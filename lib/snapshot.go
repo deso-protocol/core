@@ -402,8 +402,9 @@ func (snap *Snapshot) ForceResetToLastSnapshot(chain *Blockchain) error {
 	return nil
 }
 
-// StartAncestralRecordsFlush updates the ancestral records after a UtxoView flush.
-// This function should be called in a go-routine after all UtxoView flushes.
+// StartAncestralRecordsFlush updates the ancestral records after a UtxoView flush. This function should be called in a
+// after all UtxoView flushes. shouldIncrement is usually set to true and indicates that we are supposed to update the
+// db semaphores. The semaphore are used to manage concurrency between the main and ancestral dbs.
 func (snap *Snapshot) StartAncestralRecordsFlush(shouldIncrement bool) {
 	// If snapshot is broken then there's nothing to do.
 	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush, shouldIncrement: (%v)", shouldIncrement)

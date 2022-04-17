@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
+	"github.com/brianvoe/gofakeit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"reflect"
@@ -10,33 +11,12 @@ import (
 	"time"
 )
 
-/*
-	TODO: Maybe we add generic encoder tests that create DeSoEncoder structs with
-		some random data and try to encode/decode
-*/
+// Initialize empty DeSoEncoders and check if they are encoded properly.
 func TestEmptyTypeEncoders(t *testing.T) {
 	require := require.New(t)
-	testCases := []DeSoEncoder{
-		&BalanceEntry{},
-		&CoinEntry{},
-		&DerivedKeyEntry{},
-		&DiamondEntry{},
-		&ForbiddenPubKeyEntry{},
-		&GlobalParamsEntry{},
-		&LikeEntry{},
-		&MessageEntry{},
-		&MessagingGroupEntry{},
-		&MessagingGroupMember{},
-		&NFTBidEntry{},
-		&NFTEntry{},
-		&PKIDEntry{},
-		&PostEntry{},
-		&ProfileEntry{},
-		&PublicKeyRoyaltyPair{},
-		&RepostEntry{},
-		&UtxoEntry{},
-		&UtxoOperation{},
-	}
+	testCases := _getAllDeSoEncoders(t)
+
+	// And now try to encode/decode for the empty encoders.
 	for _, testType := range testCases {
 		testBytes := EncodeToBytes(0, testType)
 		rr := bytes.NewReader(testBytes)
@@ -44,6 +24,50 @@ func TestEmptyTypeEncoders(t *testing.T) {
 		require.Equal(true, exists)
 		require.NoError(err)
 	}
+}
+
+// Randomly initialize DeSoEncoders using gofakeit package and check if they are encoded properly.
+func TestRandomTypeEncoders(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	encodeCases := _getAllDeSoEncoders(t)
+	decodeCases := _getAllDeSoEncoders(t)
+	for ii := range encodeCases {
+		gofakeit.Struct(encodeCases[ii])
+		encodedBytes := EncodeToBytes(0, encodeCases[ii])
+		rr := bytes.NewReader(encodedBytes)
+		exists, err := DecodeFromBytes(decodeCases[ii], rr)
+		if exists != true {
+			t.Fatalf("Encode and decode exists is false! Entry type: %v, err: %v",
+				encodeCases[ii].GetEncoderType(), err)
+		}
+		require.NoError(err)
+		reEncodedBytes := EncodeToBytes(0, decodeCases[ii])
+		if reflect.DeepEqual(encodedBytes, reEncodedBytes) != true {
+			t.Fatalf("Encode and decode doesn't match! Entry type: %v", encodeCases[ii].GetEncoderType())
+		}
+	}
+}
+
+// Get an array of all DeSo encoders.
+func _getAllDeSoEncoders(t *testing.T) []DeSoEncoder {
+	var encoders []DeSoEncoder
+
+	// First add all block view DeSoEncoders
+	initialTypeBlockView := EncoderTypeUtxoEntry
+	for initialTypeBlockView != EncoderTypeEndBlockView {
+		encoders = append(encoders, initialTypeBlockView.New())
+		initialTypeBlockView += 1
+	}
+
+	// Now add all txindex DeSoEncoders
+	initialTypeTxIndex := EncoderTypeTransactionMetadata
+	for initialTypeTxIndex != EncoderTypeEndTxIndex {
+		encoders = append(encoders, initialTypeTxIndex.New())
+		initialTypeTxIndex += 1
+	}
+	return encoders
 }
 
 func TestMessageEntryDecoding(t *testing.T) {

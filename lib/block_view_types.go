@@ -67,7 +67,7 @@ func (mm UtxoType) String() string {
 
 type EncoderType uint32
 
-// Block view encoder types
+// Block view encoder types. These types to different structs implementing the DeSoEncoder interface.
 const (
 	EncoderTypeUtxoEntry EncoderType = iota
 	EncoderTypeUtxoOperation
@@ -99,9 +99,12 @@ const (
 	EncoderTypeBlockHash
 	EncoderTypeDAOCoinLimitOrderEntry
 	EncoderTypeFilledDAOCoinLimitOrder
+
+	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
+	EncoderTypeEndBlockView
 )
 
-// Txindex encoder types
+// Txindex encoder types.
 const (
 	EncoderTypeTransactionMetadata EncoderType = 1000 + iota
 	EncoderTypeBasicTransferTxindexMetadata
@@ -126,8 +129,12 @@ const (
 	EncoderTypeDAOCoinTxindexMetadata
 	EncoderTypeCreateNFTTxindexMetadata
 	EncoderTypeUpdateNFTTxindexMetadata
+
+	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
+	EncoderTypeEndTxIndex
 )
 
+// This function translates the EncoderType into an empty DeSoEncoder struct.
 func (encoderType EncoderType) New() DeSoEncoder {
 	// Block view encoder types
 	switch encoderType {
@@ -246,17 +253,32 @@ func (encoderType EncoderType) New() DeSoEncoder {
 	}
 }
 
-// DeSoEncoder represents types that implement custom to/from bytes encoding.
+// DeSoEncoder is an interface handling our custom, deterministic byte encodings.
 type DeSoEncoder interface {
+	// RawEncodeWithoutMetadata and RawDecodeWithoutMetadata methods should encode/decode a DeSoEncoder struct into a
+	// byte array. The encoding must always be deterministic, and readable by the corresponding RawDecodeWithoutMetadata.
+	// We decided to call these methods with terms like: "RawEncode" and "WithoutMetadata" so that these functions sound
+	// scary enough to not be directly called. They shouldn't be! EncodeToBytes and DecodeFromBytes wrappers should be
+	// used instead. In particular, the implementation shouldn't worry about the DeSoEncoder being nil, nor about encoding
+	// the blockHeight. All of this is handled by the wrappers. The blockHeights are passed to the encoder methods to support
+	// encoder migrations, which allow upgrading existing badgerDB entries without requiring a resync. Lookup EncoderMigrationHeights
+	// for more information on how this works. skipMetadata shouldn't be used directly by the methods; however, it must
+	// always be passed if we're nesting EncodeToBytes in the method implementation.
 	RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte
 	RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error
 
+	// GetVersionByte should return the version of the DeSoEncoder as a function of EncoderMigrationHeights and blockHeight.
+	// For instance, if we added a new migration at height H and version byte V, we should implement the GetVersionByte
+	// method so that V is returned whenever blockHeight >= H.
 	GetVersionByte(blockHeight uint64) byte
+
+	// GetEncoderType should return the EncoderType corresponding to the DeSoEncoder.
 	GetEncoderType() EncoderType
 }
 
-// EncodeToBytes encodes a DeSoEncoder type to bytes, including
-// existence bytes. This byte is used to check if the pointer was nil.
+// EncodeToBytes encodes a DeSoEncoder type to bytes, including encoder metadata such as existence byte, the encoder
+// type, and the current blockHeight. The skipMetadata parameter should be always passed if we're nesting DeSoEncoders,
+// but in general it shouldn't be passed. This parameter is only used when we're computing the state checksum.
 func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
 	var data []byte
 
@@ -367,9 +389,6 @@ func (utxo *UtxoEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata
 	data = append(data, UintToBuf(uint64(utxo.BlockHeight))...)
 	data = append(data, byte(utxo.UtxoType))
 	data = append(data, EncodeToBytes(blockHeight, utxo.UtxoKey, skipMetadata...)...)
-	//if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
-	//	data = append(data, byte(127))
-	//}
 
 	return data
 }
@@ -405,20 +424,10 @@ func (utxo *UtxoEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 		return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading UtxoKey")
 	}
 
-	//if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
-	//	_, err = rr.ReadByte()
-	//	if err != nil {
-	//		return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte")
-	//	}
-	//}
-
 	return nil
 }
 
 func (utxo *UtxoEntry) GetVersionByte(blockHeight uint64) byte {
-	//if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
-	//	return GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Version
-	//}
 	return 0
 }
 
@@ -741,8 +750,6 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 	data = append(data, UintToBuf(uint64(op.Type))...)
 
 	// Entry
-	// The op.Entry encoding will be prefixed by a single-byte flag that tells us if it existed.
-	// If the flag is set to 1 then the entry existed, otherwise the flag will be set to 0.
 	data = append(data, EncodeToBytes(blockHeight, op.Entry, skipMetadata...)...)
 
 	// Key
@@ -986,17 +993,11 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 			}
 		}
 		sort.Slice(prevBalanceEntries, func(i int, j int) bool {
-			switch bytes.Compare(prevBalanceEntries[i].primaryPKID, prevBalanceEntries[j].primaryPKID) {
+			// We compare primaryPKID || secondaryPKID byte arrays so that we don't have to consider the edge-case where
+			// primaryPKID[i] == secondaryPKID[j].
+			switch bytes.Compare(append(prevBalanceEntries[i].primaryPKID, prevBalanceEntries[i].secondaryPKID...),
+				append(prevBalanceEntries[j].primaryPKID, prevBalanceEntries[j].secondaryPKID...)) {
 			case 0:
-				switch bytes.Compare(prevBalanceEntries[i].secondaryPKID, prevBalanceEntries[j].secondaryPKID) {
-				case 0:
-					return true
-				case -1:
-					return true
-				case 1:
-					return false
-				}
-				// Return true here (contrary to the false at the end of this sort) even though we will never get here.
 				return true
 			case -1:
 				return true
@@ -3655,7 +3656,6 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 	}
 }
 
-//TODO: Test this
 func EncodePKIDuint64Map(pkidMap map[PKID]uint64) []byte {
 	var data []byte
 

@@ -4168,9 +4168,7 @@ func (txnMeta *BasicTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeigh
 	data = append(data, UintToBuf(txnMeta.TotalInputNanos)...)
 	data = append(data, UintToBuf(txnMeta.TotalOutputNanos)...)
 	data = append(data, UintToBuf(txnMeta.FeeNanos)...)
-	data = append(data, UintToBuf(uint64(len(txnMeta.UtxoOpsDump)))...)
 	data = append(data, EncodeByteArray([]byte(txnMeta.UtxoOpsDump))...)
-
 	data = append(data, UintToBuf(uint64(len(txnMeta.UtxoOps)))...)
 	for _, utxoOp := range txnMeta.UtxoOps {
 		data = append(data, EncodeToBytes(blockHeight, utxoOp, skipMetadata...)...)
@@ -4198,14 +4196,20 @@ func (txnMeta *BasicTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading FeeNanos")
 	}
 
-	lenUtxoOpsDump, err := ReadUvarint(rr)
+	utxoOpsDump, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading UtxoOpsDump")
+	}
+	txnMeta.UtxoOpsDump = string(utxoOpsDump)
+
+	lenUtxoOps, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading len of UtxoOps")
 	}
-	for ; lenUtxoOpsDump > 0; lenUtxoOpsDump-- {
+	for ; lenUtxoOps > 0; lenUtxoOps-- {
 		utxoOp := &UtxoOperation{}
 		if exists, err := DecodeFromBytes(utxoOp, rr); !exists || err != nil {
-			return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading UtxoOpsDump")
+			return errors.Wrapf(err, "BasicTransferTxindexMetadata.Decode: Problem reading UtxoOps")
 		}
 		txnMeta.UtxoOps = append(txnMeta.UtxoOps, utxoOp)
 	}

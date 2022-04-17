@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"math"
 	"math/big"
-	"math/rand"
 	"testing"
 )
 
@@ -20,7 +19,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// Test constants
 	const feeRateNanosPerKb = uint64(101)
 
-	rand.Seed(0)
 	// Initialize test chain and miner.
 	require := require.New(t)
 	chain, params, db := NewLowDifficultyBlockchain()
@@ -705,7 +703,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   * His DAO coin balance decreases.
 		// FIXME: I got an error here because my branch changed txn metadata encoding. Let's make this check smarter.
 		require.Equal(
-			int64(originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(4098-4061)),
+			int64(originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(4097-4060)),
 			int64(updatedM1DESOBalance))
 
 		require.Equal(
