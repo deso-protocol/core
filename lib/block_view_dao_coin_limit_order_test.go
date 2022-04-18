@@ -1609,6 +1609,70 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	}
 
 	{
+		// Scenario: unused bidder inputs get refunded
+
+		// Confirm existing orders in the order book.
+		// transactor: m0, buying:  $, selling: m0, price: 9, quantity: 89, type: BID
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// m1 submits an order to which we'll add additional BidderInputs.
+		exchangeRate, err := CalculateScaledExchangeRate(0.1)
+		require.NoError(err)
+
+		metadataM1 = DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
+			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(10),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		}
+
+		// TODO: delete once done testing.
+		//_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+
+		// Construct transaction.
+		testMeta.expectedSenderBalances = append(
+			testMeta.expectedSenderBalances, _getBalance(t, chain, nil, m1Pub))
+
+		updaterPkBytes, _, err := Base58CheckDecode(m1Pub)
+		require.NoError(err)
+		currentUtxoView, err := NewUtxoView(db, params, chain.postgres)
+		require.NoError(err)
+
+		currentTxn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinLimitOrderTxn(
+			updaterPkBytes, &metadataM1, feeRateNanosPerKb, nil, []*DeSoOutput{})
+		require.NoError(err)
+		require.True(totalInputMake >= changeAmountMake+feesMake)
+
+		// Add additional BidderInputs.
+		// TODO
+
+		// Sign and submit txn.
+		_signTxn(t, currentTxn, m1Priv)
+		currentUtxoOps, totalInput, totalOutput, fees, err := currentUtxoView.ConnectTransaction(
+			currentTxn, currentTxn.Hash(), getTxnSize(*currentTxn), savedHeight, true, false)
+		require.NoError(err)
+		require.Equal(totalInput, totalOutput+fees)
+		require.True(totalInput >= totalInputMake)
+		require.Equal(currentUtxoOps[len(currentUtxoOps)-1].Type, OperationTypeDAOCoinLimitOrder)
+		require.NoError(currentUtxoView.FlushToDb())
+		testMeta.txnOps = append(testMeta.txnOps, currentUtxoOps)
+		testMeta.txns = append(testMeta.txns, currentTxn)
+
+		// m1 cancels the above txn.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		metadataM1 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		require.NoError(err)
+		require.Empty(orderEntries)
+	}
+
+	{
 		// Scenario: swapping identity
 
 		// Confirm existing orders in the order book.
