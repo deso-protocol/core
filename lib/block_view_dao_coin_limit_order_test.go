@@ -1621,7 +1621,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		exchangeRate, err := CalculateScaledExchangeRate(0.1)
 		require.NoError(err)
 
-		metadataM1 = DAOCoinLimitOrderMetadata{
+		currentMetadataM1 := DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
 			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
@@ -1629,20 +1629,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 		}
 
-		// TODO: delete once done testing.
-		//_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-
 		// Construct transaction.
 		testMeta.expectedSenderBalances = append(
 			testMeta.expectedSenderBalances, _getBalance(t, chain, nil, m1Pub))
 
-		updaterPkBytes, _, err := Base58CheckDecode(m1Pub)
-		require.NoError(err)
-		currentUtxoView, err := NewUtxoView(db, params, chain.postgres)
-		require.NoError(err)
-
 		currentTxn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinLimitOrderTxn(
-			updaterPkBytes, &metadataM1, feeRateNanosPerKb, nil, []*DeSoOutput{})
+			m1PkBytes, &currentMetadataM1, feeRateNanosPerKb, nil, []*DeSoOutput{})
 		require.NoError(err)
 		require.True(totalInputMake >= changeAmountMake+feesMake)
 
@@ -1650,6 +1642,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// TODO
 
 		// Sign and submit txn.
+		currentUtxoView, err := NewUtxoView(db, params, chain.postgres)
+		require.NoError(err)
 		_signTxn(t, currentTxn, m1Priv)
 		currentUtxoOps, totalInput, totalOutput, fees, err := currentUtxoView.ConnectTransaction(
 			currentTxn, currentTxn.Hash(), getTxnSize(*currentTxn), savedHeight, true, false)
@@ -1660,6 +1654,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(currentUtxoView.FlushToDb())
 		testMeta.txnOps = append(testMeta.txnOps, currentUtxoOps)
 		testMeta.txns = append(testMeta.txns, currentTxn)
+
+		// Confirm unused BidderInput UTXOs are refunded.
+		// TODO
 
 		// m1 cancels the above txn.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
