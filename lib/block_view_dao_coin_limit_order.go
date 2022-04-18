@@ -636,8 +636,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		// due to a matching order. Adding them to the balance
 		// deltas maps with a delta of 0 ensures they receive
 		// all their money back.
-		balanceDeltaMapForBidder := balanceDeltas[*pkid.PKID]
-		if balanceDeltaMapForBidder == nil {
+		if _, exists := balanceDeltas[*pkid.PKID]; !exists {
 			balanceDeltas[*pkid.PKID] = make(map[PKID]*big.Int)
 		}
 		if _, exists := balanceDeltas[*pkid.PKID][ZeroPKID]; !exists {
