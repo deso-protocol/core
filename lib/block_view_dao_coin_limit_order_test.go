@@ -1633,8 +1633,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		testMeta.expectedSenderBalances = append(
 			testMeta.expectedSenderBalances, _getBalance(t, chain, nil, m1Pub))
 
+		// Note: we double the feeRateNanosPerKb here so that we can modify the transaction after construction
+		// and have enough inputs to cover the fee.
 		currentTxn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinLimitOrderTxn(
-			m1PkBytes, &currentMetadataM1, feeRateNanosPerKb, nil, []*DeSoOutput{})
+			m1PkBytes, &currentMetadataM1, feeRateNanosPerKb*2, nil, []*DeSoOutput{})
 		require.NoError(err)
 		require.True(totalInputMake >= changeAmountMake+feesMake)
 
@@ -1653,9 +1655,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 				TransactorPublicKey: NewPublicKey(m0PkBytes),
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM0[0].UtxoKey)),
 			})
-
-		// Add $DESO to FeeNanos to cover additional BidderInput included in txn metadata.
-		txnMeta.FeeNanos = uint64(5468)
 
 		// Sign and submit txn.
 		currentUtxoView, err := NewUtxoView(db, params, chain.postgres)

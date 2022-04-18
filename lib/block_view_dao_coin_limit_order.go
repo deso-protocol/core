@@ -241,6 +241,15 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 		bav.balanceChange(pkidEntry.PKID, &ZeroPKID, big.NewInt(0), nil, prevBalances)
 	}
+	for _, inputsByTransactor := range txMeta.BidderInputs {
+		pkidEntry := bav.GetPKIDForPublicKey(inputsByTransactor.TransactorPublicKey.ToBytes())
+		if pkidEntry == nil || pkidEntry.isDeleted {
+			return 0, 0, nil, fmt.Errorf(
+				"_connectDAOCoinLimitOrder: bidderPKIDEntry is deleted: %v",
+				spew.Sdump(pkidEntry))
+		}
+		bav.balanceChange(pkidEntry.PKID, &ZeroPKID, big.NewInt(0), nil, prevBalances)
+	}
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
@@ -620,6 +629,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 			// Track the UtxoOperations so we can rollback, and for Rosetta.
 			utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
+		}
+		balanceDeltaMapForBidder := balanceDeltas[*pkid.PKID]
+		if balanceDeltaMapForBidder == nil {
+			balanceDeltas[*pkid.PKID] = make(map[PKID]*big.Int)
+		}
+		if _, exists := balanceDeltas[*pkid.PKID][ZeroPKID]; !exists {
+			balanceDeltas[*pkid.PKID][ZeroPKID] = big.NewInt(0)
 		}
 	}
 	// At this point, we have fully spent all of the passed-in UTXOs. Now, we are free
