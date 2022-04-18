@@ -1638,8 +1638,24 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		require.True(totalInputMake >= changeAmountMake+feesMake)
 
-		// Add additional BidderInputs.
-		// TODO
+		// Track m0's $DESO balance before/after.
+		desoBalanceM0Before := _getBalance(t, chain, nil, m0Pub)
+
+		// Add additional BidderInput from m0.
+		utxoEntriesM0, err := chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, nil)
+		require.NoError(err)
+
+		txnMeta := currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+
+		txnMeta.BidderInputs = append(
+			[]*DeSoInputsByTransactor{},
+			&DeSoInputsByTransactor{
+				TransactorPublicKey: NewPublicKey(m0PkBytes),
+				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM0[0].UtxoKey)),
+			})
+
+		// Add $DESO to FeeNanos to cover additional BidderInput included in txn metadata.
+		txnMeta.FeeNanos = uint64(5468)
 
 		// Sign and submit txn.
 		currentUtxoView, err := NewUtxoView(db, params, chain.postgres)
@@ -1656,7 +1672,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		testMeta.txns = append(testMeta.txns, currentTxn)
 
 		// Confirm unused BidderInput UTXOs are refunded.
-		// TODO
+		desoBalanceM0After := _getBalance(t, chain, nil, m0Pub)
+		require.Equal(desoBalanceM0Before, desoBalanceM0After)
 
 		// m1 cancels the above txn.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
