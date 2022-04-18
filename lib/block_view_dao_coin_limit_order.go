@@ -241,6 +241,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 		bav.balanceChange(pkidEntry.PKID, &ZeroPKID, big.NewInt(0), nil, prevBalances)
 	}
+	// Get balances for all bidders as well.
 	for _, inputsByTransactor := range txMeta.BidderInputs {
 		pkidEntry := bav.GetPKIDForPublicKey(inputsByTransactor.TransactorPublicKey.ToBytes())
 		if pkidEntry == nil || pkidEntry.isDeleted {
@@ -630,6 +631,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// Track the UtxoOperations so we can rollback, and for Rosetta.
 			utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 		}
+		// If this bidder isn't in the balance deltas map yet, then
+		// we know they did not have their DESO balance changed
+		// due to a matching order. Adding them to the balance
+		// deltas maps with a delta of 0 ensures they receive
+		// all their money back.
 		balanceDeltaMapForBidder := balanceDeltas[*pkid.PKID]
 		if balanceDeltaMapForBidder == nil {
 			balanceDeltas[*pkid.PKID] = make(map[PKID]*big.Int)
