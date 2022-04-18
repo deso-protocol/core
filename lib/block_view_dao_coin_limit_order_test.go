@@ -1629,9 +1629,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 		}
 
-		// Construct transaction.
+		// Construct transaction. Note: we double the feeRateNanosPerKb here so that we can
+		// modify the transaction after construction and have enough inputs to cover the fee.
 		currentTxn, totalInputMake, _, _ := _createDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, metadataM1, feeRateNanosPerKb)
+			testMeta, m1Pub, metadataM1, feeRateNanosPerKb*2)
 
 		// Track m0's $DESO balance before/after.
 		desoBalanceM0Before := _getBalance(t, chain, nil, m0Pub)
@@ -1648,9 +1649,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 				TransactorPublicKey: NewPublicKey(m0PkBytes),
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM0[0].UtxoKey)),
 			})
-
-		// Add $DESO to FeeNanos to cover additional BidderInput included in txn metadata.
-		txnMeta.FeeNanos = uint64(5468)
 
 		// Connect txn.
 		_connectDAOCoinLimitOrderTxn(testMeta, m1Priv, currentTxn, totalInputMake)
