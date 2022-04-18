@@ -873,9 +873,11 @@ var DeSoTestnetParams = DeSoParams{
 		DAOCoinBlockHeight:            uint32(97322),
 
 		// Wed Apr 20 @ 9am ET
-		ExtraDataOnEntriesBlockHeight:            uint32(304087),
-		DerivedKeySetSpendingLimitsBlockHeight:   uint32(304087),
-		DerivedKeyTrackSpendingLimitsBlockHeight: uint32(304087),
+		ExtraDataOnEntriesBlockHeight:          uint32(304087),
+		DerivedKeySetSpendingLimitsBlockHeight: uint32(304087),
+		// Add 18h for the spending limits to be checked, since this is how we're
+		// going to do it on mainnet. Testnet produces 60 blocks per hour.
+		DerivedKeyTrackSpendingLimitsBlockHeight: uint32(304087 + 18*60),
 		DAOCoinLimitOrderBlockHeight:             uint32(304087),
 	},
 }
