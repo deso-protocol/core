@@ -531,6 +531,24 @@ func _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimitAndDerivedPrivat
 	}, derivedPrivateKey
 }
 
+func _getAccessSignature(
+	derivedPublicKey []byte,
+	expirationBlock uint64,
+	transactionSpendingLimit *TransactionSpendingLimit,
+	ownerPrivateKey *btcec.PrivateKey) ([]byte, error) {
+	accessBytes := append(derivedPublicKey, EncodeUint64(expirationBlock)...)
+	transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes()
+	if err != nil {
+		return nil, err
+	}
+	accessBytes = append(accessBytes, transactionSpendingLimitBytes...)
+	accessSignature, err := ownerPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
+	if err != nil {
+		return nil, err
+	}
+	return accessSignature.Serialize(), nil
+}
+
 func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
 	derivedPublicKey []byte, derivedPrivBase58Check string, expirationBlock uint64,
@@ -3214,6 +3232,31 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 		})
 	}
+
+	// M0 deauthorizes the derived key
+	{
+		emptyTransactionSpendingLimit := &TransactionSpendingLimit{}
+		accessSignature, err := _getAccessSignature(m0AuthTxnMeta.DerivedPublicKey, 6, emptyTransactionSpendingLimit, m0PrivateKey)
+		require.NoError(err)
+		metadata := &AuthorizeDerivedKeyMetadata{
+			DerivedPublicKey: m0AuthTxnMeta.DerivedPublicKey,
+			ExpirationBlock:  6,
+			OperationType:    AuthorizeDerivedKeyOperationNotValid,
+			AccessSignature:  accessSignature,
+		}
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			false,
+			TxnTypeAuthorizeDerivedKey,
+			metadata,
+			map[string]interface{}{
+				TransactionSpendingLimitKey: emptyTransactionSpendingLimit,
+			})
+	}
+
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
 	_executeAllTestRollbackAndFlush(testMeta)
 }
