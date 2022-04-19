@@ -1197,8 +1197,10 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 			PrevAcceptedNFTBidEntry := &NFTBidEntry{}
 			if exist, err := DecodeFromBytes(PrevAcceptedNFTBidEntry, rr); exist && err == nil {
 				prevAcceptedNFTBidEntries = append(prevAcceptedNFTBidEntries, PrevAcceptedNFTBidEntry)
-			} else {
+			} else if err != nil {
 				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevAcceptedNFTBidEntry")
+			} else {
+				prevAcceptedNFTBidEntries = append(prevAcceptedNFTBidEntries, &NFTBidEntry{})
 			}
 		}
 		op.PrevAcceptedNFTBidEntries = &prevAcceptedNFTBidEntries

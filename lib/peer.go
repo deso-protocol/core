@@ -381,9 +381,10 @@ func (pp *Peer) HandleGetBlocks(msg *MsgDeSoGetBlocks) {
 	// Note that the requester should generally ask for the blocks in the
 	// order they'd like to receive them as we will typically honor this
 	// ordering.
-	// TODO: with HyperSync there is a potential that a node will request blocks that we haven't
-	// 	yet stored, although we're fully synced. This should rarely happen and won't break anything,
-	// 	except disconnecting the syncing peer.
+	//
+	// With HyperSync there is a potential that a node will request blocks that we haven't yet stored, although we're
+	// fully synced. This can happen to archival nodes that haven't yet downloaded all historical blocks. If a GetBlock
+	// is sent to a non-archival node for blocks that we don't have, then the peer is misbehaving and should be disconnected.
 	for _, hashToSend := range msg.HashList {
 		blockToSend := pp.srv.blockchain.GetBlock(hashToSend)
 		if blockToSend == nil {
@@ -417,14 +418,15 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	pp.snapshotChunkRequestInFlight = true
 	defer func(pp *Peer) { pp.snapshotChunkRequestInFlight = false }(pp)
 
-	// Ignore GetSnapshot requests if we're still syncing. We will only serve snapshot chunk when our
-	// blockchain state is fully current.
+	// Ignore GetSnapshot requests and disconnect the peer if we're not a hypersync node.
 	if pp.srv.snapshot == nil {
 		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
 			"and disconnecting because node doesn't support HyperSync", pp)
 		pp.Disconnect()
 	}
 
+	// Ignore GetSnapshot requests if we're still syncing. We will only serve snapshot chunk when our
+	// blockchain state is fully current.
 	if pp.srv.blockchain.isSyncing() {
 		chainState := pp.srv.blockchain.chainState()
 		glog.V(1).Infof("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v"+
@@ -454,7 +456,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		return
 	}
 
-	// TODO: Any restrictions on how many snapshots a peer can request?
+	// FIXME: Any restrictions on how many snapshots a peer can request?
 
 	// Get the snapshot chunk from the database. This operation can happen concurrently with updates
 	// to the main DB or the ancestral records DB, and we don't want to slow down any of these updates.
@@ -824,8 +826,7 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 		})
 	}
 
-	// If we're sending a GetSnapshot message, the peer should respond within
-	// a few seconds with a SnapshotData.
+	// If we're sending a GetSnapshot message, the peer should respond within a few seconds with a SnapshotData.
 	if msg.GetMsgType() == MsgTypeGetSnapshot {
 		pp._addExpectedResponse(&ExpectedResponse{
 			TimeExpected: time.Now().Add(stallTimeout),
@@ -1169,8 +1170,7 @@ func (pp *Peer) Start() {
 
 func (pp *Peer) IsSyncCandidate() bool {
 	isFullNode := (pp.serviceFlags & SFFullNode) != 0
-	// TODO: This is a bit of a messy way to determine whether the node was
-	// run with --hypersync
+	// TODO: This is a bit of a messy way to determine whether the node was run with --hypersync
 	nodeSupportsHypersync := (pp.serviceFlags & SFHyperSync) != 0
 	hypersyncSatisfied := !pp.cmgr.DisableSlowSync || nodeSupportsHypersync
 	glog.Infof("IsSyncCandidate: localAddr (%v), isFullNode (%v), "+

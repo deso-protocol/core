@@ -74,6 +74,7 @@ const (
 	StatusBitcoinHeaderValidateFailed // Deprecated
 )
 
+// IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
 func (blockStatus BlockStatus) IsFullyProcessed() bool {
 	return blockStatus&StatusHeaderValidated != 0 &&
 		blockStatus&StatusBlockStored != 0 &&
@@ -488,6 +489,7 @@ func (bc *Blockchain) CopyBestHeaderChain() ([]*BlockNode, map[BlockHash]*BlockN
 	return newBestChain, newBestChainMap
 }
 
+// IsFullyStored determines if there are block nodes that haven't been fully stored or processed in the best block chain.
 func (bc *Blockchain) IsFullyStored() bool {
 	if bc.ChainState() == SyncStateFullyCurrent {
 		for _, blockNode := range bc.bestChain {
@@ -1157,15 +1159,7 @@ func (bc *Blockchain) isSyncing() bool {
 		syncState == SyncStateSyncingSnapshot || syncState == SyncStateSyncingHistoricalBlocks
 }
 
-func (bc *Blockchain) ChainFullyStored() bool {
-	for _, blockNode := range bc.bestChain {
-		if (blockNode.Status & StatusBlockStored) == 0 {
-			return false
-		}
-	}
-	return true
-}
-
+// Check if the node is in the archival mode by going through blocks in the best chain and looking up their status.
 func (bc *Blockchain) checkArchivalMode() bool {
 	// If node is not in the archival mode or if snapshot is nil then there is nothing to check.
 	if !bc.archivalMode || bc.snapshot == nil {
@@ -2125,23 +2119,19 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db height & hash")
 				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db utxo flush")
 
+				// Write the utxo operations for this block to the db so we can have the
+				// ability to roll it back in the future.
+				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
+					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+				}
+				bc.timer.End("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
+
 				// Write the modified utxo set to the view.
 				if err := bc.blockView.FlushToDbWithTxn(txn, blockHeight); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db utxo flush")
 				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
-
-				// Write the utxo operations for this block to the db so we can have the
-				// ability to roll it back in the future.
-				if bc.snapshot != nil {
-					bc.snapshot.PrepareAncestralRecordsFlush()
-					defer bc.snapshot.StartAncestralRecordsFlush(true)
-				}
-				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
-					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
-				}
-				bc.timer.End("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
 
 				return nil
 			})
@@ -2398,6 +2388,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			if bc.snapshot != nil {
 				bc.snapshot.PrepareAncestralRecordsFlush()
+				// Unfortunately, we can't call defer StartAncestralRecordsFlush here because we'd have a nested ancestral
+				// records call with the FlushToDbWithTxn at the end of this badger update.
 			}
 			for _, detachNode := range detachBlocks {
 				// Delete the utxo operations for the blocks we're detaching since we don't need
@@ -2456,7 +2448,6 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// if ProcessBlock is called by a consumer of incomingMessages we don't
 		// have any risk of deadlocking.
 		for ii, nodeToDetach := range detachBlocks {
-
 			// Fetch the block itself since we need some info from it to roll
 			// it back.
 			blockToDetach := blocksToDetach[ii]
@@ -2521,6 +2512,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	return isMainChain, false, nil
 }
 
+// DisconnectBlocksToHeight will rollback blocks from the db and blockchain structs until block tip reaches the provided
+// blockHeight parameter.
 func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 	// Roll back the block and make sure we don't hit any errors.
 	bc.ChainLock.Lock()

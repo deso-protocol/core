@@ -490,6 +490,9 @@ func NewServer(
 	timer.Initialize()
 	srv.timer = timer
 
+	// If shouldRestart is true, it means that the state checksum is likely corrupted, and we need to enter a recovery mode.
+	// This can happen if the node was terminated mid-operation last time it was running. The recovery process rolls back
+	// blocks to the beginning of the current snapshot epoch and resets to the state checksum to the epoch checksum.
 	if shouldRestart {
 		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
 			"properly last time"))
@@ -622,6 +625,8 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 // GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
 // hypersync. We will go through all blocks corresponding to the snapshot and download the blocks.
 func (srv *Server) GetBlocksToStore(pp *Peer) {
+	glog.V(2).Infof("GetBlocksToStore: Calling for peer (%v)", pp)
+
 	if !srv.blockchain.downloadingHistoricalBlocks {
 		glog.Errorf("GetBlocksToStore: Called even though all blocks have already been downloaded. This " +
 			"shouldn't happen.")
@@ -820,8 +825,6 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		if (pp.serviceFlags&SFHyperSync) != 0 && srv.blockchain.isSyncing() {
 			glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* state starting at "+
 				"height %v from peer %v", srv.blockchain.headerTip().Header.Height, pp)
-			// TODO: Handle a case where the node has synced during some previous snapshot epoch,
-			// and it has been re-run with a new snapshot epoch.
 
 			// If node is a hyper sync node and we haven't finished syncing state yet, we will kick off state sync.
 			if srv.cmgr.HyperSync {
@@ -834,9 +837,9 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 					return
 				}
 				glog.Infof(CLog(Magenta, fmt.Sprintf("Initiating HyperSync after finishing downloading headers. Node "+
-					"will quickly download a snapshot of the blockchain taken at height (%v). "+
-					"HyperSync will sync each prefix of the node's KV database. Connected peer (%v). Note: State sync is a new feature and hence might "+
-					"contain some unexpected behavior. If you see an issue, please report it in DeSo Github "+
+					"will quickly download a snapshot of the blockchain taken at height (%v). HyperSync will sync each "+
+					"prefix of the node's KV database. Connected peer (%v). Note: State sync is a new feature and hence "+
+					"might contain some unexpected behavior. If you see an issue, please report it in DeSo Github "+
 					"https://github.com/deso-protocol/core.", expectedSnapshotHeight, pp)))
 
 				// Clean all the state prefixes from the node db so that we can populate it with snapshot entries.
@@ -1018,8 +1021,16 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
 	// at least one entry sent, which is either the empty entry or the last key we've requested.
 	if srv.snapshot == nil {
-		glog.Errorf("srv_handleSnapshot: Received a snapshot message from a peer but srv.snapshot is nil. " +
+		glog.Errorf("srv._handleSnapshot: Received a snapshot message from a peer but srv.snapshot is nil. " +
 			"This peer shouldn't send us snapshot messages because we didn't pass the SFHyperSync flag.")
+		pp.Disconnect()
+		return
+	}
+
+	// If we're not syncing then we don't need the snapshot chunk so
+	if srv.blockchain.ChainState() != SyncStateSyncingSnapshot {
+		glog.Errorf("srv._handleSnapshot: Received a snapshot message from peer but chain is not currently syncing from "+
+			"snapshot. This means peer is most likely misbehaving so we'll disconnect them. Peer: (%v)", pp)
 		pp.Disconnect()
 		return
 	}
@@ -1031,16 +1042,31 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		pp.Disconnect()
 		return
 	}
+
 	glog.V(1).Infof(CLog(Yellow, fmt.Sprintf("Received a snapshot message with entry keys (First entry: "+
 		"<%v>, Last entry: <%v>), (number of entries: %v), metadata (%v), and isEmpty (%v), from Peer %v",
 		msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk),
 		msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)))
 
-	// TODO: reject this message if we're not syncing.
-	// Validate the snapshot chunk message
+	// There is a possibility that during hypersync the network entered a new snapshto epoch. We handle this case by
+	// restarting the node and starting hypersync from scratch.
+	if msg.SnapshotMetadata.SnapshotBlockHeight > srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight &&
+		uint64(srv.blockchain.HeaderTip().Height) >= msg.SnapshotMetadata.SnapshotBlockHeight {
+
+		if srv.nodeMessageChannel != nil {
+			srv.nodeMessageChannel <- NodeRestart
+			glog.Infof(CLog(Yellow, fmt.Sprintf("srv._handleSnapshot: Received a snapshot metadata with height (%v) "+
+				"which is greater than the hypersync progress height (%v). This can happen when the network entered "+
+				"a new snapshot epoch while we were syncing. The node will be restarted to retry hypersync with new epoch.",
+				msg.SnapshotMetadata.SnapshotBlockHeight, srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight)))
+			return
+		} else {
+			glog.Errorf(CLog(Red, "srv._handleSnapshot: Trying to restart the node but nodeMessageChannel is empty, "+
+				"this should never happen."))
+		}
+	}
 
 	// Make sure that the expected snapshot height and blockhash match the ones in received message.
-	// TODO: if the metadata blockheight is greater than hypersync progress snapshot blockheight, restart & erase the node.
 	if msg.SnapshotMetadata.SnapshotBlockHeight != srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight ||
 		!bytes.Equal(msg.SnapshotMetadata.CurrentEpochBlockHash[:], srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochBlockHash[:]) {
 
@@ -1165,6 +1191,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			// there is a possibility we've finished hyper sync altogether. We will break out of the loop
 			// and try to determine if we're done in the next loop.
 			// TODO: verify that the prefix checksum matches the checksum provided by the peer / header checksum.
+			//		We'll do this when we want to implement multi-peer sync.
 			if !msg.SnapshotChunkFull {
 				srv.HyperSyncProgress.PrefixProgress[ii].Completed = true
 				break
@@ -1806,11 +1833,6 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 
 	// If we get here, it means we're in SyncStateFullySynced, which is great.
 	// In this case we shoot a MEMPOOL message over to the peer to bootstrap the mempool.
-	//
-	// FIXME: In the hypersync case we're hammering the node with mempool requests every
-	// single time. We need to fix this by having a way to checking whether we have any
-	// blocks left with StatusBlockStored, and only request this if we no longer have such
-	// blocks.
 	srv._maybeRequestSync(pp)
 }
 
@@ -2062,9 +2084,8 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 // issues.
 func (srv *Server) messageHandler() {
 	for {
-		// TODO: This is used instead of the shouldQuit control message exist mechanism below.
-		// 	shouldQuit will be true only when all incoming messages have been processed, on
-		// 	the other hand this shutdown will quit immediately.
+		// This is used instead of the shouldQuit control message exist mechanism below. shouldQuit will be true only
+		// when all incoming messages have been processed, on the other hand this shutdown will quit immediately.
 		if atomic.LoadInt32(&srv.shutdown) >= 1 {
 			break
 		}

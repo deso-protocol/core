@@ -946,7 +946,6 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 	// that we can do this because _findMempoolDependencies returns the transactions in
 	// sorted order based on when transactions were added.
 	bestHeight := uint32(mp.bc.blockTip().Height + 1)
-
 	// Don't verify signatures since this transaction is already in the mempool.
 	//
 	// Additionally mempool verification does not require that BitcoinExchange

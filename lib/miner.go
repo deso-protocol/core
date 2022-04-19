@@ -429,7 +429,7 @@ func BigintToBytes(bigint *big.Int) []byte {
 func FindLowestHash(
 	blockHeaderr *MsgDeSoHeader, iterations uint64, blockHeight uint64) (
 	lowestHash *BlockHash, lowestNonce uint64, ee error) {
-	//// Compute a hash of the header with the current nonce value.
+	// Compute a hash of the header with the current nonce value.
 	bestNonce := blockHeaderr.Nonce
 	bestHash, err := blockHeaderr.Hash()
 	if err != nil {
