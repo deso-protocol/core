@@ -1822,28 +1822,41 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m1 swaps out m0's BidderInputs for spent UTXOs
 		// from m0 and tries to connect. Should error.
-		//utxoEntriesM0, err := chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, utxoView)
-		//require.NoError(err)
-		//require.Equal(len(utxoEntriesM0), 1)
-		//utxoOp, err := utxoView._spendUtxo(utxoEntriesM0[0].UtxoKey)
-		//require.NoError(err)
-		//utxoEntriesM0, err = chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, utxoView)
-		//require.NoError(err)
-		//require.Empty(utxoEntriesM0)
-		//
-		//txnMeta.BidderInputs = append(
-		//	[]*DeSoInputsByTransactor{},
-		//	&DeSoInputsByTransactor{
-		//		TransactorPublicKey: NewPublicKey(m0PkBytes),
-		//		Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoOp.Key)),
-		//	})
-		//
-		//_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-		//	testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
-		//require.Error(err)
-		//require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderOverspendingDESO)
-		//err = utxoView._unSpendUtxo(utxoOp.Entry)
-		//require.NoError(err)
+		utxoEntriesM0, err := chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, nil)
+		require.NoError(err)
+		require.NotEmpty(utxoEntriesM0) // Unspent UTXOs exist for m0.
+
+		// Spend m0's existing UTXO.
+		tempUtxoView, err := NewUtxoView(db, params, chain.postgres)
+		require.NoError(err)
+		utxoOp, err := tempUtxoView._spendUtxo(utxoEntriesM0[0].UtxoKey)
+		require.NoError(err)
+		err = tempUtxoView.FlushToDb()
+		require.NoError(err)
+		utxoEntriesM0, err = chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, nil)
+		require.NoError(err)
+		require.Empty(utxoEntriesM0) // No unspent UTXOs exist for m0.
+
+		txnMeta.BidderInputs = append(
+			[]*DeSoInputsByTransactor{},
+			&DeSoInputsByTransactor{
+				TransactorPublicKey: NewPublicKey(m0PkBytes),
+				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoOp.Key)),
+			})
+
+		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists)
+
+		// Unspend m0's existing UTXO.
+		err = tempUtxoView._unSpendUtxo(utxoOp.Entry)
+		require.NoError(err)
+		err = tempUtxoView.FlushToDb()
+		require.NoError(err)
+		utxoEntriesM0, err = chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, nil)
+		require.NoError(err)
+		require.NotEmpty(utxoEntriesM0) // Unspent UTXOs exist for m0.
 
 		// m1 includes m0's BidderInputs in addition to
 		// their own and tries to connect. Should error.
