@@ -1647,7 +1647,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
 			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosOverflow)
 
 		// Modify FeeNanos down and try to connect. Errors.
 		txnMeta.FeeNanos = originalFeeNanos - uint64(2)
