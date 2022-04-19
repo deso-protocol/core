@@ -1609,6 +1609,68 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	}
 
 	{
+		// Scenario: trying to modify FeeNanos up or down
+
+		// Confirm existing orders in the order book.
+		// transactor: m0, buying:  $, selling: m0, price: 9, quantity: 89, type: BID
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// m1 submits an order which should match to m0, but we'll modify the FeeNanos.
+		exchangeRate, err := CalculateScaledExchangeRate(0.2)
+		require.NoError(err)
+
+		metadataM1 = DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0PkBytes),
+			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(89),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		}
+
+		// Confirm would match to m0.
+		orderEntries, err = dbAdapter.GetMatchingDAOCoinLimitOrders(
+			metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID), nil)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// Construct txn.
+		currentTxn, totalInputMake, _, _ := _createDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, metadataM1, feeRateNanosPerKb)
+		txnMeta := currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+
+		// Modify FeeNanos to zero $DESO and try to connect. Errors.
+		originalFeeNanos := txnMeta.FeeNanos
+		require.True(originalFeeNanos > uint64(0))
+		txnMeta.FeeNanos = uint64(0)
+		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosOverflow)
+
+		// Modify FeeNanos down and try to connect. Errors.
+		txnMeta.FeeNanos = originalFeeNanos - uint64(2)
+		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee)
+
+		// Modify FeeNanos up and try to connect. Errors.
+		txnMeta.FeeNanos = originalFeeNanos + uint64(1)
+		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderOverspendingDESO)
+
+		// Confirm no new orders in the order book.
+		// transactor: m0, buying:  $, selling: m0, price: 9, quantity: 89, type: BID
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+	}
+
+	{
 		// Scenario: unused bidder inputs get refunded
 
 		// Confirm existing orders in the order book.
@@ -1651,7 +1713,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			})
 
 		// Connect txn.
-		_connectDAOCoinLimitOrderTxn(testMeta, m1Priv, currentTxn, totalInputMake)
+		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+		require.NoError(err)
 
 		// Confirm unused BidderInput UTXOs are refunded.
 		desoBalanceM0After := _getBalance(t, chain, nil, m0Pub)
@@ -1784,11 +1848,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 2)
 	}
 
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
@@ -2363,8 +2423,6 @@ func _createDAOCoinLimitOrderTxn(
 	*MsgDeSoTxn, uint64, uint64, uint64) {
 
 	require := require.New(testMeta.t)
-	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, publicKey))
 	transactorPkBytes, _, err := Base58CheckDecode(publicKey)
 	require.NoError(err)
 	txn, totalInput, changeAmount, fees, err := testMeta.chain.CreateDAOCoinLimitOrderTxn(
@@ -2377,10 +2435,12 @@ func _createDAOCoinLimitOrderTxn(
 }
 
 func _connectDAOCoinLimitOrderTxn(
-	testMeta *TestMeta, privateKey string, txn *MsgDeSoTxn, totalInputMake uint64) (
-	[]*UtxoOperation, uint64, uint64, uint64) {
+	testMeta *TestMeta, publicKey string, privateKey string, txn *MsgDeSoTxn, totalInputMake uint64) (
+	[]*UtxoOperation, uint64, uint64, uint64, error) {
 
 	require := require.New(testMeta.t)
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, publicKey))
 	currentUtxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres)
 	require.NoError(err)
 	// Sign the transaction now that its inputs are set up.
@@ -2389,7 +2449,11 @@ func _connectDAOCoinLimitOrderTxn(
 	// assumed the transaction will get mined into the next block.
 	utxoOps, totalInput, totalOutput, fees, err := currentUtxoView.ConnectTransaction(
 		txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, true, false)
-	require.NoError(err)
+	if err != nil {
+		// If error, remove most-recent expected sender balance added for this txn.
+		testMeta.expectedSenderBalances = testMeta.expectedSenderBalances[:len(testMeta.expectedSenderBalances)-1]
+		return nil, 0, 0, 0, err
+	}
 	require.Equal(totalInput, totalOutput+fees)
 	// totalInput will be greater than totalInputMake since we add BidderInputs to totalInput.
 	require.True(totalInput >= totalInputMake)
@@ -2397,7 +2461,7 @@ func _connectDAOCoinLimitOrderTxn(
 	require.NoError(currentUtxoView.FlushToDb())
 	testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 	testMeta.txns = append(testMeta.txns, txn)
-	return utxoOps, totalInput, totalOutput, fees
+	return utxoOps, totalInput, totalOutput, fees, err
 }
 
 // No error expected.
