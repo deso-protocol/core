@@ -271,12 +271,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	if err != nil {
 		return 0, 0, nil, err
 	}
-	if (txMeta.FeeNanos * 1000) <= txMeta.FeeNanos {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderFeeNanosOverflow
-	}
 	if (txMeta.FeeNanos*1000)/uint64(len(txnBytes)) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB ||
 		txMeta.FeeNanos == 0 {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee
+	}
+	if (txMeta.FeeNanos * 1000) <= txMeta.FeeNanos {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderFeeNanosOverflow
 	}
 
 	// If the transactor just wants to cancel an
