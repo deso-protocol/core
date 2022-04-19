@@ -1897,7 +1897,79 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	{
 		// Scenario: unused BidderInputs in DAO <--> DAO coin trade
-		// TODO
+
+		// Confirm existing orders in the order book.
+		// transactor: m0, buying:  $, selling: m0, price: 9, quantity: 89, type: BID
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// m0 submits order buying m1 coins for m0 coins. Order is stored.
+		exchangeRate, err := CalculateScaledExchangeRate(0.1)
+		require.NoError(err)
+
+		metadataM0 = DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
+			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m0PkBytes),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		}
+
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+
+		// m1 creates txn buying m0 coins for m1 coins that should match m0's.
+		exchangeRate, err = CalculateScaledExchangeRate(10.0)
+		require.NoError(err)
+
+		metadataM1 = DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0PkBytes),
+			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1PkBytes),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
+			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
+		}
+
+		currentTxn, totalInputMake, _, _ := _createDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, metadataM1, feeRateNanosPerKb)
+		txnMeta := currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+
+		// Since this is a DAO <--> DAO coin trade,
+		// no BidderInputs are specified.
+		require.Empty(txnMeta.BidderInputs)
+
+		// m1 adds BidderInputs from m0 and tries to connect. Should error.
+		utxoEntriesM0, err := chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, utxoView)
+		require.NoError(err)
+		require.NotEmpty(utxoEntriesM0)
+
+		txnMeta.BidderInputs = append(
+			[]*DeSoInputsByTransactor{},
+			&DeSoInputsByTransactor{
+				TransactorPublicKey: NewPublicKey(m1PkBytes),
+				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM0[0].UtxoKey)),
+			})
+
+		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee)
+
+		// m1 includes no BidderInputs and tries to connect. Should pass.
+		bidderInputs := []*DeSoInputsByTransactor{}
+		txnMeta.BidderInputs = bidderInputs
+
+		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+		require.NoError(err)
+
+		// m0 and m1's orders match and are removed from the order book.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
 	}
 
 	{
