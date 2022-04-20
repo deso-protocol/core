@@ -1656,7 +1656,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosOverflow)
 
 		// Modify FeeNanos down and try to connect. Errors.
-		txnMeta.FeeNanos = originalFeeNanos - uint64(2)
+		txnMeta.FeeNanos = originalFeeNanos - uint64(3)
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
 			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
 		require.Error(err)
@@ -1983,7 +1983,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
 		updatedM2DESOBalance := _getBalance(t, chain, mempool, m2Pub)
 		require.Equal(originalM0DESOBalance-uint64(5), updatedM0DESOBalance)
-		require.Equal(originalM1DESOBalance+uint64(5)-uint64(89), updatedM1DESOBalance) // Hard-coded fees.
+		require.Equal(originalM1DESOBalance+uint64(5)-uint64(73), updatedM1DESOBalance) // Hard-coded fees.
 		require.Equal(originalM2DESOBalance, updatedM2DESOBalance)
 	}
 
