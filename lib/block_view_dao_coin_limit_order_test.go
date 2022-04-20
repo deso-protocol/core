@@ -1894,6 +1894,54 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee)
 
+		// m1 increases fee rate and resubmits BidderInputs from m0
+		// in addition to m1 and separately m2. Should still fail.
+		currentTxn, totalInputMake, _, _ = _createDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, metadataM1, feeRateNanosPerKb*2)
+		txnMeta = currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+
+		// Confirm txn has BidderInputs from m0 as m1's
+		// order would match m0 and m0 is selling $DESO.
+		require.Equal(len(txnMeta.BidderInputs), 1)
+		originalBidderInput = txnMeta.BidderInputs[0]
+		require.True(bytes.Equal(originalBidderInput.TransactorPublicKey.ToBytes(), m0PkBytes))
+
+		// m1 includes m0's BidderInputs in addition to
+		// their own and tries to connect. Should error.
+		bidderInputs = append([]*DeSoInputsByTransactor{}, originalBidderInput)
+
+		bidderInputs = append(
+			bidderInputs,
+			&DeSoInputsByTransactor{
+				TransactorPublicKey: NewPublicKey(m1PkBytes),
+				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM1[0].UtxoKey)),
+			})
+
+		txnMeta.BidderInputs = bidderInputs
+
+		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists)
+
+		// m1 includes m0's BidderInputs in addition to
+		// m2's and tries to connect. Should error.
+		bidderInputs = append([]*DeSoInputsByTransactor{}, originalBidderInput)
+
+		bidderInputs = append(
+			bidderInputs,
+			&DeSoInputsByTransactor{
+				TransactorPublicKey: NewPublicKey(m1PkBytes),
+				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM2[0].UtxoKey)),
+			})
+
+		txnMeta.BidderInputs = bidderInputs
+
+		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
+
 		// m1 includes m0's original BidderInputs and tries to connect. Should pass.
 		bidderInputs = append([]*DeSoInputsByTransactor{}, originalBidderInput)
 		txnMeta.BidderInputs = bidderInputs
@@ -1970,6 +2018,32 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee)
+
+		// m1 increases fee rate and resubmits BidderInputs from m0. Should fail.
+		currentTxn, totalInputMake, _, _ = _createDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, metadataM1, feeRateNanosPerKb*2)
+		txnMeta = currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+
+		// Since this is a DAO <--> DAO coin trade,
+		// no BidderInputs are specified.
+		require.Empty(txnMeta.BidderInputs)
+
+		// m1 adds BidderInputs from m0 and tries to connect. Should error.
+		utxoEntriesM0, err = chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, utxoView)
+		require.NoError(err)
+		require.NotEmpty(utxoEntriesM0)
+
+		txnMeta.BidderInputs = append(
+			[]*DeSoInputsByTransactor{},
+			&DeSoInputsByTransactor{
+				TransactorPublicKey: NewPublicKey(m1PkBytes),
+				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM0[0].UtxoKey)),
+			})
+
+		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
+			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
 
 		// m1 includes no BidderInputs and tries to connect. Should pass.
 		bidderInputs := []*DeSoInputsByTransactor{}
