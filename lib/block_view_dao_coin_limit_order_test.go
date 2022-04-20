@@ -1883,7 +1883,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		bidderInputs = append(
 			bidderInputs,
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m1PkBytes),
+				TransactorPublicKey: NewPublicKey(m2PkBytes),
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM2[0].UtxoKey)),
 			})
 
