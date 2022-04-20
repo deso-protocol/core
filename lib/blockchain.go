@@ -1021,6 +1021,17 @@ func (bc *Blockchain) GetBlockAtHeight(height uint32) *MsgDeSoBlock {
 	return bc.GetBlock(bc.bestChain[height].Hash)
 }
 
+// GetBlockNodeWithHash looks for a block node in the bestChain list that matches the hash.
+func (bc *Blockchain) GetBlockNodeWithHash(hash *BlockHash) *BlockNode {
+	for _, blockNode := range bc.bestChain {
+		if blockNode.Hash.IsEqual(hash) {
+			return blockNode
+		}
+	}
+
+	return nil
+}
+
 // isTipMaxed compares the tip height to the MaxSyncBlockHeight height.
 func (bc *Blockchain) isTipMaxed(tip *BlockNode) bool {
 	if bc.MaxSyncBlockHeight > 0 {

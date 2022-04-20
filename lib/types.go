@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"io"
+	"reflect"
 	"sort"
 )
 
@@ -226,13 +227,11 @@ func (bh *BlockHash) ToBytes() []byte {
 
 // IsEqual returns true if target is the same as hash.
 func (bh *BlockHash) IsEqual(target *BlockHash) bool {
-	if bh == nil && target == nil {
-		return true
-	}
-	if bh == nil || target == nil {
+	if target == nil {
 		return false
 	}
-	return *bh == *target
+
+	return reflect.DeepEqual(bh[:], target[:])
 }
 
 func (bh *BlockHash) NewBlockHash() *BlockHash {
