@@ -41,6 +41,14 @@ func NewNode(config *Config) *Node {
 }
 
 func (node *Node) Start() {
+	node.StartWithOptions(nil)
+	return
+}
+
+// StartWithOptions allows third-party nodes to add processing after every
+// block or after every transaction is connected by specifying their own EventManager.
+// This allows nodes to build up their own indexes, and maintain them, from scratch.
+func (node *Node) StartWithOptions(eventManager *lib.EventManager) {
 	// TODO: Replace glog with logrus so we can also get rid of flag library
 	flag.Set("log_dir", node.Config.LogDirectory)
 	flag.Set("v", fmt.Sprintf("%d", node.Config.GlogV))
@@ -116,14 +124,13 @@ func (node *Node) Start() {
 	}
 
 	// Setup postgres using a remote URI
-	var db *pg.DB
 	if node.Config.PostgresURI != "" {
 		options, err := pg.ParseURL(node.Config.PostgresURI)
 		if err != nil {
 			panic(err)
 		}
 
-		db = pg.Connect(options)
+		db := pg.Connect(options)
 		node.Postgres = lib.NewPostgres(db)
 
 		// LoadMigrations registers all the migration files in the migrate package.
@@ -138,8 +145,10 @@ func (node *Node) Start() {
 		}
 	}
 
-	// Setup eventManager
-	eventManager := lib.NewEventManager()
+	// If we're passed an EventManager object, use that. Otherwise, initialize a new one.
+	if eventManager == nil {
+		eventManager = lib.NewEventManager()
+	}
 
 	// Setup the server
 	node.Server, err = lib.NewServer(

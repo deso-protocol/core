@@ -6444,3 +6444,10 @@ func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, order *DAOCoinLimitOrderE
 
 	return nil
 }
+
+func DBGetAllPostsInefficient(db *badger.DB) (_postHashes []*BlockHash, _postEntries []*PostEntry) {
+	allPostHashBytes, allPostEntryBytes := EnumerateKeysForPrefix(db, _PrefixPostHashToPostEntry)
+	// FIXME: Parse the post hashes and entries we read from the DB.
+	_, _ = allPostHashBytes, allPostEntryBytes
+	return nil, nil
+}
