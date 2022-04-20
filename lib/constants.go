@@ -945,6 +945,9 @@ var DeSoTestnetParams = DeSoParams{
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
 	ForkHeights: ForkHeights{
+		// Get testnet height from here:
+		// - https://explorer.deso.org/?query-node=https:%2F%2Ftest.deso.org
+
 		// Initially, testnet fork heights were the same as mainnet heights
 		// This changed when we spun up a real testnet that runs independently
 		DeflationBombBlockHeight:                             33783,
@@ -964,15 +967,13 @@ var DeSoTestnetParams = DeSoParams{
 		BuyNowAndNFTSplitsBlockHeight: uint32(97322),
 		DAOCoinBlockHeight:            uint32(97322),
 
-		// FIXME: set to real block height
-		ExtraDataOnEntriesBlockHeight: math.MaxUint32,
-
-		// FIXME: Set these values when we're ready for the next fork.
-		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
-		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
-
-		// FIXME: Set to real block height when we're ready.
-		DAOCoinLimitOrderBlockHeight: math.MaxUint32,
+		// Wed Apr 20 @ 9am ET
+		ExtraDataOnEntriesBlockHeight:          uint32(304087),
+		DerivedKeySetSpendingLimitsBlockHeight: uint32(304087),
+		// Add 18h for the spending limits to be checked, since this is how we're
+		// going to do it on mainnet. Testnet produces 60 blocks per hour.
+		DerivedKeyTrackSpendingLimitsBlockHeight: uint32(304087 + 18*60),
+		DAOCoinLimitOrderBlockHeight:             uint32(304087),
 	},
 	EncoderMigrationHeights:     TestnetEncoderMigrationHeights,
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetEncoderMigrationHeights),
