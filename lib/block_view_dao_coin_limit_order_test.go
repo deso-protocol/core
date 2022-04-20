@@ -1925,14 +1925,17 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists)
 
 		// m1 includes m0's BidderInputs in addition to
-		// m2's and tries to connect. Should error.
+		// m2's and tries to connect, but specifies m1's
+		// PK with m2's UTXO. Should error.
 		bidderInputs = append([]*DeSoInputsByTransactor{}, originalBidderInput)
 
 		bidderInputs = append(
 			bidderInputs,
 			&DeSoInputsByTransactor{
+				// m1's public key
 				TransactorPublicKey: NewPublicKey(m1PkBytes),
-				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM2[0].UtxoKey)),
+				// m2's UTXO
+				Inputs: append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM2[0].UtxoKey)),
 			})
 
 		txnMeta.BidderInputs = bidderInputs
@@ -1942,8 +1945,21 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
 
-		// m1 includes m0's original BidderInputs and tries to connect. Should pass.
+		// m1 includes m0's BidderInputs in addition to
+		// m2's and tries to connect. Should pass. And
+		// all unused UTXOs should be refunded.
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
+		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		originalM2DESOBalance := _getBalance(t, chain, mempool, m2Pub)
 		bidderInputs = append([]*DeSoInputsByTransactor{}, originalBidderInput)
+
+		bidderInputs = append(
+			bidderInputs,
+			&DeSoInputsByTransactor{
+				TransactorPublicKey: NewPublicKey(m2PkBytes),
+				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM2[0].UtxoKey)),
+			})
+
 		txnMeta.BidderInputs = bidderInputs
 
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
@@ -1954,6 +1970,15 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
+
+		// 5 $DESO nanos are transferred from m0 to m1.
+		// m2 gets refunded their unused UTXOs.
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
+		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		updatedM2DESOBalance := _getBalance(t, chain, mempool, m2Pub)
+		require.Equal(originalM0DESOBalance-uint64(5), updatedM0DESOBalance)
+		require.Equal(originalM1DESOBalance+uint64(5)-uint64(89), updatedM1DESOBalance) // Hard-coded fees.
+		require.Equal(originalM2DESOBalance, updatedM2DESOBalance)
 	}
 
 	{
@@ -2010,7 +2035,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		txnMeta.BidderInputs = append(
 			[]*DeSoInputsByTransactor{},
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m1PkBytes),
+				TransactorPublicKey: NewPublicKey(m0PkBytes),
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM0[0].UtxoKey)),
 			})
 
@@ -2019,7 +2044,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee)
 
-		// m1 increases fee rate and resubmits BidderInputs from m0. Should fail.
+		// m1 increases fee rate and resubmits BidderInputs from m0.
+		// Should pass. And all unused UTXOs should be refunded.
 		currentTxn, totalInputMake, _, _ = _createDAOCoinLimitOrderTxn(
 			testMeta, m1Pub, metadataM1, feeRateNanosPerKb*2)
 		txnMeta = currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
@@ -2028,7 +2054,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// no BidderInputs are specified.
 		require.Empty(txnMeta.BidderInputs)
 
-		// m1 adds BidderInputs from m0 and tries to connect. Should error.
+		// m1 adds BidderInputs from m0 and tries to connect. Should pass.
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
 		utxoEntriesM0, err = chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, utxoView)
 		require.NoError(err)
 		require.NotEmpty(utxoEntriesM0)
@@ -2036,18 +2063,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		txnMeta.BidderInputs = append(
 			[]*DeSoInputsByTransactor{},
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m1PkBytes),
+				TransactorPublicKey: NewPublicKey(m0PkBytes),
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM0[0].UtxoKey)),
 			})
-
-		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
-
-		// m1 includes no BidderInputs and tries to connect. Should pass.
-		bidderInputs := []*DeSoInputsByTransactor{}
-		txnMeta.BidderInputs = bidderInputs
 
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
 			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
@@ -2057,6 +2075,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
+
+		// m0 gets refunded their unused UTXOs.
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
+		require.Equal(originalM0DESOBalance, updatedM0DESOBalance)
 	}
 
 	{
