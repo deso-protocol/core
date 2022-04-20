@@ -453,7 +453,6 @@ type Blockchain struct {
 	// TODO: These could be rolled into SyncState, or at least into a single
 	// variable.
 	syncingState                bool
-	finishedSyncing             bool
 	downloadingHistoricalBlocks bool
 
 	timer *Timer
@@ -1120,11 +1119,13 @@ func (bc *Blockchain) chainState() SyncState {
 		return SyncStateSyncingHeaders
 	}
 
-	// If the header tip is current and we haven't finished syncing state,
-	// we're in the SyncStateSyncingSnapshot state.
-	if !bc.finishedSyncing && bc.syncingState {
+	// If the header tip is current and the block tip is far in the past, then we're in the SyncStateSyncingSnapshot state.
+	if bc.syncingState {
 		return SyncStateSyncingSnapshot
 	}
+
+	// If we get here that means that the block tip is pretty much up to date, so we'll either be downloading historical
+	// blocks if we're in the archival mode, or we'll download the remaining, most recent blocks.
 
 	// If the node is the archival mode and we're downloading historical blocks,
 	// then we're in the SyncStateSyncingHistoricalBlocks state.
@@ -1189,6 +1190,22 @@ func (bc *Blockchain) checkArchivalMode() bool {
 	}
 
 	// If we get here, it means that all blocks have been processed and stored, so there is nothing to do.
+	return false
+}
+
+// isHyperSyncCondition checks if the block tip is more than a snapshot period away from the header tip. If that's the case
+// then it is likely faster to delete the entire database and HyperSync the state from scratch, rather than syncing blocks.
+func (bc *Blockchain) isHyperSyncCondition() bool {
+	// If HyperSync is turned off then there's nothing to do.
+	if bc.snapshot == nil {
+		return false
+	}
+
+	blockTip := bc.blockTip()
+	headerTip := bc.headerTip()
+	if uint64(headerTip.Height-blockTip.Height) >= SnapshotBlockHeightPeriod {
+		return true
+	}
 	return false
 }
 

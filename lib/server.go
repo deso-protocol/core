@@ -821,8 +821,14 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 
 		// If we get here it means that we've just finished syncing headers and we will proceed to
 		// syncing state either through hyper sync or block sync. First let's check if the peer
-		// supports hyper sync.
-		if (pp.serviceFlags&SFHyperSync) != 0 && srv.blockchain.isSyncing() {
+		// supports hypersync and if our block tip is old enough so that it makes sense to sync state.
+		if (pp.serviceFlags&SFHyperSync) != 0 && srv.blockchain.isHyperSyncCondition() {
+			// If hypersync conditions are satisfied, we will be syncing state. This assignment results
+			// in srv.blockchain.chainState() to be equal to SyncStateSyncingSnapshot
+			srv.blockchain.syncingState = true
+		}
+
+		if srv.blockchain.chainState() == SyncStateSyncingSnapshot {
 			glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* state starting at "+
 				"height %v from peer %v", srv.blockchain.headerTip().Header.Height, pp)
 
@@ -831,7 +837,6 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
 				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
 
-				srv.blockchain.syncingState = true
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
 					srv.GetSnapshot(pp)
 					return
@@ -1293,7 +1298,6 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
 
 	// If we got here then we finished the snapshot sync so set appropriate flags.
-	srv.blockchain.finishedSyncing = true
 	srv.blockchain.syncingState = false
 	srv.blockchain.snapshot.CurrentEpochSnapshotMetadata = srv.HyperSyncProgress.SnapshotMetadata
 
