@@ -1833,11 +1833,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NotEmpty(utxoEntriesM0) // Unspent UTXOs exist for m0.
 
 		// Spend m0's existing UTXO.
-		tempUtxoView, err := NewUtxoView(db, params, chain.postgres)
+		tempUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(err)
 		utxoOp, err := tempUtxoView._spendUtxo(utxoEntriesM0[0].UtxoKey)
 		require.NoError(err)
-		err = tempUtxoView.FlushToDb()
+		err = tempUtxoView.FlushToDb(0)
 		require.NoError(err)
 		utxoEntriesM0, err = chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, nil)
 		require.NoError(err)
@@ -1858,7 +1858,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Unspend m0's existing UTXO.
 		err = tempUtxoView._unSpendUtxo(utxoOp.Entry)
 		require.NoError(err)
-		err = tempUtxoView.FlushToDb()
+		err = tempUtxoView.FlushToDb(0)
 		require.NoError(err)
 		utxoEntriesM0, err = chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, nil)
 		require.NoError(err)
@@ -2796,7 +2796,7 @@ func _connectDAOCoinLimitOrderTxn(
 	require := require.New(testMeta.t)
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, publicKey))
-	currentUtxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres)
+	currentUtxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
 	require.NoError(err)
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(testMeta.t, txn, privateKey)
@@ -2813,7 +2813,7 @@ func _connectDAOCoinLimitOrderTxn(
 	// totalInput will be greater than totalInputMake since we add BidderInputs to totalInput.
 	require.True(totalInput >= totalInputMake)
 	require.Equal(utxoOps[len(utxoOps)-1].Type, OperationTypeDAOCoinLimitOrder)
-	require.NoError(currentUtxoView.FlushToDb())
+	require.NoError(currentUtxoView.FlushToDb(0))
 	testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 	testMeta.txns = append(testMeta.txns, txn)
 	return utxoOps, totalInput, totalOutput, fees, err
