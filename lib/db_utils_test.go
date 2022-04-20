@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"bytes"
 	"io/ioutil"
 	"log"
 	"math/big"
@@ -31,39 +30,6 @@ func TestStatePrefixToDeSoEncoder(t *testing.T) {
 				t.Fatalf("Non-state prefix (%v) mapped to an incorrect encoder", prefix)
 			}
 		}
-	}
-}
-
-func TestEmptyMetadataEncoders(t *testing.T) {
-	require := require.New(t)
-	testCases := []DeSoEncoder{
-		&AcceptNFTBidTxindexMetadata{},
-		&AffectedPublicKey{},
-		&BasicTransferTxindexMetadata{},
-		&BitcoinExchangeTxindexMetadata{},
-		&CreateNFTTxindexMetadata{},
-		&CreatorCoinTransferTxindexMetadata{},
-		&CreatorCoinTxindexMetadata{},
-		&DAOCoinTransferTxindexMetadata{},
-		&DAOCoinTxindexMetadata{},
-		&FollowTxindexMetadata{},
-		&LikeTxindexMetadata{},
-		&NFTBidTxindexMetadata{},
-		&NFTRoyaltiesMetadata{},
-		&PrivateMessageTxindexMetadata{},
-		&SubmitPostTxindexMetadata{},
-		&PublicKeyRoyaltyPair{},
-		&SwapIdentityTxindexMetadata{},
-		&TransactionMetadata{},
-		&UpdateNFTTxindexMetadata{},
-		&UpdateProfileTxindexMetadata{},
-	}
-	for _, testType := range testCases {
-		testBytes := EncodeToBytes(0, testType)
-		rr := bytes.NewReader(testBytes)
-		exists, err := DecodeFromBytes(testType, rr)
-		require.Equal(true, exists)
-		require.NoError(err)
 	}
 }
 

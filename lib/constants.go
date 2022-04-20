@@ -38,7 +38,6 @@ const (
 	// MessagesToFetchPerCall is used to limit the number of messages to fetch
 	// when getting a user's inbox.
 	MessagesToFetchPerInboxCall = 10000
-	MaxBlocksInView             = 1
 )
 
 type NodeMessage uint32
@@ -247,17 +246,14 @@ type MigrationHeight struct {
 }
 type EncoderMigrationHeights struct {
 	DefaultHeight MigrationHeight
-	//UtxoEntryTestHeight MigrationHeight
 }
 
 var TestnetEncoderMigrationHeights = EncoderMigrationHeights{
 	DefaultHeight: MigrationHeight{0, 0},
-	//UtxoEntryTestHeight: MigrationHeight{1200, 1},
 }
 
 var MainnetEncoderMigrationHeights = EncoderMigrationHeights{
 	DefaultHeight: MigrationHeight{0, 0},
-	//UtxoEntryTestHeight: MigrationHeight{1200, 1},
 }
 
 // So for example, let's say you want to add a migration for UtxoEntry at height 1200.
