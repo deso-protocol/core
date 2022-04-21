@@ -213,18 +213,18 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Grab the txn metadata.
 	txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
+	// Validate txn metadata.
+	err := bav.IsValidDAOCoinLimitOrderMetadata(txMeta)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder: ")
+	}
+
 	// Get the transactor PKID and validate it.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDAOCoinLimitOrder: transactorPKIDEntry is deleted: %v",
 			spew.Sdump(transactorPKIDEntry))
-	}
-
-	// Validate OrderType.
-	if txMeta.OrderType != DAOCoinLimitOrderTypeResting &&
-		txMeta.OrderType != DAOCoinLimitOrderTypeFillOrKill {
-		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidOrderType
 	}
 
 	// Define the prevBalances map, and initialize the balances for all public keys involved in
@@ -1455,6 +1455,82 @@ func (bav *UtxoView) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *P
 // ###########################
 // ## VALIDATIONS
 // ###########################
+
+func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(metadata *DAOCoinLimitOrderMetadata) error {
+	// Returns an error if the input metadata is invalid. Otherwise returns nil.
+
+	// Validate FeeNanos > 0.
+	if metadata.FeeNanos == 0 {
+		return RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee
+	}
+
+	// If the transactor is just cancelling their order,
+	// then the below validations do not apply.
+	if metadata.CancelOrderID != nil {
+		return nil
+	}
+
+	// Validate buying and selling coins.
+	if metadata.BuyingDAOCoinCreatorPublicKey == nil {
+		return RuleErrorDAOCoinLimitOrderInvalidBuyingDAOCoinCreatorPKID
+	}
+	if metadata.SellingDAOCoinCreatorPublicKey == nil {
+		return RuleErrorDAOCoinLimitOrderInvalidSellingDAOCoinCreatorPKID
+	}
+	if bytes.Equal(
+		metadata.BuyingDAOCoinCreatorPublicKey.ToBytes(),
+		metadata.SellingDAOCoinCreatorPublicKey.ToBytes()) {
+		return RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
+	}
+
+	// Validate exchange rate.
+	if metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy == nil ||
+		metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
+	}
+
+	// Validate quantity.
+	if metadata.QuantityToFillInBaseUnits == nil ||
+		metadata.QuantityToFillInBaseUnits.IsZero() {
+		return RuleErrorDAOCoinLimitOrderInvalidQuantity
+	}
+
+	// Validate operation type.
+	if metadata.OperationType != DAOCoinLimitOrderOperationTypeASK &&
+		metadata.OperationType != DAOCoinLimitOrderOperationTypeBID {
+		return RuleErrorDAOCoinLimitOrderInvalidOperationType
+	}
+
+	// Validate OrderType.
+	if metadata.OrderType != DAOCoinLimitOrderTypeResting &&
+		metadata.OrderType != DAOCoinLimitOrderTypeFillOrKill {
+		return RuleErrorDAOCoinLimitOrderInvalidOrderType
+	}
+
+	// If buying DAO coins, validate buy coin creator exists and has a profile.
+	// Note that ZeroPublicKey indicates that we are buying $DESO.
+	isBuyingDESO := metadata.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey()
+	var buyCoinCreatorProfileEntry *ProfileEntry
+	if !isBuyingDESO {
+		buyCoinCreatorProfileEntry = bav.GetProfileEntryForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes())
+		if buyCoinCreatorProfileEntry == nil || buyCoinCreatorProfileEntry.isDeleted {
+			return RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile
+		}
+	}
+
+	// If selling DAO coins, validate sell coin creator exists and has a profile.
+	// Note that ZeroPublicKey indicates that we are selling $DESO.
+	isSellingDESO := metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey()
+	var sellCoinCreatorProfileEntry *ProfileEntry
+	if !isSellingDESO {
+		sellCoinCreatorProfileEntry = bav.GetProfileEntryForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes())
+		if sellCoinCreatorProfileEntry == nil || sellCoinCreatorProfileEntry.isDeleted {
+			return RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile
+		}
+	}
+
+	return nil
+}
 
 func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) error {
 	// Returns an error if the input order is invalid. Otherwise returns nil.
