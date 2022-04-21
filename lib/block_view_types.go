@@ -1532,7 +1532,7 @@ type DAOCoinLimitOrderEntry struct {
 	isDeleted bool
 }
 
-type DAOCoinLimitOrderOperationType uint64
+type DAOCoinLimitOrderOperationType uint8
 
 const (
 	// We intentionally skip zero as otherwise that would be the default value.

@@ -5609,7 +5609,7 @@ type DAOCoinLimitOrderMetadata struct {
 	FeeNanos uint64
 }
 
-type DAOCoinLimitOrderType uint64
+type DAOCoinLimitOrderType uint8
 
 const (
 	// We set Resting as zero so it is the default value.
