@@ -421,6 +421,7 @@ type PGMetadataDAOCoinLimitOrder struct {
 	ScaledExchangeRateCoinsToSellPerCoinToBuy string                                     `pg:",use_zero"`
 	QuantityToFillInBaseUnits                 string                                     `pg:",use_zero"`
 	OperationType                             uint64                                     `pg:",use_zero"`
+	OrderType                                 uint64                                     `pg:",use_zero"`
 	CancelOrderID                             *BlockHash                                 `pg:",type:bytea"`
 	FeeNanos                                  uint64                                     `pg:",use_zero"`
 	BidderInputs                              []*PGMetadataDAOCoinLimitOrderBidderInputs `pg:"rel:has-many,join_fk:transaction_hash"`

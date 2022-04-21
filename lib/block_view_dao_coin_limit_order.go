@@ -221,6 +221,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			spew.Sdump(transactorPKIDEntry))
 	}
 
+	// Validate OrderType.
+	if txMeta.OrderType != DAOCoinLimitOrderTypeResting &&
+		txMeta.OrderType != DAOCoinLimitOrderTypeFillOrKill {
+		return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidOrderType
+	}
+
 	// Define the prevBalances map, and initialize the balances for all public keys involved in
 	// inputs and outputs of the txn. If we wait until after _connectBasicTransfer to do this,
 	// then the balances will be messed up. Note that we don't really need to do this for the
@@ -544,6 +550,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// After iterating through all potential matching orders, if transactor's order
 	// is still not fully fulfilled, submit it to be stored.
 	if !transactorOrder.QuantityToFillInBaseUnits.IsZero() {
+		// If this is a fill-or-kill order that is still unfulfilled
+		// after matching with all applicable orders, then we need
+		// to cancel this order.
+		if txMeta.OrderType == DAOCoinLimitOrderTypeFillOrKill {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled
+		}
+
 		bav._setDAOCoinLimitOrderEntryMappings(transactorOrder)
 	}
 

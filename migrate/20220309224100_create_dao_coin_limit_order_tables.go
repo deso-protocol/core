@@ -19,6 +19,7 @@ func init() {
 				scaled_exchange_rate_coins_to_sell_per_coin_to_buy TEXT,
 				quantity_to_fill_in_base_units                     TEXT,
 				operation_type                                     BIGINT,
+				order_type                                         BIGINT,
 				cancel_order_id                                    BYTEA,
 				fee_nanos                                          BIGINT NOT NULL
 			);

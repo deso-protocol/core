@@ -569,7 +569,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   * His $DESO balance decreases and
 		//   * His DAO coin balance increases.
 		require.Equal(
-			int64(originalM0DESOBalance-desoQuantityChange.Uint64()-uint64(6485-6451)), // Hard-coded fee.
+			int64(originalM0DESOBalance-desoQuantityChange.Uint64()-uint64(6485-6450)), // Hard-coded fee.
 			int64(updatedM0DESOBalance))
 
 		require.Equal(
@@ -1349,7 +1349,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m0 is charged a txn fee in $DESO.
 		m0DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m0Pub)
-		require.Equal(m0DESOBalanceNanosBefore-uint64(34), m0DESOBalanceNanosAfter) // Hard-coded fee.
+		require.Equal(m0DESOBalanceNanosBefore-uint64(35), m0DESOBalanceNanosAfter) // Hard-coded fee.
 
 		// m1 submits BID order buying m0 coins and selling m1 coins.
 		// Orders match for 100 m0 DAO coin units <--> 200 m1 DAO coin units.
@@ -1411,7 +1411,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		m0DESOBalanceNanosAfter = _getBalance(t, chain, mempool, m0Pub)
 		m1DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m1Pub)
 		require.Equal(m0DESOBalanceNanosBefore, m0DESOBalanceNanosAfter)
-		require.Equal(m1DESOBalanceNanosBefore-uint64(34), m1DESOBalanceNanosAfter) // Hard-coded fee.
+		require.Equal(m1DESOBalanceNanosBefore-uint64(35), m1DESOBalanceNanosAfter) // Hard-coded fee.
 	}
 
 	{
@@ -1650,7 +1650,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosOverflow)
 
 		// Modify FeeNanos down and try to connect. Errors.
-		txnMeta.FeeNanos = originalFeeNanos - uint64(2)
+		txnMeta.FeeNanos = originalFeeNanos - uint64(3)
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
 			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
 		require.Error(err)
@@ -2079,6 +2079,99 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0 gets refunded their unused UTXOs.
 		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
 		require.Equal(originalM0DESOBalance, updatedM0DESOBalance)
+	}
+
+	{
+		// Scenario: fill-or-kill order
+
+		// Confirm existing orders in the order book.
+		// transactor: m0, buying:  $, selling: m0, price: 9, quantity: 89, type: BID
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// m0 submits an order selling 100 m1 DAO coin units. Order is stored.
+		exchangeRate, err := CalculateScaledExchangeRate(10.0)
+		require.NoError(err)
+
+		metadataM0 = DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
+			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1PkBytes),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
+		}
+
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+
+		// Track coin balances to compare later.
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
+		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		originalM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0PKID.PKID, m1PKID.PKID, true).BalanceNanos
+		originalM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true).BalanceNanos
+
+		// m1 submits an order with an invalid OrderType. Errors.
+		exchangeRate, err = CalculateScaledExchangeRate(0.1)
+		require.NoError(err)
+
+		metadataM1 = DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
+			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(200),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+			OrderType:                                 99,
+		}
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidOrderType)
+
+		// m1 submits a fill-or-kill order buying 200 m1 DAO coin units that is killed.
+		metadataM1.OrderType = DAOCoinLimitOrderTypeFillOrKill
+
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled)
+
+		// Order books is unchanged.
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 2)
+
+		// No coins change hands.
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
+		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		updatedM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0PKID.PKID, m1PKID.PKID, true).BalanceNanos
+		updatedM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true).BalanceNanos
+
+		require.Equal(originalM0DESOBalance, updatedM0DESOBalance)
+		require.Equal(originalM1DESOBalance, updatedM1DESOBalance)
+		require.Equal(originalM0BalanceM1Coins, updatedM0BalanceM1Coins)
+		require.Equal(originalM1BalanceM1Coins, updatedM1BalanceM1Coins)
+
+		// m1 submits a fill-or-kill order buying 100 m1 DAO coins that is filled.
+		metadataM1.QuantityToFillInBaseUnits = uint256.NewInt().SetUint64(100)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+
+		// Correct coins change hands.
+		updatedM0DESOBalance = _getBalance(t, chain, mempool, m0Pub)
+		updatedM1DESOBalance = _getBalance(t, chain, mempool, m1Pub)
+		updatedM0BalanceM1Coins = dbAdapter.GetBalanceEntry(m0PKID.PKID, m1PKID.PKID, true).BalanceNanos
+		updatedM1BalanceM1Coins = dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true).BalanceNanos
+
+		require.Equal(originalM0DESOBalance+uint64(10), updatedM0DESOBalance)
+		require.Equal(originalM1DESOBalance-uint64(10)-uint64(35), updatedM1DESOBalance) // Hard-coded fees.
+		require.Equal(originalM0BalanceM1Coins.Uint64()-uint64(100), updatedM0BalanceM1Coins.Uint64())
+		require.Equal(originalM1BalanceM1Coins.Uint64()+uint64(100), updatedM1BalanceM1Coins.Uint64())
 	}
 
 	{
