@@ -467,8 +467,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m1's order is fulfilled buying $DESO so:
 		//   * His $DESO balance increases and
 		//   * His DAO coin balance decreases.
+		feeNanos := testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
 		require.Equal(
-			int64(originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(4010-3969)), // Hard-coded fee.
+			int64(originalM1DESOBalance+desoQuantityChange.Uint64()-feeNanos),
 			int64(updatedM1DESOBalance))
 
 		require.Equal(
@@ -568,8 +569,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0's order to buy DAO coins is fulfilled so:
 		//   * His $DESO balance decreases and
 		//   * His DAO coin balance increases.
+		feeNanos := testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
 		require.Equal(
-			int64(originalM0DESOBalance-desoQuantityChange.Uint64()-uint64(6485-6450)), // Hard-coded fee.
+			int64(originalM0DESOBalance-desoQuantityChange.Uint64()-feeNanos),
 			int64(updatedM0DESOBalance))
 
 		require.Equal(
@@ -699,8 +701,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m1's order selling DAO coins is fulfilled so:
 		//   * His $DESO balance increases and
 		//   * His DAO coin balance decreases.
+		feeNanos := testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
 		require.Equal(
-			int64(originalM1DESOBalance+desoQuantityChange.Uint64()-uint64(4097-4056)), // Hard-coded fee.
+			int64(originalM1DESOBalance+desoQuantityChange.Uint64()-feeNanos),
 			int64(updatedM1DESOBalance))
 
 		require.Equal(
@@ -1046,7 +1049,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1Pub)
 		m2DESOBalanceAfter := _getBalance(t, chain, mempool, m2Pub)
 
-		require.Equal(int64(m0DESOBalanceBefore-15-uint64(5864-5826)), int64(m0DESOBalanceAfter)) // Fee is 3 nanos
+		feeNanos := testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
+		require.Equal(int64(m0DESOBalanceBefore-15-feeNanos), int64(m0DESOBalanceAfter))
 		require.Equal(m1DESOBalanceBefore+10, m1DESOBalanceAfter)
 		require.Equal(m2DESOBalanceBefore+5, m2DESOBalanceAfter)
 	}
@@ -1252,10 +1256,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// 110 DAO coin base units transferred @ 1.05 $DESO per DAO coin.
 		//  50 DAO coin base units transferred @ 1.0  $DESO per DAO coin.
 		// TOTAL = 160 DAO coin base units transferred, 165 $DESO transferred.
+		feeNanos := testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
 		require.Equal(m0DAOCoinBalanceBefore.Uint64()+uint64(160), m0DAOCoinBalanceAfter.Uint64())
 		require.Equal(m0DESOBalanceBefore-uint64(165), m0DESOBalanceAfter)
 		require.Equal(m1DAOCoinBalanceBefore.Uint64()-uint64(160), m1DAOCoinBalanceAfter.Uint64())
-		require.Equal(m1DESOBalanceBefore+uint64(165)-uint64(41), m1DESOBalanceAfter) // Hard-coded fees.
+		require.Equal(m1DESOBalanceBefore+uint64(165)-feeNanos, m1DESOBalanceAfter)
 
 		// Total # of orders decreases by 1.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -1297,10 +1302,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// 190 DAO coin base units transferred @ 1.0  $DESO per DAO coin.
 		// TOTAL = 190 DAO coin base units transferred, 190 $DESO transferred.
+		feeNanos = testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
 		require.Equal(m0DAOCoinBalanceBefore.Uint64()+uint64(190), m0DAOCoinBalanceAfter.Uint64())
 		require.Equal(m0DESOBalanceBefore-uint64(190), m0DESOBalanceAfter)
 		require.Equal(m1DAOCoinBalanceBefore.Uint64()-uint64(190), m1DAOCoinBalanceAfter.Uint64())
-		require.Equal(m1DESOBalanceBefore+uint64(190)-uint64(41), m1DESOBalanceAfter) // Hard-coded fees.
+		require.Equal(m1DESOBalanceBefore+uint64(190)-feeNanos, m1DESOBalanceAfter)
 
 		// m1's limit order is left open with 60 DAO coin base units left to be fulfilled.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -1348,8 +1354,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
 
 		// m0 is charged a txn fee in $DESO.
+		feeNanos := testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
 		m0DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m0Pub)
-		require.Equal(m0DESOBalanceNanosBefore-uint64(35), m0DESOBalanceNanosAfter) // Hard-coded fee.
+		require.Equal(m0DESOBalanceNanosBefore-feeNanos, m0DESOBalanceNanosAfter)
 
 		// m1 submits BID order buying m0 coins and selling m1 coins.
 		// Orders match for 100 m0 DAO coin units <--> 200 m1 DAO coin units.
@@ -1408,10 +1415,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(m1DAOCoinM1Decrease, daoCoinM1UnitsTransferred)
 
 		// m1 is charged a txn fee in $DESO.
+		feeNanos = testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
 		m0DESOBalanceNanosAfter = _getBalance(t, chain, mempool, m0Pub)
 		m1DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m1Pub)
 		require.Equal(m0DESOBalanceNanosBefore, m0DESOBalanceNanosAfter)
-		require.Equal(m1DESOBalanceNanosBefore-uint64(35), m1DESOBalanceNanosAfter) // Hard-coded fee.
+		require.Equal(m1DESOBalanceNanosBefore-feeNanos, m1DESOBalanceNanosAfter)
 	}
 
 	{
@@ -1495,8 +1503,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(m1DAOCoinUnitsDecrease, uint256.NewInt().SetUint64(60))
 
 		// m2's accounting
+		feeNanos := testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
 		m2DESONanosDecrease := m2DESOBalanceNanosBefore - m2DESOBalanceNanosAfter
-		require.Equal(m2DESONanosDecrease, uint64(95)+uint64(38)) // 95: cost of coins, 38: hard-coded fees.
+		require.Equal(m2DESONanosDecrease, uint64(95)+feeNanos)
 		m2DAOCoinUnitsIncrease, err := SafeUint256().Sub(&m2DAOCoinBalanceUnitsAfter, &m2DAOCoinBalanceUnitsBefore)
 		require.NoError(err)
 		require.Equal(m2DAOCoinUnitsIncrease, uint256.NewInt().SetUint64(110))
@@ -1601,8 +1610,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(m1DAOCoinUnitsIncrease, uint256.NewInt().SetUint64(600))
 
 		// m2's accounting
+		feeNanos := testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
 		m2DESONanosIncrease := m2DESOBalanceNanosAfter - m2DESOBalanceNanosBefore
-		require.Equal(m2DESONanosIncrease, uint64(150)-uint64(58)) // 150: value of coins, 58: hard-coded fees.
+		require.Equal(m2DESONanosIncrease, uint64(150)-feeNanos)
 		m2DAOCoinUnitsDecrease, err := SafeUint256().Sub(&m2DAOCoinBalanceUnitsBefore, &m2DAOCoinBalanceUnitsAfter)
 		require.NoError(err)
 		require.Equal(m2DAOCoinUnitsDecrease, uint256.NewInt().SetUint64(900))
@@ -1650,7 +1660,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosOverflow)
 
 		// Modify FeeNanos down and try to connect. Errors.
-		txnMeta.FeeNanos = originalFeeNanos - uint64(3)
+		txnMeta.FeeNanos, err = SafeUint64().Div(originalFeeNanos, 2)
+		require.NoError(err)
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
 			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
 		require.Error(err)
@@ -1973,11 +1984,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// 5 $DESO nanos are transferred from m0 to m1.
 		// m2 gets refunded their unused UTXOs.
+		feeNanos := testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
 		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
 		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
 		updatedM2DESOBalance := _getBalance(t, chain, mempool, m2Pub)
 		require.Equal(originalM0DESOBalance-uint64(5), updatedM0DESOBalance)
-		require.Equal(originalM1DESOBalance+uint64(5)-uint64(89), updatedM1DESOBalance) // Hard-coded fees.
+		require.Equal(originalM1DESOBalance+uint64(5)-feeNanos, updatedM1DESOBalance)
 		require.Equal(originalM2DESOBalance, updatedM2DESOBalance)
 	}
 
@@ -2163,13 +2175,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 1)
 
 		// Correct coins change hands.
+		feeNanos := testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
 		updatedM0DESOBalance = _getBalance(t, chain, mempool, m0Pub)
 		updatedM1DESOBalance = _getBalance(t, chain, mempool, m1Pub)
 		updatedM0BalanceM1Coins = dbAdapter.GetBalanceEntry(m0PKID.PKID, m1PKID.PKID, true).BalanceNanos
 		updatedM1BalanceM1Coins = dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true).BalanceNanos
-
 		require.Equal(originalM0DESOBalance+uint64(10), updatedM0DESOBalance)
-		require.Equal(originalM1DESOBalance-uint64(10)-uint64(35), updatedM1DESOBalance) // Hard-coded fees.
+		require.Equal(originalM1DESOBalance-uint64(10)-feeNanos, updatedM1DESOBalance)
 		require.Equal(originalM0BalanceM1Coins.Uint64()-uint64(100), updatedM0BalanceM1Coins.Uint64())
 		require.Equal(originalM1BalanceM1Coins.Uint64()+uint64(100), updatedM1BalanceM1Coins.Uint64())
 	}
