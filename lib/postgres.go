@@ -1309,6 +1309,8 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				SellingDAOCoinCreatorPublicKey:            txMeta.SellingDAOCoinCreatorPublicKey,
 				ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy.Hex(),
 				QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits.Hex(),
+				OperationType:                             uint64(txMeta.OperationType),
+				OrderType:                                 uint64(txMeta.OrderType),
 				FeeNanos:                                  txMeta.FeeNanos,
 			})
 

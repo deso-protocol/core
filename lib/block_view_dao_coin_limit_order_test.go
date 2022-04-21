@@ -2139,7 +2139,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled)
 
-		// Order books is unchanged.
+		// Order book is unchanged.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
