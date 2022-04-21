@@ -1509,10 +1509,8 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(metadata *DAOCoinLimitOrde
 
 	// If buying DAO coins, validate buy coin creator exists and has a profile.
 	// Note that ZeroPublicKey indicates that we are buying $DESO.
-	isBuyingDESO := metadata.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey()
-	var buyCoinCreatorProfileEntry *ProfileEntry
-	if !isBuyingDESO {
-		buyCoinCreatorProfileEntry = bav.GetProfileEntryForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes())
+	if !metadata.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+		buyCoinCreatorProfileEntry := bav.GetProfileEntryForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes())
 		if buyCoinCreatorProfileEntry == nil || buyCoinCreatorProfileEntry.isDeleted {
 			return RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile
 		}
@@ -1520,10 +1518,8 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(metadata *DAOCoinLimitOrde
 
 	// If selling DAO coins, validate sell coin creator exists and has a profile.
 	// Note that ZeroPublicKey indicates that we are selling $DESO.
-	isSellingDESO := metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey()
-	var sellCoinCreatorProfileEntry *ProfileEntry
-	if !isSellingDESO {
-		sellCoinCreatorProfileEntry = bav.GetProfileEntryForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes())
+	if !metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+		sellCoinCreatorProfileEntry := bav.GetProfileEntryForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes())
 		if sellCoinCreatorProfileEntry == nil || sellCoinCreatorProfileEntry.isDeleted {
 			return RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile
 		}
