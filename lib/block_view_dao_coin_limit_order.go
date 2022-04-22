@@ -213,12 +213,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Grab the txn metadata.
 	txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
-	// Validate txn metadata.
-	err := bav.IsValidDAOCoinLimitOrderMetadata(txMeta)
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder: ")
-	}
-
 	// Get the transactor PKID and validate it.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
@@ -1466,96 +1460,6 @@ func (bav *UtxoView) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *P
 // ## VALIDATIONS
 // ###########################
 
-func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(metadata *DAOCoinLimitOrderMetadata) error {
-	// Returns an error if the input metadata is invalid. Otherwise returns nil.
-
-	// Validate FeeNanos > 0.
-	if metadata.FeeNanos == 0 {
-		return RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee
-	}
-
-	// If the transactor is just cancelling their order,
-	// then the below validations do not apply.
-	if metadata.CancelOrderID != nil {
-		return nil
-	}
-
-	// Validate buying and selling coins.
-	if metadata.BuyingDAOCoinCreatorPublicKey == nil {
-		return RuleErrorDAOCoinLimitOrderInvalidBuyingDAOCoinCreatorPKID
-	}
-	if metadata.SellingDAOCoinCreatorPublicKey == nil {
-		return RuleErrorDAOCoinLimitOrderInvalidSellingDAOCoinCreatorPKID
-	}
-	if bytes.Equal(
-		metadata.BuyingDAOCoinCreatorPublicKey.ToBytes(),
-		metadata.SellingDAOCoinCreatorPublicKey.ToBytes()) {
-		return RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
-	}
-
-	// Validate OrderType.
-	if metadata.OrderType != DAOCoinLimitOrderTypeGoodTillCancelled &&
-		metadata.OrderType != DAOCoinLimitOrderTypeImmediateOrCancel &&
-		metadata.OrderType != DAOCoinLimitOrderTypeFillOrKill {
-		return RuleErrorDAOCoinLimitOrderInvalidOrderType
-	}
-
-	// Validate exchange rate.
-	if metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy == nil {
-		// This should never happen.
-		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
-	}
-
-	// For GoodTillCancelled orders, the exchange rate must be > 0.
-	// For ImmediateOrCancel and FillOrKill orders, the exchange
-	// rate can be zero, in which case it is ignored and this order
-	// functions as a market order.
-	//
-	// TODO: Probably less error-prone to refactor this function as
-	//  - if !IsMarketOrder { check the non-market-order stuff }
-	// As it's written right now, it's hard for the reader to know
-	// that the rest of the function after this point is only checking
-	// non-market-order orders.
-	if metadata.OrderType == DAOCoinLimitOrderTypeGoodTillCancelled &&
-		metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
-		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
-	}
-	// Note that we skip the quantity checks below UNLESS we're dealing
-	// with a non-market-order.
-
-	// Validate quantity.
-	if metadata.QuantityToFillInBaseUnits == nil ||
-		metadata.QuantityToFillInBaseUnits.IsZero() {
-		return RuleErrorDAOCoinLimitOrderInvalidQuantity
-	}
-
-	// Validate operation type.
-	if metadata.OperationType != DAOCoinLimitOrderOperationTypeASK &&
-		metadata.OperationType != DAOCoinLimitOrderOperationTypeBID {
-		return RuleErrorDAOCoinLimitOrderInvalidOperationType
-	}
-
-	// If buying DAO coins, validate buy coin creator exists and has a profile.
-	// Note that ZeroPublicKey indicates that we are buying $DESO.
-	if !metadata.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
-		buyCoinCreatorProfileEntry := bav.GetProfileEntryForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes())
-		if buyCoinCreatorProfileEntry == nil || buyCoinCreatorProfileEntry.isDeleted {
-			return RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile
-		}
-	}
-
-	// If selling DAO coins, validate sell coin creator exists and has a profile.
-	// Note that ZeroPublicKey indicates that we are selling $DESO.
-	if !metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
-		sellCoinCreatorProfileEntry := bav.GetProfileEntryForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes())
-		if sellCoinCreatorProfileEntry == nil || sellCoinCreatorProfileEntry.isDeleted {
-			return RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile
-		}
-	}
-
-	return nil
-}
-
 func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) error {
 	// Returns an error if the input order is invalid. Otherwise returns nil.
 
@@ -1643,29 +1547,16 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		return RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 
-	// The following validations only apply if the transactor has specified a
-	// non-zero exchange rate. This is always true for GoodTillCancelled orders.
-	// For ImmediateOrCancel and FillOrKill orders, the transactor may have
-	// specified a zero exchange rate which signifies the exchange rate should
-	// be ignored and the order is a market order. In that case, we don't know
-	// at this point what the exchange rate and thus the selling quantity for
-	// the transactor will be, so we can't know if the transactor has sufficient
+	// The following validations only apply for non-market orders. For market orders,
+	// we don't know at this point what the exchange rate and thus the selling quantity
+	// for the transactor will be, so we can't know if the transactor has sufficient
 	// coins to cover their selling amount here. This is validated later, once
 	// the transactor's order is matched with matching orders. But in the
 	// market-order case, we skip the following validations below.
-	//
-	// TODO: Probably less error-prone to refactor this function as
-	//  - if !IsMarketOrder { check the non-market-order stuff }
-	// As it's written right now, it's hard for the reader to know
-	// that the rest of the function after this point is only checking
-	// non-market-order orders.
-	if (order.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
-		order.OrderType == DAOCoinLimitOrderTypeFillOrKill) &&
-		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+	if IsDAOCoinMarketOrder(order.OrderType, order.ScaledExchangeRateCoinsToSellPerCoinToBuy) {
 		return nil
 	}
-
-	// If we get here, we assume we are dealing with a non-market-order
+	// If we get here, we assume we are dealing with a non-market order.
 
 	// Calculate order total amount to sell from price and quantity.
 	baseUnitsToSell, err := order.BaseUnitsToSellUint256()
@@ -1809,6 +1700,18 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMatch(
 	}
 
 	return nil
+}
+
+// ###########################
+// ## UTILS
+// ###########################
+
+func IsDAOCoinMarketOrder(orderType DAOCoinLimitOrderType, exchangeRate *uint256.Int) bool {
+	// Returns true if the OrderType and ScaledExchangeRateCoinsToSellPerCoinToBuy
+	// suggest this order is a MARKET order.
+	return (orderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
+		orderType == DAOCoinLimitOrderTypeFillOrKill) &&
+		exchangeRate.IsZero()
 }
 
 // The most accurate way we've found to convert a decimal price into a

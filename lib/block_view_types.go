@@ -1548,14 +1548,13 @@ type DAOCoinLimitOrderType uint8
 const (
 	// GoodTillCancelled: fulfill whatever you can immediately then
 	// store whatever is remaining of this order in the database.
-	// This is set to zero so that it is the default value.
-	DAOCoinLimitOrderTypeGoodTillCancelled DAOCoinLimitOrderType = 0
+	DAOCoinLimitOrderTypeGoodTillCancelled DAOCoinLimitOrderType = 1
 	// ImmediateOrCancel: fulfill whatever you can immediately then
 	// cancel whatever is remaining of this order.
-	DAOCoinLimitOrderTypeImmediateOrCancel DAOCoinLimitOrderType = 1
+	DAOCoinLimitOrderTypeImmediateOrCancel DAOCoinLimitOrderType = 2
 	// FillOrKill: fulfill whatever you can immediately then cancel
 	// the entire order if it is unable to be completely fulfilled.
-	DAOCoinLimitOrderTypeFillOrKill DAOCoinLimitOrderType = 2
+	DAOCoinLimitOrderTypeFillOrKill DAOCoinLimitOrderType = 3
 )
 
 // FilledDAOCoinLimitOrder only exists to support understanding what orders were
