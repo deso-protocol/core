@@ -560,11 +560,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		} else if txMeta.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel {
 			// If this is an ImmediateOrCancel order, then we should
 			// do nothing with the remaining quantity of this order.
-		} else {
+		} else if txMeta.OrderType == DAOCoinLimitOrderTypeGoodTillCancelled {
 			// If this is a GoodTilCancelled order, then we should store
 			// whatever is left-over of this order in the database. This
 			// is the default case.
 			bav._setDAOCoinLimitOrderEntryMappings(transactorOrder)
+		} else {
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidOrderType
 		}
 	}
 
@@ -1508,10 +1510,18 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(metadata *DAOCoinLimitOrde
 	// For ImmediateOrCancel and FillOrKill orders, the exchange
 	// rate can be zero, in which case it is ignored and this order
 	// functions as a market order.
+	//
+	// TODO: Probably less error-prone to refactor this function as
+	//  - if !IsMarketOrder { check the non-market-order stuff }
+	// As it's written right now, it's hard for the reader to know
+	// that the rest of the function after this point is only checking
+	// non-market-order orders.
 	if metadata.OrderType == DAOCoinLimitOrderTypeGoodTillCancelled &&
 		metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
 		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
+	// Note that we skip the quantity checks below UNLESS we're dealing
+	// with a non-market-order.
 
 	// Validate quantity.
 	if metadata.QuantityToFillInBaseUnits == nil ||
@@ -1643,11 +1653,19 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	// coins to cover their selling amount here. This is validated later, once
 	// the transactor's order is matched with matching orders. But in the
 	// market-order case, we skip the following validations below.
+	//
+	// TODO: Probably less error-prone to refactor this function as
+	//  - if !IsMarketOrder { check the non-market-order stuff }
+	// As it's written right now, it's hard for the reader to know
+	// that the rest of the function after this point is only checking
+	// non-market-order orders.
 	if (order.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
 		order.OrderType == DAOCoinLimitOrderTypeFillOrKill) &&
 		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
 		return nil
 	}
+
+	// If we get here, we assume we are dealing with a non-market-order
 
 	// Calculate order total amount to sell from price and quantity.
 	baseUnitsToSell, err := order.BaseUnitsToSellUint256()
