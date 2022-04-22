@@ -341,6 +341,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits,
 		OperationType:                             txMeta.OperationType,
+		OrderType:                                 txMeta.OrderType,
 		BlockHeight:                               blockHeight,
 	}
 
@@ -1490,10 +1491,30 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(metadata *DAOCoinLimitOrde
 		return RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
 	}
 
+	// Validate OrderType.
+	if metadata.OrderType != DAOCoinLimitOrderTypeGoodTillCancelled &&
+		metadata.OrderType != DAOCoinLimitOrderTypeImmediateOrCancel &&
+		metadata.OrderType != DAOCoinLimitOrderTypeFillOrKill {
+		return RuleErrorDAOCoinLimitOrderInvalidOrderType
+	}
+
 	// Validate exchange rate.
-	if metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy == nil ||
-		metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+	if metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy == nil {
+		// This should never happen.
 		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
+	}
+
+	if metadata.OrderType == DAOCoinLimitOrderTypeGoodTillCancelled {
+		// For GoodTillCancelled orders, the exchange rate must be > 0.
+		if metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+			return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
+		}
+	} else {
+		// For ImmediateOrCancel and FillOrKill orders, the exchange
+		// rate must be zero. It is ignored.
+		if !metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+			return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
+		}
 	}
 
 	// Validate quantity.
@@ -1506,13 +1527,6 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(metadata *DAOCoinLimitOrde
 	if metadata.OperationType != DAOCoinLimitOrderOperationTypeASK &&
 		metadata.OperationType != DAOCoinLimitOrderOperationTypeBID {
 		return RuleErrorDAOCoinLimitOrderInvalidOperationType
-	}
-
-	// Validate OrderType.
-	if metadata.OrderType != DAOCoinLimitOrderTypeGoodTillCancelled &&
-		metadata.OrderType != DAOCoinLimitOrderTypeImmediateOrCancel &&
-		metadata.OrderType != DAOCoinLimitOrderTypeFillOrKill {
-		return RuleErrorDAOCoinLimitOrderInvalidOrderType
 	}
 
 	// If buying DAO coins, validate buy coin creator exists and has a profile.
@@ -1572,6 +1586,13 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		return RuleErrorDAOCoinLimitOrderInvalidOperationType
 	}
 
+	// Validate order type.
+	if order.OrderType != DAOCoinLimitOrderTypeGoodTillCancelled &&
+		order.OrderType != DAOCoinLimitOrderTypeImmediateOrCancel &&
+		order.OrderType != DAOCoinLimitOrderTypeFillOrKill {
+		return RuleErrorDAOCoinLimitOrderInvalidOrderType
+	}
+
 	// If buying a DAO coin, validate buy coin creator exists and has a profile.
 	// Note that ZeroPKID indicates that we are buying $DESO.
 	isBuyingDESO := order.BuyingDAOCoinCreatorPKID.IsZeroPKID()
@@ -1594,11 +1615,23 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		}
 	}
 
-	// Validate price > 0.
-	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy == nil ||
-		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
-		// ScaledExchangeRateCoinsToSellPerCoinToBuy can't be nil but worth double-checking.
+	// Validate exchange rate.
+	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy == nil {
+		// This should never happen.
 		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
+	}
+
+	if order.OrderType == DAOCoinLimitOrderTypeGoodTillCancelled {
+		// For GoodTillCancelled orders, the exchange rate must be > 0.
+		if order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+			return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
+		}
+	} else {
+		// For ImmediateOrCancel and FillOrKill orders, the exchange
+		// rate must be zero. It is ignored.
+		if !order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+			return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
+		}
 	}
 
 	// Validate quantity > 0.
@@ -1606,6 +1639,18 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		order.QuantityToFillInBaseUnits.IsZero() {
 		// QuantityToFillInBaseUnits can't be nil but worth double-checking.
 		return RuleErrorDAOCoinLimitOrderInvalidQuantity
+	}
+
+	// The below validations only apply to GoodTillCancelled orders where we
+	// know the exchange rate the transactor is looking for explicitly. For
+	// ImmediateOrCancel and FillOrKill orders, we don't know at this point
+	// what the exchange rate and thus the selling quantity for the transactor
+	// will be, so we don't know if the transactor has sufficient coins to
+	// cover their selling amount. This is validated later, once the transactor's
+	// order is matched with matching orders. Here, we skip the below validations.
+	if order.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
+		order.OrderType == DAOCoinLimitOrderTypeFillOrKill {
+		return nil
 	}
 
 	// Calculate order total amount to sell from price and quantity.
@@ -1646,7 +1691,17 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 }
 
 func (order *DAOCoinLimitOrderEntry) IsValidMatchingOrderPrice(matchingOrder *DAOCoinLimitOrderEntry) bool {
-	// Return false if the price on the order exceeds the value we're looking for. We have
+	// If the transactor order is an ImmediateOrCancel or FillOrKill order then we
+	// will accept any price, so we should always return true here. The matching
+	// orders are sorted elsewhere by best-price first, so the transactor is
+	// guaranteed that they are getting the best price available.
+	if order.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
+		order.OrderType == DAOCoinLimitOrderTypeFillOrKill {
+		return true
+	}
+
+	// If the order is a GoodTillCancelled order, which is the default, then we should
+	// return false if the price on the order exceeds the value we're looking for. We have
 	// a special formula that allows us to do this without overflowing and without
 	// losing precision. It looks like this:
 	// - Want: 1 / exchangeRatePassed >= exchangeRateFound

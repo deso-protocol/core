@@ -1524,6 +1524,12 @@ type DAOCoinLimitOrderEntry struct {
 	// then quantity column applies to the buying coin. I.e. the order is considered
 	// fulfilled once the buying coin quantity to fill is zero.
 	OperationType DAOCoinLimitOrderOperationType
+	// This is one of GoodTillCancelled, ImmediateOrCancel, or FillOrKill. This
+	// field is not byte-serialized because if the order entry is ever stored in
+	// the database then this field has to be GoodTillCancelled which is the
+	// default value. For that reason, there is also no order entry OrderType
+	// column specified in postgres.
+	OrderType DAOCoinLimitOrderType
 	// This is the block height at which the order was placed. We use the block height
 	// to break ties between orders. If there are two orders that could be filled, we
 	// pick the one that was submitted earlier.

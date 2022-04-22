@@ -3224,6 +3224,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
 			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
 			OperationType:                             metadata.OperationType,
+			OrderType:                                 metadata.OrderType,
 			BlockHeight:                               bc.blockTip().Height + 1,
 		}
 	}
