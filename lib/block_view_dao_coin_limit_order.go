@@ -1504,17 +1504,13 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(metadata *DAOCoinLimitOrde
 		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
 
-	if metadata.OrderType == DAOCoinLimitOrderTypeGoodTillCancelled {
-		// For GoodTillCancelled orders, the exchange rate must be > 0.
-		if metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
-			return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
-		}
-	} else {
-		// For ImmediateOrCancel and FillOrKill orders, the exchange
-		// rate must be zero. It is ignored.
-		if !metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
-			return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
-		}
+	// For GoodTillCancelled orders, the exchange rate must be > 0.
+	// For ImmediateOrCancel and FillOrKill orders, the exchange
+	// rate can be zero, in which case it is ignored and this order
+	// functions as a market order.
+	if metadata.OrderType == DAOCoinLimitOrderTypeGoodTillCancelled &&
+		metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
 
 	// Validate quantity.
@@ -1621,17 +1617,13 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
 
-	if order.OrderType == DAOCoinLimitOrderTypeGoodTillCancelled {
-		// For GoodTillCancelled orders, the exchange rate must be > 0.
-		if order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
-			return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
-		}
-	} else {
-		// For ImmediateOrCancel and FillOrKill orders, the exchange
-		// rate must be zero. It is ignored.
-		if !order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
-			return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
-		}
+	// For GoodTillCancelled orders, the exchange rate must be > 0.
+	// For ImmediateOrCancel and FillOrKill orders, the exchange
+	// rate can be zero, in which case it is ignored and this order
+	// functions as a market order.
+	if order.OrderType == DAOCoinLimitOrderTypeGoodTillCancelled &&
+		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
 
 	// Validate quantity > 0.
@@ -1641,15 +1633,19 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		return RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
 
-	// The below validations only apply to GoodTillCancelled orders where we
-	// know the exchange rate the transactor is looking for explicitly. For
-	// ImmediateOrCancel and FillOrKill orders, we don't know at this point
-	// what the exchange rate and thus the selling quantity for the transactor
-	// will be, so we don't know if the transactor has sufficient coins to
-	// cover their selling amount. This is validated later, once the transactor's
-	// order is matched with matching orders. Here, we skip the below validations.
-	if order.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
-		order.OrderType == DAOCoinLimitOrderTypeFillOrKill {
+	// The following validations only apply if the transactor has specified a
+	// non-zero exchange rate. This is always true for GoodTillCancelled orders.
+	// For ImmediateOrCancel and FillOrKill orders, the transactor may have
+	// specified a zero exchange rate which signifies the exchange rate should
+	// be ignored and the order is a market order. In that case, we don't know
+	// at this point what the exchange rate and thus the selling quantity for
+	// the transactor will be, so we can't know if the transactor has sufficient
+	// coins to cover their selling amount here. This is validated later, once
+	// the transactor's order is matched with matching orders. But in the
+	// market-order case, we skip the following validations.
+	if (order.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
+		order.OrderType == DAOCoinLimitOrderTypeFillOrKill) &&
+		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
 		return nil
 	}
 
@@ -1691,17 +1687,19 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 }
 
 func (order *DAOCoinLimitOrderEntry) IsValidMatchingOrderPrice(matchingOrder *DAOCoinLimitOrderEntry) bool {
-	// If the transactor order is an ImmediateOrCancel or FillOrKill order then we
-	// will accept any price, so we should always return true here. The matching
-	// orders are sorted elsewhere by best-price first, so the transactor is
-	// guaranteed that they are getting the best price available.
-	if order.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
-		order.OrderType == DAOCoinLimitOrderTypeFillOrKill {
+	// If the transactor order is an ImmediateOrCancel or FillOrKill order and
+	// the exchange rate is zero, then this signifies that the transactor is
+	// willing to accept any price, so we should always return true here. The
+	// matching orders are sorted elsewhere by best-price first, so the
+	// transactor is guaranteed that they are getting the best price available
+	// in the order book for the specified buying + selling coin pair.
+	if (order.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
+		order.OrderType == DAOCoinLimitOrderTypeFillOrKill) &&
+		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
 		return true
 	}
 
-	// If the order is a GoodTillCancelled order, which is the default, then we should
-	// return false if the price on the order exceeds the value we're looking for. We have
+	// Return false if the price on the order exceeds the value we're looking for. We have
 	// a special formula that allows us to do this without overflowing and without
 	// losing precision. It looks like this:
 	// - Want: 1 / exchangeRatePassed >= exchangeRateFound
