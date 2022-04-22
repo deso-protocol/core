@@ -1524,10 +1524,8 @@ type DAOCoinLimitOrderEntry struct {
 	// then quantity column applies to the buying coin. I.e. the order is considered
 	// fulfilled once the buying coin quantity to fill is zero.
 	OperationType DAOCoinLimitOrderOperationType
-	// This is one of GoodTillCancelled, ImmediateOrCancel, or FillOrKill. This
-	// field is not byte-serialized to be stored in badger or stored in postgres
-	// because if the order entry is ever stored in the database then this field
-	// has to be GoodTillCancelled, which is the default value.
+	// This is one of GoodTillCancelled, ImmediateOrCancel, or FillOrKill.
+	// See the DAOCoinLimitOrderType struct for more details.
 	OrderType DAOCoinLimitOrderType
 	// This is the block height at which the order was placed. We use the block height
 	// to break ties between orders. If there are two orders that could be filled, we
@@ -1543,6 +1541,21 @@ const (
 	// We intentionally skip zero as otherwise that would be the default value.
 	DAOCoinLimitOrderOperationTypeASK DAOCoinLimitOrderOperationType = 1
 	DAOCoinLimitOrderOperationTypeBID DAOCoinLimitOrderOperationType = 2
+)
+
+type DAOCoinLimitOrderType uint8
+
+const (
+	// GoodTillCancelled: fulfill whatever you can immediately then
+	// store whatever is remaining of this order in the database.
+	// This is set to zero so that it is the default value.
+	DAOCoinLimitOrderTypeGoodTillCancelled DAOCoinLimitOrderType = 0
+	// ImmediateOrCancel: fulfill whatever you can immediately then
+	// cancel whatever is remaining of this order.
+	DAOCoinLimitOrderTypeImmediateOrCancel DAOCoinLimitOrderType = 1
+	// FillOrKill: fulfill whatever you can immediately then cancel
+	// the entire order if it is unable to be completely fulfilled.
+	DAOCoinLimitOrderTypeFillOrKill DAOCoinLimitOrderType = 2
 )
 
 // FilledDAOCoinLimitOrder only exists to support understanding what orders were
@@ -1566,6 +1579,7 @@ func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
 		QuantityToFillInBaseUnits:                 order.QuantityToFillInBaseUnits.Clone(),
 		OperationType:                             order.OperationType,
+		OrderType:                                 order.OrderType,
 		BlockHeight:                               order.BlockHeight,
 		isDeleted:                                 order.isDeleted,
 	}
@@ -1579,6 +1593,7 @@ func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data = append(data, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	data = append(data, EncodeUint256(order.QuantityToFillInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(order.OperationType))...)
+	data = append(data, UintToBuf(uint64(order.OrderType))...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
 	return data, nil
 }
@@ -1634,6 +1649,13 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading OperationType: %v", err)
 	}
 	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
+
+	// Parse OrderType
+	orderType, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading OrderType: %v", err)
+	}
+	ret.OrderType = DAOCoinLimitOrderType(orderType)
 
 	// Parse BlockHeight
 	var blockHeight uint64

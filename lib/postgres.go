@@ -698,6 +698,7 @@ type PGDAOCoinLimitOrder struct {
 	ScaledExchangeRateCoinsToSellPerCoinToBuy string     `pg:",use_zero"`
 	QuantityToFillInBaseUnits                 string     `pg:",use_zero"`
 	OperationType                             uint8      `pg:",use_zero"`
+	OrderType                                 uint8      `pg:",use_zero"`
 	BlockHeight                               uint32     `pg:",use_zero"`
 }
 
@@ -709,6 +710,7 @@ func (order *PGDAOCoinLimitOrder) FromDAOCoinLimitOrderEntry(orderEntry *DAOCoin
 	order.ScaledExchangeRateCoinsToSellPerCoinToBuy = Uint256ToLeftPaddedHex(orderEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy)
 	order.QuantityToFillInBaseUnits = Uint256ToLeftPaddedHex(orderEntry.QuantityToFillInBaseUnits)
 	order.OperationType = uint8(orderEntry.OperationType)
+	order.OrderType = uint8(orderEntry.OrderType)
 	order.BlockHeight = orderEntry.BlockHeight
 }
 
@@ -721,6 +723,7 @@ func (order *PGDAOCoinLimitOrder) ToDAOCoinLimitOrderEntry() *DAOCoinLimitOrderE
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: LeftPaddedHexToUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy),
 		QuantityToFillInBaseUnits:                 LeftPaddedHexToUint256(order.QuantityToFillInBaseUnits),
 		OperationType:                             DAOCoinLimitOrderOperationType(order.OperationType),
+		OrderType:                                 DAOCoinLimitOrderType(order.OrderType),
 		BlockHeight:                               order.BlockHeight,
 	}
 }

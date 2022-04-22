@@ -3517,6 +3517,7 @@ func (txnData *DAOCoinLimitOrderMetadata) ToEntry(
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToFillInBaseUnits:                 txnData.QuantityToFillInBaseUnits,
 		OperationType:                             txnData.OperationType,
+		OrderType:                                 txnData.OrderType,
 		BlockHeight:                               blockHeight,
 	}
 }
