@@ -1531,12 +1531,9 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
 
-	// For GoodTillCancelled orders, the exchange rate must be > 0.
-	// For ImmediateOrCancel and FillOrKill orders, the exchange
-	// rate can be zero, in which case it is ignored and this order
-	// functions as a market order.
-	if order.OrderType == DAOCoinLimitOrderTypeGoodTillCancelled &&
-		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+	// For non-market orders, the exchange rate must be > 0.
+	// For market orders, the exchange rate can be 0.
+	if !order.IsMarketOrder() && order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
 		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
 
@@ -1553,7 +1550,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	// coins to cover their selling amount here. This is validated later, once
 	// the transactor's order is matched with matching orders. But in the
 	// market-order case, we skip the following validations below.
-	if IsDAOCoinMarketOrder(order.OrderType, order.ScaledExchangeRateCoinsToSellPerCoinToBuy) {
+	if order.IsMarketOrder() {
 		return nil
 	}
 	// If we get here, we assume we are dealing with a non-market order.
@@ -1596,15 +1593,12 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 }
 
 func (order *DAOCoinLimitOrderEntry) IsValidMatchingOrderPrice(matchingOrder *DAOCoinLimitOrderEntry) bool {
-	// If the transactor order is an ImmediateOrCancel or FillOrKill order and
-	// the exchange rate is zero, then this signifies that the transactor is
-	// willing to accept any price, so we should always return true here. The
-	// matching orders are sorted elsewhere by best-price first, so the
+	// If the transactor order is a market order then the transactor is
+	// willing to accept any price, so we should always return true here.
+	// The matching orders are sorted elsewhere by best-price first, so the
 	// transactor is guaranteed that they are getting the best price available
 	// in the order book for the specified buying + selling coin pair.
-	if (order.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
-		order.OrderType == DAOCoinLimitOrderTypeFillOrKill) &&
-		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+	if order.IsMarketOrder() {
 		return true
 	}
 
@@ -1700,18 +1694,6 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMatch(
 	}
 
 	return nil
-}
-
-// ###########################
-// ## UTILS
-// ###########################
-
-func IsDAOCoinMarketOrder(orderType DAOCoinLimitOrderType, exchangeRate *uint256.Int) bool {
-	// Returns true if the OrderType and ScaledExchangeRateCoinsToSellPerCoinToBuy
-	// suggest this order is a MARKET order.
-	return (orderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
-		orderType == DAOCoinLimitOrderTypeFillOrKill) &&
-		exchangeRate.IsZero()
 }
 
 // The most accurate way we've found to convert a decimal price into a

@@ -1671,6 +1671,16 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 	return nil
 }
 
+func (order *DAOCoinLimitOrderEntry) IsMarketOrder() bool {
+	// For ImmediateOrCancel and FillOrKill orders, the exchange
+	// rate can be zero, in which case it is ignored and the order
+	// functions as a market order accepting the best price available
+	// in the order book for the specified buying + selling coin pair.
+	return (order.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
+		order.OrderType == DAOCoinLimitOrderTypeFillOrKill) &&
+		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero()
+}
+
 func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLimitOrderEntry) bool {
 	// We prefer the order with the higher exchange rate. This would result
 	// in more of their selling DAO coin being offered to the transactor
