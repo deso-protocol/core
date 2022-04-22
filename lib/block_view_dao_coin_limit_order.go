@@ -548,16 +548,23 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// the matching orders on "the book" that this order can fill against.
 
 	// After iterating through all potential matching orders, if transactor's order
-	// is still not fully fulfilled, submit it to be stored.
+	// is still not fully fulfilled, their quantity to fill will be > zero. What
+	// we should do with the remaining quantity depends on the OrderType.
 	if !transactorOrder.QuantityToFillInBaseUnits.IsZero() {
-		// If this is a fill-or-kill order that is still unfulfilled
-		// after matching with all applicable orders, then we need
-		// to cancel this order.
 		if txMeta.OrderType == DAOCoinLimitOrderTypeFillOrKill {
+			// If this is a FillOrKill order that is still unfulfilled
+			// after matching with all applicable orders, then we need
+			// to cancel this entire order.
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled
+		} else if txMeta.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel {
+			// If this is an ImmediateOrCancel order, then we should
+			// do nothing with the remaining quantity of this order.
+		} else {
+			// If this is a GoodTilCancelled order, then we should store
+			// whatever is left-over of this order in the database. This
+			// is the default case.
+			bav._setDAOCoinLimitOrderEntryMappings(transactorOrder)
 		}
-
-		bav._setDAOCoinLimitOrderEntryMappings(transactorOrder)
 	}
 
 	// Now, we need to update all the balances of all the users who were involved in
@@ -1502,7 +1509,8 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(metadata *DAOCoinLimitOrde
 	}
 
 	// Validate OrderType.
-	if metadata.OrderType != DAOCoinLimitOrderTypeResting &&
+	if metadata.OrderType != DAOCoinLimitOrderTypeGoodTillCancelled &&
+		metadata.OrderType != DAOCoinLimitOrderTypeImmediateOrCancel &&
 		metadata.OrderType != DAOCoinLimitOrderTypeFillOrKill {
 		return RuleErrorDAOCoinLimitOrderInvalidOrderType
 	}

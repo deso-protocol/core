@@ -5612,9 +5612,16 @@ type DAOCoinLimitOrderMetadata struct {
 type DAOCoinLimitOrderType uint8
 
 const (
-	// We set Resting as zero so it is the default value.
-	DAOCoinLimitOrderTypeResting    DAOCoinLimitOrderType = 0
-	DAOCoinLimitOrderTypeFillOrKill DAOCoinLimitOrderType = 1
+	// GoodTillCancelled: fulfill whatever you can immediately then
+	// store whatever is remaining of this order in the database.
+	// This is set to zero so that it is the default value.
+	DAOCoinLimitOrderTypeGoodTillCancelled DAOCoinLimitOrderType = 0
+	// ImmediateOrCancel: fulfill whatever you can immediately then
+	// cancel whatever is remaining of this order.
+	DAOCoinLimitOrderTypeImmediateOrCancel DAOCoinLimitOrderType = 1
+	// FillOrKill: fulfill whatever you can immediately then cancel
+	// the entire order if it is unable to be completely fulfilled.
+	DAOCoinLimitOrderTypeFillOrKill DAOCoinLimitOrderType = 2
 )
 
 func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
