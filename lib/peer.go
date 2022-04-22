@@ -139,6 +139,10 @@ type Peer struct {
 	// We will only allow peer fetch one snapshot chunk at a time so we will keep
 	// track whether this peer has a get snapshot request in flight.
 	snapshotChunkRequestInFlight bool
+
+	// DisableSlowSync indicates whether blocksync should not be requested for this peer. If set to true
+	// then we'll only hypersync from this peer.
+	disableSlowSync bool
 }
 
 func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
@@ -616,6 +620,7 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 		Params:                 params,
 		MessageChan:            messageChan,
 		requestedBlocks:        make(map[BlockHash]bool),
+		disableSlowSync:        _cmgr.DisableSlowSync,
 	}
 	if _cmgr != nil {
 		pp.ID = atomic.AddUint64(&_cmgr.peerIndex, 1)
@@ -1172,12 +1177,12 @@ func (pp *Peer) IsSyncCandidate() bool {
 	isFullNode := (pp.serviceFlags & SFFullNode) != 0
 	// TODO: This is a bit of a messy way to determine whether the node was run with --hypersync
 	nodeSupportsHypersync := (pp.serviceFlags & SFHyperSync) != 0
-	hypersyncSatisfied := !pp.cmgr.DisableSlowSync || nodeSupportsHypersync
+	hypersyncSatisfied := !pp.disableSlowSync || nodeSupportsHypersync
 	glog.Infof("IsSyncCandidate: localAddr (%v), isFullNode (%v), "+
 		"hypersyncSatisfied (%v), --disableSlowSync (%v), nodeSupportsHypersync (%v), "+
 		"is outbound (%v)",
 		pp.Conn.LocalAddr().String(), isFullNode, hypersyncSatisfied,
-		pp.cmgr.DisableSlowSync,
+		pp.disableSlowSync,
 		nodeSupportsHypersync,
 		pp.isOutbound)
 	return isFullNode && pp.isOutbound && hypersyncSatisfied
