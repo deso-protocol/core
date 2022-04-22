@@ -555,7 +555,6 @@ func TestDAOCoinBasic(t *testing.T) {
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
 			db, chain.snapshot, m1PKID.PKID, m0PKID.PKID, true)
 		// M1's balance entry is deleted because they have nothing
-		//require.Nil(m1DAOBalanceEntry)
 		require.Equal(true, m1DAOBalanceEntry.BalanceNanos.Eq(uint256.NewInt()))
 
 		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m0PKID.PKID)
@@ -624,7 +623,6 @@ func TestDAOCoinBasic(t *testing.T) {
 
 		// M0 shouldn't own any M3 DAO Coin
 		m0DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(db, chain.snapshot, m0PKID.PKID, m3PKID.PKID, true)
-		//require.Nil(m0DAOBalanceEntry)
 		require.Equal(true, m0DAOBalanceEntry.BalanceNanos.Eq(uint256.NewInt()))
 
 		// M3's DAO Balance entry should be what M0's was prior to the swap
@@ -936,7 +934,6 @@ func TestDAOCoinBasic(t *testing.T) {
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
 			db, chain.snapshot, m3PKID.PKID, m3PKID.PKID, true)
-		//require.Nil(daoBalanceEntry)
 		require.Equal(true, daoBalanceEntry.BalanceNanos.Eq(uint256.NewInt()))
 
 		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -969,7 +966,6 @@ func TestDAOCoinBasic(t *testing.T) {
 
 		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
 			db, chain.snapshot, m2PKID.PKID, m3PKID.PKID, true)
-		//require.Nil(m2DAOBalanceEntry)
 		require.Equal(true, m2DAOBalanceEntry.BalanceNanos.Eq(uint256.NewInt()))
 
 		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
