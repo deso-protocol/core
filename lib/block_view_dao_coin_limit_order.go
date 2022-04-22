@@ -1642,7 +1642,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	// the transactor will be, so we can't know if the transactor has sufficient
 	// coins to cover their selling amount here. This is validated later, once
 	// the transactor's order is matched with matching orders. But in the
-	// market-order case, we skip the following validations.
+	// market-order case, we skip the following validations below.
 	if (order.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel ||
 		order.OrderType == DAOCoinLimitOrderTypeFillOrKill) &&
 		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
