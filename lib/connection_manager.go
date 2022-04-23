@@ -436,7 +436,7 @@ func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, persistentAddr *wire.N
 			cmgr.stallTimeoutSeconds,
 			cmgr.minFeeRateNanosPerKB,
 			cmgr.params,
-			cmgr.srv.incomingMessages, cmgr, cmgr.srv)
+			cmgr.srv.incomingMessages, cmgr, cmgr.srv, cmgr.DisableSlowSync)
 
 		if err := peer.NegotiateVersion(cmgr.params.VersionNegotiationTimeout); err != nil {
 			glog.Errorf("ConnectPeer: Problem negotiating version with peer with addr: (%s) err: (%v)", conn.RemoteAddr().String(), err)

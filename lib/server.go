@@ -627,7 +627,7 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 func (srv *Server) GetBlocksToStore(pp *Peer) {
 	glog.V(2).Infof("GetBlocksToStore: Calling for peer (%v)", pp)
 
-	if !srv.blockchain.downloadingHistoricalBlocks {
+	if srv.blockchain.ChainState() != SyncStateSyncingHistoricalBlocks {
 		glog.Errorf("GetBlocksToStore: Called even though all blocks have already been downloaded. This " +
 			"shouldn't happen.")
 		return
@@ -1053,11 +1053,12 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk),
 		msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)))
 
-	// There is a possibility that during hypersync the network entered a new snapshto epoch. We handle this case by
+	// There is a possibility that during hypersync the network entered a new snapshot epoch. We handle this case by
 	// restarting the node and starting hypersync from scratch.
 	if msg.SnapshotMetadata.SnapshotBlockHeight > srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight &&
 		uint64(srv.blockchain.HeaderTip().Height) >= msg.SnapshotMetadata.SnapshotBlockHeight {
 
+		// TODO: Figure out how to handle header not reaching us, yet peer is telling us that the new epoch has started.
 		if srv.nodeMessageChannel != nil {
 			srv.nodeMessageChannel <- NodeRestart
 			glog.Infof(CLog(Yellow, fmt.Sprintf("srv._handleSnapshot: Received a snapshot metadata with height (%v) "+

@@ -28,15 +28,15 @@ import (
 
 type Node struct {
 	Server   *lib.Server
-	chainDB  *badger.DB
+	ChainDB  *badger.DB
 	TXIndex  *lib.TXIndex
 	Params   *lib.DeSoParams
 	Config   *Config
 	Postgres *lib.Postgres
 
-	// isRunning is false when a NewNode is created, set to true on Start(), set to false
+	// IsRunning is false when a NewNode is created, set to true on Start(), set to false
 	// after Stop() is called. Mainly used in testing.
-	isRunning bool
+	IsRunning bool
 	// runningMutex is held whenever we call Start() or Stop() on the node.
 	runningMutex sync.Mutex
 
@@ -143,14 +143,14 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
 	opts := lib.PerformanceBadgerOptions(dbDir)
 	opts.ValueDir = dbDir
-	node.chainDB, err = badger.Open(opts)
+	node.ChainDB, err = badger.Open(opts)
 	if err != nil {
 		panic(err)
 	}
 
 	// Setup snapshot logger
 	if node.Config.LogDBSummarySnapshots {
-		lib.StartDBSummarySnapshots(node.chainDB)
+		lib.StartDBSummarySnapshots(node.ChainDB)
 	}
 
 	// Setup postgres using a remote URI. Postgres is not currently supported when we're in hypersync mode.
@@ -195,7 +195,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		listeners,
 		desoAddrMgr,
 		node.Config.ConnectIPs,
-		node.chainDB,
+		node.ChainDB,
 		node.Postgres,
 		node.Config.TargetOutboundPeers,
 		node.Config.MaxInboundPeers,
@@ -251,7 +251,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 			}
 		}
 	}
-	node.isRunning = true
+	node.IsRunning = true
 
 	if shouldRestart {
 		if node.nodeMessageChan != nil {
@@ -288,10 +288,10 @@ func (node *Node) Stop() {
 	node.runningMutex.Lock()
 	defer node.runningMutex.Unlock()
 
-	if !node.isRunning {
+	if !node.IsRunning {
 		return
 	}
-	node.isRunning = false
+	node.IsRunning = false
 	glog.Infof(lib.CLog(lib.Yellow, "Node is shutting down. This might take a minute. Please don't "+
 		"close the node now or else you might corrupt the state."))
 
@@ -319,7 +319,7 @@ func (node *Node) Stop() {
 
 	// Databases
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Closing all databases..."))
-	node.closeDb(node.chainDB, "chain")
+	node.closeDb(node.ChainDB, "chain")
 	node.stopWaitGroup.Wait()
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Databases successfully closed."))
 
@@ -353,7 +353,7 @@ func (node *Node) listenToNodeMessages(exitChannels ...*chan struct{}) {
 	case <-node.internalExitChan:
 		break
 	case operation := <-node.nodeMessageChan:
-		if !node.isRunning {
+		if !node.IsRunning {
 			panic("Node.listenToNodeMessages: Node is currently not running, nodeMessageChan should've not been called!")
 		}
 		glog.Infof("Node.listenToNodeMessages: Stopping node")

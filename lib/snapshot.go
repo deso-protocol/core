@@ -183,10 +183,10 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	if err := operationChannel.Initialize(snapshotDb, &snapshotDbMutex); err != nil {
 		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotOperationChannel"))
 	}
-	if operationChannel.StateSemaphore > 0 {
-		// TODO: We should now revert blocks to the snapshot epoch.
-		operationChannel.StateSemaphore = 0
-	}
+	//if operationChannel.StateSemaphore > 0 {
+	//	// TODO: We should now revert blocks to the snapshot epoch.
+	//	operationChannel.StateSemaphore = 0
+	//}
 
 	// Retrieve and initialize the snapshot status.
 	status := &SnapshotStatus{}
