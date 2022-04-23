@@ -2692,8 +2692,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	}
 
 	{
-		// Scenario: we validate the order entry after the BasicTransfer.
-		// Could that cause errors?
+		// Scenario: selling $DESO with very little $DESO left over
 
 		// Confirm existing orders in the order book.
 		// transactor: m0, buying:  $, selling: m0, price: 9, quantity: 89, type: BID
@@ -2704,12 +2703,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0 submits an order selling m1 DAO coin units for $DESO. Order is stored.
 		exchangeRate, err := CalculateScaledExchangeRate(1.0)
 		require.NoError(err)
+		quantityToFill := uint256.NewInt().SetUint64(30)
 
 		metadataM0 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
 			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1PkBytes),
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
-			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(10),
+			QuantityToFillInBaseUnits:                 quantityToFill,
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
@@ -2732,7 +2732,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
 			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
-			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(10),
+			QuantityToFillInBaseUnits:                 quantityToFill,
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
@@ -2744,7 +2744,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// Confirm m4 has less $DESO nanos after the txn.
 		updatedM4DESONanos := _getBalance(t, chain, mempool, m4Pub)
-		require.Equal(updatedM4DESONanos, uint64(55))
+		require.Equal(originalM4DESONanos-quantityToFill.Uint64()-_feeNanos(), updatedM4DESONanos)
 	}
 
 	{
