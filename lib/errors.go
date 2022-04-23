@@ -278,7 +278,7 @@ const (
 	RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee                   RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee"
 	RuleErrorDAOCoinLimitOrderFeeNanosOverflow                        RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosOverflow"
 	RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee RuleError = "RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee"
-	RuleErrorDAOCoinLimitOrderInvalidOrderType                        RuleError = "RuleErrorDAOCoinLimitOrderInvalidOrderType"
+	RuleErrorDAOCoinLimitOrderInvalidFillType                         RuleError = "RuleErrorDAOCoinLimitOrderInvalidFillType"
 	RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled              RuleError = "RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled"
 
 	// Derived Keys

@@ -5589,7 +5589,7 @@ type DAOCoinLimitOrderMetadata struct {
 	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
 	QuantityToFillInBaseUnits                 *uint256.Int
 	OperationType                             DAOCoinLimitOrderOperationType
-	OrderType                                 DAOCoinLimitOrderType
+	FillType                                  DAOCoinLimitOrderFillType
 
 	// If set, we will find and delete the
 	// order with the given OrderID.
@@ -5619,7 +5619,7 @@ func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, er
 	data = append(data, EncodeOptionalUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	data = append(data, EncodeOptionalUint256(txnData.QuantityToFillInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
-	data = append(data, UintToBuf(uint64(txnData.OrderType))...)
+	data = append(data, UintToBuf(uint64(txnData.FillType))...)
 	data = append(data, EncodeOptionalBlockHash(txnData.CancelOrderID)...)
 	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
 
@@ -5680,12 +5680,12 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	}
 	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
 
-	// Parse OrderType
-	orderType, err := ReadUvarint(rr)
+	// Parse FillType
+	fillType, err := ReadUvarint(rr)
 	if err != nil {
-		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading OrderType: %v", err)
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading FillType: %v", err)
 	}
-	ret.OrderType = DAOCoinLimitOrderType(orderType)
+	ret.FillType = DAOCoinLimitOrderFillType(fillType)
 
 	// Parse CancelOrderID
 	ret.CancelOrderID, err = ReadOptionalBlockHash(rr)

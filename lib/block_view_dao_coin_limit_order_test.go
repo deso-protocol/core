@@ -147,7 +147,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 		QuantityToFillInBaseUnits:                 daoCoinQuantityChange,
 		OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-		OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+		FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 	}
 
 	// RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
@@ -388,7 +388,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 		QuantityToFillInBaseUnits:                 desoQuantityChange,
 		OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-		OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+		FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 	}
 
 	// RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder
@@ -855,7 +855,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 metadataM0.QuantityToFillInBaseUnits,
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(
@@ -962,7 +962,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(10),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// 31
@@ -983,7 +983,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(5),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// 32
@@ -1017,7 +1017,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(300),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// 33
@@ -1251,7 +1251,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(160),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -1298,7 +1298,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(250),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -1350,7 +1350,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(200),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
@@ -1384,7 +1384,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -1449,7 +1449,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
@@ -1471,7 +1471,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(110),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		m0DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m0Pub)
@@ -1538,7 +1538,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(300),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
@@ -1559,7 +1559,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(600),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -1587,7 +1587,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(900),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m2Pub, m2Priv, metadataM2)
@@ -1647,7 +1647,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(89),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// Confirm would match to m0.
@@ -1711,7 +1711,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(10),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// Construct transaction. Note: we double the feeRateNanosPerKb here so that we can
@@ -1773,7 +1773,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
@@ -1791,7 +1791,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		currentTxn, totalInputMake, _, _ := _createDAOCoinLimitOrderTxn(
@@ -2025,7 +2025,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
@@ -2043,7 +2043,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		currentTxn, totalInputMake, _, _ := _createDAOCoinLimitOrderTxn(
@@ -2127,7 +2127,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
@@ -2141,7 +2141,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		originalM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0PKID.PKID, m1PKID.PKID, true).BalanceNanos
 		originalM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1PKID.PKID, m1PKID.PKID, true).BalanceNanos
 
-		// m1 submits an order with an invalid OrderType. Errors.
+		// m1 submits an order with an invalid FillType. Errors.
 		// We set the exchange rate to zero to signify this is a market order.
 		metadataM1 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
@@ -2149,16 +2149,16 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(200),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 99,
+			FillType:                                  99,
 		}
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
 			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidOrderType)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidFillType)
 
 		// m1 submits a FillOrKill order buying 200 m1 DAO coin units that is killed.
-		metadataM1.OrderType = DAOCoinLimitOrderTypeFillOrKill
+		metadataM1.FillType = DAOCoinLimitOrderFillTypeFillOrKill
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
 			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 		require.Error(err)
@@ -2216,7 +2216,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
@@ -2238,7 +2238,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(200),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeFillOrKill,
+			FillType:                                  DAOCoinLimitOrderFillTypeFillOrKill,
 		}
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
@@ -2298,7 +2298,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
@@ -2321,7 +2321,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(200),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeImmediateOrCancel,
+			FillType:                                  DAOCoinLimitOrderFillTypeImmediateOrCancel,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -2359,7 +2359,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
@@ -2382,7 +2382,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(200),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeImmediateOrCancel,
+			FillType:                                  DAOCoinLimitOrderFillTypeImmediateOrCancel,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -2424,7 +2424,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 &originalM1BalanceM1Coins,
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -2452,7 +2452,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			QuantityToFillInBaseUnits:                 metadataM0.QuantityToFillInBaseUnits,
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeFillOrKill,
+			FillType:                                  DAOCoinLimitOrderFillTypeFillOrKill,
 		}
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
@@ -2462,7 +2462,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m0 submits a ImmediateOrCancel order trying to fulfill m1's order.
 		// m0 does not have sufficient $DESO.
-		metadataM0.OrderType = DAOCoinLimitOrderTypeImmediateOrCancel
+		metadataM0.FillType = DAOCoinLimitOrderFillTypeImmediateOrCancel
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
 			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
 		require.Error(err)
@@ -2509,7 +2509,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 &originalM1BalanceM1Coins,
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -2539,7 +2539,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			QuantityToFillInBaseUnits:                 metadataM0.QuantityToFillInBaseUnits,
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeFillOrKill,
+			FillType:                                  DAOCoinLimitOrderFillTypeFillOrKill,
 		}
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
@@ -2549,7 +2549,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m0 submits a ImmediateOrCancel order trying to fulfill m1's order.
 		// m0 does not have sufficient m0 DAO coins.
-		metadataM0.OrderType = DAOCoinLimitOrderTypeImmediateOrCancel
+		metadataM0.FillType = DAOCoinLimitOrderFillTypeImmediateOrCancel
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
 			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
 		require.Error(err)
@@ -2596,7 +2596,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
@@ -2622,7 +2622,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeFillOrKill,
+			FillType:                                  DAOCoinLimitOrderFillTypeFillOrKill,
 		}
 
 		orderEntries, err = utxoView._getNextLimitOrdersToFill(
@@ -2638,7 +2638,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m1 submits an ImmediateOrCancel order buying 50 m1 DAO coin units.
 		// The exchange rate is such that m0's order will not match.
 		// Order is cancelled.
-		metadataM1.OrderType = DAOCoinLimitOrderTypeImmediateOrCancel
+		metadataM1.FillType = DAOCoinLimitOrderFillTypeImmediateOrCancel
 		orderEntries, err = utxoView._getNextLimitOrdersToFill(
 			metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID), nil)
 		require.NoError(err)
@@ -2666,13 +2666,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		exchangeRate, err = CalculateScaledExchangeRate(0.2)
 		require.NoError(err)
 		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy = exchangeRate
-		metadataM1.OrderType = DAOCoinLimitOrderTypeFillOrKill
+		metadataM1.FillType = DAOCoinLimitOrderFillTypeFillOrKill
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
 		// m1 submits an ImmediateOrCancel order buying 50 m1 DAO coin units.
 		// The exchange rate is such that m0's order will match.
 		// Order is fulfilled.
-		metadataM1.OrderType = DAOCoinLimitOrderTypeImmediateOrCancel
+		metadataM1.FillType = DAOCoinLimitOrderFillTypeImmediateOrCancel
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
 		// m0's order is fulfilled.
@@ -2711,7 +2711,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(10),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
@@ -2734,7 +2734,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(10),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m4Pub, m4Priv, metadataM4)
@@ -2766,7 +2766,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -2821,7 +2821,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(350),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
@@ -2856,7 +2856,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -2887,7 +2887,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m1 buys 1000 DAO coin base units @ 0.1 $DESO / DAO coin.
@@ -2901,7 +2901,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m0 = transactor, m1 = matching order
@@ -2942,7 +2942,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m1 sells 500 DAO coin base units @ 5 $DESO / DAO coin.
@@ -2956,7 +2956,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(500),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m0 = transactor, m1 = matching order
@@ -2999,7 +2999,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m1 buys 1000 $DESO @ 0.1 DAO coin / $DESO.
@@ -3013,7 +3013,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m0 = transactor, m1 = matching order
@@ -3056,7 +3056,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m1 buys 250 $DESO @ 0.2 DAO coin / $DESO.
@@ -3070,7 +3070,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(250),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m0 = transactor, m1 = matching order
@@ -3113,7 +3113,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m1 sells 100 DAO coin base units @ 0.1 DAO coin / $DESO.
@@ -3127,7 +3127,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m0 = transactor, m1 = matching order
@@ -3170,7 +3170,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m1 sells 50 DAO coin units for 0.2 DAO coin / $DESO.
@@ -3184,7 +3184,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m0 = transactor, m1 = matching order
@@ -3229,7 +3229,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(1000),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m1 buys 500 DAO coin units for 0.2 $DESO / DAO coin.
@@ -3243,7 +3243,7 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(500),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			OrderType:                                 DAOCoinLimitOrderTypeGoodTillCancelled,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
 		// m0 = transactor, m1 = matching order
@@ -3611,7 +3611,7 @@ func (txnData *DAOCoinLimitOrderMetadata) ToEntry(
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToFillInBaseUnits:                 txnData.QuantityToFillInBaseUnits,
 		OperationType:                             txnData.OperationType,
-		OrderType:                                 txnData.OrderType,
+		FillType:                                  txnData.FillType,
 		BlockHeight:                               blockHeight,
 	}
 }

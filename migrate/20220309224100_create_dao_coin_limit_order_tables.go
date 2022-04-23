@@ -19,7 +19,7 @@ func init() {
 				scaled_exchange_rate_coins_to_sell_per_coin_to_buy TEXT,
 				quantity_to_fill_in_base_units                     TEXT,
 				operation_type                                     SMALLINT,
-				order_type                                         SMALLINT,
+				fill_type                                          SMALLINT,
 				cancel_order_id                                    BYTEA,
 				fee_nanos                                          BIGINT NOT NULL
 			);
@@ -52,7 +52,7 @@ func init() {
 				scaled_exchange_rate_coins_to_sell_per_coin_to_buy TEXT NOT NULL,
 				quantity_to_fill_in_base_units                     TEXT NOT NULL,
 				operation_type                                     SMALLINT NOT NULL,
-				order_type                                         SMALLINT NOT NULL,
+				fill_type                                          SMALLINT NOT NULL,
 				block_height                                       BIGINT NOT NULL
 			);
 

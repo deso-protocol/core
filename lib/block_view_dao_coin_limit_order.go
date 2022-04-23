@@ -341,7 +341,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits,
 		OperationType:                             txMeta.OperationType,
-		OrderType:                                 txMeta.OrderType,
+		FillType:                                  txMeta.FillType,
 		BlockHeight:                               blockHeight,
 	}
 
@@ -544,23 +544,23 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// After iterating through all potential matching orders, if transactor's order
 	// is still not fully fulfilled, their quantity to fill will be > zero. What
-	// we should do with the remaining quantity depends on the OrderType.
+	// we should do with the remaining quantity depends on the FillType.
 	if !transactorOrder.QuantityToFillInBaseUnits.IsZero() {
-		if txMeta.OrderType == DAOCoinLimitOrderTypeFillOrKill {
+		if txMeta.FillType == DAOCoinLimitOrderFillTypeFillOrKill {
 			// If this is a FillOrKill order that is still unfulfilled
 			// after matching with all applicable orders, then we need
 			// to cancel this entire order.
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled
-		} else if txMeta.OrderType == DAOCoinLimitOrderTypeImmediateOrCancel {
+		} else if txMeta.FillType == DAOCoinLimitOrderFillTypeImmediateOrCancel {
 			// If this is an ImmediateOrCancel order, then we should
 			// do nothing with the remaining quantity of this order.
-		} else if txMeta.OrderType == DAOCoinLimitOrderTypeGoodTillCancelled {
+		} else if txMeta.FillType == DAOCoinLimitOrderFillTypeGoodTillCancelled {
 			// If this is a GoodTilCancelled order, then we should store
 			// whatever is left-over of this order in the database. This
 			// is the default case.
 			bav._setDAOCoinLimitOrderEntryMappings(transactorOrder)
 		} else {
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidOrderType
+			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidFillType
 		}
 	}
 
@@ -1500,7 +1500,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(transactorPK []byte, metad
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits,
 		OperationType:                             metadata.OperationType,
-		OrderType:                                 metadata.OrderType,
+		FillType:                                  metadata.FillType,
 	}
 
 	// Validate order entry.
@@ -1533,7 +1533,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		return RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
 	}
 
-	// Validate operation type.
+	// Validate OperationType.
 	if order.OperationType != DAOCoinLimitOrderOperationTypeASK &&
 		order.OperationType != DAOCoinLimitOrderOperationTypeBID {
 		// OperationType can't be nil but worth double-checking.
@@ -1541,11 +1541,11 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		return RuleErrorDAOCoinLimitOrderInvalidOperationType
 	}
 
-	// Validate order type.
-	if order.OrderType != DAOCoinLimitOrderTypeGoodTillCancelled &&
-		order.OrderType != DAOCoinLimitOrderTypeImmediateOrCancel &&
-		order.OrderType != DAOCoinLimitOrderTypeFillOrKill {
-		return RuleErrorDAOCoinLimitOrderInvalidOrderType
+	// Validate FillType.
+	if order.FillType != DAOCoinLimitOrderFillTypeGoodTillCancelled &&
+		order.FillType != DAOCoinLimitOrderFillTypeImmediateOrCancel &&
+		order.FillType != DAOCoinLimitOrderFillTypeFillOrKill {
+		return RuleErrorDAOCoinLimitOrderInvalidFillType
 	}
 
 	// If buying a DAO coin, validate buy coin creator exists and has a profile.
