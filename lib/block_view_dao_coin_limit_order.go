@@ -213,6 +213,12 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Grab the txn metadata.
 	txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
+	// Validate txn metadata.
+	err := bav.IsValidDAOCoinLimitOrderMetadata(txn.PublicKey, txMeta)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+
 	// Get the transactor PKID and validate it.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
@@ -337,12 +343,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		OperationType:                             txMeta.OperationType,
 		OrderType:                                 txMeta.OrderType,
 		BlockHeight:                               blockHeight,
-	}
-
-	// Validate transactor order.
-	err = bav.IsValidDAOCoinLimitOrder(transactorOrder)
-	if err != nil {
-		return 0, 0, nil, err
 	}
 
 	// These maps contain all of the balance changes that this transaction
@@ -1460,15 +1460,60 @@ func (bav *UtxoView) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *P
 // ## VALIDATIONS
 // ###########################
 
+func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(transactorPK []byte, metadata *DAOCoinLimitOrderMetadata) error {
+	// Returns an error if the input order metadata is invalid. Otherwise returns nil.
+
+	// Validate FeeNanos.
+	if metadata.FeeNanos == 0 {
+		return RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee
+	}
+
+	// If the transactor is just cancelling an order,
+	// then the below validations do not apply.
+	if metadata.CancelOrderID != nil {
+		return nil
+	}
+
+	// Validate TransactorPublicKey.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPK)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return RuleErrorDAOCoinLimitOrderInvalidTransactorPKID
+	}
+
+	// Validate BuyingDAOCoinCreatorPublicKey.
+	buyCoinPKIDEntry := bav.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes())
+	if buyCoinPKIDEntry == nil || buyCoinPKIDEntry.isDeleted {
+		return RuleErrorDAOCoinLimitOrderInvalidBuyingDAOCoinCreatorPKID
+	}
+
+	// Validate SellingDAOCoinCreatorPublicKey.
+	sellCoinPKIDEntry := bav.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes())
+	if sellCoinPKIDEntry == nil || sellCoinPKIDEntry.isDeleted {
+		return RuleErrorDAOCoinLimitOrderInvalidSellingDAOCoinCreatorPKID
+	}
+
+	// Construct order entry from metadata.
+	order := &DAOCoinLimitOrderEntry{
+		TransactorPKID:                            transactorPKIDEntry.PKID,
+		BuyingDAOCoinCreatorPKID:                  buyCoinPKIDEntry.PKID,
+		SellingDAOCoinCreatorPKID:                 sellCoinPKIDEntry.PKID,
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+		QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits,
+		OperationType:                             metadata.OperationType,
+		OrderType:                                 metadata.OrderType,
+	}
+
+	// Validate order entry.
+	return bav.IsValidDAOCoinLimitOrder(order)
+}
+
 func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) error {
 	// Returns an error if the input order is invalid. Otherwise returns nil.
 
-	// Validate OrderID.
-	if order.OrderID == nil || order.OrderID.IsEqual(&ZeroBlockHash) {
-		// This should never happen. OrderID is set automatically
-		// to the txn hash and isn't specified by the user. But
-		// worth double-checking.
-		return RuleErrorDAOCoinLimitOrderInvalidOrderID
+	// Validate TransactorPKID.
+	if order.TransactorPKID == nil {
+		// This should never happen but worth double-checking.
+		return RuleErrorDAOCoinLimitOrderInvalidTransactorPKID
 	}
 
 	// Validate BuyingDAOCoinCreatorPKID.
