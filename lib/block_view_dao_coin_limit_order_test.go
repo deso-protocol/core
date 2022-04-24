@@ -2703,7 +2703,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0 submits an order selling m1 DAO coin units for $DESO. Order is stored.
 		exchangeRate, err := CalculateScaledExchangeRate(1.0)
 		require.NoError(err)
-		quantityToFill := uint256.NewInt().SetUint64(30)
+		quantityToFill := uint256.NewInt().SetUint64(60)
 
 		metadataM0 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,

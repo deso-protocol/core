@@ -258,14 +258,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		bav.balanceChange(pkidEntry.PKID, &ZeroPKID, big.NewInt(0), nil, prevBalances)
 	}
 
-	// Connect basic txn to get the total input and the total output without
-	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
-	}
-
 	if verifySignatures {
 		// _connectBasicTransfer has already checked that the transaction is
 		// signed by the top-level public key, which we take to be the sender's
@@ -288,6 +280,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// If the transactor just wants to cancel an
 	// existing order, find and delete by OrderID.
 	if txMeta.CancelOrderID != nil {
+		// Connect basic txn to get the total input and the total output without
+		// considering the transaction metadata.
+		totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+			txn, txHash, blockHeight, verifySignatures)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
+		}
+
 		// Search for an existing order by OrderID.
 		existingTransactorOrder, err := bav._getDAOCoinLimitOrderEntry(txMeta.CancelOrderID)
 		if err != nil {
@@ -577,6 +577,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	//     - all of the balances in the deso map being "change" amounts
 	// 3. Then we create "implicit outputs" for all the change amounts and
 	//    we're done.
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
+	}
 
 	// This is the amount of DESO each account is allowed to spend based on the
 	// UTXOs passed-in. We compute this first to know what our "budget" is for
