@@ -1654,6 +1654,10 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading FillType: %v", err)
 	}
+	if fillType > math.MaxUint8 {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: FillType exceeds "+
+			"uint8 max: %v vs %v", fillType, math.MaxUint8)
+	}
 	ret.FillType = DAOCoinLimitOrderFillType(fillType)
 
 	// Parse BlockHeight
