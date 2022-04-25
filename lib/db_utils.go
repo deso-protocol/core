@@ -5017,7 +5017,6 @@ type NFTBidTxindexMetadata struct {
 	NFTRoyaltiesMetadata *NFTRoyaltiesMetadata `json:",omitempty"`
 }
 
-// TODO: Understand the omitempty thing
 func (txnMeta *NFTBidTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
@@ -6499,7 +6498,6 @@ func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*
 // NOTE: This index is not essential to running the protocol and should be computed
 // outside of the protocol layer once update to the creation of TxIndex are complete.
 // =======================================================================================
-
 func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, serialNumber uint64) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixPostHashSerialNumberToAcceptedBidEntries...)
 	key := append(prefixCopy, nftPostHash[:]...)
