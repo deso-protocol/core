@@ -1647,6 +1647,10 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading OperationType: %v", err)
 	}
+	if operationType > math.MaxUint8 {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: OperationType exceeds "+
+			"uint8 max: %v vs %v", operationType, math.MaxUint8)
+	}
 	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
 
 	// Parse FillType

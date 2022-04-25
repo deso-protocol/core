@@ -5678,12 +5678,20 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading OperationType: %v", err)
 	}
+	if operationType > math.MaxUint8 {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: OperationType exceeds "+
+			"uint8 max: %v vs %v", operationType, math.MaxUint8)
+	}
 	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
 
 	// Parse FillType
 	fillType, err := ReadUvarint(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading FillType: %v", err)
+	}
+	if fillType > math.MaxUint8 {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: FillType exceeds "+
+			"uint8 max: %v vs %v", fillType, math.MaxUint8)
 	}
 	ret.FillType = DAOCoinLimitOrderFillType(fillType)
 
