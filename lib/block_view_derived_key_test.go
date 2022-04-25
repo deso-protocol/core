@@ -3152,7 +3152,6 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 		_, _, _, err = _doTxn(
 			testMeta,
@@ -3231,7 +3230,6 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits,
 			BlockHeight:                               savedHeight,
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
-			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		})
 	}
 

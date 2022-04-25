@@ -213,12 +213,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Grab the txn metadata.
 	txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
-	// Validate txn metadata.
-	err := bav.IsValidDAOCoinLimitOrderMetadata(txn.PublicKey, txMeta)
-	if err != nil {
-		return 0, 0, nil, err
-	}
-
 	// Get the transactor PKID and validate it.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
@@ -258,6 +252,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		bav.balanceChange(pkidEntry.PKID, &ZeroPKID, big.NewInt(0), nil, prevBalances)
 	}
 
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
+	}
+
 	if verifySignatures {
 		// _connectBasicTransfer has already checked that the transaction is
 		// signed by the top-level public key, which we take to be the sender's
@@ -280,14 +282,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// If the transactor just wants to cancel an
 	// existing order, find and delete by OrderID.
 	if txMeta.CancelOrderID != nil {
-		// Connect basic txn to get the total input and the total output without
-		// considering the transaction metadata.
-		totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-			txn, txHash, blockHeight, verifySignatures)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
-		}
-
 		// Search for an existing order by OrderID.
 		existingTransactorOrder, err := bav._getDAOCoinLimitOrderEntry(txMeta.CancelOrderID)
 		if err != nil {
@@ -341,8 +335,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: txMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 		QuantityToFillInBaseUnits:                 txMeta.QuantityToFillInBaseUnits,
 		OperationType:                             txMeta.OperationType,
-		FillType:                                  txMeta.FillType,
 		BlockHeight:                               blockHeight,
+	}
+
+	// Validate transactor order.
+	err = bav.IsValidDAOCoinLimitOrder(transactorOrder)
+	if err != nil {
+		return 0, 0, nil, err
 	}
 
 	// These maps contain all of the balance changes that this transaction
@@ -543,25 +542,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// the matching orders on "the book" that this order can fill against.
 
 	// After iterating through all potential matching orders, if transactor's order
-	// is still not fully fulfilled, their quantity to fill will be > zero. What
-	// we should do with the remaining quantity depends on the FillType.
+	// is still not fully fulfilled, submit it to be stored.
 	if !transactorOrder.QuantityToFillInBaseUnits.IsZero() {
-		if txMeta.FillType == DAOCoinLimitOrderFillTypeFillOrKill {
-			// If this is a FillOrKill order that is still unfulfilled
-			// after matching with all applicable orders, then we need
-			// to cancel this entire order.
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled
-		} else if txMeta.FillType == DAOCoinLimitOrderFillTypeImmediateOrCancel {
-			// If this is an ImmediateOrCancel order, then we should
-			// do nothing with the remaining quantity of this order.
-		} else if txMeta.FillType == DAOCoinLimitOrderFillTypeGoodTillCancelled {
-			// If this is a GoodTilCancelled order, then we should store
-			// whatever is left-over of this order in the database. This
-			// is the default case.
-			bav._setDAOCoinLimitOrderEntryMappings(transactorOrder)
-		} else {
-			return 0, 0, nil, RuleErrorDAOCoinLimitOrderInvalidFillType
-		}
+		bav._setDAOCoinLimitOrderEntryMappings(transactorOrder)
 	}
 
 	// Now, we need to update all the balances of all the users who were involved in
@@ -577,14 +560,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	//     - all of the balances in the deso map being "change" amounts
 	// 3. Then we create "implicit outputs" for all the change amounts and
 	//    we're done.
-
-	// Connect basic txn to get the total input and the total output without
-	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
-	}
 
 	// This is the amount of DESO each account is allowed to spend based on the
 	// UTXOs passed-in. We compute this first to know what our "budget" is for
@@ -1468,60 +1443,15 @@ func (bav *UtxoView) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *P
 // ## VALIDATIONS
 // ###########################
 
-func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(transactorPK []byte, metadata *DAOCoinLimitOrderMetadata) error {
-	// Returns an error if the input order metadata is invalid. Otherwise returns nil.
-
-	// Validate FeeNanos.
-	if metadata.FeeNanos == 0 {
-		return RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee
-	}
-
-	// If the transactor is just cancelling an order,
-	// then the below validations do not apply.
-	if metadata.CancelOrderID != nil {
-		return nil
-	}
-
-	// Validate TransactorPublicKey.
-	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPK)
-	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return RuleErrorDAOCoinLimitOrderInvalidTransactorPKID
-	}
-
-	// Validate BuyingDAOCoinCreatorPublicKey.
-	buyCoinPKIDEntry := bav.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes())
-	if buyCoinPKIDEntry == nil || buyCoinPKIDEntry.isDeleted {
-		return RuleErrorDAOCoinLimitOrderInvalidBuyingDAOCoinCreatorPKID
-	}
-
-	// Validate SellingDAOCoinCreatorPublicKey.
-	sellCoinPKIDEntry := bav.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes())
-	if sellCoinPKIDEntry == nil || sellCoinPKIDEntry.isDeleted {
-		return RuleErrorDAOCoinLimitOrderInvalidSellingDAOCoinCreatorPKID
-	}
-
-	// Construct order entry from metadata.
-	order := &DAOCoinLimitOrderEntry{
-		TransactorPKID:                            transactorPKIDEntry.PKID,
-		BuyingDAOCoinCreatorPKID:                  buyCoinPKIDEntry.PKID,
-		SellingDAOCoinCreatorPKID:                 sellCoinPKIDEntry.PKID,
-		ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-		QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits,
-		OperationType:                             metadata.OperationType,
-		FillType:                                  metadata.FillType,
-	}
-
-	// Validate order entry.
-	return bav.IsValidDAOCoinLimitOrder(order)
-}
-
 func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) error {
 	// Returns an error if the input order is invalid. Otherwise returns nil.
 
-	// Validate TransactorPKID.
-	if order.TransactorPKID == nil {
-		// This should never happen but worth double-checking.
-		return RuleErrorDAOCoinLimitOrderInvalidTransactorPKID
+	// Validate OrderID.
+	if order.OrderID == nil || order.OrderID.IsEqual(&ZeroBlockHash) {
+		// This should never happen. OrderID is set automatically
+		// to the txn hash and isn't specified by the user. But
+		// worth double-checking.
+		return RuleErrorDAOCoinLimitOrderInvalidOrderID
 	}
 
 	// Validate BuyingDAOCoinCreatorPKID.
@@ -1541,19 +1471,12 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		return RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
 	}
 
-	// Validate OperationType.
+	// Validate operation type.
 	if order.OperationType != DAOCoinLimitOrderOperationTypeASK &&
 		order.OperationType != DAOCoinLimitOrderOperationTypeBID {
 		// OperationType can't be nil but worth double-checking.
 		// This check will fail if it's nil.
 		return RuleErrorDAOCoinLimitOrderInvalidOperationType
-	}
-
-	// Validate FillType.
-	if order.FillType != DAOCoinLimitOrderFillTypeGoodTillCancelled &&
-		order.FillType != DAOCoinLimitOrderFillTypeImmediateOrCancel &&
-		order.FillType != DAOCoinLimitOrderFillTypeFillOrKill {
-		return RuleErrorDAOCoinLimitOrderInvalidFillType
 	}
 
 	// If buying a DAO coin, validate buy coin creator exists and has a profile.
@@ -1578,15 +1501,10 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		}
 	}
 
-	// Validate exchange rate.
-	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy == nil {
-		// This should never happen.
-		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
-	}
-
-	// For non-market orders, the exchange rate must be > 0.
-	// For market orders, the exchange rate can be 0.
-	if !order.IsMarketOrder() && order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+	// Validate price > 0.
+	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy == nil ||
+		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
+		// ScaledExchangeRateCoinsToSellPerCoinToBuy can't be nil but worth double-checking.
 		return RuleErrorDAOCoinLimitOrderInvalidExchangeRate
 	}
 
@@ -1596,17 +1514,6 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		// QuantityToFillInBaseUnits can't be nil but worth double-checking.
 		return RuleErrorDAOCoinLimitOrderInvalidQuantity
 	}
-
-	// The following validations only apply for non-market orders. For market orders,
-	// we don't know at this point what the exchange rate and thus the selling quantity
-	// for the transactor will be, so we can't know if the transactor has sufficient
-	// coins to cover their selling amount here. This is validated later, once
-	// the transactor's order is matched with matching orders. But in the
-	// market-order case, we skip the following validations below.
-	if order.IsMarketOrder() {
-		return nil
-	}
-	// If we get here, we assume we are dealing with a non-market order.
 
 	// Calculate order total amount to sell from price and quantity.
 	baseUnitsToSell, err := order.BaseUnitsToSellUint256()
@@ -1646,15 +1553,6 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 }
 
 func (order *DAOCoinLimitOrderEntry) IsValidMatchingOrderPrice(matchingOrder *DAOCoinLimitOrderEntry) bool {
-	// If the transactor order is a market order then the transactor is
-	// willing to accept any price, so we should always return true here.
-	// The matching orders are sorted elsewhere by best-price first, so the
-	// transactor is guaranteed that they are getting the best price available
-	// in the order book for the specified buying + selling coin pair.
-	if order.IsMarketOrder() {
-		return true
-	}
-
 	// Return false if the price on the order exceeds the value we're looking for. We have
 	// a special formula that allows us to do this without overflowing and without
 	// losing precision. It looks like this:

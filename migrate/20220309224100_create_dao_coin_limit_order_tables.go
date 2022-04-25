@@ -18,8 +18,7 @@ func init() {
 				selling_dao_coin_creator_public_key                BYTEA,
 				scaled_exchange_rate_coins_to_sell_per_coin_to_buy TEXT,
 				quantity_to_fill_in_base_units                     TEXT,
-				operation_type                                     SMALLINT,
-				fill_type                                          SMALLINT,
+				operation_type                                     BIGINT,
 				cancel_order_id                                    BYTEA,
 				fee_nanos                                          BIGINT NOT NULL
 			);
@@ -51,8 +50,7 @@ func init() {
 				selling_dao_coin_creator_pkid                      BYTEA NOT NULL,
 				scaled_exchange_rate_coins_to_sell_per_coin_to_buy TEXT NOT NULL,
 				quantity_to_fill_in_base_units                     TEXT NOT NULL,
-				operation_type                                     SMALLINT NOT NULL,
-				fill_type                                          SMALLINT NOT NULL,
+				operation_type                                     BIGINT NOT NULL,
 				block_height                                       BIGINT NOT NULL
 			);
 
