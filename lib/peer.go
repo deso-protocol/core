@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/decred/dcrd/lru"
 	"math"
@@ -452,14 +451,6 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		return
 	}
 
-	// Make sure the provided start key matches the prefix.
-	if !bytes.HasPrefix(msg.SnapshotStartKey, msg.GetPrefix()) {
-		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot because Peer %v is misbehaving. "+
-			"The provided key Prefix doesn't match the SnapshotStartKey", pp)
-		pp.Disconnect()
-		return
-	}
-
 	// FIXME: Any restrictions on how many snapshots a peer can request?
 
 	// Get the snapshot chunk from the database. This operation can happen concurrently with updates
@@ -600,7 +591,8 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 	_minFeeRateNanosPerKB uint64,
 	params *DeSoParams,
 	messageChan chan *ServerMessage,
-	_cmgr *ConnectionManager, _srv *Server) *Peer {
+	_cmgr *ConnectionManager, _srv *Server,
+	_disableSlowSync bool) *Peer {
 
 	pp := Peer{
 		cmgr:                   _cmgr,
@@ -620,7 +612,7 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 		Params:                 params,
 		MessageChan:            messageChan,
 		requestedBlocks:        make(map[BlockHash]bool),
-		disableSlowSync:        _cmgr.DisableSlowSync,
+		disableSlowSync:        _disableSlowSync,
 	}
 	if _cmgr != nil {
 		pp.ID = atomic.AddUint64(&_cmgr.peerIndex, 1)
@@ -1021,7 +1013,8 @@ func (pp *Peer) _handleInExpectedResponse(rmsg DeSoMessage) error {
 	msgType := rmsg.GetMsgType()
 	if msgType == MsgTypeBlock ||
 		msgType == MsgTypeHeaderBundle ||
-		msgType == MsgTypeTransactionBundle {
+		msgType == MsgTypeTransactionBundle ||
+		msgType == MsgTypeSnapshotData {
 
 		expectedResponse := pp._removeEarliestExpectedResponse(msgType)
 		if expectedResponse == nil {
