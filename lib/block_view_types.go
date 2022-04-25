@@ -1524,6 +1524,9 @@ type DAOCoinLimitOrderEntry struct {
 	// then quantity column applies to the buying coin. I.e. the order is considered
 	// fulfilled once the buying coin quantity to fill is zero.
 	OperationType DAOCoinLimitOrderOperationType
+	// This is one of GoodTillCancelled, ImmediateOrCancel, or FillOrKill.
+	// See the DAOCoinLimitOrderFillType struct for more details.
+	FillType DAOCoinLimitOrderFillType
 	// This is the block height at which the order was placed. We use the block height
 	// to break ties between orders. If there are two orders that could be filled, we
 	// pick the one that was submitted earlier.
@@ -1532,12 +1535,26 @@ type DAOCoinLimitOrderEntry struct {
 	isDeleted bool
 }
 
-type DAOCoinLimitOrderOperationType uint64
+type DAOCoinLimitOrderOperationType uint8
 
 const (
 	// We intentionally skip zero as otherwise that would be the default value.
 	DAOCoinLimitOrderOperationTypeASK DAOCoinLimitOrderOperationType = 1
 	DAOCoinLimitOrderOperationTypeBID DAOCoinLimitOrderOperationType = 2
+)
+
+type DAOCoinLimitOrderFillType uint8
+
+const (
+	// GoodTillCancelled: fulfill whatever you can immediately then
+	// store whatever is remaining of this order in the database.
+	DAOCoinLimitOrderFillTypeGoodTillCancelled DAOCoinLimitOrderFillType = 1
+	// ImmediateOrCancel: fulfill whatever you can immediately then
+	// cancel whatever is remaining of this order.
+	DAOCoinLimitOrderFillTypeImmediateOrCancel DAOCoinLimitOrderFillType = 2
+	// FillOrKill: fulfill whatever you can immediately then cancel
+	// the entire order if it is unable to be completely fulfilled.
+	DAOCoinLimitOrderFillTypeFillOrKill DAOCoinLimitOrderFillType = 3
 )
 
 // FilledDAOCoinLimitOrder only exists to support understanding what orders were
@@ -1561,6 +1578,7 @@ func (order *DAOCoinLimitOrderEntry) Copy() *DAOCoinLimitOrderEntry {
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: order.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
 		QuantityToFillInBaseUnits:                 order.QuantityToFillInBaseUnits.Clone(),
 		OperationType:                             order.OperationType,
+		FillType:                                  order.FillType,
 		BlockHeight:                               order.BlockHeight,
 		isDeleted:                                 order.isDeleted,
 	}
@@ -1574,6 +1592,7 @@ func (order *DAOCoinLimitOrderEntry) ToBytes() ([]byte, error) {
 	data = append(data, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	data = append(data, EncodeUint256(order.QuantityToFillInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(order.OperationType))...)
+	data = append(data, UintToBuf(uint64(order.FillType))...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
 	return data, nil
 }
@@ -1628,7 +1647,22 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading OperationType: %v", err)
 	}
+	if operationType > math.MaxUint8 {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: OperationType exceeds "+
+			"uint8 max: %v vs %v", operationType, math.MaxUint8)
+	}
 	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
+
+	// Parse FillType
+	fillType, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: Error reading FillType: %v", err)
+	}
+	if fillType > math.MaxUint8 {
+		return fmt.Errorf("DAOCoinLimitOrderEntry.FromBytes: FillType exceeds "+
+			"uint8 max: %v vs %v", fillType, math.MaxUint8)
+	}
+	ret.FillType = DAOCoinLimitOrderFillType(fillType)
 
 	// Parse BlockHeight
 	var blockHeight uint64
@@ -1643,6 +1677,16 @@ func (order *DAOCoinLimitOrderEntry) FromBytes(data []byte) error {
 
 	*order = ret
 	return nil
+}
+
+func (order *DAOCoinLimitOrderEntry) IsMarketOrder() bool {
+	// For ImmediateOrCancel and FillOrKill orders, the exchange
+	// rate can be zero, in which case it is ignored and the order
+	// functions as a market order accepting the best price available
+	// in the order book for the specified buying + selling coin pair.
+	return (order.FillType == DAOCoinLimitOrderFillTypeImmediateOrCancel ||
+		order.FillType == DAOCoinLimitOrderFillTypeFillOrKill) &&
+		order.ScaledExchangeRateCoinsToSellPerCoinToBuy.IsZero()
 }
 
 func (order *DAOCoinLimitOrderEntry) IsBetterMatchingOrderThan(other *DAOCoinLimitOrderEntry) bool {

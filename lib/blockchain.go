@@ -3203,6 +3203,12 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		}
 	}
 
+	// Validate txn metadata.
+	err = utxoView.IsValidDAOCoinLimitOrderMetadata(txn.PublicKey, metadata)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: ")
+	}
+
 	// Construct transactor order if submitting a new order so
 	// we can calculate BidderInputs and additional $DESO fees.
 	// This is not necessary if cancelling an existing order.
@@ -3218,6 +3224,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
 			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
 			OperationType:                             metadata.OperationType,
+			FillType:                                  metadata.FillType,
 			BlockHeight:                               bc.blockTip().Height + 1,
 		}
 	}
