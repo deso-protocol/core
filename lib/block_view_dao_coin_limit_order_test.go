@@ -37,18 +37,16 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 	}
 
-	// We take the block tip to be the blockchain height rather than the header chain height.
-	savedHeight := chain.blockTip().Height + 1
-
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
-		savedHeight: savedHeight,
+		t:       t,
+		chain:   chain,
+		params:  params,
+		db:      db,
+		mempool: mempool,
+		miner:   miner,
+		// We take the block tip to be the blockchain height rather than the header chain height.
+		savedHeight: chain.blockTip().Height + 1,
 	}
 
 	test := DAOCoinLimitOrderTestMeta{
@@ -115,9 +113,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		originalValue := test.Metadata.BuyingDAOCoinCreatorPublicKey
 		test.Metadata.BuyingDAOCoinCreatorPublicKey = deso.PublicKey
 		test.Error = RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin.Error()
-		require.Equal(test.ToString(),
-			"m0, buy: $DESO, sell: $DESO, price: 0.1, quantity: 100, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: $DESO, sell: $DESO, price: 0.1, quantity: 100, BID, GoodTillCancelled")
 		test.Metadata.BuyingDAOCoinCreatorPublicKey = originalValue
 		test.Reset()
 	}
@@ -126,18 +122,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		originalValue := test.Metadata.OperationType
 		test.Metadata.OperationType = 99
 		test.Error = RuleErrorDAOCoinLimitOrderInvalidOperationType.Error()
-		require.Equal(test.ToString(),
-			"m0, buy: No profile, sell: $DESO, price: 0.1, quantity: 100, ?, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: No profile, sell: $DESO, price: 0.1, quantity: 100, ?, GoodTillCancelled")
 		test.Metadata.OperationType = originalValue
 		test.Reset()
 	}
 	{
 		// RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile
 		test.Error = RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile.Error()
-		require.Equal(test.ToString(),
-			"m0, buy: No profile, sell: $DESO, price: 0.1, quantity: 100, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: No profile, sell: $DESO, price: 0.1, quantity: 100, BID, GoodTillCancelled")
 		test.Reset()
 	}
 	{
@@ -147,9 +139,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.Metadata.BuyingDAOCoinCreatorPublicKey = originalSellingCoin
 		test.Metadata.SellingDAOCoinCreatorPublicKey = originalBuyingCoin
 		test.Error = RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile.Error()
-		require.Equal(test.ToString(),
-			"m0, buy: $DESO, sell: No profile, price: 0.1, quantity: 100, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: $DESO, sell: No profile, price: 0.1, quantity: 100, BID, GoodTillCancelled")
 		test.Metadata.BuyingDAOCoinCreatorPublicKey = originalBuyingCoin
 		test.Metadata.SellingDAOCoinCreatorPublicKey = originalSellingCoin
 		test.Reset()
@@ -175,9 +165,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		originalValue := test.Metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy
 		test.SetPrice(0)
 		test.Error = RuleErrorDAOCoinLimitOrderInvalidExchangeRate.Error()
-		require.Equal(test.ToString(),
-			"m0, buy: m0, sell: $DESO, price: 0, quantity: 100, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: m0, sell: $DESO, price: 0, quantity: 100, BID, GoodTillCancelled")
 		test.Metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy = originalValue
 		test.Reset()
 	}
@@ -186,9 +174,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		originalValue := test.Metadata.QuantityToFillInBaseUnits
 		test.SetQuantity(0)
 		test.Error = RuleErrorDAOCoinLimitOrderInvalidQuantity.Error()
-		require.Equal(test.ToString(),
-			"m0, buy: m0, sell: $DESO, price: 0.1, quantity: 0, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: m0, sell: $DESO, price: 0.1, quantity: 0, BID, GoodTillCancelled")
 		test.Metadata.QuantityToFillInBaseUnits = originalValue
 		test.Reset()
 	}
@@ -199,9 +185,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.Metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
 		test.Metadata.QuantityToFillInBaseUnits = MaxUint256.Clone()
 		test.Error = RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256.Error()
-		require.Equal(test.ToString(),
-			"m0, buy: m0, sell: $DESO, price: 1.157920892e+39, quantity: 18446744073709551615, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: m0, sell: $DESO, price: 1.157920892e+39, quantity: 18446744073709551615, BID, GoodTillCancelled")
 		test.Metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy = originalPrice
 		test.Metadata.QuantityToFillInBaseUnits = originalQuantity
 		test.Reset()
@@ -214,9 +198,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.SetPriceFromString("0.009")
 		test.SetQuantity(100)
 		test.Error = RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano.Error()
-		require.Equal(test.ToString(),
-			"m0, buy: m0, sell: $DESO, price: 0.009, quantity: 100, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: m0, sell: $DESO, price: 0.009, quantity: 100, BID, GoodTillCancelled")
 		test.Metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy = originalPrice
 		test.Metadata.QuantityToFillInBaseUnits = originalQuantity
 		test.Reset()
@@ -228,9 +210,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.Metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy = uint256.NewInt().SetUint64(1)
 		test.SetQuantity(1)
 		test.Error = RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano.Error()
-		require.Equal(test.ToString(),
-			"m0, buy: m0, sell: $DESO, price: 1e-38, quantity: 1, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: m0, sell: $DESO, price: 1e-38, quantity: 1, BID, GoodTillCancelled")
 		test.Metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy = originalPrice
 		test.Metadata.QuantityToFillInBaseUnits = originalQuantity
 		test.Reset()
@@ -242,9 +222,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.SetPrice(1)
 		test.SetQuantity(math.MaxUint64)
 		test.Error = RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder.Error()
-		require.Equal(test.ToString(),
-			"m0, buy: m0, sell: $DESO, price: 1, quantity: 18446744073709551615, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: m0, sell: $DESO, price: 1, quantity: 18446744073709551615, BID, GoodTillCancelled")
 		test.Metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy = originalPrice
 		test.Metadata.QuantityToFillInBaseUnits = originalQuantity
 		test.Reset()
@@ -253,9 +231,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Happy path: m0 submits limit order which is stored.
 		test.OrderBookSizeBefore = 0
 		test.OrderBookSizeAfter = 1
-		require.Equal(test.ToString(),
-			"m0, buy: m0, sell: $DESO, price: 0.1, quantity: 100, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: m0, sell: $DESO, price: 0.1, quantity: 100, BID, GoodTillCancelled")
 		test.Reset()
 	}
 	{
@@ -318,9 +294,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.OrderBookSizeBefore = 1
 		test.OrderBookSizeAfter = 1
 		test.Error = RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder.Error()
-		require.Equal(test.ToString(),
-			"m1, buy: $DESO, sell: m0, price: 10, quantity: 10, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m1, buy: $DESO, sell: m0, price: 10, quantity: 10, BID, GoodTillCancelled")
 		test.Reset()
 	}
 	{
@@ -331,7 +305,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			CoinsToMintNanos: *uint256.NewInt().SetUint64(1e4),
 		}
 
-		_daoCoinTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, daoCoinMintMetadata)
+		_daoCoinTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, daoCoinMintMetadata)
 
 		daoCoinTransferMetadata := DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0.PkBytes,
@@ -339,7 +313,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			ReceiverPublicKey:      m1.PkBytes,
 		}
 
-		_daoCoinTransferTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, daoCoinTransferMetadata)
+		_daoCoinTransferTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, daoCoinTransferMetadata)
 	}
 	{
 		// m1 submits limit order for 10 $DESO @ 10 DAO coin / $DESO.
@@ -365,9 +339,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.CoinDeltas["m0"]["m0"] = 100
 		test.CoinDeltas["m1"]["$DESO"] = 10
 		test.CoinDeltas["m1"]["m0"] = -100
-		require.Equal(test.ToString(),
-			"m1, buy: $DESO, sell: m0, price: 10, quantity: 10, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m1, buy: $DESO, sell: m0, price: 10, quantity: 10, BID, GoodTillCancelled")
 		test.Reset()
 	}
 	{
@@ -387,9 +359,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.OrderBookSizeAfter = 1
 		test.SetPrice(11)
 		test.SetQuantity(20)
-		require.Equal(test.ToString(),
-			"m1, buy: $DESO, sell: m0, price: 11, quantity: 20, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m1, buy: $DESO, sell: m0, price: 11, quantity: 20, BID, GoodTillCancelled")
 
 		// m1 submits order buying 5 $DESO nanos @ 12 DAO coin / $DESO.
 		test.OrderBookSizeBefore = 1
@@ -397,16 +367,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.SetPrice(12)
 		test.SetQuantity(5)
 		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = CalculateScaledExchangeRate(12.0)
-		require.Equal(test.ToString(),
-			"m1, buy: $DESO, sell: m0, price: 12, quantity: 5, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m1, buy: $DESO, sell: m0, price: 12, quantity: 5, BID, GoodTillCancelled")
 
 		// m1 submits order buying 5 $DESO nanos @ 12 DAO coin / $DESO.
 		test.OrderBookSizeBefore = 2
 		test.OrderBookSizeAfter = 3
-		require.Equal(test.ToString(),
-			"m1, buy: $DESO, sell: m0, price: 12, quantity: 5, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m1, buy: $DESO, sell: m0, price: 12, quantity: 5, BID, GoodTillCancelled")
 		test.Reset()
 
 		// m0 submits order buying 240 DAO coin units @ 1/8 $DESO / DAO coin.
@@ -425,9 +391,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.CoinDeltas["m0"]["m0"] = 240
 		test.CoinDeltas["m1"]["$DESO"] = 20
 		test.CoinDeltas["m1"]["m0"] = -240
-		require.Equal(test.ToString(),
-			"m0, buy: m0, sell: $DESO, price: 0.125, quantity: 240, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: m0, sell: $DESO, price: 0.125, quantity: 240, BID, GoodTillCancelled")
 		test.Reset()
 	}
 	{
@@ -444,8 +408,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			CancelOrderID: NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()),
 		}
 		test.Error = RuleErrorDAOCoinLimitOrderToCancelNotFound.Error()
-		require.Equal(test.ToString(), "m1, cancellation")
-		test.Run()
+		test.Run("m1, cancellation")
 		test.Reset()
 
 		// m0 tries to cancel m1's order.
@@ -454,16 +417,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.OrderBookSizeAfter = 1
 		test.Metadata = &DAOCoinLimitOrderMetadata{CancelOrderID: test.OrderBook()[0].OrderID}
 		test.Error = RuleErrorDAOCoinLimitOrderToCancelNotYours.Error()
-		require.Equal(test.ToString(), "m0, cancellation")
-		test.Run()
+		test.Run("m0, cancellation")
 		test.Reset()
 
 		// m1 cancels their open order.
 		test.Transactor = "m1"
 		test.OrderBookSizeBefore = 1
 		test.OrderBookSizeAfter = 0
-		require.Equal(test.ToString(), "m1, cancellation")
-		test.Run()
+		test.Run("m1, cancellation")
 		test.Reset()
 	}
 	{
@@ -483,9 +444,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.SetQuantity(100)
 		test.OrderBookSizeBefore = 0
 		test.OrderBookSizeAfter = 1
-		require.Equal(test.ToString(),
-			"m0, buy: m0, sell: $DESO, price: 10, quantity: 100, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m0, buy: m0, sell: $DESO, price: 10, quantity: 100, BID, GoodTillCancelled")
 		test.Reset()
 
 		// m1 submits order selling 50 DAO coin units @ 5 $DESO / DAO coin.
@@ -509,9 +468,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.CoinDeltas["m0"]["m0"] = 25
 		test.CoinDeltas["m1"]["$DESO"] = 250
 		test.CoinDeltas["m1"]["m0"] = -25
-		require.Equal(test.ToString(),
-			"m1, buy: $DESO, sell: m0, price: 0.2, quantity: 250, BID, GoodTillCancelled")
-		test.Run()
+		test.Run("m1, buy: $DESO, sell: m0, price: 0.2, quantity: 250, BID, GoodTillCancelled")
 		test.Reset()
 
 		// m0 cancels the remainder of his order.
@@ -519,92 +476,77 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.Metadata = &DAOCoinLimitOrderMetadata{CancelOrderID: test.OrderBook()[0].OrderID}
 		test.OrderBookSizeBefore = 1
 		test.OrderBookSizeAfter = 0
-		require.Equal(test.ToString(), "m0, cancellation")
-		test.Run()
+		test.Run("m0, cancellation")
 		test.Reset()
 	}
-
-	// Scenario: m0 and m1 both submit identical orders. Both orders are stored.
 	{
-		// Confirm no existing limit orders.
-		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
-		require.NoError(err)
-		require.Empty(orderEntries)
+		// Scenario: m0 and m1 both submit identical orders. Both orders are stored.
 
-		// m0 submits order buying 100 DAO coins @ 0.1 $DESO / DAO coin.
-		metadataM0.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = CalculateScaledExchangeRate(0.1)
-		require.NoError(err)
-		metadataM0.QuantityToFillInBaseUnits = uint256.NewInt().SetUint64(100)
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-
-		// Confirm 1 existing limit order from m0.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-		require.NoError(err)
-		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(test.ToOrderEntry("m0", metadataM0)))
+		// m0 submits order buying 100 DAO coin units @ 0.1 $DESO / DAO coin.
+		test.Transactor = "m0"
+		test.Metadata = &DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:  m0.PublicKey,
+			SellingDAOCoinCreatorPublicKey: deso.PublicKey,
+			OperationType:                  DAOCoinLimitOrderOperationTypeBID,
+			FillType:                       DAOCoinLimitOrderFillTypeGoodTillCancelled,
+		}
+		test.SetPrice(0.1)
+		test.SetQuantity(100)
+		test.OrderBookSizeBefore = 0
+		test.OrderBookSizeAfter = 1
+		test.Run("m0, buy: m0, sell: $DESO, price: 0.1, quantity: 100, BID, GoodTillCancelled")
+		test.Reset()
 
 		// m1 submits order buying 100 DAO coins @ 0.1 $DESO / DAO coin.
-		metadataM1.BuyingDAOCoinCreatorPublicKey = metadataM0.BuyingDAOCoinCreatorPublicKey
-		metadataM1.SellingDAOCoinCreatorPublicKey = metadataM0.SellingDAOCoinCreatorPublicKey
-		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy = metadataM0.ScaledExchangeRateCoinsToSellPerCoinToBuy
-		metadataM1.QuantityToFillInBaseUnits = metadataM0.QuantityToFillInBaseUnits
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-
-		// Confirm 2 existing limit orders.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-		require.NoError(err)
-		require.Equal(len(orderEntries), 2)
+		test.Transactor = "m1"
+		test.OrderBookSizeBefore = 1
+		test.OrderBookSizeAfter = 2
+		test.Run("m1, buy: m0, sell: $DESO, price: 0.1, quantity: 100, BID, GoodTillCancelled")
+		test.Reset()
 	}
-
-	// Scenario: non-matching order.
 	{
-		// Confirm 2 existing limit orders.
-		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
-		require.NoError(err)
-		require.Equal(len(orderEntries), 2)
+		// Scenario: non-matching order.
 
 		// m0 cancels their order.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0.PKID)
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0.PKID)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		cancelMetadataM0 := DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, cancelMetadataM0)
+		test.Transactor = "m0"
+		test.Metadata = &DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
+		test.OrderBookSizeBefore = 2
+		test.OrderBookSizeAfter = 1
+		test.Run("m0, cancellation")
+		test.Reset()
 
 		// Confirm 1 existing order from m1.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-		require.NoError(err)
-		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(test.ToOrderEntry("m1", metadataM1)))
+		require.Equal(len(test.OrderBook()), 1)
+		require.True(test.OrderBook()[0].TransactorPKID.Eq(m1.PKID))
 
 		// m0 submits order for a worse exchange rate than m1 is willing to accept.
 		// Doesn't match m1's order. Stored instead.
-		metadataM0.BuyingDAOCoinCreatorPublicKey = metadataM1.SellingDAOCoinCreatorPublicKey
-		metadataM0.SellingDAOCoinCreatorPublicKey = metadataM1.BuyingDAOCoinCreatorPublicKey
-		metadataM0.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = CalculateScaledExchangeRate(9)
-		require.NoError(err)
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-
-		// Confirm 2 existing orders.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-		require.NoError(err)
-		require.Equal(len(orderEntries), 2)
-		require.True(orderEntries[0].Eq(test.ToOrderEntry("m0", metadataM0)))
-		require.True(orderEntries[1].Eq(test.ToOrderEntry("m1", metadataM1)))
-
-		// m1 submits order matching their own order. Fails.
-		metadataM1.BuyingDAOCoinCreatorPublicKey = metadataM0.BuyingDAOCoinCreatorPublicKey
-		metadataM1.SellingDAOCoinCreatorPublicKey = metadataM0.SellingDAOCoinCreatorPublicKey
-		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = CalculateScaledExchangeRate(10.0)
-		require.NoError(err)
-		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderMatchingOwnOrder)
-
-		// Confirm 2 existing orders.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-		require.NoError(err)
-		require.Equal(len(orderEntries), 2)
+		test.Transactor = "m0"
+		test.Metadata = &DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:  deso.PublicKey,
+			SellingDAOCoinCreatorPublicKey: m0.PublicKey,
+			OperationType:                  DAOCoinLimitOrderOperationTypeBID,
+			FillType:                       DAOCoinLimitOrderFillTypeGoodTillCancelled,
+		}
+		test.SetPrice(9)
+		test.SetQuantity(100)
+		test.OrderBookSizeBefore = 1
+		test.OrderBookSizeAfter = 2
+		test.Run("m0, buy: $DESO, sell: m0, price: 9, quantity: 100, BID, GoodTillCancelled")
+		test.Reset()
+	}
+	{
+		// Scenario: m1 submits order matching their own order. Fails.
+		test.Error = RuleErrorDAOCoinLimitOrderMatchingOwnOrder.Error()
+		test.Transactor = "m1"
+		test.SetPrice(10)
+		test.OrderBookSizeBefore = 2
+		test.OrderBookSizeAfter = 2
+		test.Run("m1, buy: $DESO, sell: m0, price: 10, quantity: 100, BID, GoodTillCancelled")
+		test.Reset()
 	}
 
 	// Cancel order with insufficient funds to cover the order.
@@ -616,8 +558,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(
 			testMeta,
 			feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
+			m0.Pub,
+			m0.Priv,
 			DAOCoinTransferMetadata{
 				ProfilePublicKey:       m0.PkBytes,
 				ReceiverPublicKey:      m2.PkBytes,
@@ -635,8 +577,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_doDAOCoinLimitOrderTxnWithTestMeta(
 			testMeta,
 			feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
+			m0.Pub,
+			m0.Priv,
 			metadataM0,
 		)
 
@@ -661,8 +603,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_doDAOCoinLimitOrderTxnWithTestMeta(
 			testMeta,
 			feeRateNanosPerKb,
-			m2Pub,
-			m2Priv,
+			m2.Pub,
+			m2.Priv,
 			metadataM2,
 		)
 
@@ -670,8 +612,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(
 			testMeta,
 			feeRateNanosPerKb,
-			m2Pub,
-			m2Priv,
+			m2.Pub,
+			m2.Priv,
 			DAOCoinTransferMetadata{
 				ProfilePublicKey:       m0.PkBytes,
 				ReceiverPublicKey:      m0.PkBytes,
@@ -682,8 +624,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_doDAOCoinLimitOrderTxnWithTestMeta(
 			testMeta,
 			feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
+			m0.Pub,
+			m0.Priv,
 			metadataM0,
 		)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -703,8 +645,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_doDAOCoinLimitOrderTxnWithTestMeta(
 			testMeta,
 			feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
+			m1.Pub,
+			m1.Priv,
 			metadataM1,
 		)
 
@@ -719,8 +661,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_updateProfileWithTestMeta(
 			testMeta,
 			feeRateNanosPerKb, /*feeRateNanosPerKB*/
-			m1Pub,             /*updaterPkBase58Check*/
-			m1Priv,            /*updaterPrivBase58Check*/
+			m1.Pub,            /*updaterPkBase58Check*/
+			m1.Priv,           /*updaterPrivBase58Check*/
 			[]byte{},          /*profilePubKey*/
 			"m1",              /*newUsername*/
 			"i am the m1",     /*newDescription*/
@@ -738,7 +680,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		// 29
-		_daoCoinTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, daoCoinMintMetadata)
+		_daoCoinTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, daoCoinMintMetadata)
 
 		// Transfer 10K nanos to M2
 		daoCoinTransferMetadata := DAOCoinTransferMetadata{
@@ -748,7 +690,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		// 30
-		_daoCoinTransferTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, daoCoinTransferMetadata)
+		_daoCoinTransferTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, daoCoinTransferMetadata)
 	}
 
 	// M1 and M2 submit orders to SELL M1 DAO Coin
@@ -757,7 +699,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		exchangeRate, err := CalculateScaledExchangeRate(5)
 		require.NoError(err)
 		m1OrderMetadata := DAOCoinLimitOrderMetadata{
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(10),
@@ -769,8 +711,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_doDAOCoinLimitOrderTxnWithTestMeta(
 			testMeta,
 			feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
+			m1.Pub,
+			m1.Priv,
 			m1OrderMetadata,
 		)
 
@@ -778,7 +720,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		exchangeRate, err = CalculateScaledExchangeRate(2)
 		require.NoError(err)
 		m2OrderMetadata := DAOCoinLimitOrderMetadata{
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(5),
@@ -790,8 +732,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_doDAOCoinLimitOrderTxnWithTestMeta(
 			testMeta,
 			feeRateNanosPerKb,
-			m2Pub,
-			m2Priv,
+			m2.Pub,
+			m2.Priv,
 			m2OrderMetadata,
 		)
 
@@ -802,9 +744,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// M0 submits order to buy M1 DAO Coin that matches
 	{
-		m0DESOBalanceBefore := _getBalance(t, chain, mempool, m0Pub)
-		m1DESOBalanceBefore := _getBalance(t, chain, mempool, m1Pub)
-		m2DESOBalanceBefore := _getBalance(t, chain, mempool, m2Pub)
+		m0DESOBalanceBefore := _getBalance(t, chain, mempool, m0.Pub)
+		m1DESOBalanceBefore := _getBalance(t, chain, mempool, m1.Pub)
+		m2DESOBalanceBefore := _getBalance(t, chain, mempool, m2.Pub)
 		m1BalanceEntryBefore := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true)
 		m2BalanceEntryBefore := dbAdapter.GetBalanceEntry(m2.PKID, m1.PKID, true)
 
@@ -813,7 +755,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		m0OrderMetadata := DAOCoinLimitOrderMetadata{
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(300),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
@@ -824,8 +766,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_doDAOCoinLimitOrderTxnWithTestMeta(
 			testMeta,
 			feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
+			m0.Pub,
+			m0.Priv,
 			m0OrderMetadata,
 		)
 
@@ -853,9 +795,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		require.True(m0BalanceEntryAfter.BalanceNanos.Eq(uint256.NewInt().SetUint64(60)))
 
-		m0DESOBalanceAfter := _getBalance(t, chain, mempool, m0Pub)
-		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1Pub)
-		m2DESOBalanceAfter := _getBalance(t, chain, mempool, m2Pub)
+		m0DESOBalanceAfter := _getBalance(t, chain, mempool, m0.Pub)
+		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1.Pub)
+		m2DESOBalanceAfter := _getBalance(t, chain, mempool, m2.Pub)
 
 		require.Equal(int64(m0DESOBalanceBefore-15-_feeNanos()), int64(m0DESOBalanceAfter))
 		require.Equal(m1DESOBalanceBefore+10, m1DESOBalanceAfter)
@@ -950,12 +892,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   Selling:    $DESO
 		//   Price:      1.05 $DESO / DAO coin
 		//   Quantity:   110 DAO coin units
-		metadataM0.BuyingDAOCoinCreatorPublicKey = NewPublicKey(m1.PkBytes)
+		metadataM0.BuyingDAOCoinCreatorPublicKey = m1.PublicKey
 		metadataM0.SellingDAOCoinCreatorPublicKey = deso.PublicKey
 		metadataM0.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = CalculateScaledExchangeRate(1.05)
 		require.NoError(err)
 		metadataM0.QuantityToFillInBaseUnits = uint256.NewInt().SetUint64(110)
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		orderEntries, err = utxoView._getAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 5)
@@ -1008,7 +950,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m0.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
@@ -1016,7 +958,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			CancelOrderID:                             orderEntries[1].OrderID,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 
 		// Total # of orders decreases by 1.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -1036,8 +978,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m1 submits ASK order selling m1 DAO coins that is fulfilled by m0's open limit orders.
 		// transactor: m0, buying: m1, selling:  $, price: 1, quantity: 240, type: BID
 		// transactor: m0, buying: m1, selling:  $, price: 1.05, quantity: 110, type: BID
-		m0DESOBalanceBefore := _getBalance(t, chain, mempool, m0Pub)
-		m1DESOBalanceBefore := _getBalance(t, chain, mempool, m1Pub)
+		m0DESOBalanceBefore := _getBalance(t, chain, mempool, m0.Pub)
+		m1DESOBalanceBefore := _getBalance(t, chain, mempool, m1.Pub)
 		m0DAOCoinBalanceBefore := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		m1DAOCoinBalanceBefore := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 
@@ -1047,17 +989,17 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// transactor: m1, buying:  $, selling: m1, price: 1.0, quantity: 160, type: ASK
 		metadataM1 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(160),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 
-		m0DESOBalanceAfter := _getBalance(t, chain, mempool, m0Pub)
-		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1Pub)
+		m0DESOBalanceAfter := _getBalance(t, chain, mempool, m0.Pub)
+		m1DESOBalanceAfter := _getBalance(t, chain, mempool, m1.Pub)
 		m0DAOCoinBalanceAfter := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		m1DAOCoinBalanceAfter := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 
@@ -1101,10 +1043,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 
-		m0DESOBalanceAfter = _getBalance(t, chain, mempool, m0Pub)
-		m1DESOBalanceAfter = _getBalance(t, chain, mempool, m1Pub)
+		m0DESOBalanceAfter = _getBalance(t, chain, mempool, m0.Pub)
+		m1DESOBalanceAfter = _getBalance(t, chain, mempool, m1.Pub)
 		m0DAOCoinBalanceAfter = dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		m1DAOCoinBalanceAfter = dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 
@@ -1139,21 +1081,21 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Empty(orderEntries)
 
 		// m0 submits BID order buying m1 coins and selling m0 coins.
-		m0DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m0Pub)
+		m0DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m0.Pub)
 
 		exchangeRate, err := CalculateScaledExchangeRate(0.5)
 		require.NoError(err)
 
 		metadataM0 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m0.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
+			SellingDAOCoinCreatorPublicKey:            m0.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(200),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 
 		// Order is stored.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(m1.PKID, m0.PKID)
@@ -1162,13 +1104,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(orderEntries[0].Eq(test.ToOrderEntry("m0", metadataM0)))
 
 		// m0 is charged a txn fee in $DESO.
-		m0DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m0Pub)
+		m0DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m0.Pub)
 		require.Equal(m0DESOBalanceNanosBefore-_feeNanos(), m0DESOBalanceNanosAfter)
 
 		// m1 submits BID order buying m0 coins and selling m1 coins.
 		// Orders match for 100 m0 DAO coin units <--> 200 m1 DAO coin units.
 		m0DESOBalanceNanosBefore = m0DESOBalanceNanosAfter
-		m1DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m1Pub)
+		m1DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m1.Pub)
 
 		m0DAOCoinBalanceM0Before := dbAdapter.GetBalanceEntry(m0.PKID, m0.PKID, true).BalanceNanos
 		m0DAOCoinBalanceM1Before := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
@@ -1179,15 +1121,15 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0.PkBytes),
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m0.PublicKey,
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 
 		// Orders match so are removed from the order book.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(m0.PKID, m1.PKID)
@@ -1223,8 +1165,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(m1DAOCoinM1Decrease, daoCoinM1UnitsTransferred)
 
 		// m1 is charged a txn fee in $DESO.
-		m0DESOBalanceNanosAfter = _getBalance(t, chain, mempool, m0Pub)
-		m1DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m1Pub)
+		m0DESOBalanceNanosAfter = _getBalance(t, chain, mempool, m0.Pub)
+		m1DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m1.Pub)
 		require.Equal(m0DESOBalanceNanosBefore, m0DESOBalanceNanosAfter)
 		require.Equal(m1DESOBalanceNanosBefore-_feeNanos(), m1DESOBalanceNanosAfter)
 	}
@@ -1252,7 +1194,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 
 		// Confirm order is stored.
 		// transactor: m0, buying:  $, selling: m1, price: 1.1, quantity: 50, type: ASK
@@ -1266,7 +1208,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM2 := DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(110),
@@ -1274,14 +1216,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		m0DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m0Pub)
-		m1DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m1Pub)
-		m2DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m2Pub)
+		m0DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m0.Pub)
+		m1DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m1.Pub)
+		m2DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m2.Pub)
 		m0DAOCoinBalanceUnitsBefore := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		m1DAOCoinBalanceUnitsBefore := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		m2DAOCoinBalanceUnitsBefore := dbAdapter.GetBalanceEntry(m2.PKID, m1.PKID, true).BalanceNanos
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m2Pub, m2Priv, metadataM2)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m2.Pub, m2.Priv, metadataM2)
 
 		// Orders are fulfilled and removed from the order book.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -1290,9 +1232,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// 60 DAO coin units were transferred from m1 to m2 in exchange for 50 $DESO nanos.
 		// 50 DAO coin units were transferred from m0 to m2 in exchange for 45 $DESO nanos.
-		m0DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m0Pub)
-		m1DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m1Pub)
-		m2DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m2Pub)
+		m0DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m0.Pub)
+		m1DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m1.Pub)
+		m2DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m2.Pub)
 		m0DAOCoinBalanceUnitsAfter := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		m1DAOCoinBalanceUnitsAfter := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		m2DAOCoinBalanceUnitsAfter := dbAdapter.GetBalanceEntry(m2.PKID, m1.PKID, true).BalanceNanos
@@ -1333,7 +1275,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM0 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(300),
@@ -1341,7 +1283,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 
 		// Order is stored.
 		// transactor: m0, buying: m1, selling:  $, price: 0.1, quantity: 300, type: BID
@@ -1354,7 +1296,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(600),
@@ -1362,7 +1304,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 
 		// Order is stored.
 		// transactor: m1, buying: m1, selling:  $, price: 0.2, quantity: 600, type: BID
@@ -1371,9 +1313,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 3)
 
 		// m2 submits an order selling m1 DAO coins.
-		m0DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m0Pub)
-		m1DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m1Pub)
-		m2DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m2Pub)
+		m0DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m0.Pub)
+		m1DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m1.Pub)
+		m2DESOBalanceNanosBefore := _getBalance(t, chain, mempool, m2.Pub)
 		m0DAOCoinBalanceUnitsBefore := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		m1DAOCoinBalanceUnitsBefore := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		m2DAOCoinBalanceUnitsBefore := dbAdapter.GetBalanceEntry(m2.PKID, m1.PKID, true).BalanceNanos
@@ -1383,14 +1325,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		metadataM2 := DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(900),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m2Pub, m2Priv, metadataM2)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m2.Pub, m2.Priv, metadataM2)
 
 		// Orders are fulfilled and removed from the order book.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -1399,9 +1341,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// 600 DAO coin units were transferred from m2 to m1 in exchange for 120 $DESO nanos.
 		// 300 DAO coin units were transferred from m2 to m0 in exchange for 30 $DESO nanos.
-		m0DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m0Pub)
-		m1DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m1Pub)
-		m2DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m2Pub)
+		m0DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m0.Pub)
+		m1DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m1.Pub)
+		m2DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m2.Pub)
 		m0DAOCoinBalanceUnitsAfter := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		m1DAOCoinBalanceUnitsAfter := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		m2DAOCoinBalanceUnitsAfter := dbAdapter.GetBalanceEntry(m2.PKID, m1.PKID, true).BalanceNanos
@@ -1442,7 +1384,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m0.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(89),
@@ -1458,7 +1400,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// Construct txn.
 		currentTxn, totalInputMake, _, _ := _createDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, metadataM1, feeRateNanosPerKb)
+			testMeta, m1.Pub, metadataM1, feeRateNanosPerKb)
 		txnMeta := currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
 		// Modify FeeNanos to zero $DESO and try to connect. Errors.
@@ -1466,7 +1408,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(originalFeeNanos > uint64(0))
 		txnMeta.FeeNanos = uint64(0)
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee)
 
@@ -1474,14 +1416,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		txnMeta.FeeNanos, err = SafeUint64().Div(originalFeeNanos, 2)
 		require.NoError(err)
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee)
 
 		// Modify FeeNanos up and try to connect. Errors.
 		txnMeta.FeeNanos = originalFeeNanos + uint64(1)
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderOverspendingDESO)
 
@@ -1506,7 +1448,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(10),
@@ -1517,11 +1459,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Construct transaction. Note: we double the feeRateNanosPerKb here so that we can
 		// modify the transaction after construction and have enough inputs to cover the fee.
 		currentTxn, totalInputMake, _, _ := _createDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, metadataM1, feeRateNanosPerKb*2)
+			testMeta, m1.Pub, metadataM1, feeRateNanosPerKb*2)
 		txnMeta := currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
 		// Track m0's $DESO balance before/after.
-		desoBalanceM0Before := _getBalance(t, chain, nil, m0Pub)
+		desoBalanceM0Before := _getBalance(t, chain, nil, m0.Pub)
 
 		// Add additional BidderInput from m0.
 		utxoEntriesM0, err := chain.GetSpendableUtxosForPublicKey(m0.PkBytes, mempool, nil)
@@ -1530,17 +1472,17 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		txnMeta.BidderInputs = append(
 			[]*DeSoInputsByTransactor{},
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m0.PkBytes),
+				TransactorPublicKey: m0.PublicKey,
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM0[0].UtxoKey)),
 			})
 
 		// Connect txn.
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.NoError(err)
 
 		// Confirm unused BidderInput UTXOs are refunded.
-		desoBalanceM0After := _getBalance(t, chain, nil, m0Pub)
+		desoBalanceM0After := _getBalance(t, chain, nil, m0.Pub)
 		require.Equal(desoBalanceM0Before, desoBalanceM0After)
 
 		// m1 cancels the above txn.
@@ -1548,7 +1490,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		metadataM1 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1.PKID)
 		require.NoError(err)
 		require.Empty(orderEntries)
@@ -1568,7 +1510,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM0 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
@@ -1576,7 +1518,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
@@ -1587,7 +1529,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
@@ -1595,7 +1537,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		currentTxn, totalInputMake, _, _ := _createDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, metadataM1, feeRateNanosPerKb)
+			testMeta, m1.Pub, metadataM1, feeRateNanosPerKb)
 		txnMeta := currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
 		// Confirm txn has BidderInputs from m0 as m1's
@@ -1607,7 +1549,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m1 deletes m0's BidderInputs and tries to connect. Should error.
 		txnMeta.BidderInputs = []*DeSoInputsByTransactor{}
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderOverspendingDESO)
 
@@ -1619,12 +1561,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		txnMeta.BidderInputs = append(
 			[]*DeSoInputsByTransactor{},
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m1.PkBytes),
+				TransactorPublicKey: m1.PublicKey,
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM1[0].UtxoKey)),
 			})
 
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists)
 
@@ -1636,12 +1578,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		txnMeta.BidderInputs = append(
 			[]*DeSoInputsByTransactor{},
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m2.PkBytes),
+				TransactorPublicKey: m2.PublicKey,
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM2[0].UtxoKey)),
 			})
 
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderOverspendingDESO)
 
@@ -1665,12 +1607,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		txnMeta.BidderInputs = append(
 			[]*DeSoInputsByTransactor{},
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m0.PkBytes),
+				TransactorPublicKey: m0.PublicKey,
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoOp.Key)),
 			})
 
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists)
 
@@ -1690,14 +1632,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		bidderInputs = append(
 			bidderInputs,
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m1.PkBytes),
+				TransactorPublicKey: m1.PublicKey,
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM1[0].UtxoKey)),
 			})
 
 		txnMeta.BidderInputs = bidderInputs
 
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee)
 
@@ -1708,21 +1650,21 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		bidderInputs = append(
 			bidderInputs,
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m2.PkBytes),
+				TransactorPublicKey: m2.PublicKey,
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM2[0].UtxoKey)),
 			})
 
 		txnMeta.BidderInputs = bidderInputs
 
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee)
 
 		// m1 increases fee rate and resubmits BidderInputs from m0
 		// in addition to m1 and separately m2. Should still fail.
 		currentTxn, totalInputMake, _, _ = _createDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, metadataM1, feeRateNanosPerKb*2)
+			testMeta, m1.Pub, metadataM1, feeRateNanosPerKb*2)
 		txnMeta = currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
 		// Confirm txn has BidderInputs from m0 as m1's
@@ -1738,14 +1680,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		bidderInputs = append(
 			bidderInputs,
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m1.PkBytes),
+				TransactorPublicKey: m1.PublicKey,
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM1[0].UtxoKey)),
 			})
 
 		txnMeta.BidderInputs = bidderInputs
 
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists)
 
@@ -1758,7 +1700,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			bidderInputs,
 			&DeSoInputsByTransactor{
 				// m1's public key
-				TransactorPublicKey: NewPublicKey(m1.PkBytes),
+				TransactorPublicKey: m1.PublicKey,
 				// m2's UTXO
 				Inputs: append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM2[0].UtxoKey)),
 			})
@@ -1766,29 +1708,29 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		txnMeta.BidderInputs = bidderInputs
 
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
 
 		// m1 includes m0's BidderInputs in addition to
 		// m2's and tries to connect. Should pass. And
 		// all unused UTXOs should be refunded.
-		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
-		originalM2DESOBalance := _getBalance(t, chain, mempool, m2Pub)
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		originalM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
+		originalM2DESOBalance := _getBalance(t, chain, mempool, m2.Pub)
 		bidderInputs = append([]*DeSoInputsByTransactor{}, originalBidderInput)
 
 		bidderInputs = append(
 			bidderInputs,
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m2.PkBytes),
+				TransactorPublicKey: m2.PublicKey,
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM2[0].UtxoKey)),
 			})
 
 		txnMeta.BidderInputs = bidderInputs
 
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.NoError(err)
 
 		// m0 and m1's orders match and are removed from the order book.
@@ -1798,9 +1740,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// 5 $DESO nanos are transferred from m0 to m1.
 		// m2 gets refunded their unused UTXOs.
-		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
-		updatedM2DESOBalance := _getBalance(t, chain, mempool, m2Pub)
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
+		updatedM2DESOBalance := _getBalance(t, chain, mempool, m2.Pub)
 		require.Equal(originalM0DESOBalance-uint64(5), updatedM0DESOBalance)
 		require.Equal(originalM1DESOBalance+uint64(5)-_feeNanos(), updatedM1DESOBalance)
 		require.Equal(originalM2DESOBalance, updatedM2DESOBalance)
@@ -1820,15 +1762,15 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM0 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m0.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
+			SellingDAOCoinCreatorPublicKey:            m0.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
@@ -1838,8 +1780,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0.PkBytes),
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m0.PublicKey,
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
@@ -1847,7 +1789,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		currentTxn, totalInputMake, _, _ := _createDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, metadataM1, feeRateNanosPerKb)
+			testMeta, m1.Pub, metadataM1, feeRateNanosPerKb)
 		txnMeta := currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
 		// Since this is a DAO <--> DAO coin trade,
@@ -1862,19 +1804,19 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		txnMeta.BidderInputs = append(
 			[]*DeSoInputsByTransactor{},
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m0.PkBytes),
+				TransactorPublicKey: m0.PublicKey,
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM0[0].UtxoKey)),
 			})
 
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee)
 
 		// m1 increases fee rate and resubmits BidderInputs from m0.
 		// Should pass. And all unused UTXOs should be refunded.
 		currentTxn, totalInputMake, _, _ = _createDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, metadataM1, feeRateNanosPerKb*2)
+			testMeta, m1.Pub, metadataM1, feeRateNanosPerKb*2)
 		txnMeta = currentTxn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
 		// Since this is a DAO <--> DAO coin trade,
@@ -1882,7 +1824,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Empty(txnMeta.BidderInputs)
 
 		// m1 adds BidderInputs from m0 and tries to connect. Should pass.
-		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
 		utxoEntriesM0, err = chain.GetSpendableUtxosForPublicKey(m0.PkBytes, mempool, utxoView)
 		require.NoError(err)
 		require.NotEmpty(utxoEntriesM0)
@@ -1890,12 +1832,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		txnMeta.BidderInputs = append(
 			[]*DeSoInputsByTransactor{},
 			&DeSoInputsByTransactor{
-				TransactorPublicKey: NewPublicKey(m0.PkBytes),
+				TransactorPublicKey: m0.PublicKey,
 				Inputs:              append([]*DeSoInput{}, (*DeSoInput)(utxoEntriesM0[0].UtxoKey)),
 			})
 
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
-			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
+			testMeta, m1.Pub, m1.Priv, currentTxn, totalInputMake)
 		require.NoError(err)
 
 		// m0 and m1's orders match and are removed from the order book.
@@ -1904,7 +1846,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 1)
 
 		// m0 gets refunded their unused UTXOs.
-		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
 		require.Equal(originalM0DESOBalance, updatedM0DESOBalance)
 	}
 
@@ -1923,28 +1865,28 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		metadataM0 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 
 		// Track coin balances to compare later.
-		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		originalM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		originalM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		originalM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 
 		// m1 submits an order with an invalid FillType. Errors.
 		// We set the exchange rate to zero to signify this is a market order.
 		metadataM1 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(200),
@@ -1953,14 +1895,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+			t, chain, db, params, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInvalidFillType)
 
 		// m1 submits a FillOrKill order buying 200 m1 DAO coin units that is killed.
 		metadataM1.FillType = DAOCoinLimitOrderFillTypeFillOrKill
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+			t, chain, db, params, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled)
 
@@ -1970,8 +1912,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 2)
 
 		// No coins change hands.
-		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		updatedM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		updatedM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		require.Equal(originalM0DESOBalance, updatedM0DESOBalance)
@@ -1981,14 +1923,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m1 submits a FillOrKill order buying 100 m1 DAO coins that is filled.
 		metadataM1.QuantityToFillInBaseUnits = uint256.NewInt().SetUint64(100)
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 
 		// Correct coins change hands.
-		updatedM0DESOBalance = _getBalance(t, chain, mempool, m0Pub)
-		updatedM1DESOBalance = _getBalance(t, chain, mempool, m1Pub)
+		updatedM0DESOBalance = _getBalance(t, chain, mempool, m0.Pub)
+		updatedM1DESOBalance = _getBalance(t, chain, mempool, m1.Pub)
 		updatedM0BalanceM1Coins = dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		updatedM1BalanceM1Coins = dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		require.Equal(originalM0DESOBalance+uint64(10), updatedM0DESOBalance)
@@ -2011,7 +1953,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM0 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
@@ -2019,14 +1961,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 
 		// Track coin balances to compare later.
-		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		originalM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		originalM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		originalM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 
@@ -2034,7 +1976,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// We set the exchange rate to zero to signify this is a market order.
 		metadataM1 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(200),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
@@ -2042,7 +1984,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+			t, chain, db, params, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled)
 
@@ -2052,8 +1994,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 2)
 
 		// No coins change hands.
-		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		updatedM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		updatedM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		require.Equal(originalM0DESOBalance, updatedM0DESOBalance)
@@ -2063,14 +2005,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m1 submits a FillOrKill order selling 100 m1 DAO coins that is filled.
 		metadataM1.QuantityToFillInBaseUnits = uint256.NewInt().SetUint64(100)
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 
 		// Correct coins change hands.
-		updatedM0DESOBalance = _getBalance(t, chain, mempool, m0Pub)
-		updatedM1DESOBalance = _getBalance(t, chain, mempool, m1Pub)
+		updatedM0DESOBalance = _getBalance(t, chain, mempool, m0.Pub)
+		updatedM1DESOBalance = _getBalance(t, chain, mempool, m1.Pub)
 		updatedM0BalanceM1Coins = dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		updatedM1BalanceM1Coins = dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		require.Equal(originalM0DESOBalance-uint64(10), updatedM0DESOBalance)
@@ -2094,21 +2036,21 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		metadataM0 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 
 		// Track coin balances to compare later.
-		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		originalM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		originalM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		originalM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 
@@ -2116,7 +2058,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// filled for 100 DAO coin units with the remaining quantity cancelled.
 		// We set the exchange rate to zero to signify this is a market order.
 		metadataM1 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(200),
@@ -2124,14 +2066,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			FillType:                                  DAOCoinLimitOrderFillTypeImmediateOrCancel,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 
 		// Correct coins change hands.
-		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		updatedM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		updatedM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		require.Equal(originalM0DESOBalance+uint64(10), updatedM0DESOBalance)
@@ -2154,7 +2096,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM0 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
@@ -2162,14 +2104,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 
 		// Track coin balances to compare later.
-		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		originalM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		originalM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		originalM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 
@@ -2178,21 +2120,21 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// We set the exchange rate to zero to signify this is a market order.
 		metadataM1 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(200),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeImmediateOrCancel,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 
 		// Correct coins change hands.
-		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		updatedM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		updatedM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		require.Equal(originalM0DESOBalance-uint64(10), updatedM0DESOBalance)
@@ -2220,14 +2162,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 &originalM1BalanceM1Coins,
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
@@ -2235,8 +2177,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(m1OrderEntry.Eq(test.ToOrderEntry("m1", metadataM1)))
 
 		// Track coin balances to compare later.
-		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		originalM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		originalM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 
 		// Confirm that m0 cannot afford to fulfill m1's order.
@@ -2247,7 +2189,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0 submits a FillOrKill order trying to fulfill m1's order.
 		// m0 does not have sufficient $DESO.
 		metadataM0 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			QuantityToFillInBaseUnits:                 metadataM0.QuantityToFillInBaseUnits,
@@ -2256,7 +2198,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+			t, chain, db, params, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		require.Error(err)
 		require.Contains(err.Error(), "AddInputsAndChangeToTransaction: Sanity check failed")
 
@@ -2264,13 +2206,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0 does not have sufficient $DESO.
 		metadataM0.FillType = DAOCoinLimitOrderFillTypeImmediateOrCancel
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+			t, chain, db, params, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		require.Error(err)
 		require.Contains(err.Error(), "AddInputsAndChangeToTransaction: Sanity check failed")
 
 		// No coins change hands.
-		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		updatedM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		updatedM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		require.Equal(originalM0DESOBalance, updatedM0DESOBalance)
@@ -2280,7 +2222,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m1 cancels their order.
 		metadataM1 = DAOCoinLimitOrderMetadata{CancelOrderID: m1OrderEntry.OrderID}
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
@@ -2304,15 +2246,15 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		originalM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0.PkBytes),
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m0.PublicKey,
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 &originalM1BalanceM1Coins,
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
@@ -2320,8 +2262,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(m1OrderEntry.Eq(test.ToOrderEntry("m1", metadataM1)))
 
 		// Track coin balances to compare later.
-		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		originalM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		originalM0BalanceM0Coins := dbAdapter.GetBalanceEntry(m0.PKID, m0.PKID, true).BalanceNanos
 		originalM1BalanceM0Coins := dbAdapter.GetBalanceEntry(m1.PKID, m0.PKID, true).BalanceNanos
 		originalM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
@@ -2334,8 +2276,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0 submits a FillOrKill order trying to fulfill m1's order.
 		// m0 does not have sufficient m0 DAO coins.
 		metadataM0 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m0.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
+			SellingDAOCoinCreatorPublicKey:            m0.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			QuantityToFillInBaseUnits:                 metadataM0.QuantityToFillInBaseUnits,
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
@@ -2343,7 +2285,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+			t, chain, db, params, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		require.Error(err)
 		require.Contains(err.Error(), "not enough to cover the amount they are selling")
 
@@ -2351,13 +2293,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0 does not have sufficient m0 DAO coins.
 		metadataM0.FillType = DAOCoinLimitOrderFillTypeImmediateOrCancel
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+			t, chain, db, params, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		require.Error(err)
 		require.Contains(err.Error(), "not enough to cover the amount they are selling")
 
 		// No coins change hands.
-		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		updatedM0BalanceM0Coins := dbAdapter.GetBalanceEntry(m0.PKID, m0.PKID, true).BalanceNanos
 		updatedM1BalanceM0Coins := dbAdapter.GetBalanceEntry(m1.PKID, m0.PKID, true).BalanceNanos
 		updatedM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
@@ -2371,7 +2313,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m1 cancels their order.
 		metadataM1 = DAOCoinLimitOrderMetadata{CancelOrderID: m1OrderEntry.OrderID}
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
@@ -2392,21 +2334,21 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		metadataM0 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 
 		// Track coin balances to compare later.
-		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		originalM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		originalM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		originalM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		originalM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 
@@ -2417,7 +2359,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(50),
@@ -2431,7 +2373,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Empty(orderEntries)
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+			t, chain, db, params, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled)
 
@@ -2443,15 +2385,15 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			test.ToOrderEntry("m1", metadataM1), nil)
 		require.NoError(err)
 		require.Empty(orderEntries)
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 
 		// No coins change hands other than m1's gas fees
 		// for submitting the ImmediateOrCancel order.
-		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
+		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0.Pub)
+		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1.Pub)
 		updatedM0BalanceM1Coins := dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		updatedM1BalanceM1Coins := dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		require.Equal(originalM0DESOBalance, updatedM0DESOBalance)
@@ -2467,13 +2409,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		metadataM1.ScaledExchangeRateCoinsToSellPerCoinToBuy = exchangeRate
 		metadataM1.FillType = DAOCoinLimitOrderFillTypeFillOrKill
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 
 		// m1 submits an ImmediateOrCancel order buying 50 m1 DAO coin units.
 		// The exchange rate is such that m0's order will match.
 		// Order is fulfilled.
 		metadataM1.FillType = DAOCoinLimitOrderFillTypeImmediateOrCancel
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 
 		// m0's order is fulfilled.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -2481,8 +2423,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 1)
 
 		// Correct coins change hands.
-		updatedM0DESOBalance = _getBalance(t, chain, mempool, m0Pub)
-		updatedM1DESOBalance = _getBalance(t, chain, mempool, m1Pub)
+		updatedM0DESOBalance = _getBalance(t, chain, mempool, m0.Pub)
+		updatedM1DESOBalance = _getBalance(t, chain, mempool, m1.Pub)
 		updatedM0BalanceM1Coins = dbAdapter.GetBalanceEntry(m0.PKID, m1.PKID, true).BalanceNanos
 		updatedM1BalanceM1Coins = dbAdapter.GetBalanceEntry(m1.PKID, m1.PKID, true).BalanceNanos
 		require.Equal(originalM0DESOBalance+uint64(20), updatedM0DESOBalance)
@@ -2504,7 +2446,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// a trade where m4 sells all of their $DESO. We save some
 		// $DESO for fees. Here, we assume that the fee for m4's
 		// txn will be the same for the previous txn.
-		originalM4DESONanos := _getBalance(t, chain, mempool, m4Pub)
+		originalM4DESONanos := _getBalance(t, chain, mempool, m4.Pub)
 		require.Equal(originalM4DESONanos, uint64(100))
 		m4QuantityToFill := uint256.NewInt().SetUint64(originalM4DESONanos - _feeNanos())
 
@@ -2516,14 +2458,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		metadataM0 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 m0QuantityToFill,
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
@@ -2534,7 +2476,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM4 := DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			OperationType: DAOCoinLimitOrderOperationTypeBID,
@@ -2546,21 +2488,21 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			m4QuantityToFill, uint256.NewInt().SetUint64(1))
 		require.NoError(err)
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m4Pub, m4Priv, metadataM4)
+			t, chain, db, params, feeRateNanosPerKb, m4.Pub, m4.Priv, metadataM4)
 		require.Error(err)
 		require.Contains(err.Error(), "not sufficient to cover the spend amount")
 
 		// m4 submits an order buying m1 coins and selling all of their $DESO.
 		metadataM4.QuantityToFillInBaseUnits = m4QuantityToFill
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m4Pub, m4Priv, metadataM4)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m4.Pub, m4.Priv, metadataM4)
 
 		// Confirm m4 has zero $DESO left over.
-		updatedM4DESONanos := _getBalance(t, chain, mempool, m4Pub)
+		updatedM4DESONanos := _getBalance(t, chain, mempool, m4.Pub)
 		require.Zero(updatedM4DESONanos)
 
 		// m0 cancels the remainder of their order.
 		metadataM0 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[1].OrderID}
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0.Pub, m0.Priv, metadataM0)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
@@ -2583,14 +2525,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 m1QuantityToFill,
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
@@ -2602,11 +2544,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		testMeta.expectedSenderBalances = append(
 			testMeta.expectedSenderBalances, _getBalance(t, chain, mempool, senderPkString))
 		currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
-			t, chain, db, params, senderPkString, m4Pub, senderPrivString,
+			t, chain, db, params, senderPkString, m4.Pub, senderPrivString,
 			m4QuantityToFill.Uint64()+feeNanos, feeRateNanosPerKb)
 		testMeta.txnOps = append(testMeta.txnOps, currentOps)
 		testMeta.txns = append(testMeta.txns, currentTxn)
-		originalM4DESONanos := _getBalance(t, chain, mempool, m4Pub)
+		originalM4DESONanos := _getBalance(t, chain, mempool, m4.Pub)
 		require.Equal(originalM4DESONanos, m4QuantityToFill.Uint64()+feeNanos)
 
 		// m4 submits a BID limit order buying m1 DAO coins for $DESO.
@@ -2614,7 +2556,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM4 := DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			OperationType: DAOCoinLimitOrderOperationTypeBID,
@@ -2629,21 +2571,21 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			m4QuantityToFill, uint256.NewInt().SetUint64(1))
 		require.NoError(err)
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m4Pub, m4Priv, metadataM4)
+			t, chain, db, params, feeRateNanosPerKb, m4.Pub, m4.Priv, metadataM4)
 		require.Error(err)
 		require.Contains(err.Error(), "not sufficient to cover the spend amount")
 
 		// m4 submits an order buying m1 coins and selling all of their $DESO.
 		metadataM4.QuantityToFillInBaseUnits = m4QuantityToFill
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m4Pub, m4Priv, metadataM4)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m4.Pub, m4.Priv, metadataM4)
 
 		// Confirm m4 has zero $DESO left over.
-		updatedM4DESONanos := _getBalance(t, chain, mempool, m4Pub)
+		updatedM4DESONanos := _getBalance(t, chain, mempool, m4.Pub)
 		require.Zero(updatedM4DESONanos)
 
 		// m1 cancels the remainder of their order.
 		metadataM1 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[1].OrderID}
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
@@ -2666,14 +2608,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 m1QuantityToFill,
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
@@ -2685,16 +2627,16 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		testMeta.expectedSenderBalances = append(
 			testMeta.expectedSenderBalances, _getBalance(t, chain, mempool, senderPkString))
 		currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
-			t, chain, db, params, senderPkString, m4Pub, senderPrivString,
+			t, chain, db, params, senderPkString, m4.Pub, senderPrivString,
 			m4QuantityToFill.Uint64()+feeNanos, feeRateNanosPerKb)
 		testMeta.txnOps = append(testMeta.txnOps, currentOps)
 		testMeta.txns = append(testMeta.txns, currentTxn)
-		originalM4DESONanos := _getBalance(t, chain, mempool, m4Pub)
+		originalM4DESONanos := _getBalance(t, chain, mempool, m4.Pub)
 		require.Equal(originalM4DESONanos, m4QuantityToFill.Uint64()+feeNanos)
 
 		// m4 submits a BID market order buying m1 DAO coins for $DESO.
 		metadataM4 := DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			OperationType: DAOCoinLimitOrderOperationTypeBID,
@@ -2709,21 +2651,21 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			m4QuantityToFill, uint256.NewInt().SetUint64(1))
 		require.NoError(err)
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m4Pub, m4Priv, metadataM4)
+			t, chain, db, params, feeRateNanosPerKb, m4.Pub, m4.Priv, metadataM4)
 		require.Error(err)
 		require.Contains(err.Error(), "not sufficient to cover the spend amount")
 
 		// m4 submits an order buying m1 coins and selling all of their $DESO.
 		metadataM4.QuantityToFillInBaseUnits = m4QuantityToFill
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m4Pub, m4Priv, metadataM4)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m4.Pub, m4.Priv, metadataM4)
 
 		// Confirm m4 has zero $DESO left over.
-		updatedM4DESONanos := _getBalance(t, chain, mempool, m4Pub)
+		updatedM4DESONanos := _getBalance(t, chain, mempool, m4.Pub)
 		require.Zero(updatedM4DESONanos)
 
 		// m1 cancels the remainder of their order.
 		metadataM1 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[1].OrderID}
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
@@ -2746,7 +2688,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 m1QuantityToFill,
@@ -2754,7 +2696,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
@@ -2766,7 +2708,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		metadataM2 := DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			OperationType: DAOCoinLimitOrderOperationTypeASK,
 			FillType:      DAOCoinLimitOrderFillTypeFillOrKill,
@@ -2780,13 +2722,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			m2QuantityToFill, uint256.NewInt().SetUint64(1))
 		require.NoError(err)
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m2Pub, m2Priv, metadataM2)
+			t, chain, db, params, feeRateNanosPerKb, m2.Pub, m2.Priv, metadataM2)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder)
 
 		// m2 submits an order selling all the DAO coins they have.
 		metadataM2.QuantityToFillInBaseUnits = m2QuantityToFill
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m2Pub, m2Priv, metadataM2)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m2.Pub, m2.Priv, metadataM2)
 
 		// Confirm m2 has zero m1 DAO coins left over.
 		updatedM2BalanceM1Coins := dbAdapter.GetBalanceEntry(m2.PKID, m1.PKID, true).BalanceNanos
@@ -2794,7 +2736,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m1 cancels the remainder of their order.
 		metadataM1 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[1].OrderID}
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
@@ -2817,7 +2759,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m1.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 m1QuantityToFill,
@@ -2825,7 +2767,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
@@ -2835,16 +2777,16 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		testMeta.expectedSenderBalances = append(
 			testMeta.expectedSenderBalances, _getBalance(t, chain, mempool, senderPkString))
 		currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
-			t, chain, db, params, senderPkString, m4Pub, senderPrivString, NanosPerUnit, feeRateNanosPerKb)
+			t, chain, db, params, senderPkString, m4.Pub, senderPrivString, NanosPerUnit, feeRateNanosPerKb)
 		testMeta.txnOps = append(testMeta.txnOps, currentOps)
 		testMeta.txns = append(testMeta.txns, currentTxn)
-		originalM4DESONanos := _getBalance(t, chain, mempool, m4Pub)
+		originalM4DESONanos := _getBalance(t, chain, mempool, m4.Pub)
 		require.Equal(originalM4DESONanos, NanosPerUnit)
 
 		// m4 submits an ASK market order selling m1 DAO coins for $DESO.
 		metadataM4 := DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m1.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m1.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: uint256.NewInt(),
 			OperationType: DAOCoinLimitOrderOperationTypeASK,
 			FillType:      DAOCoinLimitOrderFillTypeFillOrKill,
@@ -2858,13 +2800,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			m4QuantityToFill, uint256.NewInt().SetUint64(1))
 		require.NoError(err)
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m4Pub, m4Priv, metadataM4)
+			t, chain, db, params, feeRateNanosPerKb, m4.Pub, m4.Priv, metadataM4)
 		require.Error(err)
 		require.Contains(err.Error(), "not enough to cover the amount they are selling")
 
 		// m4 submits an order selling all the DAO coins they have.
 		metadataM4.QuantityToFillInBaseUnits = m4QuantityToFill
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m4Pub, m4Priv, metadataM4)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m4.Pub, m4.Priv, metadataM4)
 
 		// Confirm m4 has zero m1 DAO coins left over.
 		updatedM4BalanceM1Coins := dbAdapter.GetBalanceEntry(m4.PKID, m1.PKID, true).BalanceNanos
@@ -2872,7 +2814,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// m1 cancels the remainder of their order.
 		metadataM1 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[1].OrderID}
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
@@ -2901,14 +2843,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m0.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m0.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 
 		// Confirm order is added to the order book.
 		// transactor: m0, buying:  $, selling: m0, price: 9, quantity: 89, type: BID
@@ -2954,7 +2896,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 
 		metadataM3 := DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m3.PkBytes),
+			BuyingDAOCoinCreatorPublicKey:             m3.PublicKey,
 			SellingDAOCoinCreatorPublicKey:            deso.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(350),
@@ -2963,7 +2905,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
-			t, chain, db, params, feeRateNanosPerKb, m3Pub, m3Priv, metadataM3)
+			t, chain, db, params, feeRateNanosPerKb, m3.Pub, m3.Priv, metadataM3)
 
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderMatchingOwnOrder)
@@ -2973,7 +2915,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		metadataM3 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m3Pub, m3Priv, metadataM3)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m3.Pub, m3.Priv, metadataM3)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3.PKID)
 		require.NoError(err)
 		require.Empty(orderEntries)
@@ -2990,14 +2932,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		metadataM1 = DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:             deso.PublicKey,
-			SellingDAOCoinCreatorPublicKey:            NewPublicKey(m3.PkBytes),
+			SellingDAOCoinCreatorPublicKey:            m3.PublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeASK,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
 
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
+		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1.Pub, m1.Priv, metadataM1)
 
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1.PKID)
 		require.NoError(err)
@@ -3698,8 +3640,9 @@ func (test *DAOCoinLimitOrderTestMeta) ToString() string {
 		test.Transactor, buyCoin, sellCoin, price.String(), quantity, operationType, fillType)
 }
 
-func (test *DAOCoinLimitOrderTestMeta) Run() *DAOCoinLimitOrderEntry {
+func (test *DAOCoinLimitOrderTestMeta) Run(description string) *DAOCoinLimitOrderEntry {
 	require := require.New(test.TestMeta.t)
+	require.Equal(description, test.ToString())
 	transactor := test.GetUser(test.Transactor)
 	feeNanos := uint256.NewInt()
 
