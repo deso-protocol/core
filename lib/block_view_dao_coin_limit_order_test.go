@@ -153,12 +153,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		Metadata: &DAOCoinLimitOrderMetadata{
 			BuyingDAOCoinCreatorPublicKey:  NewPublicKey(m0PkBytes),
 			SellingDAOCoinCreatorPublicKey: &ZeroPublicKey,
-			QuantityToFillInBaseUnits:      daoCoinQuantityChange,
+			QuantityToFillInBaseUnits:      uint256.NewInt().SetUint64(100),
 			OperationType:                  DAOCoinLimitOrderOperationTypeBID,
 			FillType:                       DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		},
 	}
 	test.SetPrice(0.1)
+	test.Reset()
 
 	// RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
 	{
@@ -291,17 +292,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.Reset()
 	}
 
-	// m0 submits limit order buying 100 DAO coin units @ 0.1 $DESO / DAO coin.
+	// m0 submits limit order buying 100 m0 DAO coin units @ 0.1 $DESO / DAO coin.
 	{
-		// Confirm no existing limit orders.
-		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
-		require.NoError(err)
-		require.Empty(orderEntries)
-
 		// Happy path: m0's order should be stored.
-		test.OrderBookDelta = 1
-		orderEntry := _testDAOCoinLimitOrder(test)
-		require.NotNil(orderEntry)
+		test.OrderBookSizeBefore = 0
+		test.OrderBookSizeAfter = 1
+		_testDAOCoinLimitOrder(test)
 		test.Reset()
 	}
 
@@ -352,9 +348,9 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	//   * Quantity: 10 $DESO
 	test.Transactor = "m1"
 	test.Metadata = &DAOCoinLimitOrderMetadata{
-		BuyingDAOCoinCreatorPublicKey:  metadataM0.SellingDAOCoinCreatorPublicKey,
-		SellingDAOCoinCreatorPublicKey: metadataM0.BuyingDAOCoinCreatorPublicKey,
-		QuantityToFillInBaseUnits:      desoQuantityChange,
+		BuyingDAOCoinCreatorPublicKey:  &ZeroPublicKey,
+		SellingDAOCoinCreatorPublicKey: NewPublicKey(m0PkBytes),
+		QuantityToFillInBaseUnits:      uint256.NewInt().SetUint64(10),
 		OperationType:                  DAOCoinLimitOrderOperationTypeBID,
 		FillType:                       DAOCoinLimitOrderFillTypeGoodTillCancelled,
 	}
@@ -373,8 +369,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder
 	{
+		test.OrderBookSizeBefore = 1
+		test.OrderBookSizeAfter = 1
 		test.Error = RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder.Error()
 		_testDAOCoinLimitOrder(test)
+		test.Reset()
 	}
 
 	// Mint DAO coins and transfer to m1.
@@ -412,53 +411,15 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 
-		test.OrderBookDelta = -1
-
-		// Store original $DESO balances to check diffs.
-		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		originalM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
-
-		// Store original DAO coin balances to check diffs.
-		originalM0DAOCoinBalance := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true)
-		originalM1DAOCoinBalance := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true)
-
-		// Perform txn.
-		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-
-		// Both orders are deleted from the order book.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
-		require.NoError(err)
-		require.Empty(orderEntries)
-
-		// Calculate updated $DESO balances.
-		updatedM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
-		updatedM1DESOBalance := _getBalance(t, chain, mempool, m1Pub)
-
-		// Calculate updated DAO coin balances.
-		updatedM0DAOCoinBalance := dbAdapter.GetBalanceEntry(m0PKID.PKID, m0PKID.PKID, true)
-		updatedM1DAOCoinBalance := dbAdapter.GetBalanceEntry(m1PKID.PKID, m0PKID.PKID, true)
-
-		// m0's order buying DAO coins is fulfilled so:
-		//   * His DESO balance decreases and
-		//   * His DAO coin balance increases.
-		require.Equal(
-			originalM0DESOBalance-desoQuantityChange.Uint64(),
-			updatedM0DESOBalance)
-
-		require.Equal(
-			*uint256.NewInt().Add(&originalM0DAOCoinBalance.BalanceNanos, daoCoinQuantityChange),
-			updatedM0DAOCoinBalance.BalanceNanos)
-
-		// m1's order is fulfilled buying $DESO so:
-		//   * His $DESO balance increases and
-		//   * His DAO coin balance decreases.
-		require.Equal(
-			int64(originalM1DESOBalance+desoQuantityChange.Uint64()-_feeNanos()),
-			int64(updatedM1DESOBalance))
-
-		require.Equal(
-			*uint256.NewInt().Sub(&originalM1DAOCoinBalance.BalanceNanos, daoCoinQuantityChange),
-			updatedM1DAOCoinBalance.BalanceNanos)
+		// m1's order matches m0's.
+		test.OrderBookSizeBefore = 1
+		test.OrderBookSizeAfter = 0
+		test.CoinDeltas["m0"]["$DESO"] = -10
+		test.CoinDeltas["m0"]["m0"] = 100
+		test.CoinDeltas["m1"]["$DESO"] = 10
+		test.CoinDeltas["m1"]["m0"] = -100
+		_testDAOCoinLimitOrder(test)
+		test.Reset()
 	}
 
 	// Scenario: partially fulfilled orders sorting by best price
@@ -3768,19 +3729,15 @@ func TestCalculateScaledExchangeRate(t *testing.T) {
 //
 
 type DAOCoinLimitOrderTestMeta struct {
-	TestMeta                        *TestMeta
-	UtxoView                        *UtxoView
-	FeeRateNanosPerKb               uint64
-	Error                           string
-	Transactor                      string
-	Metadata                        *DAOCoinLimitOrderMetadata
-	OrderBookDelta                  int
-	TransactorDESONanosIncrease     uint64
-	TransactorDESONanosDecrease     uint64
-	TransactorBuyCoinUnitsIncrease  *uint256.Int
-	TransactorBuyCoinUnitsDecrease  *uint256.Int
-	TransactorSellCoinUnitsIncrease *uint256.Int
-	TransactorSellCoinUnitsDecrease *uint256.Int
+	TestMeta            *TestMeta
+	UtxoView            *UtxoView
+	FeeRateNanosPerKb   uint64
+	Error               string
+	Transactor          string
+	Metadata            *DAOCoinLimitOrderMetadata
+	OrderBookSizeBefore uint64
+	OrderBookSizeAfter  uint64
+	CoinDeltas          map[string]map[string]int
 }
 
 func (test *DAOCoinLimitOrderTestMeta) SetPrice(price float64) {
@@ -3799,38 +3756,57 @@ func (test *DAOCoinLimitOrderTestMeta) SetPriceFromString(price string) {
 
 func (test *DAOCoinLimitOrderTestMeta) Reset() {
 	test.Error = ""
-	test.OrderBookDelta = 0
-	test.TransactorDESONanosIncrease = 0
-	test.TransactorDESONanosDecrease = 0
-	test.TransactorBuyCoinUnitsIncrease = nil
-	test.TransactorBuyCoinUnitsDecrease = nil
-	test.TransactorSellCoinUnitsIncrease = nil
-	test.TransactorSellCoinUnitsDecrease = nil
+	test.OrderBookSizeBefore = 0
+	test.OrderBookSizeAfter = 0
+	test.CoinDeltas = make(map[string]map[string]int)
+
+	usernames := []string{"$DESO", "m0", "m1", "m2", "m3", "m4"}
+
+	for _, username := range usernames {
+		test.CoinDeltas[username] = make(map[string]int)
+
+		for _, coinCreatorName := range usernames {
+			test.CoinDeltas[username][coinCreatorName] = 0
+		}
+	}
 }
 
 func _testDAOCoinLimitOrder(test DAOCoinLimitOrderTestMeta) *DAOCoinLimitOrderEntry {
 	require := require.New(test.TestMeta.t)
 	transactor := _getTestUser(test.UtxoView, test.Transactor)
+	feeNanos := uint256.NewInt()
 
 	// Track original order book.
 	originalOrderEntries, err := test.UtxoView.GetDbAdapter().GetAllDAOCoinLimitOrders()
 	require.NoError(err)
+	require.Equal(uint64(len(originalOrderEntries)), test.OrderBookSizeBefore)
 
-	// Track transactor's original coin balances.
-	originalTransactorDESONanos := _getBalance(
-		test.TestMeta.t, test.TestMeta.chain, test.TestMeta.mempool, transactor.Pub)
+	// Track original coin balances.
+	originalCoinBalances := make(map[string]map[string]*uint256.Int)
 
-	//var originalTransactorBuyCoinUnits *uint256.Int
-	//var originalTransactorSellCoinUnits *uint256.Int
-	//
-	//if test.Buying != "$DESO" {
-	//	originalTransactorBuyCoinUnits = &test.UtxoView.GetDbAdapter().GetBalanceEntry(
-	//		transactor.PKID, _getTestUser(test.UtxoView, test.Buying).PKID, true).BalanceNanos
-	//}
-	//if test.Selling != "$DESO" {
-	//	originalTransactorSellCoinUnits = &test.UtxoView.GetDbAdapter().GetBalanceEntry(
-	//		transactor.PKID, _getTestUser(test.UtxoView, test.Selling).PKID, true).BalanceNanos
-	//}
+	for username, balanceMap := range test.CoinDeltas {
+		if username == "$DESO" {
+			continue
+		}
+		user := _getTestUser(test.UtxoView, username)
+		originalCoinBalances[username] = make(map[string]*uint256.Int)
+
+		for coinCreatorName, _ := range balanceMap {
+			coinCreator := _getTestUser(test.UtxoView, coinCreatorName)
+
+			if coinCreatorName == "$DESO" {
+				originalCoinBalances[username][coinCreatorName] = uint256.NewInt().SetUint64(
+					_getBalance(test.TestMeta.t, test.TestMeta.chain, test.TestMeta.mempool, user.Pub))
+			} else {
+				balanceEntry := test.UtxoView.GetDbAdapter().GetBalanceEntry(user.PKID, coinCreator.PKID, true)
+				if balanceEntry == nil {
+					originalCoinBalances[username][coinCreatorName] = uint256.NewInt()
+				} else {
+					originalCoinBalances[username][coinCreatorName] = &balanceEntry.BalanceNanos
+				}
+			}
+		}
+	}
 
 	if test.Error != "" {
 		_, _, _, err := _doDAOCoinLimitOrderTxn(
@@ -3839,38 +3815,87 @@ func _testDAOCoinLimitOrder(test DAOCoinLimitOrderTestMeta) *DAOCoinLimitOrderEn
 		require.Error(err)
 		require.Contains(err.Error(), test.Error)
 	} else {
-		_doDAOCoinLimitOrderTxnWithTestMeta(
-			test.TestMeta, test.FeeRateNanosPerKb, transactor.Pub, transactor.Priv, *test.Metadata)
+		currentTxn, totalInput, _, currentFeeNanos := _createDAOCoinLimitOrderTxn(
+			test.TestMeta, transactor.Pub, *test.Metadata, test.FeeRateNanosPerKb)
+
+		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
+			test.TestMeta, transactor.Pub, transactor.Priv, currentTxn, totalInput)
+		require.NoError(err)
+
+		feeNanos = uint256.NewInt().SetUint64(currentFeeNanos)
 	}
 
 	// Compare change in order book count.
 	updatedOrderEntries, err := test.UtxoView.GetDbAdapter().GetAllDAOCoinLimitOrders()
 	require.NoError(err)
-	require.Equal(len(originalOrderEntries)+test.OrderBookDelta, len(updatedOrderEntries))
+	require.Equal(uint64(len(updatedOrderEntries)), test.OrderBookSizeAfter)
 
-	// Track change in coins.
-	updatedTransactorDESONanos := _getBalance(
-		test.TestMeta.t, test.TestMeta.chain, test.TestMeta.mempool, transactor.Pub)
+	// Track updated coin balances.
+	updatedCoinBalances := make(map[string]map[string]*uint256.Int)
 
-	// Calculate fees.
-	feeNanos := uint64(0)
-	if test.Error == "" {
-		feeNanos = test.TestMeta.txns[len(test.TestMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
+	for username, balanceMap := range test.CoinDeltas {
+		if username == "$DESO" {
+			continue
+		}
+		user := _getTestUser(test.UtxoView, username)
+		updatedCoinBalances[username] = make(map[string]*uint256.Int)
+
+		for coinCreatorName, _ := range balanceMap {
+			coinCreator := _getTestUser(test.UtxoView, coinCreatorName)
+
+			if coinCreatorName == "$DESO" {
+				updatedCoinBalances[username][coinCreatorName] = uint256.NewInt().SetUint64(
+					_getBalance(test.TestMeta.t, test.TestMeta.chain, test.TestMeta.mempool, user.Pub))
+			} else {
+				balanceEntry := test.UtxoView.GetDbAdapter().GetBalanceEntry(user.PKID, coinCreator.PKID, true)
+				if balanceEntry == nil {
+					updatedCoinBalances[username][coinCreatorName] = uint256.NewInt()
+				} else {
+					updatedCoinBalances[username][coinCreatorName] = &balanceEntry.BalanceNanos
+				}
+			}
+		}
 	}
 
 	// Compare coin deltas.
-	if test.TransactorDESONanosIncrease != 0 {
-		require.Equal(
-			originalTransactorDESONanos+test.TransactorDESONanosIncrease-feeNanos,
-			updatedTransactorDESONanos)
-	} else if test.TransactorDESONanosDecrease != 0 {
-		require.Equal(
-			originalTransactorDESONanos-test.TransactorDESONanosIncrease-feeNanos,
-			updatedTransactorDESONanos)
-	} else {
-		require.Equal(originalTransactorDESONanos-feeNanos, updatedTransactorDESONanos)
+	for username, balanceMap := range test.CoinDeltas {
+		if username == "$DESO" {
+			continue
+		}
+
+		for coinCreatorName, _ := range balanceMap {
+			calculatedCoinBalance := originalCoinBalances[username][coinCreatorName]
+
+			if username == test.Transactor && coinCreatorName == "$DESO" && test.Error == "" {
+				// If calculating transactor's change in $DESO
+				// and this txn doesn't have an error, we have
+				// to include the txn fees.
+				calculatedCoinBalance, err = SafeUint256().Sub(calculatedCoinBalance, feeNanos)
+				require.NoError(err)
+			}
+
+			if test.CoinDeltas[username][coinCreatorName] > 0 {
+				calculatedCoinBalance, err = SafeUint256().Add(
+					calculatedCoinBalance, uint256.NewInt().SetUint64(
+						uint64(test.CoinDeltas[username][coinCreatorName])))
+				require.NoError(err)
+				require.Equal(
+					calculatedCoinBalance, updatedCoinBalances[username][coinCreatorName])
+			} else if test.CoinDeltas[username][coinCreatorName] < 0 {
+				calculatedCoinBalance, err = SafeUint256().Sub(
+					calculatedCoinBalance, uint256.NewInt().SetUint64(
+						uint64(math.Abs(float64(test.CoinDeltas[username][coinCreatorName])))))
+				require.NoError(err)
+				require.Equal(
+					calculatedCoinBalance, updatedCoinBalances[username][coinCreatorName])
+			} else {
+				require.Equal(
+					calculatedCoinBalance, updatedCoinBalances[username][coinCreatorName])
+			}
+		}
 	}
 
+	// Return the newly created order if stored.
 	for _, orderEntry := range updatedOrderEntries {
 		isMatch, err := orderEntry.Eq(&DAOCoinLimitOrderEntry{
 			// We don't know which OrderId BlockHash will be generated
@@ -3895,55 +3920,62 @@ func _testDAOCoinLimitOrder(test DAOCoinLimitOrderTestMeta) *DAOCoinLimitOrderEn
 		}
 	}
 
+	// Otherwise, return nil.
 	return nil
 }
 
 type DAOCoinLimitOrderTestUser struct {
+	Name    string
 	Pub     string
 	Priv    string
 	PkBytes []byte
 	PKID    *PKID
 }
 
-func _getTestUser(utxoView *UtxoView, user string) *DAOCoinLimitOrderTestUser {
+func _getTestUser(utxoView *UtxoView, user string) DAOCoinLimitOrderTestUser {
 	switch user {
 	case "m0":
-		return &DAOCoinLimitOrderTestUser{
+		return DAOCoinLimitOrderTestUser{
+			Name:    "m0",
 			Pub:     m0Pub,
 			Priv:    m0Priv,
 			PkBytes: m0PkBytes,
 			PKID:    utxoView.GetDbAdapter().GetPKIDForPublicKey(m0PkBytes),
 		}
 	case "m1":
-		return &DAOCoinLimitOrderTestUser{
+		return DAOCoinLimitOrderTestUser{
+			Name:    "m1",
 			Pub:     m1Pub,
 			Priv:    m1Priv,
 			PkBytes: m1PkBytes,
 			PKID:    utxoView.GetDbAdapter().GetPKIDForPublicKey(m1PkBytes),
 		}
 	case "m2":
-		return &DAOCoinLimitOrderTestUser{
+		return DAOCoinLimitOrderTestUser{
+			Name:    "m2",
 			Pub:     m2Pub,
 			Priv:    m2Priv,
 			PkBytes: m2PkBytes,
 			PKID:    utxoView.GetDbAdapter().GetPKIDForPublicKey(m2PkBytes),
 		}
 	case "m3":
-		return &DAOCoinLimitOrderTestUser{
+		return DAOCoinLimitOrderTestUser{
+			Name:    "m3",
 			Pub:     m3Pub,
 			Priv:    m3Priv,
 			PkBytes: m3PkBytes,
 			PKID:    utxoView.GetDbAdapter().GetPKIDForPublicKey(m3PkBytes),
 		}
 	case "m4":
-		return &DAOCoinLimitOrderTestUser{
+		return DAOCoinLimitOrderTestUser{
+			Name:    "m4",
 			Pub:     m4Pub,
 			Priv:    m4Priv,
 			PkBytes: m4PkBytes,
 			PKID:    utxoView.GetDbAdapter().GetPKIDForPublicKey(m4PkBytes),
 		}
 	default:
-		return nil
+		return DAOCoinLimitOrderTestUser{}
 	}
 }
 
