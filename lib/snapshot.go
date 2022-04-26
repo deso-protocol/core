@@ -150,7 +150,7 @@ type Snapshot struct {
 
 // NewSnapshot creates a new snapshot instance.
 func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightPeriod uint64, isTxIndex bool,
-	disableChecksum bool, params *DeSoParams) (_snap *Snapshot, _err error, _shouldRestart bool) {
+	disableChecksum bool, params *DeSoParams, disableMigrations bool) (_snap *Snapshot, _err error, _shouldRestart bool) {
 
 	// Initialize the ancestral records database
 	snapshotDirectory := filepath.Join(GetBadgerDbPath(mainDbDirectory), "snapshot")
@@ -158,7 +158,7 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	snapshotOpts.ValueDir = GetBadgerDbPath(snapshotDirectory)
 	snapshotDb, err := badger.Open(snapshotOpts)
 	if err != nil {
-		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem creating SnapshotDb"))
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem creating SnapshotDb"), true
 	}
 	glog.Infof("Snapshot BadgerDB Dir: %v", snapshotOpts.Dir)
 	glog.Infof("Snapshot BadgerDB ValueDir: %v", snapshotOpts.ValueDir)
@@ -170,34 +170,31 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	// Retrieve and initialize the checksum.
 	checksum := &StateChecksum{}
 	if err := checksum.Initialize(snapshotDb, &snapshotDbMutex); err != nil {
-		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem reading Checksum"))
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading Checksum"), true
 	}
 
 	// Retrieve the snapshot epoch metadata from the snapshot db.
 	metadata := &SnapshotEpochMetadata{}
 	if err := metadata.Initialize(snapshotDb, &snapshotDbMutex); err != nil {
-		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotEpochMetadata"))
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotEpochMetadata"), true
 	}
 
 	operationChannel := &SnapshotOperationChannel{}
 	if err := operationChannel.Initialize(snapshotDb, &snapshotDbMutex); err != nil {
-		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotOperationChannel"))
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotOperationChannel"), true
 	}
-	//if operationChannel.StateSemaphore > 0 {
-	//	// TODO: We should now revert blocks to the snapshot epoch.
-	//	operationChannel.StateSemaphore = 0
-	//}
 
 	// Retrieve and initialize the snapshot status.
 	status := &SnapshotStatus{}
 	if err := status.Initialize(snapshotDb, &snapshotDbMutex); err != nil {
-		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotStatus"))
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotStatus"), true
 	}
 
 	// Retrieve and initialize snapshot migrations.
 	migrations := &EncoderMigration{}
-	if err := migrations.Initialize(mainDb, snapshotDb, &snapshotDbMutex, status.CurrentBlockHeight, params); err != nil {
-		glog.Fatal(errors.Wrapf(err, "NewSnapshot: Problem reading EncoderMigration"))
+	if err := migrations.Initialize(
+		mainDb, snapshotDb, &snapshotDbMutex, status.CurrentBlockHeight, params, disableMigrations); err != nil {
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading EncoderMigration"), true
 	}
 
 	// If this condition is true, the snapshot is broken and we need to start the recovery process.
@@ -573,19 +570,19 @@ func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed b
 	}
 
 	// Get the last ancestral cache. This is where we'll add the new record.
-	lastAncestralCache := snap.AncestralMemory.Last().(*AncestralCache)
-	if lastAncestralCache.id != index {
+	latestAncestralCache := snap.AncestralMemory.Last().(*AncestralCache)
+	if latestAncestralCache.id != index {
 		return fmt.Errorf("Snapshot.PrepareAncestralRecords: last ancestral cache index (%v) is "+
-			"greater than current flush index (%v)", lastAncestralCache.id, index)
+			"greater than current flush index (%v)", latestAncestralCache.id, index)
 	}
 
 	// If the record already exists in the ancestral cache, skip.
-	if _, ok := lastAncestralCache.AncestralRecordsMap[key]; ok {
+	if _, ok := latestAncestralCache.AncestralRecordsMap[key]; ok {
 		return nil
 	}
 
 	// Add the record to the records key list and the adequate records list.
-	lastAncestralCache.AncestralRecordsMap[key] = &AncestralRecordValue{
+	latestAncestralCache.AncestralRecordsMap[key] = &AncestralRecordValue{
 		Value:   value,
 		Existed: existed,
 	}
@@ -610,9 +607,9 @@ func (snap *Snapshot) FlushAncestralRecords() {
 	}
 
 	// Pull items off of the deque for writing. We say "last" as in oldest, i.e. the first element of AncestralMemory.
-	lastAncestralCache := snap.AncestralMemory.First().(*AncestralCache)
+	oldestAncestralCache := snap.AncestralMemory.First().(*AncestralCache)
 
-	blockHeight := lastAncestralCache.blockHeight
+	blockHeight := oldestAncestralCache.blockHeight
 	if blockHeight != snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight {
 		glog.Infof("Snapshot.StartAncestralRecordsFlush: AncestralMemory blockHeight (%v) doesn't match current "+
 			"metadata blockHeight (%v), number of operations in operationChannel (%v)", blockHeight,
@@ -626,8 +623,8 @@ func (snap *Snapshot) FlushAncestralRecords() {
 		return
 	}
 	// First sort the keys so that we write to BadgerDB in order.
-	recordsKeyList := make([]string, 0, len(lastAncestralCache.AncestralRecordsMap))
-	for kk := range lastAncestralCache.AncestralRecordsMap {
+	recordsKeyList := make([]string, 0, len(oldestAncestralCache.AncestralRecordsMap))
+	for kk := range oldestAncestralCache.AncestralRecordsMap {
 		recordsKeyList = append(recordsKeyList, kk)
 	}
 	sort.Strings(recordsKeyList)
@@ -649,7 +646,7 @@ func (snap *Snapshot) FlushAncestralRecords() {
 		}
 		// Iterate through all now-sorted keys.
 		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) new records", len(recordsKeyList))
-		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) ancestral records", len(lastAncestralCache.AncestralRecordsMap))
+		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) ancestral records", len(oldestAncestralCache.AncestralRecordsMap))
 		for _, key := range recordsKeyList {
 			// We store keys as strings because they're easier to store and sort this way.
 			keyBytes, err := hex.DecodeString(key)
@@ -675,7 +672,7 @@ func (snap *Snapshot) FlushAncestralRecords() {
 
 			// If we get here, it means that no record existed in ancestral records at key,
 			// so we set it here.
-			value, exists := lastAncestralCache.AncestralRecordsMap[key]
+			value, exists := oldestAncestralCache.AncestralRecordsMap[key]
 			if !exists {
 				return fmt.Errorf("Snapshot.StartAncestralRecordsFlush: Error, key is not " +
 					"in AncestralRecordsMap. This should never happen")
@@ -841,13 +838,7 @@ func (snap *Snapshot) SnapshotProcessBlock(blockNode *BlockNode) {
 					continue
 				}
 				// Remove the migrations, we won't need it anymore.
-				for jj := 0; jj < len(snap.Migrations.migrationChecksums); jj++ {
-					if snap.Migrations.migrationChecksums[jj].BlockHeight == height {
-						snap.Migrations.migrationChecksums = append(snap.Migrations.migrationChecksums[:jj],
-							snap.Migrations.migrationChecksums[jj+1:]...)
-						jj--
-					}
-				}
+				snap.Migrations.CleanupMigrations(height)
 				break
 			}
 		}
@@ -1945,6 +1936,10 @@ func (status *SnapshotStatus) IsFlushing() bool {
 	status.MemoryLock.Lock()
 	defer status.MemoryLock.Unlock()
 
+	return status.IsFlushingWithoutLock()
+}
+
+func (status *SnapshotStatus) IsFlushingWithoutLock() bool {
 	// Flush is taking place if the semaphores have different counters or if they are odd.
 	// We increment each semaphore whenever we start the flush and when we end it so they are always
 	// even when the DB is not being updated.
@@ -1984,7 +1979,7 @@ type EncoderMigration struct {
 }
 
 func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *badger.DB,
-	snapshotDbMutex *sync.Mutex, blockHeight uint64, params *DeSoParams) error {
+	snapshotDbMutex *sync.Mutex, blockHeight uint64, params *DeSoParams, disabled bool) error {
 
 	migration.mainDb = mainDb
 	migration.snapshotDb = snapshotDb
@@ -1999,6 +1994,11 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 
 	migration.snapshotDbMutex.Lock()
 	defer migration.snapshotDbMutex.Unlock()
+
+	// For testing purposes we might want to disable migrations.
+	if disabled {
+		return nil
+	}
 
 	// Retrieve all migrations from the snapshot Db.
 	err := migration.snapshotDb.View(func(txn *badger.Txn) error {
@@ -2256,6 +2256,16 @@ func (migration *EncoderMigration) GetMigrationChecksumAtBlockheight(blockHeight
 		}
 	}
 	return nil
+}
+
+func (migration *EncoderMigration) CleanupMigrations(blockHeight uint64) {
+	for jj := 0; jj < len(migration.migrationChecksums); jj++ {
+		if migration.migrationChecksums[jj].BlockHeight <= blockHeight {
+			migration.migrationChecksums = append(migration.migrationChecksums[:jj],
+				migration.migrationChecksums[jj+1:]...)
+			jj--
+		}
+	}
 }
 
 func (migration *EncoderMigration) ResetChecksums() {

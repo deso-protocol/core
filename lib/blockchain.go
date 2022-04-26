@@ -2021,6 +2021,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// Store the new block in the db under the
 			//   <blockHash> -> <serialized block>
 			// index.
+			// TODO: In the archival mode, we'll be setting ancestral entries for the block reward. Note that it is
+			// 	set in PutBlockWithTxn. Block rewards are part of the state, and they should be identical to the ones
+			// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
+			// 	somehow ancestral records get corrupted?
 			if err := PutBlockWithTxn(txn, bc.snapshot, desoBlock); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
 			}
@@ -2414,18 +2418,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				return err
 			}
 
-			if bc.snapshot != nil {
-				bc.snapshot.PrepareAncestralRecordsFlush()
-				// Unfortunately, we can't call defer StartAncestralRecordsFlush here because we'd have a nested ancestral
-				// records call with the FlushToDbWithTxn at the end of this badger update.
-			}
 			for _, detachNode := range detachBlocks {
 				// Delete the utxo operations for the blocks we're detaching since we don't need
 				// them anymore.
 				if err := DeleteUtxoOperationsForBlockWithTxn(txn, bc.snapshot, detachNode.Hash); err != nil {
-					if bc.snapshot != nil {
-						bc.snapshot.StartAncestralRecordsFlush(true)
-					}
 					return errors.Wrapf(err, "ProcessBlock: Problem deleting utxo operations for block")
 				}
 
@@ -2439,15 +2435,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				// Add the utxo operations for the blocks we're attaching so we can roll them back
 				// in the future if necessary.
 				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, attachNode.Hash, utxoOpsForAttachBlocks[ii]); err != nil {
-					if bc.snapshot != nil {
-						bc.snapshot.StartAncestralRecordsFlush(true)
-					}
 					return errors.Wrapf(err, "ProcessBlock: Problem putting utxo operations for block")
 				}
-			}
-			if bc.snapshot != nil {
-				bc.snapshot.StartAncestralRecordsFlush(true)
-				bc.snapshot.PrintChecksum("Checksum after flush")
 			}
 
 			// Write the modified utxo set to the view.

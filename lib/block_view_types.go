@@ -347,6 +347,44 @@ func DecodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool
 	return false, nil
 }
 
+// CheckMigrationCondition is a suggested conditional check to be called within RawEncodeWithoutMetadata and
+// RawDecodeWithoutMetadata when defining the encoding migrations for DeSoEncoders. Consult constants.go for more info.
+func CheckMigrationCondition(blockHeight uint64, migrationName MigrationName) bool {
+	for _, migration := range GlobalDeSoParams.EncoderMigrationHeightsList {
+		if migration.Name == migrationName {
+			return blockHeight >= migration.Height
+		}
+	}
+
+	panic(fmt.Sprintf("Problem finding a migration corresponding to migrationName (%v) check your code!", migrationName))
+}
+
+// GetMigrationVersion can be returned in GetVersionByte when implementing DeSoEncoders. The way to do it is simply
+// calling `return GetMigrationVersion(blockHeight, [Migration Names])` where migration names are all EncoderMigrationHeights
+// that were used in RawEncodeWithoutMetadata and RawDecodeWithoutMetadata. [Migratio Names] can be simply a list of
+// MigrationName strings corresponding to these EncodeMigrationHeights.
+func GetMigrationVersion(blockHeight uint64, appliedMigrationNames ...MigrationName) byte {
+	maxMigrationVersion := byte(0)
+	for _, migration := range GlobalDeSoParams.EncoderMigrationHeightsList {
+		for _, appliedMigration := range appliedMigrationNames {
+			// Select the applied migrations.
+			if migration.Name == appliedMigration {
+
+				// Make sure the migration is satisfied by the current blockHeight.
+				if migration.Height <= blockHeight {
+
+					// Find the migration with the greatest version.
+					if migration.Version > maxMigrationVersion {
+						maxMigrationVersion = migration.Version
+					}
+				}
+			}
+		}
+	}
+
+	return maxMigrationVersion
+}
+
 // UtxoEntry identifies the data associated with a UTXO.
 type UtxoEntry struct {
 	AmountNanos uint64

@@ -38,6 +38,7 @@ type Config struct {
 	MaxSyncBlockHeight        uint32
 	SnapshotBlockHeightPeriod uint64
 	ArchivalMode              bool
+	DisableEncoderMigrations  bool
 
 	// Mining
 	MinerPublicKeys  []string
@@ -97,6 +98,7 @@ func LoadConfig() *Config {
 	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
 	config.SnapshotBlockHeightPeriod = viper.GetUint64("snapshot-block-height-period")
 	config.ArchivalMode = viper.GetBool("archival-mode")
+	config.DisableEncoderMigrations = viper.GetBool("disable-encoder-migrations")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")

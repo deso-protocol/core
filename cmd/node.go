@@ -206,6 +206,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.DisableSlowSync,
 		node.Config.MaxSyncBlockHeight,
 		node.Config.ArchivalMode,
+		node.Config.DisableEncoderMigrations,
 		node.Config.RateLimitFeerate,
 		node.Config.MinFeerate,
 		node.Config.StallTimeoutSeconds,

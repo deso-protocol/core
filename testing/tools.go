@@ -306,7 +306,7 @@ func compareNodesByStateWithPrefixList(t *testing.T, dbA *badger.DB, dbB *badger
 }
 
 // computeNodeStateChecksum goes through node's state records and computes the checksum.
-func computeNodeStateChecksum(t *testing.T, node *cmd.Node, blockHeight uint64) *lib.StateChecksum {
+func computeNodeStateChecksum(t *testing.T, node *cmd.Node, blockHeight uint64) []byte {
 	require := require.New(t)
 
 	// Get all state prefixes and sort them.
@@ -345,8 +345,9 @@ func computeNodeStateChecksum(t *testing.T, node *cmd.Node, blockHeight uint64) 
 	})
 	require.NoError(err)
 	require.NoError(carrierChecksum.Wait())
-
-	return carrierChecksum
+	checksumBytes, err := carrierChecksum.ToBytes()
+	require.NoError(err)
+	return checksumBytes
 }
 
 // Stop the provided node.

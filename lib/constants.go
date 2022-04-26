@@ -240,20 +240,26 @@ type ForkHeights struct {
 //	1. define a new blockHeight in the EncoderMigrationHeights struct
 //	2. add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods
 //	3. add proper condition to GetVersionByte to return version associated with the migration height.
+type MigrationName string
 type MigrationHeight struct {
 	Height  uint64
 	Version byte
+	Name    MigrationName
 }
 type EncoderMigrationHeights struct {
-	DefaultHeight MigrationHeight
+	DefaultMigration MigrationHeight
 }
 
+const (
+	DefaultMigration MigrationName = "DefaultMigration"
+)
+
 var TestnetEncoderMigrationHeights = EncoderMigrationHeights{
-	DefaultHeight: MigrationHeight{0, 0},
+	DefaultMigration: MigrationHeight{0, 0, DefaultMigration},
 }
 
 var MainnetEncoderMigrationHeights = EncoderMigrationHeights{
-	DefaultHeight: MigrationHeight{0, 0},
+	DefaultMigration: MigrationHeight{0, 0, DefaultMigration},
 }
 
 // So for example, let's say you want to add a migration for UtxoEntry at height 1200.

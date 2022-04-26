@@ -58,7 +58,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 	shouldRestart := false
 	if coreChain.Snapshot() != nil {
 		snapshot, err, shouldRestart = NewSnapshot(txIndexDb, txIndexDir, coreChain.Snapshot().SnapshotBlockHeightPeriod,
-			true, true, params)
+			true, true, params, false)
 		if err != nil {
 			return nil, errors.Wrapf(err, "NewTXIndex: Problem creating snapshot"), true
 		}

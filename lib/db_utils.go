@@ -723,8 +723,13 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 	}
 
 	// If a flush takes place, we don't update cache. It will be updated in DBSetWithTxn.
-	if isState && !snap.Status.IsFlushing() {
-		snap.DatabaseCache.Add(keyString, itemData)
+	if isState {
+		// Hold the snapshot memory lock just to be e
+		snap.Status.MemoryLock.Lock()
+		defer snap.Status.MemoryLock.Unlock()
+		if !snap.Status.IsFlushingWithoutLock() {
+			snap.DatabaseCache.Add(keyString, itemData)
+		}
 	}
 	return itemData, nil
 }

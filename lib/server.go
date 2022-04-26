@@ -304,6 +304,7 @@ func NewServer(
 	_disableSlowSync bool,
 	_maxSyncBlockHeight uint32,
 	_archivalMode bool,
+	_disableEncoderMigrations bool,
 	_rateLimitFeerateNanosPerKB uint64,
 	_minFeeRateNanosPerKB uint64,
 	_stallTimeoutSeconds uint64,
@@ -332,7 +333,7 @@ func NewServer(
 	archivalMode := false
 	if _hyperSync {
 		_snapshot, err, shouldRestart = NewSnapshot(_db, _dataDir, _snapshotBlockHeightPeriod,
-			false, false, _params)
+			false, false, _params, _disableEncoderMigrations)
 		if err != nil {
 			panic(err)
 		}
@@ -836,6 +837,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			if srv.cmgr.HyperSync {
 				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
 				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
+				srv.blockchain.snapshot.Migrations.CleanupMigrations(expectedSnapshotHeight)
 
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
 					srv.GetSnapshot(pp)
@@ -1316,6 +1318,10 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		}
 		break
 	}
+
+	// Update the snapshot status in the DB.
+	srv.snapshot.Status.CurrentBlockHeight = msg.SnapshotMetadata.SnapshotBlockHeight
+	srv.snapshot.Status.SaveStatus()
 
 	glog.Infof("server._handleSnapshot: FINAL snapshot checksum is (%v)",
 		srv.snapshot.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes)
