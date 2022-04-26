@@ -93,21 +93,23 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		TestMeta:          testMeta,
 		UtxoView:          utxoView,
 		FeeRateNanosPerKb: feeRateNanosPerKb,
-		Transactor:        "m0",
-		Metadata: &DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:  NewPublicKey(m0PkBytes),
-			SellingDAOCoinCreatorPublicKey: &ZeroPublicKey,
-			OperationType:                  DAOCoinLimitOrderOperationTypeBID,
-			FillType:                       DAOCoinLimitOrderFillTypeGoodTillCancelled,
-		},
 	}
-	test.SetPrice(0.1)
-	test.SetQuantity(100)
 	test.Reset()
-	metadataM0 := *test.Metadata
+	var metadataM0 DAOCoinLimitOrderMetadata
 
 	{
 		// RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin
+		test.Transactor = "m0"
+		test.Metadata = &DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:  test.GetUser("m0").PublicKey,
+			SellingDAOCoinCreatorPublicKey: test.GetUser("$DESO").PublicKey,
+			OperationType:                  DAOCoinLimitOrderOperationTypeBID,
+			FillType:                       DAOCoinLimitOrderFillTypeGoodTillCancelled,
+		}
+		test.SetPrice(0.1)
+		test.SetQuantity(100)
+		metadataM0 = *test.Metadata
+
 		originalValue := test.Metadata.BuyingDAOCoinCreatorPublicKey
 		test.Metadata.BuyingDAOCoinCreatorPublicKey = &ZeroPublicKey
 		test.Error = RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin.Error()
@@ -300,8 +302,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	//   * Quantity: 10 $DESO
 	test.Transactor = "m1"
 	test.Metadata = &DAOCoinLimitOrderMetadata{
-		BuyingDAOCoinCreatorPublicKey:  &ZeroPublicKey,
-		SellingDAOCoinCreatorPublicKey: NewPublicKey(m0PkBytes),
+		BuyingDAOCoinCreatorPublicKey:  test.GetUser("$DESO").PublicKey,
+		SellingDAOCoinCreatorPublicKey: test.GetUser("m0").PublicKey,
 		QuantityToFillInBaseUnits:      uint256.NewInt().SetUint64(10),
 		OperationType:                  DAOCoinLimitOrderOperationTypeBID,
 		FillType:                       DAOCoinLimitOrderFillTypeGoodTillCancelled,
@@ -408,8 +410,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0 submits order buying 240 DAO coin units @ 1/8 $DESO / DAO coin.
 		test.Transactor = "m0"
 		test.Metadata = &DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:  NewPublicKey(m0PkBytes),
-			SellingDAOCoinCreatorPublicKey: &ZeroPublicKey,
+			BuyingDAOCoinCreatorPublicKey:  test.GetUser("m0").PublicKey,
+			SellingDAOCoinCreatorPublicKey: test.GetUser("$DESO").PublicKey,
 			OperationType:                  DAOCoinLimitOrderOperationTypeBID,
 			FillType:                       DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
@@ -470,8 +472,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0 submits order buying 100 DAO coin units @ 10 $DESO / DAO coin.
 		test.Transactor = "m0"
 		test.Metadata = &DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:  NewPublicKey(m0PkBytes),
-			SellingDAOCoinCreatorPublicKey: &ZeroPublicKey,
+			BuyingDAOCoinCreatorPublicKey:  test.GetUser("m0").PublicKey,
+			SellingDAOCoinCreatorPublicKey: test.GetUser("$DESO").PublicKey,
 			OperationType:                  DAOCoinLimitOrderOperationTypeBID,
 			FillType:                       DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
@@ -492,8 +494,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// the best offer(s) available.
 		test.Transactor = "m1"
 		test.Metadata = &DAOCoinLimitOrderMetadata{
-			BuyingDAOCoinCreatorPublicKey:  &ZeroPublicKey,
-			SellingDAOCoinCreatorPublicKey: NewPublicKey(m0PkBytes),
+			BuyingDAOCoinCreatorPublicKey:  test.GetUser("$DESO").PublicKey,
+			SellingDAOCoinCreatorPublicKey: test.GetUser("m0").PublicKey,
 			OperationType:                  DAOCoinLimitOrderOperationTypeBID,
 			FillType:                       DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
@@ -3598,11 +3600,11 @@ type DAOCoinLimitOrderTestMeta struct {
 }
 
 type DAOCoinLimitOrderTestUser struct {
-	Name    string
-	Pub     string
-	Priv    string
-	PkBytes []byte
-	PKID    *PKID
+	Pub       string
+	Priv      string
+	PkBytes   []byte
+	PublicKey *PublicKey
+	PKID      *PKID
 }
 
 func (test *DAOCoinLimitOrderTestMeta) SetPrice(price float64) {
@@ -3628,7 +3630,6 @@ func (test *DAOCoinLimitOrderTestMeta) Reset() {
 	test.OrderBookSizeBefore = 0
 	test.OrderBookSizeAfter = 0
 	test.CoinDeltas = make(map[string]map[string]int)
-
 	usernames := []string{"$DESO", "m0", "m1", "m2", "m3", "m4"}
 
 	for _, username := range usernames {
@@ -3868,47 +3869,55 @@ func (test *DAOCoinLimitOrderTestMeta) ToOrderEntry(transactorName string, metad
 	}
 }
 
-func (test *DAOCoinLimitOrderTestMeta) GetUser(user string) DAOCoinLimitOrderTestUser {
-	switch user {
+func (test *DAOCoinLimitOrderTestMeta) GetUser(username string) DAOCoinLimitOrderTestUser {
+	switch username {
+	case "$DESO":
+		return DAOCoinLimitOrderTestUser{
+			Pub:       "",
+			Priv:      "",
+			PkBytes:   ZeroPublicKey.ToBytes(),
+			PublicKey: &ZeroPublicKey,
+			PKID:      &ZeroPKID,
+		}
 	case "m0":
 		return DAOCoinLimitOrderTestUser{
-			Name:    "m0",
-			Pub:     m0Pub,
-			Priv:    m0Priv,
-			PkBytes: m0PkBytes,
-			PKID:    test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(m0PkBytes),
+			Pub:       m0Pub,
+			Priv:      m0Priv,
+			PkBytes:   m0PkBytes,
+			PublicKey: NewPublicKey(m0PkBytes),
+			PKID:      test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(m0PkBytes),
 		}
 	case "m1":
 		return DAOCoinLimitOrderTestUser{
-			Name:    "m1",
-			Pub:     m1Pub,
-			Priv:    m1Priv,
-			PkBytes: m1PkBytes,
-			PKID:    test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(m1PkBytes),
+			Pub:       m1Pub,
+			Priv:      m1Priv,
+			PkBytes:   m1PkBytes,
+			PublicKey: NewPublicKey(m1PkBytes),
+			PKID:      test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(m1PkBytes),
 		}
 	case "m2":
 		return DAOCoinLimitOrderTestUser{
-			Name:    "m2",
-			Pub:     m2Pub,
-			Priv:    m2Priv,
-			PkBytes: m2PkBytes,
-			PKID:    test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(m2PkBytes),
+			Pub:       m2Pub,
+			Priv:      m2Priv,
+			PkBytes:   m2PkBytes,
+			PublicKey: NewPublicKey(m2PkBytes),
+			PKID:      test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(m2PkBytes),
 		}
 	case "m3":
 		return DAOCoinLimitOrderTestUser{
-			Name:    "m3",
-			Pub:     m3Pub,
-			Priv:    m3Priv,
-			PkBytes: m3PkBytes,
-			PKID:    test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(m3PkBytes),
+			Pub:       m3Pub,
+			Priv:      m3Priv,
+			PkBytes:   m3PkBytes,
+			PublicKey: NewPublicKey(m3PkBytes),
+			PKID:      test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(m3PkBytes),
 		}
 	case "m4":
 		return DAOCoinLimitOrderTestUser{
-			Name:    "m4",
-			Pub:     m4Pub,
-			Priv:    m4Priv,
-			PkBytes: m4PkBytes,
-			PKID:    test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(m4PkBytes),
+			Pub:       m4Pub,
+			Priv:      m4Priv,
+			PkBytes:   m4PkBytes,
+			PublicKey: NewPublicKey(m4PkBytes),
+			PKID:      test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(m4PkBytes),
 		}
 	default:
 		return DAOCoinLimitOrderTestUser{}
