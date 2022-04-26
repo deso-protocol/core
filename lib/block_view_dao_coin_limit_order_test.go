@@ -80,11 +80,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// Helpers
 	// -----------------------
 
-	// Helper function to convert PublicKeys to PKIDs.
-	toPKID := func(inputPK *PublicKey) *PKID {
-		return DBGetPKIDEntryForPublicKey(db, inputPK.ToBytes()).PKID
-	}
-
 	// Calculate FeeNanos from most recent txn.
 	_feeNanos := func() uint64 {
 		return testMeta.txns[len(testMeta.txns)-1].TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
@@ -265,20 +260,20 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Test database query.
 		// Confirm 1 existing limit order, and it's from m0.
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(
-			toPKID(test.Metadata.BuyingDAOCoinCreatorPublicKey),
-			toPKID(test.Metadata.SellingDAOCoinCreatorPublicKey))
+			dbAdapter.GetPKIDForPublicKey(test.Metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()),
+			dbAdapter.GetPKIDForPublicKey(test.Metadata.SellingDAOCoinCreatorPublicKey.ToBytes()))
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(test.Metadata.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[0].Eq(test.CurrentOrder()))
 
 		// Test UTXO view query.
 		// Confirm 1 existing limit order, and it's from m0.
 		orderEntries, err = utxoView.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(
-			toPKID(test.Metadata.BuyingDAOCoinCreatorPublicKey),
-			toPKID(test.Metadata.SellingDAOCoinCreatorPublicKey))
+			dbAdapter.GetPKIDForPublicKey(test.Metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()),
+			dbAdapter.GetPKIDForPublicKey(test.Metadata.SellingDAOCoinCreatorPublicKey.ToBytes()))
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(test.Metadata.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[0].Eq(test.CurrentOrder()))
 	}
 	{
 		// Test GetAllDAOCoinLimitOrdersForThisTransactor()
@@ -288,14 +283,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(test.Metadata.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[0].Eq(test.CurrentOrder()))
 
 		// Test UTXO view query.
 		// Confirm 1 existing limit order, and it's from m0.
 		orderEntries, err = utxoView.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(test.Metadata.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[0].Eq(test.CurrentOrder()))
 	}
 
 	// Construct metadata for a m1 limit order:
@@ -351,10 +346,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[0].Eq(test.ToOrderEntry("m0", metadataM0)))
 
 		// Confirm 1 matching limit orders exists.
-		orderEntryM1 := metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)
+		orderEntryM1 := test.ToOrderEntry("m1", metadataM1)
 		orderEntries, err = dbAdapter.GetMatchingDAOCoinLimitOrders(orderEntryM1, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
@@ -437,12 +432,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0 tries to cancel m1's order. Fails.
 		// m1 cancels their open order. Succeeds.
 
-		// Confirm 1 existing limit order from m1.
-		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
-		require.NoError(err)
-		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].TransactorPKID.Eq(m1PKID.PKID))
-
 		// m1 tries to cancel non-existent order.
 		test.Transactor = "m1"
 		test.OrderBookSizeBefore = 1
@@ -459,7 +448,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		test.Transactor = "m0"
 		test.OrderBookSizeBefore = 1
 		test.OrderBookSizeAfter = 1
-		test.Metadata = &DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
+		test.Metadata = &DAOCoinLimitOrderMetadata{CancelOrderID: test.OrderBook()[0].OrderID}
 		test.Error = RuleErrorDAOCoinLimitOrderToCancelNotYours.Error()
 		require.Equal(test.ToString(), "m0, cancellation")
 		test.Run()
@@ -548,7 +537,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[0].Eq(test.ToOrderEntry("m0", metadataM0)))
 
 		// m1 submits order buying 100 DAO coins @ 0.1 $DESO / DAO coin.
 		metadataM1.BuyingDAOCoinCreatorPublicKey = metadataM0.BuyingDAOCoinCreatorPublicKey
@@ -581,7 +570,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[0].Eq(test.ToOrderEntry("m1", metadataM1)))
 
 		// m0 submits order for a worse exchange rate than m1 is willing to accept.
 		// Doesn't match m1's order. Stored instead.
@@ -595,8 +584,8 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
-		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
-		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[0].Eq(test.ToOrderEntry("m0", metadataM0)))
+		require.True(orderEntries[1].Eq(test.ToOrderEntry("m1", metadataM1)))
 
 		// m1 submits order matching their own order. Fails.
 		metadataM1.BuyingDAOCoinCreatorPublicKey = metadataM0.BuyingDAOCoinCreatorPublicKey
@@ -1127,7 +1116,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 		metadataM1.QuantityToFillInBaseUnits = uint256.NewInt().SetUint64(60)
-		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[1].Eq(test.ToOrderEntry("m1", metadataM1)))
 
 		// m0 has 1 remaining open orders.
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
@@ -1166,7 +1155,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(m1PKID.PKID, m0PKID.PKID)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
-		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[0].Eq(test.ToOrderEntry("m0", metadataM0)))
 
 		// m0 is charged a txn fee in $DESO.
 		m0DESOBalanceNanosAfter := _getBalance(t, chain, mempool, m0Pub)
@@ -1459,7 +1448,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// Confirm would match to m0.
 		orderEntries, err = dbAdapter.GetMatchingDAOCoinLimitOrders(
-			metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID), nil)
+			test.ToOrderEntry("m1", metadataM1), nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 
@@ -2239,7 +2228,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 		m1OrderEntry := orderEntries[1]
-		require.True(m1OrderEntry.Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+		require.True(m1OrderEntry.Eq(test.ToOrderEntry("m1", metadataM1)))
 
 		// Track coin balances to compare later.
 		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
@@ -2324,7 +2313,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 		m1OrderEntry := orderEntries[1]
-		require.True(m1OrderEntry.Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+		require.True(m1OrderEntry.Eq(test.ToOrderEntry("m1", metadataM1)))
 
 		// Track coin balances to compare later.
 		originalM0DESOBalance := _getBalance(t, chain, mempool, m0Pub)
@@ -2433,7 +2422,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		orderEntries, err = utxoView._getNextLimitOrdersToFill(
-			metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID), nil)
+			test.ToOrderEntry("m1", metadataM1), nil)
 		require.NoError(err)
 		require.Empty(orderEntries)
 
@@ -2447,7 +2436,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Order is cancelled.
 		metadataM1.FillType = DAOCoinLimitOrderFillTypeImmediateOrCancel
 		orderEntries, err = utxoView._getNextLimitOrdersToFill(
-			metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID), nil)
+			test.ToOrderEntry("m1", metadataM1), nil)
 		require.NoError(err)
 		require.Empty(orderEntries)
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -2534,7 +2523,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
-		require.True(orderEntries[1].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[1].Eq(test.ToOrderEntry("m0", metadataM0)))
 
 		// m4 submits a BID order buying m1 DAO coins for $DESO.
 		exchangeRate, err = CalculateScaledExchangeRate(1.0)
@@ -2601,7 +2590,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
-		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[1].Eq(test.ToOrderEntry("m1", metadataM1)))
 
 		// Transfer 5 $DESO to m4 (plus enough to cover fees).
 		// We assume m4's txn fee will be the same as the prev txn.
@@ -2629,7 +2618,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		// Confirm m4's order is a limit order.
-		require.False(metadataM4.ToEntry(m4PKID.PKID, savedHeight, toPKID).IsMarketOrder())
+		require.False(test.ToOrderEntry("m4", metadataM4).IsMarketOrder())
 
 		// m4 submits an order buying m1 coins and selling more $DESO than they have.
 		metadataM4.QuantityToFillInBaseUnits, err = SafeUint256().Add(
@@ -2684,7 +2673,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
-		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[1].Eq(test.ToOrderEntry("m1", metadataM1)))
 
 		// Transfer 5 $DESO to m4 (plus enough to cover fees).
 		// We assume m4's txn fee will be the same as the prev txn.
@@ -2709,7 +2698,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		// Confirm m4's order is a market order.
-		require.True(metadataM4.ToEntry(m4PKID.PKID, savedHeight, toPKID).IsMarketOrder())
+		require.True(test.ToOrderEntry("m4", metadataM4).IsMarketOrder())
 
 		// m4 submits an order buying m1 coins and selling more $DESO than they have.
 		metadataM4.QuantityToFillInBaseUnits, err = SafeUint256().Add(
@@ -2765,7 +2754,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
-		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[1].Eq(test.ToOrderEntry("m1", metadataM1)))
 
 		// m2 submits an ASK limit order selling m1 DAO coins for $DESO.
 		exchangeRate, err = CalculateScaledExchangeRate(1.0)
@@ -2780,7 +2769,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		// Confirm m2's order is a limit order.
-		require.False(metadataM2.ToEntry(m2PKID.PKID, savedHeight, toPKID).IsMarketOrder())
+		require.False(test.ToOrderEntry("m2", metadataM2).IsMarketOrder())
 
 		// m2 submits an order selling more DAO coins than they have.
 		metadataM2.QuantityToFillInBaseUnits, err = SafeUint256().Add(
@@ -2836,7 +2825,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
-		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[1].Eq(test.ToOrderEntry("m1", metadataM1)))
 
 		// Transfer 1 $DESO to m4 to cover fees in the txn below.
 		testMeta.expectedSenderBalances = append(
@@ -2858,7 +2847,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		// Confirm m4's order is a market order.
-		require.True(metadataM4.ToEntry(m2PKID.PKID, savedHeight, toPKID).IsMarketOrder())
+		require.True(test.ToOrderEntry("m4", metadataM4).IsMarketOrder())
 
 		// m4 submits an order selling more DAO coins than they have.
 		metadataM4.QuantityToFillInBaseUnits, err = SafeUint256().Add(
@@ -3657,25 +3646,25 @@ func (test *DAOCoinLimitOrderTestMeta) ToString() string {
 		return fmt.Sprintf("%s, cancellation", test.Transactor)
 	}
 
-	buyingCoin := "$DESO"
+	buyCoin := "$DESO"
 	if !test.Metadata.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
 		profile := test.UtxoView.GetProfileEntryForPublicKey(
 			test.Metadata.BuyingDAOCoinCreatorPublicKey.ToBytes())
 		if profile == nil {
-			buyingCoin = "No profile"
+			buyCoin = "No profile"
 		} else {
-			buyingCoin = string(profile.Username)
+			buyCoin = string(profile.Username)
 		}
 	}
 
-	sellingCoin := "$DESO"
+	sellCoin := "$DESO"
 	if !test.Metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
 		profile := test.UtxoView.GetProfileEntryForPublicKey(
 			test.Metadata.SellingDAOCoinCreatorPublicKey.ToBytes())
 		if profile == nil {
-			sellingCoin = "No profile"
+			sellCoin = "No profile"
 		} else {
-			sellingCoin = string(profile.Username)
+			sellCoin = string(profile.Username)
 		}
 	}
 
@@ -3703,7 +3692,7 @@ func (test *DAOCoinLimitOrderTestMeta) ToString() string {
 
 	return fmt.Sprintf(
 		"%s, buy: %s, sell: %s, price: %s, quantity: %d, %s, %s",
-		test.Transactor, buyingCoin, sellingCoin, price.String(), quantity, operationType, fillType)
+		test.Transactor, buyCoin, sellCoin, price.String(), quantity, operationType, fillType)
 }
 
 func (test *DAOCoinLimitOrderTestMeta) Run() *DAOCoinLimitOrderEntry {
@@ -3837,22 +3826,7 @@ func (test *DAOCoinLimitOrderTestMeta) Run() *DAOCoinLimitOrderEntry {
 
 	// Return the newly created order if stored.
 	for _, orderEntry := range updatedOrderEntries {
-		isMatch, err := orderEntry.Eq(&DAOCoinLimitOrderEntry{
-			// We don't know which OrderId BlockHash will be generated
-			// from this metadata, so we generate an arbitrary non-zero
-			// one here for testing purposes as OrderID can't be nil.
-			// Note: the OrderID is skipped when we compare if two
-			// order entries are equal in these tests for this reason.
-			OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()),
-			TransactorPKID:            transactor.PKID,
-			BuyingDAOCoinCreatorPKID:  test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(test.Metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()),
-			SellingDAOCoinCreatorPKID: test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(test.Metadata.SellingDAOCoinCreatorPublicKey.ToBytes()),
-			ScaledExchangeRateCoinsToSellPerCoinToBuy: test.Metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-			QuantityToFillInBaseUnits:                 test.Metadata.QuantityToFillInBaseUnits,
-			OperationType:                             test.Metadata.OperationType,
-			FillType:                                  test.Metadata.FillType,
-			BlockHeight:                               test.TestMeta.savedHeight,
-		})
+		isMatch, err := orderEntry.Eq(test.CurrentOrder())
 		require.NoError(err)
 
 		if isMatch {
@@ -3869,6 +3843,29 @@ func (test *DAOCoinLimitOrderTestMeta) OrderBook() []*DAOCoinLimitOrderEntry {
 	orderEntries, err := test.UtxoView.GetDbAdapter().GetAllDAOCoinLimitOrders()
 	require.NoError(err)
 	return orderEntries
+}
+
+func (test *DAOCoinLimitOrderTestMeta) CurrentOrder() *DAOCoinLimitOrderEntry {
+	return test.ToOrderEntry(test.Transactor, *test.Metadata)
+}
+
+func (test *DAOCoinLimitOrderTestMeta) ToOrderEntry(transactorName string, metadata DAOCoinLimitOrderMetadata) *DAOCoinLimitOrderEntry {
+	return &DAOCoinLimitOrderEntry{
+		// We don't know which OrderId BlockHash will be generated
+		// from this metadata, so we generate an arbitrary non-zero
+		// one here for testing purposes as OrderID can't be nil.
+		// Note: the OrderID is skipped when we compare if two
+		// order entries are equal in these tests for this reason.
+		OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()),
+		TransactorPKID:            test.GetUser(transactorName).PKID,
+		BuyingDAOCoinCreatorPKID:  test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()),
+		SellingDAOCoinCreatorPKID: test.UtxoView.GetDbAdapter().GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()),
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+		QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits,
+		OperationType:                             metadata.OperationType,
+		FillType:                                  metadata.FillType,
+		BlockHeight:                               test.TestMeta.savedHeight,
+	}
 }
 
 func (test *DAOCoinLimitOrderTestMeta) GetUser(user string) DAOCoinLimitOrderTestUser {
@@ -4060,26 +4057,4 @@ func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, er
 	}
 
 	return bytes.Equal(orderBytes, otherBytes), nil
-}
-
-func (txnData *DAOCoinLimitOrderMetadata) ToEntry(
-	transactorPKID *PKID, blockHeight uint32, toPKID func(*PublicKey) *PKID) *DAOCoinLimitOrderEntry {
-
-	// Convert *DAOCoinLimitOrderMetadata to *DAOCoinLimitOrderEntry.
-	return &DAOCoinLimitOrderEntry{
-		// We don't know which OrderId BlockHash will be generated
-		// from this metadata, so we generate an arbitrary non-zero
-		// one here for testing purposes as OrderID can't be nil.
-		// Note: the OrderID is skipped when we compare if two
-		// order entries are equal in these tests for this reason.
-		OrderID:                   NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()),
-		TransactorPKID:            transactorPKID,
-		BuyingDAOCoinCreatorPKID:  toPKID(txnData.BuyingDAOCoinCreatorPublicKey),
-		SellingDAOCoinCreatorPKID: toPKID(txnData.SellingDAOCoinCreatorPublicKey),
-		ScaledExchangeRateCoinsToSellPerCoinToBuy: txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy,
-		QuantityToFillInBaseUnits:                 txnData.QuantityToFillInBaseUnits,
-		OperationType:                             txnData.OperationType,
-		FillType:                                  txnData.FillType,
-		BlockHeight:                               blockHeight,
-	}
 }
