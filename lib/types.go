@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"io"
 	"reflect"
@@ -264,6 +265,30 @@ func ReadOptionalBlockHash(rr *bytes.Reader) (*BlockHash, error) {
 	}
 	if byteCount > uint64(0) {
 		return ReadBlockHash(rr)
+	}
+	return nil, nil
+}
+
+func EncodeOptionalUint256(val *uint256.Int) []byte {
+	if val == nil {
+		return UintToBuf(uint64(0))
+	}
+	encodedVal := EncodeUint256(val)
+	return append(UintToBuf(uint64(len(encodedVal))), encodedVal...)
+}
+
+func ReadOptionalUint256(rr *bytes.Reader) (*uint256.Int, error) {
+	byteCount, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, err
+	}
+	if byteCount > uint64(0) {
+		valBytes := make([]byte, 32, 32)
+		_, err := io.ReadFull(rr, valBytes)
+		if err != nil {
+			return uint256.NewInt(), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
+		}
+		return uint256.NewInt().SetBytes(valBytes), nil
 	}
 	return nil, nil
 }
