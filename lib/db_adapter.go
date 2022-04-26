@@ -23,18 +23,10 @@ func (bav *UtxoView) GetDbAdapter() *DbAdapter {
 func (adapter *DbAdapter) GetBalanceEntry(holder *PKID, creator *PKID, isDAOCoin bool) *BalanceEntry {
 	if adapter.postgresDb != nil {
 		if isDAOCoin {
-			balance := adapter.postgresDb.GetDAOCoinBalance(holder, creator)
-			if balance == nil {
-				return nil
-			}
-			return balance.NewBalanceEntry()
+			return adapter.postgresDb.GetDAOCoinBalance(holder, creator).NewBalanceEntry()
 		}
 
-		balance := adapter.postgresDb.GetCreatorCoinBalance(holder, creator)
-		if balance == nil {
-			return nil
-		}
-		return balance.NewBalanceEntry()
+		return adapter.postgresDb.GetCreatorCoinBalance(holder, creator).NewBalanceEntry()
 	}
 
 	return DbGetBalanceEntry(adapter.badgerDb, holder, creator, isDAOCoin)
