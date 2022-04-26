@@ -8,9 +8,9 @@ import (
 
 func TestMigrationHeights(t *testing.T) {
 	fmt.Println("Checking mainnet migration heights")
-	_verifyEncoderMigrationHeights(t, &MainnetEncoderMigrationHeights)
+	_verifyEncoderMigrationHeights(t, GetEncoderMigrationHeights(&MainnetForkHeights))
 	fmt.Println("Checking testnet migration heights")
-	_verifyEncoderMigrationHeights(t, &TestnetEncoderMigrationHeights)
+	_verifyEncoderMigrationHeights(t, GetEncoderMigrationHeights(&TestnetForkHeights))
 }
 
 func _verifyEncoderMigrationHeights(t *testing.T, migrationHeights *EncoderMigrationHeights) {

@@ -150,6 +150,9 @@ type ForkHeights struct {
 	// The block height at which various forks occurred including an
 	// explanation as to why they're necessary.
 
+	// A dummy height set to zero by default.
+	DefaultHeight uint64
+
 	// The most deflationary event in DeSo history has yet to come...
 	DeflationBombBlockHeight uint64
 
@@ -233,40 +236,33 @@ type ForkHeights struct {
 
 	// DAOCoinLimitOrderBlockHeight defines the height at which DAO Coin Limit Order transactions will be accepted.
 	DAOCoinLimitOrderBlockHeight uint32
+
+	// Be sure to update EncoderMigrationHeights as well if you're modifying schema.
 }
 
 // EncoderMigrationHeights is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
 // you should:
-//	1. define a new blockHeight in the EncoderMigrationHeights struct
-//	2. add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods
-//	3. add proper condition to GetVersionByte to return version associated with the migration height.
-type MigrationName string
-type MigrationHeight struct {
-	Height  uint64
-	Version byte
-	Name    MigrationName
-}
-type EncoderMigrationHeights struct {
-	DefaultMigration MigrationHeight
-}
-
-const (
-	DefaultMigration MigrationName = "DefaultMigration"
-)
-
-var TestnetEncoderMigrationHeights = EncoderMigrationHeights{
-	DefaultMigration: MigrationHeight{0, 0, DefaultMigration},
-}
-
-var MainnetEncoderMigrationHeights = EncoderMigrationHeights{
-	DefaultMigration: MigrationHeight{0, 0, DefaultMigration},
-}
-
+//  0. Typically, encoder migrations should align with hard fork heights. So the first
+//     step is to define a new value in ForkHeights, and set the value accordingly for
+//     mainnet, testnet, and regtest param structs.
+//	1. Define a new block height in the EncoderMigrationHeights struct. This should map
+//     1:1 with the fork height defined prior.
+//	2. Add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods that
+//     trigger at the defined height.
+//	3. Add a condition to GetVersionByte to return version associated with the migration height.
+//
 // So for example, let's say you want to add a migration for UtxoEntry at height 1200.
+//
+// 0. Add a field to ForkHeight that marks the point at which this entry will come
+//    into play:
+//     - Add the following to the ForkHeight struct:
+//         UtxoEntryTestHeight uint64
+//     - Add the following to the individual param structs (MainnetForkHeights, TestnetForkHeights,
+//       and RegtestForkHeights):
+//         UtxoEntryTestHeight: 1200 (may differ for mainnet vs testnet & regtest)
+//
 // 1. Add a field to the EncoderMigrationHeights that looks like this:
 //		UtxoEntryTestHeight MigrationHeight
-//	Then, we would set them in TestnetEncoderMigrationHeights, MainnetEncoderMigrationHeights with desired heights and versions.
-// 	The heights are supposed to form a non-decreasing sequence, and versions are supposed to form a +1 sequence.
 //
 // 2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
 //	end of RawEncodeWithoutMetadata:
@@ -288,6 +284,50 @@ var MainnetEncoderMigrationHeights = EncoderMigrationHeights{
 //		}
 //
 // That's it!
+type MigrationName string
+type MigrationHeight struct {
+	Height  uint64
+	Version byte
+	Name    MigrationName
+}
+const (
+	DefaultMigration MigrationName = "DefaultMigration"
+)
+
+type EncoderMigrationHeights struct {
+	DefaultMigration MigrationHeight
+}
+
+func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
+	return &EncoderMigrationHeights{
+		DefaultMigration: MigrationHeight{
+			Version: 0,
+			Height:  forkHeights.DefaultHeight,
+			Name: DefaultMigration,
+		},
+	}
+}
+func GetEncoderMigrationHeightsList(forkHeights *ForkHeights) (
+	_migrationHeightsList []*MigrationHeight) {
+
+	migrationHeights := GetEncoderMigrationHeights(forkHeights)
+
+	// Read `version:"x"` tags from the EncoderMigrationHeights struct.
+	var migrationHeightsList []*MigrationHeight
+	elements := reflect.ValueOf(migrationHeights).Elem()
+	structFields := elements.Type()
+	for ii := 0; ii < structFields.NumField(); ii++ {
+		elementField := elements.Field(ii)
+		mig := elementField.Interface().(MigrationHeight)
+		migCopy := mig
+		migrationHeightsList = append(migrationHeightsList, &migCopy)
+	}
+
+	sort.Slice(migrationHeightsList, func(i int, j int) bool {
+		return migrationHeightsList[i].Height < migrationHeightsList[j].Height
+	})
+	return migrationHeightsList
+}
 
 // DeSoParams defines the full list of possible parameters for the
 // DeSo network.
@@ -477,8 +517,30 @@ type DeSoParams struct {
 
 	ForkHeights ForkHeights
 
-	EncoderMigrationHeights     EncoderMigrationHeights
+	EncoderMigrationHeights     *EncoderMigrationHeights
 	EncoderMigrationHeightsList []*MigrationHeight
+}
+
+var RegtestForkHeights = ForkHeights{
+	DefaultHeight:                0,
+	DeflationBombBlockHeight:     0,
+	SalomonFixBlockHeight:        uint32(0),
+	DeSoFounderRewardBlockHeight: uint32(0),
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(0),
+	ParamUpdaterProfileUpdateFixBlockHeight:              uint32(0),
+	UpdateProfileFixBlockHeight:                          uint32(0),
+	BrokenNFTBidsFixBlockHeight:                          uint32(0),
+	DeSoDiamondsBlockHeight:                              uint32(0),
+	NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(0),
+	DeSoV3MessagesBlockHeight:                            uint32(0),
+	BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
+	DAOCoinBlockHeight:                                   uint32(0),
+	ExtraDataOnEntriesBlockHeight:                        uint32(0),
+	DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
+	DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
+	DAOCoinLimitOrderBlockHeight:                         uint32(0),
+
+	// Be sure to update EncoderMigrationHeights as well if you're modifying schema.
 }
 
 // EnableRegtest allows for local development and testing with incredibly fast blocks with block rewards that
@@ -505,27 +567,9 @@ func (params *DeSoParams) EnableRegtest() {
 
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.
-	params.ForkHeights = ForkHeights{
-		DeflationBombBlockHeight:                             0,
-		SalomonFixBlockHeight:                                uint32(0),
-		DeSoFounderRewardBlockHeight:                         uint32(0),
-		BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(0),
-		ParamUpdaterProfileUpdateFixBlockHeight:              uint32(0),
-		UpdateProfileFixBlockHeight:                          uint32(0),
-		BrokenNFTBidsFixBlockHeight:                          uint32(0),
-		DeSoDiamondsBlockHeight:                              uint32(0),
-		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(0),
-		DeSoV3MessagesBlockHeight:                            uint32(0),
-		BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
-		DAOCoinBlockHeight:                                   uint32(0),
-		ExtraDataOnEntriesBlockHeight:                        uint32(0),
-		DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
-		DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
-		DAOCoinLimitOrderBlockHeight:                         uint32(0),
-	}
-
-	params.EncoderMigrationHeights = TestnetEncoderMigrationHeights
-	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.EncoderMigrationHeights)
+	params.ForkHeights = RegtestForkHeights
+	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 }
 
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
@@ -579,6 +623,36 @@ var (
 // having to pass DeSoParams everywhere. It can be set when node boots. Testnet params are used as default.
 // FIXME: This shouldn't be used a lot.
 var GlobalDeSoParams = DeSoTestnetParams
+
+var MainnetForkHeights = ForkHeights{
+	DefaultHeight:                0,
+	DeflationBombBlockHeight:     33783,
+	SalomonFixBlockHeight:        uint32(15270),
+	DeSoFounderRewardBlockHeight: uint32(21869),
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(39713),
+	ParamUpdaterProfileUpdateFixBlockHeight:              uint32(39713),
+	UpdateProfileFixBlockHeight:                          uint32(46165),
+	BrokenNFTBidsFixBlockHeight:                          uint32(46917),
+	DeSoDiamondsBlockHeight:                              uint32(52112),
+	NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
+
+	// Mon Jan 24 @ 12pm PST
+	DeSoV3MessagesBlockHeight:     uint32(98474),
+	BuyNowAndNFTSplitsBlockHeight: uint32(98474),
+	DAOCoinBlockHeight:            uint32(98474),
+
+	// FIXME: set to real block height
+	ExtraDataOnEntriesBlockHeight: math.MaxUint32,
+
+	// FIXME: Set these values when we're ready for the next fork.
+	DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
+	DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
+
+	// FIXME: Set to real block height when we're ready.
+	DAOCoinLimitOrderBlockHeight: math.MaxUint32,
+
+	// Be sure to update EncoderMigrationHeights as well if you're modifying schema.
+}
 
 // DeSoMainnetParams defines the DeSo parameters for the mainnet.
 var DeSoMainnetParams = DeSoParams{
@@ -756,35 +830,9 @@ var DeSoMainnetParams = DeSoParams{
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
-	ForkHeights: ForkHeights{
-
-		DeflationBombBlockHeight:                             33783,
-		SalomonFixBlockHeight:                                uint32(15270),
-		DeSoFounderRewardBlockHeight:                         uint32(21869),
-		BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(39713),
-		ParamUpdaterProfileUpdateFixBlockHeight:              uint32(39713),
-		UpdateProfileFixBlockHeight:                          uint32(46165),
-		BrokenNFTBidsFixBlockHeight:                          uint32(46917),
-		DeSoDiamondsBlockHeight:                              uint32(52112),
-		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
-
-		// Mon Jan 24 @ 12pm PST
-		DeSoV3MessagesBlockHeight:     uint32(98474),
-		BuyNowAndNFTSplitsBlockHeight: uint32(98474),
-		DAOCoinBlockHeight:            uint32(98474),
-
-		// FIXME: set to real block height
-		ExtraDataOnEntriesBlockHeight: math.MaxUint32,
-
-		// FIXME: Set these values when we're ready for the next fork.
-		DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
-		DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
-
-		// FIXME: Set to real block height when we're ready.
-		DAOCoinLimitOrderBlockHeight: math.MaxUint32,
-	},
-	EncoderMigrationHeights:     MainnetEncoderMigrationHeights,
-	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetEncoderMigrationHeights),
+	ForkHeights:                 MainnetForkHeights,
+	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
+	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -810,6 +858,41 @@ func mustDecodeHexBlockHash(ss string) *BlockHash {
 	ret := BlockHash{}
 	copy(ret[:], bb)
 	return &ret
+}
+
+var TestnetForkHeights = ForkHeights{
+	// Get testnet height from here:
+	// - https://explorer.deso.org/?query-node=https:%2F%2Ftest.deso.org
+
+	// Initially, testnet fork heights were the same as mainnet heights
+	// This changed when we spun up a real testnet that runs independently
+	DefaultHeight:                0,
+	DeflationBombBlockHeight:     33783,
+	SalomonFixBlockHeight:        uint32(15270),
+	DeSoFounderRewardBlockHeight: uint32(21869),
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(39713),
+	ParamUpdaterProfileUpdateFixBlockHeight:              uint32(39713),
+	UpdateProfileFixBlockHeight:                          uint32(46165),
+	BrokenNFTBidsFixBlockHeight:                          uint32(46917),
+	DeSoDiamondsBlockHeight:                              uint32(52112),
+	NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
+
+	// Flags after this point can differ from mainnet
+
+	// Thu Jan 20 @ 12pm PST
+	DeSoV3MessagesBlockHeight:     uint32(97322),
+	BuyNowAndNFTSplitsBlockHeight: uint32(97322),
+	DAOCoinBlockHeight:            uint32(97322),
+
+	// Wed Apr 20 @ 9am ET
+	ExtraDataOnEntriesBlockHeight:          uint32(304087),
+	DerivedKeySetSpendingLimitsBlockHeight: uint32(304087),
+	// Add 18h for the spending limits to be checked, since this is how we're
+	// going to do it on mainnet. Testnet produces 60 blocks per hour.
+	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(304087 + 18*60),
+	DAOCoinLimitOrderBlockHeight:             uint32(304087),
+
+	// Be sure to update EncoderMigrationHeights as well if you're modifying schema.
 }
 
 // DeSoTestnetParams defines the DeSo parameters for the testnet.
@@ -950,39 +1033,9 @@ var DeSoTestnetParams = DeSoParams{
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
-	ForkHeights: ForkHeights{
-		// Get testnet height from here:
-		// - https://explorer.deso.org/?query-node=https:%2F%2Ftest.deso.org
-
-		// Initially, testnet fork heights were the same as mainnet heights
-		// This changed when we spun up a real testnet that runs independently
-		DeflationBombBlockHeight:                             33783,
-		SalomonFixBlockHeight:                                uint32(15270),
-		DeSoFounderRewardBlockHeight:                         uint32(21869),
-		BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(39713),
-		ParamUpdaterProfileUpdateFixBlockHeight:              uint32(39713),
-		UpdateProfileFixBlockHeight:                          uint32(46165),
-		BrokenNFTBidsFixBlockHeight:                          uint32(46917),
-		DeSoDiamondsBlockHeight:                              uint32(52112),
-		NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
-
-		// Flags after this point can differ from mainnet
-
-		// Thu Jan 20 @ 12pm PST
-		DeSoV3MessagesBlockHeight:     uint32(97322),
-		BuyNowAndNFTSplitsBlockHeight: uint32(97322),
-		DAOCoinBlockHeight:            uint32(97322),
-
-		// Wed Apr 20 @ 9am ET
-		ExtraDataOnEntriesBlockHeight:          uint32(304087),
-		DerivedKeySetSpendingLimitsBlockHeight: uint32(304087),
-		// Add 18h for the spending limits to be checked, since this is how we're
-		// going to do it on mainnet. Testnet produces 60 blocks per hour.
-		DerivedKeyTrackSpendingLimitsBlockHeight: uint32(304087 + 18*60),
-		DAOCoinLimitOrderBlockHeight:             uint32(304087),
-	},
-	EncoderMigrationHeights:     TestnetEncoderMigrationHeights,
-	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetEncoderMigrationHeights),
+	ForkHeights:                 TestnetForkHeights,
+	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
+	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
 }
 
 // GetDataDir gets the user data directory where we store files
@@ -996,26 +1049,6 @@ func GetDataDir(params *DeSoParams) string {
 		log.Fatalf("GetDataDir: Could not create data directories (%s): %v", dataDir, err)
 	}
 	return dataDir
-}
-
-func GetEncoderMigrationHeightsList(migrationHeights *EncoderMigrationHeights) (
-	_migrationHeightsList []*MigrationHeight) {
-
-	// Read `version:"x"` tags from the EncoderMigrationHeights struct.
-	var migrationHeightsList []*MigrationHeight
-	elements := reflect.ValueOf(migrationHeights).Elem()
-	structFields := elements.Type()
-	for ii := 0; ii < structFields.NumField(); ii++ {
-		elementField := elements.Field(ii)
-		mig := elementField.Interface().(MigrationHeight)
-		migCopy := mig
-		migrationHeightsList = append(migrationHeightsList, &migCopy)
-	}
-
-	sort.Slice(migrationHeightsList, func(i int, j int) bool {
-		return migrationHeightsList[i].Height < migrationHeightsList[j].Height
-	})
-	return migrationHeightsList
 }
 
 func VersionByteToMigrationHeight(version byte, params *DeSoParams) (_blockHeight uint64) {
