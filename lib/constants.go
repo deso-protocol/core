@@ -260,17 +260,19 @@ type ForkHeights struct {
 //     - Add the following to the individual param structs (MainnetForkHeights, TestnetForkHeights,
 //       and RegtestForkHeights):
 //         UtxoEntryTestHeight: 1200 (may differ for mainnet vs testnet & regtest)
+//     - Add the migration name below DefaultMigration
+//     		UtxoEntryTestHeight MigrationName = "UtxoEntryTestHeight"
 //
 // 1. Add a field to the EncoderMigrationHeights that looks like this:
 //		UtxoEntryTestHeight MigrationHeight
 //
 // 2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
-//	end of RawEncodeWithoutMetadata:
-//		if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+//	end of RawEncodeWithoutMetadata (note the usage of the MigrationName UtxoEntryTestHeight):
+//		if CheckMigrationCondition(blockHeight, UtxoEntryTestHeight) {
 //			data = append(data, byte(127))
 //		}
 //	And this at the end of RawDecodeWithoutMetadata:
-//		if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
+//		if CheckMigrationCondition(blockHeight, UtxoEntryTestHeight) {
 //			_, err = rr.ReadByte()
 //			if err != nil {
 //				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte")
@@ -278,10 +280,10 @@ type ForkHeights struct {
 //		}
 //	MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
 //
-// 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height.
-//		if blockHeight >= GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Height {
-//			return GlobalDeSoParams.EncoderMigrationHeights.UtxoEntryTestHeight.Version
-//		}
+// 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. (Note
+//		the usage of the MigrationName UtxoEntryTestHeight)
+//
+//		return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
 //
 // That's it!
 type MigrationName string
@@ -290,6 +292,7 @@ type MigrationHeight struct {
 	Version byte
 	Name    MigrationName
 }
+
 const (
 	DefaultMigration MigrationName = "DefaultMigration"
 )
@@ -303,7 +306,7 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 		DefaultMigration: MigrationHeight{
 			Version: 0,
 			Height:  forkHeights.DefaultHeight,
-			Name: DefaultMigration,
+			Name:    DefaultMigration,
 		},
 	}
 }
