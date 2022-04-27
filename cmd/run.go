@@ -60,13 +60,13 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Uint32("max-sync-block-height", 0,
 		"Max sync block height")
 	// Hyper Sync
-	runCmd.PersistentFlags().Bool("hypersync", true, "Use hyper sync protocol for faster block syncing")
+	cmd.PersistentFlags().Bool("hypersync", true, "Use hyper sync protocol for faster block syncing")
 	// Snapshot
-	runCmd.PersistentFlags().Uint64("snapshot-block-height-period", 1000, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
+	cmd.PersistentFlags().Uint64("snapshot-block-height-period", 1000, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
 	// Archival mode
-	runCmd.PersistentFlags().Bool("archival-mode", false, "Download all historical blocks after finishing hypersync.")
+	cmd.PersistentFlags().Bool("archival-mode", false, "Download all historical blocks after finishing hypersync.")
 	// Disable encoder migrations
-	runCmd.PersistentFlags().Bool("disable-encoder-migrations", false, "Disable badgerDB encoder migrations")
+	cmd.PersistentFlags().Bool("disable-encoder-migrations", false, "Disable badgerDB encoder migrations")
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},
