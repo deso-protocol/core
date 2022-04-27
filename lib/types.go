@@ -273,7 +273,9 @@ func EncodeOptionalUint256(val *uint256.Int) []byte {
 	if val == nil {
 		return UintToBuf(uint64(0))
 	}
-	encodedVal := EncodeUint256(val)
+	valBytes := val.Bytes()
+	data := make([]byte, 32, 32)
+	encodedVal := append(data, valBytes...)[len(valBytes):]
 	return append(UintToBuf(uint64(len(encodedVal))), encodedVal...)
 }
 
