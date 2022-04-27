@@ -660,6 +660,10 @@ type PGCreatorCoinBalance struct {
 }
 
 func (balance *PGCreatorCoinBalance) NewBalanceEntry() *BalanceEntry {
+	if balance == nil {
+		return nil
+	}
+
 	return &BalanceEntry{
 		HODLerPKID:  balance.HolderPKID,
 		CreatorPKID: balance.CreatorPKID,
@@ -679,6 +683,10 @@ type PGDAOCoinBalance struct {
 }
 
 func (balance *PGDAOCoinBalance) NewBalanceEntry() *BalanceEntry {
+	if balance == nil {
+		return nil
+	}
+
 	return &BalanceEntry{
 		HODLerPKID:   balance.HolderPKID,
 		CreatorPKID:  balance.CreatorPKID,
