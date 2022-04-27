@@ -5,16 +5,17 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/golang/glog"
-	"github.com/holiman/uint256"
-	"github.com/pkg/errors"
 	"io"
 	"math"
 	"math/big"
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/golang/glog"
+	"github.com/holiman/uint256"
+	"github.com/pkg/errors"
 )
 
 type UtxoType uint8

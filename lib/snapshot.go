@@ -2139,7 +2139,8 @@ func (migration *EncoderMigration) StartMigrations() error {
 
 	var outstandingChecksums []*EncoderMigrationChecksum
 
-	// Look for any outstanding encoder migrations. These migrations
+	// Look for any outstanding encoder migrations. These migrations are going to be set to not completed and their checksums
+	// are set to identity (that's because we've set them to new migrations in Initialize).
 	for _, migrationChecksum := range migration.migrationChecksums {
 		if migrationChecksum.Completed && !migrationChecksum.Checksum.checksum.IsIdentity() {
 			continue
