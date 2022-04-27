@@ -67,6 +67,8 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Bool("archival-mode", false, "Download all historical blocks after finishing hypersync.")
 	// Disable encoder migrations
 	cmd.PersistentFlags().Bool("disable-encoder-migrations", false, "Disable badgerDB encoder migrations")
+	// Disable slow sync
+	cmd.PersistentFlags().Bool("disable-slow-sync", false, "When set, a node will refuse to sync from a peer unless it is a hypersync peer")
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},
