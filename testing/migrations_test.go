@@ -44,8 +44,8 @@ func TestEncoderMigrations(t *testing.T) {
 		len(node2.Server.GetBlockchain().Snapshot().OperationChannel.OperationChannel))
 
 	compareNodesByState(t, node1, node2, 0)
-	fmt.Println("node1 checksum:", computeNodeStateChecksum(t, node1, 1100))
-	fmt.Println("node2 checksum:", computeNodeStateChecksum(t, node2, 1100))
+	fmt.Println("node1 checksum:", computeNodeStateChecksum(t, node1, 1500))
+	fmt.Println("node2 checksum:", computeNodeStateChecksum(t, node2, 1500))
 	checksum1, err := node1.Server.GetBlockchain().Snapshot().Checksum.ToBytes()
 	require.NoError(err)
 	checksum2, err := node2.Server.GetBlockchain().Snapshot().Checksum.ToBytes()

@@ -301,7 +301,7 @@ func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool
 		// Encode metadata
 		if !shouldSkipMetadata {
 			data = append(data, _EncodeUint32(uint32(encoder.GetEncoderType()))...)
-			data = append(data, encoder.GetVersionByte(blockHeight))
+			data = append(data, UintToBuf(uint64(encoder.GetVersionByte(blockHeight)))...)
 		}
 		data = append(data, encoder.RawEncodeWithoutMetadata(blockHeight, skipMetadata...)...)
 	} else {
@@ -329,10 +329,11 @@ func DecodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool
 				"entry type (%v)", encoderType, encoder.GetEncoderType())
 		}
 
-		versionByte, err := rr.ReadByte()
+		versionUint64, err := ReadUvarint(rr)
 		if err != nil {
 			return false, errors.Wrapf(err, "DecodeFromBytes: Problem decoding version bytes")
 		}
+		versionByte := byte(versionUint64)
 		// TODO: We should pass DeSoParams to this function instead of using GlobalParams.
 		blockHeight := VersionByteToMigrationHeight(versionByte, &GlobalDeSoParams)
 
