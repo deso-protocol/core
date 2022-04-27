@@ -146,8 +146,8 @@ func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
 	// these values should be updated to reflect the latest testnet values.
 	paramsCopy := DeSoTestnetParams
 
-	chain, err := NewBlockchain([]string{blockSignerPk}, 0, &paramsCopy,
-		timesource, db, nil, nil)
+	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0, &paramsCopy,
+		timesource, db, nil, nil, nil, false)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	db, _ := GetTestBadgerDb()
+	db, dbDir := GetTestBadgerDb()
 	timesource := chainlib.NewMedianTime()
 	var postgresDb *Postgres
 
@@ -222,8 +222,9 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 
 	// Temporarily modify the seed balances to make a specific public
 	// key have some DeSo
-	chain, err := NewBlockchain([]string{blockSignerPk}, 0,
-		&paramsCopy, timesource, db, postgresDb, nil)
+	snap, err, _ := NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &paramsCopy, false)
+	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0,
+		&paramsCopy, timesource, db, postgresDb, nil, snap, false)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -272,7 +273,7 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 		balanceForUserNanos += utxoEntry.AmountNanos
 	}
 
-	utxoView, err := NewUtxoView(chain.db, chain.params, chain.postgres)
+	utxoView, err := NewUtxoView(chain.db, chain.params, chain.postgres, chain.snapshot)
 	require.NoError(t, err)
 	if mempool != nil {
 		utxoView, err = mempool.GetAugmentedUniversalView()
@@ -289,12 +290,12 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 	return balanceForUserNanos
 }
 
-func _getCreatorCoinInfo(t *testing.T, db *badger.DB, params *DeSoParams, pkStr string,
+func _getCreatorCoinInfo(t *testing.T, chain *Blockchain, params *DeSoParams, pkStr string,
 ) (_desoLocked uint64, _coinsInCirculation uint64) {
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
-	utxoView, _ := NewUtxoView(db, params, nil)
+	utxoView, _ := NewUtxoView(chain.db, params, nil, chain.snapshot)
 
 	// Profile fields
 	creatorProfile := utxoView.GetProfileEntryForPublicKey(pkBytes)
@@ -517,7 +518,7 @@ func TestSeedBalancesTest(t *testing.T) {
 
 	chain, params, db := NewTestBlockchain()
 	for _, seedBalance := range params.SeedBalances {
-		require.Equal(int64(482), int64(GetUtxoNumEntries(db)))
+		require.Equal(int64(482), int64(GetUtxoNumEntries(db, chain.snapshot)))
 		foundUtxos, err := chain.GetSpendableUtxosForPublicKey(seedBalance.PublicKey, nil, nil)
 		require.NoError(err)
 		require.Equal(int64(1), int64(len(foundUtxos)))
@@ -544,7 +545,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		// These should connect without issue.
 		fmt.Println("Connecting header A1")
 		// We should start with one UTXO since there's a founder reward.
-		require.Equal(uint64(1), GetUtxoNumEntries(db))
+		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockA1.Header.Hash()
 		require.NoError(err)
 		isMainChain, isOrphan, err := chain.ProcessHeader(blockA1.Header, headerHash)
@@ -560,7 +561,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		// These should connect without issue.
 		fmt.Println("Connecting header A2")
 		// We should start with one UTXO since there's a founder reward.
-		require.Equal(uint64(1), GetUtxoNumEntries(db))
+		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockA2.Header.Hash()
 		require.NoError(err)
 		isMainChain, isOrphan, err := chain.ProcessHeader(blockA2.Header, headerHash)
@@ -576,7 +577,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		// These should connect without issue.
 		fmt.Println("Connecting header B1")
 		// We should start with one UTXO since there's a founder reward.
-		require.Equal(uint64(1), GetUtxoNumEntries(db))
+		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockB1.Header.Hash()
 		require.NoError(err)
 		isMainChain, isOrphan, err := chain.ProcessHeader(blockB1.Header, headerHash)
@@ -593,7 +594,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		// These should connect without issue.
 		fmt.Println("Connecting header B2")
 		// We should start with one UTXO since there's a founder reward.
-		require.Equal(uint64(1), GetUtxoNumEntries(db))
+		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockB2.Header.Hash()
 		require.NoError(err)
 		isMainChain, isOrphan, err := chain.ProcessHeader(blockB2.Header, headerHash)
@@ -610,7 +611,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		// These should connect without issue.
 		fmt.Println("Connecting header B3")
 		// We should start with one UTXO since there's a founder reward.
-		require.Equal(uint64(1), GetUtxoNumEntries(db))
+		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockB3.Header.Hash()
 		require.NoError(err)
 		isMainChain, isOrphan, err := chain.ProcessHeader(blockB3.Header, headerHash)
@@ -638,7 +639,7 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 		// These should connect without issue.
 		fmt.Println("Connecting block a1")
 		// We should start with one UTXO since there's a founder reward.
-		require.Equal(uint64(1), GetUtxoNumEntries(db))
+		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		_shouldConnectBlock(blockA1, t, chain)
 
 		// Make sure the tip lines up.
@@ -650,7 +651,7 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 
 	{
 		fmt.Println("Connecting block a2")
-		require.Equal(uint64(2), GetUtxoNumEntries(db))
+		require.Equal(uint64(2), GetUtxoNumEntries(db, chain.snapshot))
 		_shouldConnectBlock(blockA2, t, chain)
 
 		// Make sure the tip lines up.
@@ -665,7 +666,7 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 		// These should not be on the main chain.
 		// Block b1
 		fmt.Println("Connecting block b1")
-		require.Equal(uint64(3), GetUtxoNumEntries(db))
+		require.Equal(uint64(3), GetUtxoNumEntries(db, chain.snapshot))
 		isMainChain, isOrphan, err := chain.ProcessBlock(blockB1, verifySignatures)
 		require.NoError(err)
 		require.Falsef(isOrphan, "Block b1 should not be an orphan")
@@ -681,7 +682,7 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 	{
 		// Block b2
 		fmt.Println("Connecting block b2")
-		require.Equal(uint64(3), GetUtxoNumEntries(db))
+		require.Equal(uint64(3), GetUtxoNumEntries(db, chain.snapshot))
 		isMainChain, isOrphan, err := chain.ProcessBlock(blockB2, verifySignatures)
 		require.NoError(err)
 		require.Falsef(isOrphan, "Block b2 should not be an orphan")
@@ -697,10 +698,10 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 	{
 		// This should cause the fork to take over, changing the main chain.
 		fmt.Println("Connecting block b3")
-		require.Equal(uint64(3), GetUtxoNumEntries(db))
+		require.Equal(uint64(3), GetUtxoNumEntries(db, chain.snapshot))
 		_shouldConnectBlock(blockB3, t, chain)
 		fmt.Println("b3 is connected")
-		require.Equal(uint64(4), GetUtxoNumEntries(db))
+		require.Equal(uint64(4), GetUtxoNumEntries(db, chain.snapshot))
 
 		// Make sure the tip lines up.
 		currentHash, err := blockB3.Hash()

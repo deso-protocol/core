@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/pkg/errors"
 	"path/filepath"
 	"reflect"
 	"sync"
@@ -36,12 +37,12 @@ type TXIndex struct {
 	stopUpdateChannel chan struct{}
 }
 
-func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string) (*TXIndex, error) {
+func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string) (
+	_txindex *TXIndex, _error error, _shouldRestart bool) {
 	// Initialize database
 	txIndexDir := filepath.Join(GetBadgerDbPath(dataDirectory), "txindex")
-	txIndexOpts := badger.DefaultOptions(txIndexDir)
+	txIndexOpts := PerformanceBadgerOptions(txIndexDir)
 	txIndexOpts.ValueDir = GetBadgerDbPath(txIndexDir)
-	txIndexOpts.MemTableSize = 1024 << 20
 	glog.Infof("TxIndex BadgerDB Dir: %v", txIndexOpts.Dir)
 	glog.Infof("TxIndex BadgerDB ValueDir: %v", txIndexOpts.ValueDir)
 	txIndexDb, err := badger.Open(txIndexOpts)
@@ -50,7 +51,18 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 	}
 
 	// See if we have a best chain hash stored in the txindex db.
-	bestBlockHashBeforeInit := DbGetBestHash(txIndexDb, ChainTypeDeSoBlock)
+	bestBlockHashBeforeInit := DbGetBestHash(txIndexDb, nil, ChainTypeDeSoBlock)
+
+	// Setup snapshot
+	var snapshot *Snapshot
+	shouldRestart := false
+	if coreChain.Snapshot() != nil {
+		snapshot, err, shouldRestart = NewSnapshot(txIndexDb, txIndexDir, coreChain.Snapshot().SnapshotBlockHeightPeriod,
+			true, true, params, false)
+		if err != nil {
+			return nil, errors.Wrapf(err, "NewTXIndex: Problem creating snapshot"), true
+		}
+	}
 
 	// If we haven't initialized the txIndexChain before, set up the
 	// seed mappings.
@@ -58,6 +70,9 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 
 		// Add the seed balances. Originate them from the architect public key and
 		// set their block as the genesis block.
+		if snapshot != nil {
+			snapshot.PrepareAncestralRecordsFlush()
+		}
 		{
 			dummyPk := ArchitectPubKeyBase58Check
 			dummyTxn := &MsgDeSoTxn{
@@ -75,7 +90,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 				})
 				totalOutput += seedBal.AmountNanos
 			}
-			err := DbPutTxindexTransactionMappings(txIndexDb, dummyTxn, params, &TransactionMetadata{
+			err := DbPutTxindexTransactionMappings(txIndexDb, snapshot, 0, dummyTxn, params, &TransactionMetadata{
 				TransactorPublicKeyBase58Check: dummyPk,
 				AffectedPublicKeys:             affectedPublicKeys,
 				BlockHashHex:                   GenesisBlockHashHex,
@@ -88,7 +103,10 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 				},
 			})
 			if err != nil {
-				return nil, fmt.Errorf("NewTXIndex: Error initializing seed balances in txindex: %v", err)
+				if snapshot != nil {
+					snapshot.StartAncestralRecordsFlush(true)
+				}
+				return nil, fmt.Errorf("NewTXIndex: Error initializing seed balances in txindex: %v", err), true
 			}
 		}
 
@@ -96,13 +114,19 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 		for txnIndex, txnHex := range params.SeedTxns {
 			txnBytes, err := hex.DecodeString(txnHex)
 			if err != nil {
-				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn HEX: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
+				if snapshot != nil {
+					snapshot.StartAncestralRecordsFlush(true)
+				}
+				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn HEX: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex), true
 			}
 			txn := &MsgDeSoTxn{}
 			if err := txn.FromBytes(txnBytes); err != nil {
-				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn BYTES: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex)
+				if snapshot != nil {
+					snapshot.StartAncestralRecordsFlush(true)
+				}
+				return nil, fmt.Errorf("NewTXIndex: Error decoding seed txn BYTES: %v, txn index: %v, txn hex: %v", err, txnIndex, txnHex), true
 			}
-			err = DbPutTxindexTransactionMappings(txIndexDb, txn, params, &TransactionMetadata{
+			err = DbPutTxindexTransactionMappings(txIndexDb, snapshot, 0, txn, params, &TransactionMetadata{
 				TransactorPublicKeyBase58Check: PkToString(txn.PublicKey, params),
 				// Note that we don't set AffectedPublicKeys for the SeedTxns
 				BlockHashHex:    GenesisBlockHashHex,
@@ -115,8 +139,12 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 				},
 			})
 			if err != nil {
-				return nil, fmt.Errorf("NewTXIndex: Error initializing seed txn %v in txindex: %v", txn, err)
+				return nil, fmt.Errorf("NewTXIndex: Error initializing seed txn %v in txindex: %v", txn, err), true
 			}
+		}
+		if snapshot != nil {
+			snapshot.StartAncestralRecordsFlush(true)
+			snapshot.PrintChecksum("Checksum after flush")
 		}
 	}
 
@@ -128,12 +156,21 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 		}
 	}()
 
-	// Note that we *DONT* pass server here because it is already tied to the to the main blockchain.
+	// Note that we *DONT* pass server here because it is already tied to the main blockchain.
 	txIndexChain, err := NewBlockchain(
-		[]string{}, 0,
-		params, chainlib.NewMedianTime(), txIndexDb, nil, nil)
+		[]string{}, 0, coreChain.MaxSyncBlockHeight, params, chainlib.NewMedianTime(),
+		txIndexDb, nil, nil, snapshot, false)
 	if err != nil {
-		return nil, fmt.Errorf("NewTXIndex: Error initializing TxIndex: %v", err)
+		return nil, fmt.Errorf("NewTXIndex: Error initializing TxIndex: %v", err), true
+	}
+
+	if shouldRestart {
+		glog.Errorf(CLog(Red, "NewTXIndex: Forcing a rollback to the last snapshot epoch because node was not closed "+
+			"properly last time"))
+		if err := snapshot.ForceResetToLastSnapshot(txIndexChain); err != nil {
+			return nil, errors.Wrapf(err, "NewTXIndex: Problem calling ForceResetToLastSnapshot"), true
+		}
+
 	}
 
 	// At this point, we should have set up a blockchain object for our
@@ -146,7 +183,11 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 		CoreChain:         coreChain,
 		Params:            params,
 		stopUpdateChannel: make(chan struct{}),
-	}, nil
+	}, nil, shouldRestart
+}
+
+func (txi *TXIndex) FinishedSyncing() bool {
+	return txi.TXIndexChain.BlockTip().Height == txi.CoreChain.BlockTip().Height
 }
 
 func (txi *TXIndex) Start() {
@@ -164,6 +205,10 @@ func (txi *TXIndex) Start() {
 				return
 			default:
 				if txi.CoreChain.ChainState() == SyncStateFullyCurrent {
+					if !txi.CoreChain.IsFullyStored() {
+						glog.V(1).Infof("TXIndex: Waiting, blockchain is not fully stored")
+						break
+					}
 					// If the node is fully synced, then try an update.
 					err := txi.Update()
 					if err != nil {
@@ -180,13 +225,14 @@ func (txi *TXIndex) Start() {
 	}()
 }
 
+// Stop TXIndex node. This method doesn't close the txindex db, make sure to call in the parent context:
+// 	txi.TXIndexChain.DB().Close()
+// It's important!!! Do it after the txi.updateWaitGroup.Wait().
 func (txi *TXIndex) Stop() {
 	glog.Info("TXIndex: Stopping updates and closing database")
 
 	txi.stopUpdateChannel <- struct{}{}
 	txi.updateWaitGroup.Wait()
-
-	txi.TXIndexChain.DB().Close()
 }
 
 // GetTxindexUpdateBlockNodes ...
@@ -279,7 +325,7 @@ func (txi *TXIndex) Update() error {
 		// txindex.
 		glog.V(1).Infof("Update: Detaching block (height: %d, hash: %v)",
 			blockToDetach.Height, blockToDetach.Hash)
-		blockMsg, err := GetBlock(blockToDetach.Hash, txi.TXIndexChain.DB())
+		blockMsg, err := GetBlock(blockToDetach.Hash, txi.TXIndexChain.DB(), nil)
 		if err != nil {
 			return fmt.Errorf("Update: Problem fetching detach block "+
 				"with hash %v: %v", blockToDetach.Hash, err)
@@ -287,24 +333,38 @@ func (txi *TXIndex) Update() error {
 		// Iterate through each transaction in the block and delete all its
 		// mappings from the db. Note the txindex has its own db that is
 		// distinct and isolated from our core blockchain db.
-		for _, txn := range blockMsg.Txns {
-			if err := DbDeleteTxindexTransactionMappings(
-				txi.TXIndexChain.DB(), txn, txi.Params); err != nil {
+		if txi.TXIndexChain.snapshot != nil {
+			txi.TXIndexChain.snapshot.PrepareAncestralRecordsFlush()
+		}
+		blockHeight := uint64(txi.CoreChain.blockTip().Height)
+		err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
+			for _, txn := range blockMsg.Txns {
+				if err := DbDeleteTxindexTransactionMappingsWithTxn(dbTxn, txi.TXIndexChain.snapshot,
+					blockHeight, txn, txi.Params); err != nil {
 
-				return fmt.Errorf("Update: Problem deleting "+
-					"transaction mappings for transaction %v: %v", txn.Hash(), err)
+					return fmt.Errorf("Update: Problem deleting "+
+						"transaction mappings for transaction %v: %v", txn.Hash(), err)
+				}
 			}
+			return nil
+		})
+		if txi.TXIndexChain.snapshot != nil {
+			txi.TXIndexChain.snapshot.StartAncestralRecordsFlush(true)
+			txi.TXIndexChain.snapshot.PrintChecksum("Checksum after flush")
+		}
+		if err != nil {
+			return err
 		}
 
 		// Now that all the transactions have been deleted from our txindex,
 		// it's safe to disconnect the block from our txindex chain.
-		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil)
+		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, txi.TXIndexChain.snapshot)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)
 		}
 		utxoOps, err := GetUtxoOperationsForBlock(
-			txi.TXIndexChain.DB(), blockToDetach.Hash)
+			txi.TXIndexChain.DB(), txi.TXIndexChain.snapshot, blockToDetach.Hash)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error getting UtxoOps for block %v: %v", blockToDetach, err)
@@ -316,21 +376,24 @@ func (txi *TXIndex) Update() error {
 				"Update: Error computing tx hashes for block %v: %v",
 				blockToDetach, err)
 		}
-		if err := utxoView.DisconnectBlock(blockMsg, txHashes, utxoOps); err != nil {
+		if err := utxoView.DisconnectBlock(blockMsg, txHashes, utxoOps, blockHeight); err != nil {
 			return fmt.Errorf("Update: Error detaching block "+
 				"%v from UtxoView: %v", blockToDetach, err)
 		}
-		if err := utxoView.FlushToDb(); err != nil {
+		if err := utxoView.FlushToDb(blockHeight); err != nil {
 			return fmt.Errorf("Update: Error flushing view to db for block "+
 				"%v: %v", blockToDetach, err)
 		}
 		// We have to flush a couple of extra things that the view doesn't flush...
-		if err := PutBestHash(utxoView.TipHash, txi.TXIndexChain.DB(), ChainTypeDeSoBlock); err != nil {
+		if err := PutBestHash(txi.TXIndexChain.DB(), nil, utxoView.TipHash, ChainTypeDeSoBlock); err != nil {
 			return fmt.Errorf("Update: Error putting best hash for block "+
 				"%v: %v", blockToDetach, err)
 		}
+		if txi.TXIndexChain.snapshot != nil {
+			txi.TXIndexChain.snapshot.PrepareAncestralRecordsFlush()
+		}
 		err = txi.TXIndexChain.DB().Update(func(txn *badger.Txn) error {
-			if err := DeleteUtxoOperationsForBlockWithTxn(txn, blockToDetach.Hash); err != nil {
+			if err := DeleteUtxoOperationsForBlockWithTxn(txn, txi.TXIndexChain.snapshot, blockToDetach.Hash); err != nil {
 				return fmt.Errorf("Update: Error deleting UtxoOperations 1 for block %v, %v", blockToDetach.Hash, err)
 			}
 			if err := txn.Delete(BlockHashToBlockKey(blockToDetach.Hash)); err != nil {
@@ -338,6 +401,10 @@ func (txi *TXIndex) Update() error {
 			}
 			return nil
 		})
+		if txi.TXIndexChain.snapshot != nil {
+			txi.TXIndexChain.snapshot.StartAncestralRecordsFlush(true)
+			txi.TXIndexChain.snapshot.PrintChecksum("Checksum after flush")
+		}
 		if err != nil {
 			return fmt.Errorf("Update: Error updating badgger: %v", err)
 		}
@@ -360,14 +427,14 @@ func (txi *TXIndex) Update() error {
 	// and add their mappings to our txn index. Compute any metadata that might
 	// be useful.
 	for _, blockToAttach := range attachBlocks {
-		if blockToAttach.Height%100 == 0 {
+		if blockToAttach.Height%1 == 0 {
 			glog.Infof("Update: Txindex progress: block %d / %d",
 				blockToAttach.Height, blockTipNode.Height)
 		}
 		glog.V(2).Infof("Update: Attaching block (height: %d, hash: %v)",
 			blockToAttach.Height, blockToAttach.Hash)
 
-		blockMsg, err := GetBlock(blockToAttach.Hash, txi.CoreChain.DB())
+		blockMsg, err := GetBlock(blockToAttach.Hash, txi.CoreChain.DB(), txi.TXIndexChain.snapshot)
 		if err != nil {
 			return fmt.Errorf("Update: Problem fetching attach block "+
 				"with hash %v: %v", blockToAttach.Hash, err)
@@ -377,15 +444,19 @@ func (txi *TXIndex) Update() error {
 		// us to extract custom metadata fields that we can show in our block explorer.
 		//
 		// Only set a BitcoinManager if we have one. This makes some tests pass.
-		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil)
+		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, txi.TXIndexChain.snapshot)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)
 		}
 
+		if txi.TXIndexChain.snapshot != nil {
+			txi.TXIndexChain.snapshot.PrepareAncestralRecordsFlush()
+		}
 		// Do each block update in a single transaction so we're safe in case the node
 		// restarts.
-		if err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
+		blockHeight := uint64(txi.CoreChain.BlockTip().Height)
+		err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
 
 			// Iterate through each transaction in the block and do the following:
 			// - Connect it to the view
@@ -399,15 +470,20 @@ func (txi *TXIndex) Update() error {
 						txn, err)
 				}
 
-				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, txn, txi.Params, txnMeta)
+				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, txi.TXIndexChain.snapshot, blockHeight,
+					txn, txi.Params, txnMeta)
 				if err != nil {
 					return fmt.Errorf("Update: Problem adding txn %v to txindex: %v",
 						txn, err)
 				}
 			}
-
 			return nil
-		}); err != nil {
+		})
+		if txi.TXIndexChain.snapshot != nil {
+			txi.TXIndexChain.snapshot.StartAncestralRecordsFlush(true)
+			txi.TXIndexChain.snapshot.PrintChecksum("Checksum after flush")
+		}
+		if err != nil {
 			return err
 		}
 

@@ -32,7 +32,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 
 	body, err := json.Marshal(bodyObj)
@@ -87,7 +87,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeSubmitPost, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -132,7 +132,7 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 	senderPkBytes, _, err := Base58CheckDecode(senderPkBase58Check)
 	require.NoError(t, err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(t, err)
 
 	txn, totalInputMake, spendAmount, changeAmountMake, feesMake, err := chain.CreateBasicTransferTxnWithDiamonds(
@@ -176,7 +176,7 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 	}
 	require.Equal(t, OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(t, utxoView.FlushToDb())
+	require.NoError(t, utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -224,7 +224,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(UpdaterPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 
 	txn, totalInputMake, _, _, err := chain.CreateSubmitPostTxn(
@@ -269,7 +269,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeSubmitPost, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -331,7 +331,7 @@ func TestSubmitPost(t *testing.T) {
 	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
 
 	checkPostsDeleted := func() {
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 		corePosts, commentsByPostHash, err := utxoView.GetAllPosts()
 		require.NoError(err)
@@ -1219,7 +1219,7 @@ func TestSubmitPost(t *testing.T) {
 	}
 
 	checkPostsExist := func() {
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 		corePosts, commentsByPostHash, err := utxoView.GetAllPosts()
 		require.NoError(err)
@@ -1465,14 +1465,14 @@ func TestSubmitPost(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
@@ -1495,7 +1495,7 @@ func TestSubmitPost(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -1537,14 +1537,14 @@ func TestSubmitPost(t *testing.T) {
 		}
 	}
 	// Flush the utxoView after having added all the transactions.
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	// Verify the profiles exist.
 	checkPostsExist()
 
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil)
+	utxoView2, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -1584,7 +1584,7 @@ func TestSubmitPost(t *testing.T) {
 			assertCommentCount(utxoView2, require, post6Hash, 0)
 		}
 	}
-	require.NoError(utxoView2.FlushToDb())
+	require.NoError(utxoView2.FlushToDb(0))
 	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
 
 	// Verify that all the profiles have been deleted.
@@ -1599,23 +1599,23 @@ func TestSubmitPost(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
+		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps, 0))
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// Verify that all the profiles have been deleted.
@@ -1685,21 +1685,21 @@ func TestDeSoDiamonds(t *testing.T) {
 	// Get PKIDs for looking up diamond entries.
 	m0PkBytes, _, err := Base58CheckDecode(m0Pub)
 	require.NoError(err)
-	m0PKID := DBGetPKIDEntryForPublicKey(db, m0PkBytes)
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes)
 
 	m1PkBytes, _, err := Base58CheckDecode(m1Pub)
 	require.NoError(err)
-	m1PKID := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
+	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes)
 
 	m2PkBytes, _, err := Base58CheckDecode(m2Pub)
 	require.NoError(err)
-	m2PKID := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
+	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes)
 	_ = m2PKID
 
 	validateDiamondEntry := func(
 		senderPKID *PKID, receiverPKID *PKID, diamondPostHash *BlockHash, diamondLevel int64) {
 
-		diamondEntry := DbGetDiamondMappings(db, receiverPKID, senderPKID, diamondPostHash)
+		diamondEntry := DbGetDiamondMappings(db, chain.snapshot, receiverPKID, senderPKID, diamondPostHash)
 
 		if diamondEntry == nil && diamondLevel > 0 {
 			t.Errorf("validateDiamondEntry: couldn't find diamond entry for diamondLevel %d", diamondLevel)
@@ -1902,7 +1902,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(receiverPkBase58Check)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Build the basic transfer txn.
@@ -1965,7 +1965,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		}
 		require.Equal(OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
 
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		return nil
 	}

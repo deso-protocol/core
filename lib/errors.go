@@ -64,6 +64,7 @@ const (
 	RuleErrorForbiddenBlockProducerPublicKey                    RuleError = "RuleErrorForbiddenBlockProducerPublicKey"
 	RuleErrorInvalidBlockProducerSIgnature                      RuleError = "RuleErrorInvalidBlockProducerSIgnature"
 	RuleErrorInvalidBlockHeader                                 RuleError = "RuleErrorInvalidBlockHeader"
+	RuleErrorBlockAlreadyExists                                 RuleError = "RuleErrorBlockAlreadyExists"
 	RuleErrorOrphanBlock                                        RuleError = "RuleErrorOrphanBlock"
 	RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey        RuleError = "RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey"
 	RuleErrorBlockRewardTxnNotAllowedToHaveInputs               RuleError = "RuleErrorBlockRewardTxnNotAllowedToHaveInputs"
@@ -412,14 +413,13 @@ const (
 	HeaderErrorHeightInvalid                                                     RuleError = "HeaderErrorHeightInvalid"
 	HeaderErrorDifficultyBitsNotConsistentWithTargetDifficultyComputedFromParent RuleError = "HeaderErrorDifficultyBitsNotConsistentWithTargetDifficultyComputedFromParent"
 
-	TxErrorTooLarge                                                 RuleError = "TxErrorTooLarge"
-	TxErrorDuplicate                                                RuleError = "TxErrorDuplicate"
-	TxErrorIndividualBlockReward                                    RuleError = "TxErrorIndividualBlockReward"
-	TxErrorInsufficientFeeMinFee                                    RuleError = "TxErrorInsufficientFeeMinFee"
-	TxErrorInsufficientFeeRateLimit                                 RuleError = "TxErrorInsufficientFeeRateLimit"
-	TxErrorInsufficientFeePriorityQueue                             RuleError = "TxErrorInsufficientFeePriorityQueue"
-	TxErrorUnconnectedTxnNotAllowed                                 RuleError = "TxErrorUnconnectedTxnNotAllowed"
-	TxErrorCannotProcessBitcoinExchangeUntilBitcoinManagerIsCurrent RuleError = "TxErrorCannotProcessBitcoinExchangeUntilBitcoinManagerIsCurrent"
+	TxErrorTooLarge                     RuleError = "TxErrorTooLarge"
+	TxErrorDuplicate                    RuleError = "TxErrorDuplicate"
+	TxErrorIndividualBlockReward        RuleError = "TxErrorIndividualBlockReward"
+	TxErrorInsufficientFeeMinFee        RuleError = "TxErrorInsufficientFeeMinFee"
+	TxErrorInsufficientFeeRateLimit     RuleError = "TxErrorInsufficientFeeRateLimit"
+	TxErrorInsufficientFeePriorityQueue RuleError = "TxErrorInsufficientFeePriorityQueue"
+	TxErrorUnconnectedTxnNotAllowed     RuleError = "TxErrorUnconnectedTxnNotAllowed"
 )
 
 func (e RuleError) Error() string {

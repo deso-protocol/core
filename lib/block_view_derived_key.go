@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/pkg/errors"
@@ -33,7 +34,7 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 // accessSignature is the signed hash of (derivedPublicKey + expirationBlock + transaction spending limit)
 // in DER format, made with the ownerPublicKey.
 func _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey []byte, derivedPublicKey []byte,
-	expirationBlock uint64, transactionSpendingLimitBytes []byte, accessSignature []byte) error {
+	expirationBlock uint64, transactionSpendingLimitBytes []byte, accessSignature []byte, blockHeight uint64) error {
 
 	// Sanity-check and convert ownerPublicKey to *btcec.PublicKey.
 	if err := IsByteArrayValidPublicKey(ownerPublicKey); err != nil {
@@ -160,7 +161,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			exists := false
 			if transactionSpendingLimitBytes, exists = txn.ExtraData[TransactionSpendingLimitKey]; exists {
 				transactionSpendingLimit = &TransactionSpendingLimit{}
-				if err := transactionSpendingLimit.FromBytes(transactionSpendingLimitBytes); err != nil {
+				rr := bytes.NewReader(transactionSpendingLimitBytes)
+				if err := transactionSpendingLimit.FromBytes(rr); err != nil {
 					return 0, 0, nil, errors.Wrapf(
 						err, "Error decoding transaction spending limit from extra data")
 				}
@@ -212,7 +214,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 				derivedPublicKey,
 				txMeta.ExpirationBlock,
 				transactionSpendingLimitBytes,
-				txMeta.AccessSignature); err != nil {
+				txMeta.AccessSignature,
+				uint64(blockHeight)); err != nil {
 				return 0, 0, nil, errors.Wrap(
 					RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid, err.Error())
 			}

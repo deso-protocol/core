@@ -95,6 +95,7 @@ type UtxoView struct {
 	Handle   *badger.DB
 	Postgres *Postgres
 	Params   *DeSoParams
+	Snapshot *Snapshot
 }
 
 // Assumes the db Handle is already set on the view, but otherwise the
@@ -103,13 +104,13 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Utxo data
 	bav.UtxoKeyToUtxoEntry = make(map[UtxoKey]*UtxoEntry)
 	// TODO: Deprecate this value
-	bav.NumUtxoEntries = GetUtxoNumEntries(bav.Handle)
+	bav.NumUtxoEntries = GetUtxoNumEntries(bav.Handle, bav.Snapshot)
 	bav.PublicKeyToDeSoBalanceNanos = make(map[PublicKey]uint64)
 
 	// BitcoinExchange data
-	bav.NanosPurchased = DbGetNanosPurchased(bav.Handle)
-	bav.USDCentsPerBitcoin = DbGetUSDCentsPerBitcoinExchangeRate(bav.Handle)
-	bav.GlobalParamsEntry = DbGetGlobalParamsEntry(bav.Handle)
+	bav.NanosPurchased = DbGetNanosPurchased(bav.Handle, bav.Snapshot)
+	bav.USDCentsPerBitcoin = DbGetUSDCentsPerBitcoinExchangeRate(bav.Handle, bav.Snapshot)
+	bav.GlobalParamsEntry = DbGetGlobalParamsEntry(bav.Handle, bav.Snapshot)
 	bav.BitcoinBurnTxIDs = make(map[BlockHash]bool)
 
 	// Forbidden block signature pub key info.
@@ -160,7 +161,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
-	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres)
+	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -358,6 +359,7 @@ func NewUtxoView(
 	_handle *badger.DB,
 	_params *DeSoParams,
 	_postgres *Postgres,
+	_snapshot *Snapshot,
 ) (*UtxoView, error) {
 
 	view := UtxoView{
@@ -366,12 +368,12 @@ func NewUtxoView(
 		// Note that the TipHash does not get reset as part of
 		// _ResetViewMappingsAfterFlush because it is not something that is affected by a
 		// flush operation. Moreover, its value is consistent with the view regardless of
-		// whether or not the view is flushed or not. Additionally the utxo view does
-		// not concern itself with the header chain (see comment on GetBestHash for more
-		// info on that).
-		TipHash: DbGetBestHash(_handle, ChainTypeDeSoBlock /* don't get the header chain */),
+		// whether the view is flushed or not. Additionally, the utxo view does not concern
+		// itself with the header chain (see comment on GetBestHash for more info on that).
+		TipHash: DbGetBestHash(_handle, _snapshot, ChainTypeDeSoBlock /* don't get the header chain */),
 
 		Postgres: _postgres,
+		Snapshot: _snapshot,
 		// Set everything else in _ResetViewMappings()
 	}
 
@@ -384,7 +386,7 @@ func NewUtxoView(
 	if view.Postgres != nil {
 		view.TipHash = view.Postgres.GetChain(MAIN_CHAIN).TipHash
 	} else {
-		view.TipHash = DbGetBestHash(view.Handle, ChainTypeDeSoBlock /* don't get the header chain */)
+		view.TipHash = DbGetBestHash(view.Handle, view.Snapshot, ChainTypeDeSoBlock /* don't get the header chain */)
 	}
 
 	// This function is generally used to reset the view after a flush has been performed
@@ -437,7 +439,7 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKeyArg *UtxoKey) *UtxoEntry {
 		if bav.Postgres != nil {
 			utxoEntry = bav.Postgres.GetUtxoEntryForUtxoKey(utxoKey)
 		} else {
-			utxoEntry = DbGetUtxoEntryForUtxoKey(bav.Handle, utxoKey)
+			utxoEntry = DbGetUtxoEntryForUtxoKey(bav.Handle, bav.Snapshot, utxoKey)
 		}
 		if utxoEntry == nil {
 			// This means the utxo is neither in our map nor in the db so
@@ -472,7 +474,7 @@ func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKeyArg []byte) (uint6
 		balanceNanos = bav.Postgres.GetBalance(NewPublicKey(publicKey))
 	} else {
 		var err error
-		balanceNanos, err = DbGetDeSoBalanceNanosForPublicKey(bav.Handle, publicKey)
+		balanceNanos, err = DbGetDeSoBalanceNanosForPublicKey(bav.Handle, bav.Snapshot, publicKey)
 		if err != nil {
 			return uint64(0), errors.Wrap(err, "GetDeSoBalanceNanosForPublicKey: ")
 		}
@@ -1006,7 +1008,7 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 }
 
 func (bav *UtxoView) DisconnectBlock(
-	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, utxoOps [][]*UtxoOperation) error {
+	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, utxoOps [][]*UtxoOperation, blockHeight uint64) error {
 
 	glog.Infof("DisconnectBlock: Disconnecting block %v", desoBlock)
 
@@ -1076,9 +1078,9 @@ func (bav *UtxoView) DisconnectBlock(
 		currentTxn := desoBlock.Txns[txnIndex]
 		txnHash := txHashes[txnIndex]
 		utxoOpsForTxn := utxoOps[txnIndex]
-		blockHeight := desoBlock.Header.Height
+		desoBlockHeight := desoBlock.Header.Height
 
-		err := bav.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(blockHeight))
+		err := bav.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(desoBlockHeight))
 		if err != nil {
 			return errors.Wrapf(err, "DisconnectBlock: Problem disconnecting transaction: %v", currentTxn)
 		}
@@ -2330,7 +2332,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 }
 
 func (bav *UtxoView) ConnectBlock(
-	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool, eventManager *EventManager) (
+	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool, eventManager *EventManager, blockHeight uint64) (
 	[][]*UtxoOperation, error) {
 
 	glog.V(1).Infof("ConnectBlock: Connecting block %v", desoBlock)
@@ -2438,7 +2440,7 @@ func (bav *UtxoView) ConnectBlock(
 // the database. It's much faster to fetch data in bulk and cache "nil" values
 // then to query individual records when connecting every transaction. If something
 // is not preloaded the view falls back to individual queries.
-func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
+func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock, blockHeight uint64) error {
 	// We can only preload if we're using postgres
 	if bav.Postgres == nil {
 		return nil
@@ -2698,7 +2700,7 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 	if bav.Postgres != nil {
 		utxoEntriesForPublicKey = bav.Postgres.GetUtxoEntriesForPublicKey(pkBytes)
 	} else {
-		utxoEntriesForPublicKey, err = DbGetUtxosForPubKey(pkBytes, bav.Handle)
+		utxoEntriesForPublicKey, err = DbGetUtxosForPubKey(pkBytes, bav.Handle, bav.Snapshot)
 	}
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GetUnspentUtxoEntrysForPublicKey: Problem fetching "+
@@ -2754,13 +2756,13 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 				break
 			}
 
-			blockNode := GetHeightHashToNodeInfo(bav.Handle, tipHeight, nextBlockHash, false)
+			blockNode := GetHeightHashToNodeInfo(bav.Handle, bav.Snapshot, tipHeight, nextBlockHash, false)
 			if blockNode == nil {
 				return uint64(0), fmt.Errorf(
 					"GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block for blockhash %s",
 					nextBlockHash.String())
 			}
-			blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, pkBytes, nextBlockHash)
+			blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, bav.Snapshot, pkBytes, nextBlockHash)
 			if err != nil {
 				return uint64(0), errors.Wrapf(
 					err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block reward for "+

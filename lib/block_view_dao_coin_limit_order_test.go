@@ -27,7 +27,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
 	dbAdapter := utxoView.GetDbAdapter()
 
@@ -75,10 +75,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		)
 	}
 
-	m0PKID := DBGetPKIDEntryForPublicKey(db, m0PkBytes)
-	m1PKID := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
-	m2PKID := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
-	m4PKID := DBGetPKIDEntryForPublicKey(db, m4PkBytes)
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes)
+	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes)
+	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes)
+	m4PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m4PkBytes)
 	_, _, _, _ = m0PKID, m1PKID, m2PKID, m4PKID
 
 	// -----------------------
@@ -118,7 +118,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// Helper function to convert PublicKeys to PKIDs.
 	toPKID := func(inputPK *PublicKey) *PKID {
-		return DBGetPKIDEntryForPublicKey(db, inputPK.ToBytes()).PKID
+		return DBGetPKIDEntryForPublicKey(db, chain.snapshot, inputPK.ToBytes()).PKID
 	}
 
 	// Calculate FeeNanos from most recent txn.
@@ -474,6 +474,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m1's order is fulfilled buying $DESO so:
 		//   * His $DESO balance increases and
 		//   * His DAO coin balance decreases.
+		// FIXME: I got an error here because my branch changed txn metadata encoding. Let's make this check smarter.
 		require.Equal(
 			int64(originalM1DESOBalance+desoQuantityChange.Uint64()-_feeNanos()),
 			int64(updatedM1DESOBalance))
@@ -575,6 +576,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m0's order to buy DAO coins is fulfilled so:
 		//   * His $DESO balance decreases and
 		//   * His DAO coin balance increases.
+		// FIXME: I got an error here because my branch changed txn metadata encoding. Let's make this check smarter.
 		require.Equal(
 			int64(originalM0DESOBalance-desoQuantityChange.Uint64()-_feeNanos()),
 			int64(updatedM0DESOBalance))
@@ -706,6 +708,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// m1's order selling DAO coins is fulfilled so:
 		//   * His $DESO balance increases and
 		//   * His DAO coin balance decreases.
+		// FIXME: I got an error here because my branch changed txn metadata encoding. Let's make this check smarter.
 		require.Equal(
 			int64(originalM1DESOBalance+desoQuantityChange.Uint64()-_feeNanos()),
 			int64(updatedM1DESOBalance))
@@ -1852,11 +1855,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NotEmpty(utxoEntriesM0) // Unspent UTXOs exist for m0.
 
 		// Spend m0's existing UTXO.
-		tempUtxoView, err := NewUtxoView(db, params, chain.postgres)
+		tempUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(err)
 		utxoOp, err := tempUtxoView._spendUtxo(utxoEntriesM0[0].UtxoKey)
 		require.NoError(err)
-		err = tempUtxoView.FlushToDb()
+		err = tempUtxoView.FlushToDb(0)
 		require.NoError(err)
 		utxoEntriesM0, err = chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, nil)
 		require.NoError(err)
@@ -1877,7 +1880,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Unspend m0's existing UTXO.
 		err = tempUtxoView._unSpendUtxo(utxoOp.Entry)
 		require.NoError(err)
-		err = tempUtxoView.FlushToDb()
+		err = tempUtxoView.FlushToDb(0)
 		require.NoError(err)
 		utxoEntriesM0, err = chain.GetSpendableUtxosForPublicKey(m0PkBytes, mempool, nil)
 		require.NoError(err)
@@ -2789,7 +2792,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 1)
 
 		// Confirm 0 orders belonging to m3.
-		m3PKID := DBGetPKIDEntryForPublicKey(db, m3PkBytes)
+		m3PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m3PkBytes)
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
 		require.NoError(err)
 		require.Empty(orderEntries)
@@ -3473,7 +3476,7 @@ func _connectDAOCoinLimitOrderTxn(
 	require := require.New(testMeta.t)
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, publicKey))
-	currentUtxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres)
+	currentUtxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
 	require.NoError(err)
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(testMeta.t, txn, privateKey)
@@ -3490,7 +3493,7 @@ func _connectDAOCoinLimitOrderTxn(
 	// totalInput will be greater than totalInputMake since we add BidderInputs to totalInput.
 	require.True(totalInput >= totalInputMake)
 	require.Equal(utxoOps[len(utxoOps)-1].Type, OperationTypeDAOCoinLimitOrder)
-	require.NoError(currentUtxoView.FlushToDb())
+	require.NoError(currentUtxoView.FlushToDb(0))
 	testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 	testMeta.txns = append(testMeta.txns, txn)
 	return utxoOps, totalInput, totalOutput, fees, err
@@ -3527,7 +3530,7 @@ func _doDAOCoinLimitOrderTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinLimitOrderTxn(
@@ -3570,28 +3573,21 @@ func _doDAOCoinLimitOrderTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	//}
 	require.Equal(OperationTypeDAOCoinLimitOrder, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
 
-func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) (bool, error) {
+func (order *DAOCoinLimitOrderEntry) Eq(other *DAOCoinLimitOrderEntry) bool {
 	// Skip comparing OrderID values as those
 	// aren't known before submitting the txn.
 	other.OrderID = order.OrderID
 
 	// Convert both order entries to bytes and compare bytes.
-	orderBytes, err := order.ToBytes()
-	if err != nil {
-		return false, err
-	}
+	orderBytes := EncodeToBytes(0, order)
+	otherBytes := EncodeToBytes(0, other)
 
-	otherBytes, err := other.ToBytes()
-	if err != nil {
-		return false, err
-	}
-
-	return bytes.Equal(orderBytes, otherBytes), nil
+	return bytes.Equal(orderBytes, otherBytes)
 }
 
 func (txnData *DAOCoinLimitOrderMetadata) ToEntry(

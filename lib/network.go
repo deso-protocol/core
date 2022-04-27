@@ -8,8 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
-	"github.com/holiman/uint256"
 	"io"
 	"math"
 	"net"
@@ -18,9 +16,10 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/davecgh/go-spew/spew"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
-
+	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
 
@@ -28,7 +27,7 @@ import (
 // network and defines precisely how they are serialized and de-serialized.
 
 // MaxMessagePayload is the maximum size alowed for a message payload.
-const MaxMessagePayload = (1024 * 1024 * 100) // 100MB
+const MaxMessagePayload = (1024 * 1024 * 1000) // 1GB
 
 // MaxBlockRewardDataSizeBytes is the maximum size allowed for a BLOCK_REWARD's ExtraData field.
 var MaxBlockRewardDataSizeBytes = 250
@@ -82,7 +81,11 @@ const (
 	// MsgTypeGetAddr is used to solicit Addr messages from peers.
 	MsgTypeGetAddr MsgType = 16
 
-	// NEXT_TAG = 18
+	// MsgTypeGetSnapshot is used to retrieve state from peers.
+	MsgTypeGetSnapshot  MsgType = 17
+	MsgTypeSnapshotData MsgType = 18
+
+	// NEXT_TAG = 19
 
 	// Below are control messages used to signal to the Server from other parts of
 	// the code but not actually sent among peers.
@@ -94,7 +97,7 @@ const (
 	MsgTypeNewPeer              MsgType = ControlMessagesStart + 1
 	MsgTypeDonePeer             MsgType = ControlMessagesStart + 2
 	MsgTypeBlockAccepted        MsgType = ControlMessagesStart + 3
-	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4
+	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4 // Deprecated
 
 	// NEXT_TAG = 7
 )
@@ -154,6 +157,10 @@ func (msgType MsgType) String() string {
 		return "BLOCK_ACCEPTED"
 	case MsgTypeBitcoinManagerUpdate:
 		return "BITCOIN_MANAGER_UPDATE"
+	case MsgTypeGetSnapshot:
+		return "GET_SNAPSHOT"
+	case MsgTypeSnapshotData:
+		return "SNAPSHOT_DATA"
 	default:
 		return fmt.Sprintf("UNRECOGNIZED(%d) - make sure String() is up to date", msgType)
 	}
@@ -655,6 +662,14 @@ func NewMessage(msgType MsgType) DeSoMessage {
 		{
 			return &MsgDeSoGetAddr{}
 		}
+	case MsgTypeGetSnapshot:
+		{
+			return &MsgDeSoGetSnapshot{}
+		}
+	case MsgTypeSnapshotData:
+		{
+			return &MsgDeSoSnapshotData{}
+		}
 	default:
 		{
 			return nil
@@ -709,25 +724,6 @@ func (msg *MsgDeSoDonePeer) ToBytes(preSignature bool) ([]byte, error) {
 
 func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
-}
-
-type MsgDeSoBitcoinManagerUpdate struct {
-	// Keep it simple for now. A BitcoinManagerUpdate just signals that
-	// the BitcoinManager has added at least one block or done a reorg.
-	// No serialization because we don't want this sent on the wire ever.
-	TransactionsFound []*MsgDeSoTxn
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) GetMsgType() MsgType {
-	return MsgTypeBitcoinManagerUpdate
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoBitcoinManagerUpdate.ToBytes: Not implemented")
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoBitcoinManagerUpdate.FromBytes not implemented")
 }
 
 // ==================================================================
@@ -910,7 +906,7 @@ func (msg *MsgDeSoGetBlocks) ToBytes(preSignature bool) ([]byte, error) {
 func (msg *MsgDeSoGetBlocks) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
-	// Parse the nmber of block hashes.
+	// Parse the number of block hashes.
 	numHashes, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoGetBlocks.FromBytes: Problem "+
@@ -1189,7 +1185,7 @@ func _readInvList(rr io.Reader) ([]*InvVect, error) {
 		invHash := BlockHash{}
 		_, err = io.ReadFull(rr, invHash[:])
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readInvList:: Error reading Hash for InvVect: ")
+			return nil, errors.Wrapf(err, "_readInvList: Error reading Hash for InvVect: ")
 		}
 
 		invVect := &InvVect{
@@ -1219,7 +1215,10 @@ func (msg *MsgDeSoInv) FromBytes(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoInv: ")
 	}
-	isSyncResponse := ReadBoolByte(rr)
+	isSyncResponse, err := ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoInv: ")
+	}
 
 	*msg = MsgDeSoInv{
 		InvList:        invList,
@@ -1288,6 +1287,11 @@ type ServiceFlag uint64
 const (
 	// SFFullNode is a flag used to indicate a peer is a full node.
 	SFFullNode ServiceFlag = 1 << iota
+	// SFHyperSync is a flag used to indicate that the peer supports hyper sync.
+	SFHyperSync
+	// SFArchivalNode is a flag complementary to SFHyperSync. If node is a hypersync node then
+	// it might not be able to support block sync anymore, unless it has archival mode turned on.
+	SFArchivalNode
 )
 
 type MsgDeSoVersion struct {
@@ -2265,6 +2269,125 @@ func (msg *MsgDeSoBlock) String() string {
 }
 
 // ==================================================================
+// SNAPSHOT Message
+// ==================================================================
+
+type MsgDeSoGetSnapshot struct {
+	// SnapshotStartKey is the db key from which we want to start fetching the data.
+	SnapshotStartKey []byte
+}
+
+func (msg *MsgDeSoGetSnapshot) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+	data = append(data, EncodeByteArray(msg.SnapshotStartKey)...)
+
+	return data, nil
+}
+
+func (msg *MsgDeSoGetSnapshot) FromBytes(data []byte) error {
+	var err error
+
+	rr := bytes.NewReader(data)
+
+	msg.SnapshotStartKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error reading snapshot start key")
+	}
+	if len(msg.SnapshotStartKey) == 0 {
+		return fmt.Errorf("MsgDeSoGetSnapshot.FromBytes: Received an empty SnapshotStartKey")
+	}
+	return nil
+}
+
+func (msg *MsgDeSoGetSnapshot) GetMsgType() MsgType {
+	return MsgTypeGetSnapshot
+}
+
+func (msg *MsgDeSoGetSnapshot) GetPrefix() []byte {
+	return msg.SnapshotStartKey[:1]
+}
+
+type MsgDeSoSnapshotData struct {
+	// SnapshotMetadata is the information about the current snapshot epoch.
+	SnapshotMetadata *SnapshotEpochMetadata
+
+	// SnapshotChunk is the snapshot state data chunk.
+	SnapshotChunk []*DBEntry
+	// SnapshotChunkFull indicates whether we've exhausted all entries for the given prefix.
+	// If this is true, it means that there are more entries in node's db, and false means
+	// we've fetched everything.
+	SnapshotChunkFull bool
+
+	// Prefix indicates the db prefix of the current snapshot chunk.
+	Prefix []byte
+}
+
+func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// Encode the snapshot metadata.
+	data = append(data, msg.SnapshotMetadata.ToBytes()...)
+
+	// Encode the snapshot chunk data.
+	if len(msg.SnapshotChunk) == 0 {
+		return nil, fmt.Errorf("MsgDeSoSnapshotData.ToBytes: Snapshot data should not be empty")
+	}
+	data = append(data, UintToBuf(uint64(len(msg.SnapshotChunk)))...)
+	for _, vv := range msg.SnapshotChunk {
+		data = append(data, vv.ToBytes()...)
+	}
+	data = append(data, BoolToByte(msg.SnapshotChunkFull))
+	data = append(data, UintToBuf(uint64(len(msg.Prefix)))...)
+	data = append(data, msg.Prefix...)
+
+	return data, nil
+}
+
+func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
+	var err error
+
+	rr := bytes.NewReader(data)
+
+	// Decode snapshot metadata.
+	msg.SnapshotMetadata = &SnapshotEpochMetadata{}
+	if err := msg.SnapshotMetadata.FromBytes(rr); err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding snapshot metadata")
+	}
+	// Decode snapshot keys
+	dataLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of SnapshotChunk")
+	}
+	for ; dataLen > 0; dataLen-- {
+		dbEntry := &DBEntry{}
+		if err := dbEntry.FromBytes(rr); err != nil {
+			return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding SnapshotChunk")
+		}
+		msg.SnapshotChunk = append(msg.SnapshotChunk, dbEntry)
+	}
+	msg.SnapshotChunkFull, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding SnapshotChunkFull")
+	}
+
+	prefixLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of prefix")
+	}
+	msg.Prefix = make([]byte, prefixLen)
+	_, err = io.ReadFull(rr, msg.Prefix)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding prefix")
+	}
+
+	return nil
+}
+
+func (msg *MsgDeSoSnapshotData) GetMsgType() MsgType {
+	return MsgTypeSnapshotData
+}
+
+// ==================================================================
 // TXN Message
 // ==================================================================
 
@@ -2282,6 +2405,39 @@ type UtxoKey struct {
 
 func (utxoKey *UtxoKey) String() string {
 	return fmt.Sprintf("< TxID: %v, Index: %d >", &utxoKey.TxID, utxoKey.Index)
+}
+
+func (utxoKey *UtxoKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, utxoKey.TxID.ToBytes()...)
+	data = append(data, UintToBuf(uint64(utxoKey.Index))...)
+	return data
+}
+
+func (utxoKey *UtxoKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// Read TxIndex
+	txIdBytes := make([]byte, HashSizeBytes)
+	_, err := io.ReadFull(rr, txIdBytes)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoKey.Decode: Problem reading TxID")
+	}
+	utxoKey.TxID = *NewBlockHash(txIdBytes)
+
+	index, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoKey.Decode: Problem reading Index")
+	}
+	utxoKey.Index = uint32(index)
+
+	return nil
+}
+
+func (utxoKey *UtxoKey) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (utxoKey *UtxoKey) GetEncoderType() EncoderType {
+	return EncoderTypeUtxoKey
 }
 
 const (
@@ -2322,6 +2478,38 @@ type DeSoOutput struct {
 func (desoOutput *DeSoOutput) String() string {
 	return fmt.Sprintf("< PublicKey: %#v, AmountNanos: %d >",
 		PkToStringMainnet(desoOutput.PublicKey), desoOutput.AmountNanos)
+}
+
+func (desoOutput *DeSoOutput) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(desoOutput.PublicKey)...)
+	data = append(data, UintToBuf(desoOutput.AmountNanos)...)
+
+	return data
+}
+
+func (desoOutput *DeSoOutput) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	desoOutput.PublicKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DesoOutput.Decode: Problem reading PublicKey")
+	}
+
+	desoOutput.AmountNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DesoOutput.Decode: Problem reading AmountNanos")
+	}
+	return nil
+}
+
+func (desoOutput *DeSoOutput) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (desoOutput *DeSoOutput) GetEncoderType() EncoderType {
+	return EncoderTypeDeSoOutput
 }
 
 type MsgDeSoTxn struct {
@@ -2456,30 +2644,6 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	return data, nil
 }
 
-func EncodeExtraData(extraData map[string][]byte) []byte {
-	var data []byte
-	extraDataLength := uint64(len(extraData))
-	data = append(data, UintToBuf(extraDataLength)...)
-	if extraDataLength > 0 {
-		// Sort the keys of the map
-		keys := make([]string, 0, len(extraData))
-		for key := range extraData {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		// Encode the length of the key, the key itself
-		// then the length of the value, then the value itself.
-		for _, key := range keys {
-			data = append(data, UintToBuf(uint64(len(key)))...)
-			data = append(data, []byte(key)...)
-			value := extraData[key]
-			data = append(data, UintToBuf(uint64(len(value)))...)
-			data = append(data, value...)
-		}
-	}
-	return data
-}
-
 func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	ret := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
 
@@ -2610,58 +2774,6 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	}
 
 	return ret, nil
-}
-
-func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
-	// De-serialize the ExtraData
-	extraDataLen, err := ReadUvarint(rr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeExtraData: Problem reading len(DeSoTxn.ExtraData)")
-	}
-	if extraDataLen > MaxMessagePayload {
-		return nil, fmt.Errorf("DecodeExtraData: extraDataLen length %d longer than max %d", extraDataLen, MaxMessagePayload)
-	}
-	var extraData map[string][]byte
-	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
-	if extraDataLen != 0 {
-		extraData = make(map[string][]byte, extraDataLen)
-		// Loop over each key
-		for ii := uint64(0); ii < extraDataLen; ii++ {
-			// De-serialize the length of the key
-			var keyLen uint64
-			keyLen, err = ReadUvarint(rr)
-			if err != nil {
-				return nil, fmt.Errorf("DecodeExtraData: Problem reading len(DeSoTxn.ExtraData.Keys[#{ii}]")
-			}
-			// De-serialize the key
-			keyBytes := make([]byte, keyLen)
-			_, err = io.ReadFull(rr, keyBytes)
-			if err != nil {
-				return nil, fmt.Errorf("DecodeExtraData: Problem reading key #{ii}")
-			}
-			// Convert the key to a string and check if it already exists in the map.
-			// If it already exists in the map, this is an error as a map cannot have duplicate keys.
-			key := string(keyBytes)
-			if _, keyExists := extraData[key]; keyExists {
-				return nil, fmt.Errorf("DecodeExtraData: Key [#{ii}] ({key}) already exists in ExtraData")
-			}
-			// De-serialize the length of the value
-			var valueLen uint64
-			valueLen, err = ReadUvarint(rr)
-			if err != nil {
-				return nil, fmt.Errorf("DecodeExtraData: Problem reading len(DeSoTxn.ExtraData.Value[#{ii}]")
-			}
-			// De-serialize the value
-			value := make([]byte, valueLen)
-			_, err = io.ReadFull(rr, value)
-			if err != nil {
-				return nil, fmt.Errorf("DecodeExtraData: Problem read value #{ii}")
-			}
-			// Map the key to the value
-			extraData[key] = value
-		}
-	}
-	return extraData, nil
 }
 
 func (msg *MsgDeSoTxn) FromBytes(data []byte) error {
@@ -3257,7 +3369,10 @@ func (txnData *LikeMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsUnlike
-	ret.IsUnlike = ReadBoolByte(rr)
+	ret.IsUnlike, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "LikeMetadata.FromBytes: Problem reading IsUnlike")
+	}
 
 	*txnData = ret
 
@@ -3329,7 +3444,10 @@ func (txnData *FollowMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsUnfollow
-	ret.IsUnfollow = ReadBoolByte(rr)
+	ret.IsUnfollow, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "FollowMetadata.FromBytes: Problem reading IsUnfollow")
+	}
 
 	*txnData = ret
 
@@ -3348,15 +3466,15 @@ func (txnData *FollowMetadata) New() DeSoTxnMetadata {
 // SubmitPostMetadata
 // ==================================================================
 
-func ReadBoolByte(rr *bytes.Reader) bool {
+func ReadBoolByte(rr *bytes.Reader) (bool, error) {
 	boolByte, err := rr.ReadByte()
 	if err != nil {
-		return false
+		return false, err
 	}
 	if boolByte != 0 {
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 func BoolToByte(val bool) byte {
@@ -3504,10 +3622,12 @@ func (txnData *SubmitPostMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsHidden
-	ret.IsHidden = ReadBoolByte(rr)
+	ret.IsHidden, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SubmitPostMetadata.FromBytes: Problem reading IsHidden")
+	}
 
 	*txnData = ret
-
 	return nil
 }
 
@@ -3639,7 +3759,10 @@ func (txnData *UpdateProfileMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsHidden
-	ret.IsHidden = ReadBoolByte(rr)
+	ret.IsHidden, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateProfileMetadata.FromBytes: Problem reading IsHidden")
+	}
 
 	*txnData = ret
 
@@ -3987,10 +4110,16 @@ func (txnData *CreateNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// HasUnlockable
-	ret.HasUnlockable = ReadBoolByte(rr)
+	ret.HasUnlockable, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateNFTMetadata.FromBytes: Problem reading HasUnlockable")
+	}
 
 	// IsForSale
-	ret.IsForSale = ReadBoolByte(rr)
+	ret.IsForSale, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateNFTMetadata.FromBytes: Problem reading IsForSale")
+	}
 
 	// MinBidAmountNanos uint64
 	ret.MinBidAmountNanos, err = ReadUvarint(rr)
@@ -4078,7 +4207,10 @@ func (txnData *UpdateNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// IsForSale
-	ret.IsForSale = ReadBoolByte(rr)
+	ret.IsForSale, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateNFTMetadata.FromBytes: Problem reading IsForSale")
+	}
 
 	// SerialNumber uint64
 	ret.MinBidAmountNanos, err = ReadUvarint(rr)
@@ -4739,11 +4871,7 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 	return data, nil
 }
 
-func (tsl *TransactionSpendingLimit) FromBytes(data []byte) error {
-	if len(data) == 0 {
-		return nil
-	}
-	rr := bytes.NewReader(data)
+func (tsl *TransactionSpendingLimit) FromBytes(rr *bytes.Reader) error {
 	globalDESOLimit, err := ReadUvarint(rr)
 	if err != nil {
 		return err
@@ -4868,9 +4996,6 @@ func (tsl *TransactionSpendingLimit) FromBytes(data []byte) error {
 }
 
 func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
-	if tsl == nil {
-		return nil
-	}
 	copyTSL := &TransactionSpendingLimit{
 		GlobalDESOLimit:              tsl.GlobalDESOLimit,
 		TransactionCountLimitMap:     make(map[TxnType]uint64),
@@ -5257,19 +5382,20 @@ type DAOCoinLimitOrderLimitKey struct {
 
 func (daoCoinLimitOrderLimitKey DAOCoinLimitOrderLimitKey) Encode() []byte {
 	var data []byte
-	data = append(data, daoCoinLimitOrderLimitKey.BuyingDAOCoinCreatorPKID.Encode()...)
-	data = append(data, daoCoinLimitOrderLimitKey.SellingDAOCoinCreatorPKID.Encode()...)
+	data = append(data, daoCoinLimitOrderLimitKey.BuyingDAOCoinCreatorPKID.ToBytes()...)
+	data = append(data, daoCoinLimitOrderLimitKey.SellingDAOCoinCreatorPKID.ToBytes()...)
 	return data
 }
 
 func (daoCoinLimitOrderLimitKey *DAOCoinLimitOrderLimitKey) Decode(rr *bytes.Reader) error {
-	buyingDAOCoinCreatorPKID, err := ReadPKID(rr)
-	if err != nil {
+	buyingDAOCoinCreatorPKID := &PKID{}
+	if err := buyingDAOCoinCreatorPKID.FromBytes(rr); err != nil {
 		return err
 	}
 	daoCoinLimitOrderLimitKey.BuyingDAOCoinCreatorPKID = *buyingDAOCoinCreatorPKID
-	sellingDAOCoinCreatorPKID, err := ReadPKID(rr)
-	if err != nil {
+
+	sellingDAOCoinCreatorPKID := &PKID{}
+	if err := sellingDAOCoinCreatorPKID.FromBytes(rr); err != nil {
 		return err
 	}
 	daoCoinLimitOrderLimitKey.SellingDAOCoinCreatorPKID = *sellingDAOCoinCreatorPKID
@@ -5651,14 +5777,16 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	ret.BuyingDAOCoinCreatorPublicKey, err = ReadOptionalPublicKey(rr)
 	if err != nil {
 		return fmt.Errorf(
-			"DAOCoinLimitOrderMetadata.FromBytes: Error reading BuyingDAOCoinCreatorPublicKey: %v", err)
+			"DAOCoinLimitOrderMetadata.FromBytes: Error "+
+				"reading BuyingDAOCoinCreatorPublicKey: %v", err)
 	}
 
 	// Parse SellingDAOCoinCreatorPublicKey
 	ret.SellingDAOCoinCreatorPublicKey, err = ReadOptionalPublicKey(rr)
 	if err != nil {
 		return fmt.Errorf(
-			"DAOCoinLimitOrderMetadata.FromBytes: Error reading SellingDAOCoinCreatorPKID: %v", err)
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading "+
+				"SellingDAOCoinCreatorPKID: %v", err)
 	}
 
 	// Parse ScaledExchangeRateCoinsToSellPerCoinToBuy
@@ -5886,7 +6014,7 @@ func (txnData *MessagingGroupMetadata) ToBytes(preSignature bool) ([]byte, error
 
 	data = append(data, UintToBuf(uint64(len(txnData.MessagingGroupMembers)))...)
 	for _, recipient := range txnData.MessagingGroupMembers {
-		data = append(data, recipient.Encode()...)
+		data = append(data, recipient.ToBytes()...)
 	}
 
 	return data, nil
@@ -5917,13 +6045,12 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 
 	numRecipients, err := ReadUvarint(rr)
 	for ; numRecipients > 0; numRecipients-- {
-		recipient := MessagingGroupMember{}
-		err = recipient.Decode(rr)
-		if err != nil {
+		recipient := &MessagingGroupMember{}
+		if err := recipient.FromBytes(rr); err != nil {
 			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 				"error reading recipient")
 		}
-		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, &recipient)
+		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, recipient)
 	}
 
 	*txnData = ret

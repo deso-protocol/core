@@ -7,12 +7,18 @@ import (
 type DbAdapter struct {
 	badgerDb   *badger.DB
 	postgresDb *Postgres
+	snapshot   *Snapshot
 }
 
 func (bav *UtxoView) GetDbAdapter() *DbAdapter {
+	snap := bav.Snapshot
+	if bav.Postgres != nil {
+		snap = nil
+	}
 	return &DbAdapter{
 		badgerDb:   bav.Handle,
 		postgresDb: bav.Postgres,
+		snapshot:   snap,
 	}
 }
 
@@ -29,7 +35,7 @@ func (adapter *DbAdapter) GetBalanceEntry(holder *PKID, creator *PKID, isDAOCoin
 		return adapter.postgresDb.GetCreatorCoinBalance(holder, creator).NewBalanceEntry()
 	}
 
-	return DbGetBalanceEntry(adapter.badgerDb, holder, creator, isDAOCoin)
+	return DbGetBalanceEntry(adapter.badgerDb, adapter.snapshot, holder, creator, isDAOCoin)
 }
 
 //
@@ -41,7 +47,7 @@ func (adapter *DbAdapter) GetDAOCoinLimitOrder(orderID *BlockHash) (*DAOCoinLimi
 		return adapter.postgresDb.GetDAOCoinLimitOrder(orderID)
 	}
 
-	return DBGetDAOCoinLimitOrder(adapter.badgerDb, orderID)
+	return DBGetDAOCoinLimitOrder(adapter.badgerDb, adapter.snapshot, orderID)
 }
 
 func (adapter *DbAdapter) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, error) {
@@ -98,5 +104,5 @@ func (adapter *DbAdapter) GetPKIDForPublicKey(pkBytes []byte) *PKID {
 		return profile.PKID
 	}
 
-	return DBGetPKIDEntryForPublicKey(adapter.badgerDb, pkBytes).PKID
+	return DBGetPKIDEntryForPublicKey(adapter.badgerDb, adapter.snapshot, pkBytes).PKID
 }

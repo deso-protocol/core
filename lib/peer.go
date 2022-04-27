@@ -46,8 +46,8 @@ type Peer struct {
 
 	// Stats that should be accessed using the mutex below.
 	StatsMtx       deadlock.RWMutex
-	timeOffsetSecs int64
-	timeConnected  time.Time
+	TimeOffsetSecs int64
+	TimeConnected  time.Time
 	startingHeight uint32
 	ID             uint64
 	// Ping-related fields.
@@ -57,7 +57,7 @@ type Peer struct {
 
 	// Connection info.
 	cmgr                *ConnectionManager
-	conn                net.Conn
+	Conn                net.Conn
 	isOutbound          bool
 	isPersistent        bool
 	stallTimeoutSeconds uint64
@@ -77,8 +77,8 @@ type Peer struct {
 	//
 	// TODO: The way we synchronize the version nonce is currently a bit
 	// messy; ideally we could do it without keeping global state.
-	versionNonceSent     uint64
-	versionNonceReceived uint64
+	VersionNonceSent     uint64
+	VersionNonceReceived uint64
 
 	// A pointer to the Server
 	srv *Server
@@ -91,7 +91,7 @@ type Peer struct {
 	userAgent                 string
 	advertisedProtocolVersion uint64
 	negotiatedProtocolVersion uint64
-	versionNegotiated         bool
+	VersionNegotiated         bool
 	minTxFeeRateNanosPerKB    uint64
 	// Messages for which we are expecting a reply within a fixed
 	// amount of time. This list is always sorted by ExpectedTime,
@@ -99,8 +99,8 @@ type Peer struct {
 	expectedResponses []*ExpectedResponse
 
 	// The addresses this peer is aware of.
-	knownAddressMapLock deadlock.RWMutex
-	knownAddressesmap   map[string]bool
+	knownAddressesMapLock deadlock.RWMutex
+	knownAddressesMap     map[string]bool
 
 	// Output queue for messages that need to be sent to the peer.
 	outputQueueChan chan DeSoMessage
@@ -131,9 +131,17 @@ type Peer struct {
 	// We process GetTransaction requests in a separate loop. This allows us
 	// to ensure that the responses are ordered.
 	mtxMessageQueue deadlock.RWMutex
-	messagQueue     []*DeSoMessageMeta
+	messageQueue    []*DeSoMessageMeta
 
 	requestedBlocks map[BlockHash]bool
+
+	// We will only allow peer fetch one snapshot chunk at a time so we will keep
+	// track whether this peer has a get snapshot request in flight.
+	snapshotChunkRequestInFlight bool
+
+	// DisableSlowSync indicates whether blocksync should not be requested for this peer. If set to true
+	// then we'll only hypersync from this peer.
+	disableSlowSync bool
 }
 
 func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
@@ -146,7 +154,7 @@ func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
 	pp.mtxMessageQueue.Lock()
 	defer pp.mtxMessageQueue.Unlock()
 
-	pp.messagQueue = append(pp.messagQueue, &DeSoMessageMeta{
+	pp.messageQueue = append(pp.messageQueue, &DeSoMessageMeta{
 		DeSoMessage: desoMessage,
 		Inbound:     inbound,
 	})
@@ -157,13 +165,13 @@ func (pp *Peer) MaybeDequeueDeSoMessage() *DeSoMessageMeta {
 	defer pp.mtxMessageQueue.Unlock()
 
 	// If we don't have any requests to process just return
-	if len(pp.messagQueue) == 0 {
+	if len(pp.messageQueue) == 0 {
 		return nil
 	}
 	// If we get here then we know we have messages to process.
 
-	messageToReturn := pp.messagQueue[0]
-	pp.messagQueue = pp.messagQueue[1:]
+	messageToReturn := pp.messageQueue[0]
+	pp.messageQueue = pp.messageQueue[1:]
 
 	return messageToReturn
 }
@@ -376,6 +384,10 @@ func (pp *Peer) HandleGetBlocks(msg *MsgDeSoGetBlocks) {
 	// Note that the requester should generally ask for the blocks in the
 	// order they'd like to receive them as we will typically honor this
 	// ordering.
+	//
+	// With HyperSync there is a potential that a node will request blocks that we haven't yet stored, although we're
+	// fully synced. This can happen to archival nodes that haven't yet downloaded all historical blocks. If a GetBlock
+	// is sent to a non-archival node for blocks that we don't have, then the peer is misbehaving and should be disconnected.
 	for _, hashToSend := range msg.HashList {
 		blockToSend := pp.srv.blockchain.GetBlock(hashToSend)
 		if blockToSend == nil {
@@ -390,6 +402,114 @@ func (pp *Peer) HandleGetBlocks(msg *MsgDeSoGetBlocks) {
 	}
 }
 
+// HandleGetSnapshot gets called whenever we receive a GetSnapshot message from a peer. This means
+// a peer is asking us to send him some data from our most recent snapshot. To respond to the peer we
+// will retrieve the chunk from our main and ancestral records db and attach it to the response message.
+// This function is handled within peer's inbound message loop because retrieving a chunk is costly.
+func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
+	// Start a timer to measure how much time sending a snapshot takes.
+	pp.srv.timer.Start("Send Snapshot")
+	defer pp.srv.timer.End("Send Snapshot")
+	defer pp.srv.timer.Print("Send Snapshot")
+
+	// Make sure this peer can only request one snapshot chunk at a time.
+	if pp.snapshotChunkRequestInFlight {
+		glog.V(1).Infof("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v"+
+			"because he already requested a GetSnapshot", pp)
+		pp.Disconnect()
+	}
+	pp.snapshotChunkRequestInFlight = true
+	defer func(pp *Peer) { pp.snapshotChunkRequestInFlight = false }(pp)
+
+	// Ignore GetSnapshot requests and disconnect the peer if we're not a hypersync node.
+	if pp.srv.snapshot == nil {
+		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
+			"and disconnecting because node doesn't support HyperSync", pp)
+		pp.Disconnect()
+	}
+
+	// Ignore GetSnapshot requests if we're still syncing. We will only serve snapshot chunk when our
+	// blockchain state is fully current.
+	if pp.srv.blockchain.isSyncing() {
+		chainState := pp.srv.blockchain.chainState()
+		glog.V(1).Infof("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v"+
+			"because node is syncing with ChainState (%v)", pp, chainState)
+		pp.AddDeSoMessage(&MsgDeSoSnapshotData{
+			SnapshotMetadata:  nil,
+			SnapshotChunk:     nil,
+			SnapshotChunkFull: false,
+			Prefix:            msg.GetPrefix(),
+		}, false)
+		return
+	}
+
+	// Make sure that the start key and prefix provided in the message are valid.
+	if len(msg.SnapshotStartKey) == 0 || len(msg.GetPrefix()) == 0 {
+		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
+			"because SnapshotStartKey or Prefix are empty", pp)
+		pp.Disconnect()
+		return
+	}
+
+	// FIXME: Any restrictions on how many snapshots a peer can request?
+
+	// Get the snapshot chunk from the database. This operation can happen concurrently with updates
+	// to the main DB or the ancestral records DB, and we don't want to slow down any of these updates.
+	// Because of that, we will detect whenever concurrent access takes place with the concurrencyFault
+	// variable. If concurrency is detected, we will re-queue the GetSnapshot message.
+	var concurrencyFault bool
+	var err error
+
+	snapshotDataMsg := &MsgDeSoSnapshotData{
+		Prefix: msg.GetPrefix(),
+	}
+	if isStateKey(msg.GetPrefix()) {
+		snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
+			pp.srv.snapshot.GetSnapshotChunk(pp.srv.blockchain.db, msg.GetPrefix(), msg.SnapshotStartKey)
+
+		snapshotDataMsg.SnapshotMetadata = pp.srv.snapshot.CurrentEpochSnapshotMetadata
+	} else if isTxIndexKey(msg.GetPrefix()) {
+		if pp.srv.TxIndex != nil && pp.srv.TxIndex.FinishedSyncing() {
+			snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
+				pp.srv.TxIndex.TXIndexChain.snapshot.GetSnapshotChunk(
+					pp.srv.TxIndex.TXIndexChain.db, msg.GetPrefix(), msg.SnapshotStartKey)
+
+			snapshotDataMsg.SnapshotMetadata = pp.srv.TxIndex.TXIndexChain.snapshot.CurrentEpochSnapshotMetadata
+		} else {
+			glog.V(1).Infof("Peer.HandleGetSnapshot: Received a TxIndex prefix but ignoring "+
+				"GetSnapshot from Peer %v because node is still syncing or doesn't support TxIndex", pp)
+			pp.AddDeSoMessage(&MsgDeSoSnapshotData{
+				SnapshotMetadata:  nil,
+				SnapshotChunk:     nil,
+				SnapshotChunkFull: false,
+				Prefix:            msg.GetPrefix(),
+			}, false)
+			return
+		}
+	}
+	if err != nil {
+		glog.Error("Peer.HandleGetSnapshot: something went wrong during fetching "+
+			"snapshot chunk for peer (%v), error (%v)", pp, err)
+		return
+	}
+	// When concurrencyFault occurs, we will wait a bit and then enqueue the message again.
+	if concurrencyFault {
+		glog.Errorf("Peer.HandleGetSnapshot: concurrency fault occurred so we enqueue the msg again to peer (%v)", pp)
+		go func() {
+			time.Sleep(GetSnapshotTimeout)
+			pp.AddDeSoMessage(msg, true)
+		}()
+		return
+	}
+
+	pp.AddDeSoMessage(snapshotDataMsg, false)
+
+	glog.V(2).Infof("Server._handleGetSnapshot: Sending a SnapshotChunk message to peer (%v) "+
+		"with SnapshotHeight (%v) and CurrentEpochChecksumBytes (%v) and Snapshotdata length (%v)", pp,
+		pp.srv.snapshot.CurrentEpochSnapshotMetadata.SnapshotBlockHeight,
+		snapshotDataMsg.SnapshotMetadata, len(snapshotDataMsg.SnapshotChunk))
+}
+
 func (pp *Peer) cleanupMessageProcessor() {
 	pp.mtxMessageQueue.Lock()
 	defer pp.mtxMessageQueue.Unlock()
@@ -397,14 +517,14 @@ func (pp *Peer) cleanupMessageProcessor() {
 	// We assume that no more elements will be added to the message queue once this function
 	// is called.
 	glog.Infof("StartDeSoMessageProcessor: Cleaning up message queue for peer: %v", pp)
-	pp.messagQueue = nil
+	pp.messageQueue = nil
 	// Set a few more things to nil just to make sure the garbage collector doesn't
 	// get confused when freeing up this Peer's memory. This is to fix a bug where
 	// inbound peers disconnecting was causing an OOM.
 	pp.cmgr = nil
 	pp.srv = nil
 	pp.MessageChan = nil
-	//pp.conn = nil
+	//pp.Conn = nil
 }
 
 func (pp *Peer) StartDeSoMessageProcessor() {
@@ -424,29 +544,35 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 
 		if msgToProcess.Inbound {
 			if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetTransactions {
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
-					"type %v with num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
-					len(msgToProcess.DeSoMessage.(*MsgDeSoGetTransactions).HashList), pp)
-				pp.HandleGetTransactionsMsg(msgToProcess.DeSoMessage.(*MsgDeSoGetTransactions))
+				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetTransactions)
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
+					"num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.HashList), pp)
+				pp.HandleGetTransactionsMsg(msg)
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeTransactionBundle {
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
-					"type %v with num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
-					len(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle).Transactions), pp)
-				pp.HandleTransactionBundleMessage(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle))
+				msg := msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle)
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
+					"num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.Transactions), pp)
+				pp.HandleTransactionBundleMessage(msg)
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeInv {
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
-					"type %v with num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
-					len(msgToProcess.DeSoMessage.(*MsgDeSoInv).InvList), pp)
-				pp.HandleInv(msgToProcess.DeSoMessage.(*MsgDeSoInv))
+				msg := msgToProcess.DeSoMessage.(*MsgDeSoInv)
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
+					"num invs %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.InvList), pp)
+				pp.HandleInv(msg)
 
 			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetBlocks {
-				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
-					"type %v with num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
-					len(msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks).HashList), pp)
-				pp.HandleGetBlocks(msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks))
+				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks)
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
+					"num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.HashList), pp)
+				pp.HandleGetBlocks(msg)
 
+			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetSnapshot {
+				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetSnapshot)
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with start key %v "+
+					"and prefix %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), msg.SnapshotStartKey, msg.GetPrefix(), pp)
+
+				pp.HandleGetSnapshot(msg)
 			} else {
 				glog.Errorf("StartDeSoMessageProcessor: ERROR RECEIVED message of "+
 					"type %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), pp)
@@ -465,12 +591,13 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 	_minFeeRateNanosPerKB uint64,
 	params *DeSoParams,
 	messageChan chan *ServerMessage,
-	_cmgr *ConnectionManager, _srv *Server) *Peer {
+	_cmgr *ConnectionManager, _srv *Server,
+	_disableSlowSync bool) *Peer {
 
 	pp := Peer{
 		cmgr:                   _cmgr,
 		srv:                    _srv,
-		conn:                   _conn,
+		Conn:                   _conn,
 		addrStr:                _conn.RemoteAddr().String(),
 		netAddr:                _netAddr,
 		isOutbound:             _isOutbound,
@@ -481,10 +608,11 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 		blocksToSend:           make(map[BlockHash]bool),
 		stallTimeoutSeconds:    _stallTimeoutSeconds,
 		minTxFeeRateNanosPerKB: _minFeeRateNanosPerKB,
-		knownAddressesmap:      make(map[string]bool),
+		knownAddressesMap:      make(map[string]bool),
 		Params:                 params,
 		MessageChan:            messageChan,
 		requestedBlocks:        make(map[BlockHash]bool),
+		disableSlowSync:        _disableSlowSync,
 	}
 	if _cmgr != nil {
 		pp.ID = atomic.AddUint64(&_cmgr.peerIndex, 1)
@@ -551,18 +679,18 @@ const (
 	idleTimeout = 5 * time.Minute
 )
 
-// handlePingMsg is invoked when a peer receives a ping message. It replies with a pong
+// HandlePingMsg is invoked when a peer receives a ping message. It replies with a pong
 // message.
-func (pp *Peer) handlePingMsg(msg *MsgDeSoPing) {
+func (pp *Peer) HandlePingMsg(msg *MsgDeSoPing) {
 	// Include nonce from ping so pong can be identified.
-	glog.V(2).Infof("Peer.handlePingMsg: Received ping from peer %v: %v", pp, msg)
+	glog.V(2).Infof("Peer.HandlePingMsg: Received ping from peer %v: %v", pp, msg)
 	// Queue up a pong message.
 	pp.QueueMessage(&MsgDeSoPong{Nonce: msg.Nonce})
 }
 
-// handlePongMsg is invoked when a peer receives a pong message.  It
+// HandlePongMsg is invoked when a peer receives a pong message.  It
 // updates the ping statistics.
-func (pp *Peer) handlePongMsg(msg *MsgDeSoPong) {
+func (pp *Peer) HandlePongMsg(msg *MsgDeSoPong) {
 	// Arguably we could use a buffered channel here sending data
 	// in a fifo manner whenever we send a ping, or a list keeping track of
 	// the times of each ping. For now we just make a best effort and
@@ -570,19 +698,19 @@ func (pp *Peer) handlePongMsg(msg *MsgDeSoPong) {
 	// and overlapping pings will be ignored. It is unlikely to occur
 	// without large usage of the ping call since we ping infrequently
 	// enough that if they overlap we would have timed out the peer.
-	glog.V(2).Infof("Peer.handlePongMsg: Received pong from peer %v: %v", msg, pp)
+	glog.V(2).Infof("Peer.HandlePongMsg: Received pong from peer %v: %v", msg, pp)
 	pp.StatsMtx.Lock()
 	defer pp.StatsMtx.Unlock()
 	if pp.LastPingNonce != 0 && msg.Nonce == pp.LastPingNonce {
 		pp.LastPingMicros = time.Since(pp.LastPingTime).Nanoseconds()
 		pp.LastPingMicros /= 1000 // convert to usec.
 		pp.LastPingNonce = 0
-		glog.V(2).Infof("Peer.handlePongMsg: LastPingMicros(%d) from Peer %v", pp.LastPingMicros, pp)
+		glog.V(2).Infof("Peer.HandlePongMsg: LastPingMicros(%d) from Peer %v", pp.LastPingMicros, pp)
 	}
 }
 
-func (pp *Peer) pingHandler() {
-	glog.V(1).Infof("Peer.pingHandler: Starting ping handler for Peer %v", pp)
+func (pp *Peer) PingHandler() {
+	glog.V(1).Infof("Peer.PingHandler: Starting ping handler for Peer %v", pp)
 	pingTicker := time.NewTicker(pingInterval)
 	defer pingTicker.Stop()
 
@@ -590,7 +718,7 @@ out:
 	for {
 		select {
 		case <-pingTicker.C:
-			glog.V(2).Infof("Peer.pingHandler: Initiating ping for Peer %v", pp)
+			glog.V(2).Infof("Peer.PingHandler: Initiating ping for Peer %v", pp)
 			nonce, err := wire.RandomUint64()
 			if err != nil {
 				glog.Errorf("Not sending ping to Peer %v: %v", pp, err)
@@ -694,32 +822,40 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 			// the hashes we were expecting using timeouts on requested hashes.
 		})
 	}
+
+	// If we're sending a GetSnapshot message, the peer should respond within a few seconds with a SnapshotData.
+	if msg.GetMsgType() == MsgTypeGetSnapshot {
+		pp._addExpectedResponse(&ExpectedResponse{
+			TimeExpected: time.Now().Add(stallTimeout),
+			MessageType:  MsgTypeSnapshotData,
+		})
+	}
 }
 
 func (pp *Peer) _filterAddrMsg(addrMsg *MsgDeSoAddr) *MsgDeSoAddr {
-	pp.knownAddressMapLock.Lock()
-	defer pp.knownAddressMapLock.Unlock()
+	pp.knownAddressesMapLock.Lock()
+	defer pp.knownAddressesMapLock.Unlock()
 
 	filteredAddrMsg := &MsgDeSoAddr{}
 	for _, addr := range addrMsg.AddrList {
-		if _, hasAddr := pp.knownAddressesmap[addr.StringWithPort(false /*includePort*/)]; hasAddr {
+		if _, hasAddr := pp.knownAddressesMap[addr.StringWithPort(false /*includePort*/)]; hasAddr {
 			continue
 		}
 
 		// If we get here this is an address the peer hasn't seen before so
 		// don't filter it out. Also add it to the known address map.
 		filteredAddrMsg.AddrList = append(filteredAddrMsg.AddrList, addr)
-		pp.knownAddressesmap[addr.StringWithPort(false /*includePort*/)] = true
+		pp.knownAddressesMap[addr.StringWithPort(false /*includePort*/)] = true
 	}
 
 	return filteredAddrMsg
 }
 
 func (pp *Peer) _setKnownAddressesMap(key string, val bool) {
-	pp.knownAddressMapLock.Lock()
-	defer pp.knownAddressMapLock.Unlock()
+	pp.knownAddressesMapLock.Lock()
+	defer pp.knownAddressesMapLock.Unlock()
 
-	pp.knownAddressesmap[key] = val
+	pp.knownAddressesMap[key] = val
 }
 
 func (pp *Peer) outHandler() {
@@ -768,6 +904,7 @@ out:
 			}
 
 			// If we have a problem sending a message to a peer then disconnect them.
+			glog.V(3).Infof("Writing Message: (%v)", msg)
 			if err := pp.WriteDeSoMessage(msg); err != nil {
 				glog.Errorf("Peer.outHandler: Problem sending message to peer: %v: %v", pp, err)
 				pp.Disconnect()
@@ -876,7 +1013,8 @@ func (pp *Peer) _handleInExpectedResponse(rmsg DeSoMessage) error {
 	msgType := rmsg.GetMsgType()
 	if msgType == MsgTypeBlock ||
 		msgType == MsgTypeHeaderBundle ||
-		msgType == MsgTypeTransactionBundle {
+		msgType == MsgTypeTransactionBundle ||
+		msgType == MsgTypeSnapshotData {
 
 		expectedResponse := pp._removeEarliestExpectedResponse(msgType)
 		if expectedResponse == nil {
@@ -971,14 +1109,13 @@ out:
 
 		case *MsgDeSoPing:
 			// Respond to a ping with a pong.
-			pp.handlePingMsg(msg)
+			pp.HandlePingMsg(msg)
 
 		case *MsgDeSoPong:
 			// Measure the ping time when we receive a pong.
-			pp.handlePongMsg(msg)
+			pp.HandlePongMsg(msg)
 
-		case *MsgDeSoNewPeer, *MsgDeSoDonePeer,
-			*MsgDeSoBitcoinManagerUpdate, *MsgDeSoQuit:
+		case *MsgDeSoNewPeer, *MsgDeSoDonePeer, *MsgDeSoQuit:
 
 			// We should never receive control messages from a Peer. Disconnect if we do.
 			glog.Errorf("Peer.inHandler: Received control message of type %v from "+
@@ -1011,7 +1148,7 @@ func (pp *Peer) Start() {
 	glog.Infof("Peer.Start: Starting peer %v", pp)
 	// The protocol has been negotiated successfully so start processing input
 	// and output messages.
-	go pp.pingHandler()
+	go pp.PingHandler()
 	go pp.outHandler()
 	go pp.inHandler()
 	go pp.StartDeSoMessageProcessor()
@@ -1019,7 +1156,7 @@ func (pp *Peer) Start() {
 	// If the address manager needs more addresses, then send a GetAddr message
 	// to the peer. This is best-effort.
 	if pp.cmgr != nil {
-		if pp.cmgr.addrMgr.NeedMoreAddresses() {
+		if pp.cmgr.AddrMgr.NeedMoreAddresses() {
 			go func() {
 				pp.QueueMessage(&MsgDeSoGetAddr{})
 			}()
@@ -1030,12 +1167,22 @@ func (pp *Peer) Start() {
 }
 
 func (pp *Peer) IsSyncCandidate() bool {
-	flagsAreCorrect := (pp.serviceFlags & SFFullNode) != 0
-	return flagsAreCorrect && pp.isOutbound
+	isFullNode := (pp.serviceFlags & SFFullNode) != 0
+	// TODO: This is a bit of a messy way to determine whether the node was run with --hypersync
+	nodeSupportsHypersync := (pp.serviceFlags & SFHyperSync) != 0
+	hypersyncSatisfied := !pp.disableSlowSync || nodeSupportsHypersync
+	glog.Infof("IsSyncCandidate: localAddr (%v), isFullNode (%v), "+
+		"hypersyncSatisfied (%v), --disableSlowSync (%v), nodeSupportsHypersync (%v), "+
+		"is outbound (%v)",
+		pp.Conn.LocalAddr().String(), isFullNode, hypersyncSatisfied,
+		pp.disableSlowSync,
+		nodeSupportsHypersync,
+		pp.isOutbound)
+	return isFullNode && pp.isOutbound && hypersyncSatisfied
 }
 
 func (pp *Peer) WriteDeSoMessage(msg DeSoMessage) error {
-	payload, err := WriteMessage(pp.conn, msg, pp.Params.NetworkType)
+	payload, err := WriteMessage(pp.Conn, msg, pp.Params.NetworkType)
 	if err != nil {
 		return errors.Wrapf(err, "WriteDeSoMessage: ")
 	}
@@ -1047,14 +1194,14 @@ func (pp *Peer) WriteDeSoMessage(msg DeSoMessage) error {
 	// Useful for debugging.
 	// TODO: This may be too verbose
 	messageSeq := atomic.AddUint64(&pp.totalMessages, 1)
-	glog.V(1).Infof("SENDING( seq=%d ) message of type: %v to peer %v: %v",
+	glog.V(3).Infof("SENDING( seq=%d ) message of type: %v to peer %v: %v",
 		messageSeq, msg.GetMsgType(), pp, msg)
 
 	return nil
 }
 
 func (pp *Peer) ReadDeSoMessage() (DeSoMessage, error) {
-	msg, payload, err := ReadMessage(pp.conn, pp.Params.NetworkType)
+	msg, payload, err := ReadMessage(pp.Conn, pp.Params.NetworkType)
 	if err != nil {
 		err := errors.Wrapf(err, "ReadDeSoMessage: ")
 		glog.Error(err)
@@ -1068,7 +1215,7 @@ func (pp *Peer) ReadDeSoMessage() (DeSoMessage, error) {
 
 	// Useful for debugging.
 	messageSeq := atomic.AddUint64(&pp.totalMessages, 1)
-	glog.V(1).Infof("RECEIVED( seq=%d ) message of type: %v from peer %v: %v",
+	glog.V(3).Infof("RECEIVED( seq=%d ) message of type: %v from peer %v: %v",
 		messageSeq, msg.GetMsgType(), pp, msg)
 
 	return msg, nil
@@ -1087,6 +1234,12 @@ func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	// TODO: Right now all peers are full nodes. Later on we'll want to change this,
 	// at which point we'll need to do a little refactoring.
 	ver.Services = SFFullNode
+	if pp.cmgr != nil && pp.cmgr.HyperSync {
+		ver.Services |= SFHyperSync
+		if pp.srv.blockchain.archivalMode {
+			ver.Services |= SFArchivalNode
+		}
+	}
 
 	// When a node asks you for what height you have, you should reply with
 	// the height of the latest actual block you have. This makes it so that
@@ -1111,7 +1264,7 @@ func (pp *Peer) sendVerack() error {
 	verackMsg := NewMessage(MsgTypeVerack)
 	// Include the nonce we received in the peer's version message so
 	// we can validate that we actually control our IP address.
-	verackMsg.(*MsgDeSoVerack).Nonce = pp.versionNonceReceived
+	verackMsg.(*MsgDeSoVerack).Nonce = pp.VersionNonceReceived
 	if err := pp.WriteDeSoMessage(verackMsg); err != nil {
 		return errors.Wrap(err, "sendVerack: ")
 	}
@@ -1130,10 +1283,10 @@ func (pp *Peer) readVerack() error {
 			msg.GetMsgType().String())
 	}
 	verackMsg := msg.(*MsgDeSoVerack)
-	if verackMsg.Nonce != pp.versionNonceSent {
+	if verackMsg.Nonce != pp.VersionNonceSent {
 		return fmt.Errorf(
 			"readVerack: Received VERACK message with nonce %d but expected nonce %d",
-			verackMsg.Nonce, pp.versionNonceSent)
+			verackMsg.Nonce, pp.VersionNonceSent)
 	}
 
 	return nil
@@ -1147,9 +1300,9 @@ func (pp *Peer) sendVersion() error {
 	// Record the nonce of this version message before we send it so we can
 	// detect self connections and so we can validate that the peer actually
 	// controls the IP she's supposedly communicating to us from.
-	pp.versionNonceSent = verMsg.Nonce
+	pp.VersionNonceSent = verMsg.Nonce
 	if pp.cmgr != nil {
-		pp.cmgr.sentNonces.Add(pp.versionNonceSent)
+		pp.cmgr.sentNonces.Add(pp.VersionNonceSent)
 	}
 
 	if err := pp.WriteDeSoMessage(verMsg); err != nil {
@@ -1186,7 +1339,7 @@ func (pp *Peer) readVersion() error {
 		}
 	}
 	// Save the version nonce so we can include it in our verack message.
-	pp.versionNonceReceived = msgNonce
+	pp.VersionNonceReceived = msgNonce
 
 	// Set the peer info-related fields.
 	pp.PeerInfoMtx.Lock()
@@ -1204,20 +1357,20 @@ func (pp *Peer) readVersion() error {
 	pp.StatsMtx.Lock()
 	pp.startingHeight = verMsg.StartBlockHeight
 	pp.minTxFeeRateNanosPerKB = verMsg.MinFeeRateNanosPerKB
-	pp.timeConnected = time.Unix(verMsg.TstampSecs, 0)
-	pp.timeOffsetSecs = verMsg.TstampSecs - time.Now().Unix()
+	pp.TimeConnected = time.Unix(verMsg.TstampSecs, 0)
+	pp.TimeOffsetSecs = verMsg.TstampSecs - time.Now().Unix()
 	pp.StatsMtx.Unlock()
 
 	// Update the timeSource now that we've gotten a version message from the
 	// peer.
 	if pp.cmgr != nil {
-		pp.cmgr.timeSource.AddTimeSample(pp.addrStr, pp.timeConnected)
+		pp.cmgr.timeSource.AddTimeSample(pp.addrStr, pp.TimeConnected)
 	}
 
 	return nil
 }
 
-func (pp *Peer) readWithTimeout(readFunc func() error, readTimeout time.Duration) error {
+func (pp *Peer) ReadWithTimeout(readFunc func() error, readTimeout time.Duration) error {
 	errChan := make(chan error)
 	go func() {
 		errChan <- readFunc()
@@ -1229,7 +1382,7 @@ func (pp *Peer) readWithTimeout(readFunc func() error, readTimeout time.Duration
 		}
 	case <-time.After(readTimeout):
 		{
-			return fmt.Errorf("readWithTimeout: Timed out reading message from peer: (%v)", pp)
+			return fmt.Errorf("ReadWithTimeout: Timed out reading message from peer: (%v)", pp)
 		}
 	}
 }
@@ -1241,7 +1394,7 @@ func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error 
 			return errors.Wrapf(err, "negotiateVersion: Problem sending version to Peer %v", pp)
 		}
 		// Read the peer's version.
-		if err := pp.readWithTimeout(
+		if err := pp.ReadWithTimeout(
 			pp.readVersion,
 			versionNegotiationTimeout); err != nil {
 
@@ -1249,7 +1402,7 @@ func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error 
 		}
 	} else {
 		// Read the version first since this is an inbound peer.
-		if err := pp.readWithTimeout(
+		if err := pp.ReadWithTimeout(
 			pp.readVersion,
 			versionNegotiationTimeout); err != nil {
 
@@ -1265,13 +1418,13 @@ func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error 
 	if err := pp.sendVerack(); err != nil {
 		return errors.Wrapf(err, "negotiateVersion: Problem sending verack to Peer %v", pp)
 	}
-	if err := pp.readWithTimeout(
+	if err := pp.ReadWithTimeout(
 		pp.readVerack,
 		versionNegotiationTimeout); err != nil {
 
 		return errors.Wrapf(err, "negotiateVersion: Problem reading VERACK message from Peer %v", pp)
 	}
-	pp.versionNegotiated = true
+	pp.VersionNegotiated = true
 
 	// At this point we have sent a version and validated our peer's
 	// version. So the negotiation should be complete.
@@ -1281,6 +1434,7 @@ func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error 
 // Disconnect closes a peer's network connection.
 func (pp *Peer) Disconnect() {
 	// Only run the logic the first time Disconnect is called.
+	glog.V(1).Infof(CLog(Yellow, "Peer.Disconnect: Starting"))
 	if atomic.AddInt32(&pp.disconnected, 1) != 1 {
 		glog.V(1).Infof("Peer.Disconnect: Disconnect call ignored since it was already called before for Peer %v", pp)
 		return
@@ -1289,14 +1443,14 @@ func (pp *Peer) Disconnect() {
 	glog.V(1).Infof("Peer.Disconnect: Running Disconnect for the first time for Peer %v", pp)
 
 	// Close the connection object.
-	pp.conn.Close()
+	pp.Conn.Close()
 
 	// Signaling the quit channel allows all the other goroutines to stop running.
 	close(pp.quit)
 
 	// Add the Peer to donePeers so that the ConnectionManager and Server can do any
 	// cleanup they need to do.
-	if pp.cmgr != nil {
+	if pp.cmgr != nil && atomic.LoadInt32(&pp.cmgr.shutdown) == 0 {
 		pp.cmgr.donePeerChan <- pp
 	}
 }

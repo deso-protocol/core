@@ -21,7 +21,7 @@ func _doLikeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	senderPkBytes, _, err := Base58CheckDecode(senderPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateLikeTxn(
@@ -58,7 +58,7 @@ func _doLikeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeLike, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -279,7 +279,7 @@ func TestLikeTxns(t *testing.T) {
 		for ii := 0; ii < len(likingPks); ii++ {
 			require.Contains(likingP1, likingPks[ii])
 		}
-		post1 := DBGetPostEntryByPostHash(db, &post1Hash)
+		post1 := DBGetPostEntryByPostHash(db, chain.snapshot, &post1Hash)
 		require.Equal(uint64(len(likingP1)), post1.LikeCount)
 	}
 
@@ -291,7 +291,7 @@ func TestLikeTxns(t *testing.T) {
 		for ii := 0; ii < len(likingPks); ii++ {
 			require.Contains(likingP2, likingPks[ii])
 		}
-		post2 := DBGetPostEntryByPostHash(db, &post2Hash)
+		post2 := DBGetPostEntryByPostHash(db, chain.snapshot, &post2Hash)
 		require.Equal(uint64(len(likingP2)), post2.LikeCount)
 	}
 
@@ -303,7 +303,7 @@ func TestLikeTxns(t *testing.T) {
 		for ii := 0; ii < len(likingPks); ii++ {
 			require.Contains(likingP3, likingPks[ii])
 		}
-		post3 := DBGetPostEntryByPostHash(db, &post3Hash)
+		post3 := DBGetPostEntryByPostHash(db, chain.snapshot, &post3Hash)
 		require.Equal(uint64(len(likingP3)), post3.LikeCount)
 	}
 
@@ -397,7 +397,7 @@ func TestLikeTxns(t *testing.T) {
 		for ii := 0; ii < len(likingPks); ii++ {
 			require.Contains(likingP1, likingPks[ii])
 		}
-		post1 := DBGetPostEntryByPostHash(db, &post1Hash)
+		post1 := DBGetPostEntryByPostHash(db, chain.snapshot, &post1Hash)
 		require.Equal(uint64(len(likingP1)), post1.LikeCount)
 	}
 
@@ -409,7 +409,7 @@ func TestLikeTxns(t *testing.T) {
 		for ii := 0; ii < len(likingPks); ii++ {
 			require.Contains(likingP2, likingPks[ii])
 		}
-		post2 := DBGetPostEntryByPostHash(db, &post2Hash)
+		post2 := DBGetPostEntryByPostHash(db, chain.snapshot, &post2Hash)
 		require.Equal(uint64(len(likingP2)), post2.LikeCount)
 	}
 
@@ -472,14 +472,14 @@ func TestLikeTxns(t *testing.T) {
 			"Disconnecting transaction with type %v index %d (going backwards)\n",
 			currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
@@ -492,11 +492,11 @@ func TestLikeTxns(t *testing.T) {
 
 		// Here we check the like counts after all the like entries have been disconnected.
 		if backwardIter == 19 {
-			post1 := DBGetPostEntryByPostHash(db, &post1Hash)
+			post1 := DBGetPostEntryByPostHash(db, chain.snapshot, &post1Hash)
 			require.Equal(uint64(0), post1.LikeCount)
-			post2 := DBGetPostEntryByPostHash(db, &post2Hash)
+			post2 := DBGetPostEntryByPostHash(db, chain.snapshot, &post2Hash)
 			require.Equal(uint64(0), post2.LikeCount)
-			post3 := DBGetPostEntryByPostHash(db, &post3Hash)
+			post3 := DBGetPostEntryByPostHash(db, chain.snapshot, &post3Hash)
 			require.Equal(uint64(0), post3.LikeCount)
 		}
 	}
@@ -557,7 +557,7 @@ func TestLikeTxns(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -571,7 +571,7 @@ func TestLikeTxns(t *testing.T) {
 		require.NoError(err)
 	}
 	// Flush the utxoView after having added all the transactions.
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	testConnectedState := func() {
 		likingP1 = [][]byte{
@@ -595,7 +595,7 @@ func TestLikeTxns(t *testing.T) {
 			for ii := 0; ii < len(likingPks); ii++ {
 				require.Contains(likingP1, likingPks[ii])
 			}
-			post1 := DBGetPostEntryByPostHash(db, &post1Hash)
+			post1 := DBGetPostEntryByPostHash(db, chain.snapshot, &post1Hash)
 			require.Equal(uint64(len(likingP1)), post1.LikeCount)
 		}
 
@@ -607,7 +607,7 @@ func TestLikeTxns(t *testing.T) {
 			for ii := 0; ii < len(likingPks); ii++ {
 				require.Contains(likingP2, likingPks[ii])
 			}
-			post2 := DBGetPostEntryByPostHash(db, &post2Hash)
+			post2 := DBGetPostEntryByPostHash(db, chain.snapshot, &post2Hash)
 			require.Equal(uint64(len(likingP2)), post2.LikeCount)
 		}
 
@@ -619,7 +619,7 @@ func TestLikeTxns(t *testing.T) {
 			for ii := 0; ii < len(likingPks); ii++ {
 				require.Contains(likingP3, likingPks[ii])
 			}
-			post3 := DBGetPostEntryByPostHash(db, &post3Hash)
+			post3 := DBGetPostEntryByPostHash(db, chain.snapshot, &post3Hash)
 			require.Equal(uint64(len(likingP3)), post3.LikeCount)
 		}
 
@@ -677,7 +677,7 @@ func TestLikeTxns(t *testing.T) {
 
 	// Disconnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil)
+	utxoView2, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -689,7 +689,7 @@ func TestLikeTxns(t *testing.T) {
 		err = utxoView2.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 	}
-	require.NoError(utxoView2.FlushToDb())
+	require.NoError(utxoView2.FlushToDb(0))
 	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
 	require.Equal(expectedRecipientBalances[0], _getBalance(t, chain, nil, recipientPkString))
 
@@ -720,23 +720,23 @@ func TestLikeTxns(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
+		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps, 0))
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	testDisconnectedState()
