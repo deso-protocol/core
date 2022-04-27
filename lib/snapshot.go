@@ -2174,6 +2174,7 @@ func (migration *EncoderMigration) StartMigrations() error {
 	carrierChecksum := &StateChecksum{}
 	carrierChecksum.Initialize(nil, nil)
 
+	// This whole thing is just a status printer
 	startedPrefix := prefixes[0]
 	finishChannel := make(chan struct{})
 	go func() {
@@ -2211,6 +2212,7 @@ func (migration *EncoderMigration) StartMigrations() error {
 		}
 	}()
 
+	// Compute the checksums for all migrations, as needed.
 	err := migration.mainDb.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		for _, prefix := range prefixes {

@@ -244,7 +244,8 @@ type ForkHeights struct {
 // you should:
 //  0. Typically, encoder migrations should align with hard fork heights. So the first
 //     step is to define a new value in ForkHeights, and set the value accordingly for
-//     mainnet, testnet, and regtest param structs.
+//     mainnet, testnet, and regtest param structs. Add a name for your migration so that
+//     it can be accessed robustly.
 //	1. Define a new block height in the EncoderMigrationHeights struct. This should map
 //     1:1 with the fork height defined prior.
 //	2. Add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods that
@@ -268,11 +269,11 @@ type ForkHeights struct {
 //
 // 2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
 //	end of RawEncodeWithoutMetadata (note the usage of the MigrationName UtxoEntryTestHeight):
-//		if CheckMigrationCondition(blockHeight, UtxoEntryTestHeight) {
+//		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
 //			data = append(data, byte(127))
 //		}
 //	And this at the end of RawDecodeWithoutMetadata:
-//		if CheckMigrationCondition(blockHeight, UtxoEntryTestHeight) {
+//		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
 //			_, err = rr.ReadByte()
 //			if err != nil {
 //				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte")
@@ -283,7 +284,7 @@ type ForkHeights struct {
 // 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. (Note
 //		the usage of the MigrationName UtxoEntryTestHeight)
 //
-//		return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
+//		return GetMigrationVersion(blockHeight, [UtxoEntryTestHeight])
 //
 // That's it!
 type MigrationName string

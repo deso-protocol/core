@@ -8,7 +8,8 @@ import (
 	"testing"
 )
 
-// Add an encoder migration height in constants.go then modify some random struct like UtxoEntry.
+// TODO: Add an encoder migration height in constants.go then modify some
+// random struct like UtxoEntry. Until we have a migration, we can't fully test this.
 func TestEncoderMigrations(t *testing.T) {
 	require := require.New(t)
 	_ = require
