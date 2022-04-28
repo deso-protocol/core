@@ -25,7 +25,7 @@ func (bav *UtxoView) _getMessageEntryForMessageKey(messageKey *MessageKey) *Mess
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	dbMessageEntry := DBGetMessageEntry(bav.Handle, messageKey.PublicKey[:], messageKey.TstampNanos)
+	dbMessageEntry := DBGetMessageEntry(bav.Handle, bav.Snapshot, messageKey.PublicKey[:], messageKey.TstampNanos)
 	if dbMessageEntry != nil {
 		bav._setMessageEntryMappings(dbMessageEntry)
 	}
@@ -110,7 +110,7 @@ func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 		// If we get here it means no value exists in our in-memory map. In this case,
 		// defer to the db. If a mapping exists in the db, return it. If not, return
 		// nil. Either way, save the value to the in-memory UtxoView mapping.
-		messagingGroupEntry := DBGetMessagingGroupEntry(bav.Handle, messagingGroupKey)
+		messagingGroupEntry := DBGetMessagingGroupEntry(bav.Handle, bav.Snapshot, messagingGroupKey)
 		if messagingGroupEntry != nil {
 			bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
 		}
@@ -693,7 +693,8 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 	}
 
 	// Make sure the sender and recipient entries are identical by comparing their byte encodings.
-	if !reflect.DeepEqual(recipientMessageEntry.Encode(), senderMessageEntry.Encode()) {
+	if !reflect.DeepEqual(EncodeToBytes(uint64(blockHeight), recipientMessageEntry),
+		EncodeToBytes(uint64(blockHeight), senderMessageEntry)) {
 		return fmt.Errorf("_disconnectPrivateMessage: MessageEntry for "+
 			"sender (%v) doesn't matche the entry for the recipient (%v)",
 			senderMessageEntry, recipientMessageEntry)
@@ -939,7 +940,8 @@ func (bav *UtxoView) _connectMessagingGroup(
 	var prevMessagingKeyEntry *MessagingGroupEntry
 	if existingEntry != nil && !existingEntry.isDeleted {
 		prevMessagingKeyEntry = &MessagingGroupEntry{}
-		if err = prevMessagingKeyEntry.Decode(existingEntry.Encode()); err != nil {
+		rr := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
+		if exists, err := DecodeFromBytes(prevMessagingKeyEntry, rr); !exists || err != nil {
 			return 0, 0, nil, errors.Wrapf(err,
 				"_connectMessagingGroup: Error decoding previous entry")
 		}

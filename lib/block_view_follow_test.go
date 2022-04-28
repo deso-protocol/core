@@ -24,7 +24,7 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	followedPkBytes, _, err := Base58CheckDecode(followedPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateFollowTxn(
@@ -60,7 +60,7 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeFollow, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -257,14 +257,14 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m0 has no follows.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m0Pub))
+		followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(0, len(followPks))
 	}
 
 	// Verify pks following and check like count m1.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m1Pub))
+		followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(len(followingM1), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -274,7 +274,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify pks following and check like count m2.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m2Pub))
+		followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(len(followingM2), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -284,7 +284,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify pks following and check like count m3.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m3Pub))
+		followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(len(followingM3), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -312,7 +312,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m0's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m0Pub))
+		followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(len(m0Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -322,7 +322,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m1's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m1Pub))
+		followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(len(m1Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -332,7 +332,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m2's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m2Pub))
+		followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(len(m2Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -342,7 +342,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m3's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m3Pub))
+		followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(len(m3Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -376,7 +376,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify pks following and check like count m1.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m1Pub))
+		followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m1Pub))
 		require.NoError(err)
 		require.Equal(len(followingM1), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -386,7 +386,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify pks following and check like count m2.
 	{
-		followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m2Pub))
+		followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m2Pub))
 		require.NoError(err)
 		require.Equal(len(followingM2), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -400,14 +400,14 @@ func TestFollowTxns(t *testing.T) {
 
 	// Verify m0 has no follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m0Pub))
+		followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m0Pub))
 		require.NoError(err)
 		require.Equal(0, len(followPks))
 	}
 
 	// Verify m3's follows.
 	{
-		followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m3Pub))
+		followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m3Pub))
 		require.NoError(err)
 		require.Equal(len(m3Follows), len(followPks))
 		for ii := 0; ii < len(followPks); ii++ {
@@ -462,14 +462,14 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify m0 has no follows.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m0Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m0Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 
 		// Verify pks following and check like count m1.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m1Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m1Pub))
 			require.NoError(err)
 			require.Equal(len(followingM1), len(followPks))
 			for ii := 0; ii < len(followPks); ii++ {
@@ -479,7 +479,7 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify pks following and check like count m2.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m2Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m2Pub))
 			require.NoError(err)
 			require.Equal(len(followingM2), len(followPks))
 			for ii := 0; ii < len(followPks); ii++ {
@@ -489,7 +489,7 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify pks following and check like count m3.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m3Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m3Pub))
 			require.NoError(err)
 			require.Equal(len(followingM3), len(followPks))
 			for i := 0; i < len(followPks); i++ {
@@ -512,14 +512,14 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify m0 has no follows.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m0Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m0Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 
 		// Verify m1's follows.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m1Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m1Pub))
 			require.NoError(err)
 			require.Equal(len(m1Follows), len(followPks))
 			for i := 0; i < len(followPks); i++ {
@@ -529,7 +529,7 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify m2's follows.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m2Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m2Pub))
 			require.NoError(err)
 			require.Equal(len(m2Follows), len(followPks))
 			for i := 0; i < len(followPks); i++ {
@@ -539,7 +539,7 @@ func TestFollowTxns(t *testing.T) {
 
 		// Verify m3's follows.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m3Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m3Pub))
 			require.NoError(err)
 			require.Equal(len(m3Follows), len(followPks))
 			for i := 0; i < len(followPks); i++ {
@@ -556,14 +556,14 @@ func TestFollowTxns(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
@@ -575,44 +575,44 @@ func TestFollowTxns(t *testing.T) {
 	testDisconnectedState := func() {
 		// Verify that all the pks following you have been deleted.
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m0Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m0Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m1Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m1Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m2Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m2Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysFollowingYou(db, _strToPk(t, m3Pub))
+			followPks, err := DbGetPubKeysFollowingYou(db, chain.snapshot, _strToPk(t, m3Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 
 		// Verify that all the keys you followed have been deleted.
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m0Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m0Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m1Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m1Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m2Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m2Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
 		{
-			followPks, err := DbGetPubKeysYouFollow(db, _strToPk(t, m3Pub))
+			followPks, err := DbGetPubKeysYouFollow(db, chain.snapshot, _strToPk(t, m3Pub))
 			require.NoError(err)
 			require.Equal(0, len(followPks))
 		}
@@ -634,7 +634,7 @@ func TestFollowTxns(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -648,12 +648,12 @@ func TestFollowTxns(t *testing.T) {
 		require.NoError(err)
 	}
 	// Flush the utxoView after having added all the transactions.
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 	testConnectedState()
 
 	// Disconnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil)
+	utxoView2, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -665,7 +665,7 @@ func TestFollowTxns(t *testing.T) {
 		err = utxoView2.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 	}
-	require.NoError(utxoView2.FlushToDb())
+	require.NoError(utxoView2.FlushToDb(0))
 	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
 	require.Equal(expectedRecipientBalances[0], _getBalance(t, chain, nil, recipientPkString))
 
@@ -696,23 +696,23 @@ func TestFollowTxns(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
+		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps, 0))
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	testDisconnectedState()

@@ -3,10 +3,10 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"io"
+	"reflect"
 	"sort"
 )
 
@@ -14,8 +14,10 @@ import (
 // indexed using the PKID rather than the user's public key directly in order to
 // create one layer of indirection between the public key and the user's data. This
 // makes it easy for the user to transfer certain data to a new public key.
-type PKID [33]byte
-type PublicKey [33]byte
+const PublicKeyLenCompressed int = 33
+
+type PKID [PublicKeyLenCompressed]byte
+type PublicKey [PublicKeyLenCompressed]byte
 
 func NewPKID(pkidBytes []byte) *PKID {
 	if len(pkidBytes) == 0 {
@@ -41,13 +43,48 @@ var (
 		0xff, 0xff, 0xff}
 )
 
+func (pkid *PKID) NewPKID() *PKID {
+	newPkid := &PKID{}
+	copy(newPkid[:], pkid[:])
+	return newPkid
+}
+
+func (pkid *PKID) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	return EncodeByteArray(pkid[:])
+}
+
+func (pkid *PKID) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	pkidBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PKID.Decode: Problem reading PKID")
+	}
+	copy(pkid[:], pkidBytes)
+	return nil
+}
+
+func (pkid *PKID) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (pkid *PKID) GetEncoderType() EncoderType {
+	return EncoderTypePKID
+}
+
 func (pkid *PKID) ToBytes() []byte {
 	return pkid[:]
 }
 
-func (pkid *PKID) Encode() []byte {
-	data := append([]byte{}, UintToBuf(uint64(len(pkid[:])))...)
-	return append(data, pkid[:]...)
+func (pkid *PKID) FromBytes(rr *bytes.Reader) error {
+	pkidBytes := make([]byte, PublicKeyLenCompressed)
+	if _, err := io.ReadFull(rr, pkidBytes); err != nil {
+		return errors.Wrapf(err, "PKID.FromBytes: Problem reading PKID")
+	}
+	copy(pkid[:], pkidBytes)
+	return nil
+}
+
+func (pkid *PKID) ToString() string {
+	return string(pkid.ToBytes())
 }
 
 func (pkid *PKID) Eq(other *PKID) bool {
@@ -65,31 +102,8 @@ func SortPKIDs(pkids []PKID) []PKID {
 	return pkids
 }
 
-func ReadPublicKey(rr io.Reader) (*PublicKey, error) {
-	valBytes := make([]byte, 33, 33)
-	_, err := io.ReadFull(rr, valBytes)
-	if err != nil {
-		return nil, errors.Wrapf(err, "ReadPublicKey: Error reading public key")
-	}
-	return NewPublicKey(valBytes), nil
-}
-
-func ReadPKID(rr io.Reader) (*PKID, error) {
-	pkidBytes, err := ReadVarString(rr)
-	if err != nil {
-		return nil, err
-	}
-	return PublicKeyToPKID(pkidBytes), nil
-}
-
-func (pkid *PKID) NewPKID() *PKID {
-	newPkid := &PKID{}
-	copy(newPkid[:], pkid[:])
-	return newPkid
-}
-
 func NewPublicKey(publicKeyBytes []byte) *PublicKey {
-	if len(publicKeyBytes) != btcec.PubKeyBytesLenCompressed {
+	if len(publicKeyBytes) != PublicKeyLenCompressed {
 		return nil
 	}
 	publicKey := &PublicKey{}
@@ -99,6 +113,36 @@ func NewPublicKey(publicKeyBytes []byte) *PublicKey {
 
 func (publicKey *PublicKey) ToBytes() []byte {
 	return publicKey[:]
+}
+
+func ReadPublicKey(rr io.Reader) (*PublicKey, error) {
+	valBytes := make([]byte, PublicKeyLenCompressed, PublicKeyLenCompressed)
+	_, err := io.ReadFull(rr, valBytes)
+	if err != nil {
+		return nil, errors.Wrapf(err, "ReadPublicKey: Error reading public key")
+	}
+	return NewPublicKey(valBytes), nil
+}
+
+func (publicKey *PublicKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	return EncodeByteArray(publicKey[:])
+}
+
+func (publicKey *PublicKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	publicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PublicKey.Decode: Problem reading publicKey")
+	}
+	copy(publicKey[:], publicKeyBytes)
+	return nil
+}
+
+func (publicKey *PublicKey) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (publicKey *PublicKey) GetEncoderType() EncoderType {
+	return EncoderTypePublicKey
 }
 
 func (publicKey *PublicKey) IsZeroPublicKey() bool {
@@ -151,6 +195,27 @@ func NewBlockHash(input []byte) *BlockHash {
 	return blockHash
 }
 
+func (bh *BlockHash) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	return EncodeByteArray(bh[:])
+}
+
+func (bh *BlockHash) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	blockHashBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BlockHash.Decode: Problem reading BlockHash")
+	}
+	copy(bh[:], blockHashBytes)
+	return nil
+}
+
+func (bh *BlockHash) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (bh *BlockHash) GetEncoderType() EncoderType {
+	return EncoderTypeBlockHash
+}
+
 func (bh *BlockHash) String() string {
 	return fmt.Sprintf("%064x", HashToBigint(bh))
 }
@@ -163,13 +228,11 @@ func (bh *BlockHash) ToBytes() []byte {
 
 // IsEqual returns true if target is the same as hash.
 func (bh *BlockHash) IsEqual(target *BlockHash) bool {
-	if bh == nil && target == nil {
-		return true
-	}
-	if bh == nil || target == nil {
+	if target == nil {
 		return false
 	}
-	return *bh == *target
+
+	return reflect.DeepEqual(bh[:], target[:])
 }
 
 func (bh *BlockHash) NewBlockHash() *BlockHash {
@@ -206,26 +269,13 @@ func ReadOptionalBlockHash(rr *bytes.Reader) (*BlockHash, error) {
 	return nil, nil
 }
 
-func EncodeUint256(val *uint256.Int) []byte {
-	valBytes := val.Bytes()
-	data := make([]byte, 32, 32)
-	return append(data, valBytes...)[len(valBytes):]
-}
-
-func ReadUint256(rr io.Reader) (*uint256.Int, error) {
-	valBytes := make([]byte, 32, 32)
-	_, err := io.ReadFull(rr, valBytes)
-	if err != nil {
-		return uint256.NewInt(), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
-	}
-	return uint256.NewInt().SetBytes(valBytes), nil
-}
-
 func EncodeOptionalUint256(val *uint256.Int) []byte {
 	if val == nil {
 		return UintToBuf(uint64(0))
 	}
-	encodedVal := EncodeUint256(val)
+	valBytes := val.Bytes()
+	data := make([]byte, 32, 32)
+	encodedVal := append(data, valBytes...)[len(valBytes):]
 	return append(UintToBuf(uint64(len(encodedVal))), encodedVal...)
 }
 
@@ -235,7 +285,12 @@ func ReadOptionalUint256(rr *bytes.Reader) (*uint256.Int, error) {
 		return nil, err
 	}
 	if byteCount > uint64(0) {
-		return ReadUint256(rr)
+		valBytes := make([]byte, 32, 32)
+		_, err := io.ReadFull(rr, valBytes)
+		if err != nil {
+			return uint256.NewInt(), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
+		}
+		return uint256.NewInt().SetBytes(valBytes), nil
 	}
 	return nil, nil
 }

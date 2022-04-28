@@ -23,8 +23,8 @@ func (bav *UtxoView) _getRepostEntryForRepostKey(repostKey *RepostKey) *RepostEn
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	repostEntry := DbReposterPubKeyRepostedPostHashToRepostEntry(
-		bav.Handle, repostKey.ReposterPubKey[:], repostKey.RepostedPostHash)
+	repostEntry := DbReposterPubKeyRepostedPostHashToRepostEntry(bav.Handle, bav.Snapshot,
+		repostKey.ReposterPubKey[:], repostKey.RepostedPostHash)
 	if repostEntry != nil {
 		bav._setRepostEntryMappings(repostEntry)
 	}
@@ -103,7 +103,8 @@ func (bav *UtxoView) GetDiamondEntryForDiamondKey(diamondKey *DiamondKey) *Diamo
 			}
 		}
 	} else {
-		diamondEntry = DbGetDiamondMappings(bav.Handle, &diamondKey.ReceiverPKID, &diamondKey.SenderPKID, &diamondKey.DiamondPostHash)
+		diamondEntry = DbGetDiamondMappings(bav.Handle, bav.Snapshot,
+			&diamondKey.ReceiverPKID, &diamondKey.SenderPKID, &diamondKey.DiamondPostHash)
 	}
 
 	if diamondEntry != nil {
@@ -130,7 +131,7 @@ func (bav *UtxoView) GetPostEntryForPostHash(postHash *BlockHash) *PostEntry {
 		}
 		return nil
 	} else {
-		dbPostEntry := DBGetPostEntryByPostHash(bav.Handle, postHash)
+		dbPostEntry := DBGetPostEntryByPostHash(bav.Handle, bav.Snapshot, postHash)
 		if dbPostEntry != nil {
 			bav._setPostEntryMappings(dbPostEntry)
 		}
@@ -306,7 +307,8 @@ func (bav *UtxoView) GetCommentEntriesForParentStakeID(parentStakeID []byte) ([]
 			bav.setPostMappings(post)
 		}
 	} else {
-		_, dbCommentHashes, _, err := DBGetCommentPostHashesForParentStakeID(bav.Handle, parentStakeID, false)
+		_, dbCommentHashes, _, err := DBGetCommentPostHashesForParentStakeID(
+			bav.Handle, bav.Snapshot, parentStakeID, false)
 		if err != nil {
 			return nil, errors.Wrapf(err, "GetCommentEntriesForParentStakeID: Problem fetching comments: %v", err)
 		}
@@ -382,7 +384,7 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 	//
 	// TODO(performance): This currently fetches all posts. We should implement
 	// some kind of pagination instead though.
-	_, _, dbPostEntries, err := DBGetAllPostsByTstamp(bav.Handle, true /*fetchEntries*/)
+	_, _, dbPostEntries, err := DBGetAllPostsByTstamp(bav.Handle, bav.Snapshot, true)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "GetAllPosts: Problem fetching PostEntry's from db: ")
 	}
@@ -408,7 +410,7 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 
 		if len(postEntry.ParentStakeID) == 0 {
 			_, dbCommentHashes, _, err := DBGetCommentPostHashesForParentStakeID(
-				bav.Handle, postEntry.ParentStakeID, false /*fetchEntries*/)
+				bav.Handle, bav.Snapshot, postEntry.ParentStakeID, false)
 			if err != nil {
 				return nil, nil, errors.Wrapf(err, "GetAllPosts: Problem fetching comment PostEntry's from db: ")
 			}
@@ -469,7 +471,8 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 		}
 	} else {
 		handle := bav.Handle
-		dbPrefix := append([]byte{}, _PrefixPosterPublicKeyTimestampPostHash...)
+		// FIXME: Db operation like this shouldn't happen in utxoview.
+		dbPrefix := append([]byte{}, Prefixes.PrefixPosterPublicKeyTimestampPostHash...)
 		dbPrefix = append(dbPrefix, publicKey...)
 		var prefix []byte
 		if startPostHash != nil {
@@ -565,7 +568,8 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 
 func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToDiamondLevel map[PKID]int64, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
+	// FIXME: Db operation like this shouldn't happen in utxoview.
+	dbPrefix := append([]byte{}, Prefixes.PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 
@@ -605,7 +609,8 @@ func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToD
 
 func (bav *UtxoView) GetRepostsForPostHash(postHash *BlockHash) (_reposterPubKeys [][]byte, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixRepostedPostHashReposterPubKey...)
+	// FIXME: Db operation like this shouldn't happen in utxoview.
+	dbPrefix := append([]byte{}, Prefixes.PrefixRepostedPostHashReposterPubKey...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 
@@ -641,7 +646,8 @@ func (bav *UtxoView) GetRepostsForPostHash(postHash *BlockHash) (_reposterPubKey
 func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *BlockHash,
 ) (_quoteReposterPubKeys [][]byte, _quoteReposterPubKeyToPosts map[PkMapKey][]*PostEntry, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
+	// FIXME: Db operation like this shouldn't happen in utxoview.
+	dbPrefix := append([]byte{}, Prefixes.PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 

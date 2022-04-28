@@ -27,7 +27,7 @@ func _daoCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	profilePkBytes := metadata.ProfilePublicKey
 	assert.Len(profilePkBytes, btcec.PubKeyBytesLenCompressed)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinTxn(
@@ -66,7 +66,7 @@ func _daoCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeDAOCoin, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -103,7 +103,7 @@ func _daoCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinTransferTxn(
@@ -142,7 +142,7 @@ func _daoCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeDAOCoinTransfer, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -208,10 +208,10 @@ func TestDAOCoinBasic(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 100)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 100)
 
-	m0PKID := DBGetPKIDEntryForPublicKey(db, m0PkBytes)
-	m1PKID := DBGetPKIDEntryForPublicKey(db, m1PkBytes)
-	m2PKID := DBGetPKIDEntryForPublicKey(db, m2PkBytes)
-	m4PKID := DBGetPKIDEntryForPublicKey(db, m4PkBytes)
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes)
+	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes)
+	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes)
+	m4PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m4PkBytes)
 	// M0 can't mint without a profile
 	{
 		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
@@ -290,10 +290,10 @@ func TestDAOCoinBasic(t *testing.T) {
 		},
 		)
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m0PKID.PKID, m0PKID.PKID, true)
+			db, chain.snapshot, m0PKID.PKID, m0PKID.PKID, true)
 		require.Equal(daoBalanceEntry.BalanceNanos.Uint64(), oneMCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m0PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m0PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(1))
 		require.False(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -312,10 +312,10 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m0PKID.PKID, m0PKID.PKID, true)
+			db, chain.snapshot, m0PKID.PKID, m0PKID.PKID, true)
 		require.Equal(daoBalanceEntry.BalanceNanos.Uint64(), oneMCoins-hundredKCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m0PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m0PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(1))
 		require.False(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -329,7 +329,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			CoinsToBurnNanos: *uint256.NewInt().SetUint64(100),
 		})
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorDAOCoinBurnerBalanceEntryDoesNotExist)
+		require.Contains(err.Error(), RuleErrorDAOCoinBurnInsufficientCoins)
 	}
 
 	// M0 transfers 10K DAO coins to m1
@@ -346,14 +346,14 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m0PKID.PKID, m0PKID.PKID, true)
+			db, chain.snapshot, m0PKID.PKID, m0PKID.PKID, true)
 		require.Equal(daoBalanceEntry.BalanceNanos.Uint64(), oneMCoins-hundredKCoins-tenKCoins)
 
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m1PKID.PKID, m0PKID.PKID, true)
+			db, chain.snapshot, m1PKID.PKID, m0PKID.PKID, true)
 		require.Equal(m1DAOBalanceEntry.BalanceNanos.Uint64(), tenKCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m0PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m0PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
 		require.False(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -375,10 +375,10 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m0PKID.PKID, m0PKID.PKID, true)
+			db, chain.snapshot, m0PKID.PKID, m0PKID.PKID, true)
 		require.Equal(daoBalanceEntry.BalanceNanos.Uint64(), oneMCoins-hundredKCoins-tenKCoins-tenKCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m0PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m0PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-tenKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
 		require.False(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -389,10 +389,10 @@ func TestDAOCoinBasic(t *testing.T) {
 			CoinsToMintNanos: *uint256.NewInt().SetUint64(tenKCoins),
 		})
 		daoBalanceEntry = DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m0PKID.PKID, m0PKID.PKID, true)
+			db, chain.snapshot, m0PKID.PKID, m0PKID.PKID, true)
 		require.Equal(daoBalanceEntry.BalanceNanos.Uint64(), oneMCoins-hundredKCoins-tenKCoins)
 
-		profileEntry = DBGetProfileEntryForPKID(db, m0PKID.PKID)
+		profileEntry = DBGetProfileEntryForPKID(db, chain.snapshot, m0PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
 		require.False(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -414,10 +414,10 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m1PKID.PKID, m0PKID.PKID, true)
+			db, chain.snapshot, m1PKID.PKID, m0PKID.PKID, true)
 		require.Equal(m1DAOBalanceEntry.BalanceNanos.Uint64(), tenKCoins-oneKCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m0PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m0PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
 		require.False(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -430,7 +430,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			OperationType:    DAOCoinOperationTypeDisableMinting,
 		})
 
-		profileEntry := DBGetProfileEntryForPKID(db, m0PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m0PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -487,7 +487,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			ReceiverPublicKey:      m0PkBytes,
 		})
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCoinTransferBalanceEntryDoesNotExist)
+		require.Contains(err.Error(), RuleErrorCoinTransferInsufficientCoins)
 	}
 
 	// Can't transfer DAO coins of non-existent profile
@@ -549,15 +549,15 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m0PKID.PKID, m0PKID.PKID, true)
+			db, chain.snapshot, m0PKID.PKID, m0PKID.PKID, true)
 		require.Equal(daoBalanceEntry.BalanceNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m1PKID.PKID, m0PKID.PKID, true)
+			db, chain.snapshot, m1PKID.PKID, m0PKID.PKID, true)
 		// M1's balance entry is deleted because they have nothing
-		require.Nil(m1DAOBalanceEntry)
+		require.Equal(true, m1DAOBalanceEntry.BalanceNanos.Eq(uint256.NewInt()))
 
-		profileEntry := DBGetProfileEntryForPKID(db, m0PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m0PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(1))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -577,14 +577,14 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m0PKID.PKID, m0PKID.PKID, true)
+			db, chain.snapshot, m0PKID.PKID, m0PKID.PKID, true)
 		require.Equal(daoBalanceEntry.BalanceNanos.Uint64(), oneMCoins-hundredKCoins-tenKCoins-oneKCoins)
 
 		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m2PKID.PKID, m0PKID.PKID, true)
+			db, chain.snapshot, m2PKID.PKID, m0PKID.PKID, true)
 		require.Equal(m2DAOBalanceEntry.BalanceNanos.Uint64(), tenKCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m0PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m0PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -603,34 +603,34 @@ func TestDAOCoinBasic(t *testing.T) {
 	{
 		_swapIdentityWithTestMeta(testMeta, 10, paramUpdaterPub, paramUpdaterPriv, m0PkBytes, m3PkBytes)
 
-		m3PKID := DBGetPKIDEntryForPublicKey(db, m3PkBytes)
+		m3PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m3PkBytes)
 		require.True(reflect.DeepEqual(m3PKID.PKID, m0PKID.PKID))
 
 		// Okay so we provied that M3PKID now points to where M0PKID used to point. Let's update M0PKID to be correct.
-		m0PKID = DBGetPKIDEntryForPublicKey(db, m0PkBytes)
+		m0PKID = DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes)
 		require.False(reflect.DeepEqual(m0PKID.PKID, m3PKID.PKID))
 
 		// Make sure M3's DAO Coin Entry is what M0's was prior to the swap
-		m3ProfileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		m3ProfileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.NotNil(m3ProfileEntry)
 		require.Equal(m3ProfileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
 		require.Equal(m3ProfileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 		require.True(m3ProfileEntry.DAOCoinEntry.MintingDisabled)
 
 		// M0 shouldn't have a profile entry since M3 didn't have one before
-		m0ProfileEntry := DBGetProfileEntryForPKID(db, m0PKID.PKID)
+		m0ProfileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m0PKID.PKID)
 		require.Nil(m0ProfileEntry)
 
 		// M0 shouldn't own any M3 DAO Coin
-		m0DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(db, m0PKID.PKID, m3PKID.PKID, true)
-		require.Nil(m0DAOBalanceEntry)
+		m0DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(db, chain.snapshot, m0PKID.PKID, m3PKID.PKID, true)
+		require.Equal(true, m0DAOBalanceEntry.BalanceNanos.Eq(uint256.NewInt()))
 
 		// M3's DAO Balance entry should be what M0's was prior to the swap
-		m3DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(db, m3PKID.PKID, m3PKID.PKID, true)
+		m3DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(db, chain.snapshot, m3PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m3DAOBalanceEntry.BalanceNanos.Uint64(), oneMCoins-hundredKCoins-tenKCoins-oneKCoins)
 	}
-	m3PKID := DBGetPKIDEntryForPublicKey(db, m3PkBytes)
-	m0PKID = DBGetPKIDEntryForPublicKey(db, m0PkBytes)
+	m3PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m3PkBytes)
+	m0PKID = DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes)
 
 	// So now let's have M3 update the restriction status to be Profile owner only. Now either the recipient or sender
 	// must be the profile owner.
@@ -641,7 +641,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			TransferRestrictionStatus: TransferRestrictionStatusProfileOwnerOnly,
 		})
 
-		m3ProfileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		m3ProfileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.Equal(m3ProfileEntry.DAOCoinEntry.TransferRestrictionStatus, TransferRestrictionStatusProfileOwnerOnly)
 	}
 
@@ -683,14 +683,14 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m3PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m3PKID.PKID, m3PKID.PKID, true)
 		require.Equal(daoBalanceEntry.BalanceNanos.Uint64(), oneMCoins-hundredKCoins-tenKCoins)
 
 		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m2PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m2PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m2DAOBalanceEntry.BalanceNanos.Uint64(), tenKCoins-oneKCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -712,14 +712,14 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m3PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m3PKID.PKID, m3PKID.PKID, true)
 		require.Equal(daoBalanceEntry.BalanceNanos.Uint64(), oneMCoins-hundredKCoins-tenKCoins-oneKCoins)
 
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m1PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m1PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m1DAOBalanceEntry.BalanceNanos.Uint64(), oneKCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(3))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -733,7 +733,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			TransferRestrictionStatus: TransferRestrictionStatusDAOMembersOnly,
 		})
 
-		m3ProfileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		m3ProfileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.Equal(m3ProfileEntry.DAOCoinEntry.TransferRestrictionStatus, TransferRestrictionStatusDAOMembersOnly)
 	}
 
@@ -766,14 +766,14 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m1PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m1PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m1DAOBalanceEntry.BalanceNanos.Uint64(), oneKCoins-hundredCoins)
 
 		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m2PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m2PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m2DAOBalanceEntry.BalanceNanos.Uint64(), tenKCoins-oneKCoins+hundredCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(3))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -798,14 +798,14 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		m3DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m3PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m3PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m3DAOBalanceEntry.BalanceNanos.Uint64(), oneMCoins-hundredKCoins-tenKCoins-oneKCoins-hundredCoins)
 
 		m4DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m4PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m4PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m4DAOBalanceEntry.BalanceNanos.Uint64(), hundredCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(4))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -830,14 +830,14 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m1PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m1PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m1DAOBalanceEntry.BalanceNanos.Uint64(), oneKCoins-hundredCoins-hundredCoins)
 
 		m4DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m4PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m4PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m4DAOBalanceEntry.BalanceNanos.Uint64(), hundredCoins+hundredCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(4))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -863,7 +863,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			TransferRestrictionStatus: TransferRestrictionStatusPermanentlyUnrestricted,
 		})
 
-		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.TransferRestrictionStatus,
 			TransferRestrictionStatusPermanentlyUnrestricted)
 	}
@@ -900,14 +900,14 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m1PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m1PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m1DAOBalanceEntry.BalanceNanos.Uint64(), oneKCoins-hundredCoins-hundredCoins-hundredCoins)
 
 		m0DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m0PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m0PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m0DAOBalanceEntry.BalanceNanos.Uint64(), hundredCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(5))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -933,14 +933,14 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m3PKID.PKID, m3PKID.PKID, true)
-		require.Nil(daoBalanceEntry)
+			db, chain.snapshot, m3PKID.PKID, m3PKID.PKID, true)
+		require.Equal(true, daoBalanceEntry.BalanceNanos.Eq(uint256.NewInt()))
 
 		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m2PKID.PKID, m3PKID.PKID, true)
+			db, chain.snapshot, m2PKID.PKID, m3PKID.PKID, true)
 		require.Equal(m2DAOBalanceEntry.BalanceNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins-oneKCoins)
 
-		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(4))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -965,10 +965,10 @@ func TestDAOCoinBasic(t *testing.T) {
 		})
 
 		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-			db, m2PKID.PKID, m3PKID.PKID, true)
-		require.Nil(m2DAOBalanceEntry)
+			db, chain.snapshot, m2PKID.PKID, m3PKID.PKID, true)
+		require.Equal(true, m2DAOBalanceEntry.BalanceNanos.Eq(uint256.NewInt()))
 
-		profileEntry := DBGetProfileEntryForPKID(db, m3PKID.PKID)
+		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneKCoins)
 		require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(3))
 		require.True(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -1006,10 +1006,10 @@ func TestDAOCoinBasic(t *testing.T) {
 				CoinsToMintNanos: *maxMinus1k,
 			})
 			daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-				db, m2PKID.PKID, m2PKID.PKID, true)
+				db, chain.snapshot, m2PKID.PKID, m2PKID.PKID, true)
 			require.Equal(&daoBalanceEntry.BalanceNanos, maxMinus1k)
 
-			profileEntry := DBGetProfileEntryForPKID(db, m2PKID.PKID)
+			profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m2PKID.PKID)
 			require.Equal(&profileEntry.DAOCoinEntry.CoinsInCirculationNanos, maxMinus1k)
 			require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(1))
 			require.False(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -1045,16 +1045,16 @@ func TestDAOCoinBasic(t *testing.T) {
 
 			{
 				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-					db, m1PKID.PKID, m2PKID.PKID, true)
+					db, chain.snapshot, m1PKID.PKID, m2PKID.PKID, true)
 				require.Equal(maxMinus1kDiv2, &daoBalanceEntry.BalanceNanos)
 			}
 			{
 				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-					db, m2PKID.PKID, m2PKID.PKID, true)
+					db, chain.snapshot, m2PKID.PKID, m2PKID.PKID, true)
 				require.Equal(maxMinus1kDiv2PlusOne, &daoBalanceEntry.BalanceNanos)
 			}
 
-			profileEntry := DBGetProfileEntryForPKID(db, m2PKID.PKID)
+			profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m2PKID.PKID)
 			require.Equal(&profileEntry.DAOCoinEntry.CoinsInCirculationNanos, maxMinus1k)
 			require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
 			require.False(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -1089,16 +1089,16 @@ func TestDAOCoinBasic(t *testing.T) {
 
 			{
 				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-					db, m1PKID.PKID, m2PKID.PKID, true)
+					db, chain.snapshot, m1PKID.PKID, m2PKID.PKID, true)
 				require.Equal(maxMinus1kDiv2, &daoBalanceEntry.BalanceNanos)
 			}
 			{
 				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-					db, m2PKID.PKID, m2PKID.PKID, true)
+					db, chain.snapshot, m2PKID.PKID, m2PKID.PKID, true)
 				require.Equal(maxMinus1kDiv2Plus1kPlusOne, &daoBalanceEntry.BalanceNanos)
 			}
 
-			profileEntry := DBGetProfileEntryForPKID(db, m2PKID.PKID)
+			profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m2PKID.PKID)
 			require.Equal(MaxUint256, &profileEntry.DAOCoinEntry.CoinsInCirculationNanos)
 			require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
 			require.False(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -1125,16 +1125,16 @@ func TestDAOCoinBasic(t *testing.T) {
 
 			{
 				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-					db, m1PKID.PKID, m2PKID.PKID, true)
+					db, chain.snapshot, m1PKID.PKID, m2PKID.PKID, true)
 				require.Equal(maxMinus1kDiv2Minus2k, &daoBalanceEntry.BalanceNanos)
 			}
 			{
 				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-					db, m2PKID.PKID, m2PKID.PKID, true)
+					db, chain.snapshot, m2PKID.PKID, m2PKID.PKID, true)
 				require.Equal(maxMinus1kDiv2Plus1kPlusOne, &daoBalanceEntry.BalanceNanos)
 			}
 
-			profileEntry := DBGetProfileEntryForPKID(db, m2PKID.PKID)
+			profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m2PKID.PKID)
 			require.Equal(maxMinus1kDiv2Minus1kPlus1, &profileEntry.DAOCoinEntry.CoinsInCirculationNanos)
 			require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
 			require.False(profileEntry.DAOCoinEntry.MintingDisabled)
@@ -1160,16 +1160,16 @@ func TestDAOCoinBasic(t *testing.T) {
 
 			{
 				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-					db, m1PKID.PKID, m2PKID.PKID, true)
+					db, chain.snapshot, m1PKID.PKID, m2PKID.PKID, true)
 				require.Equal(maxMinus1kDiv2Minus2k, &daoBalanceEntry.BalanceNanos)
 			}
 			{
 				daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
-					db, m2PKID.PKID, m2PKID.PKID, true)
+					db, chain.snapshot, m2PKID.PKID, m2PKID.PKID, true)
 				require.Equal(maxMinus1kDiv2Plus2kPlus1, &daoBalanceEntry.BalanceNanos)
 			}
 
-			profileEntry := DBGetProfileEntryForPKID(db, m2PKID.PKID)
+			profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m2PKID.PKID)
 			require.Equal(maxMinus1k, &profileEntry.DAOCoinEntry.CoinsInCirculationNanos)
 			require.Equal(profileEntry.DAOCoinEntry.NumberOfHolders, uint64(2))
 			require.False(profileEntry.DAOCoinEntry.MintingDisabled)

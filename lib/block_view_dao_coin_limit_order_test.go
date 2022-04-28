@@ -1056,11 +1056,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		// Spend m0's existing UTXO.
 		tempUtxoView, err := NewUtxoView(
-			testHelper.TestMeta.db, testHelper.TestMeta.params, testHelper.TestMeta.chain.postgres)
+			testHelper.TestMeta.db, testHelper.TestMeta.params,
+			testHelper.TestMeta.chain.postgres, testHelper.TestMeta.chain.snapshot)
 		require.NoError(err)
 		utxoOp, err := tempUtxoView._spendUtxo(utxoEntriesM0[0].UtxoKey)
 		require.NoError(err)
-		err = tempUtxoView.FlushToDb()
+		err = tempUtxoView.FlushToDb(0)
 		require.NoError(err)
 		utxoEntriesM0, err = testHelper.TestMeta.chain.GetSpendableUtxosForPublicKey(
 			m0.PkBytes, testHelper.TestMeta.mempool, nil)
@@ -1081,7 +1082,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Unspend m0's existing UTXO.
 		err = tempUtxoView._unSpendUtxo(utxoOp.Entry)
 		require.NoError(err)
-		err = tempUtxoView.FlushToDb()
+		err = tempUtxoView.FlushToDb(0)
 		require.NoError(err)
 		utxoEntriesM0, err = testHelper.TestMeta.chain.GetSpendableUtxosForPublicKey(
 			m0.PkBytes, testHelper.TestMeta.mempool, nil)
@@ -2863,7 +2864,7 @@ func NewDAOCoinLimitOrderTestHelper(t *testing.T) DAOCoinLimitOrderTestHelper {
 	mempool, miner := NewTestMiner(t, chain, params, true)
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
-	utxoView, err := NewUtxoView(db, params, chain.postgres)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
 
 	// Mine a few blocks to give the senderPkString some $DESO.
@@ -3056,7 +3057,7 @@ func (testHelper *DAOCoinLimitOrderTestHelper) ConnectOrderTxn(
 	meta := testHelper.TestMeta
 	meta.expectedSenderBalances = append(
 		meta.expectedSenderBalances, testHelper.GetDESOBalanceNanos(testInput.Transactor))
-	currentUtxoView, err := NewUtxoView(meta.db, meta.params, meta.chain.postgres)
+	currentUtxoView, err := NewUtxoView(meta.db, meta.params, meta.chain.postgres, meta.chain.snapshot)
 	require.NoError(err)
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(meta.t, txn, testInput.Transactor.Priv)
@@ -3073,7 +3074,7 @@ func (testHelper *DAOCoinLimitOrderTestHelper) ConnectOrderTxn(
 	// totalInput will be greater than totalInputMake since we add BidderInputs to totalInput.
 	require.True(totalInput >= totalInputMake)
 	require.Equal(utxoOps[len(utxoOps)-1].Type, OperationTypeDAOCoinLimitOrder)
-	require.NoError(currentUtxoView.FlushToDb())
+	require.NoError(currentUtxoView.FlushToDb(0))
 	meta.txnOps = append(meta.txnOps, utxoOps)
 	meta.txns = append(meta.txns, txn)
 	require.NoError(err)

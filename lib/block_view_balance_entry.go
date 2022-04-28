@@ -25,7 +25,7 @@ func (bav *UtxoView) _getBalanceEntryForHODLerPKIDAndCreatorPKID(
 	if bav.Postgres != nil {
 		balanceEntry = bav.GetBalanceEntry(hodlerPKID, creatorPKID, isDAOCoin)
 	} else {
-		balanceEntry = DBGetBalanceEntryForHODLerAndCreatorPKIDs(bav.Handle, hodlerPKID, creatorPKID, isDAOCoin)
+		balanceEntry = DBGetBalanceEntryForHODLerAndCreatorPKIDs(bav.Handle, bav.Snapshot, hodlerPKID, creatorPKID, isDAOCoin)
 	}
 	if balanceEntry != nil {
 		bav._setBalanceEntryMappingsWithPKIDs(balanceEntry, hodlerPKID, creatorPKID, isDAOCoin)
@@ -95,7 +95,7 @@ func (bav *UtxoView) GetHoldings(pkid *PKID, fetchProfiles bool, isDAOCoin bool)
 	if bav.Postgres != nil {
 		entriesYouHold = bav.GetBalanceEntryHoldings(pkid, isDAOCoin)
 	} else {
-		holdings, err := DbGetBalanceEntriesYouHold(bav.Handle, pkid, true, isDAOCoin)
+		holdings, err := DbGetBalanceEntriesYouHold(bav.Handle, bav.Snapshot, pkid, true, isDAOCoin)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -139,7 +139,7 @@ func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, isDAOCoin bool) 
 	if bav.Postgres != nil {
 		holderEntries = bav.GetBalanceEntryHolders(pkid, isDAOCoin)
 	} else {
-		holders, err := DbGetBalanceEntriesHodlingYou(bav.Handle, pkid, true, isDAOCoin)
+		holders, err := DbGetBalanceEntriesHodlingYou(bav.Handle, bav.Snapshot, pkid, true, isDAOCoin)
 		if err != nil {
 			return nil, nil, err
 		}

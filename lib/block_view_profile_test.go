@@ -43,7 +43,7 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateSwapIdentityTxn(
@@ -84,7 +84,7 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeSwapIdentity, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -115,7 +115,7 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(
@@ -163,7 +163,7 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeUpdateProfile, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -886,7 +886,7 @@ func TestUpdateProfile(t *testing.T) {
 			require.NoError(err)
 			txns = append(txns, currentTxn)
 			txnOps = append(txnOps, currentOps)
-			utxoView, err := NewUtxoView(db, params, nil)
+			utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 			require.NoError(err)
 			m4ProfileEntry := utxoView.GetProfileEntryForPublicKey(m4PkBytes)
 			require.Equal(len(m4ProfileEntry.ExtraData), 2)
@@ -922,7 +922,7 @@ func TestUpdateProfile(t *testing.T) {
 			require.NoError(err)
 			txns = append(txns, currentTxn)
 			txnOps = append(txnOps, currentOps)
-			utxoView, err := NewUtxoView(db, params, nil)
+			utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 			require.NoError(err)
 			m4ProfileEntry := utxoView.GetProfileEntryForPublicKey(m4PkBytes)
 			require.Equal(len(m4ProfileEntry.ExtraData), 3)
@@ -951,7 +951,7 @@ func TestUpdateProfile(t *testing.T) {
 	// user5
 	// m5Pub, m5_paramUpdater, m5 created by paramUpdater, otherShortPic, 11*100, 1.5*100*100, false
 	checkProfilesExist := func() {
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 		profileEntriesByPublicKey, _, _, _, err := utxoView.GetAllProfiles(nil)
 		require.NoError(err)
@@ -1006,7 +1006,7 @@ func TestUpdateProfile(t *testing.T) {
 	checkProfilesExist()
 
 	checkProfilesDeleted := func() {
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 		profileEntriesByPublicKey, _, _, _, err := utxoView.GetAllProfiles(nil)
 		require.NoError(err)
@@ -1050,14 +1050,14 @@ func TestUpdateProfile(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
@@ -1081,7 +1081,7 @@ func TestUpdateProfile(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -1095,14 +1095,14 @@ func TestUpdateProfile(t *testing.T) {
 		require.NoError(err)
 	}
 	// Flush the utxoView after having added all the transactions.
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	// Verify the profiles exist.
 	checkProfilesExist()
 
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil)
+	utxoView2, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -1114,7 +1114,7 @@ func TestUpdateProfile(t *testing.T) {
 		err = utxoView2.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 	}
-	require.NoError(utxoView2.FlushToDb())
+	require.NoError(utxoView2.FlushToDb(0))
 	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
 
 	// Verify that all the profiles have been deleted.
@@ -1129,23 +1129,23 @@ func TestUpdateProfile(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
+		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps, 0))
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// Verify that all the profiles have been deleted.
