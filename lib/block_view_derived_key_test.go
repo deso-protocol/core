@@ -3175,6 +3175,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 		}
 		m0AuthTxnMetaWithGlobalDESOLimitTxn, _ := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimitAndDerivedPrivateKey(t, m0PrivateKey, 6, globalDESOSpendingLimit, derived0Priv, false)
 
+		// Authorize derived key with a Limit Order spending limit of 1
 		_doTxnWithTestMeta(
 			testMeta,
 			10,
@@ -3233,6 +3234,81 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		})
+
+		// Cancelling an order should fail with an authorization failure error code if the derived key isn't authorized
+		// to trade the buying and selling coins
+		orderID := *orders[0].OrderID
+		_, _, _, err = _doTxn(
+			testMeta,
+			10,
+			m0Pub,
+			derived0PrivBase58Check,
+			true,
+			TxnTypeDAOCoinLimitOrder,
+			&DAOCoinLimitOrderMetadata{
+				CancelOrderID: &orderID,
+			},
+			nil,
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized)
+
+		// Re-authorize the derived key with a spending limit of 1 for the buying and selling coins
+		m0AuthTxnMetaWithGlobalDESOLimitTxn, _ = _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimitAndDerivedPrivateKey(
+			t,
+			m0PrivateKey,
+			6,
+			globalDESOSpendingLimit,
+			derived0Priv,
+			false,
+		)
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			m0Priv,
+			false,
+			TxnTypeAuthorizeDerivedKey,
+			m0AuthTxnMetaWithGlobalDESOLimitTxn,
+			map[string]interface{}{
+				TransactionSpendingLimitKey: globalDESOSpendingLimit,
+			},
+		)
+
+		// Cancelling an existing order using CancelOrderID should work if the derived key is authorized for the
+		// buying and selling coins that make up the order
+		_doTxnWithTestMeta(
+			testMeta,
+			10,
+			m0Pub,
+			derived0PrivBase58Check,
+			true,
+			TxnTypeDAOCoinLimitOrder,
+			&DAOCoinLimitOrderMetadata{
+				CancelOrderID: &orderID,
+			},
+			nil,
+		)
+		orders, err = DBGetAllDAOCoinLimitOrders(db)
+		require.NoError(err)
+		require.Len(orders, 0)
+
+		// Cancelling a non-existent order should fail due to an order id lookup, irrespective of the status of the
+		// derived key
+		_, _, _, err = _doTxn(
+			testMeta,
+			10,
+			m0Pub,
+			derived0PrivBase58Check,
+			true,
+			TxnTypeDAOCoinLimitOrder,
+			&DAOCoinLimitOrderMetadata{
+				CancelOrderID: &orderID,
+			},
+			nil,
+		)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID)
 	}
 
 	// M0 deauthorizes the derived key

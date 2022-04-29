@@ -402,6 +402,7 @@ const (
 	RuleErrorDerivedKeyNFTOperationNotAuthorized         RuleError = "RuleErrorDerivedKeyNFTOperationNotAuthorized"
 	RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized RuleError = "RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized"
 	RuleErrorDerivedKeyDAOCoinOperationNotAuthorized     RuleError = "RuleErrorDerivedKeyDAOCoinOperationNotAuthorized"
+	RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID   RuleError = "RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID"
 	RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized    RuleError = "RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized"
 
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"

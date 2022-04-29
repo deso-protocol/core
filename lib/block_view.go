@@ -1599,9 +1599,24 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		}
 	case TxnTypeDAOCoinLimitOrder:
 		txnMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+		var buyingCoinPublicKey []byte
+		var sellingCoinPublicKey []byte
+		if txnMeta.CancelOrderID != nil {
+			orderEntry, err := bav._getDAOCoinLimitOrderEntry(txnMeta.CancelOrderID)
+			if err != nil || orderEntry == nil {
+				return utxoOpsForTxn, errors.Wrapf(
+					RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID,
+					"_checkDerivedKeySpendingLimit: Invalid DAO coin limit order ID %v",
+					txnMeta.CancelOrderID)
+			}
+			buyingCoinPublicKey = bav.GetPublicKeyForPKID(orderEntry.BuyingDAOCoinCreatorPKID)
+			sellingCoinPublicKey = bav.GetPublicKeyForPKID(orderEntry.SellingDAOCoinCreatorPKID)
+		} else {
+			buyingCoinPublicKey = txnMeta.BuyingDAOCoinCreatorPublicKey.ToBytes()
+			sellingCoinPublicKey = txnMeta.SellingDAOCoinCreatorPublicKey.ToBytes()
+		}
 		if derivedKeyEntry, err = bav._checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
-			derivedKeyEntry, txnMeta.BuyingDAOCoinCreatorPublicKey.ToBytes(),
-			txnMeta.SellingDAOCoinCreatorPublicKey.ToBytes()); err != nil {
+			derivedKeyEntry, buyingCoinPublicKey, sellingCoinPublicKey); err != nil {
 			return utxoOpsForTxn, err
 		}
 	case TxnTypeUpdateNFT:
