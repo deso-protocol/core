@@ -64,7 +64,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 	// Snapshot
 	cmd.PersistentFlags().Uint64("snapshot-block-height-period", 1000, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
 	// Archival mode
-	cmd.PersistentFlags().Bool("archival-mode", false, "Download all historical blocks after finishing hypersync.")
+	cmd.PersistentFlags().Bool("archival-mode", true, "Download all historical blocks after finishing hypersync.")
 	// Disable encoder migrations
 	cmd.PersistentFlags().Bool("disable-encoder-migrations", false, "Disable badgerDB encoder migrations")
 	// Disable slow sync
