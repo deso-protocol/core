@@ -561,6 +561,8 @@ func (params *DeSoParams) EnableRegtest() {
 	// Mine blocks incredibly quickly
 	params.TimeBetweenBlocks = 2 * time.Second
 	params.TimeBetweenDifficultyRetargets = 6 * time.Second
+	// Make sure we don't care about blockchain tip age.
+	params.MaxTipAge = 1000000 * time.Hour
 
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
