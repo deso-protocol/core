@@ -5,6 +5,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/spf13/viper"
 	"os"
+	"path/filepath"
 )
 
 type Config struct {
@@ -81,10 +82,11 @@ func LoadConfig() *Config {
 		config.ProtocolPort = config.Params.DefaultSocketPort
 	}
 
-	config.DataDirectory = viper.GetString("data-dir")
-	if config.DataDirectory == "" {
-		config.DataDirectory = lib.GetDataDir(config.Params)
+	dataDir := viper.GetString("data-dir")
+	if dataDir == "" {
+		dataDir = lib.GetDataDir(config.Params)
 	}
+	config.DataDirectory = filepath.Join(dataDir, lib.DBVersionString)
 	if err := os.MkdirAll(config.DataDirectory, os.ModePerm); err != nil {
 		glog.Fatalf("Could not create data directories (%s): %v", config.DataDirectory, err)
 	}

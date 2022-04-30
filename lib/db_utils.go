@@ -32,6 +32,12 @@ const (
 	// store the badgerdb database by default.
 	BadgerDbFolder = "badgerdb"
 	MaxPrefixLen   = 1
+	// This string is added as a subdirectory of --data-dir flag that contains
+	// everything our node is doing. We use it in order to force a "fresh sync"
+	// of a node when making major updates. Not having this structure would
+	// require node operators like Coinbase to change their --data-dir flag when
+	// deploying a non-backwards-compatible version of the node.
+	DBVersionString = "v-00000"
 )
 
 // -------------------------------------------------------------------------------------
