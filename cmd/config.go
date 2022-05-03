@@ -5,6 +5,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/spf13/viper"
 	"os"
+	"path/filepath"
 )
 
 type Config struct {
@@ -32,6 +33,14 @@ type Config struct {
 	MaxInboundPeers   uint32
 	OneInboundPerIp   bool
 
+	// Snapshot
+	HyperSync                 bool
+	DisableSlowSync           bool
+	MaxSyncBlockHeight        uint32
+	SnapshotBlockHeightPeriod uint64
+	ArchivalMode              bool
+	DisableEncoderMigrations  bool
+
 	// Mining
 	MinerPublicKeys  []string
 	NumMiningThreads uint64
@@ -54,6 +63,7 @@ type Config struct {
 	GlogVmodule           string
 	LogDBSummarySnapshots bool
 	DatadogProfiler       bool
+	TimeEvents            bool
 }
 
 func LoadConfig() *Config {
@@ -72,10 +82,11 @@ func LoadConfig() *Config {
 		config.ProtocolPort = config.Params.DefaultSocketPort
 	}
 
-	config.DataDirectory = viper.GetString("data-dir")
-	if config.DataDirectory == "" {
-		config.DataDirectory = lib.GetDataDir(config.Params)
+	dataDir := viper.GetString("data-dir")
+	if dataDir == "" {
+		dataDir = lib.GetDataDir(config.Params)
 	}
+	config.DataDirectory = filepath.Join(dataDir, lib.DBVersionString)
 	if err := os.MkdirAll(config.DataDirectory, os.ModePerm); err != nil {
 		glog.Fatalf("Could not create data directories (%s): %v", config.DataDirectory, err)
 	}
@@ -84,6 +95,12 @@ func LoadConfig() *Config {
 	config.TXIndex = viper.GetBool("txindex")
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
+	config.HyperSync = viper.GetBool("hypersync")
+	config.DisableSlowSync = viper.GetBool("disable-slow-sync")
+	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
+	config.SnapshotBlockHeightPeriod = viper.GetUint64("snapshot-block-height-period")
+	config.ArchivalMode = viper.GetBool("archival-mode")
+	config.DisableEncoderMigrations = viper.GetBool("disable-encoder-migrations")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
@@ -125,6 +142,7 @@ func LoadConfig() *Config {
 	config.GlogVmodule = viper.GetString("glog-vmodule")
 	config.LogDBSummarySnapshots = viper.GetBool("log-db-summary-snapshots")
 	config.DatadogProfiler = viper.GetBool("datadog-profiler")
+	config.TimeEvents = viper.GetBool("time-events")
 
 	return &config
 }
@@ -140,6 +158,28 @@ func (config *Config) Print() {
 
 	if config.PostgresURI != "" {
 		glog.Infof("Postgres URI: %s", config.PostgresURI)
+	}
+
+	if config.HyperSync {
+		glog.Infof("HyperSync: ON")
+	}
+
+	if config.SnapshotBlockHeightPeriod > 0 {
+		glog.Infof("SnapshotBlockHeightPeriod: %v", config.SnapshotBlockHeightPeriod)
+	}
+
+	if config.ArchivalMode {
+		glog.Infof("ArchivalMode: ON")
+	}
+
+	if config.DisableSlowSync {
+		glog.Infof("DisableSlowSync: ON")
+	} else {
+		glog.Infof("DisableSlowSync: OFF")
+	}
+
+	if config.MaxSyncBlockHeight > 0 {
+		glog.Infof("MaxSyncBlockHeight: %v", config.MaxSyncBlockHeight)
 	}
 
 	if len(config.ConnectIPs) > 0 {

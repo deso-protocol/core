@@ -5,9 +5,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	"os"
-	"os/signal"
-	"syscall"
 )
 
 var runCmd = &cobra.Command{
@@ -27,16 +24,14 @@ func Run(cmd *cobra.Command, args []string) {
 	config := LoadConfig()
 
 	// Start the deso node
+	shutdownListener := make(chan struct{})
 	node := NewNode(config)
-	go node.Start()
+	node.Start(&shutdownListener)
 
-	shutdownListener := make(chan os.Signal)
-	signal.Notify(shutdownListener, syscall.SIGINT, syscall.SIGTERM)
 	defer func() {
 		node.Stop()
 		glog.Info("Shutdown complete")
 	}()
-
 	<-shutdownListener
 }
 
@@ -62,6 +57,18 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String("postgres-uri", "", "BETA: Use Postgres as the backing store for chain data."+
 		"When enabled, most data is stored in postgres although badger is still currently used for some state. Run your "+
 		"Postgres instance on the same machine as your node for optimal performance.")
+	cmd.PersistentFlags().Uint32("max-sync-block-height", 0,
+		"Max sync block height")
+	// Hyper Sync
+	cmd.PersistentFlags().Bool("hypersync", true, "Use hyper sync protocol for faster block syncing")
+	// Snapshot
+	cmd.PersistentFlags().Uint64("snapshot-block-height-period", 1000, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
+	// Archival mode
+	cmd.PersistentFlags().Bool("archival-mode", true, "Download all historical blocks after finishing hypersync.")
+	// Disable encoder migrations
+	cmd.PersistentFlags().Bool("disable-encoder-migrations", false, "Disable badgerDB encoder migrations")
+	// Disable slow sync
+	cmd.PersistentFlags().Bool("disable-slow-sync", false, "When set, a node will refuse to sync from a peer unless it is a hypersync peer")
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},
@@ -176,6 +183,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 			"level to 3 in all Go files whose names begin \"gopher\".")
 	cmd.PersistentFlags().Bool("log-db-summary-snapshots", false, "The node will log a snapshot of all DB keys every 30s.")
 	cmd.PersistentFlags().Bool("datadog-profiler", false, "Enable the DataDog profiler for performance testing")
+	cmd.PersistentFlags().Bool("time-events", false, "Enable simple event timer, helpful in hands-on performance testing")
 
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		viper.BindPFlag(flag.Name, flag)

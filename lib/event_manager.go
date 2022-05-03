@@ -2,6 +2,7 @@ package lib
 
 type TransactionEventFunc func(event *TransactionEvent)
 type BlockEventFunc func(event *BlockEvent)
+type SnapshotCompletedEventFunc func()
 
 type TransactionEvent struct {
 	Txn     *MsgDeSoTxn
@@ -25,6 +26,7 @@ type EventManager struct {
 	blockConnectedHandlers       []BlockEventFunc
 	blockDisconnectedHandlers    []BlockEventFunc
 	blockAcceptedHandlers        []BlockEventFunc
+	snapshotCompletedHandlers    []SnapshotCompletedEventFunc
 }
 
 func NewEventManager() *EventManager {
@@ -58,6 +60,16 @@ func (em *EventManager) OnBlockDisconnected(handler BlockEventFunc) {
 func (em *EventManager) blockDisconnected(event *BlockEvent) {
 	for _, handler := range em.blockDisconnectedHandlers {
 		handler(event)
+	}
+}
+
+func (em *EventManager) OnSnapshotCompleted(handler SnapshotCompletedEventFunc) {
+	em.snapshotCompletedHandlers = append(em.snapshotCompletedHandlers, handler)
+}
+
+func (em *EventManager) snapshotCompleted() {
+	for _, handler := range em.snapshotCompletedHandlers {
+		handler()
 	}
 }
 

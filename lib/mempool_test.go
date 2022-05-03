@@ -72,13 +72,13 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 		prevTxnHash := prevTxn.Hash()
 		newTxn := &MsgDeSoTxn{
 			TxInputs: []*DeSoInput{
-				&DeSoInput{
+				{
 					TxID:  *prevTxnHash,
 					Index: 0,
 				},
 			},
 			TxOutputs: []*DeSoOutput{
-				&DeSoOutput{
+				{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
@@ -151,13 +151,13 @@ func TestMempoolRateLimit(t *testing.T) {
 		prevTxnHash := prevTxn.Hash()
 		newTxn := &MsgDeSoTxn{
 			TxInputs: []*DeSoInput{
-				&DeSoInput{
+				{
 					TxID:  *prevTxnHash,
 					Index: 0,
 				},
 			},
 			TxOutputs: []*DeSoOutput{
-				&DeSoOutput{
+				{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
@@ -222,16 +222,16 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	txn2 := &MsgDeSoTxn{
 		// Set the change of the previous transaction as input.
 		TxInputs: []*DeSoInput{
-			&DeSoInput{
+			{
 				TxID:  *txn1Hash,
 				Index: 1,
 			},
 		},
 		TxOutputs: []*DeSoOutput{
-			&DeSoOutput{
+			{
 				PublicKey:   recipientPkBytes,
 				AmountNanos: 1,
-			}, &DeSoOutput{
+			}, {
 				PublicKey:   senderPkBytes,
 				AmountNanos: changeOutput.AmountNanos - 1,
 			},
@@ -246,16 +246,16 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	txn3 := &MsgDeSoTxn{
 		// Set the change of the previous transaction as input.
 		TxInputs: []*DeSoInput{
-			&DeSoInput{
+			{
 				TxID:  *txn2Hash,
 				Index: 1,
 			},
 		},
 		TxOutputs: []*DeSoOutput{
-			&DeSoOutput{
+			{
 				PublicKey:   recipientPkBytes,
 				AmountNanos: 1,
-			}, &DeSoOutput{
+			}, {
 				PublicKey:   senderPkBytes,
 				AmountNanos: changeOutput.AmountNanos - 2,
 			},
@@ -272,20 +272,20 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	txn4 := &MsgDeSoTxn{
 		// Set the change of the previous transaction as input.
 		TxInputs: []*DeSoInput{
-			&DeSoInput{
+			{
 				TxID:  *txn1Hash,
 				Index: 0,
 			},
-			&DeSoInput{
+			{
 				TxID:  *txn2Hash,
 				Index: 0,
 			},
 		},
 		TxOutputs: []*DeSoOutput{
-			&DeSoOutput{
+			{
 				PublicKey:   senderPkBytes,
 				AmountNanos: 1,
-			}, &DeSoOutput{
+			}, {
 				PublicKey:   recipientPkBytes,
 				AmountNanos: 1,
 			},

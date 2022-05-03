@@ -1,6 +1,8 @@
 package lib
 
 import (
+	"bytes"
+	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
@@ -50,7 +52,8 @@ func (bav *UtxoView) GetNFTEntryForNFTKey(nftKey *NFTKey) *NFTEntry {
 			nftEntry = nft.NewNFTEntry()
 		}
 	} else {
-		nftEntry = DBGetNFTEntryByPostHashSerialNumber(bav.Handle, &nftKey.NFTPostHash, nftKey.SerialNumber)
+		nftEntry = DBGetNFTEntryByPostHashSerialNumber(bav.Handle, bav.Snapshot,
+			&nftKey.NFTPostHash, nftKey.SerialNumber)
 	}
 
 	if nftEntry != nil {
@@ -352,7 +355,8 @@ func (bav *UtxoView) GetAcceptNFTBidHistoryForNFTKey(nftKey *NFTKey) *[]*NFTBidE
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil.
-	dbNFTBidEntries := DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(bav.Handle, &nftKey.NFTPostHash, nftKey.SerialNumber)
+	dbNFTBidEntries := DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(
+		bav.Handle, bav.Snapshot, &nftKey.NFTPostHash, nftKey.SerialNumber)
 	if dbNFTBidEntries != nil {
 		bav._setAcceptNFTBidHistoryMappings(*nftKey, dbNFTBidEntries)
 		return dbNFTBidEntries
@@ -400,7 +404,7 @@ func (bav *UtxoView) GetNFTBidEntryForNFTBidKey(nftBidKey *NFTBidKey) *NFTBidEnt
 			dbNFTBidEntry = bidEntry.NewNFTBidEntry()
 		}
 	} else {
-		dbNFTBidEntry = DBGetNFTBidEntryForNFTBidKey(bav.Handle, nftBidKey)
+		dbNFTBidEntry = DBGetNFTBidEntryForNFTBidKey(bav.Handle, bav.Snapshot, nftBidKey)
 	}
 
 	if dbNFTBidEntry != nil {
@@ -442,6 +446,19 @@ func (bav *UtxoView) GetAllNFTBidEntries(nftPostHash *BlockHash, serialNumber ui
 			nftBidEntries = append(nftBidEntries, nftBidEntry)
 		}
 	}
+	// Make sure NFT Bid entries are returned in a deterministic order. Bids must differ by BidderPKID, given they have
+	// distinct NFTBidKeys in the NFTBidKeyToNFTBidEntry map, so we use BidderPKID to order the bid entries.
+	sort.Slice(nftBidEntries, func(i int, j int) bool {
+		switch bytes.Compare(nftBidEntries[i].BidderPKID.ToBytes(), nftBidEntries[j].BidderPKID.ToBytes()) {
+		case 0:
+			return true
+		case -1:
+			return true
+		case 1:
+			return false
+		}
+		return false
+	})
 	return nftBidEntries
 }
 
@@ -450,7 +467,7 @@ func (bav *UtxoView) _getBuyNowExtraData(txn *MsgDeSoTxn, blockHeight uint32) (
 
 	isBuyNow := false
 	buyNowPrice := uint64(0)
-  
+
 	// Only extract the BuyNowPriceKey value if we are past the BuyNowAndNFTSplitsBlockHeight
 	if val, exists := txn.ExtraData[BuyNowPriceKey]; exists &&
 		blockHeight >= bav.Params.ForkHeights.BuyNowAndNFTSplitsBlockHeight {
@@ -499,7 +516,7 @@ func (bav *UtxoView) extractAdditionalRoyaltyMap(
 			additionalRoyalties[*pkid.PKID] = bps
 
 			// Check for overflow when summing the bps
-			if additionalRoyaltiesBasisPoints > math.MaxUint64 - bps {
+			if additionalRoyaltiesBasisPoints > math.MaxUint64-bps {
 				return nil, 0, errors.Wrapf(
 					RuleErrorAdditionalCoinRoyaltyOverflow,
 					"additionalRoyaltiesBasisPoints: %v, bps: %v", additionalRoyaltiesBasisPoints, bps)
@@ -688,6 +705,13 @@ func (bav *UtxoView) _connectCreateNFT(
 	postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints = additionalCoinNFTRoyalties
 	bav._setPostEntryMappings(postEntry)
 
+	var extraData map[string][]byte
+	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		// We don't have a previous entry here because we're creating the
+		// entry from scratch.
+		extraData = txn.ExtraData
+	}
+
 	// Add the appropriate NFT entries.
 	for ii := uint64(1); ii <= txMeta.NumCopies; ii++ {
 		nftEntry := &NFTEntry{
@@ -698,6 +722,7 @@ func (bav *UtxoView) _connectCreateNFT(
 			MinBidAmountNanos: txMeta.MinBidAmountNanos,
 			IsBuyNow:          isBuyNow,
 			BuyNowPriceNanos:  buyNowPrice,
+			ExtraData:         extraData,
 		}
 		bav._setNFTEntryMappings(nftEntry)
 	}
@@ -820,6 +845,11 @@ func (bav *UtxoView) _connectUpdateNFT(
 		// Keep the last accepted bid amount nanos from the previous entry since this
 		// value is only updated when a new bid is accepted.
 		LastAcceptedBidAmountNanos: prevNFTEntry.LastAcceptedBidAmountNanos,
+
+		// Just copy the extra data from the previous entry when updating an NFT.
+		// We do this because you're not allowed to update the ExtraData on an
+		// NFTEntry.
+		ExtraData: prevNFTEntry.ExtraData,
 	}
 	bav._setNFTEntryMappings(newNFTEntry)
 
@@ -982,14 +1012,17 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	// Additionally save all the other previous coin entries
 	prevAdditionalCoinEntries := make(map[PKID]CoinEntry)
 	profileEntriesMap := make(map[PKID]ProfileEntry)
-	for pkidIter, _ := range nftPostEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
+	for pkidIter := range nftPostEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
 		pkid := pkidIter
 		pkBytes := bav.GetPublicKeyForPKID(&pkid)
 		existingAdditionalProfileEntry := bav.GetProfileEntryForPublicKey(pkBytes)
 		if existingAdditionalProfileEntry == nil || existingAdditionalProfileEntry.isDeleted {
 			return 0, 0, nil, fmt.Errorf(
-				"_helpConnectNFTSold: Profile missing for additional coin royalty for pub key: %v %v",
-				PkToStringMainnet(pkBytes), PkToStringTestnet(pkBytes))
+				"_helpConnectNFTSold: Profile missing for additional coin royalty "+
+					"for pkid: %v, pub key: %v %v for post hash: %v",
+				PkToStringMainnet(pkid[:]),
+				PkToStringMainnet(pkBytes), PkToStringTestnet(pkBytes),
+				hex.EncodeToString(nftPostEntry.PostHash[:]))
 		}
 		prevAdditionalCoinEntries[pkid] = existingAdditionalProfileEntry.CreatorCoinEntry
 		profileEntriesMap[pkid] = *existingAdditionalProfileEntry
@@ -1048,7 +1081,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 			PkToStringBoth(nftPostEntry.PosterPublicKey))
 	}
 	desoRoyaltiesBalancesBefore := make(map[PKID]uint64)
-	for pkidIter, _ := range nftPostEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
+	for pkidIter := range nftPostEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints {
 		pkid := pkidIter
 		pkBytes := bav.GetPublicKeyForPKID(&pkid)
 		balanceBefore, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(pkBytes, tipHeight)
@@ -1214,7 +1247,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		// generate for the royalties will have a random order. This would cause one node
 		// to believe UTXO zero is some value, while another node believes it to be a
 		// different value because it put a different UTXO in that index.
-		sort.Slice(additionalRoyalties,  func(ii, jj int) bool {
+		sort.Slice(additionalRoyalties, func(ii, jj int) bool {
 			iiPkStr := PkToString(additionalRoyalties[ii].PublicKey, bav.Params)
 			jjPkStr := PkToString(additionalRoyalties[jj].PublicKey, bav.Params)
 			// Generally, we should never have to break a tie because a public key
@@ -1287,7 +1320,9 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 
 	// append the accepted bid entry to the list of accepted bid entries
 	prevAcceptedBidHistory := bav.GetAcceptNFTBidHistoryForNFTKey(&nftKey)
-	newAcceptedBidHistory := append(*prevAcceptedBidHistory, nftBidEntry)
+	acceptedNFTBidEntry := nftBidEntry.Copy()
+	acceptedNFTBidEntry.AcceptedBlockHeight = &blockHeight
+	newAcceptedBidHistory := append(*prevAcceptedBidHistory, acceptedNFTBidEntry)
 	bav._setAcceptNFTBidHistoryMappings(nftKey, &newAcceptedBidHistory)
 
 	// (2) Iterate over all the NFTBidEntries for this NFT and delete them.
@@ -1444,8 +1479,12 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		transactionUtxoOp.AcceptNFTBidCreatorPublicKey = nftPostEntry.PosterPublicKey
 		transactionUtxoOp.AcceptNFTBidBidderPublicKey = bidderPublicKey
 		transactionUtxoOp.AcceptNFTBidCreatorRoyaltyNanos = creatorCoinRoyaltyNanos
+		transactionUtxoOp.AcceptNFTBidCreatorDESORoyaltyNanos = creatorRoyaltyNanos
 		if len(additionalCoinRoyalties) > 0 {
 			transactionUtxoOp.AcceptNFTBidAdditionalCoinRoyalties = additionalCoinRoyalties
+		}
+		if len(additionalDESORoyalties) > 0 {
+			transactionUtxoOp.AcceptNFTBidAdditionalDESORoyalties = additionalDESORoyalties
 		}
 	} else if args.Txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
 		transactionUtxoOp.Type = OperationTypeNFTBid
@@ -1453,8 +1492,12 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		transactionUtxoOp.NFTBidCreatorPublicKey = nftPostEntry.PosterPublicKey
 		transactionUtxoOp.NFTBidBidderPublicKey = bidderPublicKey
 		transactionUtxoOp.NFTBidCreatorRoyaltyNanos = creatorCoinRoyaltyNanos
+		transactionUtxoOp.NFTBidCreatorDESORoyaltyNanos = creatorRoyaltyNanos
 		if len(additionalCoinRoyalties) > 0 {
 			transactionUtxoOp.NFTBidAdditionalCoinRoyalties = additionalCoinRoyalties
+		}
+		if len(additionalDESORoyalties) > 0 {
+			transactionUtxoOp.NFTBidAdditionalDESORoyalties = additionalDESORoyalties
 		}
 	} else {
 		return 0, 0, nil, fmt.Errorf(

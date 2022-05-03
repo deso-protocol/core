@@ -15,7 +15,7 @@ func init() {
 				operation_type              SMALLINT NOT NULL,
 				coins_to_mint_nanos         BIGINT NOT NULL,
 				coins_to_burn_nanos         BIGINT NOT NULL,
-				transfer_restriction_status SMALLINT NOT NULL
+				transfer_restriction_status SMALLINT
 			);
 		`)
 		if err != nil {
@@ -55,6 +55,9 @@ func init() {
 				ADD COLUMN dao_coin_minting_disabled            BOOL,
 				ADD COLUMN dao_coin_transfer_restriction_status SMALLINT;
 			`)
+		if err != nil {
+			return err
+		}
 
 		return nil
 	}
@@ -62,7 +65,7 @@ func init() {
 	down := func(db orm.DB) error {
 		_, err := db.Exec(`
 			DROP TABLE pg_metadata_dao_coins;
-			DROP TABLE pg_metadata_dao_coin_transfer;
+			DROP TABLE pg_metadata_dao_coin_transfers;
 			DROP TABLE pg_dao_coin_balances;
 			ALTER TABLE pg_profiles
 				DROP COLUMN minting_disabled,
@@ -76,5 +79,5 @@ func init() {
 
 	opts := migrations.MigrationOptions{}
 
-	migrations.Register("20210623152412_create_tables", up, down, opts)
+	migrations.Register("20220106162320_create_dao_coin_tables", up, down, opts)
 }

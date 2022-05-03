@@ -68,6 +68,7 @@ func TestComputeMaxTPS(t *testing.T) {
 				12500,
 				false,
 				0,
+				nil,
 				10,
 				mempool, /*mempool*/
 				[]*DeSoOutput{})
@@ -128,7 +129,7 @@ func TestComputeMaxTPS(t *testing.T) {
 		require.NoError(err)
 		pprof.StartCPUProfile(ff)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		timeStart := time.Now()
