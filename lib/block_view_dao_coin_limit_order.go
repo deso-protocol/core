@@ -1808,8 +1808,13 @@ func ScaleFloatFormatStringToUint256(floatStr string, scaleFactor *uint256.Int) 
 	sumBig := big.NewInt(0).Add(newWholePart, newDecimalPart)
 	ret, overflow := uint256.FromBig(sumBig)
 	if overflow {
-		return nil, fmt.Errorf("Sum of whole part %v and decimal part %v overflows with value %v for float string %v",
-			wholePart, decimalPart, sumBig, floatStr)
+		return nil, fmt.Errorf(
+			"Sum of whole part %v and decimal part %v overflows with value %v for float string %v",
+			wholePart,
+			decimalPart,
+			sumBig,
+			floatStr,
+		)
 	}
 
 	return ret, nil
