@@ -1749,15 +1749,23 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMatch(
 	return nil
 }
 
-// The most accurate way we've found to convert a decimal price into a
-// "scaled" price is to parse a string representation into a "whole" bigint
+func CalculateScaledExchangeRateFromString(priceStr string) (*uint256.Int, error) {
+	return ScaleFloatFormatStringToUint256(priceStr, OneE38)
+}
+
+func CalculateScaledExchangeRate(price float64) (*uint256.Int, error) {
+	return CalculateScaledExchangeRateFromString(fmt.Sprintf("%v", price))
+}
+
+// ScaleFloatFormatStringToUint256 The most accurate way we've found to convert a decimal into a
+// "scaled" value is to parse a string representation into a "whole" bigint
 // and a "decimal" bigint. Once we have these two pieces of the number, we
 // can scale the value without losing any precision.
 //
-// In contrast, note that performing these operaitons on a big.Float results
+// In contrast, note that performing these operations on a big.Float results
 // in an immediate loss of precision.
-func CalculateScaledExchangeRateFromString(priceStr string) (*uint256.Int, error) {
-	vals := strings.Split(priceStr, ".")
+func ScaleFloatFormatStringToUint256(floatStr string, scaleFactor *uint256.Int) (*uint256.Int, error) {
+	vals := strings.Split(floatStr, ".")
 	if len(vals) == 0 {
 		vals = []string{"0", "0"}
 	}
@@ -1779,10 +1787,10 @@ func CalculateScaledExchangeRateFromString(priceStr string) (*uint256.Int, error
 	// decimal part. We multiply both by 1e38 and add
 	wholePart, worked := big.NewInt(0).SetString(vals[0], 10)
 	if !worked {
-		return nil, fmt.Errorf("Failed to convert whole part %v to bigint for price %v", wholePart, priceStr)
+		return nil, fmt.Errorf("Failed to convert whole part %v to bigint for float string %v", wholePart, floatStr)
 	}
 	decimalPartStr := vals[1]
-	numDecimals := len(OneE38.ToBig().String()) - 1
+	numDecimals := len(scaleFactor.ToBig().String()) - 1
 	decimalExponent := numDecimals - len(decimalPartStr)
 	if decimalExponent < 0 {
 		// If the decimal portion is too large then truncate it
@@ -1791,22 +1799,23 @@ func CalculateScaledExchangeRateFromString(priceStr string) (*uint256.Int, error
 	}
 	decimalPart, worked := big.NewInt(0).SetString(decimalPartStr, 10)
 	if !worked {
-		return nil, fmt.Errorf("Failed to convert decimal part %v to bigint for price %v", decimalPartStr, priceStr)
+		return nil, fmt.Errorf("Failed to convert decimal part %v to bigint for float string %v", decimalPartStr, floatStr)
 	}
-	newWholePart := big.NewInt(0).Mul(wholePart, OneE38.ToBig())
+	newWholePart := big.NewInt(0).Mul(wholePart, scaleFactor.ToBig())
 	newDecimalPart := big.NewInt(0).Mul(decimalPart, big.NewInt(0).Exp(
 		big.NewInt(0).SetUint64(10), big.NewInt(0).SetUint64(uint64(decimalExponent)), nil))
 
 	sumBig := big.NewInt(0).Add(newWholePart, newDecimalPart)
 	ret, overflow := uint256.FromBig(sumBig)
 	if overflow {
-		return nil, fmt.Errorf("Sum of whole part %v and decimal part %v overflows with value %v for price %v",
-			wholePart, decimalPart, sumBig, priceStr)
+		return nil, fmt.Errorf(
+			"Sum of whole part %v and decimal part %v overflows with value %v for float string %v",
+			wholePart,
+			decimalPart,
+			sumBig,
+			floatStr,
+		)
 	}
 
 	return ret, nil
-}
-
-func CalculateScaledExchangeRate(price float64) (*uint256.Int, error) {
-	return CalculateScaledExchangeRateFromString(fmt.Sprintf("%v", price))
 }
