@@ -1531,7 +1531,9 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 	}
 
 	// If the spend amount exceeds the Global DESO limit, this derived key is not authorized to spend this DESO.
-	if spendAmount > derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit {
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		spendAmount > derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit {
+
 		return utxoOpsForTxn, errors.Wrapf(RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit,
 			"_checkDerivedKeySpendingLimit: Spend Amount %v Exceeds Global DESO Limit %v for Derived Key",
 			spendAmount, derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit)
