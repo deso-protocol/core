@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"math"
 	"reflect"
 	"strings"
@@ -1536,7 +1537,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 
 		return utxoOpsForTxn, errors.Wrapf(RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit,
 			"_checkDerivedKeySpendingLimit: Spend Amount %v Exceeds Global DESO Limit %v for Derived Key",
-			spendAmount, derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit)
+			spendAmount, spew.Sdump(derivedKeyEntry.TransactionSpendingLimitTracker))
 	}
 
 	// Decrement the global limit by the spend amount
