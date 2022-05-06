@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"math"
 	"reflect"
 	"strings"
@@ -1530,11 +1531,16 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		}
 	}
 
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil {
+		return utxoOpsForTxn, errors.Wrap(RuleErrorDerivedKeyNotAuthorized,
+			"_checkDerivedKeySpendingLimit: TransactionSpendingLimitTracker is nil")
+	}
+
 	// If the spend amount exceeds the Global DESO limit, this derived key is not authorized to spend this DESO.
 	if spendAmount > derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit {
 		return utxoOpsForTxn, errors.Wrapf(RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit,
 			"_checkDerivedKeySpendingLimit: Spend Amount %v Exceeds Global DESO Limit %v for Derived Key",
-			spendAmount, derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit)
+			spendAmount, spew.Sdump(derivedKeyEntry.TransactionSpendingLimitTracker))
 	}
 
 	// Decrement the global limit by the spend amount
@@ -1657,9 +1663,12 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		}
 	default:
 		// If we get here, it means we're dealing with a txn that doesn't have any special
-		// granular limits to deal with. This means we just check whether or not we have
+		// granular limits to deal with. This means we just check whether we have
 		// quota to execute this particular TxnType.
-
+		if derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap == nil {
+			return utxoOpsForTxn, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized,
+				"_checkDerivedKeySpendingLimit: TransactionCountLimitMap is nil")
+		}
 		// If the transaction limit is not specified or equal to 0, this derived
 		// key is not authorized to perform this transaction.
 		transactionLimit, transactionLimitExists :=
@@ -1696,6 +1705,10 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 // delete the key. Returns true if the key was found and the derived key entry
 // was updated.
 func _checkNFTKeyAndUpdateDerivedKeyEntry(key NFTOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap == nil {
+		return false
+	}
 	// If the key is present in the NFTOperationLimitMap...
 	nftLimit, nftLimitExist := derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap[key]
 	// Return false because we didn't find the key
@@ -1768,6 +1781,10 @@ func _checkNFTLimitAndUpdateDerivedKeyEntry(
 // If there are no operation remaining after this one, we delete the key.
 // Returns true if the key was found and the derived key entry was updated.
 func _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(key CreatorCoinOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap == nil {
+		return false
+	}
 	// If the key is present in the CreatorCoinOperationLimitMap...
 	ccOperationLimit, ccOperationLimitExists :=
 		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[key]
@@ -1828,6 +1845,10 @@ func (bav *UtxoView) _checkCreatorCoinLimitAndUpdateDerivedKeyEntry(
 // If there are no operation remaining after this one, we delete the key.
 // Returns true if the key was found and the derived key entry was updated.
 func _checkDAOCoinKeyAndUpdateDerivedKeyEntry(key DAOCoinOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap == nil {
+		return false
+	}
 	// If the key is present in the DAOCoinOperationLimitMap...
 	daoCoinOperationLimit, daoCoinOperationLimitExists :=
 		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap[key]
@@ -1894,7 +1915,10 @@ func (bav *UtxoView) _checkDAOCoinLimitAndUpdateDerivedKeyEntry(
 // to DESO for order book operations. We should fix this down the road.
 func _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(
 	key DAOCoinLimitOrderLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
-
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap == nil {
+		return false
+	}
 	// Check if the key is present in the DAOCoinLimitOrderLimitMap...
 	daoCoinLimitOrderLimit, daoCoinLimitOrderLimitExists :=
 		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap[key]
