@@ -184,6 +184,48 @@ func CreateUnsignedBitcoinSpendTransaction(
 	return retTxn, totalInputSatoshis, finalFee, nil
 }
 
+// Check whether the deposits being used to construct this transaction have RBF enabled.
+// If they do then we force the user to wait until those deposits have been mined into a
+// block before allowing this transaction to go through. This prevents double-spend
+// attacks where someone replaces a dependent transaction with a higher fee.
+//
+// TODO: We use a pretty janky API to check for this, and if it goes down then
+// BitcoinExchange txns break. But without it we're vulnerable to double-spends
+// so we keep it for now.
+func CheckRBF(bitcoinTxn *wire.MsgTx, bitcoinTxnHash chainhash.Hash, desoParams *DeSoParams) (bool, error) {
+	// Check whether the deposits being used to construct this transaction have RBF enabled.
+	// If they do then we force the user to wait until those deposits have been mined into a
+	// block before allowing this transaction to go through. This prevents double-spend
+	// attacks where someone replaces a dependent transaction with a higher fee.
+	//
+	// TODO: We use a pretty janky API to check for this, and if it goes down then
+	// BitcoinExchange txns break. But without it we're vulnerable to double-spends
+	// so we keep it for now.
+	if desoParams.NetworkType == NetworkType_MAINNET {
+		// Go through the transaction's inputs. If any of them have RBF set then we
+		// must assume that this transaction has RBF as well.
+		for _, txIn := range bitcoinTxn.TxIn {
+			isRBF, err := BlockonomicsCheckRBF(txIn.PreviousOutPoint.Hash.String())
+			if err != nil {
+				glog.Errorf("ExchangeBitcoinStateless: ERROR: Blockonomics request to check RBF for txn "+
+					"hash %v failed. This is bad because it means users are not able to "+
+					"complete Bitcoin burns: %v", txIn.PreviousOutPoint.Hash.String(), err)
+				return true, fmt.Errorf(
+					"The nodes are still processing your deposit. Please wait a few seconds " +
+						"and try again.")
+			}
+			// If we got a success response from Blockonomics then bail if the transaction has
+			// RBF set.
+			if isRBF {
+				glog.Errorf("ExchangeBitcoinStateless: ERROR: Blockonomics found RBF txn: %v", bitcoinTxnHash.String())
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
 func CreateBitcoinSpendTransaction(
 	spendAmountSatoshis uint64, feeRateSatoshisPerKB uint64,
 	pubKey *btcec.PublicKey,
@@ -292,6 +334,7 @@ type BlockCypherAPITxnResponse struct {
 	Outputs       []*BlockCypherAPIOutputResponse `json:"outputs"`
 	Confirmations int64                           `json:"confirmations"`
 	DoubleSpend   bool                            `json:"double_spend"`
+	TxnHex        string                          `json:"hex"`
 }
 
 type BlockCypherAPIFullAddressResponse struct {
