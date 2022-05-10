@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/holiman/uint256"
 	"log"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -237,7 +236,8 @@ type ForkHeights struct {
 	// DAOCoinLimitOrderBlockHeight defines the height at which DAO Coin Limit Order transactions will be accepted.
 	DAOCoinLimitOrderBlockHeight uint32
 
-	// Be sure to update EncoderMigrationHeights as well if you're modifying schema.
+	// Be sure to update EncoderMigrationHeights as well via
+	// GetEncoderMigrationHeights if you're modifying schema.
 }
 
 // EncoderMigrationHeights is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
@@ -544,7 +544,8 @@ var RegtestForkHeights = ForkHeights{
 	DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
 	DAOCoinLimitOrderBlockHeight:                         uint32(0),
 
-	// Be sure to update EncoderMigrationHeights as well if you're modifying schema.
+	// Be sure to update EncoderMigrationHeights as well via
+	// GetEncoderMigrationHeights if you're modifying schema.
 }
 
 // EnableRegtest allows for local development and testing with incredibly fast blocks with block rewards that
@@ -647,17 +648,13 @@ var MainnetForkHeights = ForkHeights{
 	BuyNowAndNFTSplitsBlockHeight: uint32(98474),
 	DAOCoinBlockHeight:            uint32(98474),
 
-	// FIXME: set to real block height
-	ExtraDataOnEntriesBlockHeight: math.MaxUint32,
+	ExtraDataOnEntriesBlockHeight:            uint32(130901),
+	DerivedKeySetSpendingLimitsBlockHeight:   uint32(130901),
+	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(130901),
+	DAOCoinLimitOrderBlockHeight:             uint32(130901),
 
-	// FIXME: Set these values when we're ready for the next fork.
-	DerivedKeySetSpendingLimitsBlockHeight:   math.MaxUint32,
-	DerivedKeyTrackSpendingLimitsBlockHeight: math.MaxUint32,
-
-	// FIXME: Set to real block height when we're ready.
-	DAOCoinLimitOrderBlockHeight: math.MaxUint32,
-
-	// Be sure to update EncoderMigrationHeights as well if you're modifying schema.
+	// Be sure to update EncoderMigrationHeights as well via
+	// GetEncoderMigrationHeights if you're modifying schema.
 }
 
 // DeSoMainnetParams defines the DeSo parameters for the mainnet.
@@ -898,7 +895,8 @@ var TestnetForkHeights = ForkHeights{
 	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(304087 + 18*60),
 	DAOCoinLimitOrderBlockHeight:             uint32(304087),
 
-	// Be sure to update EncoderMigrationHeights as well if you're modifying schema.
+	// Be sure to update EncoderMigrationHeights as well via
+	// GetEncoderMigrationHeights if you're modifying schema.
 }
 
 // DeSoTestnetParams defines the DeSo parameters for the testnet.
