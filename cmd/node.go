@@ -153,13 +153,13 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		lib.StartDBSummarySnapshots(node.ChainDB)
 	}
 
+	// Validate that we weren't passed incompatible Hypersync flags
+	lib.ValidateHyperSyncFlags(node.Config.HyperSync, node.Config.SyncType)
+
 	// Setup postgres using a remote URI. Postgres is not currently supported when we're in hypersync mode.
 	if node.Config.HyperSync && node.Config.PostgresURI != "" {
 		glog.Fatal("--postgres-uri is not supported when --hypersync=true. We're " +
 			"working on Hypersync support for Postgres though!")
-	}
-	if !node.Config.HyperSync && node.Config.DisableSlowSync {
-		glog.Fatal("Cannot set --disable-slow-sync=true without also setting --hypersync=true")
 	}
 	var db *pg.DB
 	if node.Config.PostgresURI != "" {
@@ -203,9 +203,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.NumMiningThreads,
 		node.Config.OneInboundPerIp,
 		node.Config.HyperSync,
-		node.Config.DisableSlowSync,
+		node.Config.SyncType,
 		node.Config.MaxSyncBlockHeight,
-		node.Config.ArchivalMode,
 		node.Config.DisableEncoderMigrations,
 		node.Config.RateLimitFeerate,
 		node.Config.MinFeerate,

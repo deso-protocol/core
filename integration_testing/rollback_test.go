@@ -2,6 +2,7 @@ package testing
 
 import (
 	"github.com/deso-protocol/core/cmd"
+	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
 	"os"
 	"reflect"
@@ -19,7 +20,9 @@ func TestStateRollback(t *testing.T) {
 	defer os.RemoveAll(dbDir2)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1.SyncType = lib.NodeSyncTypeBlockSync
 	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.MaxSyncBlockHeight = 5000
 	config2.MaxSyncBlockHeight = 5689

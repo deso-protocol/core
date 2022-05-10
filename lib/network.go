@@ -1285,8 +1285,9 @@ func (msg *MsgDeSoPong) FromBytes(data []byte) error {
 type ServiceFlag uint64
 
 const (
-	// SFFullNode is a flag used to indicate a peer is a full node.
-	SFFullNode ServiceFlag = 1 << iota
+	// SFFullNodeDeprecated is deprecated, and set on all nodes by default
+	// now. We basically split it into SFHyperSync and SFArchivalMode.
+	SFFullNodeDeprecated ServiceFlag = 1 << iota
 	// SFHyperSync is a flag used to indicate that the peer supports hyper sync.
 	SFHyperSync
 	// SFArchivalNode is a flag complementary to SFHyperSync. If node is a hypersync node then

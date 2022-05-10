@@ -57,12 +57,15 @@ type ConnectionManager struct {
 
 	// When --hypersync is set to true we will attempt fast block synchronization
 	HyperSync bool
-	// When --disable-slow-sync is set to true we will refuse to sync from non-hypersync
-	// peers. Note that this is set to false by default, which means the node will be
-	// willing to sync from a non-hypersync peer the slow way if it connects to one first
-	// (though note that it will still build ancestral records if --hypersync is set,
-	// meaning other peers can hypersync from it if they want).
-	DisableSlowSync bool
+	// We have the following options for SyncType:
+	// - any: Will sync with a node no matter what kind of syncing it supports.
+	// - blocksync: Will sync by connecting blocks from the beginning of time.
+	// - hypersync-archival: Will sync by hypersyncing state, but then it will
+	//   still download historical blocks at the end. Can only be set if HyperSync
+	//   is true.
+	// - hypersync: Will sync by downloading historical state, and will NOT
+	//   download historical blocks. Can only be set if HyperSync is true.
+	SyncType NodeSyncType
 
 	// Keep track of the nonces we've sent in our version messages so
 	// we can prevent connections to ourselves.
@@ -131,11 +134,13 @@ func NewConnectionManager(
 	_targetOutboundPeers uint32, _maxInboundPeers uint32,
 	_limitOneInboundConnectionPerIP bool,
 	_hyperSync bool,
-	_disableSlowSync bool,
+	_syncType NodeSyncType,
 	_stallTimeoutSeconds uint64,
 	_minFeeRateNanosPerKB uint64,
 	_serverMessageQueue chan *ServerMessage,
 	_srv *Server) *ConnectionManager {
+
+	ValidateHyperSyncFlags(_hyperSync, _syncType)
 
 	return &ConnectionManager{
 		srv:        _srv,
@@ -165,7 +170,7 @@ func NewConnectionManager(
 		maxInboundPeers:                _maxInboundPeers,
 		limitOneInboundConnectionPerIP: _limitOneInboundConnectionPerIP,
 		HyperSync:                      _hyperSync,
-		DisableSlowSync:                _disableSlowSync,
+		SyncType:                       _syncType,
 		serverMessageQueue:             _serverMessageQueue,
 		stallTimeoutSeconds:            _stallTimeoutSeconds,
 		minFeeRateNanosPerKB:           _minFeeRateNanosPerKB,
@@ -436,7 +441,7 @@ func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, persistentAddr *wire.N
 			cmgr.stallTimeoutSeconds,
 			cmgr.minFeeRateNanosPerKB,
 			cmgr.params,
-			cmgr.srv.incomingMessages, cmgr, cmgr.srv, cmgr.DisableSlowSync)
+			cmgr.srv.incomingMessages, cmgr, cmgr.srv, cmgr.SyncType)
 
 		if err := peer.NegotiateVersion(cmgr.params.VersionNegotiationTimeout); err != nil {
 			glog.Errorf("ConnectPeer: Problem negotiating version with peer with addr: (%s) err: (%v)", conn.RemoteAddr().String(), err)

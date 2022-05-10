@@ -68,7 +68,14 @@ func SetupRunFlags(cmd *cobra.Command) {
 	// Disable encoder migrations
 	cmd.PersistentFlags().Bool("disable-encoder-migrations", false, "Disable badgerDB encoder migrations")
 	// Disable slow sync
-	cmd.PersistentFlags().Bool("disable-slow-sync", false, "When set, a node will refuse to sync from a peer unless it is a hypersync peer")
+	cmd.PersistentFlags().String("sync-type", "any", `We have the following options for SyncType:
+		- any: Will sync with a node no matter what kind of syncing it supports.
+		- full-historical: Will sync by connecting blocks from the beginning of time.
+		- hypersync-archival: Will sync by hypersyncing state, but then it will
+		  still download historical blocks at the end. Can only be set if HyperSync
+		  is true.
+		- hypersync: Will sync by downloading historical state, and will NOT
+		  download historical blocks. Can only be set if HyperSync is true.`)
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},

@@ -30,7 +30,7 @@ var postHashForTesting1 = BlockHash{
 
 var expectedVer = &MsgDeSoVersion{
 	Version:              1,
-	Services:             SFFullNode,
+	Services:             SFFullNodeDeprecated,
 	TstampSecs:           2,
 	Nonce:                uint64(0xffffffffffffffff),
 	UserAgent:            "abcdef",
@@ -497,7 +497,7 @@ func TestSerializeAddresses(t *testing.T) {
 		AddrList: []*SingleAddr{
 			{
 				Timestamp: time.Unix(1000, 0),
-				Services:  SFFullNode,
+				Services:  SFFullNodeDeprecated,
 				IP:        []byte{0x01, 0x02, 0x03, 0x04},
 				Port:      12345,
 			},

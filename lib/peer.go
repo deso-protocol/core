@@ -139,9 +139,9 @@ type Peer struct {
 	// track whether this peer has a get snapshot request in flight.
 	snapshotChunkRequestInFlight bool
 
-	// DisableSlowSync indicates whether blocksync should not be requested for this peer. If set to true
+	// SyncType indicates whether blocksync should not be requested for this peer. If set to true
 	// then we'll only hypersync from this peer.
-	disableSlowSync bool
+	syncType NodeSyncType
 }
 
 func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
@@ -592,7 +592,7 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 	params *DeSoParams,
 	messageChan chan *ServerMessage,
 	_cmgr *ConnectionManager, _srv *Server,
-	_disableSlowSync bool) *Peer {
+	_syncType NodeSyncType) *Peer {
 
 	pp := Peer{
 		cmgr:                   _cmgr,
@@ -612,7 +612,7 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 		Params:                 params,
 		MessageChan:            messageChan,
 		requestedBlocks:        make(map[BlockHash]bool),
-		disableSlowSync:        _disableSlowSync,
+		syncType:               _syncType,
 	}
 	if _cmgr != nil {
 		pp.ID = atomic.AddUint64(&_cmgr.peerIndex, 1)
@@ -1167,18 +1167,40 @@ func (pp *Peer) Start() {
 }
 
 func (pp *Peer) IsSyncCandidate() bool {
-	isFullNode := (pp.serviceFlags & SFFullNode) != 0
+	isFullNode := (pp.serviceFlags & SFFullNodeDeprecated) != 0
 	// TODO: This is a bit of a messy way to determine whether the node was run with --hypersync
 	nodeSupportsHypersync := (pp.serviceFlags & SFHyperSync) != 0
-	hypersyncSatisfied := !pp.disableSlowSync || nodeSupportsHypersync
-	glog.Infof("IsSyncCandidate: localAddr (%v), isFullNode (%v), "+
-		"hypersyncSatisfied (%v), --disableSlowSync (%v), nodeSupportsHypersync (%v), "+
-		"is outbound (%v)",
-		pp.Conn.LocalAddr().String(), isFullNode, hypersyncSatisfied,
-		pp.disableSlowSync,
-		nodeSupportsHypersync,
-		pp.isOutbound)
-	return isFullNode && pp.isOutbound && hypersyncSatisfied
+	weRequireHypersync := (pp.syncType == NodeSyncTypeHyperSync ||
+		pp.syncType == NodeSyncTypeHyperSyncArchival)
+	if weRequireHypersync && !nodeSupportsHypersync {
+		glog.Infof("IsSyncCandidate: Rejecting node as sync candidate "+
+			"because weRequireHypersync=true but nodeSupportsHypersync=false "+
+			"localAddr (%v), isFullNode (%v), "+
+			"nodeSupportsHypersync (%v), --sync-type (%v), weRequireHypersync (%v), "+
+			"is outbound (%v)",
+			pp.Conn.LocalAddr().String(), isFullNode, nodeSupportsHypersync,
+			pp.syncType,
+			weRequireHypersync,
+			pp.isOutbound)
+		return false
+	}
+
+	weRequireArchival := IsNodeArchival(pp.syncType)
+	nodeIsArchival := (pp.serviceFlags & SFArchivalNode) != 0
+	if weRequireArchival && !nodeIsArchival {
+		glog.Infof("IsSyncCandidate: Rejecting node as sync candidate "+
+			"because weRequireArchival=true but nodeIsArchival=false "+
+			"localAddr (%v), isFullNode (%v), "+
+			"nodeIsArchival (%v), --sync-type (%v), weRequireArchival (%v), "+
+			"is outbound (%v)",
+			pp.Conn.LocalAddr().String(), isFullNode, nodeIsArchival,
+			pp.syncType,
+			weRequireArchival,
+			pp.isOutbound)
+		return false
+	}
+
+	return isFullNode && pp.isOutbound
 }
 
 func (pp *Peer) WriteDeSoMessage(msg DeSoMessage) error {
@@ -1233,12 +1255,12 @@ func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	ver.UserAgent = params.UserAgent
 	// TODO: Right now all peers are full nodes. Later on we'll want to change this,
 	// at which point we'll need to do a little refactoring.
-	ver.Services = SFFullNode
+	ver.Services = SFFullNodeDeprecated
 	if pp.cmgr != nil && pp.cmgr.HyperSync {
 		ver.Services |= SFHyperSync
-		if pp.srv.blockchain.archivalMode {
-			ver.Services |= SFArchivalNode
-		}
+	}
+	if pp.srv.blockchain.archivalMode {
+		ver.Services |= SFArchivalNode
 	}
 
 	// When a node asks you for what height you have, you should reply with

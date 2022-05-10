@@ -113,7 +113,7 @@ func (bridge *ConnectionBridge) createInboundConnection(node *cmd.Node) *lib.Pee
 	// Hence, we will mark the _isOutbound parameter as "true" in NewPeer.
 	peer := lib.NewPeer(conn, true, netAddress, true,
 		10000, 0, &lib.DeSoMainnetParams,
-		messagesFromPeer, nil, nil, false)
+		messagesFromPeer, nil, nil, lib.NodeSyncTypeAny)
 	peer.ID = uint64(lib.RandInt64(math.MaxInt64))
 	return peer
 }
@@ -141,7 +141,7 @@ func (bridge *ConnectionBridge) createOutboundConnection(node *cmd.Node, otherNo
 		messagesFromPeer := make(chan *lib.ServerMessage)
 		peer := lib.NewPeer(conn, false, na, false,
 			10000, 0, bridge.nodeB.Params,
-			messagesFromPeer, nil, nil, false)
+			messagesFromPeer, nil, nil, lib.NodeSyncTypeAny)
 		peer.ID = uint64(lib.RandInt64(math.MaxInt64))
 		bridge.newPeerChan <- peer
 		//}
@@ -160,13 +160,14 @@ func (bridge *ConnectionBridge) getVersionMessage(node *cmd.Node) *lib.MsgDeSoVe
 	ver.TstampSecs = time.Now().Unix()
 	ver.Nonce = uint64(lib.RandInt64(math.MaxInt64))
 	ver.UserAgent = node.Params.UserAgent
-	ver.Services = lib.SFFullNode
+	ver.Services = lib.SFFullNodeDeprecated
 	if node.Config.HyperSync {
 		ver.Services |= lib.SFHyperSync
-		if node.Config.ArchivalMode {
-			ver.Services |= lib.SFArchivalNode
-		}
 	}
+	if lib.IsNodeArchival(node.Config.SyncType) {
+		ver.Services |= lib.SFArchivalNode
+	}
+
 	if node.Server != nil {
 		ver.StartBlockHeight = uint32(node.Server.GetBlockchain().BlockTip().Header.Height)
 	}

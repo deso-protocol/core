@@ -17,6 +17,7 @@ func TestRegtestMiner(t *testing.T) {
 	defer os.RemoveAll(dbDir1)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1.SyncType = lib.NodeSyncTypeBlockSync
 	config1.Params = &lib.DeSoTestnetParams
 	config1.MaxSyncBlockHeight = 0
 	config1.MinerPublicKeys = []string{"tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"}

@@ -81,6 +81,7 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 	config.MinBlockUpdateInterval = 10
 	config.SnapshotBlockHeightPeriod = HyperSyncSnapshotPeriod
 	config.MaxSyncBlockHeight = MaxSyncBlockHeight
+	config.SyncType = lib.NodeSyncTypeBlockSync
 	//config.ArchivalMode = true
 
 	return config

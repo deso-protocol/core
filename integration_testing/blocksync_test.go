@@ -3,6 +3,7 @@ package testing
 import (
 	"fmt"
 	"github.com/deso-protocol/core/cmd"
+	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
@@ -24,7 +25,9 @@ func TestSimpleBlockSync(t *testing.T) {
 	defer os.RemoveAll(dbDir2)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1.SyncType = lib.NodeSyncTypeBlockSync
 	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
@@ -68,7 +71,9 @@ func TestSimpleSyncRestart(t *testing.T) {
 	defer os.RemoveAll(dbDir2)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1.SyncType = lib.NodeSyncTypeBlockSync
 	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
@@ -120,8 +125,11 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	defer os.RemoveAll(dbDir3)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1.SyncType = lib.NodeSyncTypeBlockSync
 	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2.SyncType = lib.NodeSyncTypeBlockSync
 	config3 := generateConfig(t, 18002, dbDir3, 10)
+	config3.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}

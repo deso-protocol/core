@@ -35,10 +35,9 @@ type Config struct {
 
 	// Snapshot
 	HyperSync                 bool
-	DisableSlowSync           bool
+	SyncType                  lib.NodeSyncType
 	MaxSyncBlockHeight        uint32
 	SnapshotBlockHeightPeriod uint64
-	ArchivalMode              bool
 	DisableEncoderMigrations  bool
 
 	// Mining
@@ -96,10 +95,9 @@ func LoadConfig() *Config {
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
 	config.HyperSync = viper.GetBool("hypersync")
-	config.DisableSlowSync = viper.GetBool("disable-slow-sync")
+	config.SyncType = lib.NodeSyncType(viper.GetString("sync-type"))
 	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
 	config.SnapshotBlockHeightPeriod = viper.GetUint64("snapshot-block-height-period")
-	config.ArchivalMode = viper.GetBool("archival-mode")
 	config.DisableEncoderMigrations = viper.GetBool("disable-encoder-migrations")
 
 	// Peers
@@ -168,15 +166,11 @@ func (config *Config) Print() {
 		glog.Infof("SnapshotBlockHeightPeriod: %v", config.SnapshotBlockHeightPeriod)
 	}
 
-	if config.ArchivalMode {
+	if lib.IsNodeArchival(config.SyncType) {
 		glog.Infof("ArchivalMode: ON")
 	}
 
-	if config.DisableSlowSync {
-		glog.Infof("DisableSlowSync: ON")
-	} else {
-		glog.Infof("DisableSlowSync: OFF")
-	}
+	glog.Infof("SyncType: %v", config.SyncType)
 
 	if config.MaxSyncBlockHeight > 0 {
 		glog.Infof("MaxSyncBlockHeight: %v", config.MaxSyncBlockHeight)
