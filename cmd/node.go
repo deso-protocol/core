@@ -241,7 +241,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 		// Setup TXIndex - not compatible with postgres
 		if node.Config.TXIndex && node.Postgres == nil {
-			node.TXIndex, err, shouldRestart = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
+			node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
 			if err != nil {
 				glog.Fatal(err)
 			}
