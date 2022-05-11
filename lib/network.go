@@ -2848,18 +2848,20 @@ func (msg *MsgDeSoTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, error)
 // SignTransactionWithDerivedKey the signature contains solution iteration,
 // which allows us to recover signer public key from the signature.
 // Returns (new txn bytes, txn signature, error)
-func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey) ([]byte, []byte, error) {
+func SignTransactionBytes(txnBytes []byte, privateKey *btcec.PrivateKey, isDerived bool) ([]byte, []byte, error) {
 	// As we're signing the transaction using a derived key, we
 	// pass the key to extraData.
 	rr := bytes.NewReader(txnBytes)
 	txn, err := _readTransaction(rr)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "SignTransactionWithDerivedKey: Problem reading txn: ")
+		return nil, nil, errors.Wrapf(err, "SignTransactionBytes: Problem reading txn: ")
 	}
-	if txn.ExtraData == nil {
-		txn.ExtraData = make(map[string][]byte)
+	if isDerived {
+		if txn.ExtraData == nil {
+			txn.ExtraData = make(map[string][]byte)
+		}
+		txn.ExtraData[DerivedPublicKey] = privateKey.PubKey().SerializeCompressed()
 	}
-	txn.ExtraData[DerivedPublicKey] = privateKey.PubKey().SerializeCompressed()
 
 	// Sign the transaction with the passed private key.
 	txnSignature, err := txn.Sign(privateKey)
