@@ -1238,8 +1238,14 @@ func (bc *Blockchain) HeaderTip() *BlockNode {
 	return bc.headerTip()
 }
 
+// TODO: This breaks law of demeter and we should fix it
 func (bc *Blockchain) DB() *badger.DB {
 	return bc.db
+}
+
+// TODO: This breaks law of demeter and we should fix it
+func (bc *Blockchain) Postgres() *Postgres {
+	return bc.postgres
 }
 
 func (bc *Blockchain) Snapshot() *Snapshot {
