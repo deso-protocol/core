@@ -1613,7 +1613,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	if err != nil {
 		return err
 	}
-	if baseUnitsToBuy.Eq(uint256.NewInt()) {
+	if baseUnitsToBuy.IsZero() {
 		return RuleErrorDAOCoinLimitOrderTotalBuyIsLessThanOneNano
 	}
 	// If buying $DESO, validate that qty to buy is less than the max uint64.

@@ -3632,7 +3632,7 @@ func TestComputeBaseUnitsToBuyUint256(t *testing.T) {
 	}
 	{
 		err := assertErrorStr("0.00000000000000000000000000000000000002", "10000000000000000000000000000000000000000")
-		require.Contains(err.Error(), "RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256")
+		require.Contains(err.Error(), "RuleErrorDAOCoinLimitOrderTotalBuyOverflowsUint256")
 	}
 	{
 		err := assertErrorStr("0.000000000000000000000000000000000000002", "10000000000000000000000000000000000000000")
