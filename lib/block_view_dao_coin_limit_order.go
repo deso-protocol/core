@@ -1609,17 +1609,17 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	// If we get here, we assume we are dealing with a non-market order.
 
 	// Validate quantity to buy > 0.
-	baseUnitsToBuy, err := order.BaseUnitsToBuyUint256()
-	if err != nil {
-		return err
-	}
-	if baseUnitsToBuy.IsZero() {
-		return RuleErrorDAOCoinLimitOrderTotalBuyIsLessThanOneNano
-	}
-	// If buying $DESO, validate that qty to buy is less than the max uint64.
-	if isBuyingDESO && !baseUnitsToBuy.IsUint64() {
-		return RuleErrorDAOCoinLimitOrderTotalBuyOverflowsUint64
-	}
+	//baseUnitsToBuy, err := order.BaseUnitsToBuyUint256()
+	//if err != nil {
+	//	return err
+	//}
+	//if baseUnitsToBuy.IsZero() {
+	//	return RuleErrorDAOCoinLimitOrderTotalBuyIsLessThanOneNano
+	//}
+	//// If buying $DESO, validate that qty to buy is less than the max uint64.
+	//if isBuyingDESO && !baseUnitsToBuy.IsUint64() {
+	//	return RuleErrorDAOCoinLimitOrderTotalBuyOverflowsUint64
+	//}
 
 	// Calculate order total amount to sell from price and quantity.
 	baseUnitsToSell, err := order.BaseUnitsToSellUint256()

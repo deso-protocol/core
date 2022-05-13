@@ -216,8 +216,8 @@ func TestDAOCoinLimitOrderZeroCostOrderEdgeCase(t *testing.T) {
 	exchangeRate, err = CalculateScaledExchangeRateFromString("0.00011")
 	require.NoError(err)
 	metadataM1 := DAOCoinLimitOrderMetadata{
-		BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
-		SellingDAOCoinCreatorPublicKey:            NewPublicKey(m0PkBytes),
+		BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0PkBytes),
+		SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
 		ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
 		QuantityToFillInBaseUnits:                 desoQuantityChange,
 		OperationType:                             DAOCoinLimitOrderOperationTypeBID,
