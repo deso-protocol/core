@@ -1133,13 +1133,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 		}
 
-		orderEntries, err = utxoView._getNextLimitOrdersToFill(queryEntry, nil)
+		orderEntries, err = utxoView.GetNextLimitOrdersToFill(queryEntry, nil)
 		require.NoError(err)
 		require.Empty(orderEntries)
 
 		queryEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = CalculateScaledExchangeRate(1.1)
 		require.NoError(err)
-		orderEntries, err = utxoView._getNextLimitOrdersToFill(queryEntry, nil)
+		orderEntries, err = utxoView.GetNextLimitOrdersToFill(queryEntry, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		exchangeRate, err = CalculateScaledExchangeRate(1.0)
@@ -1171,7 +1171,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   Selling:    $DESO
 		//   Price:      1.05 $DESO / DAO coin
 		//   Quantity:   110 DAO coin units
-		orderEntries, err = utxoView._getNextLimitOrdersToFill(queryEntry, nil)
+		orderEntries, err = utxoView.GetNextLimitOrdersToFill(queryEntry, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		exchangeRate, err = CalculateScaledExchangeRate(1.05)
@@ -1183,7 +1183,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Query with identical order as before but higher quantity.
 		// Should match both of m0's orders with better listed first.
 		queryEntry.QuantityToFillInBaseUnits = uint256.NewInt().SetUint64(150)
-		orderEntries, err = utxoView._getNextLimitOrdersToFill(queryEntry, nil)
+		orderEntries, err = utxoView.GetNextLimitOrdersToFill(queryEntry, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 		exchangeRate, err = CalculateScaledExchangeRate(1.05)
@@ -2628,7 +2628,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			FillType:                                  DAOCoinLimitOrderFillTypeFillOrKill,
 		}
 
-		orderEntries, err = utxoView._getNextLimitOrdersToFill(
+		orderEntries, err = utxoView.GetNextLimitOrdersToFill(
 			metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID), nil)
 		require.NoError(err)
 		require.Empty(orderEntries)
@@ -2642,7 +2642,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// The exchange rate is such that m0's order will not match.
 		// Order is cancelled.
 		metadataM1.FillType = DAOCoinLimitOrderFillTypeImmediateOrCancel
-		orderEntries, err = utxoView._getNextLimitOrdersToFill(
+		orderEntries, err = utxoView.GetNextLimitOrdersToFill(
 			metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID), nil)
 		require.NoError(err)
 		require.Empty(orderEntries)
