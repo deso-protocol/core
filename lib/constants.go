@@ -3,7 +3,6 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/holiman/uint256"
 	"log"
 	"math/big"
 	"os"
@@ -12,6 +11,8 @@ import (
 	"regexp"
 	"sort"
 	"time"
+
+	"github.com/holiman/uint256"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
