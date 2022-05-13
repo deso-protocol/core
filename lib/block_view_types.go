@@ -4272,7 +4272,7 @@ func ComputeBaseUnitsToBuyUint256(
 	// Check for overflow.
 	if quantityToBuyBigInt.Cmp(MaxUint256.ToBig()) > 0 {
 		return nil, errors.Wrapf(
-			RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256,
+			RuleErrorDAOCoinLimitOrderTotalBuyOverflowsUint256,
 			"ComputeBaseUnitsToBuyUint256: scaledExchangeRateCoinsToSellPerCoinToBuy: %v, "+
 				"quantityToSellBaseUnits: %v",
 			scaledExchangeRateCoinsToSellPerCoinToBuy.Hex(),
