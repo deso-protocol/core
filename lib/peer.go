@@ -423,7 +423,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 
 	// Ignore GetSnapshot requests and disconnect the peer if we're not a hypersync node.
 	if pp.srv.snapshot == nil {
-		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
+		glog.Errorf("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
 			"and disconnecting because node doesn't support HyperSync", pp)
 		pp.Disconnect()
 	}
@@ -445,7 +445,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 
 	// Make sure that the start key and prefix provided in the message are valid.
 	if len(msg.SnapshotStartKey) == 0 || len(msg.GetPrefix()) == 0 {
-		glog.Error("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
+		glog.Errorf("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
 			"because SnapshotStartKey or Prefix are empty", pp)
 		pp.Disconnect()
 		return
@@ -488,7 +488,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		}
 	}
 	if err != nil {
-		glog.Error("Peer.HandleGetSnapshot: something went wrong during fetching "+
+		glog.Errorf("Peer.HandleGetSnapshot: something went wrong during fetching "+
 			"snapshot chunk for peer (%v), error (%v)", pp, err)
 		return
 	}
