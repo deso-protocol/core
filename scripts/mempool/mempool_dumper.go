@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/deso-protocol/core/lib"
+	"github.com/deso-protocol/core/v2/lib"
 	"github.com/golang/glog"
 )
 

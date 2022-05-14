@@ -3,7 +3,7 @@ package desohash
 import (
 	"crypto/sha256"
 
-	"github.com/deso-protocol/core/desohash/sha3m"
+	"github.com/deso-protocol/core/v2/desohash/sha3m"
 	"golang.org/x/crypto/sha3"
 )
 

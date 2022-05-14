@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/deso-protocol/core/desohash"
+	"github.com/deso-protocol/core/v2/desohash"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
