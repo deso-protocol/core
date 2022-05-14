@@ -542,12 +542,13 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 				require.Equal(2, len(orderEntries))
 			}
 		}
+		// Use a random key to make sure it doesn't require a certain amount of DESO on it
+		// or anything like that.
+		randomTransactorPkid := NewPKID(MustBase58CheckDecode("BC1YLiZXgQdHK3SR8RMcArqStMjBFv2rnuGSk91oxobgnefTTp5h2VE"))
 		{
 			transactorOrder := &DAOCoinLimitOrderEntry{
-				OrderID: &ZeroBlockHash, // This field doesn't matter
-				// This field needs to be set to an account that has at least one
-				// DESO nano in it in order to pass validation checks.
-				TransactorPKID: NewPKID(m2PkBytes),
+				OrderID:        &ZeroBlockHash, // This field doesn't matter
+				TransactorPKID: randomTransactorPkid,
 
 				BuyingDAOCoinCreatorPKID:  NewPKID(m0PkBytes[:]),     // buying this profile's DAO coin
 				SellingDAOCoinCreatorPKID: NewPKID(ZeroBlockHash[:]), // selling DESO
@@ -563,13 +564,14 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 			ordersFound, err := utxoView.GetNextLimitOrdersToFill(transactorOrder, nil)
 			require.NoError(err)
 			require.Equal(1, len(ordersFound))
+			require.Equal(NewPKID(m0PkBytes), ordersFound[0].TransactorPKID)
 		}
 		{
 			transactorOrder := &DAOCoinLimitOrderEntry{
 				OrderID: &ZeroBlockHash, // This field doesn't matter
-				// This field needs to be set to an account that has at least one
-				// DESO nano in it in order to pass validation checks.
-				TransactorPKID: NewPKID(m2PkBytes),
+				// Use a random key to make sure it doesn't require a certain amount of DESO on it
+				// or anything like that.
+				TransactorPKID: randomTransactorPkid,
 
 				BuyingDAOCoinCreatorPKID:  NewPKID(ZeroBlockHash[:]), // buying this profile's DAO coin
 				SellingDAOCoinCreatorPKID: NewPKID(m0PkBytes[:]),     // selling DESO
@@ -585,6 +587,7 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 			ordersFound, err := utxoView.GetNextLimitOrdersToFill(transactorOrder, nil)
 			require.NoError(err)
 			require.Equal(1, len(ordersFound))
+			require.Equal(NewPKID(m1PkBytes), ordersFound[0].TransactorPKID)
 		}
 	}
 
