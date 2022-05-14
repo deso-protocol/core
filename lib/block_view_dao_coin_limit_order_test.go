@@ -279,9 +279,7 @@ func TestDAOCoinLimitOrderZeroCostOrderEdgeCase(t *testing.T) {
 			require.Empty(orderEntries)
 
 			// Perform txn.
-			_, _, _, err = _doDAOCoinLimitOrderTxn(
-				t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-			require.NoError(err)
+			_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
 
 			// Confirm 1 existing limit order.
 			orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -304,9 +302,7 @@ func TestDAOCoinLimitOrderZeroCostOrderEdgeCase(t *testing.T) {
 			}
 
 			// Perform txn.
-			_, _, _, err = _doDAOCoinLimitOrderTxn(
-				t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-			require.NoError(err)
+			_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
 			// Confirm 0 orders left, since they matched each other
 			orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
@@ -341,9 +337,7 @@ func TestDAOCoinLimitOrderZeroCostOrderEdgeCase(t *testing.T) {
 			require.Empty(orderEntries)
 
 			// Perform txn.
-			_, _, _, err = _doDAOCoinLimitOrderTxn(
-				t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-			require.NoError(err)
+			_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
 
 			// Confirm 1 existing limit order.
 			orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -366,9 +360,7 @@ func TestDAOCoinLimitOrderZeroCostOrderEdgeCase(t *testing.T) {
 			}
 
 			// Perform txn.
-			_, _, _, err = _doDAOCoinLimitOrderTxn(
-				t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-			require.NoError(err)
+			_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
 			// Confirm 0 orders left, since they matched each other
 			orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
@@ -401,9 +393,7 @@ func TestDAOCoinLimitOrderZeroCostOrderEdgeCase(t *testing.T) {
 			require.Empty(orderEntries)
 
 			// Perform txn.
-			_, _, _, err = _doDAOCoinLimitOrderTxn(
-				t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-			require.NoError(err)
+			_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
 
 			// Confirm 1 existing limit order.
 			orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -426,9 +416,7 @@ func TestDAOCoinLimitOrderZeroCostOrderEdgeCase(t *testing.T) {
 			}
 
 			// Perform txn.
-			_, _, _, err = _doDAOCoinLimitOrderTxn(
-				t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-			require.NoError(err)
+			_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
 			// Confirm 0 orders left, since they matched each other
 			orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
@@ -462,9 +450,7 @@ func TestDAOCoinLimitOrderZeroCostOrderEdgeCase(t *testing.T) {
 			require.Empty(orderEntries)
 
 			// Perform txn.
-			_, _, _, err = _doDAOCoinLimitOrderTxn(
-				t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-			require.NoError(err)
+			_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
 
 			// Confirm 1 existing limit order.
 			orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -487,9 +473,7 @@ func TestDAOCoinLimitOrderZeroCostOrderEdgeCase(t *testing.T) {
 			}
 
 			// Perform txn.
-			_, _, _, err = _doDAOCoinLimitOrderTxn(
-				t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-			require.NoError(err)
+			_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
 			// Confirm 0 orders left, since they matched each other
 			orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
@@ -527,9 +511,7 @@ func TestDAOCoinLimitOrderZeroCostOrderEdgeCase(t *testing.T) {
 				require.Empty(orderEntries)
 
 				// Perform txn.
-				_, _, _, err = _doDAOCoinLimitOrderTxn(
-					t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
-				require.NoError(err)
+				_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
 
 				// Confirm 1 existing limit order.
 				orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
@@ -552,9 +534,7 @@ func TestDAOCoinLimitOrderZeroCostOrderEdgeCase(t *testing.T) {
 				}
 
 				// Perform txn.
-				_, _, _, err = _doDAOCoinLimitOrderTxn(
-					t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-				require.NoError(err)
+				_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
 				// Confirm 0 orders left, since they matched each other
 				orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrders()
