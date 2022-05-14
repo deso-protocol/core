@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestDAOCoinLimitOrderZeroCostOrderEdgeCase(t *testing.T) {
+func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 	// -----------------------
 	// Initialization
 	// -----------------------
