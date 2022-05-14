@@ -4047,6 +4047,16 @@ const (
 	DAOCoinLimitOrderOperationTypeBID DAOCoinLimitOrderOperationType = 2
 )
 
+func (tp DAOCoinLimitOrderOperationType) String() string {
+	if tp == DAOCoinLimitOrderOperationTypeASK {
+		return "ASK"
+	} else if tp == DAOCoinLimitOrderOperationTypeBID {
+		return "BID"
+	} else {
+		return "UNKNOWN"
+	}
+}
+
 type DAOCoinLimitOrderFillType uint8
 
 const (
@@ -4257,9 +4267,15 @@ func ComputeBaseUnitsToBuyUint256(
 		return nil, fmt.Errorf("ComputeBaseUnitsToBuyUint256: passed invalid exchange rate")
 	}
 
-	if quantityToSellBaseUnits == nil || quantityToSellBaseUnits.IsZero() {
+	if quantityToSellBaseUnits == nil {
 		// This should never happen.
 		return nil, fmt.Errorf("ComputeBaseUnitsToBuyUint256: passed invalid quantity to sell")
+	}
+
+	// If the quantity to sell is zero then return zero (selling
+	// zero means you should buy zero)
+	if quantityToSellBaseUnits.IsZero() {
+		return uint256.NewInt(), nil
 	}
 
 	// Perform calculation.
@@ -4283,11 +4299,6 @@ func ComputeBaseUnitsToBuyUint256(
 	// it could cause a money printer bug if there's a problem with it. We
 	// manually check for overflow above.
 	quantityToBuyUint256, _ := uint256.FromBig(quantityToBuyBigInt)
-
-	// Error if resulting quantity to buy is < 1 base unit.
-	if quantityToBuyUint256.IsZero() {
-		return nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
-	}
 
 	return quantityToBuyUint256, nil
 }
@@ -4317,16 +4328,21 @@ func ComputeBaseUnitsToSellUint256(
 	//   = (Scaling factor * Quantity to sell / Quantity to buy) * Quantity to buy / Scaling factor
 	//   = Quantity to sell
 
-	// Perform a few validations.
 	if scaledExchangeRateCoinsToSellPerCoinToBuy == nil ||
 		scaledExchangeRateCoinsToSellPerCoinToBuy.IsZero() {
 		// This should never happen.
 		return nil, fmt.Errorf("ComputeBaseUnitsToBuyUint256: passed invalid exchange rate")
 	}
 
-	if quantityToBuyBaseUnits == nil || quantityToBuyBaseUnits.IsZero() {
+	if quantityToBuyBaseUnits == nil {
 		// This should never happen.
 		return nil, fmt.Errorf("ComputeBaseUnitsToBuyUint256: passed invalid quantity to buy")
+	}
+
+	// If the quantity to buy is zero then return zero (buying
+	// zero means you should sell zero)
+	if quantityToBuyBaseUnits.IsZero() {
+		return uint256.NewInt(), nil
 	}
 
 	// Perform calculation.
@@ -4360,11 +4376,6 @@ func ComputeBaseUnitsToSellUint256(
 	if err != nil {
 		// This should never happen as we're dividing by a known constant.
 		return nil, errors.Wrapf(err, "ComputeBaseUnitsToSellUint256: ")
-	}
-
-	// Error if resulting quantity to sell is < 1 base unit.
-	if quantityToSellUint256.IsZero() {
-		return nil, RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano
 	}
 
 	return quantityToSellUint256, nil

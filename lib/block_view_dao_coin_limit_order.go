@@ -493,13 +493,32 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				CoinQuantityInBaseUnitsBought: coinBaseUnitsSoldByTransactor,
 				CoinQuantityInBaseUnitsSold:   coinBaseUnitsBoughtByTransactor,
 			}
-			if updatedMatchingOrderQuantityToFill.IsZero() {
+			matchingOrder.QuantityToFillInBaseUnits = updatedMatchingOrderQuantityToFill
+			remainingUnitsToBuy, err := matchingOrder.BaseUnitsToBuyUint256()
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err,
+					"Error computing BaseUnitsToBuy() on updated matching order: %v",
+					matchingOrder)
+			}
+			remainingUnitsToSell, err := matchingOrder.BaseUnitsToSellUint256()
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err,
+					"Error computing BaseUnitsToSell() on updated matching order: "+
+						"Quantity: %v, ScaledExchangeRateCoinsToSellPerCoinToBuy: %v, OperationType: %v",
+					matchingOrder.QuantityToFillInBaseUnits.ToBig().Text(10),
+					matchingOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy.ToBig().Text(10),
+					matchingOrder.OperationType)
+			}
+			// When checking if an order was filled, we need to check both the buy side
+			// and the sell side. Not doing this would result in weird edge-cases cropping
+			// up whereby someone can submit a tiny order, fill part of it, and then get a
+			// better deal against the next person who matches against them.
+			if remainingUnitsToBuy.IsZero() || remainingUnitsToSell.IsZero() {
 				// Matching order was fulfilled. Mark for deletion.
 				bav._deleteDAOCoinLimitOrderEntryMappings(matchingOrder)
 				matchingOrderFilledOrder.IsFulfilled = true
 			} else {
 				// Matching order is incomplete. Update remaining quantity to fill.
-				matchingOrder.QuantityToFillInBaseUnits = updatedMatchingOrderQuantityToFill
 				matchingOrderFilledOrder.IsFulfilled = false
 
 				// Set the updated matching order in the db.
@@ -1608,10 +1627,26 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	}
 	// If we get here, we assume we are dealing with a non-market order.
 
+	// Validate quantity to buy > 0.
+	baseUnitsToBuy, err := order.BaseUnitsToBuyUint256()
+	if err != nil {
+		return err
+	}
+	if baseUnitsToBuy.Eq(uint256.NewInt()) {
+		return errors.Wrapf(RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano, "baseUnitsToBuy: ")
+	}
+	// If buying $DESO, validate that qty to buy is less than the max uint64.
+	if isBuyingDESO && !baseUnitsToBuy.IsUint64() {
+		return RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64
+	}
+
 	// Calculate order total amount to sell from price and quantity.
 	baseUnitsToSell, err := order.BaseUnitsToSellUint256()
 	if err != nil {
 		return err
+	}
+	if baseUnitsToSell.Eq(uint256.NewInt()) {
+		return errors.Wrapf(RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano, "baseUnitsToSell: ")
 	}
 
 	// If selling $DESO, validate that order total cost is less than the max uint64.
