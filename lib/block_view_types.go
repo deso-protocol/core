@@ -2534,7 +2534,7 @@ func (bundle *NFTBidEntryBundle) RawDecodeWithoutMetadata(blockHeight uint64, rr
 		if exists, err := DecodeFromBytes(bidEntry, rr); !exists || err != nil {
 			return errors.Wrapf(err, "NFTBidEntryBundle.RawDecodeWithoutMetadata: Problem decoding nft bids at index ii: %v", ii)
 		}
-		bundle.nftBidEntryBundle = append(bundle.nftBidEntryBundle, bidEntry)
+		bundle.nftBidEntryBundle[ii] = bidEntry
 	}
 
 	return nil
