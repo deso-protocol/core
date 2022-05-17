@@ -1,8 +1,9 @@
 package lib
 
 import (
-	"github.com/btcsuite/btcd/btcec"
 	"strings"
+
+	"github.com/btcsuite/btcd/btcec"
 )
 
 // RuleError is an error type that specifies an error occurred during
@@ -63,6 +64,7 @@ const (
 	RuleErrorForbiddenBlockProducerPublicKey                    RuleError = "RuleErrorForbiddenBlockProducerPublicKey"
 	RuleErrorInvalidBlockProducerSIgnature                      RuleError = "RuleErrorInvalidBlockProducerSIgnature"
 	RuleErrorInvalidBlockHeader                                 RuleError = "RuleErrorInvalidBlockHeader"
+	RuleErrorBlockAlreadyExists                                 RuleError = "RuleErrorBlockAlreadyExists"
 	RuleErrorOrphanBlock                                        RuleError = "RuleErrorOrphanBlock"
 	RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey        RuleError = "RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey"
 	RuleErrorBlockRewardTxnNotAllowedToHaveInputs               RuleError = "RuleErrorBlockRewardTxnNotAllowedToHaveInputs"
@@ -98,8 +100,6 @@ const (
 	RuleErrorBurnAddressCannotBurnBitcoin                          RuleError = "RuleErrorBurnAddressCannotBurnBitcoin"
 	RuleErrorPrivateMessageInvalidVersion                          RuleError = "RuleErrorPrivateMessageInvalidVersion"
 	RuleErrorPrivateMessageMissingExtraData                        RuleError = "RuleErrorPrivateMessageMissingExtraData"
-
-
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"
@@ -247,6 +247,41 @@ const (
 	RuleErrorDAOCoinCannotUpdateRestrictionStatusIfStatusIsPermanentlyUnrestricted RuleError = "RuleErrorDAOCoinCannotUpdateRestrictionStatusIfStatusIsPermanentlyUnrestricted"
 	RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus           RuleError = "RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus"
 
+	// DAO Coin Limit Orders
+	RuleErrorDAOCoinLimitOrderBeforeBlockHeight                       RuleError = "RuleErrorDAOCoinLimitOrderBeforeBlockHeight"
+	RuleErrorDAOCoinLimitOrderInvalidTransactorPKID                   RuleError = "RuleErrorDAOCoinLimitOrderInvalidTransactorPKID"
+	RuleErrorDAOCoinLimitOrderInvalidBuyingDAOCoinCreatorPKID         RuleError = "RuleErrorDAOCoinLimitOrderInvalidBuyingDAOCoinCreatorPKID"
+	RuleErrorDAOCoinLimitOrderInvalidSellingDAOCoinCreatorPKID        RuleError = "RuleErrorDAOCoinLimitOrderInvalidSellingDAOCoinCreatorPKID"
+	RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin                RuleError = "RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin"
+	RuleErrorDAOCoinLimitOrderInvalidOperationType                    RuleError = "RuleErrorDAOCoinLimitOrderInvalidOperationType"
+	RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile      RuleError = "RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile"
+	RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile     RuleError = "RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile"
+	RuleErrorDAOCoinLimitOrderInvalidExchangeRate                     RuleError = "RuleErrorDAOCoinLimitOrderInvalidExchangeRate"
+	RuleErrorDAOCoinLimitOrderInvalidQuantity                         RuleError = "RuleErrorDAOCoinLimitOrderInvalidQuantity"
+	RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256               RuleError = "RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256"
+	RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64                RuleError = "RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64"
+	RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano              RuleError = "RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano"
+	RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder             RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder"
+	RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder         RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder"
+	RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists               RuleError = "RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists"
+	RuleErrorDAOCoinLimitOrderToCancelNotFound                        RuleError = "RuleErrorDAOCoinLimitOrderToCancelNotFound"
+	RuleErrorDAOCoinLimitOrderToCancelNotYours                        RuleError = "RuleErrorDAOCoinLimitOrderToCancelNotYours"
+	RuleErrorDAOCoinLimitOrderOverspendingDESO                        RuleError = "RuleErrorDAOCoinLimitOrderOverspendingDESO"
+	RuleErrorDAOCoinLimitOrderOverflowsDESO                           RuleError = "RuleErrorDAOCoinLimitOrderOverflowsDESO"
+	RuleErrorDAOCoinLimitOrderOverspendingDAOCoin                     RuleError = "RuleErrorDAOCoinLimitOrderOverspendingDAOCoin"
+	RuleErrorDAOCoinLimitOrderOverflowsDAOCoin                        RuleError = "RuleErrorDAOCoinLimitOrderOverflowsDAOCoin"
+	RuleErrorDAOCoinLimitOrderMatchingOrderIsDeleted                  RuleError = "RuleErrorDAOCoinLimitOrderMatchingOrderIsDeleted"
+	RuleErrorDAOCoinLimitOrderMatchingOwnOrder                        RuleError = "RuleErrorDAOCoinLimitOrderMatchingOwnOrder"
+	RuleErrorDAOCoinLimitOrderMatchingOrderBuyingDifferentCoins       RuleError = "RuleErrorDAOCoinLimitOrderMatchingOrderBuyingDifferentCoins"
+	RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins      RuleError = "RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins"
+	RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist                RuleError = "RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist"
+	RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero                    RuleError = "RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero"
+	RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee                   RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee"
+	RuleErrorDAOCoinLimitOrderFeeNanosOverflow                        RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosOverflow"
+	RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee RuleError = "RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee"
+	RuleErrorDAOCoinLimitOrderInvalidFillType                         RuleError = "RuleErrorDAOCoinLimitOrderInvalidFillType"
+	RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled              RuleError = "RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled"
+
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"
 	RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput    RuleError = "RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput"
@@ -359,6 +394,17 @@ const (
 	RuleErrorOldFromPublicKeyHasDeletedPKID RuleError = "RuleErrorOldFromPublicKeyHasDeletedPKID"
 	RuleErrorOldToPublicKeyHasDeletedPKID   RuleError = "RuleErrorOldToPublicKeyHasDeletedPKID"
 
+	// Derived Key Transaction Spending Limits
+	RuleErrorDerivedKeyTxnTypeNotAuthorized              RuleError = "RuleErrorTxnTypeNotAuthorized"
+	RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit  RuleError = "RuleErrorTxnSpendsMoreThanGlobalDESOLimit"
+	RuleErrorDerivedKeyInvalidCreatorCoinLimitOperation  RuleError = "RuleErrorInvalidCreatorCoinLimitOperation"
+	RuleErrorDerivedKeyInvalidDAOCoinLimitOperation      RuleError = "RuleErrorInvalidDAOCoinLimitOperation"
+	RuleErrorDerivedKeyNFTOperationNotAuthorized         RuleError = "RuleErrorDerivedKeyNFTOperationNotAuthorized"
+	RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized RuleError = "RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized"
+	RuleErrorDerivedKeyDAOCoinOperationNotAuthorized     RuleError = "RuleErrorDerivedKeyDAOCoinOperationNotAuthorized"
+	RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID   RuleError = "RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID"
+	RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized    RuleError = "RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized"
+
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"
 	HeaderErrorNilPrevHash                                                       RuleError = "HeaderErrorNilPrevHash"
 	HeaderErrorInvalidParent                                                     RuleError = "HeaderErrorInvalidParent"
@@ -368,14 +414,13 @@ const (
 	HeaderErrorHeightInvalid                                                     RuleError = "HeaderErrorHeightInvalid"
 	HeaderErrorDifficultyBitsNotConsistentWithTargetDifficultyComputedFromParent RuleError = "HeaderErrorDifficultyBitsNotConsistentWithTargetDifficultyComputedFromParent"
 
-	TxErrorTooLarge                                                 RuleError = "TxErrorTooLarge"
-	TxErrorDuplicate                                                RuleError = "TxErrorDuplicate"
-	TxErrorIndividualBlockReward                                    RuleError = "TxErrorIndividualBlockReward"
-	TxErrorInsufficientFeeMinFee                                    RuleError = "TxErrorInsufficientFeeMinFee"
-	TxErrorInsufficientFeeRateLimit                                 RuleError = "TxErrorInsufficientFeeRateLimit"
-	TxErrorInsufficientFeePriorityQueue                             RuleError = "TxErrorInsufficientFeePriorityQueue"
-	TxErrorUnconnectedTxnNotAllowed                                 RuleError = "TxErrorUnconnectedTxnNotAllowed"
-	TxErrorCannotProcessBitcoinExchangeUntilBitcoinManagerIsCurrent RuleError = "TxErrorCannotProcessBitcoinExchangeUntilBitcoinManagerIsCurrent"
+	TxErrorTooLarge                     RuleError = "TxErrorTooLarge"
+	TxErrorDuplicate                    RuleError = "TxErrorDuplicate"
+	TxErrorIndividualBlockReward        RuleError = "TxErrorIndividualBlockReward"
+	TxErrorInsufficientFeeMinFee        RuleError = "TxErrorInsufficientFeeMinFee"
+	TxErrorInsufficientFeeRateLimit     RuleError = "TxErrorInsufficientFeeRateLimit"
+	TxErrorInsufficientFeePriorityQueue RuleError = "TxErrorInsufficientFeePriorityQueue"
+	TxErrorUnconnectedTxnNotAllowed     RuleError = "TxErrorUnconnectedTxnNotAllowed"
 )
 
 func (e RuleError) Error() string {

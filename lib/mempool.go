@@ -152,7 +152,8 @@ type UnconnectedTx struct {
 // to aggregate transactions and mine them into blocks.
 type DeSoMempool struct {
 	// Stops the mempool's services.
-	quit chan struct{}
+	quit    chan struct{}
+	stopped bool
 
 	// A reference to a blockchain object that can be used to validate transactions before
 	// adding them to the pool.
@@ -380,7 +381,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		""     /*dataDir*/, "")
+		"" /*dataDir*/, "")
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -422,6 +423,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		rateLimit := false
 		unconnectedTxns := true
 		verifySignatures := false
+		// TODO: This is pretty pretty inefficient.
 		_, err := newPool.processTransaction(unconnectedTx.tx, unconnectedTxns, rateLimit, unconnectedTx.peerID, verifySignatures)
 		if err != nil {
 			glog.Warning(errors.Wrapf(err, "UpdateAfterConnectBlock: "))
@@ -755,6 +757,7 @@ func MakeDirIfNonExistent(filePath string) error {
 }
 
 func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
+	blockHeight := uint64(mp.bc.blockTip().Height + 1)
 	allTxns := mp.readOnlyUniversalTransactionList
 
 	tempMempoolDBDir := filepath.Join(mp.mempoolDir, "temp_mempool_dump")
@@ -764,9 +767,8 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 	if err != nil {
 		return fmt.Errorf("OpenTempDBAndDumpTxns: Error making top-level dir: %v", err)
 	}
-	tempMempoolDBOpts := badger.DefaultOptions(tempMempoolDBDir)
+	tempMempoolDBOpts := PerformanceBadgerOptions(tempMempoolDBDir)
 	tempMempoolDBOpts.ValueDir = tempMempoolDBDir
-	tempMempoolDBOpts.MemTableSize = 1024 << 20
 	tempMempoolDB, err := badger.Open(tempMempoolDBOpts)
 	if err != nil {
 		return fmt.Errorf("OpenTempDBAndDumpTxns: Could not open temp db to dump mempool: %v", err)
@@ -786,7 +788,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 		if len(txnsToDump)%1000 == 0 || ii == len(allTxns)-1 {
 			glog.Infof("OpenTempDBAndDumpTxns: Dumping txns %v to %v", ii-len(txnsToDump)+1, ii)
 			err := tempMempoolDB.Update(func(txn *badger.Txn) error {
-				return FlushMempoolToDbWithTxn(txn, txnsToDump)
+				return FlushMempoolToDbWithTxn(txn, nil, blockHeight, txnsToDump)
 			})
 			if err != nil {
 				return fmt.Errorf("OpenTempDBAndDumpTxns: Error flushing mempool txns to DB: %v", err)
@@ -903,6 +905,9 @@ func (mp *DeSoMempool) GetAugmentedUtxoViewForPublicKey(pkBytes []byte, optional
 // TODO(performance): We should make a read-only version of the universal view that
 // you can get from the mempool.
 func (mp *DeSoMempool) GetAugmentedUniversalView() (*UtxoView, error) {
+	if mp.stopped {
+		return nil, fmt.Errorf("GetAugmentedUniversalView: Problem getting UtxoView, Mempool is closed")
+	}
 	newView, err := mp.readOnlyUtxoView.CopyUtxoView()
 	if err != nil {
 		return nil, err
@@ -931,7 +936,7 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 	// Note that it is safe to use this because we expect that the blockchain
 	// lock is held for the duration of this function call so there shouldn't
 	// be any shifting of the db happening beneath our fee.
-	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres)
+	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres, mp.bc.snapshot)
 	if err != nil {
 		return 0, errors.Wrapf(err,
 			"_helpConnectDepsAndFinalTxn: Problem initializing UtxoView")
@@ -979,6 +984,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	tx *MsgDeSoTxn, rateLimit bool, rejectDupUnconnected bool, verifySignatures bool) (
 	_missingParents []*BlockHash, _mempoolTx *MempoolTx, _err error) {
 
+	blockHeight := uint64(mp.bc.blockTip().Height + 1)
 	// Block reward transactions shouldn't appear individually
 	if tx.TxnMeta != nil && tx.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 		return nil, nil, TxErrorIndividualBlockReward
@@ -1103,7 +1109,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 	// Calculate metadata
 	mempoolTx.TxMeta = ComputeTransactionMetadata(tx, mp.backupUniversalUtxoView, nil, totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, txFee, uint64(0), utxoOps)
+		usdCentsPerBitcoinBefore, totalInput, totalOutput, txFee, uint64(0), utxoOps, blockHeight)
 	// send to sqs queue
     mp.bc.sqsQueue.SendSQSTxnMessage(mempoolTx)
 
@@ -1115,7 +1121,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
 	totalNanosPurchasedBefore uint64, usdCentsPerBitcoinBefore uint64, totalInput uint64, totalOutput uint64,
-	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation) *TransactionMetadata {
+	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation, blockHeight uint64) *TransactionMetadata {
 
 	var err error
 	txnMeta := &TransactionMetadata{
@@ -1494,7 +1500,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			SerialNumber:              realTxMeta.SerialNumber,
 			BidAmountNanos:            realTxMeta.BidAmountNanos,
 			IsBuyNowBid:               isBuyNow,
-			NFTRoyaltiesMetadata:      nftRoyaltiesMetadata,
+			NFTRoyaltiesMetadata:      &nftRoyaltiesMetadata,
 			OwnerPublicKeyBase58Check: ownerPublicKeyBase58Check,
 		}
 
@@ -1504,7 +1510,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				Metadata:             "NFTCreatorPublicKeyBase58Check",
 			})
 
-			for pubKeyIter, amountNanos := range txnMeta.NFTBidTxindexMetadata.AdditionalCoinRoyaltiesMap {
+			for pubKeyIter, amountNanos := range txnMeta.NFTBidTxindexMetadata.NFTRoyaltiesMetadata.AdditionalCoinRoyaltiesMap {
 				pubKey := pubKeyIter
 				// Skip affected pub key if no royalty received
 				if amountNanos == 0 {
@@ -1516,7 +1522,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				})
 			}
 
-			for pubKeyIter, amountNanos := range txnMeta.NFTBidTxindexMetadata.AdditionalDESORoyaltiesMap {
+			for pubKeyIter, amountNanos := range txnMeta.NFTBidTxindexMetadata.NFTRoyaltiesMetadata.AdditionalDESORoyaltiesMap {
 				pubKey := pubKeyIter
 				// Skip affected pub key if no royalty received
 				if amountNanos == 0 {
@@ -1538,7 +1544,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
 			SerialNumber:   realTxMeta.SerialNumber,
 			BidAmountNanos: realTxMeta.BidAmountNanos,
-			NFTRoyaltiesMetadata: NFTRoyaltiesMetadata{
+			NFTRoyaltiesMetadata: &NFTRoyaltiesMetadata{
 				CreatorCoinRoyaltyNanos:     utxoOp.AcceptNFTBidCreatorRoyaltyNanos,
 				CreatorRoyaltyNanos:         utxoOp.AcceptNFTBidCreatorDESORoyaltyNanos,
 				CreatorPublicKeyBase58Check: creatorPublicKeyBase58Check,
@@ -1559,7 +1565,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			Metadata:             "NFTCreatorPublicKeyBase58Check",
 		})
 
-		for pubKeyIter, amountNanos := range txnMeta.AcceptNFTBidTxindexMetadata.AdditionalCoinRoyaltiesMap {
+		for pubKeyIter, amountNanos := range txnMeta.AcceptNFTBidTxindexMetadata.NFTRoyaltiesMetadata.AdditionalCoinRoyaltiesMap {
 			pubKey := pubKeyIter
 			// Skip affected pub key if no royalty received
 			if amountNanos == 0 {
@@ -1571,7 +1577,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			})
 		}
 
-		for pubKeyIter, amountNanos := range txnMeta.AcceptNFTBidTxindexMetadata.AdditionalDESORoyaltiesMap {
+		for pubKeyIter, amountNanos := range txnMeta.AcceptNFTBidTxindexMetadata.NFTRoyaltiesMetadata.AdditionalDESORoyaltiesMap {
 			pubKey := pubKeyIter
 			// Skip affected pub key if no royalty received
 			if amountNanos == 0 {
@@ -1596,14 +1602,14 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			AdditionalDESORoyaltiesMap: additionalDESORoyaltiesMap,
 			AdditionalCoinRoyaltiesMap: additionalCoinRoyaltiesMap,
 		}
-		for pubKeyIter, _ := range additionalDESORoyaltiesMap {
+		for pubKeyIter := range additionalDESORoyaltiesMap {
 			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
 				Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
 			})
 		}
-		for pubKeyIter, _ := range additionalCoinRoyaltiesMap {
+		for pubKeyIter := range additionalCoinRoyaltiesMap {
 			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
@@ -1627,14 +1633,14 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
 			Metadata:             "NFTCreatorPublicKeyBase58Check",
 		})
-		for pubKeyIter, _ := range additionalDESORoyaltiesMap {
+		for pubKeyIter := range additionalDESORoyaltiesMap {
 			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
 				Metadata:             "AdditionalNFTRoyaltyToCreatorPublicKeyBase58Check",
 			})
 		}
-		for pubKeyIter, _ := range additionalCoinRoyaltiesMap {
+		for pubKeyIter := range additionalCoinRoyaltiesMap {
 			pubKey := pubKeyIter
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 				PublicKeyBase58Check: pubKey,
@@ -1703,8 +1709,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		txnMeta.DAOCoinTxindexMetadata = &DAOCoinTxindexMetadata{
 			CreatorUsername:           string(creatorProfileEntry.Username),
 			OperationType:             operationString,
-			CoinsToMintNanos:          realTxMeta.CoinsToMintNanos,
-			CoinsToBurnNanos:          realTxMeta.CoinsToBurnNanos,
+			CoinsToMintNanos:          &realTxMeta.CoinsToMintNanos,
+			CoinsToBurnNanos:          &realTxMeta.CoinsToBurnNanos,
 			TransferRestrictionStatus: realTxMeta.TransferRestrictionStatus.String(),
 		}
 
@@ -1724,6 +1730,64 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.ReceiverPublicKey, utxoView.Params),
 			Metadata:             "ReceiverPublicKey",
 		})
+	case TxnTypeDAOCoinLimitOrder:
+		realTxMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+
+		// We only update the mempool if the transactor submitted a new
+		// order. Not if the transactor cancelled an existing order.
+		if realTxMeta.CancelOrderID != nil {
+			break
+		}
+
+		if !realTxMeta.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: PkToString(realTxMeta.BuyingDAOCoinCreatorPublicKey.ToBytes(), utxoView.Params),
+				Metadata:             "BuyingDAOCoinCreatorPublicKey",
+			})
+		}
+
+		if !realTxMeta.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: PkToString(realTxMeta.SellingDAOCoinCreatorPublicKey.ToBytes(), utxoView.Params),
+				Metadata:             "SellingDAOCoinCreatorPublicKey",
+			})
+		}
+
+		utxoOp := utxoOps[len(utxoOps)-1]
+		uniquePKIDMap := make(map[PKID]bool)
+		fulfilledOrderMetadata := []*FilledDAOCoinLimitOrderMetadata{}
+		for _, filledOrder := range utxoOp.FilledDAOCoinLimitOrders {
+			uniquePKIDMap[*filledOrder.TransactorPKID] = true
+			fulfilledOrderMetadata = append(fulfilledOrderMetadata, &FilledDAOCoinLimitOrderMetadata{
+				TransactorPublicKeyBase58Check: PkToString(
+					utxoView.GetPublicKeyForPKID(filledOrder.TransactorPKID), utxoView.Params),
+				BuyingDAOCoinCreatorPublicKey: PkToString(
+					utxoView.GetPublicKeyForPKID(filledOrder.BuyingDAOCoinCreatorPKID), utxoView.Params),
+				SellingDAOCoinCreatorPublicKey: PkToString(
+					utxoView.GetPublicKeyForPKID(filledOrder.SellingDAOCoinCreatorPKID), utxoView.Params),
+				CoinQuantityInBaseUnitsBought: filledOrder.CoinQuantityInBaseUnitsBought,
+				CoinQuantityInBaseUnitsSold:   filledOrder.CoinQuantityInBaseUnitsSold,
+				IsFulfilled:                   filledOrder.IsFulfilled,
+			})
+		}
+
+		for uniquePKID := range uniquePKIDMap {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: PkToString(utxoView.GetPublicKeyForPKID(&uniquePKID), utxoView.Params),
+				Metadata:             "FilledOrderPublicKey",
+			})
+		}
+
+		txnMeta.DAOCoinLimitOrderTxindexMetadata = &DAOCoinLimitOrderTxindexMetadata{
+			FilledDAOCoinLimitOrdersMetadata: fulfilledOrderMetadata,
+			BuyingDAOCoinCreatorPublicKey: PkToString(
+				realTxMeta.BuyingDAOCoinCreatorPublicKey.ToBytes(), utxoView.Params),
+			SellingDAOCoinCreatorPublicKey: PkToString(
+				realTxMeta.SellingDAOCoinCreatorPublicKey.ToBytes(), utxoView.Params),
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: realTxMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
+			QuantityToFillInBaseUnits:                 realTxMeta.QuantityToFillInBaseUnits,
+		}
+
 	}
 	return txnMeta
 }
@@ -1828,7 +1892,7 @@ func ConnectTxnAndComputeTransactionMetadata(
 	}
 
 	return ComputeTransactionMetadata(txn, utxoView, blockHash, totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps), nil
+		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps, uint64(blockHeight)), nil
 }
 
 // This is the main function used for adding a new txn to the pool. It will
@@ -2205,6 +2269,9 @@ func (mp *DeSoMempool) StartReadOnlyUtxoViewRegenerator() {
 		for {
 			select {
 			case <-time.After(time.Duration(ReadOnlyUtxoViewRegenerationIntervalSeconds) * time.Second):
+				if mp.bc.chainState() == SyncStateSyncingSnapshot {
+					continue
+				}
 				glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Woke up!")
 
 				// When we wake up, only do an update if one didn't occur since before
@@ -2315,9 +2382,8 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 	}
 
 	// If we make it this far, we found a mempool dump to load.  Woohoo!
-	tempMempoolDBOpts := badger.DefaultOptions(savedTxnsDir)
+	tempMempoolDBOpts := PerformanceBadgerOptions(savedTxnsDir)
 	tempMempoolDBOpts.ValueDir = savedTxnsDir
-	tempMempoolDBOpts.MemTableSize = 1024 << 20
 	glog.Infof("LoadTxnsFrom: Opening new temp db %v", savedTxnsDir)
 	tempMempoolDB, err := badger.Open(tempMempoolDBOpts)
 	if err != nil {
@@ -2348,6 +2414,7 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 
 func (mp *DeSoMempool) Stop() {
 	close(mp.quit)
+	mp.stopped = true
 }
 
 // Create a new pool with no transactions in it.
@@ -2355,9 +2422,9 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
 	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string) *DeSoMempool {
 
-	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
-	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
-	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres)
+	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot)
+	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot)
+	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot)
 	newPool := &DeSoMempool{
 		quit:                            make(chan struct{}),
 		bc:                              _bc,

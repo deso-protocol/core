@@ -7,6 +7,7 @@ import (
 	"github.com/tyler-smith/go-bip39"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -39,14 +40,18 @@ type DeSoBlockProducer struct {
 
 	latestBlockTemplateStats *BlockTemplateStats
 
-	mempool *DeSoMempool
-	chain   *Blockchain
-	params  *DeSoParams
-
-	producerWaitGroup   sync.WaitGroup
-	stopProducerChannel chan struct{}
-
+	mempool  *DeSoMempool
+	chain    *Blockchain
+	params   *DeSoParams
 	postgres *Postgres
+
+	// producerWaitGroup allows us to wait until the producer has properly closed.
+	producerWaitGroup sync.WaitGroup
+	// exit is used to signal that DeSoBlockProducer routines should be terminated.
+	exit int32
+	// isAsleep is a helper variable for quitting that indicates whether the DeSoBlockProducer is asleep. While producing
+	// blocks, we sleep for a few seconds. Instead of waiting for the sleep to finish, we use this variable to quit immediately.
+	isAsleep int32
 }
 
 type BlockTemplateStats struct {
@@ -93,11 +98,10 @@ func NewDeSoBlockProducer(
 		blockProducerPrivateKey:       privKey,
 		recentBlockTemplatesProduced:  make(map[BlockHash]*MsgDeSoBlock),
 
-		mempool:             mempool,
-		chain:               chain,
-		params:              params,
-		stopProducerChannel: make(chan struct{}),
-		postgres:            postgres,
+		mempool:  mempool,
+		chain:    chain,
+		params:   params,
+		postgres: postgres,
 	}, nil
 }
 
@@ -198,7 +202,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		currentBlockSize := uint64(len(blockBytes) + MaxVarintLen64)
 
 		// Create a new view object.
-		utxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params, desoBlockProducer.postgres)
+		utxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
+			desoBlockProducer.postgres, desoBlockProducer.chain.snapshot)
 		if err != nil {
 			return nil, nil, nil, errors.Wrapf(err,
 				"DeSoBlockProducer._getBlockTemplate: Error generating checker UtxoView: ")
@@ -283,7 +288,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 	// Compute the total fee the BlockProducer should get.
 	totalFeeNanos := uint64(0)
-	feesUtxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params, desoBlockProducer.postgres)
+	feesUtxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
+		desoBlockProducer.postgres, desoBlockProducer.chain.snapshot)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf(
 			"DeSoBlockProducer._getBlockTemplate: Error generating UtxoView to compute txn fees: %v", err)
@@ -330,8 +336,10 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 }
 
 func (desoBlockProducer *DeSoBlockProducer) Stop() {
-	desoBlockProducer.stopProducerChannel <- struct{}{}
-	desoBlockProducer.producerWaitGroup.Wait()
+	atomic.AddInt32(&desoBlockProducer.exit, 1)
+	if atomic.LoadInt32(&desoBlockProducer.isAsleep) == 0 {
+		desoBlockProducer.producerWaitGroup.Wait()
+	}
 }
 
 func (desoBlockProducer *DeSoBlockProducer) GetRecentBlock(blockHash *BlockHash) *MsgDeSoBlock {
@@ -527,36 +535,42 @@ func (desoBlockProducer *DeSoBlockProducer) SignBlock(blockFound *MsgDeSoBlock) 
 }
 
 func (desoBlockProducer *DeSoBlockProducer) Start() {
+	// If we set up the max sync block height, we will not be running the block producer.
+	if desoBlockProducer.chain.MaxSyncBlockHeight > 0 {
+		glog.V(2).Infof("DeSoBlockProducer.Start() exiting because "+
+			"MaxSyncBlockHeight: %v is greater than 0", desoBlockProducer.chain.MaxSyncBlockHeight)
+		return
+	}
+
 	// Set the time to a nil value so we run on the first iteration of the loop.
 	var lastBlockUpdate time.Time
 	desoBlockProducer.producerWaitGroup.Add(1)
 
 	for {
-		select {
-		case <-desoBlockProducer.stopProducerChannel:
+		if atomic.LoadInt32(&desoBlockProducer.exit) >= 0 {
 			desoBlockProducer.producerWaitGroup.Done()
 			return
-		default:
-			secondsLeft := float64(desoBlockProducer.minBlockUpdateIntervalSeconds) - time.Since(lastBlockUpdate).Seconds()
-			if !lastBlockUpdate.IsZero() && secondsLeft > 0 {
-				glog.V(1).Infof("Sleeping for %v seconds before producing next block template...", secondsLeft)
-				time.Sleep(time.Duration(math.Ceil(secondsLeft)) * time.Second)
-				continue
-			}
+		}
 
-			// Update the time so start the clock for the next iteration.
-			lastBlockUpdate = time.Now()
+		secondsLeft := float64(desoBlockProducer.minBlockUpdateIntervalSeconds) - time.Since(lastBlockUpdate).Seconds()
+		if !lastBlockUpdate.IsZero() && secondsLeft > 0 {
+			glog.V(1).Infof("Sleeping for %v seconds before producing next block template...", secondsLeft)
+			atomic.AddInt32(&desoBlockProducer.isAsleep, 1)
+			time.Sleep(time.Duration(math.Ceil(secondsLeft)) * time.Second)
+			atomic.AddInt32(&desoBlockProducer.isAsleep, -1)
+			continue
+		}
 
-			glog.V(1).Infof("Producing block template...")
-			err := desoBlockProducer.UpdateLatestBlockTemplate()
-			if err != nil {
-				// If we hit an error, log it and sleep for a second. This could happen due to us
-				// being in the middle of processing a block or something.
-				glog.Errorf("Error producing block template: %v", err)
-				time.Sleep(time.Second)
-				continue
-			}
+		// Update the time so start the clock for the next iteration.
+		lastBlockUpdate = time.Now()
 
+		glog.V(1).Infof("Producing block template...")
+		err := desoBlockProducer.UpdateLatestBlockTemplate()
+		if err != nil {
+			// If we hit an error, log it and sleep for a second. This could happen due to us
+			// being in the middle of processing a block or something.
+			glog.Errorf("Error producing block template: %v", err)
+			time.Sleep(time.Second)
 		}
 	}
 }

@@ -30,7 +30,7 @@ var postHashForTesting1 = BlockHash{
 
 var expectedVer = &MsgDeSoVersion{
 	Version:              1,
-	Services:             SFFullNode,
+	Services:             SFFullNodeDeprecated,
 	TstampSecs:           2,
 	Nonce:                uint64(0xffffffffffffffff),
 	UserAgent:            "abcdef",
@@ -309,7 +309,7 @@ var expectedBlock = &MsgDeSoBlock{
 			},
 			// random bytes
 			PublicKey: []byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99},
-			ExtraData: map[string][]byte{"dummykey": []byte{0x01, 0x02, 0x03, 0x04, 0x05}},
+			ExtraData: map[string][]byte{"dummykey": {0x01, 0x02, 0x03, 0x04, 0x05}},
 			//Signature: []byte{0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90},
 		},
 		{
@@ -497,7 +497,7 @@ func TestSerializeAddresses(t *testing.T) {
 		AddrList: []*SingleAddr{
 			{
 				Timestamp: time.Unix(1000, 0),
-				Services:  SFFullNode,
+				Services:  SFFullNodeDeprecated,
 				IP:        []byte{0x01, 0x02, 0x03, 0x04},
 				Port:      12345,
 			},

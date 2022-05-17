@@ -33,7 +33,7 @@ func (bav *UtxoView) _existsBitcoinTxIDMapping(bitcoinBurnTxID *BlockHash) bool 
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return true. If not, return
 	// false. Either way, save the value to the in-memory view mapping got later.
-	dbHasMapping := DbExistsBitcoinBurnTxID(bav.Handle, bitcoinBurnTxID)
+	dbHasMapping := DbExistsBitcoinBurnTxID(bav.Handle, bav.Snapshot, bitcoinBurnTxID)
 	bav.BitcoinBurnTxIDs[*bitcoinBurnTxID] = dbHasMapping
 	return dbHasMapping
 }

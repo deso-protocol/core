@@ -5,9 +5,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	"os"
-	"os/signal"
-	"syscall"
 )
 
 var runCmd = &cobra.Command{
@@ -27,16 +24,14 @@ func Run(cmd *cobra.Command, args []string) {
 	config := LoadConfig()
 
 	// Start the deso node
+	shutdownListener := make(chan struct{})
 	node := NewNode(config)
-	go node.Start()
+	node.Start(&shutdownListener)
 
-	shutdownListener := make(chan os.Signal)
-	signal.Notify(shutdownListener, syscall.SIGINT, syscall.SIGTERM)
 	defer func() {
 		node.Stop()
 		glog.Info("Shutdown complete")
 	}()
-
 	<-shutdownListener
 }
 
@@ -64,6 +59,25 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"Postgres instance on the same machine as your node for optimal performance.")
 	cmd.PersistentFlags().String("sqs-uri", "", "BETA: Use SQS as a producer for mempool txns")
 
+	cmd.PersistentFlags().Uint32("max-sync-block-height", 0,
+		"Max sync block height")
+	// Hyper Sync
+	cmd.PersistentFlags().Bool("hypersync", true, "Use hyper sync protocol for faster block syncing")
+	// Snapshot
+	cmd.PersistentFlags().Uint64("snapshot-block-height-period", 1000, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
+	// Archival mode
+	cmd.PersistentFlags().Bool("archival-mode", true, "Download all historical blocks after finishing hypersync.")
+	// Disable encoder migrations
+	cmd.PersistentFlags().Bool("disable-encoder-migrations", false, "Disable badgerDB encoder migrations")
+	// Disable slow sync
+	cmd.PersistentFlags().String("sync-type", "any", `We have the following options for SyncType:
+		- any: Will sync with a node no matter what kind of syncing it supports.
+		- full-historical: Will sync by connecting blocks from the beginning of time.
+		- hypersync-archival: Will sync by hypersyncing state, but then it will
+		  still download historical blocks at the end. Can only be set if HyperSync
+		  is true.
+		- hypersync: Will sync by downloading historical state, and will NOT
+		  download historical blocks. Can only be set if HyperSync is true.`)
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},
@@ -178,6 +192,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 			"level to 3 in all Go files whose names begin \"gopher\".")
 	cmd.PersistentFlags().Bool("log-db-summary-snapshots", false, "The node will log a snapshot of all DB keys every 30s.")
 	cmd.PersistentFlags().Bool("datadog-profiler", false, "Enable the DataDog profiler for performance testing")
+	cmd.PersistentFlags().Bool("time-events", false, "Enable simple event timer, helpful in hands-on performance testing")
 
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		viper.BindPFlag(flag.Name, flag)

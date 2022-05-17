@@ -5,10 +5,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
-	"github.com/holiman/uint256"
 	"io"
 	"math"
 	"net"
@@ -17,9 +16,10 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/davecgh/go-spew/spew"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
-
+	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
 
@@ -27,7 +27,7 @@ import (
 // network and defines precisely how they are serialized and de-serialized.
 
 // MaxMessagePayload is the maximum size alowed for a message payload.
-const MaxMessagePayload = (1024 * 1024 * 100) // 100MB
+const MaxMessagePayload = (1024 * 1024 * 1000) // 1GB
 
 // MaxBlockRewardDataSizeBytes is the maximum size allowed for a BLOCK_REWARD's ExtraData field.
 var MaxBlockRewardDataSizeBytes = 250
@@ -81,7 +81,11 @@ const (
 	// MsgTypeGetAddr is used to solicit Addr messages from peers.
 	MsgTypeGetAddr MsgType = 16
 
-	// NEXT_TAG = 18
+	// MsgTypeGetSnapshot is used to retrieve state from peers.
+	MsgTypeGetSnapshot  MsgType = 17
+	MsgTypeSnapshotData MsgType = 18
+
+	// NEXT_TAG = 19
 
 	// Below are control messages used to signal to the Server from other parts of
 	// the code but not actually sent among peers.
@@ -93,7 +97,7 @@ const (
 	MsgTypeNewPeer              MsgType = ControlMessagesStart + 1
 	MsgTypeDonePeer             MsgType = ControlMessagesStart + 2
 	MsgTypeBlockAccepted        MsgType = ControlMessagesStart + 3
-	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4
+	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4 // Deprecated
 
 	// NEXT_TAG = 7
 )
@@ -153,6 +157,10 @@ func (msgType MsgType) String() string {
 		return "BLOCK_ACCEPTED"
 	case MsgTypeBitcoinManagerUpdate:
 		return "BITCOIN_MANAGER_UPDATE"
+	case MsgTypeGetSnapshot:
+		return "GET_SNAPSHOT"
+	case MsgTypeSnapshotData:
+		return "SNAPSHOT_DATA"
 	default:
 		return fmt.Sprintf("UNRECOGNIZED(%d) - make sure String() is up to date", msgType)
 	}
@@ -214,8 +222,9 @@ const (
 	TxnTypeMessagingGroup               TxnType = 23
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
+	TxnTypeDAOCoinLimitOrder            TxnType = 26
 
-	// NEXT_ID = 26
+	// NEXT_ID = 27
 )
 
 type TxnString string
@@ -246,6 +255,7 @@ const (
 	TxnStringMessagingGroup               TxnString = "MESSAGING_GROUP"
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
+	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -256,7 +266,7 @@ var (
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
-		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -264,7 +274,7 @@ var (
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
-		TxnStringDAOCoin, TxnStringDAOCoinTransfer,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder,
 	}
 )
 
@@ -328,6 +338,8 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringDAOCoin
 	case TxnTypeDAOCoinTransfer:
 		return TxnStringDAOCoinTransfer
+	case TxnTypeDAOCoinLimitOrder:
+		return TxnStringDAOCoinLimitOrder
 	default:
 		return TxnStringUndefined
 	}
@@ -385,6 +397,8 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeDAOCoin
 	case TxnStringDAOCoinTransfer:
 		return TxnTypeDAOCoinTransfer
+	case TxnStringDAOCoinLimitOrder:
+		return TxnTypeDAOCoinLimitOrder
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -450,6 +464,8 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinMetadata{}).New(), nil
 	case TxnTypeDAOCoinTransfer:
 		return (&DAOCoinTransferMetadata{}).New(), nil
+	case TxnTypeDAOCoinLimitOrder:
+		return (&DAOCoinLimitOrderMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -646,6 +662,14 @@ func NewMessage(msgType MsgType) DeSoMessage {
 		{
 			return &MsgDeSoGetAddr{}
 		}
+	case MsgTypeGetSnapshot:
+		{
+			return &MsgDeSoGetSnapshot{}
+		}
+	case MsgTypeSnapshotData:
+		{
+			return &MsgDeSoSnapshotData{}
+		}
 	default:
 		{
 			return nil
@@ -700,25 +724,6 @@ func (msg *MsgDeSoDonePeer) ToBytes(preSignature bool) ([]byte, error) {
 
 func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
-}
-
-type MsgDeSoBitcoinManagerUpdate struct {
-	// Keep it simple for now. A BitcoinManagerUpdate just signals that
-	// the BitcoinManager has added at least one block or done a reorg.
-	// No serialization because we don't want this sent on the wire ever.
-	TransactionsFound []*MsgDeSoTxn
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) GetMsgType() MsgType {
-	return MsgTypeBitcoinManagerUpdate
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoBitcoinManagerUpdate.ToBytes: Not implemented")
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoBitcoinManagerUpdate.FromBytes not implemented")
 }
 
 // ==================================================================
@@ -901,7 +906,7 @@ func (msg *MsgDeSoGetBlocks) ToBytes(preSignature bool) ([]byte, error) {
 func (msg *MsgDeSoGetBlocks) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
-	// Parse the nmber of block hashes.
+	// Parse the number of block hashes.
 	numHashes, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoGetBlocks.FromBytes: Problem "+
@@ -1180,7 +1185,7 @@ func _readInvList(rr io.Reader) ([]*InvVect, error) {
 		invHash := BlockHash{}
 		_, err = io.ReadFull(rr, invHash[:])
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readInvList:: Error reading Hash for InvVect: ")
+			return nil, errors.Wrapf(err, "_readInvList: Error reading Hash for InvVect: ")
 		}
 
 		invVect := &InvVect{
@@ -1210,7 +1215,10 @@ func (msg *MsgDeSoInv) FromBytes(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoInv: ")
 	}
-	isSyncResponse := ReadBoolByte(rr)
+	isSyncResponse, err := ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoInv: ")
+	}
 
 	*msg = MsgDeSoInv{
 		InvList:        invList,
@@ -1277,8 +1285,14 @@ func (msg *MsgDeSoPong) FromBytes(data []byte) error {
 type ServiceFlag uint64
 
 const (
-	// SFFullNode is a flag used to indicate a peer is a full node.
-	SFFullNode ServiceFlag = 1 << iota
+	// SFFullNodeDeprecated is deprecated, and set on all nodes by default
+	// now. We basically split it into SFHyperSync and SFArchivalMode.
+	SFFullNodeDeprecated ServiceFlag = 1 << iota
+	// SFHyperSync is a flag used to indicate that the peer supports hyper sync.
+	SFHyperSync
+	// SFArchivalNode is a flag complementary to SFHyperSync. If node is a hypersync node then
+	// it might not be able to support block sync anymore, unless it has archival mode turned on.
+	SFArchivalNode
 )
 
 type MsgDeSoVersion struct {
@@ -2256,6 +2270,125 @@ func (msg *MsgDeSoBlock) String() string {
 }
 
 // ==================================================================
+// SNAPSHOT Message
+// ==================================================================
+
+type MsgDeSoGetSnapshot struct {
+	// SnapshotStartKey is the db key from which we want to start fetching the data.
+	SnapshotStartKey []byte
+}
+
+func (msg *MsgDeSoGetSnapshot) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+	data = append(data, EncodeByteArray(msg.SnapshotStartKey)...)
+
+	return data, nil
+}
+
+func (msg *MsgDeSoGetSnapshot) FromBytes(data []byte) error {
+	var err error
+
+	rr := bytes.NewReader(data)
+
+	msg.SnapshotStartKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error reading snapshot start key")
+	}
+	if len(msg.SnapshotStartKey) == 0 {
+		return fmt.Errorf("MsgDeSoGetSnapshot.FromBytes: Received an empty SnapshotStartKey")
+	}
+	return nil
+}
+
+func (msg *MsgDeSoGetSnapshot) GetMsgType() MsgType {
+	return MsgTypeGetSnapshot
+}
+
+func (msg *MsgDeSoGetSnapshot) GetPrefix() []byte {
+	return msg.SnapshotStartKey[:1]
+}
+
+type MsgDeSoSnapshotData struct {
+	// SnapshotMetadata is the information about the current snapshot epoch.
+	SnapshotMetadata *SnapshotEpochMetadata
+
+	// SnapshotChunk is the snapshot state data chunk.
+	SnapshotChunk []*DBEntry
+	// SnapshotChunkFull indicates whether we've exhausted all entries for the given prefix.
+	// If this is true, it means that there are more entries in node's db, and false means
+	// we've fetched everything.
+	SnapshotChunkFull bool
+
+	// Prefix indicates the db prefix of the current snapshot chunk.
+	Prefix []byte
+}
+
+func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// Encode the snapshot metadata.
+	data = append(data, msg.SnapshotMetadata.ToBytes()...)
+
+	// Encode the snapshot chunk data.
+	if len(msg.SnapshotChunk) == 0 {
+		return nil, fmt.Errorf("MsgDeSoSnapshotData.ToBytes: Snapshot data should not be empty")
+	}
+	data = append(data, UintToBuf(uint64(len(msg.SnapshotChunk)))...)
+	for _, vv := range msg.SnapshotChunk {
+		data = append(data, vv.ToBytes()...)
+	}
+	data = append(data, BoolToByte(msg.SnapshotChunkFull))
+	data = append(data, UintToBuf(uint64(len(msg.Prefix)))...)
+	data = append(data, msg.Prefix...)
+
+	return data, nil
+}
+
+func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
+	var err error
+
+	rr := bytes.NewReader(data)
+
+	// Decode snapshot metadata.
+	msg.SnapshotMetadata = &SnapshotEpochMetadata{}
+	if err := msg.SnapshotMetadata.FromBytes(rr); err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding snapshot metadata")
+	}
+	// Decode snapshot keys
+	dataLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of SnapshotChunk")
+	}
+	for ; dataLen > 0; dataLen-- {
+		dbEntry := &DBEntry{}
+		if err := dbEntry.FromBytes(rr); err != nil {
+			return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding SnapshotChunk")
+		}
+		msg.SnapshotChunk = append(msg.SnapshotChunk, dbEntry)
+	}
+	msg.SnapshotChunkFull, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding SnapshotChunkFull")
+	}
+
+	prefixLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of prefix")
+	}
+	msg.Prefix = make([]byte, prefixLen)
+	_, err = io.ReadFull(rr, msg.Prefix)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding prefix")
+	}
+
+	return nil
+}
+
+func (msg *MsgDeSoSnapshotData) GetMsgType() MsgType {
+	return MsgTypeSnapshotData
+}
+
+// ==================================================================
 // TXN Message
 // ==================================================================
 
@@ -2273,6 +2406,39 @@ type UtxoKey struct {
 
 func (utxoKey *UtxoKey) String() string {
 	return fmt.Sprintf("< TxID: %v, Index: %d >", &utxoKey.TxID, utxoKey.Index)
+}
+
+func (utxoKey *UtxoKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, utxoKey.TxID.ToBytes()...)
+	data = append(data, UintToBuf(uint64(utxoKey.Index))...)
+	return data
+}
+
+func (utxoKey *UtxoKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// Read TxIndex
+	txIdBytes := make([]byte, HashSizeBytes)
+	_, err := io.ReadFull(rr, txIdBytes)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoKey.Decode: Problem reading TxID")
+	}
+	utxoKey.TxID = *NewBlockHash(txIdBytes)
+
+	index, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoKey.Decode: Problem reading Index")
+	}
+	utxoKey.Index = uint32(index)
+
+	return nil
+}
+
+func (utxoKey *UtxoKey) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (utxoKey *UtxoKey) GetEncoderType() EncoderType {
+	return EncoderTypeUtxoKey
 }
 
 const (
@@ -2313,6 +2479,38 @@ type DeSoOutput struct {
 func (desoOutput *DeSoOutput) String() string {
 	return fmt.Sprintf("< PublicKey: %#v, AmountNanos: %d >",
 		PkToStringMainnet(desoOutput.PublicKey), desoOutput.AmountNanos)
+}
+
+func (desoOutput *DeSoOutput) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(desoOutput.PublicKey)...)
+	data = append(data, UintToBuf(desoOutput.AmountNanos)...)
+
+	return data
+}
+
+func (desoOutput *DeSoOutput) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	desoOutput.PublicKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DesoOutput.Decode: Problem reading PublicKey")
+	}
+
+	desoOutput.AmountNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DesoOutput.Decode: Problem reading AmountNanos")
+	}
+	return nil
+}
+
+func (desoOutput *DeSoOutput) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (desoOutput *DeSoOutput) GetEncoderType() EncoderType {
+	return EncoderTypeDeSoOutput
 }
 
 type MsgDeSoTxn struct {
@@ -2426,25 +2624,7 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, msg.PublicKey...)
 
 	// ExtraData
-	extraDataLength := uint64(len(msg.ExtraData))
-	data = append(data, UintToBuf(extraDataLength)...)
-	if extraDataLength > 0 {
-		// Sort the keys of the map
-		keys := make([]string, 0, len(msg.ExtraData))
-		for key := range msg.ExtraData {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		// Encode the length of the key, the key itself
-		// then the length of the value, then the value itself.
-		for _, key := range keys {
-			data = append(data, UintToBuf(uint64(len(key)))...)
-			data = append(data, []byte(key)...)
-			value := msg.ExtraData[key]
-			data = append(data, UintToBuf(uint64(len(value)))...)
-			data = append(data, value...)
-		}
-	}
+	data = append(data, EncodeExtraData(msg.ExtraData)...)
 
 	// Serialize the signature. Since this can be variable length, encode
 	// the length first and then the signature. If there is no signature, then
@@ -2562,52 +2742,11 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	}
 
 	// De-serialize the ExtraData
-	extraDataLen, err := ReadUvarint(rr)
+	extraData, err := DecodeExtraData(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_readTransaction: Problem reading len(DeSoTxn.ExtraData)")
+		return nil, fmt.Errorf("_readTransaction: Error decoding extra data: %v", err)
 	}
-	if extraDataLen > MaxMessagePayload {
-		return nil, fmt.Errorf("_readTransaction.FromBytes: extraDataLen length %d longer than max %d", extraDataLen, MaxMessagePayload)
-	}
-	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
-	if extraDataLen != 0 {
-		ret.ExtraData = make(map[string][]byte, extraDataLen)
-		// Loop over each key
-		for ii := uint64(0); ii < extraDataLen; ii++ {
-			// De-serialize the length of the key
-			var keyLen uint64
-			keyLen, err = ReadUvarint(rr)
-			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(DeSoTxn.ExtraData.Keys[#{ii}]")
-			}
-			// De-serialize the key
-			keyBytes := make([]byte, keyLen)
-			_, err = io.ReadFull(rr, keyBytes)
-			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading key #{ii}")
-			}
-			// Convert the key to a string and check if it already exists in the map.
-			// If it already exists in the map, this is an error as a map cannot have duplicate keys.
-			key := string(keyBytes)
-			if _, keyExists := ret.ExtraData[key]; keyExists {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Key [#{ii}] ({key}) already exists in ExtraData")
-			}
-			// De-serialize the length of the value
-			var valueLen uint64
-			valueLen, err = ReadUvarint(rr)
-			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem reading len(DeSoTxn.ExtraData.Value[#{ii}]")
-			}
-			// De-serialize the value
-			value := make([]byte, valueLen)
-			_, err = io.ReadFull(rr, value)
-			if err != nil {
-				return nil, fmt.Errorf("_readTransaction.FromBytes: Problem read value #{ii}")
-			}
-			// Map the key to the value
-			ret.ExtraData[key] = value
-		}
-	}
+	ret.ExtraData = extraData
 
 	// De-serialize the signature if there is one.
 	sigLen, err := ReadUvarint(rr)
@@ -2709,18 +2848,20 @@ func (msg *MsgDeSoTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, error)
 // SignTransactionWithDerivedKey the signature contains solution iteration,
 // which allows us to recover signer public key from the signature.
 // Returns (new txn bytes, txn signature, error)
-func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey) ([]byte, []byte, error) {
+func SignTransactionBytes(txnBytes []byte, privateKey *btcec.PrivateKey, isDerived bool) ([]byte, []byte, error) {
 	// As we're signing the transaction using a derived key, we
 	// pass the key to extraData.
 	rr := bytes.NewReader(txnBytes)
 	txn, err := _readTransaction(rr)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "SignTransactionWithDerivedKey: Problem reading txn: ")
+		return nil, nil, errors.Wrapf(err, "SignTransactionBytes: Problem reading txn: ")
 	}
-	if txn.ExtraData == nil {
-		txn.ExtraData = make(map[string][]byte)
+	if isDerived {
+		if txn.ExtraData == nil {
+			txn.ExtraData = make(map[string][]byte)
+		}
+		txn.ExtraData[DerivedPublicKey] = privateKey.PubKey().SerializeCompressed()
 	}
-	txn.ExtraData[DerivedPublicKey] = privateKey.PubKey().SerializeCompressed()
 
 	// Sign the transaction with the passed private key.
 	txnSignature, err := txn.Sign(privateKey)
@@ -3231,7 +3372,10 @@ func (txnData *LikeMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsUnlike
-	ret.IsUnlike = ReadBoolByte(rr)
+	ret.IsUnlike, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "LikeMetadata.FromBytes: Problem reading IsUnlike")
+	}
 
 	*txnData = ret
 
@@ -3303,7 +3447,10 @@ func (txnData *FollowMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsUnfollow
-	ret.IsUnfollow = ReadBoolByte(rr)
+	ret.IsUnfollow, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "FollowMetadata.FromBytes: Problem reading IsUnfollow")
+	}
 
 	*txnData = ret
 
@@ -3322,15 +3469,15 @@ func (txnData *FollowMetadata) New() DeSoTxnMetadata {
 // SubmitPostMetadata
 // ==================================================================
 
-func ReadBoolByte(rr *bytes.Reader) bool {
+func ReadBoolByte(rr *bytes.Reader) (bool, error) {
 	boolByte, err := rr.ReadByte()
 	if err != nil {
-		return false
+		return false, err
 	}
 	if boolByte != 0 {
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 func BoolToByte(val bool) byte {
@@ -3478,10 +3625,12 @@ func (txnData *SubmitPostMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsHidden
-	ret.IsHidden = ReadBoolByte(rr)
+	ret.IsHidden, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SubmitPostMetadata.FromBytes: Problem reading IsHidden")
+	}
 
 	*txnData = ret
-
 	return nil
 }
 
@@ -3613,7 +3762,10 @@ func (txnData *UpdateProfileMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsHidden
-	ret.IsHidden = ReadBoolByte(rr)
+	ret.IsHidden, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateProfileMetadata.FromBytes: Problem reading IsHidden")
+	}
 
 	*txnData = ret
 
@@ -3961,10 +4113,16 @@ func (txnData *CreateNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// HasUnlockable
-	ret.HasUnlockable = ReadBoolByte(rr)
+	ret.HasUnlockable, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateNFTMetadata.FromBytes: Problem reading HasUnlockable")
+	}
 
 	// IsForSale
-	ret.IsForSale = ReadBoolByte(rr)
+	ret.IsForSale, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateNFTMetadata.FromBytes: Problem reading IsForSale")
+	}
 
 	// MinBidAmountNanos uint64
 	ret.MinBidAmountNanos, err = ReadUvarint(rr)
@@ -4052,7 +4210,10 @@ func (txnData *UpdateNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// IsForSale
-	ret.IsForSale = ReadBoolByte(rr)
+	ret.IsForSale, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateNFTMetadata.FromBytes: Problem reading IsForSale")
+	}
 
 	// SerialNumber uint64
 	ret.MinBidAmountNanos, err = ReadUvarint(rr)
@@ -4582,6 +4743,675 @@ type AuthorizeDerivedKeyMetadata struct {
 	AccessSignature []byte
 }
 
+type TransactionSpendingLimit struct {
+	// This is the total amount the derived key can spend.
+	GlobalDESOLimit uint64
+
+	// TransactionCount
+	// If a transaction type is not specified in the map, it is not allowed.
+	// If the transaction type is in the map, the derived key is allowed to
+	// perform the transaction up to the value to which it is mapped.
+	TransactionCountLimitMap map[TxnType]uint64
+
+	// CreatorCoinOperationLimitMap is a map with keys composed of
+	// creator PKID || CreatorCoinLimitOperation to number
+	// of transactions
+	CreatorCoinOperationLimitMap map[CreatorCoinOperationLimitKey]uint64
+
+	// DAOCoinOperationLimitMap is a map with keys composed of
+	// creator PKID || DAOCoinLimitOperation to number of
+	// transactions
+	DAOCoinOperationLimitMap map[DAOCoinOperationLimitKey]uint64
+
+	// NFTOperationLimitMap is a map with keys composed of
+	// PostHash || Serial Num || NFTLimitOperation to number
+	// of transactions
+	NFTOperationLimitMap map[NFTOperationLimitKey]uint64
+
+	// DAOCoinLimitOrderLimitMap is a map with keys composed of
+	// BuyingCreatorPKID || SellingCreatorPKID to number of
+	// transactions
+	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
+}
+
+func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
+	data := []byte{}
+
+	if tsl == nil {
+		return data, nil
+	}
+
+	// GlobalDESOLimit
+	data = append(data, UintToBuf(tsl.GlobalDESOLimit)...)
+
+	// TransactionCountLimitMap
+	transactionCountLimitMapLength := uint64(len(tsl.TransactionCountLimitMap))
+	data = append(data, UintToBuf(transactionCountLimitMapLength)...)
+	if transactionCountLimitMapLength > 0 {
+		// Sort the keys
+		keys := make([]TxnType, 0, transactionCountLimitMapLength)
+		for key := range tsl.TransactionCountLimitMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return keys[ii] < keys[jj]
+		})
+		for _, key := range keys {
+			data = append(data, UintToBuf(uint64(key))...)
+			value := tsl.TransactionCountLimitMap[key]
+			data = append(data, UintToBuf(value)...)
+		}
+	}
+
+	// CreatorCoinOperationLimitMap
+	ccOperationLimitMapLength := uint64(len(tsl.CreatorCoinOperationLimitMap))
+	data = append(data, UintToBuf(ccOperationLimitMapLength)...)
+	if ccOperationLimitMapLength > 0 {
+		keys := make([]CreatorCoinOperationLimitKey, 0, ccOperationLimitMapLength)
+		for key := range tsl.CreatorCoinOperationLimitMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+		})
+		for _, key := range keys {
+			data = append(data, key.Encode()...)
+			data = append(data, UintToBuf(tsl.CreatorCoinOperationLimitMap[key])...)
+		}
+	}
+
+	// DAOCoinOperationLimitMap
+	daoCoinOperationLimitMapLength := uint64(len(tsl.DAOCoinOperationLimitMap))
+	data = append(data, UintToBuf(daoCoinOperationLimitMapLength)...)
+	if daoCoinOperationLimitMapLength > 0 {
+		keys := make([]DAOCoinOperationLimitKey, 0, daoCoinOperationLimitMapLength)
+		for key := range tsl.DAOCoinOperationLimitMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+		})
+		for _, key := range keys {
+			data = append(data, key.Encode()...)
+			data = append(data, UintToBuf(tsl.DAOCoinOperationLimitMap[key])...)
+		}
+	}
+
+	// NFTOperationLimitMap
+	nftOperationLimitMapLength := uint64(len(tsl.NFTOperationLimitMap))
+	data = append(data, UintToBuf(nftOperationLimitMapLength)...)
+	if nftOperationLimitMapLength > 0 {
+		keys := make([]NFTOperationLimitKey, 0, nftOperationLimitMapLength)
+		for key := range tsl.NFTOperationLimitMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+		})
+		for _, key := range keys {
+			data = append(data, key.Encode()...)
+			data = append(data, UintToBuf(tsl.NFTOperationLimitMap[key])...)
+		}
+	}
+
+	// DAOCoinLimitOrderLimitMap
+	daoCoinLimitOrderLimitMapLength := uint64(len(tsl.DAOCoinLimitOrderLimitMap))
+	data = append(data, UintToBuf(daoCoinLimitOrderLimitMapLength)...)
+	if daoCoinLimitOrderLimitMapLength > 0 {
+		keys := make([]DAOCoinLimitOrderLimitKey, 0, daoCoinLimitOrderLimitMapLength)
+		for key := range tsl.DAOCoinLimitOrderLimitMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+		})
+		for _, key := range keys {
+			data = append(data, key.Encode()...)
+			data = append(data, UintToBuf(tsl.DAOCoinLimitOrderLimitMap[key])...)
+		}
+	}
+
+	return data, nil
+}
+
+func (tsl *TransactionSpendingLimit) FromBytes(rr *bytes.Reader) error {
+	globalDESOLimit, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.GlobalDESOLimit = globalDESOLimit
+
+	transactionSpendingLimitLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.TransactionCountLimitMap = make(map[TxnType]uint64)
+	if transactionSpendingLimitLen > 0 {
+		for ii := uint64(0); ii < transactionSpendingLimitLen; ii++ {
+			key, err := ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			val, err := ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			// Make sure it doesn't already exist in the map
+			if _, exists := tsl.TransactionCountLimitMap[TxnType(key)]; exists {
+				return fmt.Errorf("Key already exists in map")
+			}
+			tsl.TransactionCountLimitMap[TxnType(key)] = val
+		}
+	}
+
+	ccOperationLimitMapLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.CreatorCoinOperationLimitMap = make(map[CreatorCoinOperationLimitKey]uint64)
+	if ccOperationLimitMapLen > 0 {
+		for ii := uint64(0); ii < ccOperationLimitMapLen; ii++ {
+			ccOperationLimitMapKey := &CreatorCoinOperationLimitKey{}
+			if err = ccOperationLimitMapKey.Decode(rr); err != nil {
+				return errors.Wrap(err, "Error decoding Creator Coin Operation Limit Key")
+			}
+			var operationCount uint64
+			operationCount, err = ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			if _, exists := tsl.CreatorCoinOperationLimitMap[*ccOperationLimitMapKey]; exists {
+				return fmt.Errorf("Creator Coin Operation Limit Key already exists in map")
+			}
+			tsl.CreatorCoinOperationLimitMap[*ccOperationLimitMapKey] = operationCount
+		}
+	}
+
+	daoCoinOperationLimitMapLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.DAOCoinOperationLimitMap = make(map[DAOCoinOperationLimitKey]uint64)
+	if daoCoinOperationLimitMapLen > 0 {
+		for ii := uint64(0); ii < daoCoinOperationLimitMapLen; ii++ {
+			daoCoinOperationLimitMapKey := &DAOCoinOperationLimitKey{}
+			if err = daoCoinOperationLimitMapKey.Decode(rr); err != nil {
+				return errors.Wrap(err, "Error decoding DAO Coin Operation Limit Key")
+			}
+			var operationCount uint64
+			operationCount, err = ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			if _, exists := tsl.DAOCoinOperationLimitMap[*daoCoinOperationLimitMapKey]; exists {
+				return fmt.Errorf("DAO Coin Operation Limit Key already exists in map")
+			}
+			tsl.DAOCoinOperationLimitMap[*daoCoinOperationLimitMapKey] = operationCount
+		}
+	}
+
+	nftOperationLimitMapLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.NFTOperationLimitMap = make(map[NFTOperationLimitKey]uint64)
+	if nftOperationLimitMapLen > 0 {
+		for ii := uint64(0); ii < nftOperationLimitMapLen; ii++ {
+			nftOperationLimitMapKey := &NFTOperationLimitKey{}
+			if err = nftOperationLimitMapKey.Decode(rr); err != nil {
+				return errors.Wrap(err, "Error decoding NFT Operation Limit Key")
+			}
+			var operationCount uint64
+			operationCount, err = ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			if _, exists := tsl.NFTOperationLimitMap[*nftOperationLimitMapKey]; exists {
+				return fmt.Errorf("NFT Limit Operation Key already exists in map")
+			}
+			tsl.NFTOperationLimitMap[*nftOperationLimitMapKey] = operationCount
+		}
+	}
+
+	daoCoinLimitOrderMapLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.DAOCoinLimitOrderLimitMap = make(map[DAOCoinLimitOrderLimitKey]uint64)
+	if daoCoinLimitOrderMapLen > 0 {
+		for ii := uint64(0); ii < daoCoinLimitOrderMapLen; ii++ {
+			daoCoinLimitOrderLimitKey := &DAOCoinLimitOrderLimitKey{}
+			if err = daoCoinLimitOrderLimitKey.Decode(rr); err != nil {
+				return errors.Wrap(err, "Error decoding DAO Coin Limit Order Key")
+			}
+			var operationCount uint64
+			operationCount, err = ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			if _, exists := tsl.DAOCoinLimitOrderLimitMap[*daoCoinLimitOrderLimitKey]; exists {
+				return fmt.Errorf("DAO Coin Limit Order Key already exists in map")
+			}
+			tsl.DAOCoinLimitOrderLimitMap[*daoCoinLimitOrderLimitKey] = operationCount
+		}
+	}
+	return nil
+}
+
+func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
+	copyTSL := &TransactionSpendingLimit{
+		GlobalDESOLimit:              tsl.GlobalDESOLimit,
+		TransactionCountLimitMap:     make(map[TxnType]uint64),
+		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
+		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
+		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
+	}
+
+	for txnType, txnCount := range tsl.TransactionCountLimitMap {
+		copyTSL.TransactionCountLimitMap[txnType] = txnCount
+	}
+
+	for ccOp, ccOpCount := range tsl.CreatorCoinOperationLimitMap {
+		copyTSL.CreatorCoinOperationLimitMap[ccOp] = ccOpCount
+	}
+
+	for daoOp, daoOpCount := range tsl.DAOCoinOperationLimitMap {
+		copyTSL.DAOCoinOperationLimitMap[daoOp] = daoOpCount
+	}
+
+	for nftOp, nftOpCount := range tsl.NFTOperationLimitMap {
+		copyTSL.NFTOperationLimitMap[nftOp] = nftOpCount
+	}
+
+	for daoCoinLimitOrderLimitKey, daoCoinLimitOrderCount := range tsl.DAOCoinLimitOrderLimitMap {
+		copyTSL.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = daoCoinLimitOrderCount
+	}
+
+	return copyTSL
+}
+
+type NFTLimitOperation uint8
+
+const (
+	AnyNFTOperation            NFTLimitOperation = 0
+	UpdateNFTOperation         NFTLimitOperation = 1
+	AcceptNFTBidOperation      NFTLimitOperation = 2
+	NFTBidOperation            NFTLimitOperation = 3
+	TransferNFTOperation       NFTLimitOperation = 4
+	BurnNFTOperation           NFTLimitOperation = 5
+	AcceptNFTTransferOperation NFTLimitOperation = 6
+	UndefinedNFTOperation      NFTLimitOperation = 7
+)
+
+type NFTLimitOperationString string
+
+const (
+	AnyNFTOperationString            NFTLimitOperationString = "any"
+	UpdateNFTOperationString         NFTLimitOperationString = "update"
+	AcceptNFTBidOperationString      NFTLimitOperationString = "accept_nft_bid"
+	NFTBidOperationString            NFTLimitOperationString = "nft_bid"
+	TransferNFTOperationString       NFTLimitOperationString = "transfer"
+	BurnNFTOperationString           NFTLimitOperationString = "burn"
+	AcceptNFTTransferOperationString NFTLimitOperationString = "accept_nft_transfer"
+	UndefinedNFTOperationString      NFTLimitOperationString = "undefined"
+)
+
+func (nftLimitOperation NFTLimitOperation) ToString() string {
+	return string(nftLimitOperation.ToNFTLimitOperationString())
+}
+
+func (nftLimitOperation NFTLimitOperation) ToNFTLimitOperationString() NFTLimitOperationString {
+	switch nftLimitOperation {
+	case AnyNFTOperation:
+		return AnyNFTOperationString
+	case UpdateNFTOperation:
+		return UpdateNFTOperationString
+	case AcceptNFTBidOperation:
+		return AcceptNFTBidOperationString
+	case NFTBidOperation:
+		return NFTBidOperationString
+	case TransferNFTOperation:
+		return TransferNFTOperationString
+	case BurnNFTOperation:
+		return BurnNFTOperationString
+	case AcceptNFTTransferOperation:
+		return AcceptNFTTransferOperationString
+	default:
+		return UndefinedNFTOperationString
+	}
+}
+
+func (nftLimitOperationString NFTLimitOperationString) ToNFTLimitOperation() NFTLimitOperation {
+	switch nftLimitOperationString {
+	case AnyNFTOperationString:
+		return AnyNFTOperation
+	case UpdateNFTOperationString:
+		return UpdateNFTOperation
+	case AcceptNFTBidOperationString:
+		return AcceptNFTBidOperation
+	case NFTBidOperationString:
+		return NFTBidOperation
+	case TransferNFTOperationString:
+		return TransferNFTOperation
+	case BurnNFTOperationString:
+		return BurnNFTOperation
+	case AcceptNFTTransferOperationString:
+		return AcceptNFTTransferOperation
+	default:
+		return UndefinedNFTOperation
+	}
+}
+
+func (nftLimitOperation NFTLimitOperation) IsUndefined() bool {
+	return nftLimitOperation == UndefinedNFTOperation
+}
+
+type NFTOperationLimitKey struct {
+	BlockHash    BlockHash
+	SerialNumber uint64
+	Operation    NFTLimitOperation
+}
+
+func (nftOperationLimitKey NFTOperationLimitKey) Encode() []byte {
+	var data []byte
+	blockHash := nftOperationLimitKey.BlockHash.ToBytes()
+	data = append(data, UintToBuf(uint64(len(blockHash)))...)
+	data = append(data, blockHash...)
+	data = append(data, UintToBuf(nftOperationLimitKey.SerialNumber)...)
+	data = append(data, UintToBuf(uint64(nftOperationLimitKey.Operation))...)
+	return data
+}
+
+func (nftOperationLimitKey *NFTOperationLimitKey) Decode(rr *bytes.Reader) error {
+	blockHashLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	// De-serialize the key
+	blockhashBytes := make([]byte, blockHashLen)
+	if _, err = io.ReadFull(rr, blockhashBytes); err != nil {
+		return err
+	}
+	blockHash := NewBlockHash(blockhashBytes)
+	if blockHash == nil {
+		return fmt.Errorf("Invalid block hash")
+	}
+	nftOperationLimitKey.BlockHash = *blockHash
+	serialNum, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	nftOperationLimitKey.SerialNumber = serialNum
+	operationKey, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	nftOperationLimitKey.Operation = NFTLimitOperation(operationKey)
+	return nil
+}
+
+func MakeNFTOperationLimitKey(blockHash BlockHash, serialNumber uint64, operation NFTLimitOperation) NFTOperationLimitKey {
+	return NFTOperationLimitKey{
+		blockHash,
+		serialNumber,
+		operation,
+	}
+}
+
+// The operations that are permitted to be performed by a derived key.
+type CreatorCoinLimitOperation uint8
+
+const (
+	AnyCreatorCoinOperation       CreatorCoinLimitOperation = 0
+	BuyCreatorCoinOperation       CreatorCoinLimitOperation = 1
+	SellCreatorCoinOperation      CreatorCoinLimitOperation = 2
+	TransferCreatorCoinOperation  CreatorCoinLimitOperation = 3
+	UndefinedCreatorCoinOperation CreatorCoinLimitOperation = 4
+)
+
+type CreatorCoinLimitOperationString string
+
+const (
+	AnyCreatorCoinOperationString       CreatorCoinLimitOperationString = "any"
+	BuyCreatorCoinOperationString       CreatorCoinLimitOperationString = "buy"
+	SellCreatorCoinOperationString      CreatorCoinLimitOperationString = "sell"
+	TransferCreatorCoinOperationString  CreatorCoinLimitOperationString = "transfer"
+	UndefinedCreatorCoinOperationString CreatorCoinLimitOperationString = "undefined"
+)
+
+func (creatorCoinLimitOperation CreatorCoinLimitOperation) ToString() string {
+	return string(creatorCoinLimitOperation.ToCreatorCoinLimitOperationString())
+}
+
+func (creatorCoinLimitOperation CreatorCoinLimitOperation) ToCreatorCoinLimitOperationString() CreatorCoinLimitOperationString {
+	switch creatorCoinLimitOperation {
+	case AnyCreatorCoinOperation:
+		return AnyCreatorCoinOperationString
+	case BuyCreatorCoinOperation:
+		return BuyCreatorCoinOperationString
+	case SellCreatorCoinOperation:
+		return SellCreatorCoinOperationString
+	case TransferCreatorCoinOperation:
+		return TransferCreatorCoinOperationString
+	default:
+		return UndefinedCreatorCoinOperationString
+	}
+}
+
+func (creatorCoinLimitOperationString CreatorCoinLimitOperationString) ToCreatorCoinLimitOperation() CreatorCoinLimitOperation {
+	switch creatorCoinLimitOperationString {
+	case AnyCreatorCoinOperationString:
+		return AnyCreatorCoinOperation
+	case BuyCreatorCoinOperationString:
+		return BuyCreatorCoinOperation
+	case SellCreatorCoinOperationString:
+		return SellCreatorCoinOperation
+	case TransferCreatorCoinOperationString:
+		return TransferCreatorCoinOperation
+	default:
+		return UndefinedCreatorCoinOperation
+	}
+}
+
+func (creatorCoinLimitOperation CreatorCoinLimitOperation) IsUndefined() bool {
+	return creatorCoinLimitOperation == UndefinedCreatorCoinOperation
+}
+
+type CreatorCoinOperationLimitKey struct {
+	CreatorPKID PKID
+	Operation   CreatorCoinLimitOperation
+}
+
+func (creatorCoinOperationLimitKey CreatorCoinOperationLimitKey) Encode() []byte {
+	var data []byte
+	creatorPKIDBytes := creatorCoinOperationLimitKey.CreatorPKID.ToBytes()
+	data = append(data, UintToBuf(uint64(len(creatorPKIDBytes)))...)
+	data = append(data, creatorPKIDBytes...)
+	data = append(data, UintToBuf(uint64(creatorCoinOperationLimitKey.Operation))...)
+	return data
+}
+
+func (creatorCoinOperationLimitKey *CreatorCoinOperationLimitKey) Decode(rr *bytes.Reader) error {
+	creatorPKIDBytesLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	// De-serialize the key
+	creatorPKIDBytes := make([]byte, creatorPKIDBytesLen)
+	if _, err = io.ReadFull(rr, creatorPKIDBytes); err != nil {
+		return err
+	}
+	creatorPKID := NewPKID(creatorPKIDBytes)
+	if creatorPKID == nil {
+		return fmt.Errorf("Invalid PKID")
+	}
+	creatorCoinOperationLimitKey.CreatorPKID = *creatorPKID
+	operationKey, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	creatorCoinOperationLimitKey.Operation = CreatorCoinLimitOperation(operationKey)
+	return nil
+}
+
+func MakeCreatorCoinOperationLimitKey(creatorPKID PKID, operation CreatorCoinLimitOperation) CreatorCoinOperationLimitKey {
+	return CreatorCoinOperationLimitKey{
+		creatorPKID,
+		operation,
+	}
+}
+
+type DAOCoinLimitOperation uint8
+
+const (
+	AnyDAOCoinOperation                             DAOCoinLimitOperation = 0
+	MintDAOCoinOperation                            DAOCoinLimitOperation = 1
+	BurnDAOCoinOperation                            DAOCoinLimitOperation = 2
+	DisableMintingDAOCoinOperation                  DAOCoinLimitOperation = 3
+	UpdateTransferRestrictionStatusDAOCoinOperation DAOCoinLimitOperation = 4
+	TransferDAOCoinOperation                        DAOCoinLimitOperation = 5
+	UndefinedDAOCoinOperation                       DAOCoinLimitOperation = 6
+)
+
+type DAOCoinLimitOperationString string
+
+const (
+	AnyDAOCoinOperationString                             DAOCoinLimitOperationString = "any"
+	MintDAOCoinOperationString                            DAOCoinLimitOperationString = "mint"
+	BurnDAOCoinOperationString                            DAOCoinLimitOperationString = "burn"
+	DisableMintingDAOCoinOperationString                  DAOCoinLimitOperationString = "disable_minting"
+	UpdateTransferRestrictionStatusDAOCoinOperationString DAOCoinLimitOperationString = "update_transfer_restriction_status"
+	TransferDAOCoinOperationString                        DAOCoinLimitOperationString = "transfer"
+	UndefinedDAOCoinOperationString                       DAOCoinLimitOperationString = "undefined"
+)
+
+func (daoCoinLimitOperation DAOCoinLimitOperation) ToString() string {
+	return string(daoCoinLimitOperation.ToDAOCoinLimitOperationString())
+}
+
+func (daoCoinLimitOperation DAOCoinLimitOperation) ToDAOCoinLimitOperationString() DAOCoinLimitOperationString {
+	switch daoCoinLimitOperation {
+	case AnyDAOCoinOperation:
+		return AnyDAOCoinOperationString
+	case MintDAOCoinOperation:
+		return MintDAOCoinOperationString
+	case BurnDAOCoinOperation:
+		return BurnDAOCoinOperationString
+	case DisableMintingDAOCoinOperation:
+		return DisableMintingDAOCoinOperationString
+	case UpdateTransferRestrictionStatusDAOCoinOperation:
+		return UpdateTransferRestrictionStatusDAOCoinOperationString
+	case TransferDAOCoinOperation:
+		return TransferDAOCoinOperationString
+	default:
+		return UndefinedDAOCoinOperationString
+	}
+}
+
+func (daoCoinLimitOperationString DAOCoinLimitOperationString) ToDAOCoinLimitOperation() DAOCoinLimitOperation {
+	switch daoCoinLimitOperationString {
+	case AnyDAOCoinOperationString:
+		return AnyDAOCoinOperation
+	case MintDAOCoinOperationString:
+		return MintDAOCoinOperation
+	case BurnDAOCoinOperationString:
+		return BurnDAOCoinOperation
+	case DisableMintingDAOCoinOperationString:
+		return DisableMintingDAOCoinOperation
+	case UpdateTransferRestrictionStatusDAOCoinOperationString:
+		return UpdateTransferRestrictionStatusDAOCoinOperation
+	case TransferDAOCoinOperationString:
+		return TransferDAOCoinOperation
+	default:
+		return UndefinedDAOCoinOperation
+	}
+}
+
+func (daoCoinLimitOperation DAOCoinLimitOperation) IsUndefined() bool {
+	return daoCoinLimitOperation == UndefinedDAOCoinOperation
+}
+
+type DAOCoinOperationLimitKey struct {
+	CreatorPKID PKID
+	Operation   DAOCoinLimitOperation
+}
+
+func (daoCoinOperationLimitKey DAOCoinOperationLimitKey) Encode() []byte {
+	var data []byte
+	creatorPKIDBytes := daoCoinOperationLimitKey.CreatorPKID.ToBytes()
+	data = append(data, UintToBuf(uint64(len(creatorPKIDBytes)))...)
+	data = append(data, creatorPKIDBytes...)
+	data = append(data, UintToBuf(uint64(daoCoinOperationLimitKey.Operation))...)
+	return data
+}
+
+func (daoCoinOperationLimitKey *DAOCoinOperationLimitKey) Decode(rr *bytes.Reader) error {
+	creatorPKIDBytesLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	// De-serialize the key
+	creatorPKIDBytes := make([]byte, creatorPKIDBytesLen)
+	if _, err = io.ReadFull(rr, creatorPKIDBytes); err != nil {
+		return err
+	}
+	creatorPKID := NewPKID(creatorPKIDBytes)
+	if creatorPKID == nil {
+		return fmt.Errorf("Invalid PKID")
+	}
+	daoCoinOperationLimitKey.CreatorPKID = *creatorPKID
+	operationKey, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	daoCoinOperationLimitKey.Operation = DAOCoinLimitOperation(operationKey)
+	return nil
+}
+
+func MakeDAOCoinOperationLimitKey(creatorPKID PKID, operation DAOCoinLimitOperation) DAOCoinOperationLimitKey {
+	return DAOCoinOperationLimitKey{
+		creatorPKID,
+		operation,
+	}
+}
+
+type DAOCoinLimitOrderLimitKey struct {
+	// The PKID of the coin that we're going to buy
+	BuyingDAOCoinCreatorPKID PKID
+	// The PKID of the coin that we're going to sell
+	SellingDAOCoinCreatorPKID PKID
+}
+
+func (daoCoinLimitOrderLimitKey DAOCoinLimitOrderLimitKey) Encode() []byte {
+	var data []byte
+	data = append(data, daoCoinLimitOrderLimitKey.BuyingDAOCoinCreatorPKID.ToBytes()...)
+	data = append(data, daoCoinLimitOrderLimitKey.SellingDAOCoinCreatorPKID.ToBytes()...)
+	return data
+}
+
+func (daoCoinLimitOrderLimitKey *DAOCoinLimitOrderLimitKey) Decode(rr *bytes.Reader) error {
+	buyingDAOCoinCreatorPKID := &PKID{}
+	if err := buyingDAOCoinCreatorPKID.FromBytes(rr); err != nil {
+		return err
+	}
+	daoCoinLimitOrderLimitKey.BuyingDAOCoinCreatorPKID = *buyingDAOCoinCreatorPKID
+
+	sellingDAOCoinCreatorPKID := &PKID{}
+	if err := sellingDAOCoinCreatorPKID.FromBytes(rr); err != nil {
+		return err
+	}
+	daoCoinLimitOrderLimitKey.SellingDAOCoinCreatorPKID = *sellingDAOCoinCreatorPKID
+	return nil
+}
+
+func MakeDAOCoinLimitOrderLimitKey(buyingDAOCoinCreatorPKID PKID, sellingDAOCoinCreatorPKID PKID) DAOCoinLimitOrderLimitKey {
+	return DAOCoinLimitOrderLimitKey{
+		BuyingDAOCoinCreatorPKID:  buyingDAOCoinCreatorPKID,
+		SellingDAOCoinCreatorPKID: sellingDAOCoinCreatorPKID,
+	}
+}
+
 func (txnData *AuthorizeDerivedKeyMetadata) GetTxnType() TxnType {
 	return TxnTypeAuthorizeDerivedKey
 }
@@ -4678,7 +5508,7 @@ type DAOCoinMetadata struct {
 	// Burn Fields
 	CoinsToBurnNanos uint256.Int
 
-	// TransferRestrictionStatus to set if OperationType == DAOCoinOperatoinTypeUpdateTransferRestrictionStatus
+	// TransferRestrictionStatus to set if OperationType == DAOCoinOperationTypeUpdateTransferRestrictionStatus
 	TransferRestrictionStatus
 }
 
@@ -4873,6 +5703,204 @@ func (txnData *DAOCoinTransferMetadata) New() DeSoTxnMetadata {
 	return &DAOCoinTransferMetadata{}
 }
 
+// ==================================================================
+// DAOCoinLimitOrderMetadata
+// ==================================================================
+
+type DeSoInputsByTransactor struct {
+	TransactorPublicKey *PublicKey
+	Inputs              []*DeSoInput
+}
+
+type DAOCoinLimitOrderMetadata struct {
+	BuyingDAOCoinCreatorPublicKey             *PublicKey
+	SellingDAOCoinCreatorPublicKey            *PublicKey
+	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
+	QuantityToFillInBaseUnits                 *uint256.Int
+	OperationType                             DAOCoinLimitOrderOperationType
+	FillType                                  DAOCoinLimitOrderFillType
+
+	// If set, we will find and delete the
+	// order with the given OrderID.
+	CancelOrderID *BlockHash
+
+	// This is only populated when this order is selling a DAO coin for
+	// $DESO, and is immediately matched with an existing bid-side order
+	// at time of creation. This field contains the transactor and their
+	// utxo inputs that can be used to immediately execute this trade.
+	BidderInputs []*DeSoInputsByTransactor
+
+	// Since a DAO Coin Limit Order may spend DESO or yield DESO to the
+	// transactor, we specify FeeNanos in the transaction metadata in
+	// order to ensure the transactor pays the standard fee rate for the size
+	// of the transaction AND ensures the internal balance model of the
+	// DAO Coin Limit Order transaction connection logic remains valid.
+	FeeNanos uint64
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
+	return TxnTypeDAOCoinLimitOrder
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	data := append([]byte{}, EncodeOptionalPublicKey(txnData.BuyingDAOCoinCreatorPublicKey)...)
+	data = append(data, EncodeOptionalPublicKey(txnData.SellingDAOCoinCreatorPublicKey)...)
+	data = append(data, EncodeOptionalUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, EncodeOptionalUint256(txnData.QuantityToFillInBaseUnits)...)
+	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
+	data = append(data, UintToBuf(uint64(txnData.FillType))...)
+	data = append(data, EncodeOptionalBlockHash(txnData.CancelOrderID)...)
+	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
+
+	// we use a sorted copy internally, so we don't modify the original struct from underneath the caller
+	for _, transactor := range txnData.BidderInputs {
+		data = append(data, transactor.TransactorPublicKey[:]...)
+
+		data = append(data, UintToBuf(uint64(len(transactor.Inputs)))...)
+		for _, input := range transactor.Inputs {
+			data = append(data, input.TxID[:]...)
+			data = append(data, UintToBuf(uint64(input.Index))...)
+		}
+	}
+
+	data = append(data, UintToBuf(txnData.FeeNanos)...)
+	return data, nil
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+
+	ret := DAOCoinLimitOrderMetadata{}
+	rr := bytes.NewReader(data)
+	var err error
+
+	// Parse BuyingDAOCoinCreatorPublicKey
+	ret.BuyingDAOCoinCreatorPublicKey, err = ReadOptionalPublicKey(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinLimitOrderMetadata.FromBytes: Error "+
+				"reading BuyingDAOCoinCreatorPublicKey: %v", err)
+	}
+
+	// Parse SellingDAOCoinCreatorPublicKey
+	ret.SellingDAOCoinCreatorPublicKey, err = ReadOptionalPublicKey(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading "+
+				"SellingDAOCoinCreatorPKID: %v", err)
+	}
+
+	// Parse ScaledExchangeRateCoinsToSellPerCoinToBuy
+	ret.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = ReadOptionalUint256(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading ScaledPrice: %v", err)
+	}
+
+	// Parse QuantityToFillInBaseUnits
+	ret.QuantityToFillInBaseUnits, err = ReadOptionalUint256(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading QuantityToFillInBaseUnits: %v", err)
+	}
+
+	// Parse OperationType
+	operationType, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading OperationType: %v", err)
+	}
+	if operationType > math.MaxUint8 {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: OperationType exceeds "+
+			"uint8 max: %v vs %v", operationType, math.MaxUint8)
+	}
+	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
+
+	// Parse FillType
+	fillType, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading FillType: %v", err)
+	}
+	if fillType > math.MaxUint8 {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: FillType exceeds "+
+			"uint8 max: %v vs %v", fillType, math.MaxUint8)
+	}
+	ret.FillType = DAOCoinLimitOrderFillType(fillType)
+
+	// Parse CancelOrderID
+	ret.CancelOrderID, err = ReadOptionalBlockHash(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading CancelOrderID: %v", err)
+	}
+
+	// Parse MatchingBidsTransactors
+	matchingBidsTransactorsLength, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading length of matching bids input: %v", err)
+	}
+
+	for ii := uint64(0); ii < matchingBidsTransactorsLength; ii++ {
+		pubKey, err := ReadPublicKey(rr)
+		if err != nil {
+			return fmt.Errorf(
+				"DAOCoinLimitOrderMetadata.FromBytes: Error reading PKID at index %v: %v", ii, err)
+		}
+		var inputsLength uint64
+		inputsLength, err = ReadUvarint(rr)
+		if err != nil {
+			return fmt.Errorf(
+				"DAOCoinLimitOrderMetadata.FromBytes: Error reading inputs length at index %v: %v", ii, err)
+		}
+		inputs := []*DeSoInput{}
+		for jj := uint64(0); jj < inputsLength; jj++ {
+			currentInput := NewDeSoInput()
+			_, err = io.ReadFull(rr, currentInput.TxID[:])
+			if err != nil {
+				return fmt.Errorf(
+					"DAOCoinLimitOrderMetadata.FromBytes: Error reading input txId at ii %v, jj %v: %v",
+					ii, jj, err)
+			}
+			var inputIndex uint64
+			inputIndex, err = ReadUvarint(rr)
+			if err != nil {
+				return fmt.Errorf(
+					"DAOCoinLimitOrderMetadata.FromBytes: Error reading input index at ii %v, jj %v: %v",
+					ii, jj, err)
+			}
+			if inputIndex > uint64(math.MaxUint32) {
+				return fmt.Errorf(
+					"DAOCoinLimitOrderMetadata.FromBytes: Input index at ii %v, jj %v must not exceed %d",
+					ii, jj, math.MaxUint32)
+			}
+			currentInput.Index = uint32(inputIndex)
+
+			inputs = append(inputs, currentInput)
+		}
+
+		pubKeyCopy := *pubKey
+		ret.BidderInputs = append(
+			ret.BidderInputs,
+			&DeSoInputsByTransactor{
+				TransactorPublicKey: &pubKeyCopy,
+				Inputs:              inputs,
+			},
+		)
+	}
+
+	// Parse FeeNanos
+	ret.FeeNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading FeeNanos: %v", err)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) New() DeSoTxnMetadata {
+	return &DAOCoinLimitOrderMetadata{}
+}
+
 func SerializePubKeyToUint64Map(mm map[PublicKey]uint64) ([]byte, error) {
 	data := []byte{}
 	// Encode the number of key/value pairs
@@ -4966,7 +5994,7 @@ type MessagingGroupMetadata struct {
 	// anymore.
 	//
 	// This field is not critical and can be removed in the future.
-	GroupOwnerSignature   []byte
+	GroupOwnerSignature []byte
 
 	MessagingGroupMembers []*MessagingGroupMember
 }
@@ -4989,7 +6017,7 @@ func (txnData *MessagingGroupMetadata) ToBytes(preSignature bool) ([]byte, error
 
 	data = append(data, UintToBuf(uint64(len(txnData.MessagingGroupMembers)))...)
 	for _, recipient := range txnData.MessagingGroupMembers {
-		data = append(data, recipient.Encode()...)
+		data = append(data, recipient.ToBytes()...)
 	}
 
 	return data, nil
@@ -5002,31 +6030,30 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 	var err error
 	ret.MessagingPublicKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 			"Problem reading MessagingPublicKey")
 	}
 
 	ret.MessagingGroupKeyName, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 			"Problem reading MessagingGroupKey")
 	}
 
 	ret.GroupOwnerSignature, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err,"MessagingGroupMetadata.FromBytes: " +
+		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 			"Problem reading GroupOwnerSignature")
 	}
 
 	numRecipients, err := ReadUvarint(rr)
 	for ; numRecipients > 0; numRecipients-- {
-		recipient := MessagingGroupMember{}
-		err = recipient.Decode(rr)
-		if err != nil {
-			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: " +
+		recipient := &MessagingGroupMember{}
+		if err := recipient.FromBytes(rr); err != nil {
+			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 				"error reading recipient")
 		}
-		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, &recipient)
+		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, recipient)
 	}
 
 	*txnData = ret

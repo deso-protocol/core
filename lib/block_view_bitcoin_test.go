@@ -183,7 +183,7 @@ func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *Blockchain, db *
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(t, txn, updaterPrivBase58Check)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 
 	txHash := txn.Hash()
@@ -443,7 +443,7 @@ func TestBitcoinExchange(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
@@ -497,7 +497,7 @@ func TestBitcoinExchange(t *testing.T) {
 		}
 
 		// Flushing the UtxoView should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The balances according to the db after the flush should be correct.
@@ -593,7 +593,7 @@ func TestBitcoinExchange(t *testing.T) {
 
 	{
 		// Rolling back all the transactions should work.
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 		for ii := range bitcoinExchangeTxns {
 			index := len(bitcoinExchangeTxns) - 1 - ii
@@ -604,7 +604,7 @@ func TestBitcoinExchange(t *testing.T) {
 		}
 
 		// Flushing the UtxoView back to the db after rolling back the
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The balances according to the db after rolling back and flushing everything
@@ -629,7 +629,7 @@ func TestBitcoinExchange(t *testing.T) {
 	// flushing should be fine.
 	utxoOpsList = [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 		for ii, burnTxn := range bitcoinExchangeTxns {
 			blockHeight := chain.blockTip().Height + 1
@@ -659,7 +659,7 @@ func TestBitcoinExchange(t *testing.T) {
 		}
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The balances according to the db after applying and unapplying all the
@@ -828,7 +828,7 @@ func TestBitcoinExchange(t *testing.T) {
 
 	// Roll back the blocks and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		{
@@ -836,56 +836,56 @@ func TestBitcoinExchange(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock4.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock4.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock4, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock4, txHashes, utxoOps, 0))
 		}
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
 			hash, err := finalBlock3.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock3.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock3, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock3, txHashes, utxoOps, 0))
 		}
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
 			hash, err := finalBlock2.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock2.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock2, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock2, txHashes, utxoOps, 0))
 		}
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
 			hash, err := finalBlock1.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock1.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock1, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock1, txHashes, utxoOps, 0))
 		}
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The balances according to the db after applying and unapplying all the
@@ -1144,20 +1144,20 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// Verify that adding the transaction to the UtxoView fails because there is
 	// not enough work on the burn block yet.
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, nil)
+		utxoView, _ := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		blockHeight := chain.blockTip().Height + 1
 		utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	}
 
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, nil)
+		utxoView, _ := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		blockHeight := chain.blockTip().Height + 1
 		utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	}
 
 	// The transaction should pass now
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, nil)
+		utxoView, _ := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err :=
 			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
@@ -1173,7 +1173,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
@@ -1225,7 +1225,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		}
 
 		// Flushing the UtxoView should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The balances according to the db after the flush should be correct.
@@ -1321,7 +1321,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 	{
 		// Rolling back all the transactions should work.
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 		for ii := range bitcoinExchangeTxns {
 			index := len(bitcoinExchangeTxns) - 1 - ii
@@ -1332,7 +1332,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		}
 
 		// Flushing the UtxoView back to the db after rolling back the
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The balances according to the db after rolling back and flushing everything
@@ -1357,7 +1357,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// flushing should be fine.
 	utxoOpsList = [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 		for ii, burnTxn := range bitcoinExchangeTxns {
 			blockHeight := chain.blockTip().Height + 1
@@ -1387,7 +1387,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		}
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The balances according to the db after applying and unapplying all the
@@ -1555,7 +1555,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 	// Roll back the blocks and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		{
@@ -1563,56 +1563,56 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock4.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock4.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock4, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock4, txHashes, utxoOps, 0))
 		}
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
 			hash, err := finalBlock3.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock3.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock3, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock3, txHashes, utxoOps, 0))
 		}
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
 			hash, err := finalBlock2.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock2.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock2, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock2, txHashes, utxoOps, 0))
 		}
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
 			hash, err := finalBlock1.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock1.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock1, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock1, txHashes, utxoOps, 0))
 		}
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The balances according to the db after applying and unapplying all the
@@ -2032,7 +2032,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 
 	// The transaction should pass now
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, nil)
+		utxoView, _ := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		blockHeight := chain.blockTip().Height + 1
 
 		_, _, _, _, err :=
@@ -2123,7 +2123,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	// the mempool's disconnect function to make sure we get the txns
 	// back during a reorg.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		{
@@ -2131,56 +2131,56 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock4.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock4.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock4, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock4, txHashes, utxoOps, 0))
 		}
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
 			hash, err := finalBlock3.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock3.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock3, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock3, txHashes, utxoOps, 0))
 		}
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
 			hash, err := finalBlock2.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock2.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock2, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock2, txHashes, utxoOps, 0))
 		}
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
 			hash, err := finalBlock1.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock1.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock1, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock1, txHashes, utxoOps, 0))
 		}
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		mempool.UpdateAfterDisconnectBlock(finalBlock4)
 		mempool.UpdateAfterDisconnectBlock(finalBlock3)
@@ -2460,7 +2460,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Add a placeholder where the rate update is going to be
@@ -2512,7 +2512,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		}
 
 		// Flushing the UtxoView should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The balances according to the db after the flush should be correct.
@@ -2608,7 +2608,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 
 	{
 		// Rolling back all the transactions should work.
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 		for ii := range bitcoinExchangeTxns {
 			index := len(bitcoinExchangeTxns) - 1 - ii
@@ -2619,7 +2619,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		}
 
 		// Flushing the UtxoView back to the db after rolling back the
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The balances according to the db after rolling back and flushing everything
@@ -2644,7 +2644,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	// flushing should be fine.
 	utxoOpsList = [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 		for ii, burnTxn := range bitcoinExchangeTxns {
 			blockHeight := chain.blockTip().Height + 1
@@ -2674,7 +2674,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		}
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The balances according to the db after applying and unapplying all the
@@ -2822,7 +2822,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 
 	// Roll back the blocks and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil)
+		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
 		{
@@ -2830,56 +2830,56 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 			// in order to be able to detach the block.
 			hash, err := finalBlock4.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock4.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock4, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock4, txHashes, utxoOps, 0))
 		}
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
 			hash, err := finalBlock3.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock3.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock3, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock3, txHashes, utxoOps, 0))
 		}
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
 			hash, err := finalBlock2.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock2.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock2, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock2, txHashes, utxoOps, 0))
 		}
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
 			hash, err := finalBlock1.Header.Hash()
 			require.NoError(err)
-			utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+			utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 			require.NoError(err)
 
 			// Compute the hashes for all the transactions.
 			txHashes, err := ComputeTransactionHashes(finalBlock1.Txns)
 			require.NoError(err)
-			require.NoError(utxoView.DisconnectBlock(finalBlock1, txHashes, utxoOps))
+			require.NoError(utxoView.DisconnectBlock(finalBlock1, txHashes, utxoOps, 0))
 		}
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// The balances according to the db after applying and unapplying all the
@@ -2946,7 +2946,7 @@ func TestUpdateExchangeRate(t *testing.T) {
 			newUSDCentsPerBitcoin)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 		txnSize := getTxnSize(*updateExchangeRateTxn)
 		blockHeight := chain.blockTip().Height + 1
@@ -2956,7 +2956,7 @@ func TestUpdateExchangeRate(t *testing.T) {
 				false /*ignoreUtxos*/)
 		require.NoError(err)
 		_, _, _, _ = utxoOps, totalInput, totalOutput, fees
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// Check the balance of the updater after this txn
 		require.NotEqual(0, _getBalance(t, chain, nil, moneyPkString))
