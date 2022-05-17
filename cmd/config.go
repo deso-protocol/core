@@ -17,6 +17,7 @@ type Config struct {
 	TXIndex              bool
 	Regtest              bool
 	PostgresURI          string
+	SQSUri               string
 
 	// Peers
 	ConnectIPs          []string
@@ -99,6 +100,7 @@ func LoadConfig() *Config {
 	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
 	config.SnapshotBlockHeightPeriod = viper.GetUint64("snapshot-block-height-period")
 	config.DisableEncoderMigrations = viper.GetBool("disable-encoder-migrations")
+	config.SQSUri = viper.GetString("sqs-uri")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
