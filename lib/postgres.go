@@ -2257,8 +2257,14 @@ func (postgres *Postgres) GetOutputs(outputs []*PGTransactionOutput) []*PGTransa
 
 func (postgres *Postgres) GetBlockRewardsForPublicKey(publicKey *PublicKey, startHeight uint32, endHeight uint32) []*PGTransactionOutput {
 	var transactionOutputs []*PGTransactionOutput
-	err := postgres.db.Model(&transactionOutputs).Where("public_key = ?", publicKey).
-		Where("height > ?", startHeight).Where("height < ?", endHeight).Select()
+	err := postgres.db.Model(&transactionOutputs).
+		ColumnExpr("pg_transaction_output.*").
+		Join("JOIN pg_transactions as pgt").
+		JoinOn("pg_transaction_output.output_hash = pgt.hash").
+		Where("pg_transaction_output.public_key = ?", publicKey).
+		Where("pgt.Type = ?", TxnTypeBlockReward).
+		Where("pg_transaction_output.height > ?", startHeight).
+		Where("pg_transaction_output.height < ?", endHeight).Select()
 	if err != nil {
 		return nil
 	}
