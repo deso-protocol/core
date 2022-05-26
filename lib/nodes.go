@@ -126,9 +126,9 @@ var NODES = map[uint64]DeSoNode{
 		Owner: "Nordian",
 	},
 	21: {
-		Name:  "NinjaNode",
-		URL:   "https://node.bitcloutapps.ninja",
-		Owner: "mattpitts",
+		Name:  "VoSocial",
+		URL:   "https://vosoapp.com",
+		Owner: "voso",
 	},
 	22: {
 		Name:  "Tunel",
