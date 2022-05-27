@@ -1477,7 +1477,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		}
 	}
 
-	if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight{
+	if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		if derivedPkBytes, isDerivedSig := IsDerivedSignature(txn); isDerivedSig {
 			var err error
 			// Now we check the transaction limits on the derived key
@@ -1487,7 +1487,6 @@ func (bav *UtxoView) _connectBasicTransfer(
 			}
 		}
 	}
-
 
 	// Now that we've processed the transaction, return all of the computed
 	// data.
