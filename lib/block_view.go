@@ -1471,17 +1471,19 @@ func (bav *UtxoView) _connectBasicTransfer(
 				return 0, 0, nil, RuleErrorBlockRewardTxnNotAllowedToHaveSignature
 			}
 		} else {
-			derivedPkBytes, err := bav._verifySignature(txn, blockHeight)
-			if err != nil {
+			if _, err := bav._verifySignature(txn, blockHeight); err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem verifying txn signature: ")
 			}
-			if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight &&
-				len(derivedPkBytes) == btcec.PubKeyBytesLenCompressed {
-				// Now we check the transaction limits on the derived key
-				utxoOpsForTxn, err = bav._checkDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn)
-				if err != nil {
-					return 0, 0, nil, err
-				}
+		}
+	}
+
+	if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
+		if derivedPkBytes, isDerivedSig := IsDerivedSignature(txn); isDerivedSig {
+			var err error
+			// Now we check the transaction limits on the derived key
+			utxoOpsForTxn, err = bav._checkDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn)
+			if err != nil {
+				return 0, 0, nil, err
 			}
 		}
 	}
