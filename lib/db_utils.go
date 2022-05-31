@@ -4617,6 +4617,7 @@ type DAOCoinLimitOrderTxindexMetadata struct {
 	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
 	QuantityToFillInBaseUnits                 *uint256.Int
 	FilledDAOCoinLimitOrdersMetadata          []*FilledDAOCoinLimitOrderMetadata
+	FillType                                  DAOCoinLimitOrderFillType
 }
 
 func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -4631,6 +4632,8 @@ func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawEncodeWithoutMetadata(blockH
 	for _, order := range daoMeta.FilledDAOCoinLimitOrdersMetadata {
 		data = append(data, EncodeToBytes(blockHeight, order)...)
 	}
+
+	data = append(data, UintToBuf(uint64(daoMeta.FillType))...)
 	return data
 }
 
@@ -4669,11 +4672,19 @@ func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawDecodeWithoutMetadata(blockH
 		}
 		daoMeta.FilledDAOCoinLimitOrdersMetadata = append(daoMeta.FilledDAOCoinLimitOrdersMetadata, filledDAOCoinLimitOrderMetadata)
 	}
+
+	// FillType was added as a field on DAOCoinLimitOrderTxindexMetadata post hard-fork.
+	// To maintain backwards compatibility, we just skip if there is an error reading
+	// FillType as earlier records will not have a byte-encoded FillType present.
+	fillType, err := ReadUvarint(rr)
+	if err == nil && fillType <= math.MaxUint8 {
+		daoMeta.FillType = DAOCoinLimitOrderFillType(fillType)
+	}
 	return nil
 }
 
 func (daoMeta *DAOCoinLimitOrderTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
-	return byte(0)
+	return byte(1)
 }
 
 func (daoMeta *DAOCoinLimitOrderTxindexMetadata) GetEncoderType() EncoderType {

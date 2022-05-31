@@ -1784,6 +1784,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				realTxMeta.SellingDAOCoinCreatorPublicKey.ToBytes(), utxoView.Params),
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: realTxMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy,
 			QuantityToFillInBaseUnits:                 realTxMeta.QuantityToFillInBaseUnits,
+			FillType:                                  realTxMeta.FillType,
 		}
 
 	}
