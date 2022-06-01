@@ -122,9 +122,9 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 		}
 
 		// Compute a few hashes before checking if we've solved the block.
-		timeBefore := time.Now()
+		//timeBefore := time.Now()
 		bestHash, bestNonce, err := FindLowestHash(header, desoMiner.params.MiningIterationsPerCycle, uint64(desoMiner.BlockProducer.chain.blockTip().Height+1))
-		glog.V(2).Infof("DeSoMiner._startThread: Time per iteration: %v", time.Since(timeBefore))
+		//glog.V(2).Infof("DeSoMiner._startThread: Time per iteration: %v", time.Since(timeBefore))
 		if err != nil {
 			// If there's an error just log it and break out.
 			glog.Error(errors.Wrapf(err, "DeSoMiner._startThread: Problem while mining: "))
