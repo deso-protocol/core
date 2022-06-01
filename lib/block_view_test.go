@@ -3,9 +3,12 @@ package lib
 import (
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "net/http/pprof"
+	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -224,8 +227,7 @@ type TestMeta struct {
 func _executeAllTestRollbackAndFlush(testMeta *TestMeta) {
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
+	_applyAndDisconnectTestMetaTxnToViewAndFlushWithStateChecks(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
 
@@ -315,6 +317,59 @@ func _disconnectTestMetaTxnsFromViewAndFlush(testMeta *TestMeta) {
 		_getBalance(testMeta.t, testMeta.chain, nil, senderPkString))
 }
 
+func _applyAndDisconnectTestMetaTxnToViewAndFlushWithStateChecks(testMeta *TestMeta) {
+	// Apply all the transactions to a view and flush the view to the db.
+
+	checksumBefore, err := _computeChecksumOfCurrentDatabase(testMeta.db, 0)
+	require.NoError(testMeta.t, err)
+	checksumBeforeBytes, err := checksumBefore.ToBytes()
+	require.NoError(testMeta.t, err)
+
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(testMeta.t, err)
+	for ii, txn := range testMeta.txns {
+		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
+
+		// Always use height+1 for validation since it's assumed the transaction will
+		// get mined into the next block.
+		txHash := txn.Hash()
+		blockHeight := testMeta.chain.blockTip().Height + 1
+		_, _, _, _, err =
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		require.NoError(testMeta.t, err)
+	}
+	// Flush the utxoView after having added all the transactions.
+	require.NoError(testMeta.t, utxoView.FlushToDb(0))
+
+
+	// Disonnect the transactions from a single view in the same way as above
+	// i.e. without flushing each time.
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(testMeta.t, err)
+	for ii := 0; ii < len(testMeta.txnOps); ii++ {
+		backwardIter := len(testMeta.txnOps) - 1 - ii
+		fmt.Printf("Disconnecting transaction with index %d (going backwards)\n", backwardIter)
+		currentOps := testMeta.txnOps[backwardIter]
+		currentTxn := testMeta.txns[backwardIter]
+
+		currentHash := currentTxn.Hash()
+		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
+		require.NoError(testMeta.t, err)
+	}
+	require.NoError(testMeta.t, utxoView.FlushToDb(0))
+	require.Equal(
+		testMeta.t,
+		testMeta.expectedSenderBalances[0],
+		_getBalance(testMeta.t, testMeta.chain, nil, senderPkString))
+
+	checksumAfter, err := _computeChecksumOfCurrentDatabase(testMeta.db, 0)
+	require.NoError(testMeta.t, err)
+	checksumAfterBytes, err := checksumAfter.ToBytes()
+	require.NoError(testMeta.t, err)
+
+	require.Equal(testMeta.t, true, reflect.DeepEqual(checksumBeforeBytes, checksumAfterBytes))
+}
+
 func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
 	// all those transactions in it.
 	block, err := testMeta.miner.MineAndProcessSingleBlock(0 /*threadIndex*/, testMeta.mempool)
@@ -342,6 +397,64 @@ func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
 		// Flushing the view after applying and rolling back should work.
 		require.NoError(testMeta.t, utxoView.FlushToDb(0))
 	}
+}
+
+func _computeChecksumOfCurrentDatabase(db *badger.DB, blockHeight uint64) (_checksum *StateChecksum, _err error) {
+	singleChecksum := &StateChecksum{}
+	singleChecksum.Initialize(nil, nil)
+	checksumArray := append([]*EncoderMigrationChecksum{}, &EncoderMigrationChecksum{
+		Checksum: singleChecksum,
+		BlockHeight: blockHeight,
+		Version: byte(0),
+		Completed: false,
+	})
+
+	// Get all state prefixes and sort them.
+	var prefixes [][]byte
+	for prefix, isState := range StatePrefixes.StatePrefixesMap {
+		if !isState {
+			continue
+		}
+		prefixes = append(prefixes, []byte{prefix})
+	}
+	sort.Slice(prefixes, func(ii, jj int) bool {
+		return prefixes[ii][0] < prefixes[jj][0]
+	})
+
+	// Iterate through the whole db and re-calculate the checksum according to the outstanding migrations.
+	// TODO: Check if parallel gets are faster on fully synced node.
+	carrierChecksum := &StateChecksum{}
+	carrierChecksum.Initialize(nil, nil)
+
+	// Compute the checksums for all migrations, as needed.
+	err := db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		for _, prefix := range prefixes {
+			it := txn.NewIterator(opts)
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				item := it.Item()
+				key := item.Key()
+				err := item.Value(func(value []byte) error {
+					return carrierChecksum.AddOrRemoveBytesWithMigrations(key, value, blockHeight,
+						checksumArray, true)
+				})
+				if err != nil {
+					return err
+				}
+			}
+			it.Close()
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "_computeChecksumOfCurrentDatabase: Something went wrong during "+
+			"the encoder migration.")
+	}
+	if err = carrierChecksum.Wait(); err != nil {
+		return nil, errors.Wrapf(err, "_computeChecksumOfCurrentDatabase: Problem waiting for the checksum.")
+	}
+
+	return carrierChecksum, nil
 }
 
 func TestUpdateGlobalParams(t *testing.T) {
