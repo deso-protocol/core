@@ -341,7 +341,6 @@ func _applyAndDisconnectTestMetaTxnToViewAndFlushWithStateChecks(testMeta *TestM
 	// Flush the utxoView after having added all the transactions.
 	require.NoError(testMeta.t, utxoView.FlushToDb(0))
 
-
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
 	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
@@ -403,10 +402,10 @@ func _computeChecksumOfCurrentDatabase(db *badger.DB, blockHeight uint64) (_chec
 	singleChecksum := &StateChecksum{}
 	singleChecksum.Initialize(nil, nil)
 	checksumArray := append([]*EncoderMigrationChecksum{}, &EncoderMigrationChecksum{
-		Checksum: singleChecksum,
+		Checksum:    singleChecksum,
 		BlockHeight: blockHeight,
-		Version: byte(0),
-		Completed: false,
+		Version:     byte(0),
+		Completed:   false,
 	})
 
 	// Get all state prefixes and sort them.
