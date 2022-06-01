@@ -155,4 +155,9 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://overclout.com",
 		Owner: "Overclout",
 	},
+	27: {
+		Name:  "DesoNoCode",
+		URL:   "https://node.desonocode.com",
+		Owner: "DeSoNoCode",
+	},
 }
