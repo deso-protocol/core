@@ -1636,11 +1636,7 @@ func TestNFTBasic(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
@@ -2171,11 +2167,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestNFTSerialNumberZeroBid(t *testing.T) {
@@ -2499,11 +2491,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestNFTMinimumBidAmount(t *testing.T) {
@@ -2750,11 +2738,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 // Test to make sure an NFT created with "IsForSale=false" does not accept bids.
@@ -2960,11 +2944,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestNFTMoreErrorCases(t *testing.T) {
@@ -3315,11 +3295,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
@@ -3601,11 +3577,7 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
@@ -3892,11 +3864,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestNFTMaxCopiesGlobalParam(t *testing.T) {
@@ -4206,11 +4174,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
@@ -4500,11 +4464,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestNFTTransfersAndBurns(t *testing.T) {
@@ -5006,11 +4966,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestBidAmountZero(t *testing.T) {
@@ -5216,12 +5172,7 @@ func TestBidAmountZero(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
-
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestNFTBuyNow(t *testing.T) {
@@ -6234,11 +6185,7 @@ func TestNFTBuyNow(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestNFTSplits(t *testing.T) {
@@ -7192,11 +7139,7 @@ func TestNFTSplits(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestNFTSplitsSerializers(t *testing.T) {
@@ -7682,9 +7625,5 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 		)
 	}
 
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
