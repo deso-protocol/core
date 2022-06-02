@@ -125,7 +125,7 @@ func TestStateRollback(t *testing.T) {
 // the node will disconnect blocks back to height 1000 and recompute the checksum. Finally, we verify that the checksums match.
 // If they do, we sync the node back to height 2000 and repeat the process to height 3000, etc. Before the connect cycle,
 // node's state will be copied to copyDbDir for debugging purposes.
-func _TestStateHardcore(t *testing.T) {
+func _TestStateDisconnectHardcore(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
