@@ -3609,6 +3609,12 @@ func DbDeleteHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 	return DBDeleteWithTxn(txn, snap, _heightHashToNodeIndexKey(node.Height, node.Hash, bitcoinNodes))
 }
 
+func DbDeleteHeightHashToNodeInfo(db *badger.DB, snap *Snapshot, node *BlockNode, bitcoinNodes bool) error {
+	return db.Update(func(txn *badger.Txn) error {
+		return DbDeleteHeightHashToNodeInfoWithTxn(txn, snap, node, bitcoinNodes)
+	})
+}
+
 func DbBulkDeleteHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot,
 	nodes []*BlockNode, bitcoinNodes bool) error {
 

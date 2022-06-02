@@ -2558,7 +2558,11 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 		hash := hashIter.NewBlockHash()
 		if node.Height > blockTipHeight {
 			glog.V(1).Info(CLog(Yellow, fmt.Sprintf("DisconnectBlocksToHeight: Found node in blockIndex with "+
-				"larger height than the current block tip. Deleting the corresponding block reward. Node: (%v)", node)))
+				"larger height than the current block tip. Deleting the corresponding block node and reward. Node: (%v)", node)))
+			if err := DbDeleteHeightHashToNodeInfo(bc.db, nil, node, false); err != nil {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block node with hash: (%v) and " +
+					"at height: (%v)", hash, node.Height)
+			}
 			blockToDetach, err := GetBlock(hash, bc.db, nil)
 			if err != nil && err != badger.ErrKeyNotFound {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem getting block with hash: (%v) and "+
@@ -2629,9 +2633,9 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward")
 			}
 
-			node.Status = StatusHeaderValidated
-			if err := PutHeightHashToNodeInfoWithTxn(txn, nil, node, false); err != nil {
-				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting height hash to node info")
+			if err := DbDeleteHeightHashToNodeInfoWithTxn(txn, nil, node, false); err != nil {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block node with hash: (%v) and " +
+					"at height: (%v)", hash, node.Height)
 			}
 
 			// If we have a Server object then call its function

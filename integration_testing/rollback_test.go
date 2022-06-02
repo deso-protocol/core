@@ -117,3 +117,58 @@ func TestStateRollback(t *testing.T) {
 	node1.Stop()
 	node2.Stop()
 }
+
+func TestStateHardcore(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	dbDir := getDirectory(t)
+	defer os.RemoveAll(dbDir)
+
+	config := generateConfig(t, 18000, dbDir, 10)
+	config.SyncType = lib.NodeSyncTypeBlockSync
+	config.MaxSyncBlockHeight = 10
+	config.HyperSync = true
+	config.ConnectIPs = []string{"deso-seed-2.io:17000"}
+
+	node := cmd.NewNode(config)
+	node = startNode(t, node)
+
+	waitForNodeToFullySync(node)
+	nodeBytesPrior := computeNodeStateChecksum(t, node, 10)
+
+	node = shutdownNode(t, node)
+	config.MaxSyncBlockHeight = 20
+	node = cmd.NewNode(config)
+	node = startNode(t, node)
+
+	waitForNodeToFullySync(node)
+	require.NoError(node.Server.GetBlockchain().DisconnectBlocksToHeight(10))
+	nodeBytesAfter := computeNodeStateChecksum(t, node, 10)
+	require.Equal(true, reflect.DeepEqual(nodeBytesPrior, nodeBytesAfter))
+
+	node = shutdownNode(t, node)
+
+	copyDbDir := "$HOME/data_dirs/copy_db"
+	copyNode(t, node, copyDbDir)
+	defer os.RemoveAll(copyDbDir)
+	node = startNode(t, node)
+	waitForNodeToFullySync(node)
+	nodeBytesAt20 := computeNodeStateChecksum(t, node, 20)
+
+	copyConfig := generateConfig(t, 18001, copyDbDir, 10)
+	copyConfig.SyncType = lib.NodeSyncTypeBlockSync
+	copyConfig.MaxSyncBlockHeight = 20
+	copyConfig.HyperSync = true
+	copyConfig.ConnectIPs = []string{"deso-seed-2.io:17000"}
+	copyNode := cmd.NewNode(copyConfig)
+	copyNode = startNode(t, copyNode)
+
+	waitForNodeToFullySync(copyNode)
+	//compareNodesByState(t, node, copyNode, 1)
+	copyNodeAt20 := computeNodeStateChecksum(t, copyNode, 20)
+	require.Equal(true, reflect.DeepEqual(nodeBytesAt20, copyNodeAt20))
+
+	node.Stop()
+	copyNode.Stop()
+}

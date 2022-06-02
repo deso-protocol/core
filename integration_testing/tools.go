@@ -50,6 +50,17 @@ func getDirectory(t *testing.T) string {
 	return dbDir
 }
 
+func openDataDir(dataDir string) (*badger.DB, error) {
+	dir := lib.GetBadgerDbPath(dataDir)
+	opts := lib.PerformanceBadgerOptions(dir)
+	opts.ValueDir = lib.GetBadgerDbPath(dataDir)
+	db, err := badger.Open(opts)
+	if err != nil {
+		return nil, errors.Wrap(err, "OpenBadgerDB() failed to open badger")
+	}
+	return db, nil
+}
+
 // generateConfig creates a default config for a node, with provided port, db directory, and number of max peers.
 // It's usually the first step to starting a node.
 func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) *cmd.Config {
@@ -380,6 +391,46 @@ func restartNode(t *testing.T, node *cmd.Node) *cmd.Node {
 
 	newNode := shutdownNode(t, node)
 	return startNode(t, newNode)
+}
+
+// Copy node to the destinationDir. The destinationDir will be overwritten. The node must be shutdown.
+func copyNode(t *testing.T, node *cmd.Node, destinationDir string) {
+	// Node must be shutdown before we can copy it.
+	require.Equal(t, false, node.IsRunning)
+
+	// Open node and destinationDir badger Dbs
+	sourceDb, err := openDataDir(node.Config.DataDirectory)
+	require.NoError(t, os.RemoveAll(destinationDir))
+	destinationDb, err := openDataDir(destinationDir)
+	require.NoError(t, err)
+
+	// Iterate through each DB prefix and copy it to the destination Dir.
+	maxBytes := uint32(8 << 22)
+	for prefixByte := range lib.StatePrefixes.StatePrefixesMap {
+		prefix := []byte{prefixByte}
+		lastPrefix := prefix
+		for {
+			db0Entries, full0, err := lib.DBIteratePrefixKeys(sourceDb, prefix, lastPrefix, maxBytes)
+			require.NoError(t, err)
+
+			wb := destinationDb.NewWriteBatch()
+			for _, dbEntry := range db0Entries {
+				require.NoError(t, wb.Set(dbEntry.Key, dbEntry.Value))
+			}
+			require.NoError(t, wb.Flush())
+			wb.Cancel()
+
+			if len(db0Entries) != 0 {
+				lastPrefix = db0Entries[len(db0Entries)-1].Key
+			}
+			if !full0 {
+				break
+			}
+		}
+	}
+	require.NoError(t, err)
+	require.NoError(t, sourceDb.Close())
+	require.NoError(t, destinationDb.Close())
 }
 
 // listenForBlockHeight busy-waits until the node's block tip reaches provided height.
