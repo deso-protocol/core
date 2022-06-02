@@ -1584,7 +1584,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		for ; lenPrevMatchingOrders > 0; lenPrevMatchingOrders-- {
 			prevOrder := &DAOCoinLimitOrderEntry{}
 			if exist, err := DecodeFromBytes(prevOrder, rr); exist && err == nil {
-				op.PrevMatchingOrders = append(op.PrevMatchingOrders)
+				op.PrevMatchingOrders = append(op.PrevMatchingOrders, prevOrder)
 			} else {
 				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevMatchingOrders")
 			}
