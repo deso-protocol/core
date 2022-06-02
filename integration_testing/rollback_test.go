@@ -118,57 +118,69 @@ func TestStateRollback(t *testing.T) {
 	node2.Stop()
 }
 
-func TestStateHardcore(t *testing.T) {
+// FIXME: Uncomment '_' to run. This test is not intended to be executed with standard integration testing after core repo updates.
+// Rather, it is used as a standalone script that should be run in a terminal to thoroughly test safety of utxoview disconencts.
+// This test will repeatedly connect and disconnect blocks in cycles of 1000 blocks to test if state safety is maintained.
+// So for instance, node start at height 1000, computes the state checksum, then it connects blocks to height 2000. Once done,
+// the node will disconnect blocks back to height 1000 and recompute the checksum. Finally, we verify that the checksums match.
+// If they do, we sync the node back to height 2000 and repeat the process to height 3000, etc. Before the connect cycle,
+// node's state will be copied to copyDbDir for debugging purposes.
+func _TestStateHardcore(t *testing.T) {
 	require := require.New(t)
 	_ = require
+
+	const maxHeight = uint32(8000)
+	const heightIncrement = uint32(1000)
+	const copyDbDir = "data_dirs/copy_db"
 
 	dbDir := getDirectory(t)
 	defer os.RemoveAll(dbDir)
 
 	config := generateConfig(t, 18000, dbDir, 10)
 	config.SyncType = lib.NodeSyncTypeBlockSync
-	config.MaxSyncBlockHeight = 10
+	config.MaxSyncBlockHeight = heightIncrement
 	config.HyperSync = true
 	config.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
+	// First sync the node to heightIncrement.
 	node := cmd.NewNode(config)
 	node = startNode(t, node)
-
 	waitForNodeToFullySync(node)
-	nodeBytesPrior := computeNodeStateChecksum(t, node, 10)
-
-	node = shutdownNode(t, node)
-	config.MaxSyncBlockHeight = 20
-	node = cmd.NewNode(config)
-	node = startNode(t, node)
-
-	waitForNodeToFullySync(node)
-	require.NoError(node.Server.GetBlockchain().DisconnectBlocksToHeight(10))
-	nodeBytesAfter := computeNodeStateChecksum(t, node, 10)
-	require.Equal(true, reflect.DeepEqual(nodeBytesPrior, nodeBytesAfter))
-
 	node = shutdownNode(t, node)
 
-	copyDbDir := "$HOME/data_dirs/copy_db"
-	copyNode(t, node, copyDbDir)
-	defer os.RemoveAll(copyDbDir)
-	node = startNode(t, node)
-	waitForNodeToFullySync(node)
-	nodeBytesAt20 := computeNodeStateChecksum(t, node, 20)
+	for currentHeight := heightIncrement; currentHeight < maxHeight; {
+		// Start the node and make sure it's synced to currentHeight.
+		node = cmd.NewNode(config)
+		node = startNode(t, node)
+		waitForNodeToFullySync(node)
 
-	copyConfig := generateConfig(t, 18001, copyDbDir, 10)
-	copyConfig.SyncType = lib.NodeSyncTypeBlockSync
-	copyConfig.MaxSyncBlockHeight = 20
-	copyConfig.HyperSync = true
-	copyConfig.ConnectIPs = []string{"deso-seed-2.io:17000"}
-	copyNode := cmd.NewNode(copyConfig)
-	copyNode = startNode(t, copyNode)
+		// Compute the checksum of the node's state at currentHeight.
+		nodeChecksumBytesAtCurrentHeight := computeNodeStateChecksum(t, node, uint64(currentHeight))
 
-	waitForNodeToFullySync(copyNode)
-	//compareNodesByState(t, node, copyNode, 1)
-	copyNodeAt20 := computeNodeStateChecksum(t, copyNode, 20)
-	require.Equal(true, reflect.DeepEqual(nodeBytesAt20, copyNodeAt20))
+		// Copy node's state from currentHeight.
+		node = shutdownNode(t, node)
+		copyNode(t, node, copyDbDir)
 
-	node.Stop()
-	copyNode.Stop()
+		// Now sync the node to currentHeight + heightIncrement.
+		config.MaxSyncBlockHeight = currentHeight + heightIncrement
+		node = cmd.NewNode(config)
+		node = startNode(t, node)
+		waitForNodeToFullySync(node)
+
+		// Now disconnect blocks from node's state back to currentHeight.
+		require.NoError(node.Server.GetBlockchain().DisconnectBlocksToHeight(uint64(currentHeight)))
+
+		// Compare the state from before the disconnect and after.
+		nodeChecksumBytesAtCurrentHeightAfterDisconnect := computeNodeStateChecksum(t, node, uint64(currentHeight))
+		require.Equal(true, reflect.DeepEqual(
+			nodeChecksumBytesAtCurrentHeight,
+			nodeChecksumBytesAtCurrentHeightAfterDisconnect))
+
+		// If we get here that means this disconnect iteration was successful, so we sync the node to currentHeight + heightIncrement.
+		node = shutdownNode(t, node)
+		node = startNode(t, node)
+		waitForNodeToFullySync(node)
+		node = shutdownNode(t, node)
+		currentHeight += heightIncrement
+	}
 }
