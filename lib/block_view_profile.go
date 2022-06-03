@@ -996,7 +996,7 @@ func _verifyEthPersonalSignature(signer, data, signature []byte) error {
 	} else if len(signer) == btcec.PubKeyBytesLenUncompressed {
 		uncompressedSigner = signer
 	} else {
-		return fmt.Errorf("_verifyEthPersonalSignature: Public key has incorrect length. It should be either " +
+		return fmt.Errorf("_verifyEthPersonalSignature: Public key has incorrect length. It should be either "+
 			"(%v) for compressed key or (%v) for uncompressed key", btcec.PubKeyBytesLenCompressed, btcec.PubKeyBytesLenUncompressed)
 	}
 
