@@ -993,8 +993,11 @@ func _verifyEthPersonalSignature(signer, data, signature []byte) error {
 	}
 	if len(signer) == btcec.PubKeyBytesLenCompressed {
 		uncompressedSigner = pubKey.SerializeUncompressed()
-	} else {
+	} else if len(signer) == btcec.PubKeyBytesLenUncompressed {
 		uncompressedSigner = signer
+	} else {
+		return fmt.Errorf("_verifyEthPersonalSignature: Public key has incorrect length. It should be either " +
+			"(%v) for compressed key or (%v) for uncompressed key", btcec.PubKeyBytesLenCompressed, btcec.PubKeyBytesLenUncompressed)
 	}
 
 	// Change the data bytes into Ethereum's personal_sign message standard. This will prepend the message prefix and hash
