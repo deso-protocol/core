@@ -884,15 +884,17 @@ type PGDerivedKey struct {
 
 	// TransactionSpendingLimit fields
 	TransactionSpendingLimitTracker []byte `pg:",type:bytea"`
-	Memo                            []byte                    `pg:",type:bytea"`
+	Memo                            []byte `pg:",type:bytea"`
 }
 
 func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
-	tsl := &TransactionSpendingLimit{}
-	err := tsl.FromBytes(bytes.NewReader(key.TransactionSpendingLimitTracker))
-	if err != nil {
-		glog.Errorf("Error converting Derived Key's TransactionLimitTracker bytes back into a TransactionSpendingLimit: %v", err)
-		return nil
+	var tsl *TransactionSpendingLimit
+	if len(key.TransactionSpendingLimitTracker) > 0 {
+		tsl = &TransactionSpendingLimit{}
+		if err := tsl.FromBytes(bytes.NewReader(key.TransactionSpendingLimitTracker)); err != nil {
+			glog.Errorf("Error converting Derived Key's TransactionLimitTracker bytes back into a TransactionSpendingLimit: %v", err)
+			return nil
+		}
 	}
 	return &DerivedKeyEntry{
 		OwnerPublicKey:                  key.OwnerPublicKey,
