@@ -118,6 +118,64 @@ func TestStateRollback(t *testing.T) {
 	node2.Stop()
 }
 
+func TestManualTransactionConnect(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
+	defer os.RemoveAll(dbDir1)
+	defer os.RemoveAll(dbDir2)
+
+	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1.SyncType = lib.NodeSyncTypeBlockSync
+	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2.SyncType = lib.NodeSyncTypeBlockSync
+
+	config1.MaxSyncBlockHeight = 5
+	config2.MaxSyncBlockHeight = 4
+	config1.HyperSync = true
+	config2.HyperSync = true
+	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
+	config2.ConnectIPs = []string{"localhost:18000"}
+
+	node1 := cmd.NewNode(config1)
+	node2 := cmd.NewNode(config2)
+
+	node1 = startNode(t, node1)
+	waitForNodeToFullySync(node1)
+
+	node2 = startNode(t, node2)
+	waitForNodeToFullySync(node2)
+
+	bestChain := node1.Server.GetBlockchain().BestChain()
+	nodeToConnect := bestChain[5]
+	blockToConnect, err := lib.GetBlock(nodeToConnect.Hash, node1.Server.GetBlockchain().DB(), nil)
+	require.NoError(err)
+	height := blockToConnect.Header.Height
+	node1Checksum := computeNodeStateChecksum(t, node1, height)
+	_, txHashes, err := lib.ComputeMerkleRoot(blockToConnect.Txns)
+	require.NoError(err)
+
+	blockView, err := lib.NewUtxoView(node2.Server.GetBlockchain().DB(), node2.Params,
+		nil, node2.Server.GetBlockchain().Snapshot())
+	require.NoError(err)
+	for txIndex, txn := range blockToConnect.Txns {
+		txHash := txHashes[txIndex]
+		_, _, _, _, err := blockView.ConnectTransaction(txn, txHash,
+			0, uint32(height), true, false)
+		require.NoError(err)
+	}
+	//require.NoError(blockView.FlushToDb(height))
+	_, _, err = node2.Server.GetBlockchain().ProcessBlock(blockToConnect, true)
+	require.NoError(err)
+	node2Checksum := computeNodeStateChecksum(t, node2, height)
+	require.Equal(true, reflect.DeepEqual(node1Checksum, node2Checksum))
+
+	shutdownNode(t, node1)
+	shutdownNode(t, node2)
+}
+
 // FIXME: Uncomment '_' to run. This test is not intended to be executed with standard integration testing after core repo updates.
 // Rather, it is used as a standalone script that should be run in a terminal to thoroughly test safety of utxoview disconencts.
 // This test will repeatedly connect and disconnect blocks in cycles of 1000 blocks to test if state safety is maintained.
