@@ -2515,7 +2515,11 @@ func (postgres *Postgres) GetCreatorCoinBalance(holderPkid *PKID, creatorPkid *P
 	}
 	err := postgres.db.Model(&balance).WherePK().First()
 	if err != nil {
-		return nil
+		return &PGCreatorCoinBalance{
+			CreatorPKID: creatorPkid,
+			HolderPKID: holderPkid,
+			BalanceNanos: 0,
+		}
 	}
 	return &balance
 }
@@ -2557,7 +2561,11 @@ func (postgres *Postgres) GetDAOCoinBalance(holderPkid *PKID, creatorPkid *PKID)
 	}
 	err := postgres.db.Model(&balance).WherePK().First()
 	if err != nil {
-		return nil
+		return &PGDAOCoinBalance{
+			CreatorPKID: creatorPkid,
+			HolderPKID: holderPkid,
+			BalanceNanos: "0x0",
+		}
 	}
 	return &balance
 }

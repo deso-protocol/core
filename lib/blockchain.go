@@ -2579,7 +2579,7 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 		hash := *bc.bestChain[ii].Hash
 		height := uint64(bc.bestChain[ii].Height)
 		err := bc.db.Update(func(txn *badger.Txn) error {
-			utxoView, err := NewUtxoView(bc.db, bc.params, nil, nil)
+			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, nil)
 			if err != nil {
 				return err
 			}
