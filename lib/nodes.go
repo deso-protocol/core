@@ -42,7 +42,7 @@ var NODES = map[uint64]DeSoNode{
 	},
 	4: {
 		Name:  "Desofy",
-		URL:   "https://www.desofy.app",
+		URL:   "https://desofy.app",
 		Owner: "Ribal",
 	},
 	5: {
