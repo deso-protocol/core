@@ -41,8 +41,8 @@ var NODES = map[uint64]DeSoNode{
 		Owner: "Zordon",
 	},
 	4: {
-		Name:  "CloutFeed",
-		URL:   "https://apps.apple.com/app/id1561532815",
+		Name:  "Desofy",
+		URL:   "https://www.desofy.app",
 		Owner: "Ribal",
 	},
 	5: {
