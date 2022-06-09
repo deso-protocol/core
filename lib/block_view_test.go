@@ -644,7 +644,7 @@ func TestBasicTransfer(t *testing.T) {
 	{
 		blockToMine.Txns[0].TxOutputs[0].AmountNanos = allowedBlockReward + 1
 		// One iteration should be sufficient to find us a good block.
-		_, bestNonce, err := FindLowestHash(blockToMine.Header, 10000, 0)
+		_, bestNonce, err := FindLowestHash(blockToMine.Header, 10000)
 		require.NoError(err)
 		blockToMine.Header.Nonce = bestNonce
 
@@ -660,7 +660,7 @@ func TestBasicTransfer(t *testing.T) {
 	{
 		blockToMine.Txns[0].TxOutputs[0].AmountNanos = allowedBlockReward - 1
 		// One iteration should be sufficient to find us a good block.
-		_, bestNonce, err := FindLowestHash(blockToMine.Header, 10000, 0)
+		_, bestNonce, err := FindLowestHash(blockToMine.Header, 10000)
 		require.NoError(err)
 		blockToMine.Header.Nonce = bestNonce
 
