@@ -3644,8 +3644,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -7586,7 +7586,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -7713,7 +7713,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -7833,7 +7833,8 @@ func DBGetDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, orderID *Blo
 }
 
 func DBGetMatchingDAOCoinLimitOrders(
-	txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry, orderEntriesInView map[DAOCoinLimitOrderMapKey]bool) ([]*DAOCoinLimitOrderEntry, error) {
+	txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry,
+	orderEntriesInView map[DAOCoinLimitOrderMapKey]bool) ([]*DAOCoinLimitOrderEntry, error) {
 
 	queryOrder := inputOrder.Copy()
 	queryQuantityToFill := queryOrder.QuantityToFillInBaseUnits.Clone()

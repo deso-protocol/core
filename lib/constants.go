@@ -242,6 +242,9 @@ type ForkHeights struct {
 	// personal_sign signature standard. This in particular allows the usage of MetaMask for issuing derived keys.
 	DerivedKeyEthSignatureCompatibilityBlockHeight uint32
 
+	// OrderBookDBFetchOptimizationBlockHeight implements an optimization around fetching orders from the db.
+	OrderBookDBFetchOptimizationBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -549,6 +552,8 @@ var RegtestForkHeights = ForkHeights{
 	DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
 	DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
 	DAOCoinLimitOrderBlockHeight:                         uint32(0),
+	DerivedKeyEthSignatureCompatibilityBlockHeight:       uint32(0),
+	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -659,6 +664,7 @@ var MainnetForkHeights = ForkHeights{
 	DerivedKeyTrackSpendingLimitsBlockHeight:       uint32(130901),
 	DAOCoinLimitOrderBlockHeight:                   uint32(130901),
 	DerivedKeyEthSignatureCompatibilityBlockHeight: math.MaxUint32,
+	OrderBookDBFetchOptimizationBlockHeight:        math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -902,6 +908,7 @@ var TestnetForkHeights = ForkHeights{
 	DerivedKeyTrackSpendingLimitsBlockHeight:       uint32(304087 + 18*60),
 	DAOCoinLimitOrderBlockHeight:                   uint32(304087),
 	DerivedKeyEthSignatureCompatibilityBlockHeight: math.MaxUint32,
+	OrderBookDBFetchOptimizationBlockHeight:        math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
