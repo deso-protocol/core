@@ -776,7 +776,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// We need to make sure the default messaging key was authorized by the master public key.
 		// All other keys can be registered by derived keys.
 		bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingGroupKeyName...)
-		if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature); err != nil {
+		if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature, blockHeight, bav.Params); err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
 				"Problem verifying signature bytes, error: %v", RuleErrorMessagingSignatureInvalid)
 		}

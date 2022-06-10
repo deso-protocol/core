@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/sha3"
 	"reflect"
 	"sort"
 	"strings"
@@ -937,7 +939,29 @@ func (bav *UtxoView) _connectSwapIdentity(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
-func _verifyBytesSignature(signer, data, signature []byte) error {
+// _verifyBytesSignature will try to verify the provided signature assuming it's either a DeSo or an Eth signature.
+func _verifyBytesSignature(signer, data, signature []byte, blockHeight uint32, params *DeSoParams) error {
+	var desoErr, ethErr error
+
+	// Check if the provided signature is a DeSo signature.
+	desoErr = _verifyDeSoSignature(signer, data, signature)
+	if desoErr == nil {
+		return nil
+	}
+
+	if blockHeight >= params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight {
+		// Check if the provided signature is an Eth signature.
+		ethErr = _verifyEthPersonalSignature(signer, data, signature)
+		if ethErr == nil {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("_verifyBytesSignature: failed to verify signature. DeSo signature error (%v). "+
+		"Eth signature error (%v)", desoErr, ethErr)
+}
+
+func _verifyDeSoSignature(signer, data, signature []byte) error {
 	bytes := Sha256DoubleHash(data)
 
 	// Convert signature to *btcec.Signature.
@@ -952,6 +976,55 @@ func _verifyBytesSignature(signer, data, signature []byte) error {
 		return fmt.Errorf("_verifyBytesSignature: Invalid signature")
 	}
 	return nil
+}
+
+// TextAndHash corresponds to the Eth's accounts/account.go TextAndHash. Copied it here for security reasons.
+func TextAndHash(data []byte) ([]byte, string) {
+	msg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(data), string(data))
+	hasher := sha3.NewLegacyKeccak256()
+	hasher.Write([]byte(msg))
+	return hasher.Sum(nil), msg
+}
+
+// _verifyEthPersonalSignature checks the signature assuming it follows Ethereum's personal_sign standard. This is used
+// for the MetaMask DeSo integration.
+func _verifyEthPersonalSignature(signer, data, signature []byte) error {
+	// Ethereum likes uncompressed public keys while we use compressed keys a lot. Make sure we have uncompressed pk bytes.
+	var uncompressedSigner []byte
+	pubKey, err := btcec.ParsePubKey(signer, btcec.S256())
+	if err != nil {
+		return errors.Wrapf(err, "_verifyEthPersonalSignature: Problem parsing signer public key")
+	}
+	if len(signer) == btcec.PubKeyBytesLenCompressed {
+		uncompressedSigner = pubKey.SerializeUncompressed()
+	} else if len(signer) == btcec.PubKeyBytesLenUncompressed {
+		uncompressedSigner = signer
+	} else {
+		return fmt.Errorf("_verifyEthPersonalSignature: Public key has incorrect length. It should be either "+
+			"(%v) for compressed key or (%v) for uncompressed key", btcec.PubKeyBytesLenCompressed, btcec.PubKeyBytesLenUncompressed)
+	}
+
+	// Change the data bytes into Ethereum's personal_sign message standard. This will prepend the message prefix and hash
+	// the prepended message using keccak256. We turn data into a hex string and treat it as a character sequence which is
+	// how MetaMask treats it.
+	dataHex := hex.EncodeToString(data)
+	hash, _ := TextAndHash([]byte(dataHex))
+
+	// Make sure signature has the correct length. If signature has 65 bytes then it contains the recovery ID, we can
+	// slice it off since we already know the signer public key.
+	formattedSignature := make([]byte, 64)
+	if len(signature) == 64 || len(signature) == 65 {
+		copy(formattedSignature, signature[:64])
+	} else {
+		return fmt.Errorf("_verifyEthPersonalSignature: Signature must be 64 or 65 bytes in size. Got (%v) instead", len(signature))
+	}
+
+	// Now, verify the signature.
+	if crypto.VerifySignature(uncompressedSigner, hash, formattedSignature) {
+		return nil
+	} else {
+		return fmt.Errorf("_verifyEthPersonalSignature: Signature verification failed")
+	}
 }
 
 func (bav *UtxoView) _disconnectUpdateProfile(

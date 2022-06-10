@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"encoding/hex"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
@@ -3259,4 +3260,28 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 			require.Equal(0, len(mempoolTxsAdded))
 		}
 	}
+}
+
+// Check that Eth personal_sign works on some test data.
+func TestEthSignature(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	// This data was taken directly from MetaMask personal_sign.
+	signatureHex := "e1ddc8f4a6004439988a7578299856cdaa1a211e39ecbe57a500e1c3a65bb389779adf0472812fb35500e5b49ce679a3ed8b2cc4fac851e8783835bd7b82f0721c"
+	publicKeyHex := "04aaa44d617bae2fde81bd3e35857ac6e0358a39da4b62d8be0c94cb60def3f637641d9c5c5adb20e8561bbbbc4f271158871d530053bb917423846c8b482fd518"
+	message := []byte("message to sign")
+
+	// parse signature
+	signature, err := hex.DecodeString(signatureHex)
+	require.NoError(err)
+
+	// parse public key
+	publicKeyBytes, err := hex.DecodeString(publicKeyHex)
+	require.NoError(err)
+
+	// verify signature
+	_, _, _ = publicKeyBytes, message, signature
+	// TODO: replace the test case
+	//require.NoError(_verifyEthPersonalSignature(publicKeyBytes, message, signature))
 }
