@@ -367,7 +367,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	//
 	// Fetch all the orders, and copy them over into a new list so that we can revert in
 	// the disconnect case.
-	matchingOrders, err := bav.GetNextLimitOrdersToFill(transactorOrder, nil)
+	matchingOrders, err := bav.GetNextLimitOrdersToFill(transactorOrder, nil, blockHeight)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(
 			err, "Error getting next limit orders to fill: ")
@@ -551,7 +551,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			break
 		}
 		lastSeenOrder = prevMatchingOrders[len(prevMatchingOrders)-1]
-		matchingOrders, err = bav.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder)
+		matchingOrders, err = bav.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder, blockHeight)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err,
 				"_connectDAOCoinLimitOrder: Error getting next set of orders to fill: ")
@@ -894,15 +894,19 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 // to fulfill the quantity specified by the transactorOrder. If lastSeenOrder is specified
 // we will exclude lastSeenOrder and all BETTER orders from the result set.
 func (bav *UtxoView) GetNextLimitOrdersToFill(
-	transactorOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) (
+	transactorOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry, blockHeight uint32) (
 	[]*DAOCoinLimitOrderEntry, error) {
 	// Construct map of potential-matching orders in the view. We skip
 	// pulling these from the db as we already have them in the view.
+	// This was a breaking-change efficiency improvement, so we gate
+	// by block height.
 	orderEntriesInView := map[DAOCoinLimitOrderMapKey]bool{}
-	for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
-		if transactorOrder.BuyingDAOCoinCreatorPKID.Eq(orderEntry.SellingDAOCoinCreatorPKID) &&
-			transactorOrder.SellingDAOCoinCreatorPKID.Eq(orderEntry.BuyingDAOCoinCreatorPKID) {
-			orderEntriesInView[orderEntry.ToMapKey()] = true
+	if blockHeight >= bav.Params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight {
+		for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
+			if transactorOrder.BuyingDAOCoinCreatorPKID.Eq(orderEntry.SellingDAOCoinCreatorPKID) &&
+				transactorOrder.SellingDAOCoinCreatorPKID.Eq(orderEntry.BuyingDAOCoinCreatorPKID) {
+				orderEntriesInView[orderEntry.ToMapKey()] = true
+			}
 		}
 	}
 

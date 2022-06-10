@@ -26,6 +26,7 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
+	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
@@ -561,7 +562,7 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 				FillType:                  DAOCoinLimitOrderFillTypeImmediateOrCancel,
 				BlockHeight:               math.MaxUint32,
 			}
-			ordersFound, err := utxoView.GetNextLimitOrdersToFill(transactorOrder, nil)
+			ordersFound, err := utxoView.GetNextLimitOrdersToFill(transactorOrder, nil, savedHeight)
 			require.NoError(err)
 			require.Equal(1, len(ordersFound))
 			require.Equal(NewPKID(m0PkBytes), ordersFound[0].TransactorPKID)
@@ -584,7 +585,7 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 				FillType:                  DAOCoinLimitOrderFillTypeImmediateOrCancel,
 				BlockHeight:               math.MaxUint32,
 			}
-			ordersFound, err := utxoView.GetNextLimitOrdersToFill(transactorOrder, nil)
+			ordersFound, err := utxoView.GetNextLimitOrdersToFill(transactorOrder, nil, savedHeight)
 			require.NoError(err)
 			require.Equal(1, len(ordersFound))
 			require.Equal(NewPKID(m1PkBytes), ordersFound[0].TransactorPKID)
@@ -609,6 +610,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
+	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
@@ -1716,13 +1718,13 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
 		}
 
-		orderEntries, err = utxoView.GetNextLimitOrdersToFill(queryEntry, nil)
+		orderEntries, err = utxoView.GetNextLimitOrdersToFill(queryEntry, nil, savedHeight)
 		require.NoError(err)
 		require.Empty(orderEntries)
 
 		queryEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = CalculateScaledExchangeRate(1.1)
 		require.NoError(err)
-		orderEntries, err = utxoView.GetNextLimitOrdersToFill(queryEntry, nil)
+		orderEntries, err = utxoView.GetNextLimitOrdersToFill(queryEntry, nil, savedHeight)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		exchangeRate, err = CalculateScaledExchangeRate(1.0)
@@ -1754,7 +1756,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   Selling:    $DESO
 		//   Price:      1.05 $DESO / DAO coin
 		//   Quantity:   110 DAO coin units
-		orderEntries, err = utxoView.GetNextLimitOrdersToFill(queryEntry, nil)
+		orderEntries, err = utxoView.GetNextLimitOrdersToFill(queryEntry, nil, savedHeight)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		exchangeRate, err = CalculateScaledExchangeRate(1.05)
@@ -1766,7 +1768,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Query with identical order as before but higher quantity.
 		// Should match both of m0's orders with better listed first.
 		queryEntry.QuantityToFillInBaseUnits = uint256.NewInt().SetUint64(150)
-		orderEntries, err = utxoView.GetNextLimitOrdersToFill(queryEntry, nil)
+		orderEntries, err = utxoView.GetNextLimitOrdersToFill(queryEntry, nil, savedHeight)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 		exchangeRate, err = CalculateScaledExchangeRate(1.05)
@@ -3212,7 +3214,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		}
 
 		orderEntries, err = utxoView.GetNextLimitOrdersToFill(
-			metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID), nil)
+			metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID), nil, savedHeight)
 		require.NoError(err)
 		require.Empty(orderEntries)
 
@@ -3226,7 +3228,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		// Order is cancelled.
 		metadataM1.FillType = DAOCoinLimitOrderFillTypeImmediateOrCancel
 		orderEntries, err = utxoView.GetNextLimitOrdersToFill(
-			metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID), nil)
+			metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID), nil, savedHeight)
 		require.NoError(err)
 		require.Empty(orderEntries)
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
@@ -4202,6 +4204,7 @@ func TestFlushingDAOCoinLimitOrders(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true)
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
+	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 20; ii++ {

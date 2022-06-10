@@ -3547,6 +3547,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 	// Construct transactor order if submitting a new order so
 	// we can calculate BidderInputs and additional $DESO fees.
 	// This is not necessary if cancelling an existing order.
+	blockHeight := bc.blockTip().Height + 1
 	var transactorOrder *DAOCoinLimitOrderEntry
 
 	if metadata.CancelOrderID == nil {
@@ -3560,7 +3561,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
 			OperationType:                             metadata.OperationType,
 			FillType:                                  metadata.FillType,
-			BlockHeight:                               bc.blockTip().Height + 1,
+			BlockHeight:                               blockHeight,
 		}
 	}
 
@@ -3576,7 +3577,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 		for transactorQuantityToFill.GtUint64(0) {
 			var matchingOrderEntries []*DAOCoinLimitOrderEntry
-			matchingOrderEntries, err = utxoView.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder)
+			matchingOrderEntries, err = utxoView.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder, blockHeight)
 			if err != nil {
 				return nil, 0, 0, 0, errors.Wrapf(
 					err, "Blockchain.CreateDAOCoinLimitOrderTxn: Error getting Bid orders to match: ")
@@ -3664,7 +3665,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 		for transactorQuantityToFill.GtUint64(0) {
 			var matchingOrderEntries []*DAOCoinLimitOrderEntry
-			matchingOrderEntries, err = utxoView.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder)
+			matchingOrderEntries, err = utxoView.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder, blockHeight)
 			if err != nil {
 				return nil, 0, 0, 0, errors.Wrapf(
 					err, "Blockchain.CreateDAOCoinLimitOrderTxn: Error getting orders to match: ")
