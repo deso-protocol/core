@@ -910,8 +910,8 @@ var TestnetForkHeights = ForkHeights{
 	DAOCoinLimitOrderBlockHeight:             uint32(304087),
 
 	// Thu Jun 9 @ 11:59pm PT
-	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(360557),
-	OrderBookDBFetchOptimizationBlockHeight:        uint32(360557),
+	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(360584),
+	OrderBookDBFetchOptimizationBlockHeight:        uint32(360584),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
