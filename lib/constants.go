@@ -237,6 +237,13 @@ type ForkHeights struct {
 	// DAOCoinLimitOrderBlockHeight defines the height at which DAO Coin Limit Order transactions will be accepted.
 	DAOCoinLimitOrderBlockHeight uint32
 
+	// DerivedKeyEthSignatureCompatibilityBlockHeight allows authenticating derived keys that were signed with the Ethereum
+	// personal_sign signature standard. This in particular allows the usage of MetaMask for issuing derived keys.
+	DerivedKeyEthSignatureCompatibilityBlockHeight uint32
+
+	// OrderBookDBFetchOptimizationBlockHeight implements an optimization around fetching orders from the db.
+	OrderBookDBFetchOptimizationBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -544,6 +551,8 @@ var RegtestForkHeights = ForkHeights{
 	DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
 	DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
 	DAOCoinLimitOrderBlockHeight:                         uint32(0),
+	DerivedKeyEthSignatureCompatibilityBlockHeight:       uint32(0),
+	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -653,6 +662,10 @@ var MainnetForkHeights = ForkHeights{
 	DerivedKeySetSpendingLimitsBlockHeight:   uint32(130901),
 	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(130901),
 	DAOCoinLimitOrderBlockHeight:             uint32(130901),
+
+	// Fri Jun 9 @ 12pm PT
+	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(137173),
+	OrderBookDBFetchOptimizationBlockHeight:        uint32(137173),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -895,6 +908,10 @@ var TestnetForkHeights = ForkHeights{
 	// going to do it on mainnet. Testnet produces 60 blocks per hour.
 	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(304087 + 18*60),
 	DAOCoinLimitOrderBlockHeight:             uint32(304087),
+
+	// Thu Jun 9 @ 11:59pm PT
+	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(360584),
+	OrderBookDBFetchOptimizationBlockHeight:        uint32(360584),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
