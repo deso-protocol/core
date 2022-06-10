@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -659,12 +658,14 @@ var MainnetForkHeights = ForkHeights{
 	BuyNowAndNFTSplitsBlockHeight: uint32(98474),
 	DAOCoinBlockHeight:            uint32(98474),
 
-	ExtraDataOnEntriesBlockHeight:                  uint32(130901),
-	DerivedKeySetSpendingLimitsBlockHeight:         uint32(130901),
-	DerivedKeyTrackSpendingLimitsBlockHeight:       uint32(130901),
-	DAOCoinLimitOrderBlockHeight:                   uint32(130901),
-	DerivedKeyEthSignatureCompatibilityBlockHeight: math.MaxUint32,
-	OrderBookDBFetchOptimizationBlockHeight:        math.MaxUint32,
+	ExtraDataOnEntriesBlockHeight:            uint32(130901),
+	DerivedKeySetSpendingLimitsBlockHeight:   uint32(130901),
+	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(130901),
+	DAOCoinLimitOrderBlockHeight:             uint32(130901),
+
+	// Fri Jun 9 @ 12pm PT
+	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(137173),
+	OrderBookDBFetchOptimizationBlockHeight:        uint32(137173),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -905,10 +906,12 @@ var TestnetForkHeights = ForkHeights{
 	DerivedKeySetSpendingLimitsBlockHeight: uint32(304087),
 	// Add 18h for the spending limits to be checked, since this is how we're
 	// going to do it on mainnet. Testnet produces 60 blocks per hour.
-	DerivedKeyTrackSpendingLimitsBlockHeight:       uint32(304087 + 18*60),
-	DAOCoinLimitOrderBlockHeight:                   uint32(304087),
-	DerivedKeyEthSignatureCompatibilityBlockHeight: math.MaxUint32,
-	OrderBookDBFetchOptimizationBlockHeight:        math.MaxUint32,
+	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(304087 + 18*60),
+	DAOCoinLimitOrderBlockHeight:             uint32(304087),
+
+	// Thu Jun 9 @ 11:59pm PT
+	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(360557),
+	OrderBookDBFetchOptimizationBlockHeight:        uint32(360557),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
