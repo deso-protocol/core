@@ -896,8 +896,18 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 func (bav *UtxoView) GetNextLimitOrdersToFill(
 	transactorOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) (
 	[]*DAOCoinLimitOrderEntry, error) {
+	// Construct map of potential-matching orders in the view. We skip
+	// pulling these from the db as we already have them in the view.
+	orderEntriesInView := map[DAOCoinLimitOrderMapKey]bool{}
+	for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
+		if transactorOrder.BuyingDAOCoinCreatorPKID.Eq(orderEntry.SellingDAOCoinCreatorPKID) &&
+			transactorOrder.SellingDAOCoinCreatorPKID.Eq(orderEntry.BuyingDAOCoinCreatorPKID) {
+			orderEntriesInView[orderEntry.ToMapKey()] = true
+		}
+	}
+
 	// Get matching limit order entries from database.
-	matchingOrders, err := bav.GetDbAdapter().GetMatchingDAOCoinLimitOrders(transactorOrder, lastSeenOrder)
+	matchingOrders, err := bav.GetDbAdapter().GetMatchingDAOCoinLimitOrders(transactorOrder, lastSeenOrder, orderEntriesInView)
 	if err != nil {
 		return nil, err
 	}
