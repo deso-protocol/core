@@ -4317,7 +4317,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	}
 	if blockHeight >= bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
 		if err := _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey, derivedPublicKey,
-			expirationBlock, transactionSpendingLimitBytes, accessSignature, uint64(blockHeight)); err != nil {
+			expirationBlock, transactionSpendingLimitBytes, accessSignature, uint64(blockHeight), bc.params); err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature with transaction"+
 					" spending limit")
@@ -4325,7 +4325,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	} else {
 		// Verify that the signature is valid.
 		if err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
-			expirationBlock, accessSignature); err != nil {
+			expirationBlock, accessSignature, blockHeight, bc.params); err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature")
 		}

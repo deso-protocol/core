@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -236,6 +237,10 @@ type ForkHeights struct {
 
 	// DAOCoinLimitOrderBlockHeight defines the height at which DAO Coin Limit Order transactions will be accepted.
 	DAOCoinLimitOrderBlockHeight uint32
+
+	// DerivedKeyEthSignatureCompatibilityBlockHeight allows authenticating derived keys that were signed with the Ethereum
+	// personal_sign signature standard. This in particular allows the usage of MetaMask for issuing derived keys.
+	DerivedKeyEthSignatureCompatibilityBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -653,6 +658,7 @@ var MainnetForkHeights = ForkHeights{
 	DerivedKeySetSpendingLimitsBlockHeight:   uint32(130901),
 	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(130901),
 	DAOCoinLimitOrderBlockHeight:             uint32(130901),
+	DerivedKeyEthSignatureCompatibilityBlockHeight:      math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -895,6 +901,7 @@ var TestnetForkHeights = ForkHeights{
 	// going to do it on mainnet. Testnet produces 60 blocks per hour.
 	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(304087 + 18*60),
 	DAOCoinLimitOrderBlockHeight:             uint32(304087),
+	DerivedKeyEthSignatureCompatibilityBlockHeight:      math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.

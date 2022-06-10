@@ -940,17 +940,21 @@ func (bav *UtxoView) _connectSwapIdentity(
 }
 
 // _verifyBytesSignature will try to verify the provided signature assuming it's either a DeSo or an Eth signature.
-func _verifyBytesSignature(signer, data, signature []byte) error {
+func _verifyBytesSignature(signer, data, signature []byte, blockHeight uint32, params *DeSoParams) error {
+	var desoErr, ethErr error
+
 	// Check if the provided signature is a DeSo signature.
-	desoErr := _verifyDeSoSignature(signer, data, signature)
+	desoErr = _verifyDeSoSignature(signer, data, signature)
 	if desoErr == nil {
 		return nil
 	}
 
-	// Check if the provided signature is an Eth signature.
-	ethErr := _verifyEthPersonalSignature(signer, data, signature)
-	if ethErr == nil {
-		return nil
+	if blockHeight >= params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight {
+		// Check if the provided signature is an Eth signature.
+		ethErr = _verifyEthPersonalSignature(signer, data, signature)
+		if ethErr == nil {
+			return nil
+		}
 	}
 
 	return fmt.Errorf("_verifyBytesSignature: failed to verify signature. DeSo signature error (%v). "+
