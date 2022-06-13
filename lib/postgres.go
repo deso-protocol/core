@@ -2687,17 +2687,14 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPK
 }
 
 func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry, orderEntriesInView map[DAOCoinLimitOrderMapKey]bool) ([]*DAOCoinLimitOrderEntry, error) {
-	// TODO: for now we just pull all matching orders regardless
-	// of price and rely on the price comparison logic elsewhere.
 	// We do need to make sure we sort by price descending so that
 	// the transactor is reviewing the best-priced orders first.
 
 	// If last seen order is not nil, this means that the transactor
 	// still has quantity to fulfill and is requesting more orders.
-	// In that case, to avoid an infinite loop, we need to say that
-	// there are no more orders that match.
-	if lastSeenOrder != nil {
-		return []*DAOCoinLimitOrderEntry{}, nil
+	lastSeenOrderPassed := false
+	if lastSeenOrder == nil {
+		lastSeenOrderPassed = true
 	}
 
 	var matchingOrders []*PGDAOCoinLimitOrder
@@ -2717,11 +2714,27 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 
 	var outputOrders []*DAOCoinLimitOrderEntry
 
-	for _, matchingOrder := range matchingOrders {
+	totalQuantity := inputOrder.QuantityToFillInBaseUnits
+	for ii := 0; ii < len(matchingOrders) && totalQuantity.GtUint64(0); ii++ {
+		matchingOrder := matchingOrders[ii]
 		matchingOrderEntry := matchingOrder.ToDAOCoinLimitOrderEntry()
+		// If we haven't seen the lastSeenOrder yet, check if the current matchingOrder we're looking at
+		// is the lastSeenOrder by comparing OrderIDs.
+		if !lastSeenOrderPassed {
+			if bytes.Equal(matchingOrderEntry.OrderID.ToBytes(), lastSeenOrder.OrderID.ToBytes()) {
+				lastSeenOrderPassed = true
+			}
+			continue
+		}
 		// Skip if order is already in the view.
-		if _, exists := orderEntriesInView[matchingOrderEntry.ToMapKey()]; !exists {
-			outputOrders = append(outputOrders, matchingOrderEntry)
+		if _, exists := orderEntriesInView[matchingOrderEntry.ToMapKey()]; exists {
+			continue
+		}
+		outputOrders = append(outputOrders, matchingOrderEntry)
+		totalQuantity, _, _, _, err = _calculateDAOCoinsTransferredInLimitOrderMatch(
+			matchingOrderEntry, inputOrder.OperationType, totalQuantity)
+		if err != nil {
+			return nil, err
 		}
 	}
 
