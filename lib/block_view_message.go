@@ -107,9 +107,9 @@ func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 	//	return messagingGroupEntry
 	//
 	//} else {
-		// If we get here it means no value exists in our in-memory map. In this case,
-		// defer to the db. If a mapping exists in the db, return it. If not, return
-		// nil. Either way, save the value to the in-memory UtxoView mapping.
+	// If we get here it means no value exists in our in-memory map. In this case,
+	// defer to the db. If a mapping exists in the db, return it. If not, return
+	// nil. Either way, save the value to the in-memory UtxoView mapping.
 	messagingGroupEntry := DBGetMessagingGroupEntry(bav.Handle, bav.Snapshot, messagingGroupKey)
 	if messagingGroupEntry != nil {
 		bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
