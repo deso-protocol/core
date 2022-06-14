@@ -1590,9 +1590,10 @@ func (postgres *Postgres) FlushView(view *UtxoView) error {
 		if err := postgres.flushDerivedKeys(tx, view); err != nil {
 			return err
 		}
-		if err := postgres.flushDAOCoinLimitOrders(tx, view); err != nil {
-			return err
-		}
+		// Temporarily write limit orders to badger
+		//if err := postgres.flushDAOCoinLimitOrders(tx, view); err != nil {
+		//	return err
+		//}
 
 		return nil
 	})
