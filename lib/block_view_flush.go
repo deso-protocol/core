@@ -96,9 +96,10 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		if err := bav._flushDerivedKeyEntryToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
-		if err := bav._flushDAOCoinLimitOrderEntriesToDbWithTxn(txn, blockHeight); err != nil {
-			return err
-		}
+		// Temporarily flush all DAO Coin Limit orders to badger
+		//if err := bav._flushDAOCoinLimitOrderEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		//	return err
+		//}
 	}
 
 	// Always flush to BadgerDB.
@@ -117,7 +118,10 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushMessagingGroupEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
-
+	// Temporarily flush all DAO Coin Limit orders to badger
+	if err := bav._flushDAOCoinLimitOrderEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
 	return nil
 }
 

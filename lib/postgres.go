@@ -883,18 +883,26 @@ type PGDerivedKey struct {
 	ExtraData map[string][]byte
 
 	// TransactionSpendingLimit fields
-	TransactionSpendingLimitTracker *TransactionSpendingLimit `pg:",type:bytea"`
-	Memo                            []byte                    `pg:",type:bytea"`
+	TransactionSpendingLimitTracker []byte `pg:",type:bytea"`
+	Memo                            []byte `pg:",type:bytea"`
 }
 
 func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
+	var tsl *TransactionSpendingLimit
+	if len(key.TransactionSpendingLimitTracker) > 0 {
+		tsl = &TransactionSpendingLimit{}
+		if err := tsl.FromBytes(bytes.NewReader(key.TransactionSpendingLimitTracker)); err != nil {
+			glog.Errorf("Error converting Derived Key's TransactionLimitTracker bytes back into a TransactionSpendingLimit: %v", err)
+			return nil
+		}
+	}
 	return &DerivedKeyEntry{
 		OwnerPublicKey:                  key.OwnerPublicKey,
 		DerivedPublicKey:                key.DerivedPublicKey,
 		ExpirationBlock:                 key.ExpirationBlock,
 		OperationType:                   key.OperationType,
 		ExtraData:                       key.ExtraData,
-		TransactionSpendingLimitTracker: key.TransactionSpendingLimitTracker,
+		TransactionSpendingLimitTracker: tsl,
 		Memo:                            key.Memo,
 	}
 }
@@ -1582,9 +1590,10 @@ func (postgres *Postgres) FlushView(view *UtxoView) error {
 		if err := postgres.flushDerivedKeys(tx, view); err != nil {
 			return err
 		}
-		if err := postgres.flushDAOCoinLimitOrders(tx, view); err != nil {
-			return err
-		}
+		// Temporarily write limit orders to badger
+		//if err := postgres.flushDAOCoinLimitOrders(tx, view); err != nil {
+		//	return err
+		//}
 
 		return nil
 	})
@@ -1608,7 +1617,7 @@ func (postgres *Postgres) flushUtxos(tx *pg.Tx, view *UtxoView) error {
 
 	_, err := tx.Model(&outputs).WherePK().OnConflict("(output_hash, output_index) DO UPDATE").Insert()
 	if err != nil {
-		return err
+		return fmt.Errorf("flushUtxos: insert: %v", err)
 	}
 
 	return nil
@@ -1652,14 +1661,14 @@ func (postgres *Postgres) flushProfiles(tx *pg.Tx, view *UtxoView) error {
 	if len(insertProfiles) > 0 {
 		_, err := tx.Model(&insertProfiles).WherePK().OnConflict("(pkid) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushProfiles: insert: %v", err)
 		}
 	}
 
 	if len(deleteProfiles) > 0 {
 		_, err := tx.Model(&deleteProfiles).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushProfiles: delete: %v", err)
 		}
 	}
 
@@ -1728,14 +1737,14 @@ func (postgres *Postgres) flushPosts(tx *pg.Tx, view *UtxoView) error {
 	if len(insertPosts) > 0 {
 		_, err := tx.Model(&insertPosts).WherePK().OnConflict("(post_hash) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushPosts: insert: %v", err)
 		}
 	}
 
 	if len(deletePosts) > 0 {
 		_, err := tx.Model(&deletePosts).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushPosts: delete: %v", err)
 		}
 	}
 
@@ -1765,14 +1774,14 @@ func (postgres *Postgres) flushLikes(tx *pg.Tx, view *UtxoView) error {
 	if len(insertLikes) > 0 {
 		_, err := tx.Model(&insertLikes).WherePK().OnConflict("DO NOTHING").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushLikes: insert: %v", err)
 		}
 	}
 
 	if len(deleteLikes) > 0 {
 		_, err := tx.Model(&deleteLikes).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushLikes: delete: %v", err)
 		}
 	}
 
@@ -1802,14 +1811,14 @@ func (postgres *Postgres) flushFollows(tx *pg.Tx, view *UtxoView) error {
 	if len(insertFollows) > 0 {
 		_, err := tx.Model(&insertFollows).WherePK().OnConflict("DO NOTHING").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushFollows: insert: %v", err)
 		}
 	}
 
 	if len(deleteFollows) > 0 {
 		_, err := tx.Model(&deleteFollows).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushFollows: delete: %v", err)
 		}
 	}
 
@@ -1837,14 +1846,14 @@ func (postgres *Postgres) flushDiamonds(tx *pg.Tx, view *UtxoView) error {
 	if len(insertDiamonds) > 0 {
 		_, err := tx.Model(&insertDiamonds).WherePK().OnConflict("(sender_pkid, receiver_pkid, diamond_post_hash) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushDiamonds: insert: %v", err)
 		}
 	}
 
 	if len(deleteDiamonds) > 0 {
 		_, err := tx.Model(&deleteDiamonds).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushDiamonds: delete: %v", err)
 		}
 	}
 
@@ -1866,14 +1875,14 @@ func (postgres *Postgres) flushMessages(tx *pg.Tx, view *UtxoView) error {
 		// TODO: There should never be a conflict here. Should we raise an error?
 		_, err := tx.Model(&insertMessages).WherePK().OnConflict("(message_hash) DO NOTHING").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushMessages: insert: %v", err)
 		}
 	}
 
 	if len(deleteMessages) > 0 {
 		_, err := tx.Model(&deleteMessages).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushMessages: delete: %v", err)
 		}
 	}
 
@@ -1907,14 +1916,14 @@ func (postgres *Postgres) flushMessagingGroups(tx *pg.Tx, view *UtxoView) error 
 		_, err := tx.Model(&insertMessages).WherePK().OnConflict(
 			"(group_owner_public_key, messaging_group_key_name) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushMessagingGroups: insert: %v", err)
 		}
 	}
 
 	if len(deleteMessages) > 0 {
 		_, err := tx.Model(&deleteMessages).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushMessagingGroups: delete: %v", err)
 		}
 	}
 
@@ -1947,14 +1956,14 @@ func (postgres *Postgres) flushCreatorCoinBalances(tx *pg.Tx, view *UtxoView) er
 	if len(insertBalances) > 0 {
 		_, err := tx.Model(&insertBalances).WherePK().OnConflict("(holder_pkid, creator_pkid) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushCreatorCoinBalances: insert: %v", err)
 		}
 	}
 
 	if len(deleteBalances) > 0 {
 		_, err := tx.Model(&deleteBalances).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushCreatorCoinBalances: delete: %v", err)
 		}
 	}
 
@@ -1986,14 +1995,14 @@ func (postgres *Postgres) flushDAOCoinBalances(tx *pg.Tx, view *UtxoView) error 
 	if len(insertBalances) > 0 {
 		_, err := tx.Model(&insertBalances).WherePK().OnConflict("(holder_pkid, creator_pkid) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushDAOCoinBalances: insert: %v", err)
 		}
 	}
 
 	if len(deleteBalances) > 0 {
 		_, err := tx.Model(&deleteBalances).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushDAOCoinBalances: delete: %v", err)
 		}
 	}
 
@@ -2017,7 +2026,7 @@ func (postgres *Postgres) flushBalances(tx *pg.Tx, view *UtxoView) error {
 	if len(balances) > 0 {
 		_, err := tx.Model(&balances).WherePK().OnConflict("(public_key) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushBalances: %v", err)
 		}
 	}
 
@@ -2042,14 +2051,14 @@ func (postgres *Postgres) flushForbiddenKeys(tx *pg.Tx, view *UtxoView) error {
 	if len(insertKeys) > 0 {
 		_, err := tx.Model(&insertKeys).WherePK().OnConflict("(public_key) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushForbiddenKeys: insert: %v", err)
 		}
 	}
 
 	if len(deleteKeys) > 0 {
 		_, err := tx.Model(&deleteKeys).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushForbiddenKeys: delete: %v", err)
 		}
 	}
 
@@ -2084,14 +2093,14 @@ func (postgres *Postgres) flushNFTs(tx *pg.Tx, view *UtxoView) error {
 	if len(insertNFTs) > 0 {
 		_, err := tx.Model(&insertNFTs).WherePK().OnConflict("(nft_post_hash, serial_number) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushNFTs: insert: %v", err)
 		}
 	}
 
 	if len(deleteNFTs) > 0 {
 		_, err := tx.Model(&deleteNFTs).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushNFTs: delete: %v", err)
 		}
 	}
 
@@ -2121,14 +2130,14 @@ func (postgres *Postgres) flushNFTBids(tx *pg.Tx, view *UtxoView) error {
 	if len(insertBids) > 0 {
 		_, err := tx.Model(&insertBids).WherePK().OnConflict("(nft_post_hash, bidder_pkid, serial_number) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushNFTBids: insert: %v", err)
 		}
 	}
 
 	if len(deleteBids) > 0 {
 		_, err := tx.Model(&deleteBids).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushNFTBids: delete: %v", err)
 		}
 	}
 
@@ -2139,12 +2148,16 @@ func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
 	var insertKeys []*PGDerivedKey
 	var deleteKeys []*PGDerivedKey
 	for _, keyEntry := range view.DerivedKeyToDerivedEntry {
+		tslBytes, err := keyEntry.TransactionSpendingLimitTracker.ToBytes()
+		if err != nil {
+			return err
+		}
 		key := &PGDerivedKey{
 			OwnerPublicKey:                  keyEntry.OwnerPublicKey,
 			DerivedPublicKey:                keyEntry.DerivedPublicKey,
 			ExpirationBlock:                 keyEntry.ExpirationBlock,
 			OperationType:                   keyEntry.OperationType,
-			TransactionSpendingLimitTracker: keyEntry.TransactionSpendingLimitTracker,
+			TransactionSpendingLimitTracker: tslBytes,
 			Memo:                            keyEntry.Memo,
 		}
 
@@ -2158,14 +2171,14 @@ func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
 	if len(insertKeys) > 0 {
 		_, err := tx.Model(&insertKeys).WherePK().OnConflict("(owner_public_key, derived_public_key) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushDerivedKeys: insert: %v", err)
 		}
 	}
 
 	if len(deleteKeys) > 0 {
 		_, err := tx.Model(&deleteKeys).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushDerivedKeys: delete: %v", err)
 		}
 	}
 
@@ -2199,14 +2212,14 @@ func (postgres *Postgres) flushDAOCoinLimitOrders(tx *pg.Tx, view *UtxoView) err
 			Insert()
 
 		if err != nil {
-			return err
+			return fmt.Errorf("flushDAOCoinLimitOrders: insert: %v", err)
 		}
 	}
 
 	if len(deleteOrders) > 0 {
 		_, err := tx.Model(&deleteOrders).Returning("NULL").Delete()
 		if err != nil {
-			return err
+			return fmt.Errorf("flushDAOCoinLimitOrders: delete: %v", err)
 		}
 	}
 
@@ -2503,7 +2516,11 @@ func (postgres *Postgres) GetCreatorCoinBalance(holderPkid *PKID, creatorPkid *P
 	}
 	err := postgres.db.Model(&balance).WherePK().First()
 	if err != nil {
-		return nil
+		return &PGCreatorCoinBalance{
+			CreatorPKID:  creatorPkid,
+			HolderPKID:   holderPkid,
+			BalanceNanos: 0,
+		}
 	}
 	return &balance
 }
@@ -2545,7 +2562,11 @@ func (postgres *Postgres) GetDAOCoinBalance(holderPkid *PKID, creatorPkid *PKID)
 	}
 	err := postgres.db.Model(&balance).WherePK().First()
 	if err != nil {
-		return nil
+		return &PGDAOCoinBalance{
+			CreatorPKID:  creatorPkid,
+			HolderPKID:   holderPkid,
+			BalanceNanos: "0x0",
+		}
 	}
 	return &balance
 }
@@ -2667,17 +2688,14 @@ func (postgres *Postgres) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPK
 }
 
 func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry, orderEntriesInView map[DAOCoinLimitOrderMapKey]bool) ([]*DAOCoinLimitOrderEntry, error) {
-	// TODO: for now we just pull all matching orders regardless
-	// of price and rely on the price comparison logic elsewhere.
 	// We do need to make sure we sort by price descending so that
 	// the transactor is reviewing the best-priced orders first.
 
 	// If last seen order is not nil, this means that the transactor
 	// still has quantity to fulfill and is requesting more orders.
-	// In that case, to avoid an infinite loop, we need to say that
-	// there are no more orders that match.
-	if lastSeenOrder != nil {
-		return []*DAOCoinLimitOrderEntry{}, nil
+	lastSeenOrderPassed := false
+	if lastSeenOrder == nil {
+		lastSeenOrderPassed = true
 	}
 
 	var matchingOrders []*PGDAOCoinLimitOrder
@@ -2697,11 +2715,27 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 
 	var outputOrders []*DAOCoinLimitOrderEntry
 
-	for _, matchingOrder := range matchingOrders {
+	totalQuantity := inputOrder.QuantityToFillInBaseUnits
+	for ii := 0; ii < len(matchingOrders) && totalQuantity.GtUint64(0); ii++ {
+		matchingOrder := matchingOrders[ii]
 		matchingOrderEntry := matchingOrder.ToDAOCoinLimitOrderEntry()
+		// If we haven't seen the lastSeenOrder yet, check if the current matchingOrder we're looking at
+		// is the lastSeenOrder by comparing OrderIDs.
+		if !lastSeenOrderPassed {
+			if bytes.Equal(matchingOrderEntry.OrderID.ToBytes(), lastSeenOrder.OrderID.ToBytes()) {
+				lastSeenOrderPassed = true
+			}
+			continue
+		}
 		// Skip if order is already in the view.
-		if _, exists := orderEntriesInView[matchingOrderEntry.ToMapKey()]; !exists {
-			outputOrders = append(outputOrders, matchingOrderEntry)
+		if _, exists := orderEntriesInView[matchingOrderEntry.ToMapKey()]; exists {
+			continue
+		}
+		outputOrders = append(outputOrders, matchingOrderEntry)
+		totalQuantity, _, _, _, err = _calculateDAOCoinsTransferredInLimitOrderMatch(
+			matchingOrderEntry, inputOrder.OperationType, totalQuantity)
+		if err != nil {
+			return nil, err
 		}
 	}
 
