@@ -117,7 +117,7 @@ func _helpTestCreatorCoinBuySell(
 	_, _ = mempool, miner
 
 	// Create a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
 	// These are block heights where deso forked.
 	params.ForkHeights.SalomonFixBlockHeight = 0
@@ -978,7 +978,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 	_, _ = mempool, miner
 
 	// Create a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
 	// Give paramUpdater some mony
 	_, _, _ = _doBasicTransferWithViewFlush(
@@ -1371,7 +1371,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 	_, _ = mempool, miner
 
 	// Create a paramUpdater for this test.
-	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
 	// Set the DeSoDiamondsBlockHeight so that it is immediately hit.
 	params.ForkHeights.DeSoDiamondsBlockHeight = uint32(0)

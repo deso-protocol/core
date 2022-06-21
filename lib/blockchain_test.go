@@ -219,6 +219,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 			AmountNanos: uint64(2000000 * NanosPerUnit),
 		},
 	}
+	paramsCopy.ExtraRegtestParamUpdaterKeys = map[PkMapKey]bool{}
 
 	// Temporarily modify the seed balances to make a specific public
 	// key have some DeSo
@@ -1527,7 +1528,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 
 	// Make the senderPk a paramUpdater for this test
 	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
-	params.ParamUpdaterPublicKeys[MakePkMapKey(senderPkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(senderPkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

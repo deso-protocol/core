@@ -1989,7 +1989,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 	newGlobalParamsEntry := *prevGlobalParamsEntry
 	extraData := txn.ExtraData
 	// Validate the public key. Only a paramUpdater is allowed to trigger this.
-	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
+	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
 	if !updaterIsParamUpdater {
 		return 0, 0, nil, RuleErrorUserNotAuthorizedToUpdateGlobalParams
 	}

@@ -63,7 +63,7 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 100)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 100)
 
-	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 	// Param Updater set min fee rate to 101 nanos per KB
 	{
 		_updateGlobalParamsEntryWithTestMeta(
@@ -647,7 +647,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 100)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 100)
 
-	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 	// Param Updater set min fee rate to 101 nanos per KB
 	{
 		_updateGlobalParamsEntryWithTestMeta(
@@ -4332,7 +4332,7 @@ func TestFlushingDAOCoinLimitOrders(t *testing.T) {
 		_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1.Pub, senderPrivString, 5e9)
 		_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 100)
 
-		params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
 		_updateGlobalParamsEntryWithTestMeta(
 			testMeta, feeRateNanosPerKb, paramUpdaterPub,

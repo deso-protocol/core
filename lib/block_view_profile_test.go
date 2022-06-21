@@ -212,7 +212,7 @@ func TestUpdateProfile(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 
 	// For testing purposes, we set the fix block height to be 0 for the ParamUpdaterProfileUpdateFixBlockHeight.
 	params.ForkHeights.ParamUpdaterProfileUpdateFixBlockHeight = 0
@@ -2002,7 +2002,7 @@ func TestSwapIdentityFailureCases(t *testing.T) {
 		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 
 	// Create a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
 	// Swapping identities with a key that is not paramUpdater should fail.
 	_, _, _, err := _swapIdentity(
@@ -3026,7 +3026,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 		chain, params, db := NewLowDifficultyBlockchain()
 		mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 		// Make m3 a paramUpdater for this test
-		params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 
 		// Mine a few blocks to give the senderPkString some money.
 		_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

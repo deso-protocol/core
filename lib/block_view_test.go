@@ -355,8 +355,8 @@ func TestUpdateGlobalParams(t *testing.T) {
 	_, _ = mempool, miner
 
 	// Set the founder equal to the moneyPk
-	params.ParamUpdaterPublicKeys = make(map[PkMapKey]bool)
-	params.ParamUpdaterPublicKeys[MakePkMapKey(MustBase58CheckDecode(moneyPkString))] = true
+	params.ExtraRegtestParamUpdaterKeys = make(map[PkMapKey]bool)
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(MustBase58CheckDecode(moneyPkString))] = true
 
 	// Send money to m0 from moneyPk
 	_, _, _ = _doBasicTransferWithViewFlush(

@@ -794,8 +794,8 @@ func TestNFTBasic(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 	params.ForkHeights.BrokenNFTBidsFixBlockHeight = uint32(0)
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
@@ -1652,8 +1652,8 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -2187,8 +2187,8 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -2515,8 +2515,8 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -2767,8 +2767,8 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -2983,8 +2983,8 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -3331,8 +3331,8 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -3617,8 +3617,8 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -3908,8 +3908,8 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -4222,8 +4222,8 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -4516,7 +4516,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 
 	params.ForkHeights.BrokenNFTBidsFixBlockHeight = uint32(0)
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
@@ -5023,8 +5023,8 @@ func TestBidAmountZero(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -5233,8 +5233,8 @@ func TestNFTBuyNow(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
@@ -6250,8 +6250,8 @@ func TestNFTSplits(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
@@ -7091,7 +7091,7 @@ func TestNFTSplits(t *testing.T) {
 	// Swap identity of m3 and m2.
 	// m2 now owns the NFT that m3 had.
 	// This will also cause m3's coin to wind up with m2's royalties.
-	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 100)
 	_swapIdentityWithTestMeta(testMeta, 10, paramUpdaterPub, paramUpdaterPriv, m2PkBytes, m3PkBytes)
 
@@ -7226,8 +7226,8 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 

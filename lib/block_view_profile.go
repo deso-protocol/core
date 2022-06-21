@@ -579,7 +579,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 	}
 
 	profilePublicKey := txn.PublicKey
-	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
+	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
 	if len(txMeta.ProfilePublicKey) != 0 {
 		if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
 			return 0, 0, nil, errors.Wrapf(RuleErrorProfilePublicKeySize, "_connectUpdateProfile: %#v", txMeta.ProfilePublicKey)
@@ -671,7 +671,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 		// Modifying a profile is only allowed if the transaction public key equals
 		// the profile public key or if the public key belongs to a paramUpdater.
-		_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
+		_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
 		if !reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) &&
 			!updaterIsParamUpdater {
 
@@ -680,7 +680,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 				"_connectUpdateProfile: Profile: %v, profile public key: %v, "+
 					"txn public key: %v, paramUpdater: %v", existingProfileEntry,
 				PkToStringBoth(existingProfileEntry.PublicKey),
-				PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
+				PkToStringBoth(txn.PublicKey), spew.Sdump(GetParamUpdaterPublicKeys(blockHeight, bav.Params)))
 		}
 
 		// Only set the fields if they have non-zero length. Otherwise leave
@@ -807,7 +807,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 	txMeta := txn.TxnMeta.(*SwapIdentityMetadataa)
 
 	// The txn.PublicKey must be paramUpdater
-	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
+	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
 	if !updaterIsParamUpdater {
 		return 0, 0, nil, RuleErrorSwapIdentityIsParamUpdaterOnly
 	}
