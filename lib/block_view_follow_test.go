@@ -74,7 +74,7 @@ func TestFollowTxns(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

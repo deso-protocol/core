@@ -2579,7 +2579,7 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 		hash := *bc.bestChain[ii].Hash
 		height := uint64(bc.bestChain[ii].Height)
 		err := bc.db.Update(func(txn *badger.Txn) error {
-			utxoView, err := NewUtxoView(bc.db, bc.params, nil, nil)
+			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, nil)
 			if err != nil {
 				return err
 			}
@@ -3547,6 +3547,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 	// Construct transactor order if submitting a new order so
 	// we can calculate BidderInputs and additional $DESO fees.
 	// This is not necessary if cancelling an existing order.
+	blockHeight := bc.blockTip().Height + 1
 	var transactorOrder *DAOCoinLimitOrderEntry
 
 	if metadata.CancelOrderID == nil {
@@ -3560,7 +3561,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
 			OperationType:                             metadata.OperationType,
 			FillType:                                  metadata.FillType,
-			BlockHeight:                               bc.blockTip().Height + 1,
+			BlockHeight:                               blockHeight,
 		}
 	}
 
@@ -3576,7 +3577,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 		for transactorQuantityToFill.GtUint64(0) {
 			var matchingOrderEntries []*DAOCoinLimitOrderEntry
-			matchingOrderEntries, err = utxoView.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder)
+			matchingOrderEntries, err = utxoView.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder, blockHeight)
 			if err != nil {
 				return nil, 0, 0, 0, errors.Wrapf(
 					err, "Blockchain.CreateDAOCoinLimitOrderTxn: Error getting Bid orders to match: ")
@@ -3664,7 +3665,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 		for transactorQuantityToFill.GtUint64(0) {
 			var matchingOrderEntries []*DAOCoinLimitOrderEntry
-			matchingOrderEntries, err = utxoView.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder)
+			matchingOrderEntries, err = utxoView.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder, blockHeight)
 			if err != nil {
 				return nil, 0, 0, 0, errors.Wrapf(
 					err, "Blockchain.CreateDAOCoinLimitOrderTxn: Error getting orders to match: ")
@@ -4317,7 +4318,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	}
 	if blockHeight >= bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
 		if err := _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey, derivedPublicKey,
-			expirationBlock, transactionSpendingLimitBytes, accessSignature, uint64(blockHeight)); err != nil {
+			expirationBlock, transactionSpendingLimitBytes, accessSignature, uint64(blockHeight), bc.params); err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature with transaction"+
 					" spending limit")
@@ -4325,7 +4326,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	} else {
 		// Verify that the signature is valid.
 		if err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
-			expirationBlock, accessSignature); err != nil {
+			expirationBlock, accessSignature, blockHeight, bc.params); err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature")
 		}

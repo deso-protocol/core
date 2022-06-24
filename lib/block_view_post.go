@@ -784,7 +784,7 @@ func (bav *UtxoView) _connectSubmitPost(
 				"_connectSubmitPost: Post hash: %v, poster public key: %v, "+
 					"txn public key: %v, paramUpdater: %v", postHash,
 				PkToStringBoth(existingPostEntryy.PosterPublicKey),
-				PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
+				PkToStringBoth(txn.PublicKey), spew.Sdump(GetParamUpdaterPublicKeys(blockHeight, bav.Params)))
 		}
 
 		// Modification of an NFT is not allowed.

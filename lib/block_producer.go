@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/go-deadlock"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -221,46 +220,38 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 				mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), uint32(blockRet.Header.Height), true,
 				false /*ignoreUtxos*/)
 			if err != nil {
-				// If we fail to apply this transaction then we're done. Don't mine any of the
-				// other transactions since they could be dependent on this one.
+				// Skip failing txns. This should happen super rarely.
 				txnErrorString := fmt.Sprintf(
-					"DeSoBlockProducer._getBlockTemplate: Stopping at txn %v because it's not ready yet: %v", ii, err)
-				glog.Infof(txnErrorString)
-				if mempoolTx.Tx.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
-					// Print the Bitcoin block hash when we break out due to this.
-					btcErrorString := fmt.Sprintf("A bad BitcoinExchange transaction may be holding "+
-						"up block production: %v",
-						mempoolTx.Tx.TxnMeta.(*BitcoinExchangeMetadata).BitcoinTransaction.TxHash())
-					glog.Infof(btcErrorString)
-					txnErrorString += (" " + btcErrorString)
-					scs := spew.ConfigState{DisableMethods: true, Indent: "  "}
-					glog.V(1).Infof("Spewing Bitcoin txn: %v", scs.Sdump(mempoolTx.Tx))
-				}
+					"DeSoBlockProducer._getBlockTemplate: Skipping txn %v because it had an error: %v", ii, err)
+				glog.Error(txnErrorString)
+				glog.Infof("DeSoBlockProducer._getBlockTemplate: Recomputing UtxoView without broken txn...")
 
-				// Update the block template stats for the admin dashboard.
-				failingTxnHash := mempoolTx.Hash.String()
-				failingTxnOriginalTimeAdded := mempoolTx.Added
-				if desoBlockProducer.latestBlockTemplateStats != nil &&
-					desoBlockProducer.latestBlockTemplateStats.FailingTxnHash == failingTxnHash {
-					// If we already have the txn stored, update the error message in case it changed
-					// and set the originalTimeAdded variable to compute an accurate staleness metric.
-					desoBlockProducer.latestBlockTemplateStats.FailingTxnError = txnErrorString
-					failingTxnOriginalTimeAdded = desoBlockProducer.latestBlockTemplateStats.FailingTxnOriginalTimeAdded
-				} else {
-					// If we haven't seen this txn before, build the block template stats from scratch.
-					blockTemplateStats := &BlockTemplateStats{}
-					blockTemplateStats.FailingTxnHash = mempoolTx.Hash.String()
-					blockTemplateStats.TxnCount = uint32(ii)
-					blockTemplateStats.FailingTxnError = txnErrorString
-					blockTemplateStats.FailingTxnOriginalTimeAdded = failingTxnOriginalTimeAdded
-					desoBlockProducer.latestBlockTemplateStats = blockTemplateStats
+				// When a txn encounters an error, the view is tainted and we
+				// need to recompute it from scratch before continuing.
+				newUtxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
+					desoBlockProducer.postgres, desoBlockProducer.chain.snapshot)
+				if err != nil {
+					return nil, nil, nil, errors.Wrapf(err,
+						"DeSoBlockProducer._getBlockTemplate: Error re-generating UtxoView; "+
+							"this should never ever happen: ")
 				}
-				// Compute the time since this txn started holding up the mempool.
-				currentTime := time.Now()
-				timeElapsed := currentTime.Sub(failingTxnOriginalTimeAdded)
-				desoBlockProducer.latestBlockTemplateStats.FailingTxnMinutesSinceAdded = timeElapsed.Minutes()
-
-				break
+				for jj := 0; jj < ii; jj++ {
+					txToRecompute := txnsOrderedByTimeAdded[jj]
+					_, _, _, _, err = newUtxoView._connectTransaction(
+						txToRecompute.Tx, txToRecompute.Hash, int64(txToRecompute.TxSizeBytes), uint32(blockRet.Header.Height), false,
+						false /*ignoreUtxos*/)
+					if err != nil {
+						return nil, nil, nil, errors.Wrapf(err,
+							"DeSoBlockProducer._getBlockTemplate: Error RE-connecting previous txn to "+
+								"UtxoView; this should never ever happen: ")
+					}
+				}
+				// By the time we get here, the view should have been fully
+				// recomputed so we continue with the new view
+				utxoView = newUtxoView
+				glog.Infof("DeSoBlockProducer._getBlockTemplate: UtxoView recomputed-- skipping txn now...")
+				// continue WITHOUT adding this txn to the block
+				continue
 			} else if desoBlockProducer.latestBlockTemplateStats != nil {
 				desoBlockProducer.latestBlockTemplateStats.FailingTxnError = "You good"
 				desoBlockProducer.latestBlockTemplateStats.FailingTxnHash = "Nada"

@@ -174,7 +174,7 @@ func TestDAOCoinBasic(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 
 	// Mine a few blocks to give the senderPkString some money.
@@ -591,7 +591,7 @@ func TestDAOCoinBasic(t *testing.T) {
 	}
 
 	// Create a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
 	// Swap m0 and m3 identities
 	// M0 DAO cap table before:

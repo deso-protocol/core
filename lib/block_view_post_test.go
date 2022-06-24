@@ -283,7 +283,7 @@ func TestSubmitPost(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -1651,8 +1651,8 @@ func TestDeSoDiamonds(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 	params.ForkHeights.DeSoDiamondsBlockHeight = 0
 	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
 
@@ -1859,8 +1859,8 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m4PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 	params.ForkHeights.DeSoDiamondsBlockHeight = 0
 	diamondValueMap := GetDeSoNanosDiamondLevelMapAtBlockHeight(0)
 

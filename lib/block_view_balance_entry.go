@@ -205,6 +205,13 @@ func (bav *UtxoView) GetBalanceEntry(holderPkid *PKID, creatorPkid *PKID, isDAOC
 			balanceEntry = balance.NewBalanceEntry()
 		}
 	}
+	if balanceEntry == nil {
+		return &BalanceEntry{
+			CreatorPKID:  creatorPkid,
+			HODLerPKID:   holderPkid,
+			BalanceNanos: *uint256.NewInt(),
+		}
+	}
 	return balanceEntry
 }
 

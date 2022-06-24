@@ -12,7 +12,7 @@ import (
 // accessSignature is the signed hash of (derivedPublicKey + expirationBlock)
 // in DER format, made with the ownerPublicKey.
 func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
-	expirationBlock uint64, accessSignature []byte) error {
+	expirationBlock uint64, accessSignature []byte, blockHeight uint32, params *DeSoParams) error {
 
 	// Sanity-check and convert ownerPublicKey to *btcec.PublicKey.
 	if err := IsByteArrayValidPublicKey(ownerPublicKey); err != nil {
@@ -27,14 +27,14 @@ func _verifyAccessSignature(ownerPublicKey []byte, derivedPublicKey []byte,
 	// Compute a hash of derivedPublicKey+expirationBlock.
 	expirationBlockBytes := EncodeUint64(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockBytes[:]...)
-	return _verifyBytesSignature(ownerPublicKey, accessBytes, accessSignature)
+	return _verifyBytesSignature(ownerPublicKey, accessBytes, accessSignature, blockHeight, params)
 }
 
 // _verifyAccessSignatureWithTransactionSpendingLimit verifies if the accessSignature is correct. Valid
 // accessSignature is the signed hash of (derivedPublicKey + expirationBlock + transaction spending limit)
 // in DER format, made with the ownerPublicKey.
-func _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey []byte, derivedPublicKey []byte,
-	expirationBlock uint64, transactionSpendingLimitBytes []byte, accessSignature []byte, blockHeight uint64) error {
+func _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey []byte, derivedPublicKey []byte, expirationBlock uint64,
+	transactionSpendingLimitBytes []byte, accessSignature []byte, blockHeight uint64, params *DeSoParams) error {
 
 	// Sanity-check and convert ownerPublicKey to *btcec.PublicKey.
 	if err := IsByteArrayValidPublicKey(ownerPublicKey); err != nil {
@@ -54,7 +54,7 @@ func _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey []byte, d
 	expirationBlockBytes := EncodeUint64(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockBytes[:]...)
 	accessBytes = append(accessBytes, transactionSpendingLimitBytes[:]...)
-	return _verifyBytesSignature(ownerPublicKey, accessBytes, accessSignature)
+	return _verifyBytesSignature(ownerPublicKey, accessBytes, accessSignature, uint32(blockHeight), params)
 }
 
 func (bav *UtxoView) _connectAuthorizeDerivedKey(
@@ -215,7 +215,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 				txMeta.ExpirationBlock,
 				transactionSpendingLimitBytes,
 				txMeta.AccessSignature,
-				uint64(blockHeight)); err != nil {
+				uint64(blockHeight),
+				bav.Params); err != nil {
 				return 0, 0, nil, errors.Wrap(
 					RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid, err.Error())
 			}
@@ -223,7 +224,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	} else {
 		// Verify that the access signature is valid. This means the derived key is authorized.
 		if err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
-			txMeta.ExpirationBlock, txMeta.AccessSignature); err != nil {
+			txMeta.ExpirationBlock, txMeta.AccessSignature, blockHeight, bav.Params); err != nil {
 			return 0, 0, nil, errors.Wrap(
 				RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid, err.Error())
 		}

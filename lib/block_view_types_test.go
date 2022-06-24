@@ -306,9 +306,9 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 
 	// Make the moneyPkString the paramUpdater so they can update the exchange rate.
 	rateUpdateIndex := 4
-	params.ParamUpdaterPublicKeys = make(map[PkMapKey]bool)
-	params.ParamUpdaterPublicKeys[MakePkMapKey(MustBase58CheckDecode(moneyPkString))] = true
-	paramsCopy.ParamUpdaterPublicKeys = params.ParamUpdaterPublicKeys
+	params.ExtraRegtestParamUpdaterKeys = make(map[PkMapKey]bool)
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(MustBase58CheckDecode(moneyPkString))] = true
+	paramsCopy.ExtraRegtestParamUpdaterKeys = params.ExtraRegtestParamUpdaterKeys
 	// Applying all the txns to the UtxoView should work. Include a rate update
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}

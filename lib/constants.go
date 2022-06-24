@@ -237,6 +237,17 @@ type ForkHeights struct {
 	// DAOCoinLimitOrderBlockHeight defines the height at which DAO Coin Limit Order transactions will be accepted.
 	DAOCoinLimitOrderBlockHeight uint32
 
+	// DerivedKeyEthSignatureCompatibilityBlockHeight allows authenticating derived keys that were signed with the Ethereum
+	// personal_sign signature standard. This in particular allows the usage of MetaMask for issuing derived keys.
+	DerivedKeyEthSignatureCompatibilityBlockHeight uint32
+
+	// OrderBookDBFetchOptimizationBlockHeight implements an optimization around fetching orders from the db.
+	OrderBookDBFetchOptimizationBlockHeight uint32
+
+	// ParamUpdaterRefactorBlockHeight indicates a point at which we refactored
+	// ParamUpdater to use a blockHeight-gated function rather than a constant.
+	ParamUpdaterRefactorBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -339,6 +350,8 @@ func GetEncoderMigrationHeightsList(forkHeights *ForkHeights) (
 type DeSoParams struct {
 	// The network type (mainnet, testnet, etc).
 	NetworkType NetworkType
+	// Set to true when we're running in regtest mode. This is useful for testing.
+	ExtraRegtestParamUpdaterKeys map[PkMapKey]bool
 	// The current protocol version we're running.
 	ProtocolVersion uint64
 	// The minimum protocol version we'll allow a peer we connect to
@@ -472,7 +485,6 @@ type DeSoParams struct {
 	MaxStakeMultipleBasisPoints uint64
 	MaxCreatorBasisPoints       uint64
 	MaxNFTRoyaltyBasisPoints    uint64
-	ParamUpdaterPublicKeys      map[PkMapKey]bool
 
 	// A list of transactions to apply when initializing the chain. Useful in
 	// cases where we want to hard fork or reboot the chain with specific
@@ -544,6 +556,9 @@ var RegtestForkHeights = ForkHeights{
 	DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
 	DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
 	DAOCoinLimitOrderBlockHeight:                         uint32(0),
+	DerivedKeyEthSignatureCompatibilityBlockHeight:       uint32(0),
+	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
+	ParamUpdaterRefactorBlockHeight:                      uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -557,6 +572,12 @@ func (params *DeSoParams) EnableRegtest() {
 		return
 	}
 
+	// Add a key defined in n0_test to the ParamUpdater set when running in regtest mode.
+	// Seed: verb find card ship another until version devote guilt strong lemon six
+	params.ExtraRegtestParamUpdaterKeys = map[PkMapKey]bool{}
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(MustBase58CheckDecode(
+		"tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"))] = true
+
 	// Clear the seeds
 	params.DNSSeeds = []string{}
 
@@ -568,10 +589,6 @@ func (params *DeSoParams) EnableRegtest() {
 
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
-
-	// Add a key defined in n0_test to the ParamUpdater set when running in regtest mode.
-	// Seed: verb find card ship another until version devote guilt strong lemon six
-	params.ParamUpdaterPublicKeys[MakePkMapKey(MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"))] = true
 
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.
@@ -614,18 +631,40 @@ var (
 	}
 	GenesisBlockHashHex = "5567c45b7b83b604f9ff5cb5e88dfc9ad7d5a1dd5818dd19e6d02466f47cbd62"
 	GenesisBlockHash    = mustDecodeHexBlockHash(GenesisBlockHashHex)
-
-	ParamUpdaterPublicKeys = map[PkMapKey]bool{
-		// 19Hg2mAJUTKFac2F2BBpSEm7BcpkgimrmD
-		MakePkMapKey(MustBase58CheckDecode(ArchitectPubKeyBase58Check)):                                true,
-		MakePkMapKey(MustBase58CheckDecode("BC1YLiXwGTte8oXEEVzm4zqtDpGRx44Y4rqbeFeAs5MnzsmqT5RcqkW")): true,
-		MakePkMapKey(MustBase58CheckDecode("BC1YLgGLKjuHUFZZQcNYrdWRrHsDKUofd9MSxDq4NY53x7vGt4H32oZ")): true,
-		MakePkMapKey(MustBase58CheckDecode("BC1YLj8UkNMbCsmTUTx5Z2bhtp8q86csDthRmK6zbYstjjbS5eHoGkr")): true,
-		MakePkMapKey(MustBase58CheckDecode("BC1YLgD1f7yw7Ue8qQiW7QMBSm6J7fsieK5rRtyxmWqL2Ypra2BAToc")): true,
-		MakePkMapKey(MustBase58CheckDecode("BC1YLfz4GH3Gfj6dCtBi8bNdNTbTdcibk8iCZS75toUn4UKZaTJnz9y")): true,
-		MakePkMapKey(MustBase58CheckDecode("BC1YLfoSyJWKjHGnj5ZqbSokC3LPDNBMDwHX3ehZDCA3HVkFNiPY5cQ")): true,
-	}
 )
+
+func GetParamUpdaterPublicKeys(blockHeight uint32, params *DeSoParams) map[PkMapKey]bool {
+	// We use legacy paramUpdater values before this block height
+	var paramUpdaterKeys map[PkMapKey]bool
+	if blockHeight < params.ForkHeights.ParamUpdaterRefactorBlockHeight {
+		paramUpdaterKeys = map[PkMapKey]bool{
+			// 19Hg2mAJUTKFac2F2BBpSEm7BcpkgimrmD
+			MakePkMapKey(MustBase58CheckDecode(ArchitectPubKeyBase58Check)):                                true,
+			MakePkMapKey(MustBase58CheckDecode("BC1YLiXwGTte8oXEEVzm4zqtDpGRx44Y4rqbeFeAs5MnzsmqT5RcqkW")): true,
+			MakePkMapKey(MustBase58CheckDecode("BC1YLgGLKjuHUFZZQcNYrdWRrHsDKUofd9MSxDq4NY53x7vGt4H32oZ")): true,
+			MakePkMapKey(MustBase58CheckDecode("BC1YLj8UkNMbCsmTUTx5Z2bhtp8q86csDthRmK6zbYstjjbS5eHoGkr")): true,
+			MakePkMapKey(MustBase58CheckDecode("BC1YLgD1f7yw7Ue8qQiW7QMBSm6J7fsieK5rRtyxmWqL2Ypra2BAToc")): true,
+			MakePkMapKey(MustBase58CheckDecode("BC1YLfz4GH3Gfj6dCtBi8bNdNTbTdcibk8iCZS75toUn4UKZaTJnz9y")): true,
+			MakePkMapKey(MustBase58CheckDecode("BC1YLfoSyJWKjHGnj5ZqbSokC3LPDNBMDwHX3ehZDCA3HVkFNiPY5cQ")): true,
+		}
+	} else {
+		paramUpdaterKeys = map[PkMapKey]bool{
+			MakePkMapKey(MustBase58CheckDecode("BC1YLgKBcYwyWCqnBHKoJY2HX1sc38A7JuA2jMNEmEXfcRpc7D6Hyiu")): true,
+			MakePkMapKey(MustBase58CheckDecode("BC1YLfrtYZs4mCeSALnjTUZMdcwsWNHoNaG5gWWD5WyvRrWNTGWWq1q")): true,
+			MakePkMapKey(MustBase58CheckDecode("BC1YLiABrQ1P5pKXdm8S1vj1annx6D8Asku5CXX477dpwYXDamprpWd")): true,
+			MakePkMapKey(MustBase58CheckDecode("BC1YLfqYyePuSYPVFB2mdh9Dss7PJ9j5vJts87b9zGbVJhQDjCJNdjb")): true,
+			MakePkMapKey(MustBase58CheckDecode("BC1YLjDmDtymghnMgAPmTCyykqhcNR19sgSS7pWNd36FXTZpUZNHypj")): true,
+		}
+	}
+
+	// Add extra paramUpdater keys when we're in regtest mode. This is useful in
+	// tests where we need to mess with things.
+	for kk, vv := range params.ExtraRegtestParamUpdaterKeys {
+		paramUpdaterKeys[kk] = vv
+	}
+
+	return paramUpdaterKeys
+}
 
 // GlobalDeSoParams is a global instance of DeSoParams that can be used inside nested functions, like encoders, without
 // having to pass DeSoParams everywhere. It can be set when node boots. Testnet params are used as default.
@@ -653,6 +692,12 @@ var MainnetForkHeights = ForkHeights{
 	DerivedKeySetSpendingLimitsBlockHeight:   uint32(130901),
 	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(130901),
 	DAOCoinLimitOrderBlockHeight:             uint32(130901),
+
+	// Fri Jun 9 @ 12pm PT
+	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(137173),
+	OrderBookDBFetchOptimizationBlockHeight:        uint32(137173),
+
+	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -813,7 +858,6 @@ var DeSoMainnetParams = DeSoParams{
 	// but whatever.
 	MaxCreatorBasisPoints:    100 * 100,
 	MaxNFTRoyaltyBasisPoints: 100 * 100,
-	ParamUpdaterPublicKeys:   ParamUpdaterPublicKeys,
 
 	// Use a canonical set of seed transactions.
 	SeedTxns: SeedTxns,
@@ -895,6 +939,12 @@ var TestnetForkHeights = ForkHeights{
 	// going to do it on mainnet. Testnet produces 60 blocks per hour.
 	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(304087 + 18*60),
 	DAOCoinLimitOrderBlockHeight:             uint32(304087),
+
+	// Thu Jun 9 @ 11:59pm PT
+	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(360584),
+	OrderBookDBFetchOptimizationBlockHeight:        uint32(360584),
+
+	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1016,7 +1066,6 @@ var DeSoTestnetParams = DeSoParams{
 	// but whatever.
 	MaxCreatorBasisPoints:    100 * 100,
 	MaxNFTRoyaltyBasisPoints: 100 * 100,
-	ParamUpdaterPublicKeys:   ParamUpdaterPublicKeys,
 
 	// Use a canonical set of seed transactions.
 	SeedTxns: TestSeedTxns,

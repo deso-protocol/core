@@ -2464,9 +2464,10 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
+	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 
-	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

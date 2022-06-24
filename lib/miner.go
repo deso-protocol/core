@@ -123,7 +123,7 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 
 		// Compute a few hashes before checking if we've solved the block.
 		timeBefore := time.Now()
-		bestHash, bestNonce, err := FindLowestHash(header, desoMiner.params.MiningIterationsPerCycle, uint64(desoMiner.BlockProducer.chain.blockTip().Height+1))
+		bestHash, bestNonce, err := FindLowestHash(header, desoMiner.params.MiningIterationsPerCycle)
 		glog.V(2).Infof("DeSoMiner._startThread: Time per iteration: %v", time.Since(timeBefore))
 		if err != nil {
 			// If there's an error just log it and break out.
@@ -427,7 +427,7 @@ func BigintToBytes(bigint *big.Int) []byte {
 // of the passed blockHeader field as it iterates. This makes it easy to
 // continue a subsequent batch of iterations after we return.
 func FindLowestHash(
-	blockHeaderr *MsgDeSoHeader, iterations uint64, blockHeight uint64) (
+	blockHeaderr *MsgDeSoHeader, iterations uint64) (
 	lowestHash *BlockHash, lowestNonce uint64, ee error) {
 	// Compute a hash of the header with the current nonce value.
 	bestNonce := blockHeaderr.Nonce

@@ -202,6 +202,9 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	// the node will rebuild snapshot by resyncing blocks up to the tip, starting from last snapshot epoch.
 	shouldRestart := false
 	if operationChannel.StateSemaphore > 0 || status.IsFlushing() {
+		operationChannel.StateSemaphore = 0
+		status.MainDBSemaphore = 0
+		status.AncestralDBSemaphore = 0
 		glog.Errorf(CLog(Red, fmt.Sprintf("NewSnapshot: Node didn't shut down properly last time. Entering a "+
 			"recovery mode. The node will roll back to last snapshot epoch block height (%v) and hash (%v), then restart.",
 			metadata.SnapshotBlockHeight, metadata.CurrentEpochBlockHash)))
