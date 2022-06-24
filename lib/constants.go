@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -698,7 +697,7 @@ var MainnetForkHeights = ForkHeights{
 	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(137173),
 	OrderBookDBFetchOptimizationBlockHeight:        uint32(137173),
 
-	ParamUpdaterRefactorBlockHeight: uint32(math.MaxUint32),
+	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
