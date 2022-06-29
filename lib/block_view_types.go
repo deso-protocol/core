@@ -1982,6 +1982,11 @@ type MessagingGroupEntry struct {
 	// is given to all group members.
 	MessagingGroupMembers []*MessagingGroupMember
 
+	// MuteList is a list of members that have been currently muted.
+	// Being muted means the member cannot send any messages to the group
+	// but can still cryptographically read new on-chain messages
+	MuteList []*MessagingGroupMember
+
 	// ExtraData is an arbitrary key value map
 	ExtraData map[string][]byte
 
