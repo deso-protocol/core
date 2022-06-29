@@ -7833,7 +7833,8 @@ func DBGetDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, orderID *Blo
 }
 
 func DBGetMatchingDAOCoinLimitOrders(
-	txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry) ([]*DAOCoinLimitOrderEntry, error) {
+	txn *badger.Txn, inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry,
+	orderEntriesInView map[DAOCoinLimitOrderMapKey]bool) ([]*DAOCoinLimitOrderEntry, error) {
 
 	queryOrder := inputOrder.Copy()
 	queryQuantityToFill := queryOrder.QuantityToFillInBaseUnits.Clone()
@@ -7888,6 +7889,11 @@ func DBGetMatchingDAOCoinLimitOrders(
 		rr := bytes.NewReader(matchingOrderBytes)
 		if exist, err := DecodeFromBytes(matchingOrder, rr); !exist || err != nil {
 			return nil, errors.Wrapf(err, "DBGetMatchingDAOCoinLimitOrders: problem decoding limit order")
+		}
+
+		// Skip if order is already in the view.
+		if _, exists := orderEntriesInView[matchingOrder.ToMapKey()]; exists {
+			continue
 		}
 
 		// Validate matching order's price.
