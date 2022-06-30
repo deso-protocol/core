@@ -757,8 +757,6 @@ func MakeDirIfNonExistent(filePath string) error {
 }
 
 func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
-	mp.mtx.Lock()
-	defer mp.mtx.Unlock()
 	blockHeight := uint64(mp.bc.blockTip().Height + 1)
 	allTxns := mp.readOnlyUniversalTransactionList
 
@@ -2350,7 +2348,7 @@ func (mp *DeSoMempool) StartMempoolDBDumper() {
 				glog.Info("StartMempoolDBDumper: Waking up! Dumping txns now...")
 
 				// Dump the txns and time it.
-				mp.DumpTxnsToDB()
+				// mp.DumpTxnsToDB()
 
 			case <-mp.quit:
 				break out
@@ -2360,8 +2358,6 @@ func (mp *DeSoMempool) StartMempoolDBDumper() {
 }
 
 func (mp *DeSoMempool) LoadTxnsFromDB() {
-	mp.mtx.Lock()
-	defer mp.mtx.Unlock()
 	glog.Infof("LoadTxnsFromDB: Loading mempool txns from db because --load_mempool_txns_from_db was set")
 	startTime := time.Now()
 
