@@ -74,8 +74,9 @@ func _dumpAndLoadMempool(mempool *DeSoMempool) {
 	newMempool := NewDeSoMempool(
 		mempool.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
-		mempool.dataDir, mempoolDir)
-	mempool.mempoolDir = ""
+		mempool.dataDir, "")
+	newMempool.mempoolDir = mempoolDir
+	newMempool.LoadTxnsFromDB()
 	mempool.resetPool(newMempool)
 }
 
