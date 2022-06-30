@@ -702,8 +702,6 @@ func (mp *DeSoMempool) isUnconnectedTxnInPool(hash *BlockHash) bool {
 
 func (mp *DeSoMempool) DumpTxnsToDB() {
 	// Dump all mempool txns into data_dir_path/temp_mempool_dump.
-	mp.mtx.Lock()
-	defer mp.mtx.Unlock()
 	err := mp.OpenTempDBAndDumpTxns()
 	if err != nil {
 		glog.Infof("DumpTxnsToDB: Problem opening temp db / dumping mempool txns: %v", err)
@@ -759,6 +757,8 @@ func MakeDirIfNonExistent(filePath string) error {
 }
 
 func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
+	mp.mtx.Lock()
+	defer mp.mtx.Unlock()
 	blockHeight := uint64(mp.bc.blockTip().Height + 1)
 	allTxns := mp.readOnlyUniversalTransactionList
 
