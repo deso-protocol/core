@@ -1057,9 +1057,9 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 			ExtraData: txn.ExtraData,
 		}
 
-		if txn.Signature != nil {
-			transaction.R = BigintToHash(txn.Signature.R)
-			transaction.S = BigintToHash(txn.Signature.S)
+		if txn.Signature.Sign != nil {
+			transaction.R = BigintToHash(txn.Signature.Sign.R)
+			transaction.S = BigintToHash(txn.Signature.Sign.S)
 		}
 
 		transactions = append(transactions, transaction)

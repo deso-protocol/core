@@ -292,6 +292,8 @@ const (
 	RuleErrorDerivedKeyNotAuthorized                    RuleError = "RuleErrorDerivedKeyNotAuthorized"
 	RuleErrorDerivedKeyInvalidExtraData                 RuleError = "RuleErrorDerivedKeyInvalidExtraData"
 	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
+	RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId    RuleError = "RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId"
+	RuleErrorDerivedKeyInvalidRecoveryId                RuleError = "RuleErrorDerivedKeyInvalidRecoveryId"
 
 	// Messages
 	RuleErrorMessagingPublicKeyCannotBeOwnerKey     RuleError = "RuleErrorMessagingPublicKeyCannotBeOwnerKey"
