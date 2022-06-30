@@ -2360,6 +2360,8 @@ func (mp *DeSoMempool) StartMempoolDBDumper() {
 }
 
 func (mp *DeSoMempool) LoadTxnsFromDB() {
+	mp.mtx.Lock()
+	defer mp.mtx.Unlock()
 	glog.Infof("LoadTxnsFromDB: Loading mempool txns from db because --load_mempool_txns_from_db was set")
 	startTime := time.Now()
 
