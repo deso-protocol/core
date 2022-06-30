@@ -2348,7 +2348,7 @@ func (mp *DeSoMempool) StartMempoolDBDumper() {
 				glog.Info("StartMempoolDBDumper: Waking up! Dumping txns now...")
 
 				// Dump the txns and time it.
-				// mp.DumpTxnsToDB()
+				mp.DumpTxnsToDB()
 
 			case <-mp.quit:
 				break out
