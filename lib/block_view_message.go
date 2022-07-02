@@ -831,6 +831,62 @@ func (bav *UtxoView) _connectMessagingGroup(
 		}
 	}
 
+	// V3 Messages: MUTING and UNMUTING members
+	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+		//var existingExtraData map[string][]byte
+		if existingEntry != nil && !existingEntry.isDeleted {
+			value, ok := existingEntry.ExtraData["OperationType"]
+			if ok {
+				muteList := existingEntry.MuteList
+
+				if string(value) == "MessagingGroupOperationMute" {
+					for _, s := range txMeta.MessagingGroupMembers {
+						// Add s to muteList
+						muteList = append(muteList, s)
+					}
+				} else if string(value) == "MessagingGroupOperationUnmute" {
+					for _, s := range txMeta.MessagingGroupMembers {
+						// Remove s from muteList
+						for i, toUnmute := range muteList {
+							if toUnmute == s {
+								muteList = append(muteList[:i], muteList[i+1:]...)
+								break
+							}
+						}
+					}
+				}
+				// Create a MessagingGroupEntry so we can add the entry to UtxoView.
+				messagingGroupEntry := MessagingGroupEntry{
+					GroupOwnerPublicKey:   &messagingGroupKey.OwnerPublicKey,
+					MessagingPublicKey:    messagingPublicKey,
+					MessagingGroupKeyName: NewGroupKeyName(txMeta.MessagingGroupKeyName),
+					MessagingGroupMembers: existingEntry.MessagingGroupMembers,
+					MuteList:              muteList,
+					ExtraData:             existingEntry.ExtraData,
+				}
+				// Create a utxoOps entry, we make a copy of the existing entry.
+				var prevMessagingKeyEntry *MessagingGroupEntry
+				if existingEntry != nil && !existingEntry.isDeleted {
+					prevMessagingKeyEntry = &MessagingGroupEntry{}
+					rr := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
+					if exists, err := DecodeFromBytes(prevMessagingKeyEntry, rr); !exists || err != nil {
+						return 0, 0, nil, errors.Wrapf(err,
+							"_connectMessagingGroup: Error decoding previous entry")
+					}
+				}
+				bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, &messagingGroupEntry)
+
+				// Construct UtxoOperation.
+				utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+					Type:                  OperationTypeMessagingKey,
+					PrevMessagingKeyEntry: prevMessagingKeyEntry,
+				})
+
+				return totalInput, totalOutput, utxoOpsForTxn, nil
+			}
+		}
+	}
+
 	// In DeSo V3 Messages, a messaging key can initialize a group chat with more than two parties. In group chats, all
 	// messages are encrypted to the group messaging public key. The group members are provided with an encrypted
 	// private key of the group's messagingPublicKey so that each of them can read the messages. We refer to
