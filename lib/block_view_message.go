@@ -929,6 +929,8 @@ func (bav *UtxoView) _connectMessagingGroup(
 		extraData = mergeExtraData(existingExtraData, txn.ExtraData)
 	}
 
+	muteList := existingEntry.MuteList
+
 	// TODO: Currently, it is technically possible for any user to add *any other* user to *any group* with
 	// a garbage EncryptedKey. This can be filtered out at the app layer, though, and for now it leaves the
 	// app layer with more flexibility compared to if we implemented an explicit permissioning model at the
@@ -940,6 +942,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		MessagingPublicKey:    messagingPublicKey,
 		MessagingGroupKeyName: NewGroupKeyName(txMeta.MessagingGroupKeyName),
 		MessagingGroupMembers: messagingMembers,
+		MuteList:              muteList,
 		ExtraData:             extraData,
 	}
 	// Create a utxoOps entry, we make a copy of the existing entry.
