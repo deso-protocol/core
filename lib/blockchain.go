@@ -2056,29 +2056,6 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		return true, false, nil
 	}
 
-	for ii, txn := range desoBlock.Txns {
-		if txn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
-			if desoBlock.Header.Height >= uint64(bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight) {
-				if txn.ExtraData != nil {
-					if transactionSpendingLimitBytes, exists := txn.ExtraData[TransactionSpendingLimitKey]; exists {
-						transactionSpendingLimit := &TransactionSpendingLimit{}
-						rr := bytes.NewReader(transactionSpendingLimitBytes)
-						if err := transactionSpendingLimit.FromBytes(rr); err == nil {
-							if transactionSpendingLimit.GlobalDESOLimit == math.MaxUint64 {
-								glog.Infof(CLog(Red, fmt.Sprintf("Found max uint64 spending limit at block height %v and "+
-									"hash %v in transaction ii: %v with hash: %v", desoBlock.Header.Height, blockHash, ii, txn.Hash())))
-								panic(false)
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	bc.bestChain = append(bc.bestChain, nodeToValidate)
-	bc.bestChainMap[*nodeToValidate.Hash] = nodeToValidate
-	return true, false, nil
-
 	// Now we try and add the block to the main block chain (note that it should
 	// already be on the main header chain if we've made it this far).
 
