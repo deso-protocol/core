@@ -742,6 +742,12 @@ func (bav *UtxoView) _connectMessagingGroup(
 			RuleErrorMessagingKeyBeforeBlockHeight, "_connectMessagingGroup: "+
 				"Problem connecting messaging key, too early block height")
 	}
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
+		return 0, 0, nil, fmt.Errorf("_connectMessagingGroup: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
 	txMeta := txn.TxnMeta.(*MessagingGroupMetadata)
 
 	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
