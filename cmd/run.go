@@ -158,22 +158,6 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String("block-producer-seed", "",
 		"When set, all blocks produced by the block producer will be signed by this "+
 			"seed.")
-	cmd.PersistentFlags().StringSlice("trusted-block-producer-public-keys", []string{
-		"BC1YLgS1zDJQqywFpsty4fFheUrZxVQNKEsrttppvUESFZCq6Nfoypm",
-		"BC1YLh768bVj2R3QpSiduxcvn7ipxF3L3XHsabZYtCGtsinUnNrZvNN",
-		"BC1YLgsiUgM1Vr35YwbkSfZB3NC9tyrMXBPuJ2SEBf8naDf6PRpNit9",
-		"BC1YLgW5jWudzSUvrvNkD4GReN3kvGvsTuqLLttKfsCbXb7vLSCjwTk",
-		"BC1YLi8X7U9DZc2UqPE4s5PjrNJJUa6PKygD7VF4u8vy96srm18YvEX",
-	},
-		"When set, this node will only accept new blocks that are signed by the trusted block "+
-			"producers. This setting, is pretty novel. It allows a network of full nodes who "+
-			"trust each other to create their own network that can't be easily taken over by a 51% "+
-			"attack. In some sense, it uses trust in order to lower the amount of work needed to "+
-			"protect the network, making it highly eco-friendly. Then, if full nodes ever want to "+
-			"allow open mining, all they need to do is unset these public keys (or one of the owners "+
-			"of the public keys can release her key material, pulling a metaphorical 'ripcord'). "+
-			"Importantly, until this point, the network will be completely protected from a 51% attack, "+
-			"giving it time to accumulate the necessary hash power.")
 	cmd.PersistentFlags().Uint64("trusted-block-producer-start-height", 37000,
 		"If --trusted-block-producer-public-keys is set, then all blocks after this height must "+
 			"be signed by one of these keys in order to be considered valid. Setting this value to zero "+
