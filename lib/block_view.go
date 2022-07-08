@@ -1153,38 +1153,9 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 			return nil, nil
 		}
 	} else {
-		// Look for a derived key entry in UtxoView and DB, check to make sure it exists
-		// and is not isDeleted.
-		derivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPkBytes, derivedPkBytes)
-		if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
-			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized,
-				"Derived key mapping for owner not found: Owner: %v, "+
-					"Derived key: %v", PkToStringMainnet(ownerPkBytes),
-				PkToStringMainnet(derivedPkBytes))
-		}
-
-		// Sanity-check that transaction public keys line up with looked-up derivedKeyEntry public keys.
-		if !reflect.DeepEqual(ownerPkBytes, derivedKeyEntry.OwnerPublicKey[:]) ||
-			!reflect.DeepEqual(derivedPkBytes, derivedKeyEntry.DerivedPublicKey[:]) {
-			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "DB entry (OwnerPubKey, "+
-				"DerivedPubKey) = (%v, %v) does not match keys used to "+
-				"look up the entry: (%v, %v). This should never happen.",
-				PkToStringMainnet(derivedKeyEntry.OwnerPublicKey[:]),
-				PkToStringMainnet(derivedKeyEntry.DerivedPublicKey[:]),
-				PkToStringMainnet(ownerPkBytes),
-				PkToStringMainnet(derivedPkBytes))
-		}
-
-		// At this point, we know the derivedKeyEntry that we have is matching.
-		// We check if the derived key hasn't been de-authorized or hasn't expired.
-		if derivedKeyEntry.OperationType != AuthorizeDerivedKeyOperationValid ||
-			derivedKeyEntry.ExpirationBlock <= uint64(blockHeight) {
-			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Derived key EITHER "+
-				"deactivated or block height expired. Deactivation status: %v, "+
-				"Expiration block height: %v, Current block height: %v",
-				derivedKeyEntry.OperationType,
-				derivedKeyEntry.ExpirationBlock,
-				blockHeight)
+		// Look for a derived key entry in UtxoView and DB, check to make sure it exists and is not isDeleted.
+		if err := bav.ValidateDerivedKey(ownerPkBytes, derivedPkBytes, uint64(blockHeight)); err != nil {
+			return nil, err
 		}
 
 		// All checks passed so we try to verify the signature.
@@ -1197,6 +1168,36 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	}
 
 	return nil, RuleErrorInvalidTransactionSignature
+}
+
+// ValidateDerivedKey checks if a derived key is authorized and valid.
+func (bav *UtxoView) ValidateDerivedKey(ownerPkBytes []byte, derivedPkBytes []byte, blockHeight uint64) error {
+	derivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPkBytes, derivedPkBytes)
+	if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
+		return errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Derived key mapping for owner not found: Owner: %v, "+
+			"Derived key: %v", PkToStringBoth(ownerPkBytes), PkToStringBoth(derivedPkBytes))
+	}
+
+	// Sanity-check that transaction public keys line up with looked-up derivedKeyEntry public keys.
+	if !reflect.DeepEqual(ownerPkBytes, derivedKeyEntry.OwnerPublicKey[:]) ||
+		!reflect.DeepEqual(derivedPkBytes, derivedKeyEntry.DerivedPublicKey[:]) {
+		return errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "DB entry (OwnerPubKey, DerivedPubKey) = (%v, %v) does not "+
+			"match keys used to look up the entry: (%v, %v). This should never happen.",
+			PkToStringBoth(derivedKeyEntry.OwnerPublicKey[:]), PkToStringBoth(derivedKeyEntry.DerivedPublicKey[:]),
+			PkToStringBoth(ownerPkBytes), PkToStringBoth(derivedPkBytes))
+	}
+
+	// At this point, we know the derivedKeyEntry that we have is matching.
+	// We check if the derived key hasn't been de-authorized or hasn't expired.
+	if derivedKeyEntry.OperationType != AuthorizeDerivedKeyOperationValid ||
+		derivedKeyEntry.ExpirationBlock <= blockHeight {
+		return errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Derived key EITHER deactivated or block height expired. "+
+			"Deactivation status: %v, Expiration block height: %v, Current block height: %v",
+			derivedKeyEntry.OperationType, derivedKeyEntry.ExpirationBlock, blockHeight)
+	}
+
+	// If we get to this point, we got a valid derived key.
+	return nil
 }
 
 // IsDerivedSignature checks if a transaction was signed using a derived key. If so, it will recover the derived key used

@@ -335,6 +335,10 @@ func (bav *UtxoView) _deleteProfileEntryMappings(profileEntry *ProfileEntry) {
 	bav._setProfileEntryMappings(&tombstoneProfileEntry)
 }
 
+func (bav *UtxoView) GetDerivedKeyEntry(ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
+	return bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
+}
+
 // _getDerivedKeyMappingForOwner fetches the derived key mapping from the utxoView
 func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
 	// Check if the entry exists in utxoView.
