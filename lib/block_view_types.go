@@ -1980,7 +1980,7 @@ type MessagingGroupEntry struct {
 	// MessagingGroupMembers is a list of recipients in a group chat. Messaging keys can have
 	// multiple recipients, where the encrypted private key of the messaging public key
 	// is given to all group members.
-	MessagingGroupMembers []*MessagingGroupMembe
+	MessagingGroupMembers []*MessagingGroupMember
 
 	// ExtraData is an arbitrary key value map
 	ExtraData map[string][]byte
