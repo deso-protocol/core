@@ -1680,6 +1680,9 @@ func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 		MessagingGroupMembers: []*MessagingGroupMember{
 			messagingGroupMember,
 		},
+		MuteList: []*MessagingGroupMember{
+			messagingGroupMember,
+		},
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForMessagingGroupMember(
