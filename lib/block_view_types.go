@@ -1980,12 +1980,7 @@ type MessagingGroupEntry struct {
 	// MessagingGroupMembers is a list of recipients in a group chat. Messaging keys can have
 	// multiple recipients, where the encrypted private key of the messaging public key
 	// is given to all group members.
-	MessagingGroupMembers []*MessagingGroupMember
-
-	// MuteList is a list of members that have been currently muted.
-	// Being muted means the member cannot send any messages to the group
-	// but can still cryptographically read new on-chain messages
-	MuteList []*MessagingGroupMember
+	MessagingGroupMembers []*MessagingGroupMembe
 
 	// ExtraData is an arbitrary key value map
 	ExtraData map[string][]byte
@@ -1994,6 +1989,11 @@ type MessagingGroupEntry struct {
 	// to the db. This is initially set to false, but can become true if
 	// we disconnect the messaging key from UtxoView
 	isDeleted bool
+
+	// MuteList is a list of members that have been currently muted.
+	// Being muted means the member cannot send any messages to the group
+	// but can still cryptographically read new on-chain messages
+	MuteList []*MessagingGroupMember
 }
 
 func (entry *MessagingGroupEntry) String() string {
