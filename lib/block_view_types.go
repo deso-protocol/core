@@ -2086,6 +2086,18 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
 	}
 
+	muteListLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding MuteList length")
+	}
+	for ; muteListLen > 0; muteListLen-- {
+		muteListMember := &MessagingGroupMember{}
+		if exist, err := DecodeFromBytes(muteListMember, rr); exist && err == nil {
+			entry.MuteList = append(entry.MuteList, muteListMember)
+		} else if err != nil {
+			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding muteListMember")
+		}
+	}
 	return nil
 }
 
