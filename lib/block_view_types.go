@@ -2035,8 +2035,8 @@ func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, s
 	// We sort the MuteList members because they can be added while iterating over
 	// a map, which could lead to inconsistent orderings across nodes when encoding.
 	muteListMembers := sortMessagingGroupMembers(entry.MuteList)
-	for iii := 0; iii < len(muteListMembers); iii++ {
-		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, muteListMembers[iii], skipMetadata...)...)
+	for ii := 0; ii < len(muteListMembers); ii++ {
+		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, muteListMembers[ii], skipMetadata...)...)
 	}
 	return entryBytes
 }
