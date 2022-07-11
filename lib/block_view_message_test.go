@@ -2470,6 +2470,76 @@ func TestGroupMessages(t *testing.T) {
 		messages, _, err = utxoView.GetMessagesForUser(m2PubKey)
 		require.NoError(err)
 		assert.Equal(1, len(messages))
+
+		// UNMUTING TESTS
+		// Let us now unmute m0
+		var unmuteList []*MessagingGroupMember
+		unmuteList = append(unmuteList, &MessagingGroupMember{
+			m0PublicKey,
+			BaseGroupKeyName(),
+			encrypt(privBytes, m0PubKey), // This is different since last usage??
+		})
+		//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
+		extraData = make(map[string][]byte)
+		extraData["OperationType"] = []byte("MessagingGroupOperationUnmute")
+		_messagingKeyWithExtraDataWithTestMeta(
+			testMeta,
+			senderPkBytes,
+			senderPrivString,
+			entry.MessagingPublicKey[:],
+			gangKey,
+			[]byte{},
+			unmuteList,
+			extraData,
+			nil)
+		// The decrypted key should match the original private key.
+		require.Equal(privBytes, m0PrivBytes)
+		// Now it's time to encrypt the message.
+		tstampNanos = uint64(time.Now().UnixNano())
+		testMessage = []byte("DeSo Group Chat Unmuting Works because this will be sent!")
+		encryptedMessage = encrypt(testMessage, entry.MessagingPublicKey[:])
+		// Create the corresponding message entry and connect it.
+		unmuteMessageEntry := MessageEntry{
+			m0PublicKey,
+			senderPublicKey,
+			encryptedMessage,
+			tstampNanos,
+			false,
+			MessagesVersion3,
+			m0PublicKey,
+			BaseGroupKeyName(),
+			entry.MessagingPublicKey,
+			NewGroupKeyName(gangKey),
+			nil,
+		}
+		_helpConnectPrivateMessageWithParty(testMeta, m0Priv, unmuteMessageEntry, nil)
+		// m0 is now unmuted and hence:
+		// The message should be successfully added, so we now have:
+		// m0 -> group(sender, recipient, m0, m2)
+		// 	sender: 7
+		//	recipient: 8
+		//  m1: 5
+		// 	m0: 5
+		// 	m2: 2
+		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, unmuteMessageEntry, false))
+
+		// Verify the messages AGAIN.
+		_verifyMessages(testMeta, expectedMessageEntries)
+		// Just to sanity-check, verify that the number of messages is as intended.
+		utxoView, err = NewUtxoView(db, params, nil, chain.snapshot)
+		require.NoError(err)
+		messages, _, err = utxoView.GetMessagesForUser(senderPkBytes)
+		require.NoError(err)
+		assert.Equal(7, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes)
+		require.NoError(err)
+		assert.Equal(8, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(m0PubKey)
+		require.NoError(err)
+		assert.Equal(5, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(m2PubKey)
+		require.NoError(err)
+		assert.Equal(2, len(messages))
 	}
 
 	// Now disconnect all entries.
