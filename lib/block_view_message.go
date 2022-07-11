@@ -875,8 +875,11 @@ func (bav *UtxoView) _connectMessagingGroup(
 				} else if string(value) == "MessagingGroupOperationUnmute" {
 					for _, s := range txMeta.MessagingGroupMembers {
 						// Remove s from muteList
+						//if contains(existingEntry.MuteList, s) {
+						//	existingEntry
+						//}
 						for i, toUnmute := range existingEntry.MuteList {
-							if toUnmute == s {
+							if reflect.DeepEqual(toUnmute.GroupMemberPublicKey, s.GroupMemberPublicKey) {
 								existingEntry.MuteList = append(existingEntry.MuteList[:i], existingEntry.MuteList[i+1:]...)
 								break
 							}
