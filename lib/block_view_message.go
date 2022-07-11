@@ -501,13 +501,6 @@ func (bav *UtxoView) _connectPrivateMessage(
 				RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
 		}
 		for _, muteListMember := range muteList {
-			// how to convert senderMessagingPublicKey [bytes] to MessagingGroupMember?????
-			//muteMap := map[*MessagingGroupMember]bool
-			//for _, m := range muteList {
-			//	if val, ok := muteMap[]; ok {
-			//		//do something here
-			//	}
-			//}
 
 			for _, mutedMember := range muteList {
 				if mutedMember.GroupMemberPublicKey == NewPublicKey(senderMessagingPublicKey) {
