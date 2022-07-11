@@ -64,7 +64,6 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 
 func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 	messagingGroupKey *MessagingGroupKey) *MessagingGroupEntry {
-
 	// This function is used to get a MessagingGroupEntry given a MessagingGroupKey. The V3 messages are
 	// backwards-compatible, and in particular each user has a built-in MessagingGroupKey, called the
 	// "base group key," which is simply a messaging key corresponding to user's main key.
@@ -379,7 +378,6 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicK
 func (bav *UtxoView) _connectPrivateMessage(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
-
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypePrivateMessage {
 		return 0, 0, nil, fmt.Errorf("_connectPrivateMessage: called with bad TxnType %s",
@@ -473,18 +471,32 @@ func (bav *UtxoView) _connectPrivateMessage(
 				RuleErrorPrivateMessageSentWithoutProperMessagingParty,
 				"_connectPrivateMessage: at least one messaging party must be present")
 		}
+		//messagingGroupKeyName, existsKeyName := txn.ExtraData[RecipientMessagingGroupKeyName]
+		//if !existsKeyName {
+		//	return 0, 0, nil, errors.Wrapf(
+		//		RuleErrorPrivateMessageFailedToValidateMessagingKey,
+		//		"_connectPrivateMessage: txn.ExtraData[RecipientMessagingGroupKeyName] must be present to form MessagingGroupKey")
+		//}
 
 		// Reject message if sender is muted
 		var messagingGroupKey *MessagingGroupKey
-		messagingGroupKeyName, existsKeyName := txn.ExtraData[RecipientMessagingGroupKeyName]
-		// At least one of these fields must exist if this is a V3 message.
-		if !existsKeyName {
-			return 0, 0, nil, errors.Wrapf(
-				RuleErrorPrivateMessageFailedToValidateMessagingKey,
-				"_connectPrivateMessage: txn.ExtraData[RecipientMessagingGroupKeyName] must be present to form MessagingGroupKey")
-		}
-		messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txn.PublicKey), messagingGroupKeyName)
+		//var messagingPublicKey *PublicKey
+		//if reflect.DeepEqual(recipientMessagingPublicKey, GetS256BasePointCompressed()) {
+		//	messagingGroupKey = NewMessagingGroupKey(NewPublicKey(GetS256BasePointCompressed()), messagingGroupKeyName)
+		//	//_, keyPublic := btcec.PrivKeyFromBytes(btcec.S256(), Sha256DoubleHash(messagingGroupKeyName)[:])
+		//	//messagingPublicKey = NewPublicKey(keyPublic.SerializeCompressed())
+		//} else {
+		//	messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txn.PublicKey), messagingGroupKeyName)
+		//	//messagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
+		//}
+		// First, let's check if this key doesn't already exist in UtxoView or in the DB.
+		// It's worth noting that we index messaging keys by the owner public key and messaging key name.
+		messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txMeta.RecipientPublicKey), txn.ExtraData[RecipientMessagingGroupKeyName])
 		messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
+
+		//messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txn.PublicKey), messagingGroupKeyName)
+		//messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
+
 		if messagingGroupEntry != nil {
 			muteList := messagingGroupEntry.MuteList
 			if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
@@ -493,7 +505,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 			}
 			// TODO: Make the following more efficient by retrieving MuteList from hacked MessagingGroupEntry to avoid fetching bulky MessagingGroupEntry
 			for _, mutedMember := range muteList {
-				if mutedMember.GroupMemberPublicKey == NewPublicKey(senderMessagingPublicKey) {
+				if reflect.DeepEqual(mutedMember.GroupMemberPublicKey, NewPublicKey(senderMessagingPublicKey)) {
 					return 0, 0, nil, errors.Wrapf(
 						RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
 							"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
@@ -859,12 +871,10 @@ func (bav *UtxoView) _connectMessagingGroup(
 	}
 
 	// V3 Messages: MUTING and UNMUTING members
-	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
 		if existingEntry != nil && !existingEntry.isDeleted {
-			value, ok := existingEntry.ExtraData["OperationType"]
+			value, ok := txn.ExtraData["OperationType"]
 			if ok {
-				muteList := existingEntry.MuteList
-
 				// inline helper method
 				contains := func(memberList []*MessagingGroupMember, member *MessagingGroupMember) bool {
 					for _, a := range memberList {
@@ -879,16 +889,16 @@ func (bav *UtxoView) _connectMessagingGroup(
 					for _, s := range txMeta.MessagingGroupMembers {
 						// Add s to muteList
 						// Make sure does not already exist to ensure no dups
-						if !contains(muteList, s) {
-							muteList = append(muteList, s)
+						if !contains(existingEntry.MuteList, s) {
+							existingEntry.MuteList = append(existingEntry.MuteList, s)
 						}
 					}
 				} else if string(value) == "MessagingGroupOperationUnmute" {
 					for _, s := range txMeta.MessagingGroupMembers {
 						// Remove s from muteList
-						for i, toUnmute := range muteList {
+						for i, toUnmute := range existingEntry.MuteList {
 							if toUnmute == s {
-								muteList = append(muteList[:i], muteList[i+1:]...)
+								existingEntry.MuteList = append(existingEntry.MuteList[:i], existingEntry.MuteList[i+1:]...)
 								break
 							}
 						}
@@ -900,7 +910,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 					MessagingPublicKey:    messagingPublicKey,
 					MessagingGroupKeyName: NewGroupKeyName(txMeta.MessagingGroupKeyName),
 					MessagingGroupMembers: existingEntry.MessagingGroupMembers,
-					MuteList:              muteList,
+					MuteList:              existingEntry.MuteList,
 					ExtraData:             existingEntry.ExtraData,
 				}
 				// Create a utxoOps entry, we make a copy of the existing entry.
