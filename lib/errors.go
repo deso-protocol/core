@@ -310,6 +310,7 @@ const (
 	RuleErrorMessagingKeyConnect                    RuleError = "RuleErrorMessagingKeyConnect"
 	RuleErrorMessagingKeySignatureNotProvided       RuleError = "RuleErrorMessagingKeySignatureNotProvided"
 	RuleErrorMessagingKeyBeforeBlockHeight          RuleError = "RuleErrorMessagingKeyBeforeBlockHeight"
+	RuleErrorMessagingMemberMuted                   RuleError = "RuleErrorMessagingMemberMuted"
 
 	// NFTs
 	RuleErrorTooManyNFTCopies                            RuleError = "RuleErrorTooManyNFTCopies"
