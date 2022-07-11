@@ -1,11 +1,16 @@
 package lib
 
 import (
+	"encoding/hex"
 	"fmt"
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/core/migrate"
 	"github.com/dgraph-io/badger/v3"
+	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "net/http/pprof"
+	"reflect"
 	"testing"
 )
 
@@ -350,7 +355,12 @@ func TestUpdateGlobalParams(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	// Don't use postgres in this test.
+	var postgres *Postgres
+	postgres = nil
+	var err error
+
+	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_, _ = mempool, miner
 
@@ -385,7 +395,6 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 	// Should pass when founder key is equal to moneyPk
 	var updateGlobalParamsTxn *MsgDeSoTxn
-	var err error
 	{
 		newUSDCentsPerBitcoin := int64(270430 * 100)
 		newMinimumNetworkFeeNanosPerKB := int64(191)
@@ -404,7 +413,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			false)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot)
 		require.NoError(err)
 		txnSize := getTxnSize(*updateGlobalParamsTxn)
 		blockHeight := chain.blockTip().Height + 1
@@ -467,7 +476,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 		require.Equal(DbGetGlobalParamsEntry(db, chain.snapshot), expectedGlobalParams)
 
 		// Now let's do a disconnect and make sure the values reflect the previous entry.
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot)
 		require.NoError(err)
 		blockHeight := chain.blockTip().Height + 1
 		utxoView.DisconnectTransaction(
@@ -489,10 +498,17 @@ func TestBasicTransfer(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	postgres := initializeTestPostgresInstance(t)
+
+	migrate.LoadMigrations()
+	err := migrations.Run(postgres.db, "migrate", []string{"", "migrate"})
+	require.NoError(err)
+
+	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
+
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Mine two blocks to give the sender some DeSo.
-	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
@@ -530,7 +546,7 @@ func TestBasicTransfer(t *testing.T) {
 		txn.PublicKey = recipientPkBytes
 
 		_signTxn(t, txn, recipientPrivString)
-		utxoView, _ := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -564,7 +580,7 @@ func TestBasicTransfer(t *testing.T) {
 		// Sign the transaction with the recipient's key rather than the
 		// sender's key.
 		_signTxn(t, txn, recipientPrivString)
-		utxoView, _ := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -591,7 +607,7 @@ func TestBasicTransfer(t *testing.T) {
 			},
 		}
 		_signTxn(t, txn, senderPrivString)
-		utxoView, _ := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -626,7 +642,7 @@ func TestBasicTransfer(t *testing.T) {
 		require.Greater(totalInput, uint64(0))
 
 		_signTxn(t, txn, senderPrivString)
-		utxoView, _ := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -650,7 +666,7 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil, 0)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardExceedsMaxAllowed)
@@ -666,8 +682,162 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil, 0)
 		require.NoError(err)
 	}
+}
+
+func TestBasicTransferSignatures(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	postgres := initializeTestPostgresInstance(t)
+
+	migrate.LoadMigrations()
+	err := migrations.Run(postgres.db, "migrate", []string{"", "migrate"})
+	require.NoError(err)
+
+	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
+	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
+
+	_ = db
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	// Mine two blocks to give the sender some DeSo.
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+	require.NoError(err)
+	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
+	require.NoError(err)
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
+	require.NoError(err)
+
+	createTransaction := func(mempool *DeSoMempool) *MsgDeSoTxn {
+		txn := &MsgDeSoTxn{
+			// The inputs will be set below.
+			TxInputs: []*DeSoInput{},
+			TxOutputs: []*DeSoOutput{
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 1,
+				},
+			},
+			PublicKey: senderPkBytes,
+			TxnMeta:   &BasicTransferMetadata{},
+		}
+
+		totalInput, spendAmount, changeAmount, fees, err :=
+			chain.AddInputsAndChangeToTransaction(txn, 10, mempool)
+		require.NoError(err)
+		require.Equal(totalInput, spendAmount+changeAmount+fees)
+		require.Greater(totalInput, uint64(0))
+		return txn
+	}
+
+	mineSignedTransactions := func(txns []*MsgDeSoTxn) {
+		var mempoolTxs []*MempoolTx
+		for _, txn := range txns {
+			mempoolTx, err := mempool.processTransaction(txn, true, true, 0, true)
+			require.NoError(err)
+			mempoolTxs = append(mempoolTxs, mempoolTx...)
+		}
+		require.Equal(len(txns), len(mempoolTxs))
+		block, err := miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(err)
+		require.Equal(1+len(txns), len(block.Txns))
+		for ii := 1; ii < len(block.Txns); ii++ {
+			transactionHash := mempoolTxs[ii-1].Hash
+			require.Equal(true, reflect.DeepEqual(transactionHash.ToBytes(), block.Txns[ii].Hash().ToBytes()))
+		}
+	}
+
+	// Just a basic transfer with a bad signature.
+	{
+		txn := createTransaction(mempool)
+		// Sign the transaction with the recipient's key rather than the
+		// sender's key.
+		_signTxn(t, txn, senderPrivString)
+		mineSignedTransactions([]*MsgDeSoTxn{txn})
+		transactionHash := txn.Hash()
+		pgTxn := postgres.GetTransactionByHash(transactionHash)
+
+		if !reflect.DeepEqual(txn.Signature.Sign.R.Bytes(), pgTxn.R.ToBytes()) {
+			fmt.Println("PROBLEM COMPARING R", txn.Signature.Sign.R.Bytes(), pgTxn.R.ToBytes())
+		}
+		if !reflect.DeepEqual(txn.Signature.Sign.S.Bytes(), pgTxn.S.ToBytes()) {
+			fmt.Println("PROBLEM COMPARING S", txn.Signature.Sign.S.Bytes(), pgTxn.S.ToBytes())
+		}
+		require.Equal(true, reflect.DeepEqual(txn.Signature.Sign.R.Bytes(), pgTxn.R.ToBytes()))
+		require.Equal(true, reflect.DeepEqual(txn.Signature.Sign.S.Bytes(), pgTxn.S.ToBytes()))
+		require.Equal(txn.Signature.RecoveryId, byte(pgTxn.RecoveryId))
+		require.Equal(txn.Signature.IsRecoverable, pgTxn.IsRecoverable)
+		fmt.Println("transaction", pgTxn)
+	}
+
+	// Add a test where a derived key is authorized and then signs a transaction. Then edge-cases.
+	savedHeight := chain.blockTip().Height + 1
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: savedHeight,
+	}
+	{
+		transactionSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit:              100,
+			TransactionCountLimitMap:     make(map[TxnType]uint64),
+			CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
+			DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+			NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
+		}
+		transactionSpendingLimit.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
+		extraData := make(map[string]interface{})
+		extraData[TransactionSpendingLimitKey] = transactionSpendingLimit
+		authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
+			t, senderPrivKey, 10, transactionSpendingLimit, false)
+		_ = testMeta
+		transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes(0)
+		require.NoError(err)
+		derivedKeyTxn, totalInput, changeAmount, fees, err := chain.CreateAuthorizeDerivedKeyTxn(
+			senderPkBytes,
+			authTxnMeta.DerivedPublicKey,
+			authTxnMeta.ExpirationBlock,
+			authTxnMeta.AccessSignature,
+			false,
+			false,
+			nil,
+			[]byte{},
+			hex.EncodeToString(transactionSpendingLimitBytes),
+			10,
+			mempool,
+			nil,
+		)
+		require.NoError(err)
+		require.Equal(totalInput, changeAmount+fees)
+		require.Greater(totalInput, uint64(0))
+		require.NoError(err)
+		_ = derivedPriv
+		_ = derivedKeyTxn
+		_signTxn(t, derivedKeyTxn, senderPrivString)
+
+		var allTxns []*MsgDeSoTxn
+		allTxns = append(allTxns, derivedKeyTxn)
+
+		//moneyTxn := createTransaction(mempool)
+		//derivedPrivBase58Check := Base58CheckEncode(derivedPriv.Serialize(), true, params)
+		//_signTxnWithDerivedKeyAndType(t, moneyTxn, derivedPrivBase58Check, 0)
+		//allTxns = append(allTxns, moneyTxn)
+		mineSignedTransactions(allTxns)
+	}
+
 }

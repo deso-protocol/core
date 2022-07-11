@@ -248,6 +248,9 @@ type ForkHeights struct {
 	// ParamUpdater to use a blockHeight-gated function rather than a constant.
 	ParamUpdaterRefactorBlockHeight uint32
 
+	// UnlimitedDerivedKeysBlockHeight allows for derived keys without a spending limit.
+	UnlimitedDerivedKeysBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -293,10 +296,11 @@ type ForkHeights struct {
 //		}
 //	MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
 //
-// 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. (Note
+// 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. Use the
+//		function GetMigrationVersion to chain encoder migrations (Note the variadic parameter of GetMigrationVersion and
 //		the usage of the MigrationName UtxoEntryTestHeight)
 //
-//		return GetMigrationVersion(blockHeight, [UtxoEntryTestHeight])
+//		return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
 //
 // That's it!
 type MigrationName string
@@ -307,11 +311,15 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration MigrationName = "DefaultMigration"
+	DefaultMigration              MigrationName = "DefaultMigration"
+	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
 )
 
 type EncoderMigrationHeights struct {
 	DefaultMigration MigrationHeight
+
+	// UnlimitedDerivedKeysMigration coincides with the UnlimitedDerivedKeysBlockHeight block
+	UnlimitedDerivedKeysMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -320,6 +328,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 0,
 			Height:  forkHeights.DefaultHeight,
 			Name:    DefaultMigration,
+		},
+		UnlimitedDerivedKeysMigration: MigrationHeight{
+			Version: 1,
+			Height:  uint64(forkHeights.UnlimitedDerivedKeysBlockHeight),
+			Name:    UnlimitedDerivedKeysMigration,
 		},
 	}
 }
@@ -559,6 +572,7 @@ var RegtestForkHeights = ForkHeights{
 	DerivedKeyEthSignatureCompatibilityBlockHeight:       uint32(0),
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
+	UnlimitedDerivedKeysBlockHeight:                      uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -698,6 +712,8 @@ var MainnetForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:        uint32(137173),
 
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
+
+	UnlimitedDerivedKeysBlockHeight: uint32(145500),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -945,6 +961,8 @@ var TestnetForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:        uint32(360584),
 
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
+
+	UnlimitedDerivedKeysBlockHeight: uint32(385000),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.

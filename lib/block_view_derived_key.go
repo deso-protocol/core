@@ -53,7 +53,7 @@ func _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey []byte, d
 	transactionSpendingLimit := &TransactionSpendingLimit{}
 	rr := bytes.NewReader(transactionSpendingLimitBytes)
 	// This error is fine because transaction should fail anyway if spending limit cannot be decoded.
-	if err := transactionSpendingLimit.FromBytes(rr); err != nil {
+	if err := transactionSpendingLimit.FromBytes(blockHeight, rr); err != nil {
 		return errors.Wrapf(err, "Error decoding transaction spending limit from extra data")
 	}
 
@@ -193,7 +193,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			if transactionSpendingLimitBytes, exists = txn.ExtraData[TransactionSpendingLimitKey]; exists {
 				transactionSpendingLimit = &TransactionSpendingLimit{}
 				rr := bytes.NewReader(transactionSpendingLimitBytes)
-				if err := transactionSpendingLimit.FromBytes(rr); err != nil {
+				if err := transactionSpendingLimit.FromBytes(uint64(blockHeight), rr); err != nil {
 					return 0, 0, nil, errors.Wrapf(
 						err, "Error decoding transaction spending limit from extra data")
 				}

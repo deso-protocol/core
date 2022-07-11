@@ -3644,8 +3644,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -3769,6 +3769,40 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	}
 
 	return nil
+}
+
+// GetBlockTipHeight fetches the current block tip height from the database.
+func GetBlockTipHeight(handle *badger.DB, bitcoinNodes bool) (uint64, error) {
+	var blockHeight uint64
+	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
+	// Seek prefix will look for the block node with the largest block height. We populate the maximal possible
+	// uint32 and iterate backwards.
+	seekPrefix := append(prefix, []byte{0xff, 0xff, 0xff, 0xff}...)
+
+	err := handle.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Reverse = true
+		nodeIterator := txn.NewIterator(opts)
+		defer nodeIterator.Close()
+
+		// Fetch a single blocknode and then return.
+		nodeIterator.Seek(seekPrefix)
+		if !nodeIterator.ValidForPrefix(prefix) {
+			return fmt.Errorf("No block nodes were found in the database")
+		}
+
+		item := nodeIterator.Item()
+		err := item.Value(func(blockNodeBytes []byte) error {
+			blockNode, err := DeserializeBlockNode(blockNodeBytes)
+			if err != nil {
+				return err
+			}
+			blockHeight = uint64(blockNode.Height)
+			return nil
+		})
+		return err
+	})
+	return blockHeight, err
 }
 
 func GetBlockIndex(handle *badger.DB, bitcoinNodes bool) (map[BlockHash]*BlockNode, error) {
@@ -7586,7 +7620,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -7713,7 +7747,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}

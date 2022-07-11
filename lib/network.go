@@ -4916,6 +4916,10 @@ type TransactionSpendingLimit struct {
 	// BuyingCreatorPKID || SellingCreatorPKID to number of
 	// transactions
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
+
+	// ===== ENCODER MIGRATION XX =====
+	// IsUnlimited field determines whether this derived key has no spending limit.
+	IsUnlimited bool
 }
 
 func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string {
@@ -5073,7 +5077,7 @@ func _computeIndentation(counter int) string {
 	return indentationString
 }
 
-func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
+func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error) {
 	data := []byte{}
 
 	if tsl == nil {
@@ -5170,10 +5174,15 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 		}
 	}
 
+	// IsUnlimited, gated by the encoder migration.
+	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
+		data = append(data, BoolToByte(tsl.IsUnlimited))
+	}
+
 	return data, nil
 }
 
-func (tsl *TransactionSpendingLimit) FromBytes(rr *bytes.Reader) error {
+func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Reader) error {
 	globalDESOLimit, err := ReadUvarint(rr)
 	if err != nil {
 		return err
@@ -5294,6 +5303,14 @@ func (tsl *TransactionSpendingLimit) FromBytes(rr *bytes.Reader) error {
 			tsl.DAOCoinLimitOrderLimitMap[*daoCoinLimitOrderLimitKey] = operationCount
 		}
 	}
+
+	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
+		tsl.IsUnlimited, err = ReadBoolByte(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionSpendingLimit.FromBytes: Problem reading IsUnlimited")
+		}
+	}
+
 	return nil
 }
 

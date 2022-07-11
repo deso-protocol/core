@@ -4,11 +4,9 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/go-pg/pg/v10"
 	"log"
 	"math/big"
 	"math/rand"
-	"os"
 	"testing"
 	"time"
 
@@ -162,10 +160,22 @@ func NewLowDifficultyBlockchain() (
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	return NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+	return NewLowDifficultyBlockchainWithParamsAndPostgres(&DeSoTestnetParams, nil)
 }
 
 func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
+	*Blockchain, *DeSoParams, *badger.DB) {
+
+	return NewLowDifficultyBlockchainWithParamsAndPostgres(params, nil)
+}
+
+func NewLowDifficultyBlockchainWithPostgres(postgres *Postgres) (
+	*Blockchain, *DeSoParams, *badger.DB) {
+
+	return NewLowDifficultyBlockchainWithParamsAndPostgres(&DeSoTestnetParams, postgres)
+}
+
+func NewLowDifficultyBlockchainWithParamsAndPostgres(params *DeSoParams, postgres *Postgres) (
 	*Blockchain, *DeSoParams, *badger.DB) {
 
 	// Set the number of txns per view regeneration to one while creating the txns
@@ -173,11 +183,11 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 
 	db, dbDir := GetTestBadgerDb()
 	timesource := chainlib.NewMedianTime()
-	var postgresDb *Postgres
-
-	if len(os.Getenv("POSTGRES_URI")) > 0 {
-		postgresDb = NewPostgres(pg.Connect(ParsePostgresURI(os.Getenv("POSTGRES_URI"))))
-	}
+	//var postgresDb *Postgres
+	//
+	//if len(os.Getenv("POSTGRES_URI")) > 0 {
+	//	postgresDb = NewPostgres(pg.Connect(ParsePostgresURI(os.Getenv("POSTGRES_URI"))))
+	//}
 
 	// Set some special parameters for testing. If the blocks above are changed
 	// these values should be updated to reflect the latest testnet values.
@@ -226,7 +236,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	// key have some DeSo
 	snap, err, _ := NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &paramsCopy, false)
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0,
-		&paramsCopy, timesource, db, postgresDb, nil, snap, false)
+		&paramsCopy, timesource, db, postgres, nil, snap, false)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -242,7 +252,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 
 	mempool := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0 /* minFeeRateNanosPerKB */, "", true,
+		0  /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	minerPubKeys := []string{}
 	if isSender {
@@ -755,17 +765,21 @@ func _signTxn(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
 	txn.Signature.Sign = txnSignature
 }
 
+func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrBase58Check string) {
+	signatureType := rand.Int() % 2
+	_signTxnWithDerivedKeyAndType(t, txn, privKeyStrBase58Check, signatureType)
+}
+
 // Signs the transaction with a derived key. Transaction ExtraData contains the derived
 // public key, so that _verifySignature() knows transaction wasn't signed by the owner.
-func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
+func _signTxnWithDerivedKeyAndType(t *testing.T, txn *MsgDeSoTxn, privKeyStrBase58Check string, signatureType int) {
 	require := require.New(t)
 
-	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
+	privKeyBytes, _, err := Base58CheckDecode(privKeyStrBase58Check)
 	require.NoError(err)
 	privateKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
 
 	// We will randomly sign with the standard DER encoding + ExtraData, or with the DeSo-DER encoding.
-	signatureType := rand.Int() % 2
 	if signatureType == 0 {
 		if txn.ExtraData == nil {
 			txn.ExtraData = make(map[string][]byte)

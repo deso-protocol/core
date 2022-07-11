@@ -2586,7 +2586,7 @@ func (key *DerivedKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMet
 	data = append(data, EncodeExtraData(key.ExtraData)...)
 	if key.TransactionSpendingLimitTracker != nil {
 		data = append(data, BoolToByte(true))
-		tslBytes, _ := key.TransactionSpendingLimitTracker.ToBytes()
+		tslBytes, _ := key.TransactionSpendingLimitTracker.ToBytes(blockHeight)
 		data = append(data, tslBytes...)
 	} else {
 		data = append(data, BoolToByte(false))
@@ -2632,7 +2632,7 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 
 	if exists, err := ReadBoolByte(rr); exists && err == nil {
 		key.TransactionSpendingLimitTracker = &TransactionSpendingLimit{}
-		err := key.TransactionSpendingLimitTracker.FromBytes(rr)
+		err := key.TransactionSpendingLimitTracker.FromBytes(blockHeight, rr)
 		if err != nil {
 			return errors.Wrapf(err, "DerivedKeyEntry.Decode: Problem decoding TransactionSpendingLimitTracker")
 		}
@@ -2649,7 +2649,7 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {

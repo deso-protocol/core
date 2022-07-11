@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/core/migrate"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
+	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"math/rand"
@@ -131,7 +133,7 @@ func _doTxn(
 	transactorPublicKey, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot)
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
 	require.NoError(err)
 	chain := testMeta.chain
 
@@ -328,7 +330,7 @@ func _doTxn(
 		if realTxMeta.OperationType == AuthorizeDerivedKeyOperationNotValid {
 			deleteKey = true
 		}
-		transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes()
+		transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes(0)
 		require.NoError(err)
 		txn, totalInputMake, changeAmountMake, feesMake, err = chain.CreateAuthorizeDerivedKeyTxn(
 			transactorPublicKey,
@@ -576,7 +578,7 @@ func _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
 		accessBytes = append(derivedPublicKey, expirationBlockByte[:]...)
 
 		var transactionSpendingLimitBytes []byte
-		transactionSpendingLimitBytes, err = transactionSpendingLimit.ToBytes()
+		transactionSpendingLimitBytes, err = transactionSpendingLimit.ToBytes(0)
 		require.NoError(err, "_getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit: Error in transaction spending limit to bytes")
 		accessBytes = append(accessBytes, transactionSpendingLimitBytes[:]...)
 	} else {
@@ -610,7 +612,7 @@ func _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimitAndDerivedPrivat
 	expirationBlockByte := EncodeUint64(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockByte[:]...)
 
-	transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes()
+	transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes(0)
 	require.NoError(err, "_getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit: Error in transaction spending limit to bytes")
 	accessBytes = append(accessBytes, transactionSpendingLimitBytes[:]...)
 
@@ -639,7 +641,7 @@ func _getAccessSignature(
 	transactionSpendingLimit *TransactionSpendingLimit,
 	ownerPrivateKey *btcec.PrivateKey) ([]byte, error) {
 	accessBytes := append(derivedPublicKey, EncodeUint64(expirationBlock)...)
-	transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes()
+	transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes(0)
 	if err != nil {
 		return nil, err
 	}
@@ -675,7 +677,7 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(t *testing.T, chain *Blockcha
 	_ = assert
 	_ = require
 
-	transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes()
+	transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes(0)
 	require.NoError(err)
 	txn, totalInput, changeAmount, fees, err := chain.CreateAuthorizeDerivedKeyTxn(
 		ownerPublicKey,
@@ -3406,5 +3408,27 @@ func TestSpendingLimit(t *testing.T) {
 		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
 	}
-	fmt.Println(newTransactionSpendingLimit.ToBytes())
+	fmt.Println(newTransactionSpendingLimit.ToBytes(0))
+}
+
+func TestSignatureWithPostgres(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	postgres := initializeTestPostgresInstance(t)
+
+	migrate.LoadMigrations()
+	err := migrations.Run(postgres.db, "migrate", []string{"", "migrate"})
+	require.NoError(err)
+
+	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
+	_ = db
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Mine two blocks to give the sender some DeSo.
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
 }

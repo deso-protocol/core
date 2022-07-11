@@ -13,7 +13,7 @@ func (bav *UtxoView) FlushToDb(blockHeight uint64) error {
 	// Make sure everything happens inside a single transaction.
 	var err error
 	if bav.Postgres != nil {
-		err = bav.Postgres.FlushView(bav)
+		err = bav.Postgres.FlushView(bav, blockHeight)
 		if err != nil {
 			return err
 		}
