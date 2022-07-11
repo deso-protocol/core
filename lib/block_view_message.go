@@ -1023,7 +1023,12 @@ func (bav *UtxoView) _connectMessagingGroup(
 		}
 		extraData = mergeExtraData(existingExtraData, txn.ExtraData)
 	}
-	muteList := existingEntry.MuteList
+	var muteList []*MessagingGroupMember
+	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
+		if existingEntry != nil && !existingEntry.isDeleted {
+			muteList = existingEntry.MuteList
+		}
+	}
 
 	// TODO: Currently, it is technically possible for any user to add *any other* user to *any group* with
 	// a garbage EncryptedKey. This can be filtered out at the app layer, though, and for now it leaves the
