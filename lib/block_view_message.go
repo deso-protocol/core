@@ -500,14 +500,12 @@ func (bav *UtxoView) _connectPrivateMessage(
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
 		}
-		for _, muteListMember := range muteList {
 
-			for _, mutedMember := range muteList {
-				if mutedMember.GroupMemberPublicKey == NewPublicKey(senderMessagingPublicKey) {
-					return 0, 0, nil, errors.Wrapf(
-						RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
-							"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
-				}
+		for _, mutedMember := range muteList {
+			if mutedMember.GroupMemberPublicKey == NewPublicKey(senderMessagingPublicKey) {
+				return 0, 0, nil, errors.Wrapf(
+					RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
+						"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
 			}
 		}
 
