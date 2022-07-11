@@ -471,32 +471,11 @@ func (bav *UtxoView) _connectPrivateMessage(
 				RuleErrorPrivateMessageSentWithoutProperMessagingParty,
 				"_connectPrivateMessage: at least one messaging party must be present")
 		}
-		//messagingGroupKeyName, existsKeyName := txn.ExtraData[RecipientMessagingGroupKeyName]
-		//if !existsKeyName {
-		//	return 0, 0, nil, errors.Wrapf(
-		//		RuleErrorPrivateMessageFailedToValidateMessagingKey,
-		//		"_connectPrivateMessage: txn.ExtraData[RecipientMessagingGroupKeyName] must be present to form MessagingGroupKey")
-		//}
 
 		// Reject message if sender is muted
 		var messagingGroupKey *MessagingGroupKey
-		//var messagingPublicKey *PublicKey
-		//if reflect.DeepEqual(recipientMessagingPublicKey, GetS256BasePointCompressed()) {
-		//	messagingGroupKey = NewMessagingGroupKey(NewPublicKey(GetS256BasePointCompressed()), messagingGroupKeyName)
-		//	//_, keyPublic := btcec.PrivKeyFromBytes(btcec.S256(), Sha256DoubleHash(messagingGroupKeyName)[:])
-		//	//messagingPublicKey = NewPublicKey(keyPublic.SerializeCompressed())
-		//} else {
-		//	messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txn.PublicKey), messagingGroupKeyName)
-		//	//messagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
-		//}
-		// First, let's check if this key doesn't already exist in UtxoView or in the DB.
-		// It's worth noting that we index messaging keys by the owner public key and messaging key name.
 		messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txMeta.RecipientPublicKey), txn.ExtraData[RecipientMessagingGroupKeyName])
 		messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
-
-		//messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txn.PublicKey), messagingGroupKeyName)
-		//messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
-
 		if messagingGroupEntry != nil {
 			muteList := messagingGroupEntry.MuteList
 			if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
