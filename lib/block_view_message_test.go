@@ -2443,6 +2443,7 @@ func TestGroupMessages(t *testing.T) {
 			nil,
 		}
 		_helpConnectPrivateMessageWithParty(testMeta, m0Priv, muteMessageEntry, RuleErrorMessagingMemberMuted)
+		// m0 is currently muted and hence:
 		// The message should NOT be successfully added, so we STILL have:
 		// m0 -> group(sender, recipient, m0, m2)
 		// 	sender: 6
