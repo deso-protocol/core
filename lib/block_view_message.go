@@ -487,15 +487,6 @@ func (bav *UtxoView) _connectPrivateMessage(
 		messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
 		muteList := messagingGroupEntry.MuteList
 
-		// inline helper method
-		contains := func(memberList []*MessagingGroupMember, member *MessagingGroupMember) bool {
-			for _, a := range memberList {
-				if a == member {
-					return true
-				}
-			}
-			return false
-		}
 		if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
