@@ -2392,7 +2392,7 @@ func TestGroupMessages(t *testing.T) {
 			// the recipient messaging key with user's private key, and use it to decrypt the message.
 			decryptedKey := decrypt(encryptedKey, priv)
 			plaintext := decrypt(msg, decryptedKey)
-			// If the message was successfuly decrypted, it should match our original message.
+			// If the message was successfully decrypted, it should match our original message.
 			require.Equal(plaintext, testMessage)
 		}
 		// Verify that all group members can decrypt the message (skip the group owner)
