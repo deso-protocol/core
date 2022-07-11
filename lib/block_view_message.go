@@ -486,12 +486,11 @@ func (bav *UtxoView) _connectPrivateMessage(
 		messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txn.PublicKey), messagingGroupKeyName)
 		messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
 		muteList := messagingGroupEntry.MuteList
-
 		if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
 		}
-
+		// TODO: Make the following more efficient by retrieving MuteList from hacked MessagingGroupEntry to avoid fetching bulky MessagingGroupEntry
 		for _, mutedMember := range muteList {
 			if mutedMember.GroupMemberPublicKey == NewPublicKey(senderMessagingPublicKey) {
 				return 0, 0, nil, errors.Wrapf(
