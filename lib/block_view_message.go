@@ -485,17 +485,19 @@ func (bav *UtxoView) _connectPrivateMessage(
 		}
 		messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txn.PublicKey), messagingGroupKeyName)
 		messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
-		muteList := messagingGroupEntry.MuteList
-		if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
-			return 0, 0, nil, errors.Wrapf(
-				RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
-		}
-		// TODO: Make the following more efficient by retrieving MuteList from hacked MessagingGroupEntry to avoid fetching bulky MessagingGroupEntry
-		for _, mutedMember := range muteList {
-			if mutedMember.GroupMemberPublicKey == NewPublicKey(senderMessagingPublicKey) {
+		if messagingGroupEntry != nil {
+			muteList := messagingGroupEntry.MuteList
+			if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
 				return 0, 0, nil, errors.Wrapf(
-					RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
-						"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
+					RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
+			}
+			// TODO: Make the following more efficient by retrieving MuteList from hacked MessagingGroupEntry to avoid fetching bulky MessagingGroupEntry
+			for _, mutedMember := range muteList {
+				if mutedMember.GroupMemberPublicKey == NewPublicKey(senderMessagingPublicKey) {
+					return 0, 0, nil, errors.Wrapf(
+						RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
+							"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
+				}
 			}
 		}
 
@@ -1021,7 +1023,6 @@ func (bav *UtxoView) _connectMessagingGroup(
 		}
 		extraData = mergeExtraData(existingExtraData, txn.ExtraData)
 	}
-
 	muteList := existingEntry.MuteList
 
 	// TODO: Currently, it is technically possible for any user to add *any other* user to *any group* with
