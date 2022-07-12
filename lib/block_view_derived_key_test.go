@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/deso-protocol/core/migrate"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
-	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"math/rand"
@@ -570,6 +568,7 @@ func _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
 		operationType = AuthorizeDerivedKeyOperationValid
 	}
 
+	// We randomly use standard or the metamask derived key access signature.
 	var accessBytes []byte
 	accessBytesEncodingType := rand.Int() % 2
 	if accessBytesEncodingType == 0 {
@@ -3398,37 +3397,4 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
 	_executeAllTestRollbackAndFlush(testMeta)
-}
-
-func TestSpendingLimit(t *testing.T) {
-	newTransactionSpendingLimit := &TransactionSpendingLimit{
-		TransactionCountLimitMap:     make(map[TxnType]uint64),
-		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
-		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
-		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
-		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
-	}
-	fmt.Println(newTransactionSpendingLimit.ToBytes(0))
-}
-
-func TestSignatureWithPostgres(t *testing.T) {
-	require := require.New(t)
-	_ = require
-
-	postgres := initializeTestPostgresInstance(t)
-
-	migrate.LoadMigrations()
-	err := migrations.Run(postgres.db, "migrate", []string{"", "migrate"})
-	require.NoError(err)
-
-	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
-	_ = db
-	mempool, miner := NewTestMiner(t, chain, params, true)
-
-	// Mine two blocks to give the sender some DeSo.
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-
 }
