@@ -475,6 +475,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 		// Reject message if sender is muted
 		_, existsSenderKeyName := txn.ExtraData[SenderMessagingGroupKeyName]
 		recipientMessagingGroupKeyName, existsRecipientKeyName := txn.ExtraData[RecipientMessagingGroupKeyName]
+		// Ensure sender and recipient are both present for a group chat
 		if existsSender && existsSenderKeyName && existsRecipient && existsRecipientKeyName {
 			var messagingGroupKey *MessagingGroupKey
 			messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txMeta.RecipientPublicKey), recipientMessagingGroupKeyName)
