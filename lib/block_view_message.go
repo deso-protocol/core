@@ -473,21 +473,25 @@ func (bav *UtxoView) _connectPrivateMessage(
 		}
 
 		// Reject message if sender is muted
-		var messagingGroupKey *MessagingGroupKey
-		messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txMeta.RecipientPublicKey), txn.ExtraData[RecipientMessagingGroupKeyName])
-		messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
-		if messagingGroupEntry != nil {
-			muteList := messagingGroupEntry.MuteList
-			if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
-				return 0, 0, nil, errors.Wrapf(
-					RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
-			}
-			// TODO: Make the following more efficient by retrieving MuteList from hacked MessagingGroupEntry to avoid fetching bulky MessagingGroupEntry
-			for _, mutedMember := range muteList {
-				if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], senderMessagingPublicKey) {
+		_, existsSenderKeyName := txn.ExtraData[SenderMessagingGroupKeyName]
+		recipientMessagingGroupKeyName, existsRecipientKeyName := txn.ExtraData[RecipientMessagingGroupKeyName]
+		if existsSender && existsSenderKeyName && existsRecipient && existsRecipientKeyName {
+			var messagingGroupKey *MessagingGroupKey
+			messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txMeta.RecipientPublicKey), recipientMessagingGroupKeyName)
+			messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
+			if messagingGroupEntry != nil {
+				muteList := messagingGroupEntry.MuteList
+				if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
 					return 0, 0, nil, errors.Wrapf(
-						RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
-							"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
+						RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
+				}
+				// TODO: Make the following more efficient by retrieving MuteList from hacked MessagingGroupEntry to avoid fetching bulky MessagingGroupEntry
+				for _, mutedMember := range muteList {
+					if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], senderMessagingPublicKey) {
+						return 0, 0, nil, errors.Wrapf(
+							RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
+								"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
+					}
 				}
 			}
 		}
