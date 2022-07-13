@@ -2562,7 +2562,7 @@ func _testAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T, postgr
 
 	GlobalDeSoParams = *params
 	GlobalDeSoParams.ForkHeights.UnlimitedDerivedKeysBlockHeight = 0
-	for ii, _ := range GlobalDeSoParams.EncoderMigrationHeightsList {
+	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
 		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 0
 	}
 

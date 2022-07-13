@@ -1500,7 +1500,7 @@ func TestUnlimitedSpendingLimitMetamaskEncoding(t *testing.T) {
 	// Set the blockheights for encoder migration.
 	GlobalDeSoParams = DeSoTestnetParams
 	GlobalDeSoParams.ForkHeights.UnlimitedDerivedKeysBlockHeight = 0
-	for ii, _ := range GlobalDeSoParams.EncoderMigrationHeightsList {
+	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
 		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 0
 	}
 
