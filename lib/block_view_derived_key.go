@@ -197,44 +197,58 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 					return 0, 0, nil, errors.Wrapf(
 						err, "Error decoding transaction spending limit from extra data")
 				}
-				// TODO: how can we serialize this in a way that we don't have to specify it everytime
-				// Always overwrite the global DESO limit...
-				newTransactionSpendingLimit.GlobalDESOLimit = transactionSpendingLimit.GlobalDESOLimit
-				// Iterate over transaction types and update the counts. Delete keys if the transaction count is zero.
-				for txnType, transactionCount := range transactionSpendingLimit.TransactionCountLimitMap {
-					if transactionCount == 0 {
-						delete(newTransactionSpendingLimit.TransactionCountLimitMap, txnType)
-					} else {
-						newTransactionSpendingLimit.TransactionCountLimitMap[txnType] = transactionCount
+				if transactionSpendingLimit.IsUnlimited {
+					if transactionSpendingLimit.GlobalDESOLimit > 0 ||
+						len(transactionSpendingLimit.TransactionCountLimitMap) > 0 ||
+						len(transactionSpendingLimit.CreatorCoinOperationLimitMap) > 0 ||
+						len(transactionSpendingLimit.DAOCoinOperationLimitMap) > 0 ||
+						len(transactionSpendingLimit.NFTOperationLimitMap) > 0 ||
+						len(transactionSpendingLimit.DAOCoinLimitOrderLimitMap) > 0 {
+
+						return 0, 0, nil, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
 					}
-				}
-				for ccLimitKey, transactionCount := range transactionSpendingLimit.CreatorCoinOperationLimitMap {
-					if transactionCount == 0 {
-						delete(newTransactionSpendingLimit.CreatorCoinOperationLimitMap, ccLimitKey)
-					} else {
-						newTransactionSpendingLimit.CreatorCoinOperationLimitMap[ccLimitKey] = transactionCount
+					newTransactionSpendingLimit.IsUnlimited = true
+				} else {
+					// TODO: how can we serialize this in a way that we don't have to specify it everytime
+					// Always overwrite the global DESO limit...
+					newTransactionSpendingLimit.GlobalDESOLimit = transactionSpendingLimit.GlobalDESOLimit
+					// Iterate over transaction types and update the counts. Delete keys if the transaction count is zero.
+					for txnType, transactionCount := range transactionSpendingLimit.TransactionCountLimitMap {
+						if transactionCount == 0 {
+							delete(newTransactionSpendingLimit.TransactionCountLimitMap, txnType)
+						} else {
+							newTransactionSpendingLimit.TransactionCountLimitMap[txnType] = transactionCount
+						}
 					}
-				}
-				for daoCoinLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinOperationLimitMap {
-					if transactionCount == 0 {
-						delete(newTransactionSpendingLimit.DAOCoinOperationLimitMap, daoCoinLimitKey)
-					} else {
-						newTransactionSpendingLimit.DAOCoinOperationLimitMap[daoCoinLimitKey] = transactionCount
+					for ccLimitKey, transactionCount := range transactionSpendingLimit.CreatorCoinOperationLimitMap {
+						if transactionCount == 0 {
+							delete(newTransactionSpendingLimit.CreatorCoinOperationLimitMap, ccLimitKey)
+						} else {
+							newTransactionSpendingLimit.CreatorCoinOperationLimitMap[ccLimitKey] = transactionCount
+						}
 					}
-				}
-				for nftLimitKey, transactionCount := range transactionSpendingLimit.NFTOperationLimitMap {
-					if transactionCount == 0 {
-						delete(newTransactionSpendingLimit.NFTOperationLimitMap, nftLimitKey)
-					} else {
-						newTransactionSpendingLimit.NFTOperationLimitMap[nftLimitKey] = transactionCount
+					for daoCoinLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinOperationLimitMap {
+						if transactionCount == 0 {
+							delete(newTransactionSpendingLimit.DAOCoinOperationLimitMap, daoCoinLimitKey)
+						} else {
+							newTransactionSpendingLimit.DAOCoinOperationLimitMap[daoCoinLimitKey] = transactionCount
+						}
 					}
-				}
-				for daoCoinLimitOrderLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinLimitOrderLimitMap {
-					if transactionCount == 0 {
-						delete(newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap, daoCoinLimitOrderLimitKey)
-					} else {
-						newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
+					for nftLimitKey, transactionCount := range transactionSpendingLimit.NFTOperationLimitMap {
+						if transactionCount == 0 {
+							delete(newTransactionSpendingLimit.NFTOperationLimitMap, nftLimitKey)
+						} else {
+							newTransactionSpendingLimit.NFTOperationLimitMap[nftLimitKey] = transactionCount
+						}
 					}
+					for daoCoinLimitOrderLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinLimitOrderLimitMap {
+						if transactionCount == 0 {
+							delete(newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap, daoCoinLimitOrderLimitKey)
+						} else {
+							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
+						}
+					}
+					newTransactionSpendingLimit.IsUnlimited = false
 				}
 			}
 		}

@@ -294,6 +294,7 @@ const (
 	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
 	RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId    RuleError = "RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId"
 	RuleErrorDerivedKeyInvalidRecoveryId                RuleError = "RuleErrorDerivedKeyInvalidRecoveryId"
+	RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits  RuleError = "RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits"
 
 	// Messages
 	RuleErrorMessagingPublicKeyCannotBeOwnerKey     RuleError = "RuleErrorMessagingPublicKeyCannotBeOwnerKey"

@@ -1549,6 +1549,15 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 
 	// Create a copy of the prevDerivedKeyEntry so we can safely modify the new entry
 	derivedKeyEntry := *prevDerivedKeyEntry.Copy()
+	// Make sure spending limit is not nil.
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil {
+		return utxoOpsForTxn, errors.Wrap(RuleErrorDerivedKeyNotAuthorized,
+			"_checkDerivedKeySpendingLimit: TransactionSpendingLimitTracker is nil")
+	}
+	// If the derived key is an unlimited key, we don't need to check spending limits whatsoever.
+	if derivedKeyEntry.TransactionSpendingLimitTracker.IsUnlimited {
+		return utxoOpsForTxn, nil
+	}
 
 	// Spend amount is total inputs minus sum of AddUtxo type operations
 	// going to transactor (i.e. change).
@@ -1575,11 +1584,6 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			}
 			spendAmount -= utxoOp.Entry.AmountNanos
 		}
-	}
-
-	if derivedKeyEntry.TransactionSpendingLimitTracker == nil {
-		return utxoOpsForTxn, errors.Wrap(RuleErrorDerivedKeyNotAuthorized,
-			"_checkDerivedKeySpendingLimit: TransactionSpendingLimitTracker is nil")
 	}
 
 	// If the spend amount exceeds the Global DESO limit, this derived key is not authorized to spend this DESO.
