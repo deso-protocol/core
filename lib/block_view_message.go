@@ -1116,7 +1116,7 @@ func (bav *UtxoView) _disconnectMessagingGroup(
 			value, ok := prevMessagingKeyEntry.ExtraData["OperationType"]
 			if ok {
 				// SHOULD WE JUST RESET TO PREV MAPPING INSTEAD OF ALL COMPLICATED RESETTING????
-				if string(value) == "MessagingGroupOperationMute" || string(value) == "MessagingGroupOperationUnmute" {
+				if string(value) == MessagingGroupOperationMute || string(value) == MessagingGroupOperationUnmute {
 					// Delete this item from UtxoView to indicate we should remove this entry from DB.
 					bav._deleteMessagingGroupKeyToMessagingGroupEntryMapping(&messagingKey.OwnerPublicKey, messagingKeyEntry)
 					// If the previous entry exists, we should set it in the utxoview
