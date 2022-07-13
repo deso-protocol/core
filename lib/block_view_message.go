@@ -1143,7 +1143,7 @@ func (bav *UtxoView) _disconnectMessagingGroup(
 						return false
 					}
 
-					if string(value) == "MessagingGroupOperationMute" { // if MessagingGroupOperationMute, then Unmute because UNDO
+					if string(value) == MessagingGroupOperationMute { // if MessagingGroupOperationMute, then Unmute because UNDO
 						for _, s := range txMeta.MessagingGroupMembers {
 							// UNDO Add s to muteList
 							for i, toUnmute := range muteList {
@@ -1153,7 +1153,7 @@ func (bav *UtxoView) _disconnectMessagingGroup(
 								}
 							}
 						}
-					} else if string(value) == "MessagingGroupOperationUnmute" { // if MessagingGroupOperationUnmute, then Mute because UNDO
+					} else if string(value) == MessagingGroupOperationUnmute { // if MessagingGroupOperationUnmute, then Mute because UNDO
 						for _, s := range txMeta.MessagingGroupMembers {
 							// UNDO Remove s from muteList
 							// Make sure does not already exist to ensure no dups

@@ -2411,7 +2411,7 @@ func TestGroupMessages(t *testing.T) {
 		})
 		//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 		extraData := make(map[string][]byte)
-		extraData["OperationType"] = []byte("MessagingGroupOperationMute")
+		extraData["OperationType"] = []byte(MessagingGroupOperationMute)
 		_messagingKeyWithExtraDataWithTestMeta(
 			testMeta,
 			senderPkBytes,
@@ -2481,7 +2481,7 @@ func TestGroupMessages(t *testing.T) {
 		})
 		//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 		extraData = make(map[string][]byte)
-		extraData["OperationType"] = []byte("MessagingGroupOperationUnmute")
+		extraData["OperationType"] = []byte(MessagingGroupOperationUnmute)
 		_messagingKeyWithExtraDataWithTestMeta(
 			testMeta,
 			senderPkBytes,
