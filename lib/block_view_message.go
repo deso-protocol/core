@@ -484,7 +484,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 			}
 			// TODO: Make the following more efficient by retrieving MuteList from hacked MessagingGroupEntry to avoid fetching bulky MessagingGroupEntry
 			for _, mutedMember := range muteList {
-				if reflect.DeepEqual(mutedMember.GroupMemberPublicKey, NewPublicKey(senderMessagingPublicKey)) {
+				if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], senderMessagingPublicKey) {
 					return 0, 0, nil, errors.Wrapf(
 						RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
 							"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
