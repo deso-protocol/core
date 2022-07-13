@@ -864,7 +864,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 					return false
 				}
 
-				if string(value) == "MessagingGroupOperationMute" {
+				if string(value) == MessagingGroupOperationMute {
 					for _, s := range txMeta.MessagingGroupMembers {
 						// Add s to muteList
 						// Make sure does not already exist to ensure no dups
@@ -872,7 +872,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 							existingEntry.MuteList = append(existingEntry.MuteList, s)
 						}
 					}
-				} else if string(value) == "MessagingGroupOperationUnmute" {
+				} else if string(value) == MessagingGroupOperationUnmute {
 					for _, s := range txMeta.MessagingGroupMembers {
 						for i, toUnmute := range existingEntry.MuteList {
 							if reflect.DeepEqual(toUnmute.GroupMemberPublicKey, s.GroupMemberPublicKey) {
