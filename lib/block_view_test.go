@@ -703,14 +703,7 @@ func TestBasicTransfer(t *testing.T) {
 // key, a derived key, or a random key. Basically, we try every possible context in which a transaction can be signed.
 // FIXME: This is also the first test that uses a dockerized Postgres and allows to run pg and badger tests simultaneously.
 func TestBasicTransferSignatures(t *testing.T) {
-	require := require.New(t)
-
-	postgres := InitializeTestPostgresInstance(t)
-	migrate.LoadMigrations()
-	err := migrations.Run(postgres.db, "migrate", []string{"", "migrate"})
-	require.NoError(err)
-	_testBasicTransferSignaturesWithPostgres(t, postgres)
-	_testBasicTransferSignaturesWithPostgres(t, nil)
+	RunTestWithBadgerAndPostgresOptimized(t, _testBasicTransferSignaturesWithPostgres)
 }
 
 func _testBasicTransferSignaturesWithPostgres(t *testing.T, postgres *Postgres) {

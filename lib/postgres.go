@@ -896,7 +896,6 @@ type PGDerivedKey struct {
 	// TransactionSpendingLimit fields
 	TransactionSpendingLimitTracker []byte `pg:",type:bytea"`
 	Memo                            []byte `pg:",type:bytea"`
-	IsUnlimited                     bool   `pg:",use_zero"`
 	BlockHeight                     uint64 `pg:",use_zero"`
 }
 
@@ -2184,6 +2183,7 @@ func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView, blockHeigh
 			DerivedPublicKey:                keyEntry.DerivedPublicKey,
 			ExpirationBlock:                 keyEntry.ExpirationBlock,
 			OperationType:                   keyEntry.OperationType,
+			ExtraData:                       keyEntry.ExtraData,
 			TransactionSpendingLimitTracker: tslBytes,
 			Memo:                            keyEntry.Memo,
 			BlockHeight:                     blockHeight,

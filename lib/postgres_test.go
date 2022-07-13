@@ -3,12 +3,14 @@ package lib
 import (
 	"context"
 	"fmt"
+	"github.com/deso-protocol/core/migrate"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/go-pg/pg/v10"
+	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
 	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"strconv"
@@ -40,6 +42,18 @@ func getDirectory(t *testing.T) string {
 		require.NoError(err)
 	}
 	return dbDir
+}
+
+func RunTestWithBadgerAndPostgresOptimized(t *testing.T, testFunction func(t *testing.T, postgres *Postgres)) {
+	var postgres *Postgres
+	postgresChannel := make(chan struct{})
+	go func() {
+		postgres = InitializeTestPostgresInstance(t)
+		postgresChannel <- struct{}{}
+	}()
+	testFunction(t, nil)
+	<-postgresChannel
+	testFunction(t, postgres)
 }
 
 // InitializeTestPostgresInstance, similarly to NewLowDifficultyBlockchain, is intended to help in creating unit tests.
@@ -84,6 +98,11 @@ func InitializeTestPostgresInstance(t *testing.T) *Postgres {
 	}
 	// Completely clear the database.
 	err := postgres.resetDatabase()
+	require.NoError(err)
+
+	// Create all the tables using migrations.
+	migrate.LoadMigrations()
+	err = migrations.Run(postgres.db, "migrate", []string{"", "migrate"})
 	require.NoError(err)
 	return postgres
 }

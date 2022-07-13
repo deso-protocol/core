@@ -4917,7 +4917,7 @@ type TransactionSpendingLimit struct {
 	// transactions
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
 
-	// ===== ENCODER MIGRATION XX =====
+	// ===== ENCODER MIGRATION UnlimitedDerivedKeysMigration =====
 	// IsUnlimited field determines whether this derived key has no spending limit.
 	IsUnlimited bool
 }
@@ -5064,6 +5064,11 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			str += limitStr
 		}
 		indentationCounter--
+	}
+
+	// IsUnlimited
+	if tsl.IsUnlimited {
+		str += _indt(indentationCounter) + "FULL ACCESS"
 	}
 
 	return str
@@ -5322,6 +5327,7 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
+		IsUnlimited:                  tsl.IsUnlimited,
 	}
 
 	for txnType, txnCount := range tsl.TransactionCountLimitMap {

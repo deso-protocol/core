@@ -9,7 +9,6 @@ func init() {
 	up := func(db orm.DB) error {
 		if _, err := db.Exec(`
 			ALTER TABLE pg_derived_keys
-				ADD COLUMN is_unlimited BOOL,
 				ADD COLUMN block_height BIGINT;
 		`); err != nil {
 			return err
@@ -29,7 +28,6 @@ func init() {
 	down := func(db orm.DB) error {
 		if _, err := db.Exec(`
 			ALTER TABLE pg_derived_keys
-				DROP COLUMN is_unlimited,
 				DROP COLUMN block_height;
 		`); err != nil {
 			return err
