@@ -3300,5 +3300,5 @@ func TestEthSignature(t *testing.T) {
 		transactionSpendingLimit, &DeSoTestnetParams)
 
 	// verify signature
-	require.NoError(_verifyEthPersonalSignature(ownerPublicKeyBytes, accessBytes, signature))
+	require.NoError(VerifyEthPersonalSignature(ownerPublicKeyBytes, accessBytes, signature))
 }
