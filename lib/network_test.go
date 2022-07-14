@@ -1516,7 +1516,7 @@ func TestUnlimitedSpendingLimitMetamaskEncoding(t *testing.T) {
 
 	// Test the spending limit encoding using the metamask scheme.
 	require.Equal(true, reflect.DeepEqual(
-		"Spending limits on the derived key:\n\tFULL ACCESS",
+		"Spending limits on the derived key:\nFULL ACCESS",
 		spendingLimit.ToMetamaskString(&GlobalDeSoParams),
 	))
 }

@@ -5068,7 +5068,7 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 
 	// IsUnlimited
 	if tsl.IsUnlimited {
-		str += _indt(indentationCounter) + "FULL ACCESS"
+		str += "FULL ACCESS"
 	}
 
 	return str
