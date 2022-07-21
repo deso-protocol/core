@@ -1114,64 +1114,6 @@ func (bav *UtxoView) _disconnectMessagingGroup(
 		}
 	}
 
-	// At this point, we know that prevMessagingKeyEntry exists
-	// UNDO MuteList Operation if applicable
-	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
-		if messagingKeyEntry != nil && !messagingKeyEntry.isDeleted && prevMessagingKeyEntry != nil && !prevMessagingKeyEntry.isDeleted {
-			value, ok := prevMessagingKeyEntry.ExtraData["OperationType"]
-			if ok {
-				// SHOULD WE JUST RESET TO PREV MAPPING INSTEAD OF ALL COMPLICATED RESETTING????
-				if string(value) == MessagingGroupOperationMute || string(value) == MessagingGroupOperationUnmute {
-					// Delete this item from UtxoView to indicate we should remove this entry from DB.
-					bav._deleteMessagingGroupKeyToMessagingGroupEntryMapping(&messagingKey.OwnerPublicKey, messagingKeyEntry)
-					// If the previous entry exists, we should set it in the utxoview
-					if prevMessagingKeyEntry != nil {
-						bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingKey.OwnerPublicKey, prevMessagingKeyEntry)
-					}
-					// Now disconnect the basic transfer.
-					return bav._disconnectBasicTransfer(
-						currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
-				}
-				// IS THE ABOVE EVEN NEEDED SINCE WE DO THIS AT THE END ANYWAY????
-
-				// CONFIRM IF THE FOLLOWING BLOCK IS NEEDED?????
-				/*
-					muteList := prevMessagingKeyEntry.MuteList
-
-					// inline helper method
-					contains := func(memberList []*MessagingGroupMember, member *MessagingGroupMember) bool {
-						for _, a := range memberList {
-							if a == member {
-								return true
-							}
-						}
-						return false
-					}
-
-					if string(value) == MessagingGroupOperationMute { // if MessagingGroupOperationMute, then Unmute because UNDO
-						for _, s := range txMeta.MessagingGroupMembers {
-							// UNDO Add s to muteList
-							for i, toUnmute := range muteList {
-								if toUnmute == s {
-									muteList = append(muteList[:i], muteList[i+1:]...)
-									break
-								}
-							}
-						}
-					} else if string(value) == MessagingGroupOperationUnmute { // if MessagingGroupOperationUnmute, then Mute because UNDO
-						for _, s := range txMeta.MessagingGroupMembers {
-							// UNDO Remove s from muteList
-							// Make sure does not already exist to ensure no dups
-							if !contains(muteList, s) {
-								muteList = append(muteList, s)
-							}
-						}
-					}
-				*/
-			}
-		}
-	}
-
 	// Delete this item from UtxoView to indicate we should remove this entry from DB.
 	bav._deleteMessagingGroupKeyToMessagingGroupEntryMapping(&messagingKey.OwnerPublicKey, messagingKeyEntry)
 	// If the previous entry exists, we should set it in the utxoview
