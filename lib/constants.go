@@ -248,6 +248,10 @@ type ForkHeights struct {
 	// ParamUpdater to use a blockHeight-gated function rather than a constant.
 	ParamUpdaterRefactorBlockHeight uint32
 
+	// DeSoV3MessagesMutingBlockHeight defines the height at which point V3 group chat muting
+	// and unmuting will be accepted by consensus
+	DeSoV3MessagesMutingBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }

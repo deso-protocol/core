@@ -473,25 +473,27 @@ func (bav *UtxoView) _connectPrivateMessage(
 		}
 
 		// Reject message if sender is muted
-		_, existsSenderKeyName := txn.ExtraData[SenderMessagingGroupKeyName]
-		recipientMessagingGroupKeyName, existsRecipientKeyName := txn.ExtraData[RecipientMessagingGroupKeyName]
-		// Ensure sender and recipient are both present for a group chat
-		if existsSender && existsSenderKeyName && existsRecipient && existsRecipientKeyName {
-			var messagingGroupKey *MessagingGroupKey
-			messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txMeta.RecipientPublicKey), recipientMessagingGroupKeyName)
-			messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
-			if messagingGroupEntry != nil {
-				muteList := messagingGroupEntry.MuteList
-				if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
-					return 0, 0, nil, errors.Wrapf(
-						RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
-				}
-				// TODO: Make the following more efficient by retrieving MuteList from hacked MessagingGroupEntry to avoid fetching bulky MessagingGroupEntry
-				for _, mutedMember := range muteList {
-					if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], senderMessagingPublicKey) {
+		if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingBlockHeight {
+			_, existsSenderKeyName := txn.ExtraData[SenderMessagingGroupKeyName]
+			recipientMessagingGroupKeyName, existsRecipientKeyName := txn.ExtraData[RecipientMessagingGroupKeyName]
+			// Ensure sender and recipient are both present for a group chat
+			if existsSender && existsSenderKeyName && existsRecipient && existsRecipientKeyName {
+				var messagingGroupKey *MessagingGroupKey
+				messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txMeta.RecipientPublicKey), recipientMessagingGroupKeyName)
+				messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
+				if messagingGroupEntry != nil {
+					muteList := messagingGroupEntry.MuteList
+					if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
 						return 0, 0, nil, errors.Wrapf(
-							RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
-								"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
+							RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
+					}
+					// TODO: Make the following more efficient by retrieving MuteList from hacked MessagingGroupEntry to avoid fetching bulky MessagingGroupEntry
+					for _, mutedMember := range muteList {
+						if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], senderMessagingPublicKey) {
+							return 0, 0, nil, errors.Wrapf(
+								RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
+									"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
+						}
 					}
 				}
 			}
@@ -855,7 +857,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 	}
 
 	// V3 Messages: MUTING and UNMUTING members
-	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
+	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingBlockHeight {
 		if existingEntry != nil && !existingEntry.isDeleted {
 			value, operationTypeExists := txn.ExtraData["OperationType"]
 			if operationTypeExists {
