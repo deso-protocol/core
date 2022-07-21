@@ -2038,6 +2038,9 @@ func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, s
 	for ii := 0; ii < len(muteListMembers); ii++ {
 		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, muteListMembers[ii], skipMetadata...)...)
 	}
+	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingMigration) {
+		entryBytes = append(entryBytes, byte(127))
+	}
 	return entryBytes
 }
 
@@ -2099,11 +2102,17 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding muteListMember")
 		}
 	}
+	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingMigration) {
+		_, err = rr.ReadByte()
+		if err != nil {
+			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem reading random byte.")
+		}
+	}
 	return nil
 }
 
 func (entry *MessagingGroupEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, DeSoV3MessagesMutingMigration)
 }
 
 func (entry *MessagingGroupEntry) GetEncoderType() EncoderType {

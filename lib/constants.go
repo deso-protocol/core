@@ -292,7 +292,7 @@ type ForkHeights struct {
 //		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
 //			_, err = rr.ReadByte()
 //			if err != nil {
-//				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte")
+//				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte.")
 //			}
 //		}
 //	MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
@@ -300,7 +300,7 @@ type ForkHeights struct {
 // 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. (Note
 //		the usage of the MigrationName UtxoEntryTestHeight)
 //
-//		return GetMigrationVersion(blockHeight, [UtxoEntryTestHeight])
+//		return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
 //
 // That's it!
 type MigrationName string
@@ -311,11 +311,15 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration MigrationName = "DefaultMigration"
+	DefaultMigration              MigrationName = "DefaultMigration"
+	DeSoV3MessagesMutingMigration MigrationName = "DeSoV3MessagesMutingMigration"
 )
 
 type EncoderMigrationHeights struct {
 	DefaultMigration MigrationHeight
+
+	// DeSoV3MessagesMutingMigration coincides with the DeSoV3MessagesMutingBlockHeight block
+	DeSoV3MessagesMutingMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -324,6 +328,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 0,
 			Height:  forkHeights.DefaultHeight,
 			Name:    DefaultMigration,
+		},
+		DeSoV3MessagesMutingMigration: MigrationHeight{
+			Version: 2,
+			Height:  uint64(forkHeights.DeSoV3MessagesMutingBlockHeight),
+			Name:    DeSoV3MessagesMutingMigration,
 		},
 	}
 }
@@ -563,6 +572,7 @@ var RegtestForkHeights = ForkHeights{
 	DerivedKeyEthSignatureCompatibilityBlockHeight:       uint32(0),
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
+	DeSoV3MessagesMutingBlockHeight:                      uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -702,6 +712,9 @@ var MainnetForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:        uint32(137173),
 
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
+
+	// ADD FINAL DATE & TIME HERE
+	DeSoV3MessagesMutingBlockHeight: uint32(151616),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -949,6 +962,9 @@ var TestnetForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:        uint32(360584),
 
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
+
+	// ADD FINAL DATE & TIME HERE
+	DeSoV3MessagesMutingBlockHeight: uint32(151616),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
