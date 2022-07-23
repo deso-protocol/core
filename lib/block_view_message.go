@@ -873,8 +873,8 @@ func (bav *UtxoView) _connectMessagingGroup(
 				// make deep copy of existingEntry.MuteList to prevent mempool errors
 				var entryCopy *MessagingGroupEntry
 				entryCopy = &MessagingGroupEntry{}
-				rr := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
-				if exists, err := DecodeFromBytes(entryCopy, rr); !exists || err != nil {
+				rrEntryCopy := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
+				if exists, err := DecodeFromBytes(entryCopy, rrEntryCopy); !exists || err != nil {
 					return 0, 0, nil, errors.Wrapf(err,
 						"_connectMessagingGroup: Error decoding deep copy for V3 Muting.")
 				}
@@ -913,13 +913,11 @@ func (bav *UtxoView) _connectMessagingGroup(
 				}
 				// Create a utxoOps entry, we make a copy of the existing entry.
 				var prevMessagingKeyEntry *MessagingGroupEntry
-				if existingEntry != nil && !existingEntry.isDeleted {
-					prevMessagingKeyEntry = &MessagingGroupEntry{}
-					rr := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
-					if exists, err := DecodeFromBytes(prevMessagingKeyEntry, rr); !exists || err != nil {
-						return 0, 0, nil, errors.Wrapf(err,
-							"_connectMessagingGroup: Error decoding previous entry")
-					}
+				prevMessagingKeyEntry = &MessagingGroupEntry{}
+				rr := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
+				if exists, err := DecodeFromBytes(prevMessagingKeyEntry, rr); !exists || err != nil {
+					return 0, 0, nil, errors.Wrapf(err,
+						"_connectMessagingGroup: Error decoding previous entry")
 				}
 				bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, &messagingGroupEntry)
 
