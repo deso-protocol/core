@@ -859,7 +859,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// V3 Messages: MUTING and UNMUTING members
 	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingBlockHeight {
 		if existingEntry != nil && !existingEntry.isDeleted {
-			value, operationTypeExists := txn.ExtraData["OperationType"]
+			value, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]
 			if operationTypeExists {
 				// inline helper method
 				contains := func(memberList []*MessagingGroupMember, member *MessagingGroupMember) bool {

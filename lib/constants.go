@@ -1187,9 +1187,8 @@ const (
 	TransactionSpendingLimitKey = "TransactionSpendingLimit"
 	DerivedKeyMemoKey           = "DerivedKeyMemo"
 
-	// V3 Group Chat Messages ExtraData OperationTypes
-	MessagingGroupOperationMute   = "MessagingGroupOperationMute"
-	MessagingGroupOperationUnmute = "MessagingGroupOperationUnmute"
+	// V3 Group Chat Messages ExtraData Key
+	MessagingGroupOperationType = "MessagingGroupOperationType"
 )
 
 // Defines values that may exist in a transaction's ExtraData map
@@ -1243,4 +1242,9 @@ const (
 	// Messaging key constants
 	MinMessagingKeyNameCharacters = 1
 	MaxMessagingKeyNameCharacters = 32
+)
+const (
+	// V3 Group Chat Messages ExtraData["MessagingGroupOperationType"] values
+	MessagingGroupOperationMute   = "MessagingGroupOperationMute"
+	MessagingGroupOperationUnmute = "MessagingGroupOperationUnmute"
 )
