@@ -896,6 +896,9 @@ func (bav *UtxoView) _connectMessagingGroup(
 							}
 						}
 					}
+				} else {
+					return 0, 0, nil, errors.Wrapf(err,
+						"_connectMessagingGroup: Error, invalid ExtraData[\"OperationType\"] value.")
 				}
 				// Finally set the real existingEntry.MuteList to point to the clone
 				existingEntry = entryCopy
