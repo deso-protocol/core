@@ -871,29 +871,34 @@ func (bav *UtxoView) _connectMessagingGroup(
 					return false
 				}
 				// make deep copy of existingEntry.MuteList to prevent mempool errors
-				muteListCopy := make([]*MessagingGroupMember, len(existingEntry.MuteList))
-				copy(muteListCopy, existingEntry.MuteList)
+				var entryCopy *MessagingGroupEntry
+				entryCopy = &MessagingGroupEntry{}
+				rr := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
+				if exists, err := DecodeFromBytes(entryCopy, rr); !exists || err != nil {
+					return 0, 0, nil, errors.Wrapf(err,
+						"_connectMessagingGroup: Error decoding deep copy for V3 Muting.")
+				}
 				// check if mute or unmute
 				if string(value) == MessagingGroupOperationMute {
 					for _, s := range txMeta.MessagingGroupMembers {
 						// Add s to muteList
 						// Make sure does not already exist to ensure no dups
-						if !contains(muteListCopy, s) {
-							muteListCopy = append(muteListCopy, s)
+						if !contains(entryCopy.MuteList, s) {
+							entryCopy.MuteList = append(entryCopy.MuteList, s)
 						}
 					}
 				} else if string(value) == MessagingGroupOperationUnmute {
 					for _, s := range txMeta.MessagingGroupMembers {
-						for i, toUnmute := range muteListCopy {
+						for i, toUnmute := range entryCopy.MuteList {
 							if reflect.DeepEqual(toUnmute.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
-								muteListCopy = append(muteListCopy[:i], muteListCopy[i+1:]...)
+								entryCopy.MuteList = append(entryCopy.MuteList[:i], entryCopy.MuteList[i+1:]...)
 								break
 							}
 						}
 					}
 				}
 				// Finally set the real existingEntry.MuteList to point to the clone
-				existingEntry.MuteList = muteListCopy
+				existingEntry = entryCopy
 				// Create a MessagingGroupEntry so we can add the entry to UtxoView.
 				messagingGroupEntry := MessagingGroupEntry{
 					GroupOwnerPublicKey:   &messagingGroupKey.OwnerPublicKey,
