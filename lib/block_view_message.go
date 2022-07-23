@@ -884,15 +884,24 @@ func (bav *UtxoView) _connectMessagingGroup(
 						}
 						if !contains(entryCopy.MuteList, s) {
 							entryCopy.MuteList = append(entryCopy.MuteList, s)
+						} else {
+							return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyMuted,
+								"_connectMessagingGroup: Cannot mute member that is already muted (%v).", s.GroupMemberPublicKey[:])
 						}
 					}
 				} else if string(value) == MessagingGroupOperationUnmute {
 					for _, s := range txMeta.MessagingGroupMembers {
+						isUnmuteValid := false
 						for i, toUnmute := range entryCopy.MuteList {
 							if reflect.DeepEqual(toUnmute.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
 								entryCopy.MuteList = append(entryCopy.MuteList[:i], entryCopy.MuteList[i+1:]...)
+								isUnmuteValid = true
 								break
 							}
+						}
+						if !isUnmuteValid {
+							return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyUnmuted,
+								"_connectMessagingGroup: Cannot unmute member that is already unmuted (%v).", s.GroupMemberPublicKey[:])
 						}
 					}
 				} else {
