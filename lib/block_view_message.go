@@ -472,6 +472,31 @@ func (bav *UtxoView) _connectPrivateMessage(
 				"_connectPrivateMessage: at least one messaging party must be present")
 		}
 
+		// We will now proceed to add sender's and recipient's messaging keys to the message entry.
+		// We make sure that both sender public key and key name is present in transaction's ExtraData.
+		senderMessagingKeyName, existsSenderName := txn.ExtraData[SenderMessagingGroupKeyName]
+		if existsSender && existsSenderName {
+			// Validate the key and the name using this helper function to make sure messaging key has been previously authorized.
+			if err = bav.ValidateKeyAndNameWithUtxo(txn.PublicKey, senderMessagingPublicKey, senderMessagingKeyName); err != nil {
+				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
+					"_connectPrivateMessage: failed to validate public key and key name")
+			}
+			// If everything went well, update the messaging key information in the message entry.
+			messageEntry.SenderMessagingPublicKey = NewPublicKey(senderMessagingPublicKey)
+			messageEntry.SenderMessagingGroupKeyName = NewGroupKeyName(senderMessagingKeyName)
+		}
+		// We do an analogous validation for the recipient's messaging key.
+		recipientMessagingKeyName, existsRecipientName := txn.ExtraData[RecipientMessagingGroupKeyName]
+		if existsRecipient && existsRecipientName {
+			if err := bav.ValidateKeyAndNameWithUtxo(txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
+				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
+					"_connectPrivateMessage: failed to validate public key and key name, error: (%v)", err)
+			}
+			// If everything worked, update the messaging key information in the message entry.
+			messageEntry.RecipientMessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
+			messageEntry.RecipientMessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
+		}
+
 		// Reject message if sender is muted
 		if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingBlockHeight {
 			_, existsSenderKeyName := txn.ExtraData[SenderMessagingGroupKeyName]
@@ -497,31 +522,6 @@ func (bav *UtxoView) _connectPrivateMessage(
 					}
 				}
 			}
-		}
-
-		// We will now proceed to add sender's and recipient's messaging keys to the message entry.
-		// We make sure that both sender public key and key name is present in transaction's ExtraData.
-		senderMessagingKeyName, existsSenderName := txn.ExtraData[SenderMessagingGroupKeyName]
-		if existsSender && existsSenderName {
-			// Validate the key and the name using this helper function to make sure messaging key has been previously authorized.
-			if err = bav.ValidateKeyAndNameWithUtxo(txn.PublicKey, senderMessagingPublicKey, senderMessagingKeyName); err != nil {
-				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
-					"_connectPrivateMessage: failed to validate public key and key name")
-			}
-			// If everything went well, update the messaging key information in the message entry.
-			messageEntry.SenderMessagingPublicKey = NewPublicKey(senderMessagingPublicKey)
-			messageEntry.SenderMessagingGroupKeyName = NewGroupKeyName(senderMessagingKeyName)
-		}
-		// We do an analogous validation for the recipient's messaging key.
-		recipientMessagingKeyName, existsRecipientName := txn.ExtraData[RecipientMessagingGroupKeyName]
-		if existsRecipient && existsRecipientName {
-			if err := bav.ValidateKeyAndNameWithUtxo(txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
-				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
-					"_connectPrivateMessage: failed to validate public key and key name, error: (%v)", err)
-			}
-			// If everything worked, update the messaging key information in the message entry.
-			messageEntry.RecipientMessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
-			messageEntry.RecipientMessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
 		}
 	}
 
