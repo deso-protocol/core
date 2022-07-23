@@ -861,15 +861,6 @@ func (bav *UtxoView) _connectMessagingGroup(
 		if existingEntry != nil && !existingEntry.isDeleted {
 			value, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]
 			if operationTypeExists {
-				// inline helper method
-				contains := func(memberList []*MessagingGroupMember, member *MessagingGroupMember) bool {
-					for _, a := range memberList {
-						if a == member {
-							return true
-						}
-					}
-					return false
-				}
 				// make deep copy of existingEntry.MuteList to prevent mempool errors
 				var entryCopy *MessagingGroupEntry
 				entryCopy = &MessagingGroupEntry{}
@@ -883,6 +874,14 @@ func (bav *UtxoView) _connectMessagingGroup(
 					for _, s := range txMeta.MessagingGroupMembers {
 						// Add s to muteList
 						// Make sure does not already exist to ensure no dups
+						contains := func(memberList []*MessagingGroupMember, member *MessagingGroupMember) bool {
+							for _, a := range memberList {
+								if a == member {
+									return true
+								}
+							}
+							return false
+						}
 						if !contains(entryCopy.MuteList, s) {
 							entryCopy.MuteList = append(entryCopy.MuteList, s)
 						}
