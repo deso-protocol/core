@@ -2032,14 +2032,13 @@ func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, s
 	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	// adding MuteList to the end for backwards compatibility
 	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MuteList)))...)
-	// We sort the MuteList members because they can be added while iterating over
-	// a map, which could lead to inconsistent orderings across nodes when encoding.
-	muteListMembers := sortMessagingGroupMembers(entry.MuteList)
-	for ii := 0; ii < len(muteListMembers); ii++ {
-		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, muteListMembers[ii], skipMetadata...)...)
-	}
 	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingMigration) {
-		entryBytes = append(entryBytes, byte(127))
+		// We sort the MuteList members because they can be added while iterating over
+		// a map, which could lead to inconsistent orderings across nodes when encoding.
+		muteListMembers := sortMessagingGroupMembers(entry.MuteList)
+		for ii := 0; ii < len(muteListMembers); ii++ {
+			entryBytes = append(entryBytes, EncodeToBytes(blockHeight, muteListMembers[ii], skipMetadata...)...)
+		}
 	}
 	return entryBytes
 }
@@ -2089,23 +2088,18 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 	} else if err != nil {
 		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
 	}
-
-	muteListLen, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding MuteList length")
-	}
-	for ; muteListLen > 0; muteListLen-- {
-		muteListMember := &MessagingGroupMember{}
-		if exist, err := DecodeFromBytes(muteListMember, rr); exist && err == nil {
-			entry.MuteList = append(entry.MuteList, muteListMember)
-		} else if err != nil {
-			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding muteListMember")
-		}
-	}
 	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingMigration) {
-		_, err = rr.ReadByte()
+		muteListLen, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem reading random byte.")
+			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding MuteList length")
+		}
+		for ; muteListLen > 0; muteListLen-- {
+			muteListMember := &MessagingGroupMember{}
+			if exist, err := DecodeFromBytes(muteListMember, rr); exist && err == nil {
+				entry.MuteList = append(entry.MuteList, muteListMember)
+			} else if err != nil {
+				return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding muteListMember")
+			}
 		}
 	}
 	return nil

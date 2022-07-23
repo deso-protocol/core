@@ -964,7 +964,7 @@ var TestnetForkHeights = ForkHeights{
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
 	// ADD FINAL DATE & TIME HERE
-	DeSoV3MessagesMutingBlockHeight: uint32(151616),
+	DeSoV3MessagesMutingBlockHeight: uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
