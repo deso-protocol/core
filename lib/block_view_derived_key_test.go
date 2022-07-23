@@ -88,15 +88,7 @@ func _derivedKeyVerifyTest(t *testing.T, db *badger.DB, chain *Blockchain, trans
 
 	// Verify that expiration block was persisted in the db or is in mempool utxoView
 	if mempool == nil {
-		var derivedKeyEntry *DerivedKeyEntry
-		if chain.postgres != nil {
-			pgEntry := chain.postgres.GetDerivedKey(NewPublicKey(senderPkBytes), NewPublicKey(derivedPublicKey))
-			if pgEntry != nil {
-				derivedKeyEntry = pgEntry.NewDerivedKeyEntry()
-			}
-		} else {
-			derivedKeyEntry = DBGetOwnerToDerivedKeyMapping(db, chain.snapshot, *NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
-		}
+		derivedKeyEntry := NewDbAdapter(chain).GetOwnerToDerivedKeyMapping(*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
 		// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 		// To pass the tests, we initialize it to a default struct.
 		if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
