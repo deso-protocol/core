@@ -860,7 +860,6 @@ func (bav *UtxoView) _connectMessagingGroup(
 	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingBlockHeight {
 		if existingEntry != nil && !existingEntry.isDeleted {
 			if value, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists {
-				//if operationTypeExists {
 				// make deep copy of existingEntry.MuteList to prevent mempool errors
 				var entryCopy *MessagingGroupEntry
 				entryCopy = &MessagingGroupEntry{}
