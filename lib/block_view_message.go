@@ -859,8 +859,8 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// V3 Messages: MUTING and UNMUTING members
 	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingBlockHeight {
 		if existingEntry != nil && !existingEntry.isDeleted {
-			value, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]
-			if operationTypeExists {
+			if value, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists {
+				//if operationTypeExists {
 				// make deep copy of existingEntry.MuteList to prevent mempool errors
 				var entryCopy *MessagingGroupEntry
 				entryCopy = &MessagingGroupEntry{}
