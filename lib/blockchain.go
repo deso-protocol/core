@@ -2050,6 +2050,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		return false, false, errors.Wrapf(err, "ProcessBlock: Problem storing block after basic validation")
 	}
 
+	// If we've already validated this block, there's no need to do that again. This in particular gets triggered in the
+	// archival mode, where we actually skip block validation altogether for historical blocks.
 	if nodeToValidate.Status&StatusBlockValidated != 0 {
 		return true, false, nil
 	}

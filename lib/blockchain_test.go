@@ -4,10 +4,9 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/go-pg/pg/v10"
 	"log"
 	"math/big"
-	"os"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -161,10 +160,22 @@ func NewLowDifficultyBlockchain() (
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	return NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+	return NewLowDifficultyBlockchainWithParamsAndPostgres(&DeSoTestnetParams, nil)
 }
 
 func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
+	*Blockchain, *DeSoParams, *badger.DB) {
+
+	return NewLowDifficultyBlockchainWithParamsAndPostgres(params, nil)
+}
+
+func NewLowDifficultyBlockchainWithPostgres(postgres *Postgres) (
+	*Blockchain, *DeSoParams, *badger.DB) {
+
+	return NewLowDifficultyBlockchainWithParamsAndPostgres(&DeSoTestnetParams, postgres)
+}
+
+func NewLowDifficultyBlockchainWithParamsAndPostgres(params *DeSoParams, postgres *Postgres) (
 	*Blockchain, *DeSoParams, *badger.DB) {
 
 	// Set the number of txns per view regeneration to one while creating the txns
@@ -172,11 +183,11 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 
 	db, dbDir := GetTestBadgerDb()
 	timesource := chainlib.NewMedianTime()
-	var postgresDb *Postgres
-
-	if len(os.Getenv("POSTGRES_URI")) > 0 {
-		postgresDb = NewPostgres(pg.Connect(ParsePostgresURI(os.Getenv("POSTGRES_URI"))))
-	}
+	//var postgresDb *Postgres
+	//
+	//if len(os.Getenv("POSTGRES_URI")) > 0 {
+	//	postgresDb = NewPostgres(pg.Connect(ParsePostgresURI(os.Getenv("POSTGRES_URI"))))
+	//}
 
 	// Set some special parameters for testing. If the blocks above are changed
 	// these values should be updated to reflect the latest testnet values.
@@ -225,7 +236,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	// key have some DeSo
 	snap, err, _ := NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &paramsCopy, false)
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0,
-		&paramsCopy, timesource, db, postgresDb, nil, snap, false)
+		&paramsCopy, timesource, db, postgres, nil, snap, false)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -751,25 +762,47 @@ func _signTxn(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
 	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
 	txnSignature, err := txn.Sign(privKey)
 	require.NoError(err)
-	txn.Signature = txnSignature
+	txn.Signature.Sign = txnSignature
+}
+
+func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrBase58Check string) {
+	signatureType := rand.Int() % 2
+	_signTxnWithDerivedKeyAndType(t, txn, privKeyStrBase58Check, signatureType)
 }
 
 // Signs the transaction with a derived key. Transaction ExtraData contains the derived
 // public key, so that _verifySignature() knows transaction wasn't signed by the owner.
-func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
+func _signTxnWithDerivedKeyAndType(t *testing.T, txn *MsgDeSoTxn, privKeyStrBase58Check string, signatureType int) {
 	require := require.New(t)
 
-	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
+	privKeyBytes, _, err := Base58CheckDecode(privKeyStrBase58Check)
 	require.NoError(err)
 	privateKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
-	if txn.ExtraData == nil {
-		txn.ExtraData = make(map[string][]byte)
-	}
-	txn.ExtraData[DerivedPublicKey] = publicKey.SerializeCompressed()
-	txnSignature, err := txn.Sign(privateKey)
-	require.NoError(err)
 
-	txn.Signature = txnSignature
+	// We will randomly sign with the standard DER encoding + ExtraData, or with the DeSo-DER encoding.
+	if signatureType == 0 {
+		if txn.ExtraData == nil {
+			txn.ExtraData = make(map[string][]byte)
+		}
+		txn.ExtraData[DerivedPublicKey] = publicKey.SerializeCompressed()
+		txnSignature, err := txn.Sign(privateKey)
+		require.NoError(err)
+		txn.Signature.Sign = txnSignature
+	} else {
+		txBytes, err := txn.ToBytes(true /*preSignature*/)
+		require.NoError(err)
+		txHash := Sha256DoubleHash(txBytes)[:]
+		signature, err := privateKey.Sign(txHash)
+		require.NoError(err)
+
+		signatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, txHash, true)
+		require.NoError(err)
+		recoveryId := (signatureCompact[0] - compactSigMagicOffset) & ^byte(compactSigCompPubKey)
+
+		txn.Signature.Sign = signature
+		txn.Signature.RecoveryId = recoveryId
+		txn.Signature.IsRecoverable = true
+	}
 }
 
 func _assembleBasicTransferTxnFullySigned(t *testing.T, chain *Blockchain,

@@ -2,22 +2,31 @@ package lib
 
 import (
 	"bytes"
+	"context"
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/client"
 	"github.com/go-pg/pg/v10"
 	"github.com/go-pg/pg/v10/orm"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
+	"github.com/pkg/errors"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 )
 
 type Postgres struct {
 	db *pg.DB
+
+	// Only applies to a docker postgres db.
+	directory   string
+	containerId string
 }
 
 func NewPostgres(db *pg.DB) *Postgres {
@@ -118,13 +127,15 @@ type PGBlock struct {
 type PGTransaction struct {
 	tableName struct{} `pg:"pg_transactions"`
 
-	Hash      *BlockHash `pg:",pk,type:bytea"`
-	BlockHash *BlockHash `pg:",type:bytea"`
-	Type      TxnType    `pg:",use_zero"`
-	PublicKey []byte     `pg:",type:bytea"`
-	ExtraData map[string][]byte
-	R         *BlockHash `pg:",type:bytea"`
-	S         *BlockHash `pg:",type:bytea"`
+	Hash          *BlockHash `pg:",pk,type:bytea"`
+	BlockHash     *BlockHash `pg:",type:bytea"`
+	Type          TxnType    `pg:",use_zero"`
+	PublicKey     []byte     `pg:",type:bytea"`
+	ExtraData     map[string][]byte
+	R             *BlockHash `pg:",type:bytea"`
+	S             *BlockHash `pg:",type:bytea"`
+	RecoveryId    uint32     `pg:",use_zero"`
+	IsRecoverable bool       `pg:",use_zero"`
 
 	// Relationships
 	Outputs                     []*PGTransactionOutput         `pg:"rel:has-many,join_fk:output_hash"`
@@ -885,13 +896,14 @@ type PGDerivedKey struct {
 	// TransactionSpendingLimit fields
 	TransactionSpendingLimitTracker []byte `pg:",type:bytea"`
 	Memo                            []byte `pg:",type:bytea"`
+	BlockHeight                     uint64 `pg:",use_zero"`
 }
 
 func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
 	var tsl *TransactionSpendingLimit
 	if len(key.TransactionSpendingLimitTracker) > 0 {
 		tsl = &TransactionSpendingLimit{}
-		if err := tsl.FromBytes(bytes.NewReader(key.TransactionSpendingLimitTracker)); err != nil {
+		if err := tsl.FromBytes(key.BlockHeight, bytes.NewReader(key.TransactionSpendingLimitTracker)); err != nil {
 			glog.Errorf("Error converting Derived Key's TransactionLimitTracker bytes back into a TransactionSpendingLimit: %v", err)
 			return nil
 		}
@@ -1057,9 +1069,11 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 			ExtraData: txn.ExtraData,
 		}
 
-		if txn.Signature != nil {
-			transaction.R = BigintToHash(txn.Signature.R)
-			transaction.S = BigintToHash(txn.Signature.S)
+		if txn.Signature.Sign != nil {
+			transaction.R = BigintToHash(txn.Signature.Sign.R)
+			transaction.S = BigintToHash(txn.Signature.Sign.S)
+			transaction.RecoveryId = uint32(txn.Signature.RecoveryId)
+			transaction.IsRecoverable = txn.Signature.IsRecoverable
 		}
 
 		transactions = append(transactions, transaction)
@@ -1542,11 +1556,22 @@ func (postgres *Postgres) UpsertBlockAndTransactions(blockNode *BlockNode, desoB
 	})
 }
 
+func (postgres *Postgres) GetTransactionByHash(txnHash *BlockHash) *PGTransaction {
+	txn := PGTransaction{
+		Hash: txnHash,
+	}
+	err := postgres.db.Model(&txn).WherePK().Select()
+	if err != nil {
+		return nil
+	}
+	return &txn
+}
+
 //
 // BlockView Flushing
 //
 
-func (postgres *Postgres) FlushView(view *UtxoView) error {
+func (postgres *Postgres) FlushView(view *UtxoView, blockHeight uint64) error {
 	return postgres.db.RunInTransaction(postgres.db.Context(), func(tx *pg.Tx) error {
 		if err := postgres.flushUtxos(tx, view); err != nil {
 			return err
@@ -1587,7 +1612,7 @@ func (postgres *Postgres) FlushView(view *UtxoView) error {
 		if err := postgres.flushNFTBids(tx, view); err != nil {
 			return err
 		}
-		if err := postgres.flushDerivedKeys(tx, view); err != nil {
+		if err := postgres.flushDerivedKeys(tx, view, blockHeight); err != nil {
 			return err
 		}
 		// Temporarily write limit orders to badger
@@ -2144,11 +2169,12 @@ func (postgres *Postgres) flushNFTBids(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView, blockHeight uint64) error {
 	var insertKeys []*PGDerivedKey
 	var deleteKeys []*PGDerivedKey
+
 	for _, keyEntry := range view.DerivedKeyToDerivedEntry {
-		tslBytes, err := keyEntry.TransactionSpendingLimitTracker.ToBytes()
+		tslBytes, err := keyEntry.TransactionSpendingLimitTracker.ToBytes(blockHeight)
 		if err != nil {
 			return err
 		}
@@ -2157,8 +2183,10 @@ func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
 			DerivedPublicKey:                keyEntry.DerivedPublicKey,
 			ExpirationBlock:                 keyEntry.ExpirationBlock,
 			OperationType:                   keyEntry.OperationType,
+			ExtraData:                       keyEntry.ExtraData,
 			TransactionSpendingLimitTracker: tslBytes,
 			Memo:                            keyEntry.Memo,
+			BlockHeight:                     blockHeight,
 		}
 
 		if keyEntry.isDeleted {
@@ -2915,4 +2943,51 @@ func (postgres *Postgres) GetNotifications(publicKey string) ([]*PGNotification,
 	}
 
 	return notifications, nil
+}
+
+//
+// Postgres Test tooling
+//
+
+// Drop all tables in the postgres Db.
+func (postgres *Postgres) resetDatabase() error {
+	res, err := postgres.db.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostgresDatabase: Problem executing the query")
+	}
+	glog.V(1).Infof(CLog(Blue, fmt.Sprintf("DeletePostgresDatabase: Got res %v", res)))
+	return nil
+}
+
+// Kill the postgres Docker container and delete the postgres directory. This is used for running pg tests.
+func (postgres *Postgres) forceKillContainer() error {
+	if postgres.containerId == "" {
+		return fmt.Errorf("forceKillContainer: container Id is empty. This function only works for dockerized postgres")
+	}
+
+	err := postgres.db.Close()
+	if err != nil {
+		return errors.Wrapf(err, "forceKillContainer: Problem closing postgres db")
+	}
+
+	cli, err := client.NewClientWithOpts(client.FromEnv)
+	if err != nil {
+		return errors.Wrapf(err, "forceKillContainer: Problem creating new docker client")
+	}
+
+	removeOptions := types.ContainerRemoveOptions{
+		Force: true,
+	}
+	err = cli.ContainerRemove(context.Background(), postgres.containerId, removeOptions)
+	if err != nil {
+		return errors.Wrapf(err, "forceKillContainer: Problem removing postgres container")
+	}
+
+	if postgres.directory == "" {
+		err = os.RemoveAll(postgres.directory)
+		if err != nil {
+			return errors.Wrapf(err, "forceKillContainer: Problem removing postgres directory")
+		}
+	}
+	return nil
 }

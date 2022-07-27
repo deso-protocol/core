@@ -292,6 +292,9 @@ const (
 	RuleErrorDerivedKeyNotAuthorized                    RuleError = "RuleErrorDerivedKeyNotAuthorized"
 	RuleErrorDerivedKeyInvalidExtraData                 RuleError = "RuleErrorDerivedKeyInvalidExtraData"
 	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
+	RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId    RuleError = "RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId"
+	RuleErrorDerivedKeyInvalidRecoveryId                RuleError = "RuleErrorDerivedKeyInvalidRecoveryId"
+	RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits  RuleError = "RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits"
 
 	// Messages
 	RuleErrorMessagingPublicKeyCannotBeOwnerKey     RuleError = "RuleErrorMessagingPublicKeyCannotBeOwnerKey"
@@ -395,7 +398,7 @@ const (
 	RuleErrorOldToPublicKeyHasDeletedPKID   RuleError = "RuleErrorOldToPublicKeyHasDeletedPKID"
 
 	// Derived Key Transaction Spending Limits
-	RuleErrorDerivedKeyTxnTypeNotAuthorized              RuleError = "RuleErrorTxnTypeNotAuthorized"
+	RuleErrorDerivedKeyTxnTypeNotAuthorized              RuleError = "RuleErrorDerivedKeyTxnTypeNotAuthorized"
 	RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit  RuleError = "RuleErrorTxnSpendsMoreThanGlobalDESOLimit"
 	RuleErrorDerivedKeyInvalidCreatorCoinLimitOperation  RuleError = "RuleErrorInvalidCreatorCoinLimitOperation"
 	RuleErrorDerivedKeyInvalidDAOCoinLimitOperation      RuleError = "RuleErrorInvalidDAOCoinLimitOperation"
