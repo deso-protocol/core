@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
@@ -329,7 +330,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
 	}
@@ -349,7 +350,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameTooLong)
 	}
@@ -369,7 +370,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,       /*newProfilePic*/
 			10*100,         /*newCreatorBasisPoints*/
 			2*100*100,      /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileDescriptionTooLong)
 	}
@@ -387,7 +388,7 @@ func TestUpdateProfile(t *testing.T) {
 			longPic,       /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorMaxProfilePicSize)
 	}
@@ -405,7 +406,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			100*100*100,   /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileStakeMultipleSize)
 	}
@@ -423,7 +424,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			.99*100*100,   /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileStakeMultipleSize)
 	}
@@ -441,7 +442,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			101*100,       /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileCreatorPercentageSize)
 	}
@@ -459,7 +460,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,        /*newProfilePic*/
 			10*100,          /*newCreatorBasisPoints*/
 			1.25*100*100,    /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false            /*isHidden*/)
 		require.Error(err)
 		// This returned RuleErrorProfilePubKeyNotAuthorized for me once
 		// "ConnectTransaction: : _connectUpdateProfile: ... RuleErrorProfilePubKeyNotAuthorized"
@@ -479,7 +480,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
 	}
@@ -496,7 +497,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Username that does not match our regex should fail
@@ -512,7 +513,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -527,7 +528,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,          /*newProfilePic*/
 			10*100,            /*newCreatorBasisPoints*/
 			1.25*100*100,      /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false              /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -542,7 +543,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,            /*newProfilePic*/
 			10*100,              /*newCreatorBasisPoints*/
 			1.25*100*100,        /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false                /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -557,7 +558,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
@@ -572,7 +573,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,              /*newProfilePic*/
 			10*100,                /*newCreatorBasisPoints*/
 			1.25*100*100,          /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false                  /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 	}
@@ -590,7 +591,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -607,7 +608,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -622,7 +623,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 
 		_, _, _, err = _updateProfile(
 			t, chain, db, params,
@@ -635,7 +636,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -652,7 +653,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -669,7 +670,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 	}
@@ -686,7 +687,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Leaving username, description, and pic blank should result in a noop.
@@ -701,7 +702,7 @@ func TestUpdateProfile(t *testing.T) {
 			"",           /*newProfilePic*/
 			10*100,       /*newCreatorBasisPoints*/
 			1.25*100*100, /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false         /*isHidden*/)
 	}
 
 	// An update followed by a reversion should result in no change.
@@ -716,7 +717,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic+"woohoo",    /*newProfilePic*/
 			15*100,               /*newCreatorBasisPoints*/
 			1.7*100*100,          /*newStakeMultipleBasisPoints*/
-			true /*isHidden*/)
+			true                  /*isHidden*/)
 
 		updateProfile(
 			1,             /*feeRateNanosPerKB*/
@@ -728,7 +729,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// A normal user updating their profile should succeed.
@@ -743,7 +744,7 @@ func TestUpdateProfile(t *testing.T) {
 			otherShortPic,      /*newProfilePic*/
 			12*100,             /*newCreatorBasisPoints*/
 			1.6*100*100,        /*newStakeMultipleBasisPoints*/
-			true /*isHidden*/)
+			true                /*isHidden*/)
 	}
 
 	// Normal user updating another user's profile should fail.
@@ -759,7 +760,7 @@ func TestUpdateProfile(t *testing.T) {
 			shortPic,         /*newProfilePic*/
 			10*100,           /*newCreatorBasisPoints*/
 			1.25*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false             /*isHidden*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
 	}
@@ -776,7 +777,7 @@ func TestUpdateProfile(t *testing.T) {
 			otherShortPic,                /*newProfilePic*/
 			11*100,                       /*newCreatorBasisPoints*/
 			1.5*100*100,                  /*newStakeMultipleBasisPoints*/
-			true /*isHidden*/)
+			true                          /*isHidden*/)
 	}
 
 	// ParamUpdater creating another user's profile should succeed.
@@ -791,7 +792,7 @@ func TestUpdateProfile(t *testing.T) {
 			otherShortPic,                /*newProfilePic*/
 			11*100,                       /*newCreatorBasisPoints*/
 			1.5*100*100,                  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false                         /*isHidden*/)
 	}
 
 	// Create Profile Fee and Minimum Network Fee tests
@@ -3268,20 +3269,36 @@ func TestEthSignature(t *testing.T) {
 	_ = require
 
 	// This data was taken directly from MetaMask personal_sign.
-	signatureHex := "e1ddc8f4a6004439988a7578299856cdaa1a211e39ecbe57a500e1c3a65bb389779adf0472812fb35500e5b49ce679a3ed8b2cc4fac851e8783835bd7b82f0721c"
-	publicKeyHex := "04aaa44d617bae2fde81bd3e35857ac6e0358a39da4b62d8be0c94cb60def3f637641d9c5c5adb20e8561bbbbc4f271158871d530053bb917423846c8b482fd518"
-	message := []byte("message to sign")
+	signatureHex := "d03fdea89e64e599935c48c3568b8b1481d074e2f93ed0f84fa3fa2962909c276133d7df637795833f64f1fefef0e486897d75d6abd8b7cf4420dcd0b674a8e01b"
+	transactionSpendingLimitHex := "8094ebdc030305c0a90706c0a90716c0a90700000000"
+	expirationBlock := uint64(999999999999)
+	derivedPublicKeyBase58Check := "tBCKWTfCBT1QRmhPaMug7L2QtrH4TDETmMYxP24FGtPaRGpXSpqknN"
+	ownerPublicKeyBase58Check := "tBCKW6GJpevX6g9kfVz4opSb7gVsJMhES67z4k5Bntxnd7zHcHdgFM"
 
 	// parse signature
 	signature, err := hex.DecodeString(signatureHex)
 	require.NoError(err)
 
-	// parse public key
-	publicKeyBytes, err := hex.DecodeString(publicKeyHex)
+	// parse spending limits
+	transactionSpendingLimit := &TransactionSpendingLimit{}
+	transactionSpendingLimitBytes, err := hex.DecodeString(transactionSpendingLimitHex)
+	require.NoError(err)
+	rr := bytes.NewReader(transactionSpendingLimitBytes)
+	// This error is fine because transaction should fail anyway if spending limit cannot be decoded.
+	require.NoError(transactionSpendingLimit.FromBytes(rr))
+
+	// parse derived public key
+	derivedPublicKeyBytes, _, err := Base58CheckDecode(derivedPublicKeyBase58Check)
 	require.NoError(err)
 
+	// parse owner public key
+	ownerPublicKeyBytes, _, err := Base58CheckDecode(ownerPublicKeyBase58Check)
+	require.NoError(err)
+
+	// assemble the message
+	accessBytes := AssembleAccessBytesWithMetamaskStrings(derivedPublicKeyBytes, expirationBlock,
+		transactionSpendingLimit, &DeSoTestnetParams)
+
 	// verify signature
-	_, _, _ = publicKeyBytes, message, signature
-	// TODO: replace the test case
-	//require.NoError(_verifyEthPersonalSignature(publicKeyBytes, message, signature))
+	require.NoError(_verifyEthPersonalSignature(ownerPublicKeyBytes, accessBytes, signature))
 }

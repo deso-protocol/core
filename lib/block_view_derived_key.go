@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/pkg/errors"
 	"reflect"
+	"strconv"
 )
 
 // _verifyAccessSignature verifies if the accessSignature is correct. Valid
@@ -49,12 +50,42 @@ func _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey []byte, d
 	if len(transactionSpendingLimitBytes) == 0 {
 		return fmt.Errorf("_verifyAccessSignatureWithTransactionSpendingLimit: Transaction Spending limit object is required")
 	}
+	transactionSpendingLimit := &TransactionSpendingLimit{}
+	rr := bytes.NewReader(transactionSpendingLimitBytes)
+	// This error is fine because transaction should fail anyway if spending limit cannot be decoded.
+	if err := transactionSpendingLimit.FromBytes(rr); err != nil {
+		return errors.Wrapf(err, "Error decoding transaction spending limit from extra data")
+	}
 
-	// Compute a hash of derivedPublicKey+expirationBlock.
+	// Check if signature matches Access Bytes Encoding 1.0
+	// Assemble standard access signature of derivedPublicKey || expirationBlock || transactionSpendingLimits
 	expirationBlockBytes := EncodeUint64(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockBytes[:]...)
 	accessBytes = append(accessBytes, transactionSpendingLimitBytes[:]...)
-	return _verifyBytesSignature(ownerPublicKey, accessBytes, accessSignature, uint32(blockHeight), params)
+	verifySignature := _verifyBytesSignature(ownerPublicKey, accessBytes, accessSignature, uint32(blockHeight), params)
+	if verifySignature == nil {
+		return nil
+	}
+
+	// Check if signature matches Access Bytes Encoding 2.0
+	// Assemble access bytes that use Metamask-compatible strings.
+	accessBytes = AssembleAccessBytesWithMetamaskStrings(derivedPublicKey, expirationBlock, transactionSpendingLimit, params)
+	verifySignatureNew := _verifyBytesSignature(ownerPublicKey, accessBytes, accessSignature, uint32(blockHeight), params)
+	if verifySignatureNew != nil {
+		return fmt.Errorf("Failed to verify signature under all possible encodings. Access Bytes Encoding 1.0 "+
+			"Error: %v. Access Bytes Encoding 2.0 Error: %v", verifySignature, verifySignatureNew)
+	}
+	return nil
+}
+
+func AssembleAccessBytesWithMetamaskStrings(derivedPublicKey []byte, expirationBlock uint64,
+	transactionSpendingLimit *TransactionSpendingLimit, params *DeSoParams) []byte {
+
+	encodingString := "DECENTRALIZED SOCIAL\n\n"
+	encodingString += "Your derived public key: " + Base58CheckEncode(derivedPublicKey, false, params) + "\n\n"
+	encodingString += "The expiration block of your key: " + strconv.FormatUint(expirationBlock, 10) + "\n\n"
+	encodingString += transactionSpendingLimit.ToMetamaskString(params)
+	return []byte(encodingString)
 }
 
 func (bav *UtxoView) _connectAuthorizeDerivedKey(

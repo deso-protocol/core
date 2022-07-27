@@ -12,6 +12,7 @@ import (
 	"math"
 	"net"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -4772,6 +4773,161 @@ type TransactionSpendingLimit struct {
 	// BuyingCreatorPKID || SellingCreatorPKID to number of
 	// transactions
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
+}
+
+func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string {
+	var str string
+	var indentationCounter int
+	_indt := _computeIndentation
+
+	str += "Spending limits on the derived key:\n"
+	indentationCounter++
+
+	// GlobalDESOLimit
+	if tsl.GlobalDESOLimit > 0 {
+		str += _indt(indentationCounter) + "Total $DESO Limit: " +
+			strconv.FormatUint(tsl.GlobalDESOLimit, 10) + " $DESO\n"
+	}
+
+	// TransactionCountLimitMap
+	if len(tsl.TransactionCountLimitMap) > 0 {
+		var txnCountStr []string
+		str += _indt(indentationCounter) + "Transaction Count Limit: \n"
+		indentationCounter++
+		for txnType, limit := range tsl.TransactionCountLimitMap {
+			txnCountStr = append(txnCountStr, _indt(indentationCounter)+txnType.String()+": "+
+				strconv.FormatUint(limit, 10)+"\n")
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sort.Strings(txnCountStr)
+		for _, limitStr := range txnCountStr {
+			str += limitStr
+		}
+		indentationCounter--
+	}
+
+	// CreatorCoinOperationLimitMap
+	if len(tsl.CreatorCoinOperationLimitMap) > 0 {
+		var creatorCoinLimitStr []string
+		str += _indt(indentationCounter) + "Creator Coin Operation Limits:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.CreatorCoinOperationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Creator Public Key: " +
+				Base58CheckEncode(limitKey.CreatorPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			creatorCoinLimitStr = append(creatorCoinLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sort.Strings(creatorCoinLimitStr)
+		for _, limitStr := range creatorCoinLimitStr {
+			str += limitStr
+		}
+		indentationCounter--
+	}
+
+	// DAOCoinOperationLimitMap
+	if len(tsl.DAOCoinOperationLimitMap) > 0 {
+		var daoCoinOperationLimitStr []string
+		str += _indt(indentationCounter) + "DAO Coin Operation Limits:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.DAOCoinOperationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Creator Public Key: " +
+				Base58CheckEncode(limitKey.CreatorPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			daoCoinOperationLimitStr = append(daoCoinOperationLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sort.Strings(daoCoinOperationLimitStr)
+		for _, limitStr := range daoCoinOperationLimitStr {
+			str += limitStr
+		}
+		indentationCounter--
+	}
+
+	// NFTOperationLimitMap
+	if len(tsl.NFTOperationLimitMap) > 0 {
+		var nftOperationLimitKey []string
+		str += _indt(indentationCounter) + "NFT Operation Limits:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.NFTOperationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Block Hash: " + limitKey.BlockHash.String() + "\n"
+			opString += _indt(indentationCounter) + "Serial Number: " +
+				strconv.FormatUint(limitKey.SerialNumber, 10) + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			nftOperationLimitKey = append(nftOperationLimitKey, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sort.Strings(nftOperationLimitKey)
+		for _, limitStr := range nftOperationLimitKey {
+			str += limitStr
+		}
+		indentationCounter--
+	}
+
+	// DAOCoinLimitOrderLimitMap
+	if len(tsl.DAOCoinLimitOrderLimitMap) > 0 {
+		var daoCoinLimitOrderStr []string
+		str += _indt(indentationCounter) + "DAO Coin Limit Order Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.DAOCoinLimitOrderLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Buying DAO Creator Public Key: " +
+				Base58CheckEncode(limitKey.BuyingDAOCoinCreatorPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Selling DAO Creator Public Key: " +
+				Base58CheckEncode(limitKey.SellingDAOCoinCreatorPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			daoCoinLimitOrderStr = append(daoCoinLimitOrderStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sort.Strings(daoCoinLimitOrderStr)
+		for _, limitStr := range daoCoinLimitOrderStr {
+			str += limitStr
+		}
+		indentationCounter--
+	}
+
+	return str
+}
+
+func _computeIndentation(counter int) string {
+	var indentationString string
+	for ; counter > 0; counter-- {
+		indentationString += "\t"
+	}
+	return indentationString
 }
 
 func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {

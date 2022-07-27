@@ -3,8 +3,11 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"github.com/holiman/uint256"
+	"math/rand"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1293,4 +1296,199 @@ func TestDecodeBlockVersion0(t *testing.T) {
 	require.NoError(err)
 
 	require.Equal(expectedBytes, blockBytes)
+}
+
+// This test will test determinism and correctness of TransactionSpendingLimit.ToMetamaskString().
+func TestSpendingLimitMetamaskString(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	// Number of operations to choose from during tests. The following fields should reflect the upper bound on
+	// the corresponding TransactionSpendingLimit fields.
+	maxTxnType := 26
+	maxCreatorCoinLimitOperation := 4
+	maxDAOCoinLimitOperation := 6
+	maxNFTLimitOperation := 7
+
+	// Number of random operations to generate for each field.
+	testOperationCount := 2
+
+	// We test different configurations of TransactionSpendingLimit fields.
+	// Generate a random GlobalDESOLimit field.
+	_populateTotalDESOLimit := func() uint64 {
+		return rand.Uint64()
+	}
+	// Generate a random TransactionCountLimitMap field.
+	_populateTransactionCountLimitMap := func(operationCount int) map[TxnType]uint64 {
+		operationMap := make(map[TxnType]uint64)
+
+		for ; operationCount > 0; operationCount-- {
+			txnTyp := TxnType(uint8(rand.Int()%maxTxnType + 1))
+			operationMap[txnTyp] = rand.Uint64()
+		}
+		return operationMap
+	}
+	// Generate a random TransactionCountLimitMap field.
+	_populateCreatorCoinOperationLimitMap := func(operationCount int) map[CreatorCoinOperationLimitKey]uint64 {
+		operationMap := make(map[CreatorCoinOperationLimitKey]uint64)
+
+		for ; operationCount > 0; operationCount-- {
+			randomCreatorCoinOperationKey := CreatorCoinOperationLimitKey{
+				CreatorPKID: *NewPKID(RandomBytes(int32(PublicKeyLenCompressed))),
+				Operation:   CreatorCoinLimitOperation(uint8(rand.Int()%maxCreatorCoinLimitOperation + 1)),
+			}
+			operationMap[randomCreatorCoinOperationKey] = rand.Uint64()
+		}
+		return operationMap
+	}
+	// Generate a random DAOCoinOperationLimitMap field.
+	_populateDAOCoinOperationLimitMap := func(operationCount int) map[DAOCoinOperationLimitKey]uint64 {
+		operationMap := make(map[DAOCoinOperationLimitKey]uint64)
+
+		for ; operationCount > 0; operationCount-- {
+			randomDAOCoinOperationKey := DAOCoinOperationLimitKey{
+				CreatorPKID: *NewPKID(RandomBytes(int32(PublicKeyLenCompressed))),
+				Operation:   DAOCoinLimitOperation(uint8(rand.Int()%maxDAOCoinLimitOperation + 1)),
+			}
+			operationMap[randomDAOCoinOperationKey] = rand.Uint64()
+		}
+		return operationMap
+	}
+	// Generate a random NFTOperationLimitMap field.
+	_populateNFTOperationLimitKey := func(operationCount int) map[NFTOperationLimitKey]uint64 {
+		operationMap := make(map[NFTOperationLimitKey]uint64)
+
+		for ; operationCount > 0; operationCount-- {
+			randomNFTOperationKey := NFTOperationLimitKey{
+				BlockHash:    *NewBlockHash(RandomBytes(HashSizeBytes)),
+				SerialNumber: rand.Uint64(),
+				Operation:    NFTLimitOperation(uint8(rand.Int()%maxNFTLimitOperation + 1)),
+			}
+			operationMap[randomNFTOperationKey] = rand.Uint64()
+		}
+		return operationMap
+	}
+	// Generate a random DAOCoinLimitOrderLimitMap field.
+	_populateDAOCoinLimitOrderLimitMap := func(operationCount int) map[DAOCoinLimitOrderLimitKey]uint64 {
+		operationMap := make(map[DAOCoinLimitOrderLimitKey]uint64)
+
+		for ; operationCount > 0; operationCount-- {
+			randomDAOLimitOperation := DAOCoinLimitOrderLimitKey{
+				BuyingDAOCoinCreatorPKID:  *NewPKID(RandomBytes(int32(PublicKeyLenCompressed))),
+				SellingDAOCoinCreatorPKID: *NewPKID(RandomBytes(int32(PublicKeyLenCompressed))),
+			}
+			operationMap[randomDAOLimitOperation] = rand.Uint64()
+		}
+		return operationMap
+	}
+
+	// Test encoding of all possible combinations of TransactionSpendingLimit fields.
+	_runTestOnSpendingLimit := func(spendingLimit *TransactionSpendingLimit, params *DeSoParams) bool {
+		fmt.Println(spendingLimit.ToMetamaskString(params))
+		return spendingLimit.ToMetamaskString(params) == spendingLimit.ToMetamaskString(params)
+	}
+
+	// Do the binomial sum trick 2^n = \sum^n_{i=0} (n choose i)
+	for ii := 0; ii < 1<<(reflect.ValueOf(TransactionSpendingLimit{}).Type().NumField()); ii++ {
+		spendingLimit := TransactionSpendingLimit{}
+		if ii&(1<<0) > 0 {
+			spendingLimit.GlobalDESOLimit = _populateTotalDESOLimit()
+		}
+		if ii&(1<<1) > 0 {
+			spendingLimit.TransactionCountLimitMap = _populateTransactionCountLimitMap(testOperationCount)
+		}
+		if ii&(1<<2) > 0 {
+			spendingLimit.CreatorCoinOperationLimitMap = _populateCreatorCoinOperationLimitMap(testOperationCount)
+		}
+		if ii&(1<<3) > 0 {
+			spendingLimit.DAOCoinOperationLimitMap = _populateDAOCoinOperationLimitMap(testOperationCount)
+		}
+		if ii&(1<<4) > 0 {
+			spendingLimit.NFTOperationLimitMap = _populateNFTOperationLimitKey(testOperationCount)
+		}
+		if ii&(1<<5) > 0 {
+			spendingLimit.DAOCoinLimitOrderLimitMap = _populateDAOCoinLimitOrderLimitMap(testOperationCount)
+		}
+		// Make sure the encoding is deterministic.
+		require.Equal(true, _runTestOnSpendingLimit(&spendingLimit, &DeSoTestnetParams))
+		require.Equal(true, _runTestOnSpendingLimit(&spendingLimit, &DeSoMainnetParams))
+
+		// Make sure the encoding contains all the spending limit fields
+		_verifyEncodingCorrectness := func(tsl *TransactionSpendingLimit, params *DeSoParams) bool {
+			encoding := spendingLimit.ToMetamaskString(params)
+			if tsl.GlobalDESOLimit > 0 {
+				if !strings.Contains(encoding, strconv.FormatUint(tsl.GlobalDESOLimit, 10)) {
+					return false
+				}
+			}
+			if len(tsl.TransactionCountLimitMap) > 0 {
+				for txnType, limit := range tsl.TransactionCountLimitMap {
+					if !strings.Contains(encoding, txnType.String()) {
+						return false
+					}
+					if !strings.Contains(encoding, strconv.FormatUint(limit, 10)) {
+						return false
+					}
+				}
+			}
+			if len(tsl.CreatorCoinOperationLimitMap) > 0 {
+				for limitKey, limit := range tsl.CreatorCoinOperationLimitMap {
+					if !strings.Contains(encoding, Base58CheckEncode(limitKey.CreatorPKID.ToBytes(), false, params)) {
+						return false
+					}
+					if !strings.Contains(encoding, limitKey.Operation.ToString()) {
+						return false
+					}
+					if !strings.Contains(encoding, strconv.FormatUint(limit, 10)) {
+						return false
+					}
+				}
+			}
+			if len(tsl.DAOCoinOperationLimitMap) > 0 {
+				for limitKey, limit := range tsl.DAOCoinOperationLimitMap {
+					if !strings.Contains(encoding, Base58CheckEncode(limitKey.CreatorPKID.ToBytes(), false, params)) {
+						return false
+					}
+					if !strings.Contains(encoding, limitKey.Operation.ToString()) {
+						return false
+					}
+					if !strings.Contains(encoding, strconv.FormatUint(limit, 10)) {
+						return false
+					}
+				}
+			}
+			if len(tsl.NFTOperationLimitMap) > 0 {
+				for limitKey, limit := range tsl.NFTOperationLimitMap {
+					if !strings.Contains(encoding, limitKey.BlockHash.String()) {
+						return false
+					}
+					if !strings.Contains(encoding, strconv.FormatUint(limitKey.SerialNumber, 10)) {
+						return false
+					}
+					if !strings.Contains(encoding, limitKey.Operation.ToString()) {
+						return false
+					}
+					if !strings.Contains(encoding, strconv.FormatUint(limit, 10)) {
+						return false
+					}
+				}
+			}
+			if len(tsl.DAOCoinLimitOrderLimitMap) > 0 {
+				for limitKey, limit := range tsl.DAOCoinLimitOrderLimitMap {
+					if !strings.Contains(encoding, Base58CheckEncode(limitKey.BuyingDAOCoinCreatorPKID.ToBytes(), false, params)) {
+						return false
+					}
+					if !strings.Contains(encoding, Base58CheckEncode(limitKey.SellingDAOCoinCreatorPKID.ToBytes(), false, params)) {
+						return false
+					}
+					if !strings.Contains(encoding, strconv.FormatUint(limit, 10)) {
+						return false
+					}
+				}
+			}
+			return true
+		}
+		require.Equal(true, _verifyEncodingCorrectness(&spendingLimit, &DeSoTestnetParams))
+		require.Equal(true, _verifyEncodingCorrectness(&spendingLimit, &DeSoMainnetParams))
+	}
 }
