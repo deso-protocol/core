@@ -330,7 +330,7 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Name:    DefaultMigration,
 		},
 		DeSoV3MessagesMutingMigration: MigrationHeight{
-			Version: 2,
+			Version: 1, // change this to 2 when "unlimited derived keys" is merged
 			Height:  uint64(forkHeights.DeSoV3MessagesMutingBlockHeight),
 			Name:    DeSoV3MessagesMutingMigration,
 		},
