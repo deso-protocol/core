@@ -67,7 +67,7 @@ func main() {
 	messagesFromPeer := make(chan *lib.ServerMessage)
 	peer := lib.NewPeer(conn, true, netAddrss, true,
 		10000, 0, &lib.DeSoMainnetParams,
-		messagesFromPeer, nil, nil, false)
+		messagesFromPeer, nil, nil, lib.NodeSyncTypeAny)
 	time.Sleep(1 * time.Second)
 	if err := peer.NegotiateVersion(lib.DeSoMainnetParams.VersionNegotiationTimeout); err != nil {
 		panic(err)

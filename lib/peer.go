@@ -1259,7 +1259,7 @@ func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	if pp.cmgr != nil && pp.cmgr.HyperSync {
 		ver.Services |= SFHyperSync
 	}
-	if pp.srv.blockchain.archivalMode {
+	if pp.srv != nil && pp.srv.blockchain.archivalMode {
 		ver.Services |= SFArchivalNode
 	}
 
