@@ -1670,6 +1670,14 @@ func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 			"entry for public key (%v)", messagingGroupMember.GroupMemberPublicKey)
 	}
 
+	// Check if messagingGroupMember is muted
+	var muteList []*MessagingGroupMember
+	for _, mutedMember := range messagingGroupEntry.MuteList {
+		if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], messagingGroupMember.GroupMemberPublicKey[:]) {
+			muteList = append(muteList, messagingGroupMember)
+			break
+		}
+	}
 	// Entries for group members are stored as MessagingGroupEntries where the only member in
 	// the entry is the member specified. This is a bit of a hack to allow us to store a "back-reference"
 	// to the GroupEntry inside the value of this field.
@@ -1680,9 +1688,7 @@ func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 		MessagingGroupMembers: []*MessagingGroupMember{
 			messagingGroupMember,
 		},
-		//MuteList: []*MessagingGroupMember{
-		//	messagingGroupMember,
-		//},
+		MuteList: muteList,
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForMessagingGroupMember(

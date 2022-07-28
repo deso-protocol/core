@@ -499,22 +499,23 @@ func (bav *UtxoView) _connectPrivateMessage(
 
 		// Reject message if sender is muted
 		if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingBlockHeight {
-			_, existsSenderKeyName := txn.ExtraData[SenderMessagingGroupKeyName]
-			recipientMessagingGroupKeyName, existsRecipientKeyName := txn.ExtraData[RecipientMessagingGroupKeyName]
 			// Ensure sender and recipient are both present for a group chat
-			if existsSender && existsSenderKeyName && existsRecipient && existsRecipientKeyName {
-				var messagingGroupKey *MessagingGroupKey
-				messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txMeta.RecipientPublicKey), recipientMessagingGroupKeyName)
-				messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
+			if existsSender && existsSenderName && existsRecipient && existsRecipientName {
+				// Hacked messaging entry OPTIMIZATION
+				sender := &MessagingGroupMember{}
+				sender.GroupMemberPublicKey = NewPublicKey(senderMessagingPublicKey)
+				sender.GroupMemberKeyName = NewGroupKeyName(senderMessagingKeyName)
+				hackedEntry := &MessagingGroupEntry{}
+				hackedEntry.MessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
+				messagingGroupEntry := DBGetMessagingMember(bav.Handle, bav.Snapshot, sender, hackedEntry)
 				if messagingGroupEntry != nil {
 					muteList := messagingGroupEntry.MuteList
 					if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
 						return 0, 0, nil, errors.Wrapf(
 							RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
 					}
-					// TODO: Make the following more efficient by retrieving MuteList from hacked MessagingGroupEntry to avoid fetching bulky MessagingGroupEntry
 					for _, mutedMember := range muteList {
-						if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], senderMessagingPublicKey) {
+						if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], txn.PublicKey) {
 							return 0, 0, nil, errors.Wrapf(
 								RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
 									"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
