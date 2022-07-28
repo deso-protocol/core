@@ -14,6 +14,7 @@ require (
 	github.com/bxcodec/faker v2.0.1+incompatible
 	github.com/cloudflare/circl v1.1.0
 	github.com/davecgh/go-spew v1.1.1
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/decred/dcrd/lru v1.1.1
 	github.com/deso-protocol/go-deadlock v1.0.0
 	github.com/deso-protocol/go-merkle-tree v1.0.0

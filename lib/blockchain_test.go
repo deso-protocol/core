@@ -7,6 +7,7 @@ import (
 	"github.com/go-pg/pg/v10"
 	"log"
 	"math/big"
+	"math/rand"
 	"os"
 	"testing"
 	"time"
@@ -751,7 +752,7 @@ func _signTxn(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
 	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
 	txnSignature, err := txn.Sign(privKey)
 	require.NoError(err)
-	txn.Signature = txnSignature
+	txn.Signature.Sign = txnSignature
 }
 
 // Signs the transaction with a derived key. Transaction ExtraData contains the derived
@@ -762,14 +763,32 @@ func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string)
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
 	require.NoError(err)
 	privateKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
-	if txn.ExtraData == nil {
-		txn.ExtraData = make(map[string][]byte)
-	}
-	txn.ExtraData[DerivedPublicKey] = publicKey.SerializeCompressed()
-	txnSignature, err := txn.Sign(privateKey)
-	require.NoError(err)
 
-	txn.Signature = txnSignature
+	// We will randomly sign with the standard DER encoding + ExtraData, or with the DeSo-DER encoding.
+	signatureType := rand.Int() % 2
+	if signatureType == 0 {
+		if txn.ExtraData == nil {
+			txn.ExtraData = make(map[string][]byte)
+		}
+		txn.ExtraData[DerivedPublicKey] = publicKey.SerializeCompressed()
+		txnSignature, err := txn.Sign(privateKey)
+		require.NoError(err)
+		txn.Signature.Sign = txnSignature
+	} else {
+		txBytes, err := txn.ToBytes(true /*preSignature*/)
+		require.NoError(err)
+		txHash := Sha256DoubleHash(txBytes)[:]
+		signature, err := privateKey.Sign(txHash)
+		require.NoError(err)
+
+		signatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, txHash, true)
+		require.NoError(err)
+		recoveryId := (signatureCompact[0] - compactSigMagicOffset) & ^byte(compactSigCompPubKey)
+
+		txn.Signature.Sign = signature
+		txn.Signature.RecoveryId = recoveryId
+		txn.Signature.IsRecoverable = true
+	}
 }
 
 func _assembleBasicTransferTxnFullySigned(t *testing.T, chain *Blockchain,
