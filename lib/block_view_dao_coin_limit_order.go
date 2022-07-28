@@ -214,7 +214,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 
 	// Validate txn metadata.
-	err := bav.IsValidDAOCoinLimitOrderMetadata(txn.PublicKey, txMeta)
+	err := bav.IsValidDAOCoinLimitOrderMetadata(txn.PublicKey, blockHeight, txMeta)
 	if err != nil {
 		return 0, 0, nil, err
 	}
@@ -1501,7 +1501,7 @@ func (bav *UtxoView) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *P
 // ## VALIDATIONS
 // ###########################
 
-func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(transactorPK []byte, metadata *DAOCoinLimitOrderMetadata) error {
+func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(transactorPK []byte, blockHeight uint32, metadata *DAOCoinLimitOrderMetadata) error {
 	// Returns an error if the input order metadata is invalid. Otherwise returns nil.
 
 	// Validate FeeNanos.
@@ -1542,6 +1542,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrderMetadata(transactorPK []byte, metad
 		QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits,
 		OperationType:                             metadata.OperationType,
 		FillType:                                  metadata.FillType,
+		BlockHeight:                               blockHeight,
 	}
 
 	// Validate order entry.
@@ -1597,6 +1598,19 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 		buyCoinCreatorProfileEntry = bav.GetProfileEntryForPKID(order.BuyingDAOCoinCreatorPKID)
 		if buyCoinCreatorProfileEntry == nil || buyCoinCreatorProfileEntry.isDeleted {
 			return RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile
+		}
+
+		// Validate no transfer restriction on buying the DAO coin.
+		// For the purposes of this validation, the sender can be
+		// any public key, so we use the ZeroPublicKey.
+		if order.BlockHeight >= bav.Params.ForkHeights.OrderBookTransferRestrictionBlockHeight {
+			err := bav.IsValidDAOCoinTransfer(
+				buyCoinCreatorProfileEntry,
+				ZeroPublicKey.ToBytes(),
+				bav.GetPublicKeyForPKID(order.TransactorPKID))
+			if err != nil {
+				return err
+			}
 		}
 	}
 
