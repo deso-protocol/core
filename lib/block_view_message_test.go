@@ -1595,11 +1595,7 @@ func TestMessagingKeys(t *testing.T) {
 	_verifyAddedMessagingKeys(testMeta, m3PubKey, keyEntriesAdded[m3PublicKey])
 
 	// Do some block connecting/disconnecting, mempooling, etc to verify everything works.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 
 	// Finally, verify that there are no more keys, besides the base keys, in the db.
 	{
@@ -2402,11 +2398,7 @@ func TestGroupMessages(t *testing.T) {
 	}
 
 	// Now disconnect all entries.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 
 	// Sanity-check that all entries were reverted from the DB.
 	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)

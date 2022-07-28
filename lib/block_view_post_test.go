@@ -1843,11 +1843,7 @@ func TestDeSoDiamonds(t *testing.T) {
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestDeSoDiamondErrorCases(t *testing.T) {

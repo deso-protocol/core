@@ -5,6 +5,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"reflect"
 	"testing"
 )
 
@@ -584,6 +585,11 @@ func _helpTestCreatorCoinBuySell(
 	assert.Equalf(int64(m6StartNanos),
 		int64(_getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after SimpleDisconnect is incorrect")
 
+	checksumBefore, err := _computeChecksumOfCurrentDatabase(db, 0)
+	require.NoError(err)
+	checksumBeforeBytes, err := checksumBefore.ToBytes()
+	require.NoError(err)
+
 	// Connect all the txns to a single UtxoView without flushing
 	{
 		// Create a new UtxoView to check on the state of things
@@ -649,6 +655,12 @@ func _helpTestCreatorCoinBuySell(
 		assert.Equalf(int64(m6StartNanos),
 			int64(_getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after BatchDisconnect is incorrect")
 	}
+
+	checksumAfter, err := _computeChecksumOfCurrentDatabase(db, 0)
+	require.NoError(err)
+	checksumAfterBytes, err := checksumAfter.ToBytes()
+	require.NoError(err)
+	require.Equal(true, reflect.DeepEqual(checksumBeforeBytes, checksumAfterBytes))
 
 	// Running all the transactions through the mempool should work and result
 	// in all of them being added.
