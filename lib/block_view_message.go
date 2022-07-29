@@ -501,7 +501,9 @@ func (bav *UtxoView) _connectPrivateMessage(
 		if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingBlockHeight {
 			// Ensure sender and recipient are both present for a group chat
 			if existsSender && existsSenderName && existsRecipient && existsRecipientName {
-				// Hacked messaging entry OPTIMIZATION
+				// Here we retrieve the MuteList in an optimized way by using the <HackedMessagingGroupEntry> prefix
+				// which is also known as the "memberGroupEntry". This prevents fetching potentially 1000s of members
+				// of a group chat simply for checking if a member is muted
 				sender := &MessagingGroupMember{}
 				sender.GroupMemberPublicKey = NewPublicKey(senderMessagingPublicKey)
 				sender.GroupMemberKeyName = NewGroupKeyName(senderMessagingKeyName)
