@@ -979,7 +979,7 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 					"Problem deleting MessagingGroupEntry %v from db", *messagingGroupEntry)
 			}
 			for _, member := range existingMessagingGroupEntry.MessagingGroupMembers {
-				if err := DBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot,
+				if err := DEPRECATEDDBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot,
 					member, existingMessagingGroupEntry); err != nil {
 
 					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
@@ -1013,7 +1013,7 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 					// they are the group owner, and the second time because they are also a messaging member
 					continue
 				}
-				if err := DBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
+				if err := DEPRECATEDDBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
 					recipient, &ownerPublicKey, messagingGroupEntry); err != nil {
 					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
 						"Problem putting MessagingGroupEntry recipient (%v) to db", recipient)

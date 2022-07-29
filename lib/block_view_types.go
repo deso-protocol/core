@@ -2030,7 +2030,7 @@ func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, s
 	}
 	// adding MuteList to the end for backwards compatibility
 	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MuteList)))...)
-	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingMigration) {
+	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration) {
 		// We sort the MuteList members because they can be added while iterating over
 		// a map, which could lead to inconsistent orderings across nodes when encoding.
 		muteListMembers := sortMessagingGroupMembers(entry.MuteList)
@@ -2076,7 +2076,7 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding recipient")
 		}
 	}
-	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingMigration) {
+	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration) {
 		muteListLen, err := ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding MuteList length")
@@ -2104,7 +2104,7 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 }
 
 func (entry *MessagingGroupEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, DeSoV3MessagesMutingMigration)
+	return GetMigrationVersion(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration)
 }
 
 func (entry *MessagingGroupEntry) GetEncoderType() EncoderType {

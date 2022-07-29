@@ -2374,7 +2374,7 @@ func TestGroupMessages(t *testing.T) {
 			// Get all user messages from the DB.
 			var msgKeys []*MessagingGroupEntry
 			require.NoError(db.View(func(txn *badger.Txn) error {
-				msgKeys, err = DBGetAllMessagingGroupEntriesForMemberWithTxn(txn, NewPublicKey(pk))
+				msgKeys, err = DEPRECATEDDBGetAllMessagingGroupEntriesForMemberWithTxn(txn, NewPublicKey(pk))
 				return err
 			}))
 			assert.NotNil(msgKeys)

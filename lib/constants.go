@@ -318,8 +318,8 @@ const (
 type EncoderMigrationHeights struct {
 	DefaultMigration MigrationHeight
 
-	// DeSoV3MessagesMutingMigration coincides with the DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight block
-	DeSoV3MessagesMutingMigration MigrationHeight
+	// DeSoV3MessagesMutingAndPrefixOptimizationMigration coincides with the DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight block
+	DeSoV3MessagesMutingAndPrefixOptimizationMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -329,7 +329,7 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Height:  forkHeights.DefaultHeight,
 			Name:    DefaultMigration,
 		},
-		DeSoV3MessagesMutingMigration: MigrationHeight{
+		DeSoV3MessagesMutingAndPrefixOptimizationMigration: MigrationHeight{
 			Version: 1, // change this to 2 when "unlimited derived keys" is merged
 			Height:  uint64(forkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight),
 			Name:    DeSoV3MessagesMutingAndPrefixOptimizationMigration,
