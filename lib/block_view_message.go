@@ -508,8 +508,17 @@ func (bav *UtxoView) _connectPrivateMessage(
 				sender.GroupMemberPublicKey = NewPublicKey(senderMessagingPublicKey)
 				sender.GroupMemberKeyName = NewGroupKeyName(senderMessagingKeyName)
 				hackedEntry := &MessagingGroupEntry{}
+				// txMeta.RecipientPublicKey is the GroupOwnerPublicKey in disguise
+				hackedEntry.GroupOwnerPublicKey = NewPublicKey(txMeta.RecipientPublicKey)
 				hackedEntry.MessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
-				messagingGroupEntry := DEPRECATEDDBGetMessagingMember(bav.Handle, bav.Snapshot, sender, hackedEntry)
+				hackedEntry.MessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
+				var messagingGroupEntry *MessagingGroupEntry
+				if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
+					messagingGroupEntry = DEPRECATEDDBGetMessagingMember(bav.Handle, bav.Snapshot, sender, hackedEntry)
+				} else {
+					messagingGroupEntry = DBGetMessagingMember(bav.Handle, bav.Snapshot, sender, hackedEntry)
+				}
+
 				if messagingGroupEntry != nil {
 					muteList := messagingGroupEntry.MuteList
 					if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {

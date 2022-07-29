@@ -720,7 +720,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 
 	require.NoError(testMeta.chain.db.View(func(txn *badger.Txn) error {
 		// Get the DB record.
-		entries, err := DBGetAllUserGroupEntiresWithTxn(txn, publicKey)
+		entries, err := DBGetAllUserGroupEntriesWithTxn(txn, publicKey)
 		require.NoError(err)
 		// Make sure the number of entries between the DB and expectation match.
 		assert.Equal(len(entries), len(expectedEntries))
@@ -2373,8 +2373,14 @@ func TestGroupMessages(t *testing.T) {
 		verifyGangMessage := func(msg, pk, priv []byte) {
 			// Get all user messages from the DB.
 			var msgKeys []*MessagingGroupEntry
+
 			require.NoError(db.View(func(txn *badger.Txn) error {
-				msgKeys, err = DEPRECATEDDBGetAllMessagingGroupEntriesForMemberWithTxn(txn, NewPublicKey(pk))
+				blockHeight := chain.blockTip().Height
+				if blockHeight < params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
+					msgKeys, err = DEPRECATEDDBGetAllMessagingGroupEntriesForMemberWithTxn(txn, NewPublicKey(pk))
+				} else {
+					msgKeys, err = DBGetAllMessagingGroupEntriesForMemberWithTxn(txn, NewPublicKey(pk))
+				}
 				return err
 			}))
 			assert.NotNil(msgKeys)
