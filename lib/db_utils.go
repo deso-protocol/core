@@ -287,7 +287,11 @@ type DBPrefixes struct {
 	//   you read all the fetching code around this index.
 	//
 	// <prefix, OwnerPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
-	PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey []byte `prefix_id:"[58]" is_state:"true"`
+	DeprecatedPrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey []byte `prefix_id:"[58]" is_state:"true"` // Deprecated: Use NEWPrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName instead
+
+	// New <HackedMessagingKeyEntry> :
+	// <prefix, GroupMemberPublicKey [33]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte>
+	NEWPrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName []byte `prefix_id:"[63]" is_state:"true"`
 
 	// Prefix for Authorize Derived Key transactions:
 	// 		<prefix_id, OwnerPublicKey [33]byte, DerivedPublicKey [33]byte> -> <DerivedKeyEntry>
@@ -322,7 +326,7 @@ type DBPrefixes struct {
 	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
-	// NEXT_TAG: 63
+	// NEXT_TAG: 64
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -464,7 +468,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName) {
 		// prefix_id:"[57]"
 		return true, &MessagingGroupEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey) {
+	} else if bytes.Equal(prefix, Prefixes.DeprecatedPrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey) {
 		// prefix_id:"[58]"
 		return true, &MessagingGroupEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixAuthorizeDerivedKey) {
@@ -1649,14 +1653,14 @@ func DBGetAllUserGroupEntries(handle *badger.DB, ownerPublicKey []byte) ([]*Mess
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForMessagingGroupMember(memberPublicKey *PublicKey, groupMessagingPublicKey *PublicKey) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey...)
+	prefixCopy := append([]byte{}, Prefixes.DeprecatedPrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey...)
 	key := append(prefixCopy, memberPublicKey[:]...)
 	key = append(key, groupMessagingPublicKey[:]...)
 	return key
 }
 
 func _dbSeekPrefixForMessagingGroupMember(memberPublicKey *PublicKey) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey...)
+	prefixCopy := append([]byte{}, Prefixes.DeprecatedPrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey...)
 	return append(prefixCopy, memberPublicKey[:]...)
 }
 

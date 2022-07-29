@@ -498,7 +498,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 		}
 
 		// Reject message if sender is muted
-		if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingBlockHeight {
+		if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
 			// Ensure sender and recipient are both present for a group chat
 			if existsSender && existsSenderName && existsRecipient && existsRecipientName {
 				// Here we retrieve the MuteList in an optimized way by using the <HackedMessagingGroupEntry> prefix
@@ -860,7 +860,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 	}
 
 	// V3 Messages: MUTING and UNMUTING members
-	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingBlockHeight {
+	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
 		if existingEntry != nil && !existingEntry.isDeleted {
 			if value, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists {
 				// make deep copy of existingEntry.MuteList to prevent mempool errors

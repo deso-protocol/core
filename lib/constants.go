@@ -248,9 +248,9 @@ type ForkHeights struct {
 	// ParamUpdater to use a blockHeight-gated function rather than a constant.
 	ParamUpdaterRefactorBlockHeight uint32
 
-	// DeSoV3MessagesMutingBlockHeight defines the height at which point V3 group chat muting
-	// and unmuting will be accepted by consensus
-	DeSoV3MessagesMutingBlockHeight uint32
+	// DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight defines the height at which point V3 group chat muting
+	// and unmuting, and also Optimized MessagingGroupEntry will be accepted by consensus
+	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -311,14 +311,14 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration              MigrationName = "DefaultMigration"
-	DeSoV3MessagesMutingMigration MigrationName = "DeSoV3MessagesMutingMigration"
+	DefaultMigration                                   MigrationName = "DefaultMigration"
+	DeSoV3MessagesMutingAndPrefixOptimizationMigration MigrationName = "DeSoV3MessagesMutingAndPrefixOptimizationMigration"
 )
 
 type EncoderMigrationHeights struct {
 	DefaultMigration MigrationHeight
 
-	// DeSoV3MessagesMutingMigration coincides with the DeSoV3MessagesMutingBlockHeight block
+	// DeSoV3MessagesMutingMigration coincides with the DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight block
 	DeSoV3MessagesMutingMigration MigrationHeight
 }
 
@@ -331,8 +331,8 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 		},
 		DeSoV3MessagesMutingMigration: MigrationHeight{
 			Version: 1, // change this to 2 when "unlimited derived keys" is merged
-			Height:  uint64(forkHeights.DeSoV3MessagesMutingBlockHeight),
-			Name:    DeSoV3MessagesMutingMigration,
+			Height:  uint64(forkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight),
+			Name:    DeSoV3MessagesMutingAndPrefixOptimizationMigration,
 		},
 	}
 }
@@ -572,7 +572,7 @@ var RegtestForkHeights = ForkHeights{
 	DerivedKeyEthSignatureCompatibilityBlockHeight:       uint32(0),
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
-	DeSoV3MessagesMutingBlockHeight:                      uint32(0),
+	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -714,7 +714,7 @@ var MainnetForkHeights = ForkHeights{
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
 	// ADD FINAL DATE & TIME HERE
-	DeSoV3MessagesMutingBlockHeight: uint32(151616),
+	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(151616),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -964,7 +964,7 @@ var TestnetForkHeights = ForkHeights{
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
 	// ADD FINAL DATE & TIME HERE
-	DeSoV3MessagesMutingBlockHeight: uint32(0),
+	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
