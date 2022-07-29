@@ -287,11 +287,11 @@ type DBPrefixes struct {
 	//   you read all the fetching code around this index.
 	//
 	// <prefix, OwnerPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
-	DeprecatedPrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey []byte `prefix_id:"[58]" is_state:"true"` // Deprecated: Use NEWPrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName instead
+	DeprecatedPrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey []byte `prefix_id:"[58]" is_state:"true"` // Deprecated: Use PrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName instead
 
 	// New <HackedMessagingKeyEntry> :
 	// <prefix, GroupMemberPublicKey [33]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte>
-	NEWPrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName []byte `prefix_id:"[63]" is_state:"true"`
+	PrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName []byte `prefix_id:"[63]" is_state:"true"`
 
 	// Prefix for Authorize Derived Key transactions:
 	// 		<prefix_id, OwnerPublicKey [33]byte, DerivedPublicKey [33]byte> -> <DerivedKeyEntry>
@@ -483,7 +483,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixDAOCoinLimitOrderByOrderID) {
 		// prefix_id:"[62]"
 		return true, &DAOCoinLimitOrderEntry{}
-	} else if bytes.Equal(prefix, Prefixes.NEWPrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName) {
 		// prefix_id:"[63]"
 		return true, &MessagingGroupEntry{}
 	}
@@ -1657,7 +1657,7 @@ func DBGetAllUserGroupEntries(handle *badger.DB, ownerPublicKey []byte) ([]*Mess
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForMessagingGroupMember(groupMemberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) []byte {
-	prefixCopy := append([]byte{}, Prefixes.NEWPrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName...)
 	key := append(prefixCopy, groupMemberPublicKey[:]...)
 	key = append(key, groupOwnerPublicKey[:]...)
 	key = append(key, groupKeyName[:]...)
@@ -1665,7 +1665,7 @@ func _dbKeyForMessagingGroupMember(groupMemberPublicKey *PublicKey, groupOwnerPu
 }
 
 func _dbSeekPrefixForMessagingGroupMember(groupMemberPublicKey *PublicKey) []byte {
-	prefixCopy := append([]byte{}, Prefixes.NEWPrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName...)
 	return append(prefixCopy, groupMemberPublicKey[:]...)
 }
 
