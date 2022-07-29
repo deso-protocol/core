@@ -313,6 +313,7 @@ const (
 	RuleErrorMessagingMemberMuted                   RuleError = "RuleErrorMessagingMemberMuted"
 	RuleErrorMessagingMemberAlreadyMuted            RuleError = "RuleErrorMessagingMemberAlreadyMuted"
 	RuleErrorMessagingMemberAlreadyUnmuted          RuleError = "RuleErrorMessagingMemberAlreadyUnmuted"
+	RuleErrorMessagingMutingBeforeBlockHeight       RuleError = "RuleErrorMessagingMutingBeforeBlockHeight"
 
 	// NFTs
 	RuleErrorTooManyNFTCopies                            RuleError = "RuleErrorTooManyNFTCopies"

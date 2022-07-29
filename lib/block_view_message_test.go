@@ -2470,6 +2470,9 @@ func TestGroupMessages(t *testing.T) {
 		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes)
 		require.NoError(err)
 		assert.Equal(7, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(m1PubKey)
+		require.NoError(err)
+		assert.Equal(4, len(messages))
 		messages, _, err = utxoView.GetMessagesForUser(m0PubKey)
 		require.NoError(err)
 		assert.Equal(4, len(messages))
@@ -2524,7 +2527,7 @@ func TestGroupMessages(t *testing.T) {
 		// m0 -> group(sender, recipient, m0, m2)
 		// 	sender: 7
 		//	recipient: 8
-		//  m1: 5
+		//  m1: 4
 		// 	m0: 5
 		// 	m2: 2
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, unmuteMessageEntry, false))
@@ -2540,12 +2543,127 @@ func TestGroupMessages(t *testing.T) {
 		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes)
 		require.NoError(err)
 		assert.Equal(8, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(m1PubKey)
+		require.NoError(err)
+		assert.Equal(4, len(messages))
 		messages, _, err = utxoView.GetMessagesForUser(m0PubKey)
 		require.NoError(err)
 		assert.Equal(5, len(messages))
 		messages, _, err = utxoView.GetMessagesForUser(m2PubKey)
 		require.NoError(err)
 		assert.Equal(2, len(messages))
+
+		{
+			// Deprecated Hacked Prefix Test
+			// Let us set the DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight to much higher than current blockHeight
+			params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = chain.blockTip().Height + 10
+			// Let us now mute m2
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m2PublicKey,
+				BaseGroupKeyName(),
+				privBytes,
+			})
+			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte(MessagingGroupOperationMute)
+			// should fail because blockHeight too low
+			_messagingKeyWithExtraDataWithTestMeta(
+				testMeta,
+				senderPkBytes,
+				senderPrivString,
+				entry.MessagingPublicKey[:],
+				gangKey,
+				[]byte{},
+				muteList,
+				extraData,
+				RuleErrorMessagingMutingBeforeBlockHeight)
+			// reset to 0 for further testing
+			params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+		}
+
+		{
+			// More Deprecated Hacked Prefix Test
+			// Let us now try to mute m2 again
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m2PublicKey,
+				BaseGroupKeyName(),
+				privBytes,
+			})
+			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte(MessagingGroupOperationMute)
+			_messagingKeyWithExtraDataWithTestMeta(
+				testMeta,
+				senderPkBytes,
+				senderPrivString,
+				entry.MessagingPublicKey[:],
+				gangKey,
+				[]byte{},
+				muteList,
+				extraData,
+				nil)
+			// The decrypted key should match the original private key.
+			//require.Equal(privBytes, m0PrivBytes)
+			// Now it's time to encrypt the message.
+			tstampNanos = uint64(time.Now().UnixNano())
+			testMessage = []byte("DeSo Deprecated HackedMessagingGroupEntry is backwards compatible and " +
+				"DeSo Group Chat Muting Works because this won't be sent!")
+			encryptedMessage = encrypt(testMessage, entry.MessagingPublicKey[:])
+			// Create the corresponding message entry and connect it.
+			muteMessageEntry := MessageEntry{
+				m2PublicKey,
+				senderPublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m2PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			// Let us set the DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight to much higher than current blockHeight
+			params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = chain.blockTip().Height + 10
+			_helpConnectPrivateMessageWithParty(testMeta, m2Priv, muteMessageEntry, nil)
+			// m2 is currently muted, but that is irrelevant because the blockHeight is lower than MutingBlockHeight,
+			// so the txn should complete normally and the muting should NOT work due to gating of the check-if-muted functionality.
+			// Note: This is just a sanity check and this probably won't happen on mainnet as the blockHeight does not
+			// suddenly decrease below DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight after a muting txn:
+			// The message should be successfully added, so we now have:
+			// m2 -> group(sender, recipient, m0, m2)
+			// 	sender: 8
+			//	recipient: 9
+			//  m1: 4
+			// 	m0: 6
+			// 	m2: 3
+			require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, muteMessageEntry, false))
+
+			// Verify the messages AGAIN.
+			_verifyMessages(testMeta, expectedMessageEntries)
+			// Just to sanity-check, verify that the number of messages is as intended.
+			utxoView, err = NewUtxoView(db, params, nil, chain.snapshot)
+			require.NoError(err)
+			messages, _, err = utxoView.GetMessagesForUser(senderPkBytes)
+			require.NoError(err)
+			assert.Equal(8, len(messages))
+			messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes)
+			require.NoError(err)
+			assert.Equal(9, len(messages))
+			messages, _, err = utxoView.GetMessagesForUser(m1PubKey)
+			require.NoError(err)
+			assert.Equal(4, len(messages))
+			messages, _, err = utxoView.GetMessagesForUser(m0PubKey)
+			require.NoError(err)
+			assert.Equal(6, len(messages))
+			messages, _, err = utxoView.GetMessagesForUser(m2PubKey)
+			require.NoError(err)
+			assert.Equal(3, len(messages))
+			// reset to 0 for further testing
+			params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+		}
 	}
 
 	// Now disconnect all entries.
