@@ -1993,7 +1993,6 @@ type MessagingGroupEntry struct {
 	// MuteList is a list of members that have been currently muted.
 	// Being muted means the member cannot send any messages to the group
 	// but can still cryptographically read new on-chain messages
-	// MuteList added to end of struct for backwards compatibility
 	MuteList []*MessagingGroupMember
 }
 
