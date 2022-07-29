@@ -64,7 +64,6 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 
 func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 	messagingGroupKey *MessagingGroupKey) *MessagingGroupEntry {
-
 	// This function is used to get a MessagingGroupEntry given a MessagingGroupKey. The V3 messages are
 	// backwards-compatible, and in particular each user has a built-in MessagingGroupKey, called the
 	// "base group key," which is simply a messaging key corresponding to user's main key.
@@ -379,7 +378,6 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicK
 func (bav *UtxoView) _connectPrivateMessage(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
-
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypePrivateMessage {
 		return 0, 0, nil, fmt.Errorf("_connectPrivateMessage: called with bad TxnType %s",
@@ -497,6 +495,36 @@ func (bav *UtxoView) _connectPrivateMessage(
 			// If everything worked, update the messaging key information in the message entry.
 			messageEntry.RecipientMessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
 			messageEntry.RecipientMessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
+		}
+
+		// Reject message if sender is muted
+		if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingBlockHeight {
+			// Ensure sender and recipient are both present for a group chat
+			if existsSender && existsSenderName && existsRecipient && existsRecipientName {
+				// Here we retrieve the MuteList in an optimized way by using the <HackedMessagingGroupEntry> prefix
+				// which is also known as the "memberGroupEntry". This prevents fetching potentially 1000s of members
+				// of a group chat simply for checking if a member is muted
+				sender := &MessagingGroupMember{}
+				sender.GroupMemberPublicKey = NewPublicKey(senderMessagingPublicKey)
+				sender.GroupMemberKeyName = NewGroupKeyName(senderMessagingKeyName)
+				hackedEntry := &MessagingGroupEntry{}
+				hackedEntry.MessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
+				messagingGroupEntry := DBGetMessagingMember(bav.Handle, bav.Snapshot, sender, hackedEntry)
+				if messagingGroupEntry != nil {
+					muteList := messagingGroupEntry.MuteList
+					if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
+						return 0, 0, nil, errors.Wrapf(
+							RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
+					}
+					for _, mutedMember := range muteList {
+						if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], txn.PublicKey) {
+							return 0, 0, nil, errors.Wrapf(
+								RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
+									"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -742,6 +770,12 @@ func (bav *UtxoView) _connectMessagingGroup(
 			RuleErrorMessagingKeyBeforeBlockHeight, "_connectMessagingGroup: "+
 				"Problem connecting messaging key, too early block height")
 	}
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
+		return 0, 0, nil, fmt.Errorf("_connectMessagingGroup: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
 	txMeta := txn.TxnMeta.(*MessagingGroupMetadata)
 
 	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
@@ -822,6 +856,89 @@ func (bav *UtxoView) _connectMessagingGroup(
 		if !reflect.DeepEqual(existingEntry.MessagingPublicKey[:], messagingPublicKey[:]) {
 			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingPublicKeyCannotBeDifferent,
 				"_connectMessagingGroup: Messaging public key cannot differ from the existing entry")
+		}
+	}
+
+	// V3 Messages: MUTING and UNMUTING members
+	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingBlockHeight {
+		if existingEntry != nil && !existingEntry.isDeleted {
+			if value, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists {
+				// make deep copy of existingEntry.MuteList to prevent mempool errors
+				var entryCopy *MessagingGroupEntry
+				entryCopy = &MessagingGroupEntry{}
+				rrEntryCopy := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
+				if exists, err := DecodeFromBytes(entryCopy, rrEntryCopy); !exists || err != nil {
+					return 0, 0, nil, errors.Wrapf(err,
+						"_connectMessagingGroup: Error decoding deep copy for V3 Muting.")
+				}
+				// check if mute or unmute
+				if string(value) == MessagingGroupOperationMute {
+					for _, s := range txMeta.MessagingGroupMembers {
+						// Add s to muteList
+						// Make sure does not already exist to ensure no dups
+						contains := func(memberList []*MessagingGroupMember, member *MessagingGroupMember) bool {
+							for _, a := range memberList {
+								if a == member {
+									return true
+								}
+							}
+							return false
+						}
+						if !contains(entryCopy.MuteList, s) {
+							entryCopy.MuteList = append(entryCopy.MuteList, s)
+						} else {
+							return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyMuted,
+								"_connectMessagingGroup: Cannot mute member that is already muted (%v).", s.GroupMemberPublicKey[:])
+						}
+					}
+				} else if string(value) == MessagingGroupOperationUnmute {
+					for _, s := range txMeta.MessagingGroupMembers {
+						isUnmuteValid := false
+						for i, toUnmute := range entryCopy.MuteList {
+							if reflect.DeepEqual(toUnmute.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
+								entryCopy.MuteList = append(entryCopy.MuteList[:i], entryCopy.MuteList[i+1:]...)
+								isUnmuteValid = true
+								break
+							}
+						}
+						if !isUnmuteValid {
+							return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyUnmuted,
+								"_connectMessagingGroup: Cannot unmute member that is already unmuted (%v).", s.GroupMemberPublicKey[:])
+						}
+					}
+				} else {
+					return 0, 0, nil, errors.Wrapf(err,
+						"_connectMessagingGroup: Error, invalid ExtraData[\"OperationType\"] value.")
+				}
+				// Finally set the real existingEntry.MuteList to point to the clone
+				existingEntry = entryCopy
+				// Create a MessagingGroupEntry so we can add the entry to UtxoView.
+				messagingGroupEntry := MessagingGroupEntry{
+					GroupOwnerPublicKey:   &messagingGroupKey.OwnerPublicKey,
+					MessagingPublicKey:    messagingPublicKey,
+					MessagingGroupKeyName: NewGroupKeyName(txMeta.MessagingGroupKeyName),
+					MessagingGroupMembers: existingEntry.MessagingGroupMembers,
+					MuteList:              existingEntry.MuteList,
+					ExtraData:             existingEntry.ExtraData,
+				}
+				// Create a utxoOps entry, we make a copy of the existing entry.
+				var prevMessagingKeyEntry *MessagingGroupEntry
+				prevMessagingKeyEntry = &MessagingGroupEntry{}
+				rr := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
+				if exists, err := DecodeFromBytes(prevMessagingKeyEntry, rr); !exists || err != nil {
+					return 0, 0, nil, errors.Wrapf(err,
+						"_connectMessagingGroup: Error decoding previous entry")
+				}
+				bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, &messagingGroupEntry)
+
+				// Construct UtxoOperation.
+				utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+					Type:                  OperationTypeMessagingKey,
+					PrevMessagingKeyEntry: prevMessagingKeyEntry,
+				})
+
+				return totalInput, totalOutput, utxoOpsForTxn, nil
+			}
 		}
 	}
 
@@ -922,6 +1039,12 @@ func (bav *UtxoView) _connectMessagingGroup(
 		}
 		extraData = mergeExtraData(existingExtraData, txn.ExtraData)
 	}
+	var muteList []*MessagingGroupMember
+	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
+		if existingEntry != nil && !existingEntry.isDeleted {
+			muteList = existingEntry.MuteList
+		}
+	}
 
 	// TODO: Currently, it is technically possible for any user to add *any other* user to *any group* with
 	// a garbage EncryptedKey. This can be filtered out at the app layer, though, and for now it leaves the
@@ -934,6 +1057,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		MessagingPublicKey:    messagingPublicKey,
 		MessagingGroupKeyName: NewGroupKeyName(txMeta.MessagingGroupKeyName),
 		MessagingGroupMembers: messagingMembers,
+		MuteList:              muteList,
 		ExtraData:             extraData,
 	}
 	// Create a utxoOps entry, we make a copy of the existing entry.
@@ -970,6 +1094,12 @@ func (bav *UtxoView) _disconnectMessagingGroup(
 		return fmt.Errorf("_disconnectMessagingGroup: Trying to revert "+
 			"OperationTypeMessagingKey but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
+	}
+
+	// Check that the transaction has the right TxnType.
+	if currentTxn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
+		return fmt.Errorf("_disconnectMessagingGroup: called with bad TxnType %s",
+			currentTxn.TxnMeta.GetTxnType().String())
 	}
 
 	// Now we know the txMeta is MessagingGroupKey

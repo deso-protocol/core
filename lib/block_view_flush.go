@@ -1008,6 +1008,9 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 				// encrypted key addressed to the owner. This could happen when the group is created
 				// by a derived key, and we want to allow the main owner key to be able to read the chat.
 				if reflect.DeepEqual(recipient.GroupMemberPublicKey[:], ownerPublicKey[:]) {
+					// Not adding group owner to HackedMessagingMemberEntry to avoid dups when fetching groups for
+					// someone, because if they are any group's owner, that group will be fetched twice: once because
+					// they are the group owner, and the second time because they are also a messaging member
 					continue
 				}
 				if err := DBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,

@@ -2242,6 +2242,7 @@ func TestGroupMessages(t *testing.T) {
 		// Create the group messaging key.
 		gangKey := []byte("gang-gang")
 		priv, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, gangKey)
+
 		privBytes := priv.Serialize()
 
 		// Define helper functions for encryption/decryption so that we can do some real crypto.
@@ -2392,13 +2393,153 @@ func TestGroupMessages(t *testing.T) {
 			// the recipient messaging key with user's private key, and use it to decrypt the message.
 			decryptedKey := decrypt(encryptedKey, priv)
 			plaintext := decrypt(msg, decryptedKey)
-			// If the message was successfuly decrypted, it should match our original message.
+			// If the message was successfully decrypted, it should match our original message.
 			require.Equal(plaintext, testMessage)
 		}
 		// Verify that all group members can decrypt the message (skip the group owner)
 		verifyGangMessage(gangMessage[0].EncryptedText, recipientPkBytes, recipientPrivBytes)
 		verifyGangMessage(gangMessage[0].EncryptedText, m0PubKey, m0PrivKey)
 		verifyGangMessage(gangMessage[0].EncryptedText, m2PubKey, m2PrivKey)
+
+		// MUTING TESTS
+		// Let us now mute m0
+		var muteList []*MessagingGroupMember
+		muteList = append(muteList, &MessagingGroupMember{
+			m0PublicKey,
+			BaseGroupKeyName(),
+			encrypt(privBytes, m0PubKey),
+		})
+		//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
+		extraData := make(map[string][]byte)
+		extraData[MessagingGroupOperationType] = []byte(MessagingGroupOperationMute)
+		_messagingKeyWithExtraDataWithTestMeta(
+			testMeta,
+			senderPkBytes,
+			senderPrivString,
+			entry.MessagingPublicKey[:],
+			gangKey,
+			[]byte{},
+			muteList,
+			extraData,
+			nil)
+		// The decrypted key should match the original private key.
+		require.Equal(privBytes, m0PrivBytes)
+		// Now it's time to encrypt the message.
+		tstampNanos = uint64(time.Now().UnixNano())
+		testMessage = []byte("DeSo Group Chat Muting Works because this won't be sent!")
+		encryptedMessage = encrypt(testMessage, entry.MessagingPublicKey[:])
+		// Create the corresponding message entry and connect it.
+		muteMessageEntry := MessageEntry{
+			m0PublicKey,
+			senderPublicKey,
+			encryptedMessage,
+			tstampNanos,
+			false,
+			MessagesVersion3,
+			m0PublicKey,
+			BaseGroupKeyName(),
+			entry.MessagingPublicKey,
+			NewGroupKeyName(gangKey),
+			nil,
+		}
+		_helpConnectPrivateMessageWithParty(testMeta, m0Priv, muteMessageEntry, RuleErrorMessagingMemberMuted)
+		// m0 is currently muted and hence:
+		// The message should NOT be successfully added, so we STILL have:
+		// m0 -> group(sender, recipient, m0, m2)
+		// 	sender: 6
+		//	recipient: 7
+		//  m1: 4
+		// 	m0: 4
+		// 	m2: 1
+		require.Equal(false, _verifyMessageParty(testMeta, expectedMessageEntries, muteMessageEntry, false))
+
+		// Verify the messages AGAIN.
+		_verifyMessages(testMeta, expectedMessageEntries)
+		// Just to sanity-check, verify that the number of messages is as intended.
+		utxoView, err = NewUtxoView(db, params, nil, chain.snapshot)
+		require.NoError(err)
+		messages, _, err = utxoView.GetMessagesForUser(senderPkBytes)
+		require.NoError(err)
+		assert.Equal(6, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes)
+		require.NoError(err)
+		assert.Equal(7, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(m0PubKey)
+		require.NoError(err)
+		assert.Equal(4, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(m2PubKey)
+		require.NoError(err)
+		assert.Equal(1, len(messages))
+
+		// UNMUTING TESTS
+		// Let us now unmute m0
+		var unmuteList []*MessagingGroupMember
+		unmuteList = append(unmuteList, &MessagingGroupMember{
+			m0PublicKey,
+			BaseGroupKeyName(),
+			encrypt(privBytes, m0PubKey), // This is different since last usage??
+		})
+		//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
+		extraData = make(map[string][]byte)
+		extraData[MessagingGroupOperationType] = []byte(MessagingGroupOperationUnmute)
+		_messagingKeyWithExtraDataWithTestMeta(
+			testMeta,
+			senderPkBytes,
+			senderPrivString,
+			entry.MessagingPublicKey[:],
+			gangKey,
+			[]byte{},
+			unmuteList,
+			extraData,
+			nil)
+		// The decrypted key should match the original private key.
+		require.Equal(privBytes, m0PrivBytes)
+		// Now it's time to encrypt the message.
+		tstampNanos = uint64(time.Now().UnixNano())
+		testMessage = []byte("DeSo Group Chat Unmuting Works because this will be sent!")
+		encryptedMessage = encrypt(testMessage, entry.MessagingPublicKey[:])
+		// Create the corresponding message entry and connect it.
+		unmuteMessageEntry := MessageEntry{
+			m0PublicKey,
+			senderPublicKey,
+			encryptedMessage,
+			tstampNanos,
+			false,
+			MessagesVersion3,
+			m0PublicKey,
+			BaseGroupKeyName(),
+			entry.MessagingPublicKey,
+			NewGroupKeyName(gangKey),
+			nil,
+		}
+		_helpConnectPrivateMessageWithParty(testMeta, m0Priv, unmuteMessageEntry, nil)
+		// m0 is now unmuted and hence:
+		// The message should be successfully added, so we now have:
+		// m0 -> group(sender, recipient, m0, m2)
+		// 	sender: 7
+		//	recipient: 8
+		//  m1: 5
+		// 	m0: 5
+		// 	m2: 2
+		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, unmuteMessageEntry, false))
+
+		// Verify the messages AGAIN.
+		_verifyMessages(testMeta, expectedMessageEntries)
+		// Just to sanity-check, verify that the number of messages is as intended.
+		utxoView, err = NewUtxoView(db, params, nil, chain.snapshot)
+		require.NoError(err)
+		messages, _, err = utxoView.GetMessagesForUser(senderPkBytes)
+		require.NoError(err)
+		assert.Equal(7, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes)
+		require.NoError(err)
+		assert.Equal(8, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(m0PubKey)
+		require.NoError(err)
+		assert.Equal(5, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(m2PubKey)
+		require.NoError(err)
+		assert.Equal(2, len(messages))
 	}
 
 	// Now disconnect all entries.
