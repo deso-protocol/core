@@ -500,32 +500,36 @@ func (bav *UtxoView) _connectPrivateMessage(
 		// Reject message if sender is muted
 		if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
 			// Ensure sender and recipient are both present for a group chat
-			if existsSender && existsSenderName && existsRecipient && existsRecipientName {
-				// Here we retrieve the MuteList in an optimized way by using the <OptimizedMessagingGroupEntry> prefix
-				// which is also known as the "memberGroupEntry". This prevents fetching potentially 1000s of members
-				// of a group chat simply for checking if a member is muted
-				sender := &MessagingGroupMember{}
-				sender.GroupMemberPublicKey = NewPublicKey(senderMessagingPublicKey)
-				sender.GroupMemberKeyName = NewGroupKeyName(senderMessagingKeyName)
-				optimizedEntry := &MessagingGroupEntry{}
-				// txMeta.RecipientPublicKey is the GroupOwnerPublicKey in disguise
-				optimizedEntry.GroupOwnerPublicKey = NewPublicKey(txMeta.RecipientPublicKey)
-				optimizedEntry.MessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
-				optimizedEntry.MessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
-				var messagingGroupEntry *MessagingGroupEntry
-				messagingGroupEntry = DBGetMessagingMember(bav.Handle, bav.Snapshot, sender, optimizedEntry)
-				if messagingGroupEntry != nil {
-					muteList := messagingGroupEntry.MuteList
-					if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
+			if !(existsSender && existsSenderName && existsRecipient && existsRecipientName) {
+				return 0, 0, nil, errors.Wrapf(
+					RuleErrorPrivateMessageSentWithoutProperMessagingParty,
+					"_connectPrivateMessage: SenderKey, SenderName, RecipientKey, RecipientName should all exist "+
+						"in ExtraData after DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight.")
+			}
+			// Here we retrieve the MuteList in an optimized way by using the <OptimizedMessagingGroupEntry> prefix
+			// which is also known as the "memberGroupEntry". This prevents fetching potentially 1000s of members
+			// of a group chat simply for checking if a member is muted
+			sender := &MessagingGroupMember{}
+			sender.GroupMemberPublicKey = NewPublicKey(senderMessagingPublicKey)
+			sender.GroupMemberKeyName = NewGroupKeyName(senderMessagingKeyName)
+			optimizedEntry := &MessagingGroupEntry{}
+			// txMeta.RecipientPublicKey is the GroupOwnerPublicKey in disguise
+			optimizedEntry.GroupOwnerPublicKey = NewPublicKey(txMeta.RecipientPublicKey)
+			optimizedEntry.MessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
+			optimizedEntry.MessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
+			var messagingGroupEntry *MessagingGroupEntry
+			messagingGroupEntry = DBGetMessagingMember(bav.Handle, bav.Snapshot, sender, optimizedEntry)
+			if messagingGroupEntry != nil {
+				muteList := messagingGroupEntry.MuteList
+				if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
+					return 0, 0, nil, errors.Wrapf(
+						RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
+				}
+				for _, mutedMember := range muteList {
+					if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], txn.PublicKey) {
 						return 0, 0, nil, errors.Wrapf(
-							RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
-					}
-					for _, mutedMember := range muteList {
-						if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], txn.PublicKey) {
-							return 0, 0, nil, errors.Wrapf(
-								RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
-									"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
-						}
+							RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
+								"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
 					}
 				}
 			}
@@ -867,12 +871,10 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// Check if blockHeight lower than threshold and still trying to mute
 	if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
 		if existingEntry != nil && !existingEntry.isDeleted {
-			if value, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists {
-				if string(value) == MessagingGroupOperationMute || string(value) == MessagingGroupOperationUnmute {
-					return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMutingBeforeBlockHeight,
-						"_connectMessagingGroup: Error, blockHeight too low for MessagingGroupOperationMute or "+
-							"MessagingGroupOperationUnmute.")
-				}
+			if _, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists {
+				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMutingBeforeBlockHeight,
+					"_connectMessagingGroup: Error, blockHeight too low for MessagingGroupOperationMute or "+
+						"MessagingGroupOperationUnmute.")
 			}
 		}
 	}
