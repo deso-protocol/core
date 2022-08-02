@@ -922,7 +922,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 								if !reflect.DeepEqual(toUnmute.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
 									tempMuteList = append(tempMuteList, toUnmute)
 								} else {
-									// if s IS in MuteList, then unmute txn is valid and we continue looping to add remaining members to tempMuteList
+									// if s IS in MuteList, then unmute txn is valid, and we continue looping to add remaining members to tempMuteList
 									isUnmuteValid = true
 								}
 							}
