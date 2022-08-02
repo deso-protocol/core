@@ -890,7 +890,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 						"_connectMessagingGroup: Error decoding deep copy for V3 Muting.")
 				}
 				// check if mute or unmute
-				if string(value) == MessagingGroupOperationMute {
+				if reflect.DeepEqual(value, []byte(MessagingGroupOperationMute)) {
 					for _, s := range txMeta.MessagingGroupMembers {
 						// Add s to muteList
 						// Make sure does not already exist to ensure no dups
@@ -902,7 +902,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 						}
 						entryCopy.MuteList = append(entryCopy.MuteList, s)
 					}
-				} else if string(value) == MessagingGroupOperationUnmute {
+				} else if reflect.DeepEqual(value, []byte(MessagingGroupOperationUnmute)) {
 					for _, s := range txMeta.MessagingGroupMembers {
 						isUnmuteValid := false
 						for i, toUnmute := range entryCopy.MuteList {
