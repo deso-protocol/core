@@ -894,20 +894,13 @@ func (bav *UtxoView) _connectMessagingGroup(
 					for _, s := range txMeta.MessagingGroupMembers {
 						// Add s to muteList
 						// Make sure does not already exist to ensure no dups
-						contains := func(memberList []*MessagingGroupMember, member *MessagingGroupMember) bool {
-							for _, a := range memberList {
-								if a == member {
-									return true
-								}
+						for _, a := range entryCopy.MuteList {
+							if a == s {
+								return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyMuted,
+									"_connectMessagingGroup: Cannot mute member that is already muted (%v).", s.GroupMemberPublicKey[:])
 							}
-							return false
 						}
-						if !contains(entryCopy.MuteList, s) {
-							entryCopy.MuteList = append(entryCopy.MuteList, s)
-						} else {
-							return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyMuted,
-								"_connectMessagingGroup: Cannot mute member that is already muted (%v).", s.GroupMemberPublicKey[:])
-						}
+						entryCopy.MuteList = append(entryCopy.MuteList, s)
 					}
 				} else if string(value) == MessagingGroupOperationUnmute {
 					for _, s := range txMeta.MessagingGroupMembers {
