@@ -883,7 +883,21 @@ func (bav *UtxoView) _connectMessagingGroup(
 							"MessagingGroupOperationUnmute.")
 				}
 			}
-			// MUTING/UNMUTING functionality
+
+			// MUTING/UNMUTING functionality notes:
+			// In DeSo V3 Messages, Group Chat Owners can now mute or unmute members. This essentially acts like a
+			// de-facto "remove member from group" functionality, but can also be used to mute spammers in large channels.
+			// Note: A muted member can still cryptographically read the past AND future messages in the group, however,
+			// they cannot send messages to this group until they are unmuted by the group owner.
+			// Optimization Problem and Solution:
+			// Every time a new message arrives as a txn, we need to check inside _connectPrivateMessage() if the sender of
+			// the message is muted or not. This would decide whether we reject a message txn or not. However, to check
+			// that, we need to fetch the entire MessagingGroupEntry which may contains 1000s if not 100,000s of members.
+			// This is suboptimal as it can lead to long processing times and high txn costs per message sent. Hence,
+			// we use OptimizedMessagingGroupEntry which is a hack that allows us to store only the relevant member in the
+			// lists - "MessagingGroupMembers" & "MuteList" which otherwise could have been pretty bulky to retrieve
+			// for every single message.
+
 			if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
 				if value, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists {
 					// make deep copy of existingEntry.MuteList to prevent mempool errors
