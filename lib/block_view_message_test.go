@@ -2480,6 +2480,30 @@ func TestGroupMessages(t *testing.T) {
 		require.NoError(err)
 		assert.Equal(1, len(messages))
 
+		{
+			// Let us now try to mute m0 AGAIN
+			// This should produce an error since m0 is already muted
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m0PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m0PubKey),
+			})
+			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte(MessagingGroupOperationMute)
+			_messagingKeyWithExtraDataWithTestMeta(
+				testMeta,
+				senderPkBytes,
+				senderPrivString,
+				entry.MessagingPublicKey[:],
+				gangKey,
+				[]byte{},
+				muteList,
+				extraData,
+				RuleErrorMessagingMemberAlreadyMuted)
+		}
+
 		// UNMUTING TESTS
 		// Let us now unmute m0
 		var unmuteList []*MessagingGroupMember

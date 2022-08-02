@@ -895,7 +895,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 						// Add s to muteList
 						// Make sure does not already exist to ensure no dups
 						for _, a := range entryCopy.MuteList {
-							if a == s {
+							if reflect.DeepEqual(a.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
 								return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyMuted,
 									"_connectMessagingGroup: Cannot mute member that is already muted (%v).", s.GroupMemberPublicKey[:])
 							}
