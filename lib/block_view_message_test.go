@@ -2510,7 +2510,7 @@ func TestGroupMessages(t *testing.T) {
 		unmuteList = append(unmuteList, &MessagingGroupMember{
 			m0PublicKey,
 			BaseGroupKeyName(),
-			encrypt(privBytes, m0PubKey), // This is different since last usage??
+			encrypt(privBytes, m0PubKey),
 		})
 		//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 		extraData = make(map[string][]byte)
@@ -2576,6 +2576,30 @@ func TestGroupMessages(t *testing.T) {
 		messages, _, err = utxoView.GetMessagesForUser(m2PubKey)
 		require.NoError(err)
 		assert.Equal(2, len(messages))
+
+		{
+			// Let us now try to unmute m0 AGAIN
+			// This should produce an error since m0 is already unmuted
+			var unmuteList []*MessagingGroupMember
+			unmuteList = append(unmuteList, &MessagingGroupMember{
+				m0PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m0PubKey),
+			})
+			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
+			extraData = make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte(MessagingGroupOperationUnmute)
+			_messagingKeyWithExtraDataWithTestMeta(
+				testMeta,
+				senderPkBytes,
+				senderPrivString,
+				entry.MessagingPublicKey[:],
+				gangKey,
+				[]byte{},
+				unmuteList,
+				extraData,
+				RuleErrorMessagingMemberAlreadyUnmuted)
+		}
 
 		{
 			// Deprecated Hacked Prefix Test
