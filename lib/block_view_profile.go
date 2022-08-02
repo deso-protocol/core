@@ -1005,10 +1005,8 @@ func _verifyEthPersonalSignature(signer, data, signature []byte) error {
 	}
 
 	// Change the data bytes into Ethereum's personal_sign message standard. This will prepend the message prefix and hash
-	// the prepended message using keccak256. We turn data into a hex string and treat it as a character sequence which is
-	// how MetaMask treats it.
-	dataHex := hex.EncodeToString(data)
-	hash, _ := TextAndHash([]byte(dataHex))
+	// the prepended message using keccak256.
+	hash, _ := TextAndHash(data)
 
 	// Make sure signature has the correct length. If signature has 65 bytes then it contains the recovery ID, we can
 	// slice it off since we already know the signer public key.
