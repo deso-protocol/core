@@ -905,17 +905,33 @@ func (bav *UtxoView) _connectMessagingGroup(
 				} else if reflect.DeepEqual(value, []byte(MessagingGroupOperationUnmute)) {
 					for _, s := range txMeta.MessagingGroupMembers {
 						isUnmuteValid := false
-						for i, toUnmute := range entryCopy.MuteList {
-							if reflect.DeepEqual(toUnmute.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
-								entryCopy.MuteList = append(entryCopy.MuteList[:i], entryCopy.MuteList[i+1:]...)
+						// create temporary mute list to avoid modifying entryCopy.MuteList while iterating over it
+						var tempMuteList []*MessagingGroupMember
+						for _, toUnmute := range entryCopy.MuteList {
+							// if s not in MuteList, add s to the tempMuteList
+							if !reflect.DeepEqual(toUnmute.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
+								tempMuteList = append(tempMuteList, toUnmute)
+							} else {
+								// if s IS in MuteList, then unmute txn is valid and we continue looping to add remaining members to tempMuteList
 								isUnmuteValid = true
-								break
 							}
 						}
+						// If invalid unmuting, then check why:
+						// 1. Member already unmuted
+						// 2. Member does not exist in group hence cannot unmute nonexistent member
 						if !isUnmuteValid {
-							return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyUnmuted,
-								"_connectMessagingGroup: Cannot unmute member that is already unmuted (%v).", s.GroupMemberPublicKey[:])
+							for _, member := range entryCopy.MessagingGroupMembers {
+								if reflect.DeepEqual(member.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
+									// 1. Member already unmuted
+									return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyUnmuted,
+										"_connectMessagingGroup: Cannot unmute member that is already unmuted (%v).", s.GroupMemberPublicKey[:])
+								}
+							}
+							// 2. Member does not exist in group hence cannot unmute nonexistent member
+							return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberNotInGroup,
+								"_connectMessagingGroup: Cannot unmute member that does not exist in group (%v).", s.GroupMemberPublicKey[:])
 						}
+						entryCopy.MuteList = tempMuteList
 					}
 				} else {
 					return 0, 0, nil, errors.Wrapf(err,

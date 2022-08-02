@@ -2602,6 +2602,30 @@ func TestGroupMessages(t *testing.T) {
 		}
 
 		{
+			// Let us now try to unmute m1 who is not part of the group
+			// This should produce an error since m1 does not exist in the group
+			var unmuteList []*MessagingGroupMember
+			unmuteList = append(unmuteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
+			extraData = make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte(MessagingGroupOperationUnmute)
+			_messagingKeyWithExtraDataWithTestMeta(
+				testMeta,
+				senderPkBytes,
+				senderPrivString,
+				entry.MessagingPublicKey[:],
+				gangKey,
+				[]byte{},
+				unmuteList,
+				extraData,
+				RuleErrorMessagingMemberNotInGroup)
+		}
+
+		{
 			// Deprecated Hacked Prefix Test
 			// Let us set the DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight to much higher than current blockHeight
 			params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = chain.blockTip().Height + 10
