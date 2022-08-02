@@ -867,7 +867,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		}
 	}
 
-	// This will keep track of all group messaging members for the "else" block.
+	// This will keep track of all group messaging members primarily for the "else" block.
 	var messagingMembers []*MessagingGroupMember
 
 	// If muting/unmuting txn
