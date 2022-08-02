@@ -892,9 +892,14 @@ func (bav *UtxoView) _connectMessagingGroup(
 				// check if mute or unmute
 				if reflect.DeepEqual(value, []byte(MessagingGroupOperationMute)) {
 					for _, s := range txMeta.MessagingGroupMembers {
+						// Make sure GroupOwner is not muting herself
+						if reflect.DeepEqual(s.GroupMemberPublicKey[:], existingEntry.GroupOwnerPublicKey[:]) {
+							return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupOwnerMutingSelf,
+								"_connectMessagingGroup: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
+						}
 						// Add s to muteList
-						// Make sure does not already exist to ensure no dups
 						for _, a := range entryCopy.MuteList {
+							// Make sure does not already exist to ensure no dups
 							if reflect.DeepEqual(a.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
 								return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyMuted,
 									"_connectMessagingGroup: Cannot mute member that is already muted (%v).", s.GroupMemberPublicKey[:])
@@ -917,17 +922,23 @@ func (bav *UtxoView) _connectMessagingGroup(
 							}
 						}
 						// If invalid unmuting, then check why:
-						// 1. Member already unmuted
-						// 2. Member does not exist in group hence cannot unmute nonexistent member
+						// 1. GroupOwner unmuting herself
+						// 2. Member already unmuted
+						// 3. Member does not exist in group hence cannot unmute nonexistent member
 						if !isUnmuteValid {
+							// 1. GroupOwner unmuting herself is invalid because GroupOwner can never be muted in the first place
+							if reflect.DeepEqual(s.GroupMemberPublicKey[:], entryCopy.GroupOwnerPublicKey[:]) {
+								return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupOwnerUnmutingSelf,
+									"_connectMessagingGroup: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
+							}
+							// 2. Member already unmuted
 							for _, member := range entryCopy.MessagingGroupMembers {
 								if reflect.DeepEqual(member.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
-									// 1. Member already unmuted
 									return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyUnmuted,
 										"_connectMessagingGroup: Cannot unmute member that is already unmuted (%v).", s.GroupMemberPublicKey[:])
 								}
 							}
-							// 2. Member does not exist in group hence cannot unmute nonexistent member
+							// 3. Member does not exist in group hence cannot unmute nonexistent member
 							return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberNotInGroup,
 								"_connectMessagingGroup: Cannot unmute member that does not exist in group (%v).", s.GroupMemberPublicKey[:])
 						}

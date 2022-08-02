@@ -315,6 +315,8 @@ const (
 	RuleErrorMessagingMemberAlreadyUnmuted          RuleError = "RuleErrorMessagingMemberAlreadyUnmuted"
 	RuleErrorMessagingMutingBeforeBlockHeight       RuleError = "RuleErrorMessagingMutingBeforeBlockHeight"
 	RuleErrorMessagingMemberNotInGroup              RuleError = "RuleErrorMessagingMemberNotInGroup"
+	RuleErrorMessagingGroupOwnerMutingSelf          RuleError = "RuleErrorMessagingGroupOwnerMutingSelf"
+	RuleErrorMessagingGroupOwnerUnmutingSelf        RuleError = "RuleErrorMessagingGroupOwnerUnmutingSelf"
 
 	// NFTs
 	RuleErrorTooManyNFTCopies                            RuleError = "RuleErrorTooManyNFTCopies"

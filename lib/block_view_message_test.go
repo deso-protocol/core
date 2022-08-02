@@ -2626,6 +2626,56 @@ func TestGroupMessages(t *testing.T) {
 		}
 
 		{
+			// MORE MUTING TESTS
+			// Let us now try to mute group owner "sender" as a sanity check
+			// This should fail because GroupOwner cannot mute/unmute herself
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				senderPublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, senderPkBytes),
+			})
+			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte(MessagingGroupOperationMute)
+			_messagingKeyWithExtraDataWithTestMeta(
+				testMeta,
+				senderPkBytes,
+				senderPrivString,
+				entry.MessagingPublicKey[:],
+				gangKey,
+				[]byte{},
+				muteList,
+				extraData,
+				RuleErrorMessagingGroupOwnerMutingSelf)
+		}
+
+		{
+			// MORE UNMUTING TESTS
+			// Let us now try to unmute group owner "sender" as a sanity check
+			// This should fail because GroupOwner cannot mute/unmute herself
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				senderPublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, senderPkBytes),
+			})
+			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte(MessagingGroupOperationUnmute)
+			_messagingKeyWithExtraDataWithTestMeta(
+				testMeta,
+				senderPkBytes,
+				senderPrivString,
+				entry.MessagingPublicKey[:],
+				gangKey,
+				[]byte{},
+				muteList,
+				extraData,
+				RuleErrorMessagingGroupOwnerUnmutingSelf)
+		}
+
+		{
 			// Deprecated Hacked Prefix Test
 			// Let us set the DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight to much higher than current blockHeight
 			params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = chain.blockTip().Height + 10
