@@ -868,18 +868,17 @@ func (bav *UtxoView) _connectMessagingGroup(
 	}
 
 	// V3 Messages: MUTING and UNMUTING members
-	// Check if blockHeight lower than threshold and still trying to mute
-	if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
-		if existingEntry != nil && !existingEntry.isDeleted {
+	if existingEntry != nil && !existingEntry.isDeleted {
+		// Check if blockHeight lower than threshold and still trying to mute
+		if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
 			if _, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists {
 				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMutingBeforeBlockHeight,
 					"_connectMessagingGroup: Error, blockHeight too low for MessagingGroupOperationMute or "+
 						"MessagingGroupOperationUnmute.")
 			}
 		}
-	}
-	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
-		if existingEntry != nil && !existingEntry.isDeleted {
+		// MUTING/UNMUTING functionality
+		if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
 			if value, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists {
 				// make deep copy of existingEntry.MuteList to prevent mempool errors
 				var entryCopy *MessagingGroupEntry
@@ -950,6 +949,17 @@ func (bav *UtxoView) _connectMessagingGroup(
 				}
 				// Finally set the real existingEntry.MuteList to point to the clone
 				existingEntry = entryCopy
+
+				// merge extra data
+				var extraData map[string][]byte
+				if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
+					var existingExtraData map[string][]byte
+					if existingEntry != nil && !existingEntry.isDeleted {
+						existingExtraData = existingEntry.ExtraData
+					}
+					extraData = mergeExtraData(existingExtraData, txn.ExtraData)
+				}
+
 				// Create a MessagingGroupEntry so we can add the entry to UtxoView.
 				messagingGroupEntry := MessagingGroupEntry{
 					GroupOwnerPublicKey:   &messagingGroupKey.OwnerPublicKey,
@@ -957,7 +967,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 					MessagingGroupKeyName: NewGroupKeyName(txMeta.MessagingGroupKeyName),
 					MessagingGroupMembers: existingEntry.MessagingGroupMembers,
 					MuteList:              existingEntry.MuteList,
-					ExtraData:             existingEntry.ExtraData,
+					ExtraData:             extraData,
 				}
 				// Create a utxoOps entry, we make a copy of the existing entry.
 				var prevMessagingKeyEntry *MessagingGroupEntry
