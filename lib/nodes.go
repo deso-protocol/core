@@ -165,4 +165,9 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://node.post2earndao.com",
 		Owner: "edokoevoet",
 	},
+	29: {
+		Name:  "Pearl",
+		URL:   "https://pearl.app",
+		Owner: "pearl",
+	},
 }
