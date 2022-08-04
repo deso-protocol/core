@@ -2272,6 +2272,11 @@ func TestGroupMessages(t *testing.T) {
 		// since it's not what we're testing here.
 		// We're making a group chat with: (sender, recipient, m0, m2).
 		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+			senderPublicKey,
+			BaseGroupKeyName(),
+			encrypt(privBytes, senderPkBytes),
+		})
+		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
 			recipientPublicKey,
 			BaseGroupKeyName(),
 			encrypt(privBytes, recipientPkBytes),
