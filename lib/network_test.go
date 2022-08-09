@@ -3,7 +3,6 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
-	"fmt"
 	"github.com/holiman/uint256"
 	"math/rand"
 	"reflect"
@@ -1322,8 +1321,21 @@ func TestSpendingLimitMetamaskString(t *testing.T) {
 	_populateTransactionCountLimitMap := func(operationCount int) map[TxnType]uint64 {
 		operationMap := make(map[TxnType]uint64)
 
-		for ; operationCount > 0; operationCount-- {
-			txnTyp := TxnType(uint8(rand.Int()%maxTxnType + 1))
+		var indexList []byte
+		for ii := 0; ii < maxTxnType; ii++ {
+			indexList = append(indexList, byte(ii))
+		}
+		rand.Shuffle(len(indexList), func(i, j int) {
+			temp := indexList[i]
+			indexList[i] = indexList[j]
+			indexList[j] = temp
+		})
+
+		if operationCount > maxTxnType {
+			operationCount = maxTxnType
+		}
+		for ii := 0; ii < operationCount; ii++ {
+			txnTyp := TxnType(indexList[ii])
 			operationMap[txnTyp] = rand.Uint64()
 		}
 		return operationMap
@@ -1384,7 +1396,6 @@ func TestSpendingLimitMetamaskString(t *testing.T) {
 
 	// Test encoding of all possible combinations of TransactionSpendingLimit fields.
 	_runTestOnSpendingLimit := func(spendingLimit *TransactionSpendingLimit, params *DeSoParams) bool {
-		fmt.Println(spendingLimit.ToMetamaskString(params))
 		return spendingLimit.ToMetamaskString(params) == spendingLimit.ToMetamaskString(params)
 	}
 
