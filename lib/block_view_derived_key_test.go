@@ -791,16 +791,12 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(t *testing.T, chain *Blockcha
 }
 
 func TestAuthorizeDerivedKeyBasic(t *testing.T) {
-	RunTestWithBadgerAndPostgresOptimized(t, _testAuthorizeDerivedKeyBasic)
-}
-
-func _testAuthorizeDerivedKeyBasic(t *testing.T, postgres *Postgres) {
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
+	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	dbAdapter := chain.NewDbAdapter()
 
@@ -1644,16 +1640,12 @@ func _testAuthorizeDerivedKeyBasic(t *testing.T, postgres *Postgres) {
 }
 
 func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
-	RunTestWithBadgerAndPostgresOptimized(t, _testAuthorizeDerivedKeyBasicWithTransactionLimits)
-}
-
-func _testAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T, postgres *Postgres) {
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
+	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
@@ -2539,16 +2531,12 @@ func _testAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T, postgres *
 }
 
 func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
-	RunTestWithBadgerAndPostgresOptimized(t, _testAuthorizedDerivedKeyWithTransactionLimitsHardcore)
-}
-
-func _testAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T, postgres *Postgres) {
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
+	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	dbAdapter := chain.NewDbAdapter()
 
@@ -2952,7 +2940,6 @@ func _testAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T, postgr
 		)
 	}
 
-	// FIXME: Continue from here.
 	m0TransactionSpendingLimit := &TransactionSpendingLimit{
 		GlobalDESOLimit:              0,
 		TransactionCountLimitMap:     make(map[TxnType]uint64),

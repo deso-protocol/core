@@ -2,31 +2,22 @@ package lib
 
 import (
 	"bytes"
-	"context"
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/client"
 	"github.com/go-pg/pg/v10"
 	"github.com/go-pg/pg/v10/orm"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
-	"github.com/pkg/errors"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 )
 
 type Postgres struct {
 	db *pg.DB
-
-	// Only applies to a docker postgres db.
-	directory   string
-	containerId string
 }
 
 func NewPostgres(db *pg.DB) *Postgres {
@@ -2733,8 +2724,8 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
-		Order("block_height ASC").                                        // Then oldest first (FIFO)
-		Order("order_id DESC").                                           // Then match BadgerDB ordering
+		Order("block_height ASC"). // Then oldest first (FIFO)
+		Order("order_id DESC"). // Then match BadgerDB ordering
 		Select()
 
 	if err != nil {
@@ -2943,51 +2934,4 @@ func (postgres *Postgres) GetNotifications(publicKey string) ([]*PGNotification,
 	}
 
 	return notifications, nil
-}
-
-//
-// Postgres Test tooling
-//
-
-// Drop all tables in the postgres Db.
-func (postgres *Postgres) resetDatabase() error {
-	res, err := postgres.db.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-	if err != nil {
-		return errors.Wrapf(err, "DeletePostgresDatabase: Problem executing the query")
-	}
-	glog.V(1).Infof(CLog(Blue, fmt.Sprintf("DeletePostgresDatabase: Got res %v", res)))
-	return nil
-}
-
-// Kill the postgres Docker container and delete the postgres directory. This is used for running pg tests.
-func (postgres *Postgres) forceKillContainer() error {
-	if postgres.containerId == "" {
-		return fmt.Errorf("forceKillContainer: container Id is empty. This function only works for dockerized postgres")
-	}
-
-	err := postgres.db.Close()
-	if err != nil {
-		return errors.Wrapf(err, "forceKillContainer: Problem closing postgres db")
-	}
-
-	cli, err := client.NewClientWithOpts(client.FromEnv)
-	if err != nil {
-		return errors.Wrapf(err, "forceKillContainer: Problem creating new docker client")
-	}
-
-	removeOptions := types.ContainerRemoveOptions{
-		Force: true,
-	}
-	err = cli.ContainerRemove(context.Background(), postgres.containerId, removeOptions)
-	if err != nil {
-		return errors.Wrapf(err, "forceKillContainer: Problem removing postgres container")
-	}
-
-	if postgres.directory == "" {
-		err = os.RemoveAll(postgres.directory)
-		if err != nil {
-			return errors.Wrapf(err, "forceKillContainer: Problem removing postgres directory")
-		}
-	}
-	return nil
 }

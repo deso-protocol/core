@@ -4,9 +4,11 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/go-pg/pg/v10"
 	"log"
 	"math/big"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
@@ -160,22 +162,10 @@ func NewLowDifficultyBlockchain() (
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	return NewLowDifficultyBlockchainWithParamsAndPostgres(&DeSoTestnetParams, nil)
+	return NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
 }
 
 func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
-	*Blockchain, *DeSoParams, *badger.DB) {
-
-	return NewLowDifficultyBlockchainWithParamsAndPostgres(params, nil)
-}
-
-func NewLowDifficultyBlockchainWithPostgres(postgres *Postgres) (
-	*Blockchain, *DeSoParams, *badger.DB) {
-
-	return NewLowDifficultyBlockchainWithParamsAndPostgres(&DeSoTestnetParams, postgres)
-}
-
-func NewLowDifficultyBlockchainWithParamsAndPostgres(params *DeSoParams, postgres *Postgres) (
 	*Blockchain, *DeSoParams, *badger.DB) {
 
 	// Set the number of txns per view regeneration to one while creating the txns
@@ -183,11 +173,11 @@ func NewLowDifficultyBlockchainWithParamsAndPostgres(params *DeSoParams, postgre
 
 	db, dbDir := GetTestBadgerDb()
 	timesource := chainlib.NewMedianTime()
-	//var postgresDb *Postgres
-	//
-	//if len(os.Getenv("POSTGRES_URI")) > 0 {
-	//	postgresDb = NewPostgres(pg.Connect(ParsePostgresURI(os.Getenv("POSTGRES_URI"))))
-	//}
+	var postgresDb *Postgres
+
+	if len(os.Getenv("POSTGRES_URI")) > 0 {
+		postgresDb = NewPostgres(pg.Connect(ParsePostgresURI(os.Getenv("POSTGRES_URI"))))
+	}
 
 	// Set some special parameters for testing. If the blocks above are changed
 	// these values should be updated to reflect the latest testnet values.
@@ -236,7 +226,7 @@ func NewLowDifficultyBlockchainWithParamsAndPostgres(params *DeSoParams, postgre
 	// key have some DeSo
 	snap, err, _ := NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &paramsCopy, false)
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0,
-		&paramsCopy, timesource, db, postgres, nil, snap, false)
+		&paramsCopy, timesource, db, postgresDb, nil, snap, false)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -252,7 +242,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 
 	mempool := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0 /* minFeeRateNanosPerKB */, "", true,
+		0  /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	minerPubKeys := []string{}
 	if isSender {

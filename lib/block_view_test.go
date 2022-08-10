@@ -4,9 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/deso-protocol/core/migrate"
 	"github.com/dgraph-io/badger/v3"
-	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "net/http/pprof"
@@ -355,12 +353,8 @@ func TestUpdateGlobalParams(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	// Don't use postgres in this test.
-	var postgres *Postgres
-	postgres = nil
-	var err error
-
-	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
+	chain, params, db := NewLowDifficultyBlockchain()
+	postgres := chain.postgres
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_, _ = mempool, miner
 
@@ -395,6 +389,8 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 	// Should pass when founder key is equal to moneyPk
 	var updateGlobalParamsTxn *MsgDeSoTxn
+	var err error
+
 	{
 		newUSDCentsPerBitcoin := int64(270430 * 100)
 		newMinimumNetworkFeeNanosPerKB := int64(191)
@@ -498,17 +494,11 @@ func TestBasicTransfer(t *testing.T) {
 	_ = assert
 	_ = require
 
-	postgres := InitializeTestPostgresInstance(t)
-
-	migrate.LoadMigrations()
-	err := migrations.Run(postgres.db, "migrate", []string{"", "migrate"})
-	require.NoError(err)
-
-	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
-
+	chain, params, db := NewLowDifficultyBlockchain()
+	postgres := chain.postgres
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Mine two blocks to give the sender some DeSo.
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
@@ -701,16 +691,12 @@ func TestBasicTransfer(t *testing.T) {
 // We use basicTransfer as a placeholder for a normal DeSo transaction (alternatively, we could have used a post,
 // follow, nft, etc transaction). For each scenario we try signing the transaction with either user's main public
 // key, a derived key, or a random key. Basically, we try every possible context in which a transaction can be signed.
-// FIXME: This is also the first test that uses a dockerized Postgres and allows to run pg and badger tests simultaneously.
 func TestBasicTransferSignatures(t *testing.T) {
-	RunTestWithBadgerAndPostgresOptimized(t, _testBasicTransferSignaturesWithPostgres)
-}
-
-func _testBasicTransferSignaturesWithPostgres(t *testing.T, postgres *Postgres) {
 	require := require.New(t)
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
+	chain, params, db := NewLowDifficultyBlockchain()
+	postgres := chain.postgres
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
