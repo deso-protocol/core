@@ -10,11 +10,11 @@ type DbAdapter struct {
 	snapshot   *Snapshot
 }
 
-func NewDbAdapter(chain *Blockchain) *DbAdapter {
+func (bc *Blockchain) NewDbAdapter() *DbAdapter {
 	return &DbAdapter{
-		badgerDb:   chain.db,
-		postgresDb: chain.postgres,
-		snapshot:   chain.snapshot,
+		badgerDb:   bc.db,
+		postgresDb: bc.postgres,
+		snapshot:   bc.snapshot,
 	}
 }
 

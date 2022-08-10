@@ -88,7 +88,7 @@ func _derivedKeyVerifyTest(t *testing.T, db *badger.DB, chain *Blockchain, trans
 
 	// Verify that expiration block was persisted in the db or is in mempool utxoView
 	if mempool == nil {
-		derivedKeyEntry := NewDbAdapter(chain).GetOwnerToDerivedKeyMapping(*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
+		derivedKeyEntry := chain.NewDbAdapter().GetOwnerToDerivedKeyMapping(*NewPublicKey(senderPkBytes), *NewPublicKey(derivedPublicKey))
 		// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 		// To pass the tests, we initialize it to a default struct.
 		if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
@@ -802,7 +802,7 @@ func _testAuthorizeDerivedKeyBasic(t *testing.T, postgres *Postgres) {
 
 	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-	dbAdapter := NewDbAdapter(chain)
+	dbAdapter := chain.NewDbAdapter()
 
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
@@ -2550,7 +2550,7 @@ func _testAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T, postgr
 
 	chain, params, db := NewLowDifficultyBlockchainWithPostgres(postgres)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-	dbAdapter := NewDbAdapter(chain)
+	dbAdapter := chain.NewDbAdapter()
 
 	GlobalDeSoParams = *params
 	GlobalDeSoParams.ForkHeights.UnlimitedDerivedKeysBlockHeight = 0
