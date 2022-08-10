@@ -78,6 +78,11 @@ func _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey []byte, d
 	return nil
 }
 
+// AssembleAccessBytesWithMetamaskStrings constructs Access Bytes Encoding 2.0. It encodes the derived key access bytes into a
+// Metamask-compatible string. There are three components of a derived key that comprise the access bytes, it is the
+// derived public key, expiration block, and transaction spending limit. We encode these three into a single string that
+// is unique, displays nicely, and can be signed with MetaMask. This is intended to be an equivalent alternative to the
+// standard Access Bytes Encoding 1.0.
 func AssembleAccessBytesWithMetamaskStrings(derivedPublicKey []byte, expirationBlock uint64,
 	transactionSpendingLimit *TransactionSpendingLimit, params *DeSoParams) []byte {
 
