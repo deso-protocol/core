@@ -12,7 +12,6 @@ import (
 	"io"
 	"math"
 	"net"
-	"reflect"
 	"sort"
 	"strconv"
 	"time"
@@ -2560,6 +2559,18 @@ type DeSoSignature struct {
 	IsRecoverable bool
 }
 
+func (desoSign *DeSoSignature) SetSignature(sign *btcec.Signature) {
+	desoSign.Sign = sign
+}
+
+// Verify is a wrapper around DeSoSignature.Sign.Verify.
+func (desoSign *DeSoSignature) Verify(hash []byte, pubKey *btcec.PublicKey) bool {
+	if desoSign.Sign == nil {
+		return false
+	}
+	return desoSign.Sign.Verify(hash, pubKey)
+}
+
 // ToBytes encodes the signature in accordance to the DeSo-DER ECDSA format.
 // <0x30 + optionally (0x01 + recoveryId)> <length of whole message> <0x02> <length of R> <R> 0x2 <length of S> <S>.
 func (desoSign *DeSoSignature) ToBytes() []byte {
@@ -2626,7 +2637,7 @@ func (desoSign *DeSoSignature) SerializeCompact() ([]byte, error) {
 
 	// To make sure the signature has been correctly parsed, we verify DER encoding of both signatures matches.
 	verifySignature := decredEC.NewSignature(r, s)
-	if !reflect.DeepEqual(verifySignature.Serialize(), desoSign.Sign.Serialize()) {
+	if !bytes.Equal(verifySignature.Serialize(), desoSign.Sign.Serialize()) {
 		return nil, fmt.Errorf("SerializeCompact: Problem sanity-checking signature")
 	}
 
@@ -2903,7 +2914,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 		return nil, fmt.Errorf("_readTransaction.FromBytes: sigLen length %d longer than max %d", sigLen, MaxMessagePayload)
 	}
 
-	ret.Signature.Sign = nil
+	ret.Signature.SetSignature(nil)
 	if sigLen != 0 {
 		sigBytes := make([]byte, sigLen)
 		_, err = io.ReadFull(rr, sigBytes)

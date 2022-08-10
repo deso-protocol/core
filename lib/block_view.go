@@ -1123,7 +1123,9 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	txHash := Sha256DoubleHash(txBytes)
 
 	// Look for the derived key in transaction ExtraData and validate it. For transactions
-	// signed using a derived key, the derived public key is passed to ExtraData.
+	// signed using a derived key, the derived public key is passed in ExtraData. Alternatively,
+	// the signature uses DeSo-DER encoding, meaning we can recover the derived public key from
+	// the signature.
 	var derivedPk *btcec.PublicKey
 	derivedPkBytes, isDerived, err := IsDerivedSignature(txn)
 	if err != nil {
@@ -1149,7 +1151,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	// If derived key is present in ExtraData, we check if transaction was signed by the derived key.
 	if derivedPk == nil {
 		// Verify that the transaction is signed by the specified key.
-		if txn.Signature.Sign.Verify(txHash[:], ownerPk) {
+		if txn.Signature.Verify(txHash[:], ownerPk) {
 			return nil, nil
 		}
 	} else {
@@ -1187,9 +1189,10 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 				blockHeight)
 		}
 
-		// All checks passed so we try to verify the signature.
-		// FIXME: This step can be avoided for DeSo-DER signatures. At this point, we've already recovered and verified the signature.
-		if txn.Signature.Sign.Verify(txHash[:], derivedPk) {
+		// All checks passed so we try to verify the signature. This step can be avoided for DeSo-DER signatures.
+		// At this point, we've already recovered the derived public key and verified the signature.
+		// IT'S SUPER IMPORTANT TO QUADRUPLE-CHECK THIS LOGIC WHEN MODIFYING ANY CODE RELATED TO RECOVERABLE SIGNATURES.
+		if txn.Signature.IsRecoverable || txn.Signature.Verify(txHash[:], derivedPk) {
 			return derivedPk.SerializeCompressed(), nil
 		}
 
@@ -1207,13 +1210,13 @@ func IsDerivedSignature(txn *MsgDeSoTxn) (_derivedPkBytes []byte, _isDerived boo
 	// If transaction contains ExtraData, then check if the DerivedPublicKey was passed along.
 	if txn.ExtraData != nil {
 		derivedPkBytes, isDerived := txn.ExtraData[DerivedPublicKey]
+		// Make sure both encodings aren't used concurrently.
+		if isDerived && txn.Signature.IsRecoverable {
+			return nil, false, errors.Wrapf(RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId,
+				"IsDerivedSignature: transaction signed with a derived key can either store public key in "+
+					"ExtraData or use the DeSo-DER recoverable signature encoding")
+		}
 		if isDerived {
-			// Make sure both encodings aren't used concurrently.
-			if txn.Signature.IsRecoverable {
-				return nil, false, errors.Wrapf(RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId,
-					"IsDerivedSignature: transaction signed with a derived key can either store public key in "+
-						"ExtraData or use the DeSo-DER recoverable signature encoding")
-			}
 			return derivedPkBytes, isDerived, nil
 		}
 	}

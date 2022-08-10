@@ -752,7 +752,7 @@ func _signTxn(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
 	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
 	txnSignature, err := txn.Sign(privKey)
 	require.NoError(err)
-	txn.Signature.Sign = txnSignature
+	txn.Signature.SetSignature(txnSignature)
 }
 
 // Signs the transaction with a derived key. Transaction ExtraData contains the derived
@@ -773,7 +773,7 @@ func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string)
 		txn.ExtraData[DerivedPublicKey] = publicKey.SerializeCompressed()
 		txnSignature, err := txn.Sign(privateKey)
 		require.NoError(err)
-		txn.Signature.Sign = txnSignature
+		txn.Signature.SetSignature(txnSignature)
 	} else {
 		txBytes, err := txn.ToBytes(true /*preSignature*/)
 		require.NoError(err)
@@ -785,7 +785,7 @@ func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string)
 		require.NoError(err)
 		recoveryId := (signatureCompact[0] - compactSigMagicOffset) & ^byte(compactSigCompPubKey)
 
-		txn.Signature.Sign = signature
+		txn.Signature.SetSignature(signature)
 		txn.Signature.RecoveryId = recoveryId
 		txn.Signature.IsRecoverable = true
 	}
