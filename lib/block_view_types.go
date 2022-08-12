@@ -364,8 +364,8 @@ func MigrationTriggered(blockHeight uint64, migrationName MigrationName) bool {
 		}
 	}
 
-	panic(fmt.Sprintf("Problem finding a migration corresponding to migrationName (%v) "+
-		"check your code!", migrationName))
+	panic(any(fmt.Sprintf("Problem finding a migration corresponding to migrationName (%v) "+
+		"check your code!", migrationName)))
 }
 
 // GetMigrationVersion can be returned in GetVersionByte when implementing DeSoEncoders. The way to do it is simply

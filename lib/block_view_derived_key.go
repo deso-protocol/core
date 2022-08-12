@@ -203,7 +203,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						err, "Error decoding transaction spending limit from extra data")
 				}
 
-				isUnlimited, err := transactionSpendingLimit.CheckIfUnlimitedSpendingLimit()
+				isUnlimited, err := bav.CheckIfValidUnlimitedSpendingLimit(transactionSpendingLimit, blockHeight)
 				if err != nil {
 					return 0, 0, nil, errors.Wrapf(err,
 						"_connectAuthorizeDerivedKey: invalid unlimited spending limit")

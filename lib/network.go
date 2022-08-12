@@ -5363,8 +5363,12 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 	return copyTSL
 }
 
-func (tsl *TransactionSpendingLimit) CheckIfUnlimitedSpendingLimit() (_isUnlimited bool, _err error) {
+func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpendingLimit, blockHeight uint32) (_isUnlimited bool, _err error) {
 	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 7)
+
+	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.UnlimitedDerivedKeysBlockHeight {
+		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
+	}
 
 	if tsl.IsUnlimited && (tsl.GlobalDESOLimit > 0 ||
 		len(tsl.TransactionCountLimitMap) > 0 ||

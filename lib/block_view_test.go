@@ -249,7 +249,8 @@ func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
 		require.NoError(testMeta.t, err)
 
-		require.NoError(testMeta.t, utxoView.FlushToDb(0))
+		blockHeight := uint64(testMeta.chain.BlockTip().Height)
+		require.NoError(testMeta.t, utxoView.FlushToDb(blockHeight+1))
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
@@ -293,7 +294,8 @@ func _applyTestMetaTxnsToViewAndFlush(testMeta *TestMeta) {
 		require.NoError(testMeta.t, err)
 	}
 	// Flush the utxoView after having added all the transactions.
-	require.NoError(testMeta.t, utxoView.FlushToDb(0))
+	blockHeight := uint64(testMeta.chain.BlockTip().Height)
+	require.NoError(testMeta.t, utxoView.FlushToDb(blockHeight+1))
 }
 
 func _disconnectTestMetaTxnsFromViewAndFlush(testMeta *TestMeta) {
@@ -311,11 +313,8 @@ func _disconnectTestMetaTxnsFromViewAndFlush(testMeta *TestMeta) {
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
 		require.NoError(testMeta.t, err)
 	}
-	require.NoError(testMeta.t, utxoView.FlushToDb(0))
-	require.Equal(
-		testMeta.t,
-		testMeta.expectedSenderBalances[0],
-		_getBalance(testMeta.t, testMeta.chain, nil, senderPkString))
+	blockHeight := uint64(testMeta.chain.BlockTip().Height)
+	require.NoError(testMeta.t, utxoView.FlushToDb(blockHeight))
 }
 
 func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
@@ -340,10 +339,11 @@ func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(block.Txns)
 		require.NoError(testMeta.t, err)
-		require.NoError(testMeta.t, utxoView.DisconnectBlock(block, txHashes, utxoOps, 0))
+		blockHeight := uint64(testMeta.chain.BlockTip().Height)
+		require.NoError(testMeta.t, utxoView.DisconnectBlock(block, txHashes, utxoOps, blockHeight))
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(testMeta.t, utxoView.FlushToDb(0))
+		require.NoError(testMeta.t, utxoView.FlushToDb(blockHeight))
 	}
 }
 
@@ -799,9 +799,11 @@ func TestBasicTransferSignatures(t *testing.T) {
 
 		extraData := make(map[string]interface{})
 		extraData[TransactionSpendingLimitKey] = transactionSpendingLimit
+		blockHeight, err := GetBlockTipHeight(db, false)
+		require.NoError(err)
 		authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
-			t, senderPrivKey, 10, transactionSpendingLimit, false)
-		transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes(0)
+			t, senderPrivKey, 10, transactionSpendingLimit, false, blockHeight+1)
+		transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes(blockHeight + 1)
 		require.NoError(err)
 		derivedKeyTxn, totalInput, changeAmount, fees, err := chain.CreateAuthorizeDerivedKeyTxn(
 			senderPkBytes,

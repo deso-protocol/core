@@ -296,6 +296,7 @@ const (
 	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
 	RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId    RuleError = "RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId"
 	RuleErrorDerivedKeyInvalidRecoveryId                RuleError = "RuleErrorDerivedKeyInvalidRecoveryId"
+	RuleErrorUnlimitedDerivedKeyBeforeBlockHeight       RuleError = "RuleErrorUnlimitedDerivedKeyBeforeBlockHeight"
 	RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits  RuleError = "RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits"
 
 	// Messages
@@ -401,7 +402,7 @@ const (
 
 	// Derived Key Transaction Spending Limits
 	RuleErrorDerivedKeyTxnTypeNotAuthorized              RuleError = "RuleErrorDerivedKeyTxnTypeNotAuthorized"
-	RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit  RuleError = "RuleErrorTxnSpendsMoreThanGlobalDESOLimit"
+	RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit  RuleError = "RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit"
 	RuleErrorDerivedKeyInvalidCreatorCoinLimitOperation  RuleError = "RuleErrorInvalidCreatorCoinLimitOperation"
 	RuleErrorDerivedKeyInvalidDAOCoinLimitOperation      RuleError = "RuleErrorInvalidDAOCoinLimitOperation"
 	RuleErrorDerivedKeyNFTOperationNotAuthorized         RuleError = "RuleErrorDerivedKeyNFTOperationNotAuthorized"
