@@ -3268,6 +3268,14 @@ func TestEthSignature(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
+	// Make sure encoder migrations are not triggered yet.
+	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
+		if GlobalDeSoParams.EncoderMigrationHeightsList[ii].Version == 0 {
+			continue
+		}
+		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 1
+	}
+
 	// This data was taken directly from MetaMask personal_sign.
 	signatureHex := "d03fdea89e64e599935c48c3568b8b1481d074e2f93ed0f84fa3fa2962909c276133d7df637795833f64f1fefef0e486897d75d6abd8b7cf4420dcd0b674a8e01b"
 	transactionSpendingLimitHex := "8094ebdc030305c0a90706c0a90716c0a90700000000"

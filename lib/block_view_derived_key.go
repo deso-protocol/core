@@ -192,9 +192,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			if memoBytes, exists := txn.ExtraData[DerivedPublicKey]; exists {
 				memo = memoBytes
 			}
-			// If the transaction spending limit key exists, parse it and merge it into the existing transaction
-			// spending limit tracker
 			exists := false
+			// If the transaction spending limit key exists, parse it and merge it into the existing transaction
+			// spending limit tracker.
 			if transactionSpendingLimitBytes, exists = txn.ExtraData[TransactionSpendingLimitKey]; exists {
 				transactionSpendingLimit = &TransactionSpendingLimit{}
 				rr := bytes.NewReader(transactionSpendingLimitBytes)
@@ -202,16 +202,15 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 					return 0, 0, nil, errors.Wrapf(
 						err, "Error decoding transaction spending limit from extra data")
 				}
-				if transactionSpendingLimit.IsUnlimited {
-					if transactionSpendingLimit.GlobalDESOLimit > 0 ||
-						len(transactionSpendingLimit.TransactionCountLimitMap) > 0 ||
-						len(transactionSpendingLimit.CreatorCoinOperationLimitMap) > 0 ||
-						len(transactionSpendingLimit.DAOCoinOperationLimitMap) > 0 ||
-						len(transactionSpendingLimit.NFTOperationLimitMap) > 0 ||
-						len(transactionSpendingLimit.DAOCoinLimitOrderLimitMap) > 0 {
 
-						return 0, 0, nil, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
-					}
+				isUnlimited, err := transactionSpendingLimit.CheckIfUnlimitedSpendingLimit()
+				if err != nil {
+					return 0, 0, nil, errors.Wrapf(err,
+						"_connectAuthorizeDerivedKey: invalid unlimited spending limit")
+				}
+
+				// A valid unlimited spending limit object only has the IsUnlimited field set.
+				if isUnlimited {
 					newTransactionSpendingLimit.IsUnlimited = true
 				} else {
 					// TODO: how can we serialize this in a way that we don't have to specify it everytime

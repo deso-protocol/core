@@ -5363,6 +5363,22 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 	return copyTSL
 }
 
+func (tsl *TransactionSpendingLimit) CheckIfUnlimitedSpendingLimit() (_isUnlimited bool, _err error) {
+	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 7)
+
+	if tsl.IsUnlimited && (tsl.GlobalDESOLimit > 0 ||
+		len(tsl.TransactionCountLimitMap) > 0 ||
+		len(tsl.CreatorCoinOperationLimitMap) > 0 ||
+		len(tsl.DAOCoinOperationLimitMap) > 0 ||
+		len(tsl.NFTOperationLimitMap) > 0 ||
+		len(tsl.DAOCoinLimitOrderLimitMap) > 0) {
+
+		return tsl.IsUnlimited, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
+	}
+
+	return tsl.IsUnlimited, nil
+}
+
 type NFTLimitOperation uint8
 
 const (

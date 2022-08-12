@@ -242,7 +242,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 
 	mempool := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0  /* minFeeRateNanosPerKB */, "", true,
+		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	minerPubKeys := []string{}
 	if isSender {

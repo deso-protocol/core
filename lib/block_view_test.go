@@ -700,6 +700,15 @@ func TestBasicTransferSignatures(t *testing.T) {
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
+	// Make sure encoder migrations are not triggered yet.
+	GlobalDeSoParams = *params
+	GlobalDeSoParams.ForkHeights.UnlimitedDerivedKeysBlockHeight = uint32(100)
+	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
+		if GlobalDeSoParams.EncoderMigrationHeightsList[ii].Version == 0 {
+			continue
+		}
+		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 100
+	}
 
 	_ = db
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
