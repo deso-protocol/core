@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -713,7 +714,7 @@ var MainnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
-	UnlimitedDerivedKeysBlockHeight: uint32(145500),
+	UnlimitedDerivedKeysBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -962,7 +963,7 @@ var TestnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
-	UnlimitedDerivedKeysBlockHeight: uint32(385000),
+	UnlimitedDerivedKeysBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
