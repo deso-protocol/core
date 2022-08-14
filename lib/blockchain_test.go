@@ -782,16 +782,10 @@ func _signTxnWithDerivedKeyAndType(t *testing.T, txn *MsgDeSoTxn, privKeyStrBase
 		txBytes, err := txn.ToBytes(true /*preSignature*/)
 		require.NoError(err)
 		txHash := Sha256DoubleHash(txBytes)[:]
-		signature, err := privateKey.Sign(txHash)
-		require.NoError(err)
 
-		signatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, txHash, true)
+		desoSignature, err := SignRecoverable(txHash, privateKey)
 		require.NoError(err)
-		recoveryId := (signatureCompact[0] - compactSigMagicOffset) & ^byte(compactSigCompPubKey)
-
-		txn.Signature.SetSignature(signature)
-		txn.Signature.RecoveryId = recoveryId
-		txn.Signature.IsRecoverable = true
+		txn.Signature = *desoSignature
 	}
 }
 

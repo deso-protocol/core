@@ -1227,7 +1227,7 @@ func IsDerivedSignature(txn *MsgDeSoTxn) (_derivedPkBytes []byte, _isDerived boo
 
 	// If transaction doesn't contain the ExtraData, then check if it contains the recovery Id.
 	if txn.Signature.IsRecoverable {
-		// Assemble the transaction hash, we need it in order to recover the public key.
+		// Assemble the transaction hash; we need it in order to recover the public key.
 		txBytes, err := txn.ToBytes(true /*preSignature*/)
 		if err != nil {
 			return nil, false, errors.Wrapf(err, "IsDerivedSignature: Problem "+
