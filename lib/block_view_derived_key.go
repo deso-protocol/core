@@ -213,6 +213,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 				if isUnlimited {
 					newTransactionSpendingLimit.IsUnlimited = true
 				} else {
+					newTransactionSpendingLimit.IsUnlimited = false
+
 					// TODO: how can we serialize this in a way that we don't have to specify it everytime
 					// Always overwrite the global DESO limit...
 					newTransactionSpendingLimit.GlobalDESOLimit = transactionSpendingLimit.GlobalDESOLimit
@@ -252,16 +254,16 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
 						}
 					}
-					newTransactionSpendingLimit.IsUnlimited = false
 				}
 			}
 		}
 		// We skip verifying the access signature if the transaction is signed by the owner.
-		if _, isDerived, err := IsDerivedSignature(txn); isDerived {
-			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectAuthorizeDerivedKey: "+
-					"It looks like this transaction was signed with a derived key, but the signature is malformed: ")
-			}
+		_, isDerived, err := IsDerivedSignature(txn)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectAuthorizeDerivedKey: "+
+				"It looks like this transaction was signed with a derived key, but the signature is malformed: ")
+		}
+		if isDerived {
 			if err = _verifyAccessSignatureWithTransactionSpendingLimit(
 				ownerPublicKey,
 				derivedPublicKey,
@@ -270,6 +272,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 				txMeta.AccessSignature,
 				uint64(blockHeight),
 				bav.Params); err != nil {
+
 				return 0, 0, nil, errors.Wrap(
 					RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid, err.Error())
 			}
