@@ -63,7 +63,6 @@ func (adapter *DbAdapter) GetOwnerToDerivedKeyMapping(ownerPublicKey PublicKey, 
 //
 
 func (adapter *DbAdapter) GetDAOCoinLimitOrder(orderID *BlockHash) (*DAOCoinLimitOrderEntry, error) {
-	// FIXME:
 	// Temporarily use badger to support DAO Coin limit order DB operations
 	//if adapter.postgresDb != nil {
 	//	return adapter.postgresDb.GetDAOCoinLimitOrder(orderID)
@@ -73,7 +72,6 @@ func (adapter *DbAdapter) GetDAOCoinLimitOrder(orderID *BlockHash) (*DAOCoinLimi
 }
 
 func (adapter *DbAdapter) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry, error) {
-	// FIXME:
 	// This function is currently used for testing purposes only.
 	// Temporarily use badger to support DAO Coin limit order DB operations
 	//if adapter.postgresDb != nil {
@@ -84,7 +82,6 @@ func (adapter *DbAdapter) GetAllDAOCoinLimitOrders() ([]*DAOCoinLimitOrderEntry,
 }
 
 func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCoinCreatorPKID *PKID, sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
-	// FIXME:
 	// Temporarily use badger to support DAO Coin limit order DB operations
 	//if adapter.postgresDb != nil {
 	//	return adapter.postgresDb.GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCoinCreatorPKID, sellingDAOCoinCreatorPKID)
@@ -94,7 +91,6 @@ func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCo
 }
 
 func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
-	// FIXME:
 	// Temporarily use badger to support DAO Coin limit order DB operations
 	//if adapter.postgresDb != nil {
 	//	return adapter.postgresDb.GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID)
@@ -104,7 +100,6 @@ func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPK
 }
 
 func (adapter *DbAdapter) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry, orderEntriesInView map[DAOCoinLimitOrderMapKey]bool) ([]*DAOCoinLimitOrderEntry, error) {
-	// FIXME:
 	// Temporarily use badger to support DAO Coin limit order DB operations
 	//if adapter.postgresDb != nil {
 	//	return adapter.postgresDb.GetMatchingDAOCoinLimitOrders(inputOrder, lastSeenOrder, orderEntriesInView)

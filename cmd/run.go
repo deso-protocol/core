@@ -61,6 +61,8 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"Max sync block height")
 	// Hyper Sync
 	cmd.PersistentFlags().Bool("hypersync", true, "Use hyper sync protocol for faster block syncing")
+	cmd.PersistentFlags().Bool("force-checksum", true, "When true, the node will panic if the "+
+		"local state checksum differs from the network checksum reported by its peers.")
 	// Snapshot
 	cmd.PersistentFlags().Uint64("snapshot-block-height-period", 1000, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
 	// Archival mode
