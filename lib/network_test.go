@@ -732,6 +732,64 @@ func TestSerializeUnlike(t *testing.T) {
 	require.Equal(txMeta, testMeta)
 }
 
+func TestSerializeNoReaction(t *testing.T) {
+	require := require.New(t)
+
+	txMeta := &ReactMetadata{PostHash: &postHashForTesting1}
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeReact)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestSerializeRemoveReaction(t *testing.T) {
+	require := require.New(t)
+
+	txMeta := &ReactMetadata{
+		PostHash: &postHashForTesting1,
+		IsRemove: true,
+	}
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeReact)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
+func TestSerializeReactions(t *testing.T) {
+	ValidReactions := []rune{'😊', '😥', '😠', '😮'}
+	for _, r := range ValidReactions {
+		_testSerializeSingleReaction(t, r)
+	}
+}
+
+func _testSerializeSingleReaction(t *testing.T, emoji rune) {
+	require := require.New(t)
+
+	txMeta := &ReactMetadata{
+		PostHash:      &postHashForTesting1,
+		EmojiReaction: emoji,
+	}
+
+	data, err := txMeta.ToBytes(false)
+	require.NoError(err)
+
+	testMeta, err := NewTxnMetadata(TxnTypeReact)
+	require.NoError(err)
+	err = testMeta.FromBytes(data)
+	require.NoError(err)
+	require.Equal(txMeta, testMeta)
+}
+
 func TestSerializeFollow(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

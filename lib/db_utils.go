@@ -174,6 +174,12 @@ type DBPrefixes struct {
 	PrefixLikerPubKeyToLikedPostHash []byte `prefix_id:"[30]" is_state:"true"`
 	PrefixLikedPostHashToLikerPubKey []byte `prefix_id:"[31]" is_state:"true"`
 
+	// Prefixes for reactions:
+	// <prefix, user pub key [33]byte, reacted post hash [32]byte> -> <>
+	// <prefix, post hash [32]byte, user pub key [33]byte> -> <>
+	PrefixReactorPubKeyToPostHash []byte `prefix_id:"[63]" is_state:"true"`
+	PrefixPostHashToReactorPubKey []byte `prefix_id:"[64]" is_state:"true"`
+
 	// Prefixes for creator coin fields:
 	// <prefix_id, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
 	// <prefix_id, creator PKID [33]byte, HODLer PKID [33]byte> -> <BalanceEntry>
@@ -322,7 +328,7 @@ type DBPrefixes struct {
 	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
-	// NEXT_TAG: 63
+	// NEXT_TAG: 65
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -479,8 +485,13 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixDAOCoinLimitOrderByOrderID) {
 		// prefix_id:"[62]"
 		return true, &DAOCoinLimitOrderEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixReactorPubKeyToPostHash) {
+		// prefix_id:"[63]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostHashToReactorPubKey) {
+		// prefix_id:"[64]"
+		return false, nil
 	}
-
 	return true, nil
 }
 
@@ -2025,6 +2036,164 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 	userPubKeys := [][]byte{}
 	for _, keyBytes := range keysFound {
 		// We must slice off the first byte and likedPostHash to get the userPubKey.
+		userPubKey := keyBytes[1+HashSizeBytes:]
+		userPubKeys = append(userPubKeys, userPubKey)
+	}
+
+	return userPubKeys, nil
+}
+
+// -------------------------------------------------------------------------------------
+// React mapping functions
+// 		<prefix, user pub key [33]byte, liked post BlockHash, reaction> -> <>
+// 		<prefix, liked post BlockHash, user pub key [33]byte, reaction> -> <>
+// -------------------------------------------------------------------------------------
+//
+//TODO these will probably need to change slightly to accommodate multiple reactions with different emojis per post
+func _dbKeyForReactorPubKeyToPostHashMapping(
+	userPubKey []byte, postHash BlockHash, reactionEmoji rune) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixReactorPubKeyToPostHash...)
+	key := append(prefixCopy, userPubKey...)
+	key = append(key, postHash[:]...)
+	key = append(key, []byte(string(reactionEmoji))...)
+	return key
+}
+
+func _dbKeyForPostHashToReactorPubKeyMapping(
+	postHash BlockHash, userPubKey []byte) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixPostHashToReactorPubKey...)
+	key := append(prefixCopy, postHash[:]...)
+	key = append(key, userPubKey...)
+	return key
+}
+
+func _dbSeekPrefixForPostHashesYouReact(yourPubKey []byte) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixReactorPubKeyToPostHash...)
+	return append(prefixCopy, yourPubKey...)
+}
+
+func _dbSeekPrefixForReactorPubKeysReactingToPostHash(likedPostHash BlockHash) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixPostHashToReactorPubKey...)
+	return append(prefixCopy, likedPostHash[:]...)
+}
+
+// Note that this adds a mapping for the user *and* the liked post.
+func DbPutReactMappingsWithTxn(
+	txn *badger.Txn, userPubKey []byte, likedPostHash BlockHash, reactionEmoji rune) error {
+
+	if len(userPubKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbPutReactMappingsWithTxn: User public key "+
+			"length %d != %d", len(userPubKey), btcec.PubKeyBytesLenCompressed)
+	}
+
+	if err := txn.Set(_dbKeyForReactorPubKeyToPostHashMapping(userPubKey, likedPostHash, reactionEmoji), []byte{}); err != nil {
+		return errors.Wrapf(err, "DbPutReactMappingsWithTxn: Problem adding user to reacted post mapping: ")
+	}
+
+	if err := txn.Set(_dbKeyForPostHashToReactorPubKeyMapping(likedPostHash, userPubKey), []byte{}); err != nil {
+		return errors.Wrapf(err, "DbPutReactMappingsWithTxn: Problem adding reacted post to user mapping: ")
+	}
+
+	return nil
+}
+
+func DbPutReactMappings(
+	handle *badger.DB, userPubKey []byte, likedPostHash BlockHash, reactionEmoji rune) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbPutReactMappingsWithTxn(txn, userPubKey, likedPostHash, reactionEmoji)
+	})
+}
+
+func DbGetReactorPubKeyToPostHashMappingWithTxn(
+	txn *badger.Txn, userPubKey []byte, likedPostHash BlockHash, reactionEmoji rune) []byte {
+
+	key := _dbKeyForReactorPubKeyToPostHashMapping(userPubKey, likedPostHash, reactionEmoji)
+	_, err := txn.Get(key)
+	if err != nil {
+		return nil
+	}
+
+	// Typically we return a DB entry here but we don't store anything for like mappings.
+	// We use this function instead of one returning true / false for feature consistency.
+	return []byte{}
+}
+
+func DbGetReactorPubKeyToPostHashMapping(
+	db *badger.DB, userPubKey []byte, likedPostHash BlockHash, reactionEmoji rune) []byte {
+	var ret []byte
+	db.View(func(txn *badger.Txn) error {
+		ret = DbGetReactorPubKeyToPostHashMappingWithTxn(txn, userPubKey, likedPostHash, reactionEmoji)
+		return nil
+	})
+	return ret
+}
+
+// Note this deletes the like for the user *and* the liked post since a mapping
+// should exist for each.
+func DbDeleteReactMappingsWithTxn(
+	txn *badger.Txn, userPubKey []byte, postHash BlockHash, reactionEmoji rune) error {
+
+	// First check that a mapping exists. If one doesn't exist then there's nothing to do.
+	existingMapping := DbGetReactorPubKeyToPostHashMappingWithTxn(txn, userPubKey, postHash, reactionEmoji)
+	if existingMapping == nil {
+		return nil
+	}
+
+	// When a message exists, delete the mapping for the sender and receiver.
+	if err := txn.Delete(
+		_dbKeyForReactorPubKeyToPostHashMapping(userPubKey, postHash, reactionEmoji)); err != nil {
+		return errors.Wrapf(err, "DbDeleteLikeMappingsWithTxn: Deleting "+
+			"userPubKey %s and postHash %s failed",
+			PkToStringBoth(userPubKey), postHash)
+	}
+	if err := txn.Delete(
+		_dbKeyForPostHashToReactorPubKeyMapping(postHash, userPubKey)); err != nil {
+		return errors.Wrapf(err, "DbDeleteLikeMappingsWithTxn: Deleting "+
+			"postHash %s and userPubKey %s failed",
+			PkToStringBoth(postHash[:]), PkToStringBoth(userPubKey))
+	}
+
+	return nil
+}
+
+func DbDeleteReactMappings(
+	handle *badger.DB, userPubKey []byte, postHash BlockHash, reactionEmoji rune) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbDeleteReactMappingsWithTxn(txn, userPubKey, postHash, reactionEmoji)
+	})
+}
+
+func DbGetPostHashesYouReact(handle *badger.DB, yourPublicKey []byte) (
+	_postHashes []*BlockHash, _err error) {
+
+	prefix := _dbSeekPrefixForPostHashesYouReact(yourPublicKey)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+
+	var postHashesYouReact []*BlockHash
+	for _, keyBytes := range keysFound {
+		// We must slice off the first byte and userPubKey to get the postHash.
+		postHash := &BlockHash{}
+		copy(postHash[:], keyBytes[1+btcec.PubKeyBytesLenCompressed:])
+		postHashesYouReact = append(postHashesYouReact, postHash)
+	}
+
+	return postHashesYouReact, nil
+}
+
+func DbGetReactorPubKeysReactingToPostHash(handle *badger.DB, postHash BlockHash) (
+	_pubKeys [][]byte, _err error) {
+
+	prefix := _dbSeekPrefixForReactorPubKeysReactingToPostHash(postHash)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+
+	var userPubKeys [][]byte
+	for _, keyBytes := range keysFound {
+		// We must slice off the first byte and postHash to get the userPubKey.
 		userPubKey := keyBytes[1+HashSizeBytes:]
 		userPubKeys = append(userPubKeys, userPubKey)
 	}
@@ -4844,6 +5013,52 @@ func (txnMeta *LikeTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeLikeTxindexMetadata
 }
 
+type ReactTxindexMetadata struct {
+	// ReactorPublicKeyBase58Check = TransactorPublicKeyBase58Check
+	IsRemove      bool
+	EmojiReaction rune
+
+	PostHashHex string
+	// PosterPublicKeyBase58Check in AffectedPublicKeys
+}
+
+func (txnMeta *ReactTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+
+	data = append(data, BoolToByte(txnMeta.IsRemove))
+	data = append(data, []byte(string(txnMeta.EmojiReaction))...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.PostHashHex))...)
+	return data
+}
+
+func (txnMeta *ReactTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	txnMeta.IsRemove, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "ReactTxindexMetadata.Decode: Empty IsRemove")
+	}
+	txnMeta.EmojiReaction, _, err = rr.ReadRune()
+	if err != nil {
+		return errors.Wrapf(err, "ReactTxindexMetadata.Decode: Empty EmojiReaction")
+	}
+	postHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "ReactTxindexMetadata.Decode: problem reading PostHashHex")
+	}
+	txnMeta.PostHashHex = string(postHashHexBytes)
+
+	return nil
+}
+
+func (txnMeta *ReactTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txnMeta *ReactTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeReactTxindexMetadata
+}
+
 type FollowTxindexMetadata struct {
 	// FollowerPublicKeyBase58Check = TransactorPublicKeyBase58Check
 	// FollowedPublicKeyBase58Check in AffectedPublicKeys
@@ -5353,6 +5568,7 @@ type TransactionMetadata struct {
 	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata       `json:",omitempty"`
 	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata          `json:",omitempty"`
 	LikeTxindexMetadata                *LikeTxindexMetadata                `json:",omitempty"`
+	ReactTxindexMetadata               *ReactTxindexMetadata               `json:",omitempty"`
 	FollowTxindexMetadata              *FollowTxindexMetadata              `json:",omitempty"`
 	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata      `json:",omitempty"`
 	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata        `json:",omitempty"`

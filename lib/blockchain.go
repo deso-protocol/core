@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/holiman/uint256"
+	"golang.org/x/text/unicode/norm"
 	"math"
 	"math/big"
 	"reflect"
@@ -3049,6 +3050,59 @@ func (bc *Blockchain) CreateLikeTxn(
 	// Sanity-check that the spendAmount is zero.
 	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateLikeTxn: %v", err)
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateReactTxn(
+	userPublicKey []byte, postHash BlockHash, isRemove bool, emojiReaction rune,
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64,
+	_err error) {
+
+	//TODO Where would be the best place to place the validation function?
+	// At the moment, only support happy, sad, angry and surprised
+	AcceptedReactions := [4]rune{'😊', '😥', '😠', '😮'}
+	// Validate emoji reaction
+	var isValidEmoji = func(emoji rune) bool {
+		for _, acceptedReaction := range AcceptedReactions {
+			if emoji == acceptedReaction {
+				return true
+			}
+		}
+		return false
+	}
+
+	// TODO Fix bug returning invalid for valid inputs
+	normalizedReaction := norm.NFC.String(string(emojiReaction))
+	if !isValidEmoji(rune(normalizedReaction[0])) {
+		return nil, 0, 0, 0, errors.New("CreateReactTxn: Invalid emoji input: ")
+	}
+
+	// A React transaction doesn't need any inputs or outputs (except additionalOutputs provided).
+	txn := &MsgDeSoTxn{
+		PublicKey: userPublicKey,
+		TxnMeta: &ReactMetadata{
+			PostHash:      &postHash,
+			EmojiReaction: rune(normalizedReaction[0]),
+			IsRemove:      isRemove,
+		},
+		TxOutputs: additionalOutputs,
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "CreateReactTxn: Problem adding inputs: ")
+	}
+
+	// Sanity-check that the spendAmount is zero.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("CreateReactTxn: %v", err)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil

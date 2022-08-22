@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/text/unicode/norm"
 	"io"
 	"math"
 	"net"
@@ -223,8 +224,9 @@ const (
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
 	TxnTypeDAOCoinLimitOrder            TxnType = 26
+	TxnTypeReact                        TxnType = 27
 
-	// NEXT_ID = 27
+	// NEXT_ID = 28
 )
 
 type TxnString string
@@ -256,6 +258,7 @@ const (
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
 	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
+	TxnStringReact                        TxnString = "REACT"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -266,7 +269,7 @@ var (
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
-		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeReact,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -274,7 +277,7 @@ var (
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
-		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringReact,
 	}
 )
 
@@ -340,6 +343,8 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringDAOCoinTransfer
 	case TxnTypeDAOCoinLimitOrder:
 		return TxnStringDAOCoinLimitOrder
+	case TxnTypeReact:
+		return TxnStringReact
 	default:
 		return TxnStringUndefined
 	}
@@ -399,6 +404,8 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeDAOCoinTransfer
 	case TxnStringDAOCoinLimitOrder:
 		return TxnTypeDAOCoinLimitOrder
+	case TxnStringReact:
+		return TxnTypeReact
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -466,6 +473,8 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinTransferMetadata{}).New(), nil
 	case TxnTypeDAOCoinLimitOrder:
 		return (&DAOCoinLimitOrderMetadata{}).New(), nil
+	case TxnTypeReact:
+		return (&ReactMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -3384,6 +3393,88 @@ func (txnData *LikeMetadata) FromBytes(data []byte) error {
 
 func (txnData *LikeMetadata) New() DeSoTxnMetadata {
 	return &LikeMetadata{}
+}
+
+// ==================================================================
+// ReactMetadata
+//
+// A reaction is an interaction where a user on the platform reacts to a post.
+// ==================================================================
+
+type ReactMetadata struct {
+	// The user reacting is assumed to be the originator of the
+	// top-level transaction.
+
+	// The post hash to react to.
+	PostHash *BlockHash
+
+	// Set to true when a user is requesting to "remove" a reaction.
+	IsRemove bool
+
+	// The Unicode for the emoji reaction.
+	EmojiReaction rune
+}
+
+func (txnData *ReactMetadata) GetTxnType() TxnType {
+	return TxnTypeReact
+}
+
+func (txnData *ReactMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// Validate the metadata before encoding it.
+	//
+
+	var data []byte
+
+	// Add PostHash
+	//
+	// We know the post hash is set and has the expected length, so we don't need
+	// to encode the length here.
+	data = append(data, txnData.PostHash[:]...)
+
+	// Add IsRemove
+	data = append(data, BoolToByte(txnData.IsRemove))
+
+	// Add EmojiReaction.
+	// It is possible for a single character to be encoded with different code point sequences.
+	// By normalizing the Unicode (NFC), we ensure that a character will have a unique code point sequence.
+	data = append(data, norm.NFC.Bytes([]byte(string(txnData.EmojiReaction)))...)
+
+	return data, nil
+}
+
+func (txnData *ReactMetadata) FromBytes(data []byte) error {
+	ret := ReactMetadata{}
+	rr := bytes.NewReader(data)
+
+	// PostHash
+	ret.PostHash = &BlockHash{}
+	_, err := io.ReadFull(rr, ret.PostHash[:])
+	if err != nil {
+		return fmt.Errorf(
+			"ReactMetadata.FromBytes: Error reading PostHash: %v", err)
+	}
+
+	// IsRemove
+	ret.IsRemove, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "ReactMetadata.FromBytes: Problem reading IsRemove")
+	}
+
+	// Emoji reaction
+	reaction, _, err := rr.ReadRune()
+	if err != nil {
+		return fmt.Errorf(
+			"ReactMetadata.FromBytes: Error reading EmojiReaction: %v", err)
+	}
+
+	ret.EmojiReaction = reaction
+	*txnData = ret
+
+	return nil
+}
+
+func (txnData *ReactMetadata) New() DeSoTxnMetadata {
+	return &ReactMetadata{}
 }
 
 // ==================================================================

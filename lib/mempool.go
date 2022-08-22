@@ -1387,6 +1387,34 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				Metadata:             "PosterPublicKeyBase58Check",
 			})
 		}
+	case TxnTypeReact:
+		realTxMeta := txn.TxnMeta.(*ReactMetadata)
+
+		// ReactorPublicKeyBase58Check = TransactorPublicKeyBase58Check
+
+		txnMeta.ReactTxindexMetadata = &ReactTxindexMetadata{
+			IsRemove:      realTxMeta.IsRemove,
+			PostHashHex:   hex.EncodeToString(realTxMeta.PostHash[:]),
+			EmojiReaction: realTxMeta.EmojiReaction,
+		}
+
+		// Get the public key of the poster and set it as having been affected
+		// by this like.
+		//
+		// PosterPublicKeyBase58Check in AffectedPublicKeys
+		postHash := &BlockHash{}
+		copy(postHash[:], realTxMeta.PostHash[:])
+		postEntry := utxoView.GetPostEntryForPostHash(postHash)
+		if postEntry == nil {
+			glog.V(2).Infof(
+				"UpdateTxindex: Error creating ReactTxindexMetadata; "+
+					"missing post for hash %v: %v", postHash, err)
+		} else {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
+				Metadata:             "PosterPublicKeyBase58Check",
+			})
+		}
 	case TxnTypeFollow:
 		realTxMeta := txn.TxnMeta.(*FollowMetadata)
 

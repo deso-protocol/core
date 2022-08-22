@@ -79,6 +79,7 @@ const (
 	EncoderTypeMessagingGroupMember
 	EncoderTypeForbiddenPubKeyEntry
 	EncoderTypeLikeEntry
+	EncoderTypeReactEntry
 	EncoderTypeNFTEntry
 	EncoderTypeNFTBidEntry
 	EncoderTypeNFTBidEntryBundle
@@ -118,6 +119,7 @@ const (
 	EncoderTypeUpdateProfileTxindexMetadata
 	EncoderTypeSubmitPostTxindexMetadata
 	EncoderTypeLikeTxindexMetadata
+	EncoderTypeReactTxindexMetadata
 	EncoderTypeFollowTxindexMetadata
 	EncoderTypePrivateMessageTxindexMetadata
 	EncoderTypeSwapIdentityTxindexMetadata
@@ -225,6 +227,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &SubmitPostTxindexMetadata{}
 	case EncoderTypeLikeTxindexMetadata:
 		return &LikeTxindexMetadata{}
+	case EncoderTypeReactTxindexMetadata:
+		return &ReactTxindexMetadata{}
 	case EncoderTypeFollowTxindexMetadata:
 		return &FollowTxindexMetadata{}
 	case EncoderTypePrivateMessageTxindexMetadata:
@@ -517,8 +521,9 @@ const (
 	OperationTypeDAOCoinTransfer              OperationType = 26
 	OperationTypeSpendingLimitAccounting      OperationType = 27
 	OperationTypeDAOCoinLimitOrder            OperationType = 28
+	OperationTypeReact                        OperationType = 29
 
-	// NEXT_TAG = 29
+	// NEXT_TAG = 30
 )
 
 func (op OperationType) String() string {
@@ -687,6 +692,10 @@ type UtxoOperation struct {
 	// Save the previous like entry and like count when making an update.
 	PrevLikeEntry *LikeEntry
 	PrevLikeCount uint64
+
+	// Save the previous emoji reactions
+	PrevReactEntry *ReactionEntry
+	PrevEmojiCount map[rune]uint64
 
 	// For disconnecting diamonds.
 	PrevDiamondEntry *DiamondEntry
@@ -2263,6 +2272,61 @@ func (likeEntry *LikeEntry) GetEncoderType() EncoderType {
 	return EncoderTypeLikeEntry
 }
 
+func MakeReactionKey(userPk []byte, ReactPostHash BlockHash, ReactEmoji rune) ReactionKey {
+	return ReactionKey{
+		// Avoid using the pointer so that it is easier to compare Reaction key structs
+		ReactorPubKey:   *NewPublicKey(userPk),
+		ReactedPostHash: ReactPostHash,
+		ReactEmoji:      ReactEmoji,
+	}
+}
+
+type ReactionKey struct {
+	ReactorPubKey   PublicKey
+	ReactedPostHash BlockHash
+	ReactEmoji      rune
+}
+
+type ReactionEntry struct {
+	ReactorPubKey   []byte
+	ReactedPostHash *BlockHash
+	ReactEmoji      rune
+	// Whether this entry is deleted in the view
+	isDeleted bool
+}
+
+func (reactEntry *ReactionEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(reactEntry.ReactorPubKey)...)
+	data = append(data, EncodeToBytes(blockHeight, reactEntry.ReactedPostHash, skipMetadata...)...)
+	return data
+}
+
+func (reactEntry *ReactionEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	reactEntry.ReactorPubKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "ReactionEntry.Decode: problem reading ReactorPubKey")
+	}
+	reactedPostHash := &BlockHash{}
+	if exist, err := DecodeFromBytes(reactedPostHash, rr); exist && err == nil {
+		reactEntry.ReactedPostHash = reactedPostHash
+	} else if err != nil {
+		return errors.Wrapf(err, "ReactionEntry.Decode: problem reading ReactedPostHash")
+	}
+	return nil
+}
+
+func (reactEntry *ReactionEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (reactEntry *ReactionEntry) GetEncoderType() EncoderType {
+	return EncoderTypeReactEntry
+}
+
 func MakeNFTKey(nftPostHash *BlockHash, serialNumber uint64) NFTKey {
 	return NFTKey{
 		NFTPostHash:  *nftPostHash,
@@ -2991,6 +3055,9 @@ type PostEntry struct {
 
 	// Counter of users that have liked this post.
 	LikeCount uint64
+
+	// Counter of emoji reactions that this post has.
+	EmojiCount map[rune]uint64
 
 	// Counter of users that have reposted this post.
 	RepostCount uint64
