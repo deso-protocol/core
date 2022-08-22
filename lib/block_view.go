@@ -64,6 +64,9 @@ type UtxoView struct {
 	// Like data
 	LikeKeyToLikeEntry map[LikeKey]*LikeEntry
 
+	// React data
+	ReactionKeyToReactionEntry map[ReactionKey]*ReactionEntry
+
 	// Repost data
 	RepostKeyToRepostEntry map[RepostKey]*RepostEntry
 
@@ -144,6 +147,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Like data
 	bav.LikeKeyToLikeEntry = make(map[LikeKey]*LikeEntry)
+
+	// React data
+	bav.ReactionKeyToReactionEntry = make(map[ReactionKey]*ReactionEntry)
 
 	// Repost data
 	bav.RepostKeyToRepostEntry = make(map[RepostKey]*RepostEntry)
@@ -279,6 +285,16 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 
 		newLikeEntry := *likeEntry
 		newView.LikeKeyToLikeEntry[likeKey] = &newLikeEntry
+	}
+
+	// Copy the react data
+	newView.ReactionKeyToReactionEntry = make(map[ReactionKey]*ReactionEntry, len(bav.ReactionKeyToReactionEntry))
+	for reactKey, reactEntry := range bav.ReactionKeyToReactionEntry {
+		if reactEntry == nil {
+			continue
+		}
+		newReactEntry := *reactEntry
+		newView.ReactionKeyToReactionEntry[reactKey] = &newReactEntry
 	}
 
 	// Copy the repost data
@@ -947,6 +963,10 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeLike {
 		return bav._disconnectLike(
 			OperationTypeLike, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeReact {
+		return bav._disconnectReact(
+			OperationTypeReact, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
 		return bav._disconnectCreatorCoin(
@@ -2309,6 +2329,10 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeLike {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectLike(txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeReact {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectReact(txn, txHash, blockHeight, verifySignatures)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
 		totalInput, totalOutput, utxoOpsForTxn, err =

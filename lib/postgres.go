@@ -138,6 +138,7 @@ type PGTransaction struct {
 	MetadataUpdateProfile       *PGMetadataUpdateProfile       `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataFollow              *PGMetadataFollow              `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataLike                *PGMetadataLike                `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataReact               *PGMetadataReact               `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataCreatorCoin         *PGMetadataCreatorCoin         `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataCreatorCoinTransfer *PGMetadataCreatorCoinTransfer `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataSwapIdentity        *PGMetadataSwapIdentity        `pg:"rel:belongs-to,join_fk:transaction_hash"`
@@ -260,6 +261,17 @@ type PGMetadataLike struct {
 	TransactionHash *BlockHash `pg:",pk,type:bytea"`
 	LikedPostHash   *BlockHash `pg:",type:bytea"`
 	IsUnlike        bool       `pg:",use_zero"`
+}
+
+// PGMetadataReact represents ReactMetadata
+type PGMetadataReact struct {
+	tableName struct{} `pg:"pg_metadata_reactions"`
+
+	TransactionHash *BlockHash `pg:",pk,type:bytea"`
+	PostHash        *BlockHash `pg:",type:bytea"`
+	IsRemove        bool       `pg:",use_zero"`
+	//TODO (Michel) Are you sure this is an integer? I just frankly don't know off the top of my head.
+	EmojiReaction rune `pg:",type:integer"`
 }
 
 // PGMetadataCreatorCoin represents CreatorCoinMetadataa
@@ -457,6 +469,7 @@ const (
 	NotificationUnknown NotificationType = iota
 	NotificationSendDESO
 	NotificationLike
+	NotificationReact
 	NotificationFollow
 	NotificationCoinPurchase
 	NotificationCoinTransfer
@@ -597,6 +610,22 @@ func (like *PGLike) NewLikeEntry() *LikeEntry {
 	return &LikeEntry{
 		LikerPubKey:   like.LikerPublicKey,
 		LikedPostHash: like.LikedPostHash,
+	}
+}
+
+type PGReact struct {
+	tableName struct{} `pg:"pg_react"`
+
+	ReactorPublicKey []byte     `pg:",pk,type:bytea"`
+	ReactorPostHash  *BlockHash `pg:",pk,type:bytea"`
+	ReactionEmoji    rune       `pg:",pk,type:bytea"`
+}
+
+func (react *PGReact) NewReactionEntry() *ReactionEntry {
+	return &ReactionEntry{
+		ReactorPubKey:   react.ReactorPublicKey,
+		ReactedPostHash: react.ReactorPostHash,
+		ReactEmoji:      react.ReactionEmoji,
 	}
 }
 
@@ -1579,6 +1608,9 @@ func (postgres *Postgres) FlushView(view *UtxoView, blockHeight uint64) error {
 		if err := postgres.flushLikes(tx, view); err != nil {
 			return err
 		}
+		if err := postgres.flushReacts(tx, view); err != nil {
+			return err
+		}
 		if err := postgres.flushFollows(tx, view); err != nil {
 			return err
 		}
@@ -1801,6 +1833,44 @@ func (postgres *Postgres) flushLikes(tx *pg.Tx, view *UtxoView) error {
 		_, err := tx.Model(&deleteLikes).Returning("NULL").Delete()
 		if err != nil {
 			return fmt.Errorf("flushLikes: delete: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (postgres *Postgres) flushReacts(tx *pg.Tx, view *UtxoView) error {
+	var insertReacts []*PGReact
+	var deleteReacts []*PGReact
+	for _, reactionEntry := range view.ReactionKeyToReactionEntry {
+		if reactionEntry == nil {
+			continue
+		}
+
+		react := &PGReact{
+			ReactorPublicKey: reactionEntry.ReactorPubKey,
+			ReactorPostHash:  reactionEntry.ReactedPostHash,
+			ReactionEmoji:    reactionEntry.ReactEmoji,
+		}
+
+		if reactionEntry.isDeleted {
+			deleteReacts = append(deleteReacts, react)
+		} else {
+			insertReacts = append(insertReacts, react)
+		}
+	}
+
+	if len(insertReacts) > 0 {
+		_, err := tx.Model(&insertReacts).WherePK().OnConflict("DO NOTHING").Returning("NULL").Insert()
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(deleteReacts) > 0 {
+		_, err := tx.Model(&deleteReacts).Returning("NULL").Delete()
+		if err != nil {
+			return err
 		}
 	}
 
@@ -2462,6 +2532,42 @@ func (postgres *Postgres) GetLikesForPost(postHash *BlockHash) []*PGLike {
 		return nil
 	}
 	return likes
+}
+
+//
+// Reacts
+//
+func (postgres *Postgres) GetReaction(reactorPublicKey []byte, reactedPostHash *BlockHash, reactionEmoji rune) *PGReact {
+	react := PGReact{
+		ReactorPublicKey: reactorPublicKey,
+		ReactorPostHash:  reactedPostHash,
+		ReactionEmoji:    reactionEmoji,
+	}
+	err := postgres.db.Model(&react).WherePK().First()
+	if err != nil {
+		return nil
+	}
+	return &react
+}
+func (postgres *Postgres) GetReacts(reacts []*PGReact) []*PGReact {
+	err := postgres.db.Model(&reacts).WherePK().Select()
+	if err != nil {
+		return nil
+	}
+	return reacts
+}
+
+func (postgres *Postgres) GetReactionsForPost(postHash *BlockHash, reactionEmoji rune) []*PGReact {
+	var reacts []*PGReact
+	err := postgres.db.Model(&reacts).
+		Where("reactor_post_hash = ?", postHash).
+		Where("reaction_emoji = ?", reactionEmoji).
+		Select()
+	if err != nil {
+		return nil
+	}
+	//TODO (Michel) You'll also want to write a migration for postgres in the migrations directory.
+	return reacts
 }
 
 //

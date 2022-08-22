@@ -46,6 +46,7 @@ func (notifier *Notifier) Update() error {
 		var transactions []*PGTransaction
 		err = notifier.db.Model(&transactions).Where("block_hash = ?", block.Hash).
 			Relation("Outputs").Relation("PGMetadataLike").Relation("PGMetadataFollow").
+			Relation("PGMetadataReact").
 			Relation("PGMetadataCreatorCoin").Relation("PGMetadataCreatorCoinTransfer").
 			Relation("PGMetadataSubmitPost").Select()
 		// TODO: Add NFTs
@@ -93,6 +94,20 @@ func (notifier *Notifier) Update() error {
 						ToUser:          post.PosterPublicKey,
 						FromUser:        transaction.PublicKey,
 						Type:            NotificationLike,
+						PostHash:        postHash,
+						Timestamp:       block.Timestamp,
+					})
+				}
+			} else if transaction.Type == TxnTypeReact {
+				postHash := transaction.MetadataReact.PostHash
+				post := DBGetPostEntryByPostHash(notifier.badger, nil, postHash)
+				if post != nil {
+					notifications = append(notifications, &PGNotification{
+						TransactionHash: transaction.Hash,
+						Mined:           true,
+						ToUser:          post.PosterPublicKey,
+						FromUser:        transaction.PublicKey,
+						Type:            NotificationReact,
 						PostHash:        postHash,
 						Timestamp:       block.Timestamp,
 					})

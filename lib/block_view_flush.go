@@ -66,6 +66,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		if err := bav._flushLikeEntriesToDbWithTxn(txn); err != nil {
 			return err
 		}
+		if err := bav._flushReactEntriesToDbWithTxn(txn); err != nil {
+			return err
+		}
 		if err := bav._flushFollowEntriesToDbWithTxn(txn); err != nil {
 			return err
 		}
@@ -402,6 +405,53 @@ func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 			// mappings for it into the db.
 			if err := DbPutLikeMappingsWithTxn(txn, bav.Snapshot,
 				likeEntry.LikerPubKey, *likeEntry.LikedPostHash); err != nil {
+
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (bav *UtxoView) _flushReactEntriesToDbWithTxn(txn *badger.Txn) error {
+
+	// Go through all the entries in the ReactionKeyToReactionEntry map.
+	for reactKeyIter, reactEntry := range bav.ReactionKeyToReactionEntry {
+		// Make a copy of the iterator since we make references to it below.
+		reactKey := reactKeyIter
+
+		// Sanity-check that the ReactKey computed from the ReactEntry is
+		// equal to the ReactKey that maps to that entry.
+		reactKeyInEntry := MakeReactionKey(reactEntry.ReactorPubKey, *reactEntry.ReactedPostHash, reactEntry.ReactEmoji)
+		if reactKeyInEntry != reactKey {
+			return fmt.Errorf("_flushReactEntriesToDbWithTxn: ReactEntry has "+
+				"ReactKey: %v, which doesn't match the ReactKeyToReactEntry map key %v",
+				&reactKeyInEntry, &reactKey)
+		}
+
+		// Delete the existing mappings in the db for this ReactKey. They will be re-added
+		// if the corresponding entry in memory has isDeleted=false.
+		if err := DbDeleteReactMappingsWithTxn(
+			txn, reactKey.ReactorPubKey[:], reactKey.ReactedPostHash, reactKey.ReactEmoji); err != nil {
+
+			return errors.Wrapf(
+				err, "_flushReactEntriesToDbWithTxn: Problem deleting mappings "+
+					"for LikeKey: %v: ", &reactKey)
+		}
+	}
+
+	// Go through all the entries in the ReactionKeyToReactionEntry map.
+	for _, reactEntry := range bav.ReactionKeyToReactionEntry {
+
+		if reactEntry.isDeleted {
+			// If the ReactEntry has isDeleted=true then there's nothing to do because
+			// we already deleted the entry above.
+		} else {
+			// If the ReactEntry has (isDeleted = false) then we put the corresponding
+			// mappings for it into the db.
+			if err := DbPutReactMappingsWithTxn(
+				txn, reactEntry.ReactorPubKey, *reactEntry.ReactedPostHash, reactEntry.ReactEmoji); err != nil {
 
 				return err
 			}
