@@ -139,6 +139,7 @@ const (
 
 var (
 	UsernameRegex = regexp.MustCompile("^[a-zA-Z0-9_]+$")
+	ENSRegex      = regexp.MustCompile("[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\\+.~#?&//=]*)?")
 	// Profile pics are Base64 encoded plus ": ; ," used in the mime type spec.
 	ProfilePicRegex = regexp.MustCompile("^[a-zA-Z0-9+/:;,]+$")
 
@@ -249,7 +250,7 @@ type ForkHeights struct {
 	// ParamUpdater to use a blockHeight-gated function rather than a constant.
 	ParamUpdaterRefactorBlockHeight uint32
 
-	// UnlimitedDerivedKeysBlockHeight allows for derived keys without a spending limit.
+	// UnlimitedDerivedKeysBlockHeight allows for derived keys without a spending limit and was introduced for the metamask integrations fork
 	UnlimitedDerivedKeysBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
