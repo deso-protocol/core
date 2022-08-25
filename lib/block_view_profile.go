@@ -577,7 +577,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 	// If a username is set then it must adhere to a particular regex.
 
 	if len(txMeta.NewUsername) != 0 && !UsernameRegex.Match(txMeta.NewUsername) {
-		if !(ENSRegex.Match(txMeta.NewUsername) && blockHeight >= bav.Params.ForkHeights.UnlimitedDerivedKeysBlockHeight) {
+		if blockHeight < bav.Params.ForkHeights.UnlimitedDerivedKeysBlockHeight || !ENSRegex.Match(txMeta.NewUsername) {
 			return 0, 0, nil, errors.Wrapf(RuleErrorInvalidUsername, "Username: %v", string(txMeta.NewUsername))
 		}
 	}
