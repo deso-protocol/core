@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"log"
 	"os"
 	"runtime/pprof"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func _swapIdentityWithTestMeta(
@@ -794,6 +795,39 @@ func TestUpdateProfile(t *testing.T) {
 			1.5*100*100,                  /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 	}
+	// Should not allow ENS names before block height, should allow after
+	{
+
+		params.ForkHeights.UnlimitedDerivedKeysBlockHeight = uint32(100)
+		_, _, _, err = _updateProfile(
+			t, chain, db, params,
+			1,                            /*feeRateNanosPerKB*/
+			m3Pub,                        /*updaterPkBase58Check*/
+			m3Priv,                       /*updaterPrivBase58Check*/
+			m5PkBytes,                    /*profilePubKey*/
+			"m5.eth",                     /*newUsername*/
+			"m5 created by paramUpdater", /*newDescription*/
+			otherShortPic,                /*newProfilePic*/
+			11*100,                       /*newCreatorBasisPoints*/
+			1.5*100*100,                  /*newStakeMultipleBasisPoints*/
+			false /*isHidden*/)
+
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorInvalidUsername)
+
+		params.ForkHeights.UnlimitedDerivedKeysBlockHeight = uint32(0)
+		updateProfile(
+			1,                            /*feeRateNanosPerKB*/
+			m3Pub,                        /*updaterPkBase58Check*/
+			m3Priv,                       /*updaterPrivBase58Check*/
+			m5PkBytes,                    /*profilePubKey*/
+			"m5.eth",                     /*newUsername*/
+			"m5 created by paramUpdater", /*newDescription*/
+			otherShortPic,                /*newProfilePic*/
+			11*100,                       /*newCreatorBasisPoints*/
+			1.5*100*100,                  /*newStakeMultipleBasisPoints*/
+			false /*isHidden*/)
+	}
 
 	// Create Profile Fee and Minimum Network Fee tests
 	{
@@ -998,7 +1032,7 @@ func TestUpdateProfile(t *testing.T) {
 		{
 			m5Entry, m5Exists := profileEntriesByPublicKey[MakePkMapKey(m5PkBytes)]
 			require.True(m5Exists)
-			require.Equal(string(m5Entry.Username), "m5_paramUpdater")
+			require.Equal(string(m5Entry.Username), "m5.eth")
 			require.Equal(string(m5Entry.Description), "m5 created by paramUpdater")
 			require.Equal(string(m5Entry.ProfilePic), otherShortPic)
 			require.Equal(int64(m5Entry.CreatorCoinEntry.CreatorBasisPoints), int64(11*100))
