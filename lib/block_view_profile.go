@@ -3,6 +3,10 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"reflect"
+	"sort"
+	"strings"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -10,9 +14,6 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/sha3"
-	"reflect"
-	"sort"
-	"strings"
 )
 
 // Just fetch all the profiles from the db and join them with all the profiles
@@ -574,10 +575,12 @@ func (bav *UtxoView) _connectUpdateProfile(
 		return 0, 0, nil, RuleErrorProfileStakeMultipleSize
 	}
 	// If a username is set then it must adhere to a particular regex.
-	if len(txMeta.NewUsername) != 0 && !UsernameRegex.Match(txMeta.NewUsername) {
-		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidUsername, "Username: %v", string(txMeta.NewUsername))
-	}
 
+	if len(txMeta.NewUsername) != 0 && !UsernameRegex.Match(txMeta.NewUsername) {
+		if blockHeight < bav.Params.ForkHeights.UnlimitedDerivedKeysBlockHeight || !ENSRegex.Match(txMeta.NewUsername) {
+			return 0, 0, nil, errors.Wrapf(RuleErrorInvalidUsername, "Username: %v", string(txMeta.NewUsername))
+		}
+	}
 	profilePublicKey := txn.PublicKey
 	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
 	if len(txMeta.ProfilePublicKey) != 0 {
