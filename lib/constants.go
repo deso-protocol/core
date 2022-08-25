@@ -139,7 +139,7 @@ const (
 
 var (
 	UsernameRegex = regexp.MustCompile("^[a-zA-Z0-9_]+$")
-	ENSRegex      = regexp.MustCompile("[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\\+.~#?&//=]*)?")
+	ENSRegex      = regexp.MustCompile(`[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)?`)
 	// Profile pics are Base64 encoded plus ": ; ," used in the mime type spec.
 	ProfilePicRegex = regexp.MustCompile("^[a-zA-Z0-9+/:;,]+$")
 
