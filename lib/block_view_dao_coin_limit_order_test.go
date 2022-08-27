@@ -611,6 +611,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
+	params.ForkHeights.OrderBookTransferRestrictionBlockHeight = uint32(0)
 
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
@@ -900,6 +901,39 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder)
 		metadataM0.ScaledExchangeRateCoinsToSellPerCoinToBuy = originalPrice
 		metadataM0.QuantityToFillInBaseUnits = originalQuantity
+	}
+
+	// RuleErrorDAOCoinTransferDAOMemberOnlyViolation
+	{
+		// m0 updates DAO coin transfer restriction status to: MEMBERS ONLY.
+		_daoCoinTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, DAOCoinMetadata{
+			ProfilePublicKey:          m0PkBytes,
+			OperationType:             DAOCoinOperationTypeUpdateTransferRestrictionStatus,
+			TransferRestrictionStatus: TransferRestrictionStatusDAOMembersOnly,
+		})
+
+		// m1's DAO coin limit order buying m0 DAO coins fails.
+		exchangeRate, err = CalculateScaledExchangeRate(0.1)
+		require.NoError(err)
+		metadata := DAOCoinLimitOrderMetadata{
+			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0PkBytes),
+			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
+		}
+		_, _, _, err = _doDAOCoinLimitOrderTxn(
+			t, chain, db, params, feeRateNanosPerKb, m1Pub, m1Priv, metadata)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinTransferDAOMemberOnlyViolation)
+
+		// m0 updates DAO coin transfer restriction status to: UNRESTRICTED.
+		_daoCoinTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, DAOCoinMetadata{
+			ProfilePublicKey:          m0PkBytes,
+			OperationType:             DAOCoinOperationTypeUpdateTransferRestrictionStatus,
+			TransferRestrictionStatus: TransferRestrictionStatusUnrestricted,
+		})
 	}
 
 	// m0 submits limit order buying 100 DAO coin units @ 0.1 $DESO / DAO coin.
