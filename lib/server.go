@@ -377,11 +377,11 @@ func NewServer(
 		if err != nil {
 			panic(err)
 		}
+	}
 
-		// We only set archival mode true if we're a hypersync node.
-		if IsNodeArchival(_syncType) {
-			archivalMode = true
-		}
+	// We only set archival mode true if we're a hypersync node.
+	if IsNodeArchival(_syncType) {
+		archivalMode = true
 	}
 
 	// Create an empty Server object here so we can pass a reference to it to the
