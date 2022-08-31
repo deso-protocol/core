@@ -62,6 +62,47 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 	bav._setMessageEntryMappings(&tombstoneMessageEntry)
 }
 
+func (bav *UtxoView) GetMessagingMemberEntry(memberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey,
+	groupKeyName *GroupKeyName, blockHeight uint32, forceFullEntry ...bool) *MessagingGroupEntry {
+
+	if memberPublicKey == nil || groupOwnerPublicKey == nil || groupKeyName == nil {
+		return nil
+	}
+	messagingGroupKey := NewMessagingGroupKey(groupOwnerPublicKey, groupKeyName[:])
+	if EqualGroupKeyName(&messagingGroupKey.GroupKeyName, BaseGroupKeyName()) {
+		return &MessagingGroupEntry{
+			GroupOwnerPublicKey:   NewPublicKey(messagingGroupKey.OwnerPublicKey[:]),
+			MessagingPublicKey:    NewPublicKey(messagingGroupKey.OwnerPublicKey[:]),
+			MessagingGroupKeyName: BaseGroupKeyName(),
+		}
+	}
+
+	if mapValue, exists := bav.MessagingGroupKeyToMessagingGroupEntry[*messagingGroupKey]; exists {
+		return mapValue
+	}
+
+	if len(forceFullEntry) == 0 && blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
+		messagingGroupEntry := DBGetEntryFromMembershipIndex(bav.Handle, bav.Snapshot, memberPublicKey, groupOwnerPublicKey, groupKeyName)
+		if messagingGroupEntry != nil {
+			return messagingGroupEntry
+		}
+	}
+
+	return bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
+}
+
+func (bav *UtxoView) GetMessagingGroupKeyToOwnerGroupEntry(messagingGroupKey *MessagingGroupKey,
+	blockHeight uint32, forceFullEntry ...bool) *MessagingGroupEntry {
+
+	if messagingGroupKey == nil {
+		return nil
+	}
+
+	ownerPublicKey := &messagingGroupKey.OwnerPublicKey
+	groupKeyName := &messagingGroupKey.GroupKeyName
+	return bav.GetMessagingMemberEntry(ownerPublicKey, ownerPublicKey, groupKeyName, blockHeight, forceFullEntry...)
+}
+
 func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 	messagingGroupKey *MessagingGroupKey) *MessagingGroupEntry {
 	// This function is used to get a MessagingGroupEntry given a MessagingGroupKey. The V3 messages are
@@ -175,7 +216,7 @@ func (bav *UtxoView) deleteMessageMappings(message *PGMessage) {
 	bav.setMessageMappings(&deletedMessage)
 }
 
-func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte) (
+func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte, blockHeight uint32) (
 	_messagingGroupEntries []*MessagingGroupEntry, _err error) {
 	// This function will return all groups a user is associated with,
 	// including the base key group, groups the user has created, and groups where
@@ -205,10 +246,20 @@ func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte) (
 	}
 
 	// We fetched all the entries from the UtxoView, so we move to the DB.
-	dbMessagingKeys, err := DBGetAllUserGroupEntries(bav.Handle, ownerPublicKey)
-	if err != nil {
-		return nil, errors.Wrapf(err, "GetUserMessagingKeys: problem getting "+
-			"messaging keys from the DB")
+	var dbMessagingKeys []*MessagingGroupEntry
+	var err error
+	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
+		dbMessagingKeys, err = DBGetAllUserGroupEntries(bav.Handle, ownerPublicKey)
+		if err != nil {
+			return nil, errors.Wrapf(err, "GetUserMessagingKeys: problem getting "+
+				"messaging keys from the DB")
+		}
+	} else {
+		dbMessagingKeys, err = DEPRECATEDDBGetAllUserGroupEntries(bav.Handle, ownerPublicKey)
+		if err != nil {
+			return nil, errors.Wrapf(err, "GetUserMessagingKeys: problem getting "+
+				"messaging keys from the DB")
+		}
 	}
 	// Now go through the messaging keys in the DB and add keys we haven't seen before.
 	for _, messagingKeyEntry := range dbMessagingKeys {
@@ -233,21 +284,21 @@ func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte) (
 }
 
 // TODO: Update for Postgres
-func (bav *UtxoView) GetMessagesForUser(publicKey []byte) (
+func (bav *UtxoView) GetMessagesForUser(publicKey []byte, blockHeight uint32) (
 	_messageEntries []*MessageEntry, _messagingKeyEntries []*MessagingGroupEntry, _err error) {
 
-	return bav.GetLimitedMessagesForUser(publicKey, math.MaxUint64)
+	return bav.GetLimitedMessagesForUser(publicKey, math.MaxUint64, blockHeight)
 }
 
 // TODO: Update for Postgres
-func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint64) (
+func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint64, blockHeight uint32) (
 	_messageEntries []*MessageEntry, _messagingGroupEntries []*MessagingGroupEntry, _err error) {
 
 	// This function will fetch up to limit number of messages for a public key. To accomplish
 	// this, we will have to fetch messages for each groups that the user has registered.
 
 	// First get all messaging keys for a user.
-	messagingGroupEntries, err := bav.GetMessagingGroupEntriesForUser(ownerPublicKey)
+	messagingGroupEntries, err := bav.GetMessagingGroupEntriesForUser(ownerPublicKey, blockHeight)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "GetLimitedMessagesForUser: "+
 			"problem getting user messaging keys")
@@ -346,7 +397,7 @@ func ValidateGroupPublicKeyAndName(messagingPublicKey, keyName []byte) error {
 // ValidateKeyAndNameWithUtxo validates public key and key name, which are used in DeSo V3 Messages protocol.
 // The function first checks that the key and name are valid and then fetches an entry from UtxoView or DB
 // to check if the key has been previously saved. This is particularly useful for connecting V3 messages.
-func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicKey, keyName []byte) error {
+func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicKey, keyName []byte, blockHeight uint32) error {
 	// First validate the public key and name with ValidateGroupPublicKeyAndName
 	err := ValidateGroupPublicKeyAndName(messagingPublicKey, keyName)
 	if err != nil {
@@ -356,7 +407,7 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicK
 
 	// Fetch the messaging key entry from UtxoView.
 	messagingGroupKey := NewMessagingGroupKey(NewPublicKey(ownerPublicKey), keyName)
-	messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
+	messagingGroupEntry := bav.GetMessagingGroupKeyToOwnerGroupEntry(messagingGroupKey, blockHeight)
 	if messagingGroupEntry == nil || messagingGroupEntry.isDeleted {
 		return fmt.Errorf("ValidateKeyAndNameWithUtxo: non-existent messaging key entry "+
 			"for ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
@@ -477,7 +528,8 @@ func (bav *UtxoView) _connectPrivateMessage(
 		senderMessagingKeyName, existsSenderName := txn.ExtraData[SenderMessagingGroupKeyName]
 		if existsSender && existsSenderName {
 			// Validate the key and the name using this helper function to make sure messaging key has been previously authorized.
-			if err = bav.ValidateKeyAndNameWithUtxo(txn.PublicKey, senderMessagingPublicKey, senderMessagingKeyName); err != nil {
+			if err = bav.ValidateKeyAndNameWithUtxo(
+				txn.PublicKey, senderMessagingPublicKey, senderMessagingKeyName, blockHeight); err != nil {
 				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
 					"_connectPrivateMessage: failed to validate public key and key name")
 			}
@@ -488,7 +540,8 @@ func (bav *UtxoView) _connectPrivateMessage(
 		// We do an analogous validation for the recipient's messaging key.
 		recipientMessagingKeyName, existsRecipientName := txn.ExtraData[RecipientMessagingGroupKeyName]
 		if existsRecipient && existsRecipientName {
-			if err := bav.ValidateKeyAndNameWithUtxo(txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
+			if err := bav.ValidateKeyAndNameWithUtxo(
+				txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName, blockHeight); err != nil {
 				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
 					"_connectPrivateMessage: failed to validate public key and key name, error: (%v)", err)
 			}
@@ -509,22 +562,16 @@ func (bav *UtxoView) _connectPrivateMessage(
 			// Here we retrieve the MuteList in an optimized way by using the <OptimizedMessagingGroupEntry> prefix
 			// which is also known as the "memberGroupEntry". This prevents fetching potentially 1000s of members
 			// of a group chat simply for checking if a member is muted
-			sender := &MessagingGroupMember{
-				GroupMemberPublicKey: NewPublicKey(senderMessagingPublicKey),
-				GroupMemberKeyName:   NewGroupKeyName(senderMessagingKeyName),
-			}
+			senderMessagingPk := NewPublicKey(senderMessagingPublicKey)
 			// txMeta.RecipientPublicKey is the GroupOwnerPublicKey in disguise
-			optimizedEntry := &MessagingGroupEntry{
-				GroupOwnerPublicKey:   NewPublicKey(txMeta.RecipientPublicKey),
-				MessagingPublicKey:    NewPublicKey(recipientMessagingPublicKey),
-				MessagingGroupKeyName: NewGroupKeyName(recipientMessagingKeyName),
-			}
-			var messagingGroupEntry *MessagingGroupEntry
-			messagingGroupEntry = DBGetMessagingMember(bav.Handle, bav.Snapshot, sender, optimizedEntry)
-			if messagingGroupEntry != nil {
+			groupOwnerMessagingPk := NewPublicKey(txMeta.RecipientPublicKey)
+			messagingGroupKeyName := NewGroupKeyName(recipientMessagingKeyName)
+			messagingGroupEntry := bav.GetMessagingMemberEntry(
+				senderMessagingPk, groupOwnerMessagingPk, messagingGroupKeyName, blockHeight)
+			if messagingGroupEntry != nil && !messagingGroupEntry.isDeleted {
 				muteList := messagingGroupEntry.MuteList
 				for _, mutedMember := range muteList {
-					if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], txn.PublicKey) {
+					if bytes.Equal(mutedMember.GroupMemberPublicKey[:], txn.PublicKey) {
 						return 0, 0, nil, errors.Wrapf(
 							RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
 								"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
