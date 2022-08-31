@@ -888,6 +888,9 @@ type PGDerivedKey struct {
 }
 
 func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
+	if key == nil {
+		return nil
+	}
 	var tsl *TransactionSpendingLimit
 	if len(key.TransactionSpendingLimitTracker) > 0 {
 		tsl = &TransactionSpendingLimit{}

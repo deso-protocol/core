@@ -413,6 +413,17 @@ func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
 	return derivedKeyMappings, nil
 }
 
+func (bav *UtxoView) GetDerivedKeyEntryForDerivedPublicKey(ownerPublicKeyBytes []byte, derivedPublicKeyBytes []byte) *DerivedKeyEntry {
+	ownerPublicKey := NewPublicKey(ownerPublicKeyBytes)
+	derivedPublicKey := NewPublicKey(derivedPublicKeyBytes)
+	mapValue, existsMapValue := bav.DerivedKeyToDerivedEntry[MakeDerivedKeyMapKey(*ownerPublicKey, *derivedPublicKey)]
+	if existsMapValue {
+		return mapValue
+	}
+
+	return bav.GetDbAdapter().GetOwnerToDerivedKeyMapping(*ownerPublicKey, *derivedPublicKey)
+}
+
 // _setDerivedKeyMapping sets a derived key mapping in the utxoView.
 func (bav *UtxoView) _setDerivedKeyMapping(derivedKeyEntry *DerivedKeyEntry) {
 	// If the derivedKeyEntry is nil then there's nothing to do.
