@@ -979,12 +979,20 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 					"Problem deleting MessagingGroupEntry %v from db", *messagingGroupEntry)
 			}
 			for _, member := range existingMessagingGroupEntry.MessagingGroupMembers {
-				if err := DBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot,
-					member, existingMessagingGroupEntry); err != nil {
-
-					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
-						"Problem deleting MessagingGroupEntry recipients (%v) from db", member)
+				if blockHeight < uint64(bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight) {
+					if err := DEPRECATEDDBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot,
+						member, existingMessagingGroupEntry); err != nil {
+						return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+							"Problem deleting MessagingGroupEntry recipients (%v) from db", member)
+					}
+				} else {
+					if err := DBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot,
+						member, existingMessagingGroupEntry); err != nil {
+						return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+							"Problem deleting MessagingGroupEntry recipients (%v) from db", member)
+					}
 				}
+
 			}
 		}
 
@@ -1008,13 +1016,26 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 				// encrypted key addressed to the owner. This could happen when the group is created
 				// by a derived key, and we want to allow the main owner key to be able to read the chat.
 				if reflect.DeepEqual(recipient.GroupMemberPublicKey[:], ownerPublicKey[:]) {
+					// Not adding group owner to HackedMessagingMemberEntry to avoid dups when fetching groups for
+					// someone, because if they are any group's owner, that group will be fetched twice: once because
+					// they are the group owner, and the second time because they are also a messaging member
 					continue
 				}
-				if err := DBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
-					recipient, &ownerPublicKey, messagingGroupEntry); err != nil {
-					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
-						"Problem putting MessagingGroupEntry recipient (%v) to db", recipient)
+				// Backwards compatibility only
+				if blockHeight < uint64(bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight) {
+					if err := DEPRECATEDDBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
+						recipient, &ownerPublicKey, messagingGroupEntry); err != nil {
+						return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+							"Problem putting MessagingGroupEntry recipient (%v) to db", recipient)
+					}
+				} else {
+					if err := DBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
+						recipient, &ownerPublicKey, messagingGroupEntry); err != nil {
+						return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+							"Problem putting MessagingGroupEntry recipient (%v) to db", recipient)
+					}
 				}
+
 			}
 			numPut++
 		}

@@ -1989,6 +1989,11 @@ type MessagingGroupEntry struct {
 	// to the db. This is initially set to false, but can become true if
 	// we disconnect the messaging key from UtxoView
 	isDeleted bool
+
+	// MuteList is a list of members that have been currently muted.
+	// Being muted means the member cannot send any messages to the group
+	// but can still cryptographically read new on-chain messages
+	MuteList []*MessagingGroupMember
 }
 
 func (entry *MessagingGroupEntry) String() string {
@@ -2022,6 +2027,16 @@ func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, s
 	members := sortMessagingGroupMembers(entry.MessagingGroupMembers)
 	for ii := 0; ii < len(members); ii++ {
 		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, members[ii], skipMetadata...)...)
+	}
+	// adding MuteList to the end for backwards compatibility
+	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MuteList)))...)
+	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration) {
+		// We sort the MuteList members because they can be added while iterating over
+		// a map, which could lead to inconsistent orderings across nodes when encoding.
+		muteListMembers := sortMessagingGroupMembers(entry.MuteList)
+		for ii := 0; ii < len(muteListMembers); ii++ {
+			entryBytes = append(entryBytes, EncodeToBytes(blockHeight, muteListMembers[ii], skipMetadata...)...)
+		}
 	}
 	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	return entryBytes
@@ -2061,7 +2076,20 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding recipient")
 		}
 	}
-
+	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration) {
+		muteListLen, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding MuteList length")
+		}
+		for ; muteListLen > 0; muteListLen-- {
+			muteListMember := &MessagingGroupMember{}
+			if exist, err := DecodeFromBytes(muteListMember, rr); exist && err == nil {
+				entry.MuteList = append(entry.MuteList, muteListMember)
+			} else if err != nil {
+				return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding muteListMember")
+			}
+		}
+	}
 	entry.ExtraData, err = DecodeExtraData(rr)
 	if err != nil && strings.Contains(err.Error(), "EOF") {
 		// To preserve backwards-compatibility, we set an empty map and return if we
@@ -2072,12 +2100,11 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 	} else if err != nil {
 		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
 	}
-
 	return nil
 }
 
 func (entry *MessagingGroupEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration)
 }
 
 func (entry *MessagingGroupEntry) GetEncoderType() EncoderType {

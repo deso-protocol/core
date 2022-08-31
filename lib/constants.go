@@ -248,6 +248,10 @@ type ForkHeights struct {
 	// ParamUpdater to use a blockHeight-gated function rather than a constant.
 	ParamUpdaterRefactorBlockHeight uint32
 
+	// DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight defines the height at which point V3 group chat muting
+	// and unmuting, and also Optimized MessagingGroupEntry will be accepted by consensus
+	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -288,7 +292,7 @@ type ForkHeights struct {
 //		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
 //			_, err = rr.ReadByte()
 //			if err != nil {
-//				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte")
+//				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte.")
 //			}
 //		}
 //	MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
@@ -296,7 +300,7 @@ type ForkHeights struct {
 // 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. (Note
 //		the usage of the MigrationName UtxoEntryTestHeight)
 //
-//		return GetMigrationVersion(blockHeight, [UtxoEntryTestHeight])
+//		return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
 //
 // That's it!
 type MigrationName string
@@ -307,11 +311,15 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration MigrationName = "DefaultMigration"
+	DefaultMigration                                   MigrationName = "DefaultMigration"
+	DeSoV3MessagesMutingAndPrefixOptimizationMigration MigrationName = "DeSoV3MessagesMutingAndPrefixOptimizationMigration"
 )
 
 type EncoderMigrationHeights struct {
 	DefaultMigration MigrationHeight
+
+	// DeSoV3MessagesMutingAndPrefixOptimizationMigration coincides with the DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight block
+	DeSoV3MessagesMutingAndPrefixOptimizationMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -320,6 +328,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 0,
 			Height:  forkHeights.DefaultHeight,
 			Name:    DefaultMigration,
+		},
+		DeSoV3MessagesMutingAndPrefixOptimizationMigration: MigrationHeight{
+			Version: 1, // change this to 2 when "unlimited derived keys" is merged
+			Height:  uint64(forkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight),
+			Name:    DeSoV3MessagesMutingAndPrefixOptimizationMigration,
 		},
 	}
 }
@@ -559,6 +572,7 @@ var RegtestForkHeights = ForkHeights{
 	DerivedKeyEthSignatureCompatibilityBlockHeight:       uint32(0),
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
+	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -698,6 +712,9 @@ var MainnetForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:        uint32(137173),
 
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
+
+	// ADD FINAL DATE & TIME HERE
+	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(151616),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -946,6 +963,9 @@ var TestnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
+	// ADD FINAL DATE & TIME HERE
+	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(0),
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -1166,6 +1186,9 @@ const (
 	// TransactionSpendingLimit
 	TransactionSpendingLimitKey = "TransactionSpendingLimit"
 	DerivedKeyMemoKey           = "DerivedKeyMemo"
+
+	// V3 Group Chat Messages ExtraData Key
+	MessagingGroupOperationType = "MessagingGroupOperationType"
 )
 
 // Defines values that may exist in a transaction's ExtraData map
@@ -1219,4 +1242,9 @@ const (
 	// Messaging key constants
 	MinMessagingKeyNameCharacters = 1
 	MaxMessagingKeyNameCharacters = 32
+)
+const (
+	// V3 Group Chat Messages ExtraData["MessagingGroupOperationType"] values
+	MessagingGroupOperationMute   = "MessagingGroupOperationMute"
+	MessagingGroupOperationUnmute = "MessagingGroupOperationUnmute"
 )
