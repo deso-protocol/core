@@ -509,22 +509,20 @@ func (bav *UtxoView) _connectPrivateMessage(
 			// Here we retrieve the MuteList in an optimized way by using the <OptimizedMessagingGroupEntry> prefix
 			// which is also known as the "memberGroupEntry". This prevents fetching potentially 1000s of members
 			// of a group chat simply for checking if a member is muted
-			sender := &MessagingGroupMember{}
-			sender.GroupMemberPublicKey = NewPublicKey(senderMessagingPublicKey)
-			sender.GroupMemberKeyName = NewGroupKeyName(senderMessagingKeyName)
-			optimizedEntry := &MessagingGroupEntry{}
+			sender := &MessagingGroupMember{
+				GroupMemberPublicKey: NewPublicKey(senderMessagingPublicKey),
+				GroupMemberKeyName:   NewGroupKeyName(senderMessagingKeyName),
+			}
 			// txMeta.RecipientPublicKey is the GroupOwnerPublicKey in disguise
-			optimizedEntry.GroupOwnerPublicKey = NewPublicKey(txMeta.RecipientPublicKey)
-			optimizedEntry.MessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
-			optimizedEntry.MessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
+			optimizedEntry := &MessagingGroupEntry{
+				GroupOwnerPublicKey:   NewPublicKey(txMeta.RecipientPublicKey),
+				MessagingPublicKey:    NewPublicKey(recipientMessagingPublicKey),
+				MessagingGroupKeyName: NewGroupKeyName(recipientMessagingKeyName),
+			}
 			var messagingGroupEntry *MessagingGroupEntry
 			messagingGroupEntry = DBGetMessagingMember(bav.Handle, bav.Snapshot, sender, optimizedEntry)
 			if messagingGroupEntry != nil {
 				muteList := messagingGroupEntry.MuteList
-				if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
-					return 0, 0, nil, errors.Wrapf(
-						RuleErrorPrivateMessageParsePubKeyError, "_connectPrivateMessage: Parse error: %v", err)
-				}
 				for _, mutedMember := range muteList {
 					if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], txn.PublicKey) {
 						return 0, 0, nil, errors.Wrapf(
@@ -856,6 +854,23 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// It's worth noting that we index messaging keys by the owner public key and messaging key name.
 	existingEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
 
+	// We will update the existing entry if it exists, or otherwise create a new utxoView entry. The new entry can currently
+	// only be created if the messagingGroupOperation is MessagingGroupOperationAddMembers. If we update the existing entry,
+	// we will set its MessagingMembers and MuteList to these new values based on the txn.
+	var newMessagingMembers []*MessagingGroupMember
+	var newMuteList []*MessagingGroupMember
+
+	// Determine the messaging group operation.
+	var messagingGroupOperation MessagingGroupOperation
+	if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
+		messagingGroupOperation = MessagingGroupOperationAddMembers
+	} else {
+		messagingGroupOperation, err = GetMessagingGroupOperation(txn)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+				"Problem getting messaging group operation")
+		}
+	}
 	// Make sure that the utxoView entry and the transaction entries have the same messaging public keys and encrypted key.
 	// The encrypted key is an auxiliary field that can be used to share the private key of the messaging public keys with
 	// user's main key when registering a messaging key via a derived key. This field will also be used in group chats, as
@@ -867,114 +882,9 @@ func (bav *UtxoView) _connectMessagingGroup(
 		}
 	}
 
-	// This will keep track of all group messaging members primarily for the "else" block.
-	var messagingMembers []*MessagingGroupMember
-
-	// If muting/unmuting txn
-	if operationType, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists &&
-		(string(operationType) == MessagingGroupOperationMute || string(operationType) == MessagingGroupOperationUnmute) {
-		// V3 Messages: MUTING and UNMUTING members
-		if existingEntry != nil && !existingEntry.isDeleted {
-			// Check if blockHeight lower than threshold and still trying to mute
-			if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
-				if _, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists {
-					return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMutingBeforeBlockHeight,
-						"_connectMessagingGroup: Error, blockHeight too low for MessagingGroupOperationMute or "+
-							"MessagingGroupOperationUnmute.")
-				}
-			}
-
-			// MUTING/UNMUTING functionality notes:
-			// In DeSo V3 Messages, Group Chat Owners can now mute or unmute members. This essentially acts like a
-			// de-facto "remove member from group" functionality, but can also be used to mute spammers in large channels.
-			// Note: A muted member can still cryptographically read the past AND future messages in the group, however,
-			// they cannot send messages to this group until they are unmuted by the group owner.
-			// Optimization Problem and Solution:
-			// Every time a new message arrives as a txn, we need to check inside _connectPrivateMessage() if the sender of
-			// the message is muted or not. This would decide whether we reject a message txn or not. However, to check
-			// that, we need to fetch the entire MessagingGroupEntry which may contains 1000s if not 100,000s of members.
-			// This is suboptimal as it can lead to long processing times and high txn costs per message sent. Hence,
-			// we use OptimizedMessagingGroupEntry which is a hack that allows us to store only the relevant member in the
-			// lists - "MessagingGroupMembers" & "MuteList" which otherwise could have been pretty bulky to retrieve
-			// for every single message.
-
-			if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
-				if value, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists {
-					// make deep copy of existingEntry.MuteList to prevent mempool errors
-					var entryCopy *MessagingGroupEntry
-					entryCopy = &MessagingGroupEntry{}
-					rrEntryCopy := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
-					if exists, err := DecodeFromBytes(entryCopy, rrEntryCopy); !exists || err != nil {
-						return 0, 0, nil, errors.Wrapf(err,
-							"_connectMessagingGroup: Error decoding deep copy for V3 Muting.")
-					}
-					// check if mute or unmute
-					if reflect.DeepEqual(value, []byte(MessagingGroupOperationMute)) {
-						for _, s := range txMeta.MessagingGroupMembers {
-							// Make sure GroupOwner is not muting herself
-							if reflect.DeepEqual(s.GroupMemberPublicKey[:], existingEntry.GroupOwnerPublicKey[:]) {
-								return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupOwnerMutingSelf,
-									"_connectMessagingGroup: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
-							}
-							// Add s to muteList
-							for _, a := range entryCopy.MuteList {
-								// Make sure does not already exist to ensure no dups
-								if reflect.DeepEqual(a.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
-									return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyMuted,
-										"_connectMessagingGroup: Cannot mute member that is already muted (%v).", s.GroupMemberPublicKey[:])
-								}
-							}
-							entryCopy.MuteList = append(entryCopy.MuteList, s)
-						}
-					} else if reflect.DeepEqual(value, []byte(MessagingGroupOperationUnmute)) {
-						for _, s := range txMeta.MessagingGroupMembers {
-							isUnmuteValid := false
-							// create temporary mute list to avoid modifying entryCopy.MuteList while iterating over it
-							var tempMuteList []*MessagingGroupMember
-							for _, toUnmute := range entryCopy.MuteList {
-								// if s not in MuteList, add s to the tempMuteList
-								if !reflect.DeepEqual(toUnmute.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
-									tempMuteList = append(tempMuteList, toUnmute)
-								} else {
-									// if s IS in MuteList, then unmute txn is valid, and we continue looping to add remaining members to tempMuteList
-									isUnmuteValid = true
-								}
-							}
-							// If invalid unmuting, then check why:
-							// 1. GroupOwner unmuting herself
-							// 2. Member already unmuted
-							// 3. Member does not exist in group hence cannot unmute nonexistent member
-							if !isUnmuteValid {
-								// 1. GroupOwner unmuting herself is invalid because GroupOwner can never be muted in the first place
-								if reflect.DeepEqual(s.GroupMemberPublicKey[:], entryCopy.GroupOwnerPublicKey[:]) {
-									return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupOwnerUnmutingSelf,
-										"_connectMessagingGroup: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
-								}
-								// 2. Member already unmuted
-								for _, member := range entryCopy.MessagingGroupMembers {
-									if reflect.DeepEqual(member.GroupMemberPublicKey[:], s.GroupMemberPublicKey[:]) {
-										return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyUnmuted,
-											"_connectMessagingGroup: Cannot unmute member that is already unmuted (%v).", s.GroupMemberPublicKey[:])
-									}
-								}
-								// 3. Member does not exist in group hence cannot unmute nonexistent member
-								return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberNotInGroup,
-									"_connectMessagingGroup: Cannot unmute member that does not exist in group (%v).", s.GroupMemberPublicKey[:])
-							}
-							entryCopy.MuteList = tempMuteList
-						}
-					} else {
-						return 0, 0, nil, errors.Wrapf(err,
-							"_connectMessagingGroup: Error, invalid ExtraData[\"OperationType\"] value.")
-					}
-					// Finally set the real existingEntry.MuteList to point to the clone
-					existingEntry = entryCopy
-					messagingMembers = existingEntry.MessagingGroupMembers
-				}
-			}
-		}
-	} else { // Else (normal txn without muting/unmuting)
-
+	// Check what type of operation we are performing.
+	switch messagingGroupOperation {
+	case MessagingGroupOperationAddMembers:
 		// In DeSo V3 Messages, a messaging key can initialize a group chat with more than two parties. In group chats, all
 		// messages are encrypted to the group messaging public key. The group members are provided with an encrypted
 		// private key of the group's messagingPublicKey so that each of them can read the messages. We refer to
@@ -1015,8 +925,10 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 				// Add the existingMember to our helper structs.
 				existingMembers[*existingMember.GroupMemberPublicKey] = true
-				messagingMembers = append(messagingMembers, existingMember)
+				newMessagingMembers = append(newMessagingMembers, existingMember)
 			}
+			// Set the mute list to the existing mute list since we won't be changing it.
+			newMuteList = existingEntry.MuteList
 		}
 
 		// Validate all members.
@@ -1059,8 +971,99 @@ func (bav *UtxoView) _connectMessagingGroup(
 			}
 			// Add the messagingMember to our helper structs.
 			existingMembers[*messagingMember.GroupMemberPublicKey] = true
-			messagingMembers = append(messagingMembers, messagingMember)
+			newMessagingMembers = append(newMessagingMembers, messagingMember)
 		}
+
+	case MessagingGroupOperationMuteMembers:
+		// Muting members assumes the group was already created.
+		if existingEntry == nil || existingEntry.isDeleted {
+			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupDoesntExist,
+				"_connectMessagingGroup: Can't mute members for a non-existing group")
+		}
+		// MUTING/UNMUTING functionality notes:
+		// In DeSo V3 Messages, Group Chat Owners can now mute or unmute members. This essentially acts like a
+		// de-facto "remove member from group" functionality, but can also be used to mute spammers in large channels.
+		// Note: A muted member can still cryptographically read the past AND future messages in the group, however,
+		// they cannot send messages to this group until they are unmuted by the group owner.
+		// Optimization Problem and Solution:
+		// Every time a new message arrives as a txn, we need to check inside _connectPrivateMessage() if the sender of
+		// the message is muted or not. This would decide whether we reject a message txn or not. However, to check
+		// that, we need to fetch the entire MessagingGroupEntry which may contains 1000s if not 100,000s of members.
+		// This is suboptimal as it can lead to long processing times and high txn costs per message sent. Hence,
+		// we use OptimizedMessagingGroupEntry which is a hack that allows us to store only the relevant member in the
+		// lists - "MessagingGroupMembers" & "MuteList" which otherwise could have been pretty bulky to retrieve
+		// for every single message.
+		for _, existingMutedMember := range existingEntry.MuteList {
+			newMuteList = append(newMuteList, existingMutedMember)
+		}
+
+		for _, newlyMutedMember := range txMeta.MessagingGroupMembers {
+			// Make sure GroupOwner is not muting herself
+			if reflect.DeepEqual(newlyMutedMember.GroupMemberPublicKey[:], existingEntry.GroupOwnerPublicKey[:]) {
+				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupOwnerMutingSelf,
+					"_connectMessagingGroup: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
+			}
+			// Add member to newMuteList
+			for _, existingMutedMember := range existingEntry.MuteList {
+				// Check if member is already muted, in such case we error.
+				if reflect.DeepEqual(existingMutedMember.GroupMemberPublicKey[:], newlyMutedMember.GroupMemberPublicKey[:]) {
+					return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyMuted,
+						"_connectMessagingGroup: Cannot mute member that is already muted (%v).", newlyMutedMember.GroupMemberPublicKey[:])
+				}
+			}
+			newMuteList = append(newMuteList, newlyMutedMember)
+		}
+		// Set the messaging members to the existing members since we won't be changing them.
+		newMessagingMembers = existingEntry.MessagingGroupMembers
+
+	case MessagingGroupOperationUnmuteMembers:
+		// Unmuting members assumes the group was already created.
+		if existingEntry == nil || existingEntry.isDeleted {
+			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupDoesntExist,
+				"_connectMessagingGroup: Can't mute members for a non-existing group")
+		}
+		for _, member := range txMeta.MessagingGroupMembers {
+			isUnmuteValid := false
+			// create temporary mute list to avoid modifying entryCopy.MuteList while iterating over it
+			for _, toUnmute := range existingEntry.MuteList {
+				// if member not in MuteList, add member to the tempMuteList
+				if !reflect.DeepEqual(toUnmute.GroupMemberPublicKey[:], member.GroupMemberPublicKey[:]) {
+					newMuteList = append(newMuteList, toUnmute)
+				} else {
+					// if member IS in MuteList, then unmute txn is valid, and we continue looping to add remaining members to newMuteList.
+					isUnmuteValid = true
+				}
+			}
+			// If invalid unmuting, then check why:
+			// 1. GroupOwner unmuting herself
+			// 2. Member already unmuted
+			// 3. Member does not exist in group hence cannot unmute nonexistent member
+			if !isUnmuteValid {
+				// 1. GroupOwner unmuting herself is invalid because GroupOwner can never be muted in the first place
+				if reflect.DeepEqual(member.GroupMemberPublicKey[:], existingEntry.GroupOwnerPublicKey[:]) {
+					return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupOwnerUnmutingSelf,
+						"_connectMessagingGroup: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
+				}
+				// 2. Member already unmuted
+				for _, entryMembers := range existingEntry.MessagingGroupMembers {
+					if reflect.DeepEqual(member.GroupMemberPublicKey[:], entryMembers.GroupMemberPublicKey[:]) {
+						return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyUnmuted,
+							"_connectMessagingGroup: Cannot unmute member that is already unmuted (%v).", member.GroupMemberPublicKey[:])
+					}
+				}
+				// 3. Member does not exist in group hence cannot unmute nonexistent member
+				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberNotInGroup,
+					"_connectMessagingGroup: Cannot unmute member that does not exist in group (%v).", member.GroupMemberPublicKey[:])
+			}
+			// Set the messaging members to the existing members since we won't be changing them.
+			newMessagingMembers = existingEntry.MessagingGroupMembers
+		}
+	default:
+		// If we're here, then the operation type is invalid. Currently, this can only
+		// happen if the operation is of type MessagingGroupOperationRemoveMembers
+		return 0, 0, nil, errors.Wrapf(err,
+			"_connectMessagingGroup: Error, messaging group operation.")
+
 	}
 
 	// merge extra data
@@ -1073,13 +1076,6 @@ func (bav *UtxoView) _connectMessagingGroup(
 		extraData = mergeExtraData(existingExtraData, txn.ExtraData)
 	}
 
-	var muteList []*MessagingGroupMember
-	if blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
-		if existingEntry != nil && !existingEntry.isDeleted {
-			muteList = existingEntry.MuteList
-		}
-	}
-
 	// TODO: Currently, it is technically possible for any user to add *any other* user to *any group* with
 	// a garbage EncryptedKey. This can be filtered out at the app layer, though, and for now it leaves the
 	// app layer with more flexibility compared to if we implemented an explicit permissioning model at the
@@ -1090,8 +1086,8 @@ func (bav *UtxoView) _connectMessagingGroup(
 		GroupOwnerPublicKey:   &messagingGroupKey.OwnerPublicKey,
 		MessagingPublicKey:    messagingPublicKey,
 		MessagingGroupKeyName: NewGroupKeyName(txMeta.MessagingGroupKeyName),
-		MessagingGroupMembers: messagingMembers,
-		MuteList:              muteList,
+		MessagingGroupMembers: newMessagingMembers,
+		MuteList:              newMuteList,
 		ExtraData:             extraData,
 	}
 	// Create a utxoOps entry, we make a copy of the existing entry.

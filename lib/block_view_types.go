@@ -1960,6 +1960,13 @@ func (key *MessagingGroupKey) String() string {
 		key.OwnerPublicKey, key.GroupKeyName)
 }
 
+type MessagingGroupType byte
+
+const (
+	MessagingGroupEntryType MessagingGroupType = iota
+	MessagingGroupSimplifiedEntryType
+)
+
 // MessagingGroupEntry is used to update messaging keys for a user, this was added in
 // the DeSo V3 Messages protocol.
 type MessagingGroupEntry struct {
@@ -1985,15 +1992,17 @@ type MessagingGroupEntry struct {
 	// ExtraData is an arbitrary key value map
 	ExtraData map[string][]byte
 
+	// MuteList is a list of members that have been currently muted.
+	// Being muted means the member cannot send any messages to the group
+	// but can still cryptographically read new on-chain messages
+	MuteList []*MessagingGroupMember
+
 	// Whether this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if
 	// we disconnect the messaging key from UtxoView
 	isDeleted bool
 
-	// MuteList is a list of members that have been currently muted.
-	// Being muted means the member cannot send any messages to the group
-	// but can still cryptographically read new on-chain messages
-	MuteList []*MessagingGroupMember
+	groupType MessagingGroupType
 }
 
 func (entry *MessagingGroupEntry) String() string {

@@ -1243,8 +1243,3 @@ const (
 	MinMessagingKeyNameCharacters = 1
 	MaxMessagingKeyNameCharacters = 32
 )
-const (
-	// V3 Group Chat Messages ExtraData["MessagingGroupOperationType"] values
-	MessagingGroupOperationMute   = "MessagingGroupOperationMute"
-	MessagingGroupOperationUnmute = "MessagingGroupOperationUnmute"
-)

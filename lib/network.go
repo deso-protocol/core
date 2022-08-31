@@ -5977,6 +5977,16 @@ func DeserializePubKeyToUint64Map(data []byte) (map[PublicKey]uint64, error) {
 // MessagingGroupMetadata
 // ==================================================================
 
+// MessagingGroupOperation represents V3 Group Chat Messages ExtraData["MessagingGroupOperationType"] values
+type MessagingGroupOperation byte
+
+const (
+	MessagingGroupOperationAddMembers MessagingGroupOperation = iota
+	MessagingGroupOperationRemoveMembers
+	MessagingGroupOperationMuteMembers
+	MessagingGroupOperationUnmuteMembers
+)
+
 type MessagingGroupMetadata struct {
 	// This struct is very similar to the MessagingGroupEntry type.
 	MessagingPublicKey    []byte
@@ -6062,4 +6072,51 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 
 func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 	return &MessagingGroupMetadata{}
+}
+
+// GetMessagingGroupOperation returns the messaging group operation based on the transaction. In particular, we check
+// transaction's ExtraData to see whether it's a mute/unmute operation.
+func GetMessagingGroupOperation(txn *MsgDeSoTxn) (MessagingGroupOperation, error) {
+	// If the transaction is nil then we return an error.
+	if txn == nil {
+		return 0, fmt.Errorf("GetMessagingGroupOperation: nil txn")
+	}
+
+	// Make sure this is a messaging group transaction.
+	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
+		return 0, fmt.Errorf("GetMessagingGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
+	}
+
+	// Sanity-check cast the transaction metadata to a messaging group metadata.
+	_, ok := txn.TxnMeta.(*MessagingGroupMetadata)
+	if !ok {
+		return 0, fmt.Errorf("GetMessagingGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
+	}
+
+	// If the transaction's ExtraData is nil then we assume MessagingGroupOperationAddMembers
+	messagingGroupOperation := MessagingGroupOperationAddMembers
+	if txn.ExtraData == nil {
+		return messagingGroupOperation, nil
+	}
+
+	// Check if the transaction's ExtraData contains a MessagingGroupOperationType.
+	if operationTypeBytes, operationTypeExists := txn.ExtraData[MessagingGroupOperationType];
+		operationTypeExists && len(operationTypeBytes) == 1 {
+		operationType := MessagingGroupOperation(operationTypeBytes[0])
+
+		switch operationType {
+		case MessagingGroupOperationAddMembers:
+			messagingGroupOperation = MessagingGroupOperationAddMembers
+		case MessagingGroupOperationRemoveMembers:
+			messagingGroupOperation = MessagingGroupOperationRemoveMembers
+		case MessagingGroupOperationMuteMembers:
+			messagingGroupOperation = MessagingGroupOperationMuteMembers
+		case MessagingGroupOperationUnmuteMembers:
+			messagingGroupOperation = MessagingGroupOperationUnmuteMembers
+		default:
+			return 0, fmt.Errorf("GetMessagingGroupOperation: invalid operation type %v", operationType)
+		}
+	}
+
+	return messagingGroupOperation, nil
 }

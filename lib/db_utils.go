@@ -270,7 +270,7 @@ type DBPrefixes struct {
 	//
 	// * For each group that a user is a member of, we store a value in this index of
 	//   the form:
-	//   - <OwnerPublicKey for user, GroupMessagingPublicKey> -> <HackedMessagingGroupEntry>
+	//   - <GroupMemberPublicKey for user, GroupMessagingPublicKey> -> <HackedMessagingGroupEntry>
 	//   The value needs to contain enough information to allow us to look up the
 	//   group's metatdata in the _PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName index. It's also convenient for
 	//   the value to contain the encrypted messaging key for the user so that we can
@@ -286,12 +286,12 @@ type DBPrefixes struct {
 	//   the index rather than the group owner's public key. This becomes clear if
 	//   you read all the fetching code around this index.
 	//
-	// <prefix, OwnerPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
-	DeprecatedPrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey []byte `prefix_id:"[58]" is_state:"true"` // Deprecated: Use PrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName instead
+	// <prefix, GroupMemberPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
+	DeprecatedPrefixGroupMembershipIndex []byte `prefix_id:"[58]" is_state:"true"` // Deprecated: Use PrefixGroupMembershipIndex instead
 
 	// New <HackedMessagingKeyEntry> :
 	// <prefix, GroupMemberPublicKey [33]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte>
-	PrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName []byte `prefix_id:"[63]" is_state:"true"`
+	PrefixGroupMembershipIndex []byte `prefix_id:"[63]" is_state:"true"`
 
 	// Prefix for Authorize Derived Key transactions:
 	// 		<prefix_id, OwnerPublicKey [33]byte, DerivedPublicKey [33]byte> -> <DerivedKeyEntry>
@@ -468,7 +468,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName) {
 		// prefix_id:"[57]"
 		return true, &MessagingGroupEntry{}
-	} else if bytes.Equal(prefix, Prefixes.DeprecatedPrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey) {
+	} else if bytes.Equal(prefix, Prefixes.DeprecatedPrefixGroupMembershipIndex) {
 		// prefix_id:"[58]"
 		return true, &MessagingGroupEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixAuthorizeDerivedKey) {
@@ -483,7 +483,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixDAOCoinLimitOrderByOrderID) {
 		// prefix_id:"[62]"
 		return true, &DAOCoinLimitOrderEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixGroupMembershipIndex) {
 		// prefix_id:"[63]"
 		return true, &MessagingGroupEntry{}
 	}
@@ -1656,16 +1656,16 @@ func DBGetAllUserGroupEntries(handle *badger.DB, ownerPublicKey []byte) ([]*Mess
 // <prefix, GroupMemberPublicKey, GroupOwnerPublicKey, GroupKeyName> -> <OptimizedMessagingGroupEntry>
 // -------------------------------------------------------------------------------------
 
-func _dbKeyForMessagingGroupMember(groupMemberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName...)
+func _dbKeyForGroupMembershipIndex(groupMemberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixGroupMembershipIndex...)
 	key := append(prefixCopy, groupMemberPublicKey[:]...)
 	key = append(key, groupOwnerPublicKey[:]...)
 	key = append(key, groupKeyName[:]...)
 	return key
 }
 
-func _dbSeekPrefixForMessagingGroupMember(groupMemberPublicKey *PublicKey) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixOptimizedMessagingGroupMetadataByMemberPubKeyAndOwnerPubKeyAndGroupKeyName...)
+func _dbSeekPrefixForGroupMembershipIndex(groupMemberPublicKey *PublicKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixGroupMembershipIndex...)
 	return append(prefixCopy, groupMemberPublicKey[:]...)
 }
 
@@ -1697,15 +1697,16 @@ func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 		MessagingGroupMembers: []*MessagingGroupMember{
 			messagingGroupMember,
 		},
-		MuteList: muteList,
+		MuteList:  muteList,
+		groupType: MessagingGroupSimplifiedEntryType,
 	}
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForMessagingGroupMember(
+	if err := DBSetWithTxn(txn, snap, _dbKeyForGroupMembershipIndex(
 		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.MessagingGroupKeyName),
 		EncodeToBytes(blockHeight, memberGroupEntry)); err != nil {
 
 		return errors.Wrapf(err, "DBPutMessagingGroupMemberWithTxn: Problem setting messaging recipient with key (%v) "+
-			"and entry (%v) in the db", _dbKeyForMessagingGroupMember(
+			"and entry (%v) in the db", _dbKeyForGroupMembershipIndex(
 			messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.MessagingGroupKeyName),
 			EncodeToBytes(blockHeight, memberGroupEntry))
 	}
@@ -1724,7 +1725,7 @@ func DBPutMessagingGroupMember(handle *badger.DB, snap *Snapshot, blockHeight ui
 func DBGetMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, messagingGroupMember *MessagingGroupMember,
 	messagingGroupEntry *MessagingGroupEntry) *MessagingGroupEntry {
 
-	key := _dbKeyForMessagingGroupMember(
+	key := _dbKeyForGroupMembershipIndex(
 		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.MessagingGroupKeyName)
 	// This is a hacked MessagingGroupEntry that contains a single member entry
 	// for the member we're fetching in the members list.
@@ -1735,6 +1736,7 @@ func DBGetMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, messaging
 	messagingGroupMemberEntry := &MessagingGroupEntry{}
 	rr := bytes.NewReader(messagingGroupMemberEntryBytes)
 	DecodeFromBytes(messagingGroupMemberEntry, rr)
+	messagingGroupMemberEntry.groupType = MessagingGroupSimplifiedEntryType
 
 	return messagingGroupMemberEntry
 }
@@ -1755,7 +1757,7 @@ func DBGetAllMessagingGroupEntriesForMemberWithTxn(txn *badger.Txn, groupMemberP
 
 	// This function is used to fetch all messaging
 	var messagingGroupEntries []*MessagingGroupEntry
-	prefix := _dbSeekPrefixForMessagingGroupMember(groupMemberPublicKey)
+	prefix := _dbSeekPrefixForGroupMembershipIndex(groupMemberPublicKey)
 	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllMessagingGroupEntriesForMemberWithTxn: "+
@@ -1769,6 +1771,7 @@ func DBGetAllMessagingGroupEntriesForMemberWithTxn(txn *badger.Txn, groupMemberP
 			return nil, errors.Wrapf(err, "DBGetAllMessagingGroupEntriesForMemberWithTxn: problem reading "+
 				"an entry from DB")
 		}
+		messagingGroupEntry.groupType = MessagingGroupSimplifiedEntryType
 
 		messagingGroupEntries = append(messagingGroupEntries, messagingGroupEntry)
 	}
@@ -1789,7 +1792,7 @@ func DBDeleteMessagingGroupMemberMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	// When a message exists, delete the mapping for the sender and receiver.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMessagingGroupMember(
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForGroupMembershipIndex(
 		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.MessagingGroupKeyName)); err != nil {
 
 		return errors.Wrapf(err, "DBDeleteMessagingGroupMemberMappingWithTxn: Deleting mapping for public key %v "+
@@ -1816,7 +1819,7 @@ func DBDeleteMessagingGroupMemberMappings(handle *badger.DB, snap *Snapshot,
 
 // Deprecated
 func _DEPRECATEDdbKeyForMessagingGroupMember(memberPublicKey *PublicKey, groupMessagingPublicKey *PublicKey) []byte {
-	prefixCopy := append([]byte{}, Prefixes.DeprecatedPrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey...)
+	prefixCopy := append([]byte{}, Prefixes.DeprecatedPrefixGroupMembershipIndex...)
 	key := append(prefixCopy, memberPublicKey[:]...)
 	key = append(key, groupMessagingPublicKey[:]...)
 	return key
@@ -1824,7 +1827,7 @@ func _DEPRECATEDdbKeyForMessagingGroupMember(memberPublicKey *PublicKey, groupMe
 
 // Deprecated
 func _DEPRECATEDdbSeekPrefixForMessagingGroupMember(memberPublicKey *PublicKey) []byte {
-	prefixCopy := append([]byte{}, Prefixes.DeprecatedPrefixMessagingGroupMetadataByMemberPubKeyAndGroupMessagingPubKey...)
+	prefixCopy := append([]byte{}, Prefixes.DeprecatedPrefixGroupMembershipIndex...)
 	return append(prefixCopy, memberPublicKey[:]...)
 }
 
@@ -3828,8 +3831,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -7770,7 +7773,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -7897,7 +7900,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
