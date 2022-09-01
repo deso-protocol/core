@@ -655,7 +655,7 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 func (srv *Server) CheckIfStatePrefixExistsForBlockHeight(blockHeight uint64, prefix []byte) bool {
 	switch prefix[0] {
 	case Prefixes.PrefixGroupMembershipIndex[0]:
-		if uint32(blockHeight) < srv.blockchain.params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+		if uint32(blockHeight) < srv.blockchain.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 			return false
 		}
 	}

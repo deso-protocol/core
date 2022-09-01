@@ -94,7 +94,7 @@ func (bav *UtxoView) GetMessagingMemberEntry(memberPublicKey *PublicKey, groupOw
 	// GetMessagingMemberEntry compatible with the new membership index, that's why we don't attempt to fetch entries from
 	// the deprecated prefix, even though it would have saved us some read time. The call to
 	// GetMessagingGroupKeyToMessagingGroupEntryMapping will fetch the full entry.
-	if len(forceFullEntry) == 0 && blockHeight >= bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+	if len(forceFullEntry) == 0 && blockHeight >= bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 		messagingGroupEntry := DBGetEntryFromMembershipIndex(bav.Handle, bav.Snapshot, memberPublicKey, groupOwnerPublicKey, groupKeyName)
 		if messagingGroupEntry != nil {
 			return messagingGroupEntry
@@ -266,7 +266,7 @@ func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte, bloc
 	// We fetched all the entries from the UtxoView, so we move to the DB.
 	var dbMessagingKeys []*MessagingGroupEntry
 	var err error
-	if blockHeight >= bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+	if blockHeight >= bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 		dbMessagingKeys, err = DBGetAllUserGroupEntries(bav.Handle, ownerPublicKey)
 		if err != nil {
 			return nil, errors.Wrapf(err, "GetUserMessagingKeys: problem getting "+
@@ -570,13 +570,13 @@ func (bav *UtxoView) _connectPrivateMessage(
 			messageEntry.RecipientMessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
 		}
 
-		// After the DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight block height we force the usage of V3 messages.
-		if blockHeight >= bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+		// After the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight block height we force the usage of V3 messages.
+		if blockHeight >= bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 			if !(existsSender && existsSenderName && existsRecipient && existsRecipientName) {
 				return 0, 0, nil, errors.Wrapf(
 					RuleErrorPrivateMessageSentWithoutProperMessagingParty,
 					"_connectPrivateMessage: SenderKey, SenderName, RecipientKey, RecipientName should all exist "+
-						"in ExtraData after DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight.")
+						"in ExtraData after DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight.")
 			}
 			// Reject message if sender is muted
 			// Here we retrieve the MuteList in an optimized way by using the <MembershipIndex> prefix
@@ -929,7 +929,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 	// Determine the messaging group operation.
 	var messagingGroupOperation MessagingGroupOperation
-	if blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 		messagingGroupOperation = MessagingGroupOperationAddMembers
 	} else {
 		messagingGroupOperation, err = GetMessagingGroupOperation(txn)

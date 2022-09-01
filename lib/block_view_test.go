@@ -702,7 +702,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
 	// Make sure encoder migrations are not triggered yet.
 	GlobalDeSoParams = *params
-	GlobalDeSoParams.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = uint32(100)
+	GlobalDeSoParams.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = uint32(100)
 	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
 		if GlobalDeSoParams.EncoderMigrationHeightsList[ii].Version == 0 {
 			continue

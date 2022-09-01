@@ -152,7 +152,7 @@ func TestMessagingGroupEntryDecoding(t *testing.T) {
 	// The way this test is structured won't work with the newly added mute list
 	// so we set the fork height to something high so that the mute list doesn't exist.
 	fh := RegtestForkHeights
-	fh.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = 10
+	fh.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 10
 	GlobalDeSoParams.ForkHeights = fh
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&fh)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&fh)

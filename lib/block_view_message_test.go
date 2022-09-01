@@ -718,7 +718,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 		var entries []*MessagingGroupEntry
 		var err error
 		blockHeight := testMeta.chain.blockTip().Height + 1
-		if blockHeight >= testMeta.params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+		if blockHeight >= testMeta.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 			entries, err = DBGetAllUserGroupEntriesWithTxn(txn, publicKey)
 			require.NoError(err)
 		} else {
@@ -740,7 +740,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 				// than the entire group chat. If the expected entry assumes the old, full-entry then we will rewrite it
 				// to the empty []*MessagingGroupMember (+ the member entry for the owner).
 				if bytes.Equal(entry.GroupOwnerPublicKey[:], publicKey) &&
-					blockHeight >= testMeta.params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+					blockHeight >= testMeta.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 					actualEntry.MessagingGroupMembers = []*MessagingGroupMember{}
 					for _, member := range expectedEntry.MessagingGroupMembers {
 						if bytes.Equal(member.GroupMemberPublicKey[:], publicKey) {
@@ -783,7 +783,7 @@ func TestMessagingKeys(t *testing.T) {
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 	// Set the DeSo V3 messages block height to 0
 	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
-	params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+	params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
 	params.EncoderMigrationHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization.Height = 0
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	GlobalDeSoParams = *params
@@ -1837,7 +1837,7 @@ func TestGroupMessages(t *testing.T) {
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 	// Set the DeSo V3 messages block height to 0
 	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
-	params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+	params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
 	params.EncoderMigrationHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization.Height = 0
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	GlobalDeSoParams = *params
@@ -2535,7 +2535,7 @@ func TestGroupMessages(t *testing.T) {
 
 			require.NoError(db.View(func(txn *badger.Txn) error {
 				blockHeight := chain.blockTip().Height
-				if blockHeight < params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+				if blockHeight < params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 					msgKeys, err = DEPRECATEDDBGetAllMessagingGroupEntriesForMemberWithTxn(txn, NewPublicKey(pk))
 				} else {
 					msgKeys, err = DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn(txn, NewPublicKey(pk))
@@ -2842,8 +2842,8 @@ func TestGroupMessages(t *testing.T) {
 
 		{
 			// Deprecated Hacked Prefix Test
-			// Let us set the DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight to much higher than current blockHeight
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = chain.blockTip().Height + 10
+			// Let us set the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight to much higher than current blockHeight
+			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = chain.blockTip().Height + 10
 			// Let us now mute m2
 			var muteList []*MessagingGroupMember
 			muteList = append(muteList, &MessagingGroupMember{
@@ -2867,7 +2867,7 @@ func TestGroupMessages(t *testing.T) {
 				extraData,
 				RuleErrorMessagingMemberAlreadyExists)
 			// reset to 0 for further testing
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
 		}
 
 		{
@@ -2913,18 +2913,18 @@ func TestGroupMessages(t *testing.T) {
 				NewGroupKeyName(gangKey),
 				nil,
 			}
-			// Let us set the DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight to much higher than current blockHeight,
+			// Let us set the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight to much higher than current blockHeight,
 			// don't flush because we are modifying the fork height. This transaction should pass because the connect logic
 			// will disregard the fork height and ignore the fact that m2 is muted. That's why we don't flush.
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = chain.blockTip().Height + 10
+			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = chain.blockTip().Height + 10
 			_helpConnectPrivateMessageWithPartyAndFlush(testMeta, m2Priv, muteMessageEntry, nil, false)
-			// Now let's try to send a message to the group with DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight set to 0
+			// Now let's try to send a message to the group with DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight set to 0
 			// This should fail since the member is muted.
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
 			_helpConnectPrivateMessageWithParty(testMeta, m2Priv, muteMessageEntry, RuleErrorMessagingMemberMuted)
 			// m2 is currently muted, so the txn should not complete muting should work due to gating of the check-if-muted
 			// functionality. Note: This is just a sanity check and this probably won't happen on mainnet as the blockHeight
-			// does not suddenly decrease below DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight after a muting txn:
+			// does not suddenly decrease below DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight after a muting txn:
 			// The message should be unsuccessfully added, so we still have:
 			// m2 -> group(sender, recipient, m0, m2)
 			// 	sender: 7
@@ -2934,13 +2934,13 @@ func TestGroupMessages(t *testing.T) {
 			// 	m2: 2
 			require.Equal(false, _verifyMessageParty(testMeta, expectedMessageEntries, muteMessageEntry, false))
 
-			// Lower the DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight to zero, otherwise we won't fetch all the group
+			// Lower the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight to zero, otherwise we won't fetch all the group
 			// chats and the _verifyMessages will fail. If we're past the block height, we use the membership index prefix to
 			// store user's group chats. However, if we're before the block height, we use the old deprecated db prefix to
 			// store the group chats that a user is a member of. If a user became a member of a group chat AFTER the block height
 			// the corresponding group chat will not be saved in the deprecated prefix. As this is the case here, we need to
 			// lower the block height to zero to fetch all the group chats.
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
 			// Verify the messages AGAIN.
 			_verifyMessages(testMeta, expectedMessageEntries)
 			// Just to sanity-check, verify that the number of messages is as intended.

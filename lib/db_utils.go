@@ -297,7 +297,7 @@ type DBPrefixes struct {
 	// (only values per EncoderMigrations). The migration to a new prefix will cause all membership entries to
 	// disappear, since they won't be re-added to the new membership index prefix. However, since the main group
 	// entry prefix is never modified, you could "reset" the addition of membership index entries in the flush logic
-	// if you simply add a group member after the block height DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight.
+	// if you simply add a group member after the block height DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight.
 	//
 	// <prefix, GroupMemberPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <MessagingGroupSimplifiedEntry>
 	DeprecatedPrefixGroupMembershipIndex []byte `prefix_id:"[58]" is_state:"true"` // Deprecated: Use PrefixGroupMembershipIndex instead
