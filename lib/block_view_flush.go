@@ -988,6 +988,9 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 				}
 			}
 			for _, member := range existingMessagingGroupEntry.MessagingGroupMembers {
+				// Prior to the fork, group members were stored under the deprecated index. After the fork,
+				// all members are stored in the new membership index. Depending on the blockheight, we remove
+				// existing entries from the corresponding index.
 				if blockHeight < uint64(bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight) {
 					if err := DEPRECATEDDBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot,
 						member, existingMessagingGroupEntry); err != nil {
@@ -1035,7 +1038,9 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 				}
 			}
 			for _, member := range messagingGroupEntry.MessagingGroupMembers {
-				// Backwards compatibility only
+				// Prior to the fork, group members were stored under the deprecated index. After the fork,
+				// all members are stored in the new membership index. Depending on the blockheight, we add
+				// entries to the corresponding index.
 				if blockHeight < uint64(bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight) {
 					if err := DEPRECATEDDBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
 						member, ownerPublicKey, messagingGroupEntry); err != nil {

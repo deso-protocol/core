@@ -388,7 +388,7 @@ func TestPrivateMessage(t *testing.T) {
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
-		blockHeight := chain.blockTip().Height
+		blockHeight := chain.blockTip().Height + 1
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, blockHeight)
 		require.NoError(err)
 
@@ -778,9 +778,12 @@ func TestMessagingKeys(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Allow extra data
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
-
 	// Set the DeSo V3 messages block height to 0
 	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
+	params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+	params.EncoderMigrationHeights.DeSoV3MessagesMutingAndPrefixOptimizationMigration.Height = 0
+	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	GlobalDeSoParams = *params
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -1656,14 +1659,22 @@ func _connectPrivateMessageWithParty(testMeta *TestMeta, senderPkBytes []byte, s
 ) {
 	_connectPrivateMessageWithPartyWithExtraData(testMeta, senderPkBytes, senderPrivBase58, recipientPkBytes,
 		senderMessagingPublicKey, senderMessagingKeyName, recipientMessagingPublicKey, recipientMessagingKeyName,
-		encryptedMessageText, tstampNanos, nil, expectedError)
+		encryptedMessageText, tstampNanos, nil, expectedError, true)
+}
+
+func _helpConnectPrivateMessageWithPartyAndFlush(testMeta *TestMeta, senderPrivBase58 string,
+	entry MessageEntry, expectedError error, flush bool) {
+
+	_connectPrivateMessageWithPartyWithExtraData(testMeta, entry.SenderPublicKey[:], senderPrivBase58, entry.RecipientPublicKey[:],
+		entry.SenderMessagingPublicKey[:], entry.SenderMessagingGroupKeyName[:], entry.RecipientMessagingPublicKey[:],
+		entry.RecipientMessagingGroupKeyName[:], hex.EncodeToString(entry.EncryptedText), entry.TstampNanos, nil, expectedError, flush)
 }
 
 // This helper function connects a private message transaction with the message party in ExtraData.
 func _connectPrivateMessageWithPartyWithExtraData(testMeta *TestMeta, senderPkBytes []byte, senderPrivBase58 string,
 	recipientPkBytes, senderMessagingPublicKey []byte, senderMessagingKeyName []byte, recipientMessagingPublicKey []byte,
 	recipientMessagingKeyName []byte, encryptedMessageText string, tstampNanos uint64, extraData map[string][]byte,
-	expectedError error) {
+	expectedError error, flush bool) {
 
 	require := require.New(testMeta.t)
 
@@ -1704,6 +1715,9 @@ func _connectPrivateMessageWithPartyWithExtraData(testMeta *TestMeta, senderPkBy
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 	}
 	require.Equal(OperationTypePrivateMessage, utxoOps[len(utxoOps)-1].Type)
+	if !flush {
+		return
+	}
 	require.NoError(utxoView.FlushToDb(uint64(blockHeight)))
 
 	testMeta.expectedSenderBalances = append(
@@ -1741,10 +1755,11 @@ func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKe
 	if messageEntryRecipient == nil || messageEntryRecipient.isDeleted {
 		return false
 	}
-	if !reflect.DeepEqual(EncodeToBytes(0, messageEntrySender), EncodeToBytes(0, messageEntryRecipient)) {
+	blockHeight := uint64(testMeta.chain.blockTip().Height + 1)
+	if !reflect.DeepEqual(EncodeToBytes(blockHeight, messageEntrySender), EncodeToBytes(blockHeight, messageEntryRecipient)) {
 		return false
 	}
-	if !reflect.DeepEqual(EncodeToBytes(0, messageEntrySender), EncodeToBytes(0, &expectedEntry)) {
+	if !reflect.DeepEqual(EncodeToBytes(blockHeight, messageEntrySender), EncodeToBytes(blockHeight, &expectedEntry)) {
 		return false
 	}
 	addedEntries := make(map[PublicKey]bool)
@@ -1815,7 +1830,14 @@ func TestGroupMessages(t *testing.T) {
 	_ = miner
 
 	// Set the DeSo V3 messages block height to 0
+
+	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
+	// Set the DeSo V3 messages block height to 0
 	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
+	params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+	params.EncoderMigrationHeights.DeSoV3MessagesMutingAndPrefixOptimizationMigration.Height = 0
+	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	GlobalDeSoParams = *params
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -1936,6 +1958,14 @@ func TestGroupMessages(t *testing.T) {
 		// sender -> recipient
 		//	sender: 1
 		//	recipient: 1
+		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
+		// transaction is processed as an extra sanity-check.
+		messageEntry.ExtraData = make(map[string][]byte)
+		messageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+		messageEntry.ExtraData[SenderMessagingPublicKey] = senderPkBytes
+		messageEntry.ExtraData[SenderMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
+		messageEntry.ExtraData[RecipientMessagingPublicKey] = recipientPkBytes
+		messageEntry.ExtraData[RecipientMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
 		_verifyMessages(testMeta, expectedMessageEntries)
@@ -1969,6 +1999,18 @@ func TestGroupMessages(t *testing.T) {
 			nil)
 		require.Equal(true, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 
+		// Verify that all the messages are correct.
+		_verifyMessages(testMeta, expectedMessageEntries)
+		// Just to sanity-check, verify that the number of messages is as intended.
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+		require.NoError(err)
+		messages, _, err := utxoView.GetMessagesForUser(senderPkBytes, chain.blockTip().Height+1)
+		require.NoError(err)
+		require.Equal(1, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes, chain.blockTip().Height+1)
+		require.NoError(err)
+		require.Equal(1, len(messages))
+
 		// SenderPk sends a message from their default key to recipient's base key, should pass.
 		tstampNanos1 := uint64(time.Now().UnixNano())
 		testMessage1 := []byte{1, 2, 3, 4, 5, 6, 7, 8}
@@ -1990,7 +2032,27 @@ func TestGroupMessages(t *testing.T) {
 		// sender -> recipient
 		// 	sender: 2
 		//	recipient: 2
+		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
+		// transaction is processed as an extra sanity-check.
+		messageEntry.ExtraData = make(map[string][]byte)
+		messageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+		messageEntry.ExtraData[SenderMessagingPublicKey] = entry.MessagingPublicKey[:]
+		messageEntry.ExtraData[SenderMessagingGroupKeyName] = NewGroupKeyName(defaultKey).ToBytes()
+		messageEntry.ExtraData[RecipientMessagingPublicKey] = recipientPkBytes
+		messageEntry.ExtraData[RecipientMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
+
+		// Verify that all the messages are correct.
+		_verifyMessages(testMeta, expectedMessageEntries)
+		// Just to sanity-check, verify that the number of messages is as intended.
+		utxoView, err = NewUtxoView(db, params, nil, chain.snapshot)
+		require.NoError(err)
+		messages, _, err = utxoView.GetMessagesForUser(senderPkBytes, chain.blockTip().Height+1)
+		require.NoError(err)
+		require.Equal(2, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes, chain.blockTip().Height+1)
+		require.NoError(err)
+		require.Equal(2, len(messages))
 
 		// Add another message cause why not:
 		tstampNanos2 := uint64(time.Now().UnixNano())
@@ -2003,6 +2065,17 @@ func TestGroupMessages(t *testing.T) {
 		// 	sender: 3
 		//	recipient: 3
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
+		// Verify that all the messages are correct.
+		_verifyMessages(testMeta, expectedMessageEntries)
+		// Just to sanity-check, verify that the number of messages is as intended.
+		utxoView, err = NewUtxoView(db, params, nil, chain.snapshot)
+		require.NoError(err)
+		messages, _, err = utxoView.GetMessagesForUser(senderPkBytes, chain.blockTip().Height+1)
+		require.NoError(err)
+		require.Equal(3, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes, chain.blockTip().Height+1)
+		require.NoError(err)
+		require.Equal(3, len(messages))
 
 		// Register a default key for the recipient, so we can try sending messages between two messaging keys.
 		defaultKey = []byte("default-key")
@@ -2031,7 +2104,27 @@ func TestGroupMessages(t *testing.T) {
 		// sender -> recipient
 		// 	sender: 4
 		//	recipient: 4
+		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
+		// transaction is processed as an extra sanity-check.
+		messageEntry.ExtraData = make(map[string][]byte)
+		messageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+		messageEntry.ExtraData[SenderMessagingPublicKey] = entry.MessagingPublicKey[:]
+		messageEntry.ExtraData[SenderMessagingGroupKeyName] = NewGroupKeyName(defaultKey).ToBytes()
+		messageEntry.ExtraData[RecipientMessagingPublicKey] = entryRecipient.MessagingPublicKey.ToBytes()
+		messageEntry.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(defaultKey).ToBytes()
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
+
+		// Verify that all the messages are correct.
+		_verifyMessages(testMeta, expectedMessageEntries)
+		// Just to sanity-check, verify that the number of messages is as intended.
+		utxoView, err = NewUtxoView(db, params, nil, chain.snapshot)
+		require.NoError(err)
+		messages, _, err = utxoView.GetMessagesForUser(senderPkBytes, chain.blockTip().Height+1)
+		require.NoError(err)
+		require.Equal(4, len(messages))
+		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes, chain.blockTip().Height+1)
+		require.NoError(err)
+		require.Equal(4, len(messages))
 
 		// Now send a message from recipient -> sender
 		tstampNanos4 := uint64(time.Now().UnixNano())
@@ -2047,14 +2140,22 @@ func TestGroupMessages(t *testing.T) {
 		// recipient -> sender
 		// 	sender: 5
 		//	recipient: 5
+		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
+		// transaction is processed as an extra sanity-check.
+		messageEntry.ExtraData = make(map[string][]byte)
+		messageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+		messageEntry.ExtraData[SenderMessagingPublicKey] = entryRecipient.MessagingPublicKey.ToBytes()
+		messageEntry.ExtraData[SenderMessagingGroupKeyName] = NewGroupKeyName(defaultKey).ToBytes()
+		messageEntry.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
+		messageEntry.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(defaultKey).ToBytes()
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
 		// Verify that all the messages are correct.
 		_verifyMessages(testMeta, expectedMessageEntries)
 		// Just to sanity-check, verify that the number of messages is as intended.
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, err = NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
-		messages, _, err := utxoView.GetMessagesForUser(senderPkBytes, chain.blockTip().Height+1)
+		messages, _, err = utxoView.GetMessagesForUser(senderPkBytes, chain.blockTip().Height+1)
 		require.NoError(err)
 		require.Equal(5, len(messages))
 		messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes, chain.blockTip().Height+1)
@@ -2105,6 +2206,14 @@ func TestGroupMessages(t *testing.T) {
 		// 	sender: 5
 		//	recipient: 5
 		//  m1: 1
+		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
+		// transaction is processed as an extra sanity-check.
+		messageEntry1.ExtraData = make(map[string][]byte)
+		messageEntry1.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+		messageEntry1.ExtraData[SenderMessagingPublicKey] = m1PubKey
+		messageEntry1.ExtraData[SenderMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
+		messageEntry1.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
+		messageEntry1.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(addingMembersKey).ToBytes()
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry1, true))
 
 		_verifyMessages(testMeta, expectedMessageEntries)
@@ -2234,6 +2343,26 @@ func TestGroupMessages(t *testing.T) {
 
 		// Verify that all messages are present in the DB.
 		// We set groupOwner=true because of the edge-case where the user who made the group sends the message.
+		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
+		// transaction is processed as an extra sanity-check.
+		messageEntry1.ExtraData = make(map[string][]byte)
+		messageEntry1.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+		messageEntry1.ExtraData[SenderMessagingPublicKey] = m1PubKey
+		messageEntry1.ExtraData[SenderMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
+		messageEntry1.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
+		messageEntry1.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(addingMembersKey).ToBytes()
+		messageEntry2.ExtraData = make(map[string][]byte)
+		messageEntry2.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+		messageEntry2.ExtraData[SenderMessagingPublicKey] = m0PublicKey.ToBytes()
+		messageEntry2.ExtraData[SenderMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
+		messageEntry2.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
+		messageEntry2.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(addingMembersKey).ToBytes()
+		messageEntry3.ExtraData = make(map[string][]byte)
+		messageEntry3.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+		messageEntry3.ExtraData[SenderMessagingPublicKey] = messagingKey.MessagingPublicKey.ToBytes()
+		messageEntry3.ExtraData[SenderMessagingGroupKeyName] = DefaultGroupKeyName().ToBytes()
+		messageEntry3.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
+		messageEntry3.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(addingMembersKey).ToBytes()
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry1, true))
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry2, false))
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry3, false))
@@ -2365,6 +2494,12 @@ func TestGroupMessages(t *testing.T) {
 		// 	m0: 4
 		// 	m2: 1
 
+		messageEntry.ExtraData = make(map[string][]byte)
+		messageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+		messageEntry.ExtraData[SenderMessagingPublicKey] = m0PublicKey.ToBytes()
+		messageEntry.ExtraData[SenderMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
+		messageEntry.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
+		messageEntry.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(gangKey).ToBytes()
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
 		// Verify the messages.
@@ -2576,6 +2711,14 @@ func TestGroupMessages(t *testing.T) {
 		//  m1: 4
 		// 	m0: 5
 		// 	m2: 2
+		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
+		// transaction is processed as an extra sanity-check.
+		unmuteMessageEntry.ExtraData = make(map[string][]byte)
+		unmuteMessageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+		unmuteMessageEntry.ExtraData[SenderMessagingPublicKey] = m0PublicKey.ToBytes()
+		unmuteMessageEntry.ExtraData[SenderMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
+		unmuteMessageEntry.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
+		unmuteMessageEntry.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(gangKey).ToBytes()
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, unmuteMessageEntry, false))
 
 		// Verify the messages AGAIN.
@@ -2770,21 +2913,26 @@ func TestGroupMessages(t *testing.T) {
 				NewGroupKeyName(gangKey),
 				nil,
 			}
-			// Let us set the DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight to much higher than current blockHeight
+			// Let us set the DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight to much higher than current blockHeight,
+			// don't flush because we are modifying the fork height. This transaction should pass because the connect logic
+			// will disregard the fork height and ignore the fact that m2 is muted. That's why we don't flush.
 			params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = chain.blockTip().Height + 10
-			_helpConnectPrivateMessageWithParty(testMeta, m2Priv, muteMessageEntry, nil)
-			// m2 is currently muted, but that is irrelevant because the blockHeight is lower than MutingBlockHeight,
-			// so the txn should complete normally and the muting should NOT work due to gating of the check-if-muted functionality.
-			// Note: This is just a sanity check and this probably won't happen on mainnet as the blockHeight does not
-			// suddenly decrease below DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight after a muting txn:
-			// The message should be successfully added, so we now have:
+			_helpConnectPrivateMessageWithPartyAndFlush(testMeta, m2Priv, muteMessageEntry, nil, false)
+			// Now let's try to send a message to the group with DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight set to 0
+			// This should fail since the member is muted.
+			params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+			_helpConnectPrivateMessageWithParty(testMeta, m2Priv, muteMessageEntry, RuleErrorMessagingMemberMuted)
+			// m2 is currently muted, so the txn should not complete muting should work due to gating of the check-if-muted
+			// functionality. Note: This is just a sanity check and this probably won't happen on mainnet as the blockHeight
+			// does not suddenly decrease below DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight after a muting txn:
+			// The message should be unsuccessfully added, so we still have:
 			// m2 -> group(sender, recipient, m0, m2)
-			// 	sender: 8
-			//	recipient: 9
+			// 	sender: 7
+			//	recipient: 8
 			//  m1: 4
-			// 	m0: 6
-			// 	m2: 3
-			require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, muteMessageEntry, false))
+			// 	m0: 5
+			// 	m2: 2
+			require.Equal(false, _verifyMessageParty(testMeta, expectedMessageEntries, muteMessageEntry, false))
 
 			// Lower the DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight to zero, otherwise we won't fetch all the group
 			// chats and the _verifyMessages will fail. If we're past the block height, we use the membership index prefix to
@@ -2800,19 +2948,19 @@ func TestGroupMessages(t *testing.T) {
 			require.NoError(err)
 			messages, _, err = utxoView.GetMessagesForUser(senderPkBytes, chain.blockTip().Height+1)
 			require.NoError(err)
-			require.Equal(8, len(messages))
+			require.Equal(7, len(messages))
 			messages, _, err = utxoView.GetMessagesForUser(recipientPkBytes, chain.blockTip().Height+1)
 			require.NoError(err)
-			require.Equal(9, len(messages))
+			require.Equal(8, len(messages))
 			messages, _, err = utxoView.GetMessagesForUser(m1PubKey, chain.blockTip().Height+1)
 			require.NoError(err)
 			require.Equal(4, len(messages))
 			messages, _, err = utxoView.GetMessagesForUser(m0PubKey, chain.blockTip().Height+1)
 			require.NoError(err)
-			require.Equal(6, len(messages))
+			require.Equal(5, len(messages))
 			messages, _, err = utxoView.GetMessagesForUser(m2PubKey, chain.blockTip().Height+1)
 			require.NoError(err)
-			require.Equal(3, len(messages))
+			require.Equal(2, len(messages))
 		}
 	}
 

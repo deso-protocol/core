@@ -62,12 +62,18 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 	bav._setMessageEntryMappings(&tombstoneMessageEntry)
 }
 
+// GetMessagingMemberEntry will check the membership index for membership of memberPublicKey in the group
+// <groupOwnerPublicKey, groupKeyName>. Based on the blockheight, we fetch the full group or we fetch
+// the simplified message group entry from the membership index. forceFullEntry is an optional parameter that
+// will force us to always fetch the full group entry.
 func (bav *UtxoView) GetMessagingMemberEntry(memberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey,
 	groupKeyName *GroupKeyName, blockHeight uint32, forceFullEntry ...bool) *MessagingGroupEntry {
 
+	// If either of the provided parameters is nil, we return.
 	if memberPublicKey == nil || groupOwnerPublicKey == nil || groupKeyName == nil {
 		return nil
 	}
+	// If the group is the base key, then we return right away since base key cannot be modified by transactions.
 	messagingGroupKey := NewMessagingGroupKey(groupOwnerPublicKey, groupKeyName[:])
 	if EqualGroupKeyName(&messagingGroupKey.GroupKeyName, BaseGroupKeyName()) {
 		return &MessagingGroupEntry{
@@ -77,10 +83,16 @@ func (bav *UtxoView) GetMessagingMemberEntry(memberPublicKey *PublicKey, groupOw
 		}
 	}
 
+	// If the group has already been fetched in this utxoView, then we get it directly from there.
 	if mapValue, exists := bav.MessagingGroupKeyToMessagingGroupEntry[*messagingGroupKey]; exists {
 		return mapValue
 	}
 
+	// If we allow for simplified entries, then we will check the membership index for the member. Note that we don't
+	// check the deprecated prefix for the membership entry, this is because it would require us to change the function's
+	// signature to include the group's messaging public key. However, for simplicity, we keep the signature of
+	// GetMessagingMemberEntry compatible with the new membership index, that's why we don't attempt to fetch entries from
+	// the deprecated prefix, even though it would have saved us some read time.
 	if len(forceFullEntry) == 0 && blockHeight >= bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
 		messagingGroupEntry := DBGetEntryFromMembershipIndex(bav.Handle, bav.Snapshot, memberPublicKey, groupOwnerPublicKey, groupKeyName)
 		if messagingGroupEntry != nil {
@@ -88,16 +100,21 @@ func (bav *UtxoView) GetMessagingMemberEntry(memberPublicKey *PublicKey, groupOw
 		}
 	}
 
+	// In case the group entry was not in utxo_view, nor was it in the membership index, we fetch the full group directly.
 	return bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
 }
 
-func (bav *UtxoView) GetMessagingGroupKeyToOwnerGroupEntry(messagingGroupKey *MessagingGroupKey,
+// GetMessagingGroupForMessagingGroupKeyExistence will check if the group with key messagingGroupKey exists, if so it will fetch
+// the simplified group entry from the membership index. If the forceFullEntry is set or if we're not past the membership
+// index block height, then we will fetch the entire group entry from the db (provided it exists).
+func (bav *UtxoView) GetMessagingGroupForMessagingGroupKeyExistence(messagingGroupKey *MessagingGroupKey,
 	blockHeight uint32, forceFullEntry ...bool) *MessagingGroupEntry {
 
 	if messagingGroupKey == nil {
 		return nil
 	}
 
+	// The owner is a member of their own group by default, hence they will be present in the membership index.
 	ownerPublicKey := &messagingGroupKey.OwnerPublicKey
 	groupKeyName := &messagingGroupKey.GroupKeyName
 	return bav.GetMessagingMemberEntry(ownerPublicKey, ownerPublicKey, groupKeyName, blockHeight, forceFullEntry...)
@@ -407,7 +424,8 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicK
 
 	// Fetch the messaging key entry from UtxoView.
 	messagingGroupKey := NewMessagingGroupKey(NewPublicKey(ownerPublicKey), keyName)
-	messagingGroupEntry := bav.GetMessagingGroupKeyToOwnerGroupEntry(messagingGroupKey, blockHeight)
+	// To validate a messaging group key, we try to fetch the simplified group entry from the membership index.
+	messagingGroupEntry := bav.GetMessagingGroupForMessagingGroupKeyExistence(messagingGroupKey, blockHeight)
 	if messagingGroupEntry == nil || messagingGroupEntry.isDeleted {
 		return fmt.Errorf("ValidateKeyAndNameWithUtxo: non-existent messaging key entry "+
 			"for ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))

@@ -6100,8 +6100,7 @@ func GetMessagingGroupOperation(txn *MsgDeSoTxn) (MessagingGroupOperation, error
 	}
 
 	// Check if the transaction's ExtraData contains a MessagingGroupOperationType.
-	if operationTypeBytes, operationTypeExists := txn.ExtraData[MessagingGroupOperationType];
-		operationTypeExists && len(operationTypeBytes) == 1 {
+	if operationTypeBytes, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists && len(operationTypeBytes) == 1 {
 		operationType := MessagingGroupOperation(operationTypeBytes[0])
 
 		switch operationType {
