@@ -31,6 +31,14 @@ func TestRandomTypeEncoders(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
+	// Make sure encoder migrations are not triggered yet.
+	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
+		if GlobalDeSoParams.EncoderMigrationHeightsList[ii].Version == 0 {
+			continue
+		}
+		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 1
+	}
+
 	encodeCases := _getAllDeSoEncoders(t)
 	decodeCases := _getAllDeSoEncoders(t)
 	// Make sure the encoder migration for v3 messages is tested.
@@ -144,7 +152,7 @@ func TestMessagingGroupEntryDecoding(t *testing.T) {
 	// The way this test is structured won't work with the newly added mute list
 	// so we set the fork height to something high so that the mute list doesn't exist.
 	fh := RegtestForkHeights
-	fh.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = 10
+	fh.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = 10
 	GlobalDeSoParams.ForkHeights = fh
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&fh)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&fh)

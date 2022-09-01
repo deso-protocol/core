@@ -10,6 +10,14 @@ type DbAdapter struct {
 	snapshot   *Snapshot
 }
 
+func (bc *Blockchain) NewDbAdapter() *DbAdapter {
+	return &DbAdapter{
+		badgerDb:   bc.db,
+		postgresDb: bc.postgres,
+		snapshot:   bc.snapshot,
+	}
+}
+
 func (bav *UtxoView) GetDbAdapter() *DbAdapter {
 	snap := bav.Snapshot
 	if bav.Postgres != nil {
@@ -36,6 +44,18 @@ func (adapter *DbAdapter) GetBalanceEntry(holder *PKID, creator *PKID, isDAOCoin
 	}
 
 	return DbGetBalanceEntry(adapter.badgerDb, adapter.snapshot, holder, creator, isDAOCoin)
+}
+
+//
+// Derived keys
+//
+
+func (adapter *DbAdapter) GetOwnerToDerivedKeyMapping(ownerPublicKey PublicKey, derivedPublicKey PublicKey) *DerivedKeyEntry {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetDerivedKey(&ownerPublicKey, &derivedPublicKey).NewDerivedKeyEntry()
+	}
+
+	return DBGetOwnerToDerivedKeyMapping(adapter.badgerDb, adapter.snapshot, ownerPublicKey, derivedPublicKey)
 }
 
 //

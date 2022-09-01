@@ -297,7 +297,7 @@ type DBPrefixes struct {
 	// (only values per EncoderMigrations). The migration to a new prefix will cause all membership entries to
 	// disappear, since they won't be re-added to the new membership index prefix. However, since the main group
 	// entry prefix is never modified, you could "reset" the addition of membership index entries in the flush logic
-	// if you simply add a group member after the block height DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight.
+	// if you simply add a group member after the block height DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight.
 	//
 	// <prefix, GroupMemberPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <MessagingGroupSimplifiedEntry>
 	DeprecatedPrefixGroupMembershipIndex []byte `prefix_id:"[58]" is_state:"true"` // Deprecated: Use PrefixGroupMembershipIndex instead
@@ -346,7 +346,7 @@ type DBPrefixes struct {
 // In particular, this is used by the EncoderMigration service, and used to determine how to encode/decode db entries.
 func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEncoder) {
 	if len(prefix) > MaxPrefixLen {
-		panic(fmt.Sprintf("Called with prefix longer than MaxPrefixLen, prefix: (%v), MaxPrefixLen: (%v)", prefix, MaxPrefixLen))
+		panic(any(fmt.Sprintf("Called with prefix longer than MaxPrefixLen, prefix: (%v), MaxPrefixLen: (%v)", prefix, MaxPrefixLen)))
 	}
 	if bytes.Equal(prefix, Prefixes.PrefixUtxoKeyToUtxoEntry) {
 		// prefix_id:"[5]"
@@ -506,7 +506,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 
 func StateKeyToDeSoEncoder(key []byte) (_isEncoder bool, _encoder DeSoEncoder) {
 	if MaxPrefixLen > 1 {
-		panic(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen))
+		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))
 	}
 	return StatePrefixToDeSoEncoder(key[:1])
 }
@@ -520,11 +520,11 @@ func getPrefixIdValue(structFields reflect.StructField, fieldType reflect.Type) 
 		ref.Elem().Set(reflect.MakeSlice(fieldType, 0, 0))
 		if value != "" && value != "[]" {
 			if err := json.Unmarshal([]byte(value), ref.Interface()); err != nil {
-				panic(err)
+				panic(any(err))
 			}
 		}
 	} else {
-		panic(fmt.Errorf("prefix_id cannot be empty"))
+		panic(any(fmt.Errorf("prefix_id cannot be empty")))
 	}
 	return ref.Elem()
 }
@@ -574,13 +574,13 @@ func GetStatePrefixes() *DBStatePrefixes {
 		prefixId := getPrefixIdValue(structFields.Field(i), prefixField.Type())
 		prefixBytes := prefixId.Bytes()
 		if len(prefixBytes) > MaxPrefixLen {
-			panic(fmt.Errorf("prefix (%v) is longer than MaxPrefixLen: (%v)",
-				structFields.Field(i).Name, MaxPrefixLen))
+			panic(any(fmt.Errorf("prefix (%v) is longer than MaxPrefixLen: (%v)",
+				structFields.Field(i).Name, MaxPrefixLen)))
 		}
 		prefix := prefixBytes[0]
 		if statePrefixes.StatePrefixesMap[prefix] {
-			panic(fmt.Errorf("prefix (%v) already exists in StatePrefixesMap. You created a "+
-				"prefix overlap, fix it", structFields.Field(i).Name))
+			panic(any(fmt.Errorf("prefix (%v) already exists in StatePrefixesMap. You created a "+
+				"prefix overlap, fix it", structFields.Field(i).Name)))
 		}
 		if structFields.Field(i).Tag.Get("is_state") == "true" {
 			statePrefixes.StatePrefixesMap[prefix] = true
@@ -610,7 +610,7 @@ func GetStatePrefixes() *DBStatePrefixes {
 // isStateKey checks if a key is a state-related key.
 func isStateKey(key []byte) bool {
 	if MaxPrefixLen > 1 {
-		panic(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen))
+		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))
 	}
 	prefix := key[0]
 	isState, exists := StatePrefixes.StatePrefixesMap[prefix]
@@ -620,7 +620,7 @@ func isStateKey(key []byte) bool {
 // isTxIndexKey checks if a key is a txindex-related key.
 func isTxIndexKey(key []byte) bool {
 	if MaxPrefixLen > 1 {
-		panic(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen))
+		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))
 	}
 	prefix := key[0]
 	for _, txIndexPrefix := range StatePrefixes.TxIndexPrefixes {
@@ -661,7 +661,7 @@ func EncodeKeyAndValueForChecksum(key []byte, value []byte, blockHeight uint64) 
 		} else if err != nil {
 			glog.Errorf("Some odd problem: isEncoder %v encoder %v, key bytes (%v), value bytes (%v), blockHeight (%v)",
 				isEncoder, encoder, key, checksumValue, blockHeight)
-			panic(errors.Wrapf(err, "EncodeKeyAndValueForChecksum: The schema is corrupted or value doesn't match the key"))
+			panic(any(errors.Wrapf(err, "EncodeKeyAndValueForChecksum: The schema is corrupted or value doesn't match the key")))
 		}
 	}
 
@@ -3905,8 +3905,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -4030,6 +4030,40 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	}
 
 	return nil
+}
+
+// GetBlockTipHeight fetches the current block tip height from the database.
+func GetBlockTipHeight(handle *badger.DB, bitcoinNodes bool) (uint64, error) {
+	var blockHeight uint64
+	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
+	// Seek prefix will look for the block node with the largest block height. We populate the maximal possible
+	// uint32 and iterate backwards.
+	seekPrefix := append(prefix, []byte{0xff, 0xff, 0xff, 0xff}...)
+
+	err := handle.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Reverse = true
+		nodeIterator := txn.NewIterator(opts)
+		defer nodeIterator.Close()
+
+		// Fetch a single blocknode and then return.
+		nodeIterator.Seek(seekPrefix)
+		if !nodeIterator.ValidForPrefix(prefix) {
+			return fmt.Errorf("No block nodes were found in the database")
+		}
+
+		item := nodeIterator.Item()
+		err := item.Value(func(blockNodeBytes []byte) error {
+			blockNode, err := DeserializeBlockNode(blockNodeBytes)
+			if err != nil {
+				return err
+			}
+			blockHeight = uint64(blockNode.Height)
+			return nil
+		})
+		return err
+	})
+	return blockHeight, err
 }
 
 func GetBlockIndex(handle *badger.DB, bitcoinNodes bool) (map[BlockHash]*BlockNode, error) {
@@ -7847,7 +7881,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -7974,7 +8008,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
