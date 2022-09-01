@@ -714,7 +714,7 @@ var MainnetForkHeights = ForkHeights{
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
 	// ADD FINAL DATE & TIME HERE
-	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(99999999),
+	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(999999999),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.

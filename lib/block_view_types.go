@@ -2038,16 +2038,16 @@ func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, s
 		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, members[ii], skipMetadata...)...)
 	}
 	// adding MuteList to the end for backwards compatibility
-	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MuteList)))...)
+	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration) {
 		// We sort the MuteList members because they can be added while iterating over
 		// a map, which could lead to inconsistent orderings across nodes when encoding.
+		entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MuteList)))...)
 		muteListMembers := sortMessagingGroupMembers(entry.MuteList)
 		for ii := 0; ii < len(muteListMembers); ii++ {
 			entryBytes = append(entryBytes, EncodeToBytes(blockHeight, muteListMembers[ii], skipMetadata...)...)
 		}
 	}
-	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	return entryBytes
 }
 
@@ -2085,6 +2085,16 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding recipient")
 		}
 	}
+	entry.ExtraData, err = DecodeExtraData(rr)
+	if err != nil && strings.Contains(err.Error(), "EOF") {
+		// To preserve backwards-compatibility, we set an empty map and return if we
+		// encounter an EOF error decoding ExtraData.
+		glog.Warning(err, "MessagingGroupEntry.Decode: problem decoding extra data. "+
+			"Please resync your node to upgrade your datadir before the next hard fork.")
+		return nil
+	} else if err != nil {
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
+	}
 	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration) {
 		muteListLen, err := ReadUvarint(rr)
 		if err != nil {
@@ -2098,16 +2108,6 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 				return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding muteListMember")
 			}
 		}
-	}
-	entry.ExtraData, err = DecodeExtraData(rr)
-	if err != nil && strings.Contains(err.Error(), "EOF") {
-		// To preserve backwards-compatibility, we set an empty map and return if we
-		// encounter an EOF error decoding ExtraData.
-		glog.Warning(err, "MessagingGroupEntry.Decode: problem decoding extra data. "+
-			"Please resync your node to upgrade your datadir before the next hard fork.")
-		return nil
-	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
 	}
 	return nil
 }

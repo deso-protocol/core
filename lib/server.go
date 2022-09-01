@@ -1331,7 +1331,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			"checksum received from the peer. It is likely that HyperSync encountered some unexpected error earlier. "+
 			"You should report this as an issue on DeSo github https://github.com/deso-protocol/core. It is also possible "+
 			"that the peer is misbehaving and sent invalid snapshot chunks. In either way, we'll restart the node and "+
-			"attempt to HyperSync from the beginning.")))
+			"attempt to HyperSync from the beginning. Local db checksum %v; peer's snapshot checksum %v",
+			checksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
 		return
 	}
 
