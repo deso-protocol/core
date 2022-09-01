@@ -1276,6 +1276,12 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	var completedPrefixes [][]byte
 	for _, prefix := range StatePrefixes.StatePrefixesList {
+		// FIXME: This is a temporary hack that we have to employ until we are confident nodes have
+		// 	downloaded the latest code that sends an empty db chunk for a non-existing prefix.
+		if ok := srv.CheckIfStatePrefixExistsForBlockHeight(
+			srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, prefix); !ok {
+			continue
+		}
 		completed := false
 		// Check if the prefix has been completed.
 		for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
