@@ -2037,8 +2037,8 @@ func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, s
 	for ii := 0; ii < len(members); ii++ {
 		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, members[ii], skipMetadata...)...)
 	}
-	// adding MuteList to the end for backwards compatibility
 	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
+	// adding MuteList to the end for backwards compatibility
 	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration) {
 		// We sort the MuteList members because they can be added while iterating over
 		// a map, which could lead to inconsistent orderings across nodes when encoding.
@@ -2095,6 +2095,7 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 	} else if err != nil {
 		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
 	}
+	// Decoding mute list at the end of the entry.
 	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration) {
 		muteListLen, err := ReadUvarint(rr)
 		if err != nil {

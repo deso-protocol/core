@@ -736,6 +736,9 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 				actualEntry := &MessagingGroupEntry{}
 				_, err = DecodeFromBytes(actualEntry, bytes.NewReader(EncodeToBytes(uint64(blockHeight), expectedEntry)))
 				require.NoError(err)
+				// If we're after the block height then the DB will fetch the simplified membership entry, rather
+				// than the entire group chat. If the expected entry assumes the old, full-entry then we will rewrite it
+				// to the empty []*MessagingGroupMember (+ the member entry for the owner).
 				if bytes.Equal(entry.GroupOwnerPublicKey[:], publicKey) &&
 					blockHeight >= testMeta.params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
 					actualEntry.MessagingGroupMembers = []*MessagingGroupMember{}
@@ -2388,7 +2391,6 @@ func TestGroupMessages(t *testing.T) {
 		// Create the group messaging key.
 		gangKey := []byte("gang-gang")
 		priv, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, gangKey)
-
 		privBytes := priv.Serialize()
 
 		// Define helper functions for encryption/decryption so that we can do some real crypto.
@@ -2682,8 +2684,6 @@ func TestGroupMessages(t *testing.T) {
 			unmuteList,
 			extraData,
 			nil)
-		// The decrypted key should match the original private key.
-		require.Equal(privBytes, m0PrivBytes)
 		// Now it's time to encrypt the message.
 		tstampNanos = uint64(time.Now().UnixNano())
 		testMessage = []byte("DeSo Group Chat Unmuting Works because this will be sent!")

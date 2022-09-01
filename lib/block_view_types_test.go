@@ -34,7 +34,7 @@ func TestRandomTypeEncoders(t *testing.T) {
 	encodeCases := _getAllDeSoEncoders(t)
 	decodeCases := _getAllDeSoEncoders(t)
 	// Make sure the encoder migration for v3 messages is tested.
-	GlobalDeSoParams.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+	GlobalDeSoParams.ForkHeights = RegtestForkHeights
 	for ii := range encodeCases {
 		gofakeit.Struct(encodeCases[ii])
 		encodedBytes := EncodeToBytes(0, encodeCases[ii])
