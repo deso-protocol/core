@@ -1416,7 +1416,7 @@ func (srv *Server) _startSync() {
 	var bestPeer *Peer
 	for _, peer := range srv.cmgr.GetAllPeers() {
 		if !peer.IsSyncCandidate() {
-			glog.Infof("Peer is not sync candidate: %v", peer)
+			glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", peer, peer.isOutbound)
 			continue
 		}
 
@@ -1481,7 +1481,7 @@ func (srv *Server) _handleNewPeer(pp *Peer) {
 		srv._startSync()
 	}
 	if !isSyncCandidate {
-		glog.Infof("Peer is not sync candidate: %v", pp)
+		glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", pp, pp.isOutbound)
 	}
 }
 
