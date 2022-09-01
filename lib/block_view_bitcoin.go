@@ -167,7 +167,7 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	if len(txn.PublicKey) != 0 {
 		return 0, 0, nil, RuleErrorBitcoinExchangeShouldNotHavePublicKey
 	}
-	if txn.Signature != nil {
+	if txn.Signature.Sign != nil {
 		return 0, 0, nil, RuleErrorBitcoinExchangeShouldNotHaveSignature
 	}
 

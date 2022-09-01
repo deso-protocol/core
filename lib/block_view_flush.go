@@ -13,7 +13,7 @@ func (bav *UtxoView) FlushToDb(blockHeight uint64) error {
 	// Make sure everything happens inside a single transaction.
 	var err error
 	if bav.Postgres != nil {
-		err = bav.Postgres.FlushView(bav)
+		err = bav.Postgres.FlushView(bav, blockHeight)
 		if err != nil {
 			return err
 		}
@@ -978,7 +978,12 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
 					"Problem deleting MessagingGroupEntry %v from db", *messagingGroupEntry)
 			}
-			if blockHeight >= uint64(bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight) {
+			// The PrefixOptimization fork introduces a new group membership index. By default, it contains a
+			// simplified messaging group entry for the owner of every group. We will delete it now.
+			// Note that the latter for-loop over the MessagingGroupMembers doesn't conflict with this delete.
+			// If a membership index entry with key <ownerPublicKey, ownerPublicKey, keyName> was part of the
+			// MessagingGroupMembers, it just gets deleted anyway.
+			if blockHeight >= uint64(bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight) {
 				// Group owner is added as member by default in the new fork. More on this in the later comment.
 				// We make sure to delete the owner from the membership index.
 				if err := DBDeleteMessagingGroupOwnerFromMembershipIndexWithTxn(
@@ -991,7 +996,7 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 				// Prior to the fork, group members were stored under the deprecated index. After the fork,
 				// all members are stored in the new membership index. Depending on the blockheight, we remove
 				// existing entries from the corresponding index.
-				if blockHeight < uint64(bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight) {
+				if blockHeight < uint64(bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight) {
 					if err := DEPRECATEDDBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot,
 						member, existingMessagingGroupEntry); err != nil {
 						return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
@@ -1004,7 +1009,6 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 							"Problem deleting MessagingGroupEntry recipients (%v) from db", member)
 					}
 				}
-
 			}
 		}
 
@@ -1023,8 +1027,8 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
 					"Problem putting MessagingGroupEntry %v to db", *messagingGroupEntry)
 			}
-			if blockHeight >= uint64(bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight) {
-				// Group owner can be one of the recipients, particularly when we want to add the
+			if blockHeight >= uint64(bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight) {
+				// Group owner can be one of the group members, particularly when we want to add the
 				// encrypted key addressed to the owner. This could happen when the group is created
 				// by a derived key, and we want to allow the main owner key to be able to read the chat.
 				// After the muting and prefix optimization block height, we will store the owner's groups
@@ -1041,7 +1045,9 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 				// Prior to the fork, group members were stored under the deprecated index. After the fork,
 				// all members are stored in the new membership index. Depending on the blockheight, we add
 				// entries to the corresponding index.
-				if blockHeight < uint64(bav.Params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight) {
+				// The membership index allows us to store only the relevant member in the lists - "MessagingGroupMembers" &
+				// "MuteList" which otherwise could have been pretty bulky to retrieve for every single message.
+				if blockHeight < uint64(bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight) {
 					if err := DEPRECATEDDBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
 						member, ownerPublicKey, messagingGroupEntry); err != nil {
 						return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+

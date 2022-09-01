@@ -266,31 +266,44 @@ type DBPrefixes struct {
 	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <MessagingGroupEntry>
 	PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName []byte `prefix_id:"[57]" is_state:"true"`
 
-	// Prefix for Message MessagingGroupMembers:
+	// Prefix for Group Membership Index:
 	//
 	// * For each group that a user is a member of, we store a value in this index of
 	//   the form:
-	//   - <GroupMemberPublicKey for user, GroupMessagingPublicKey> -> <HackedMessagingGroupEntry>
+	//   - <GroupMemberPublicKey for user, GroupOwnerPublicKey, GroupKeyName> -> <MessagingGroupSimplifiedEntry>
 	//   The value needs to contain enough information to allow us to look up the
-	//   group's metatdata in the _PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName index. It's also convenient for
-	//   the value to contain the encrypted messaging key for the user so that we can
-	//   decrypt messages for this user *without* looking up the group.
+	//   group's metatdata in the _PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName
+	//   index. It's also convenient for the value to contain the encrypted messaging key for
+	//   the user so that we can decrypt messages for this user *without* looking up the group.
 	//
-	// * HackedMessagingGroupEntry is a MessagingGroupEntry that we overload to store
-	// 	 information on a member of a group. We couldn't use the MessagingGroupMember
-	//   because we wanted to store additional information that "back-references" the
-	//   MessagingGroupEntry for this group.
+	// * MessagingGroupSimplifiedEntry is a MessagingGroupEntry that has the groupType set
+	//   to MessagingGroupSimplifiedEntryType. It contains sufficiently enough information
+	//   about user's membership in a group to be useful in many db calls. In particular,
+	//   the MessagingGroupSimplifiedEntry will contain information on group's messaging
+	//   public key, or the encrypted private key, or whether the group member is muted.
 	//
-	// * Note that GroupMessagingPublicKey != GroupOwnerPublicKey. For this index
-	//   it was convenient for various reasons to put the messaging public key into
-	//   the index rather than the group owner's public key. This becomes clear if
-	//   you read all the fetching code around this index.
+	// * Note that in a special case GroupMemberPublicKey == GroupOwnerPublicKey.
+	//   For this index it was convenient for various reasons to automatically save an entry
+	//   with such key in the db whenever user registers a group. This becomes clear if
+	//   you read all the fetching code around this index. Particularly functions containing
+	//   the 'owner' keyword.
 	//
-	// <prefix, GroupMemberPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
+	// Lastly, in an unfortunate fiasco of backwards-compatibility, we need to migrate the previously added
+	// prefix to a new one. This doesn't sit well with the checksum computation and so we need to maintain the
+	// previous db logic until the migration block height is reached. In general, migrating prefixes is strongly
+	// discouraged, and here we were forced to do so because the previous solution hindered public group chats.
+	// While this solution is mediocre, other solutions, such as "overloading" the DeprecatedPrefixGroupMembershipIndex
+	// fail, since the checksum encodes <key, value> pairs and migrating the keys is not implemented
+	// (only values per EncoderMigrations). The migration to a new prefix will cause all membership entries to
+	// disappear, since they won't be re-added to the new membership index prefix. However, since the main group
+	// entry prefix is never modified, you could "reset" the addition of membership index entries in the flush logic
+	// if you simply add a group member after the block height DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight.
+	//
+	// <prefix, GroupMemberPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <MessagingGroupSimplifiedEntry>
 	DeprecatedPrefixGroupMembershipIndex []byte `prefix_id:"[58]" is_state:"true"` // Deprecated: Use PrefixGroupMembershipIndex instead
 
-	// New <HackedMessagingKeyEntry> :
-	// <prefix, GroupMemberPublicKey [33]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte>
+	// New <MembershipIndex> :
+	// <prefix, GroupMemberPublicKey [33]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <MessagingGroupSimplifiedEntry>
 	PrefixGroupMembershipIndex []byte `prefix_id:"[63]" is_state:"true"`
 
 	// Prefix for Authorize Derived Key transactions:
@@ -333,7 +346,7 @@ type DBPrefixes struct {
 // In particular, this is used by the EncoderMigration service, and used to determine how to encode/decode db entries.
 func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEncoder) {
 	if len(prefix) > MaxPrefixLen {
-		panic(fmt.Sprintf("Called with prefix longer than MaxPrefixLen, prefix: (%v), MaxPrefixLen: (%v)", prefix, MaxPrefixLen))
+		panic(any(fmt.Sprintf("Called with prefix longer than MaxPrefixLen, prefix: (%v), MaxPrefixLen: (%v)", prefix, MaxPrefixLen)))
 	}
 	if bytes.Equal(prefix, Prefixes.PrefixUtxoKeyToUtxoEntry) {
 		// prefix_id:"[5]"
@@ -493,7 +506,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 
 func StateKeyToDeSoEncoder(key []byte) (_isEncoder bool, _encoder DeSoEncoder) {
 	if MaxPrefixLen > 1 {
-		panic(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen))
+		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))
 	}
 	return StatePrefixToDeSoEncoder(key[:1])
 }
@@ -507,11 +520,11 @@ func getPrefixIdValue(structFields reflect.StructField, fieldType reflect.Type) 
 		ref.Elem().Set(reflect.MakeSlice(fieldType, 0, 0))
 		if value != "" && value != "[]" {
 			if err := json.Unmarshal([]byte(value), ref.Interface()); err != nil {
-				panic(err)
+				panic(any(err))
 			}
 		}
 	} else {
-		panic(fmt.Errorf("prefix_id cannot be empty"))
+		panic(any(fmt.Errorf("prefix_id cannot be empty")))
 	}
 	return ref.Elem()
 }
@@ -561,13 +574,13 @@ func GetStatePrefixes() *DBStatePrefixes {
 		prefixId := getPrefixIdValue(structFields.Field(i), prefixField.Type())
 		prefixBytes := prefixId.Bytes()
 		if len(prefixBytes) > MaxPrefixLen {
-			panic(fmt.Errorf("prefix (%v) is longer than MaxPrefixLen: (%v)",
-				structFields.Field(i).Name, MaxPrefixLen))
+			panic(any(fmt.Errorf("prefix (%v) is longer than MaxPrefixLen: (%v)",
+				structFields.Field(i).Name, MaxPrefixLen)))
 		}
 		prefix := prefixBytes[0]
 		if statePrefixes.StatePrefixesMap[prefix] {
-			panic(fmt.Errorf("prefix (%v) already exists in StatePrefixesMap. You created a "+
-				"prefix overlap, fix it", structFields.Field(i).Name))
+			panic(any(fmt.Errorf("prefix (%v) already exists in StatePrefixesMap. You created a "+
+				"prefix overlap, fix it", structFields.Field(i).Name)))
 		}
 		if structFields.Field(i).Tag.Get("is_state") == "true" {
 			statePrefixes.StatePrefixesMap[prefix] = true
@@ -597,7 +610,7 @@ func GetStatePrefixes() *DBStatePrefixes {
 // isStateKey checks if a key is a state-related key.
 func isStateKey(key []byte) bool {
 	if MaxPrefixLen > 1 {
-		panic(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen))
+		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))
 	}
 	prefix := key[0]
 	isState, exists := StatePrefixes.StatePrefixesMap[prefix]
@@ -607,7 +620,7 @@ func isStateKey(key []byte) bool {
 // isTxIndexKey checks if a key is a txindex-related key.
 func isTxIndexKey(key []byte) bool {
 	if MaxPrefixLen > 1 {
-		panic(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen))
+		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))
 	}
 	prefix := key[0]
 	for _, txIndexPrefix := range StatePrefixes.TxIndexPrefixes {
@@ -648,7 +661,7 @@ func EncodeKeyAndValueForChecksum(key []byte, value []byte, blockHeight uint64) 
 		} else if err != nil {
 			glog.Errorf("Some odd problem: isEncoder %v encoder %v, key bytes (%v), value bytes (%v), blockHeight (%v)",
 				isEncoder, encoder, key, checksumValue, blockHeight)
-			panic(errors.Wrapf(err, "EncodeKeyAndValueForChecksum: The schema is corrupted or value doesn't match the key"))
+			panic(any(errors.Wrapf(err, "EncodeKeyAndValueForChecksum: The schema is corrupted or value doesn't match the key")))
 		}
 	}
 
@@ -1866,14 +1879,6 @@ func DEPRECATEDDBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot,
 			"entry for public key (%v)", messagingGroupMember.GroupMemberPublicKey)
 	}
 
-	// Check if messagingGroupMember is muted
-	var muteList []*MessagingGroupMember
-	for _, mutedMember := range messagingGroupEntry.MuteList {
-		if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], messagingGroupMember.GroupMemberPublicKey[:]) {
-			muteList = append(muteList, messagingGroupMember)
-			break
-		}
-	}
 	// Entries for group members are stored as MessagingGroupEntries where the only member in
 	// the entry is the member specified. This is a bit of a hack to allow us to store a "back-reference"
 	// to the GroupEntry inside the value of this field.
@@ -1884,7 +1889,6 @@ func DEPRECATEDDBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot,
 		MessagingGroupMembers: []*MessagingGroupMember{
 			messagingGroupMember,
 		},
-		MuteList: muteList,
 	}
 
 	if err := DBSetWithTxn(txn, snap, _DEPRECATEDdbKeyForMessagingGroupMember(
@@ -4026,6 +4030,40 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	}
 
 	return nil
+}
+
+// GetBlockTipHeight fetches the current block tip height from the database.
+func GetBlockTipHeight(handle *badger.DB, bitcoinNodes bool) (uint64, error) {
+	var blockHeight uint64
+	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
+	// Seek prefix will look for the block node with the largest block height. We populate the maximal possible
+	// uint32 and iterate backwards.
+	seekPrefix := append(prefix, []byte{0xff, 0xff, 0xff, 0xff}...)
+
+	err := handle.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Reverse = true
+		nodeIterator := txn.NewIterator(opts)
+		defer nodeIterator.Close()
+
+		// Fetch a single blocknode and then return.
+		nodeIterator.Seek(seekPrefix)
+		if !nodeIterator.ValidForPrefix(prefix) {
+			return fmt.Errorf("No block nodes were found in the database")
+		}
+
+		item := nodeIterator.Item()
+		err := item.Value(func(blockNodeBytes []byte) error {
+			blockNode, err := DeserializeBlockNode(blockNodeBytes)
+			if err != nil {
+				return err
+			}
+			blockHeight = uint64(blockNode.Height)
+			return nil
+		})
+		return err
+	})
+	return blockHeight, err
 }
 
 func GetBlockIndex(handle *badger.DB, bitcoinNodes bool) (map[BlockHash]*BlockNode, error) {

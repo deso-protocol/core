@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -248,9 +249,10 @@ type ForkHeights struct {
 	// ParamUpdater to use a blockHeight-gated function rather than a constant.
 	ParamUpdaterRefactorBlockHeight uint32
 
-	// DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight defines the height at which point V3 group chat muting
-	// and unmuting, and also Optimized MessagingGroupEntry will be accepted by consensus
-	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight uint32
+	// DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight defines the height at which
+	// we introduce derived keys without a spending limit. As well as V3 group chat muting and unmuting, and
+	// also the MembershipIndex prefix.
+	DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -297,7 +299,8 @@ type ForkHeights struct {
 //		}
 //	MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
 //
-// 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. (Note
+// 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. Use the
+//		function GetMigrationVersion to chain encoder migrations (Note the variadic parameter of GetMigrationVersion and
 //		the usage of the MigrationName UtxoEntryTestHeight)
 //
 //		return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
@@ -311,15 +314,15 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration                                   MigrationName = "DefaultMigration"
-	DeSoV3MessagesMutingAndPrefixOptimizationMigration MigrationName = "DeSoV3MessagesMutingAndPrefixOptimizationMigration"
+	DefaultMigration                                                 MigrationName = "DefaultMigration"
+	DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization MigrationName = "DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization"
 )
 
 type EncoderMigrationHeights struct {
 	DefaultMigration MigrationHeight
 
-	// DeSoV3MessagesMutingAndPrefixOptimizationMigration coincides with the DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight block
-	DeSoV3MessagesMutingAndPrefixOptimizationMigration MigrationHeight
+	// DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization coincides with the DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight block
+	DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -329,10 +332,10 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Height:  forkHeights.DefaultHeight,
 			Name:    DefaultMigration,
 		},
-		DeSoV3MessagesMutingAndPrefixOptimizationMigration: MigrationHeight{
-			Version: 1, // change this to 2 when "unlimited derived keys" is merged
-			Height:  uint64(forkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight),
-			Name:    DeSoV3MessagesMutingAndPrefixOptimizationMigration,
+		DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization: MigrationHeight{
+			Version: 1,
+			Height:  uint64(forkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight),
+			Name:    DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization,
 		},
 	}
 }
@@ -556,23 +559,23 @@ var RegtestForkHeights = ForkHeights{
 	DeflationBombBlockHeight:     0,
 	SalomonFixBlockHeight:        uint32(0),
 	DeSoFounderRewardBlockHeight: uint32(0),
-	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(0),
-	ParamUpdaterProfileUpdateFixBlockHeight:              uint32(0),
-	UpdateProfileFixBlockHeight:                          uint32(0),
-	BrokenNFTBidsFixBlockHeight:                          uint32(0),
-	DeSoDiamondsBlockHeight:                              uint32(0),
-	NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(0),
-	DeSoV3MessagesBlockHeight:                            uint32(0),
-	BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
-	DAOCoinBlockHeight:                                   uint32(0),
-	ExtraDataOnEntriesBlockHeight:                        uint32(0),
-	DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
-	DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
-	DAOCoinLimitOrderBlockHeight:                         uint32(0),
-	DerivedKeyEthSignatureCompatibilityBlockHeight:       uint32(0),
-	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
-	ParamUpdaterRefactorBlockHeight:                      uint32(0),
-	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(0),
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight:                        uint32(0),
+	ParamUpdaterProfileUpdateFixBlockHeight:                                     uint32(0),
+	UpdateProfileFixBlockHeight:                                                 uint32(0),
+	BrokenNFTBidsFixBlockHeight:                                                 uint32(0),
+	DeSoDiamondsBlockHeight:                                                     uint32(0),
+	NFTTransferOrBurnAndDerivedKeysBlockHeight:                                  uint32(0),
+	DeSoV3MessagesBlockHeight:                                                   uint32(0),
+	BuyNowAndNFTSplitsBlockHeight:                                               uint32(0),
+	DAOCoinBlockHeight:                                                          uint32(0),
+	ExtraDataOnEntriesBlockHeight:                                               uint32(0),
+	DerivedKeySetSpendingLimitsBlockHeight:                                      uint32(0),
+	DerivedKeyTrackSpendingLimitsBlockHeight:                                    uint32(0),
+	DAOCoinLimitOrderBlockHeight:                                                uint32(0),
+	DerivedKeyEthSignatureCompatibilityBlockHeight:                              uint32(0),
+	OrderBookDBFetchOptimizationBlockHeight:                                     uint32(0),
+	ParamUpdaterRefactorBlockHeight:                                             uint32(0),
+	DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -713,8 +716,8 @@ var MainnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
-	// ADD FINAL DATE & TIME HERE
-	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(99999999),
+	// TODO: ADD FINAL DATE & TIME HERE
+	DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -963,8 +966,8 @@ var TestnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
-	// ADD FINAL DATE & TIME HERE
-	DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(999999999),
+	// TODO: ADD FINAL DATE & TIME HERE
+	DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.

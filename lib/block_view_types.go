@@ -364,8 +364,8 @@ func MigrationTriggered(blockHeight uint64, migrationName MigrationName) bool {
 		}
 	}
 
-	panic(fmt.Sprintf("Problem finding a migration corresponding to migrationName (%v) "+
-		"check your code!", migrationName))
+	panic(any(fmt.Sprintf("Problem finding a migration corresponding to migrationName (%v) "+
+		"check your code!", migrationName)))
 }
 
 // GetMigrationVersion can be returned in GetVersionByte when implementing DeSoEncoders. The way to do it is simply
@@ -2037,17 +2037,17 @@ func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, s
 	for ii := 0; ii < len(members); ii++ {
 		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, members[ii], skipMetadata...)...)
 	}
+	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	// adding MuteList to the end for backwards compatibility
-	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MuteList)))...)
-	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration) {
+	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization) {
 		// We sort the MuteList members because they can be added while iterating over
 		// a map, which could lead to inconsistent orderings across nodes when encoding.
+		entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MuteList)))...)
 		muteListMembers := sortMessagingGroupMembers(entry.MuteList)
 		for ii := 0; ii < len(muteListMembers); ii++ {
 			entryBytes = append(entryBytes, EncodeToBytes(blockHeight, muteListMembers[ii], skipMetadata...)...)
 		}
 	}
-	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	return entryBytes
 }
 
@@ -2085,7 +2085,18 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding recipient")
 		}
 	}
-	if MigrationTriggered(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration) {
+	entry.ExtraData, err = DecodeExtraData(rr)
+	if err != nil && strings.Contains(err.Error(), "EOF") {
+		// To preserve backwards-compatibility, we set an empty map and return if we
+		// encounter an EOF error decoding ExtraData.
+		glog.Warning(err, "MessagingGroupEntry.Decode: problem decoding extra data. "+
+			"Please resync your node to upgrade your datadir before the next hard fork.")
+		return nil
+	} else if err != nil {
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
+	}
+	// Decoding mute list at the end of the entry.
+	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization) {
 		muteListLen, err := ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding MuteList length")
@@ -2099,21 +2110,11 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 			}
 		}
 	}
-	entry.ExtraData, err = DecodeExtraData(rr)
-	if err != nil && strings.Contains(err.Error(), "EOF") {
-		// To preserve backwards-compatibility, we set an empty map and return if we
-		// encounter an EOF error decoding ExtraData.
-		glog.Warning(err, "MessagingGroupEntry.Decode: problem decoding extra data. "+
-			"Please resync your node to upgrade your datadir before the next hard fork.")
-		return nil
-	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
-	}
 	return nil
 }
 
 func (entry *MessagingGroupEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, DeSoV3MessagesMutingAndPrefixOptimizationMigration)
+	return GetMigrationVersion(blockHeight, DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization)
 }
 
 func (entry *MessagingGroupEntry) GetEncoderType() EncoderType {
@@ -2622,7 +2623,7 @@ func (key *DerivedKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMet
 	data = append(data, EncodeExtraData(key.ExtraData)...)
 	if key.TransactionSpendingLimitTracker != nil {
 		data = append(data, BoolToByte(true))
-		tslBytes, _ := key.TransactionSpendingLimitTracker.ToBytes()
+		tslBytes, _ := key.TransactionSpendingLimitTracker.ToBytes(blockHeight)
 		data = append(data, tslBytes...)
 	} else {
 		data = append(data, BoolToByte(false))
@@ -2668,7 +2669,7 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 
 	if exists, err := ReadBoolByte(rr); exists && err == nil {
 		key.TransactionSpendingLimitTracker = &TransactionSpendingLimit{}
-		err := key.TransactionSpendingLimitTracker.FromBytes(rr)
+		err := key.TransactionSpendingLimitTracker.FromBytes(blockHeight, rr)
 		if err != nil {
 			return errors.Wrapf(err, "DerivedKeyEntry.Decode: Problem decoding TransactionSpendingLimitTracker")
 		}
@@ -2685,7 +2686,7 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {
