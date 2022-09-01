@@ -1156,11 +1156,11 @@ func (bav *UtxoView) _connectMessagingGroup(
 		ExtraData:             extraData,
 	}
 	// Create a utxoOps entry, we make a copy of the existing entry.
-	var prevMessagingKeyEntry *MessagingGroupEntry
+	var prevMessagingGroupEntry *MessagingGroupEntry
 	if existingEntry != nil && !existingEntry.isDeleted {
-		prevMessagingKeyEntry = &MessagingGroupEntry{}
+		prevMessagingGroupEntry = &MessagingGroupEntry{}
 		rr := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
-		if exists, err := DecodeFromBytes(prevMessagingKeyEntry, rr); !exists || err != nil {
+		if exists, err := DecodeFromBytes(prevMessagingGroupEntry, rr); !exists || err != nil {
 			return 0, 0, nil, errors.Wrapf(err,
 				"_connectMessagingGroup: Error decoding previous entry")
 		}
@@ -1170,7 +1170,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// Construct UtxoOperation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                  OperationTypeMessagingKey,
-		PrevMessagingKeyEntry: prevMessagingKeyEntry,
+		PrevMessagingKeyEntry: prevMessagingGroupEntry,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
