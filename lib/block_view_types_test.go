@@ -140,8 +140,15 @@ func TestMessageEntryDecoding(t *testing.T) {
 }
 
 func TestMessagingGroupEntryDecoding(t *testing.T) {
+	// In this test, we check for backwards-compatibility with extra-data.
+	// The way this test is structured won't work with the newly added mute list
+	// so we set the fork height to something high so that the mute list doesn't exist.
+	fh := RegtestForkHeights
+	fh.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight = 10
+	GlobalDeSoParams.ForkHeights = fh
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&fh)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&fh)
 	// Create a messaging group entry
-
 	messagingGroupEntry := &MessagingGroupEntry{
 		GroupOwnerPublicKey:   NewPublicKey(m0PkBytes),
 		MessagingPublicKey:    NewPublicKey(m0PkBytes),

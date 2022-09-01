@@ -266,31 +266,44 @@ type DBPrefixes struct {
 	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <MessagingGroupEntry>
 	PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName []byte `prefix_id:"[57]" is_state:"true"`
 
-	// Prefix for Message MessagingGroupMembers:
+	// Prefix for Group Membership Index:
 	//
 	// * For each group that a user is a member of, we store a value in this index of
 	//   the form:
-	//   - <GroupMemberPublicKey for user, GroupMessagingPublicKey> -> <HackedMessagingGroupEntry>
+	//   - <GroupMemberPublicKey for user, GroupOwnerPublicKey, GroupKeyName> -> <MessagingGroupSimplifiedEntry>
 	//   The value needs to contain enough information to allow us to look up the
-	//   group's metatdata in the _PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName index. It's also convenient for
-	//   the value to contain the encrypted messaging key for the user so that we can
-	//   decrypt messages for this user *without* looking up the group.
+	//   group's metatdata in the _PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName
+	//   index. It's also convenient for the value to contain the encrypted messaging key for
+	//   the user so that we can decrypt messages for this user *without* looking up the group.
 	//
-	// * HackedMessagingGroupEntry is a MessagingGroupEntry that we overload to store
-	// 	 information on a member of a group. We couldn't use the MessagingGroupMember
-	//   because we wanted to store additional information that "back-references" the
-	//   MessagingGroupEntry for this group.
+	// * MessagingGroupSimplifiedEntry is a MessagingGroupEntry that has the groupType set
+	//   to MessagingGroupSimplifiedEntryType. It contains sufficiently enough information
+	//   about user's membership in a group to be useful in many db calls. In particular,
+	//   the MessagingGroupSimplifiedEntry will contain information on group's messaging
+	//   public key, or the encrypted private key, or whether the group member is muted.
 	//
-	// * Note that GroupMessagingPublicKey != GroupOwnerPublicKey. For this index
-	//   it was convenient for various reasons to put the messaging public key into
-	//   the index rather than the group owner's public key. This becomes clear if
-	//   you read all the fetching code around this index.
+	// * Note that in a special case GroupMemberPublicKey == GroupOwnerPublicKey.
+	//   For this index it was convenient for various reasons to automatically save an entry
+	//   with such key in the db whenever user registers a group. This becomes clear if
+	//   you read all the fetching code around this index. Particularly functions containing
+	//   the 'owner' keyword.
 	//
-	// <prefix, GroupMemberPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <HackedMessagingKeyEntry>
+	// Lastly, in an unfortunate fiasco of backwards-compatibility, we need to migrate the previously added
+	// prefix to a new one. This doesn't sit well with the checksum computation and so we need to maintain the
+	// previous db logic until the migration block height is reached. In general, migrating prefixes is strongly
+	// discouraged, and here we were forced to do so because the previous solution hindered public group chats.
+	// While this solution is mediocre, other solutions, such as "overloading" the DeprecatedPrefixGroupMembershipIndex
+	// fail, since the checksum encodes <key, value> pairs and migrating the keys is not implemented
+	// (only values per EncoderMigrations). The migration to a new prefix will cause all membership entries to
+	// disappear, since they won't be re-added to the new membership index prefix. However, since the main group
+	// entry prefix is never modified, you could "reset" the addition of membership index entries in the flush logic
+	// if you simply add a group member after the block height DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight.
+	//
+	// <prefix, GroupMemberPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <MessagingGroupSimplifiedEntry>
 	DeprecatedPrefixGroupMembershipIndex []byte `prefix_id:"[58]" is_state:"true"` // Deprecated: Use PrefixGroupMembershipIndex instead
 
 	// New <MembershipIndex> :
-	// <prefix, GroupMemberPublicKey [33]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte>
+	// <prefix, GroupMemberPublicKey [33]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <MessagingGroupSimplifiedEntry>
 	PrefixGroupMembershipIndex []byte `prefix_id:"[63]" is_state:"true"`
 
 	// Prefix for Authorize Derived Key transactions:
@@ -1866,14 +1879,6 @@ func DEPRECATEDDBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot,
 			"entry for public key (%v)", messagingGroupMember.GroupMemberPublicKey)
 	}
 
-	// Check if messagingGroupMember is muted
-	var muteList []*MessagingGroupMember
-	for _, mutedMember := range messagingGroupEntry.MuteList {
-		if reflect.DeepEqual(mutedMember.GroupMemberPublicKey[:], messagingGroupMember.GroupMemberPublicKey[:]) {
-			muteList = append(muteList, messagingGroupMember)
-			break
-		}
-	}
 	// Entries for group members are stored as MessagingGroupEntries where the only member in
 	// the entry is the member specified. This is a bit of a hack to allow us to store a "back-reference"
 	// to the GroupEntry inside the value of this field.
@@ -1884,7 +1889,6 @@ func DEPRECATEDDBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot,
 		MessagingGroupMembers: []*MessagingGroupMember{
 			messagingGroupMember,
 		},
-		MuteList: muteList,
 	}
 
 	if err := DBSetWithTxn(txn, snap, _DEPRECATEDdbKeyForMessagingGroupMember(
@@ -3901,8 +3905,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
-		genesisBlock.Header,                                                               // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
+		genesisBlock.Header, // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -7843,7 +7847,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -7970,7 +7974,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true   /*reverse*/, false /*fetchValues*/)
+		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
