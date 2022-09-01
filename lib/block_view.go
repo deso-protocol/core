@@ -686,7 +686,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 					PkToString(derivedPkBytes, bav.Params),
 					err)
 			}
-			derivedKeyEntry := bav._getDerivedKeyMappingForOwner(currentTxn.PublicKey, derivedPkBytes)
+			derivedKeyEntry := bav.GetDerivedKeyMappingForOwner(currentTxn.PublicKey, derivedPkBytes)
 			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
 				return fmt.Errorf("_disconnectBasicTransfer: could not find derived key entry")
 			}
@@ -1149,7 +1149,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	} else {
 		// Look for a derived key entry in UtxoView and DB, check to make sure it exists
 		// and is not isDeleted.
-		derivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPkBytes, derivedPkBytes)
+		derivedKeyEntry := bav.GetDerivedKeyMappingForOwner(ownerPkBytes, derivedPkBytes)
 		if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
 			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized,
 				"Derived key mapping for owner not found: Owner: %v, "+
@@ -1498,7 +1498,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 	_utxoOpsForTxn []*UtxoOperation, _err error) {
 
 	// Get the derived key entry
-	prevDerivedKeyEntry := bav._getDerivedKeyMappingForOwner(txn.PublicKey, derivedPkBytes)
+	prevDerivedKeyEntry := bav.GetDerivedKeyMappingForOwner(txn.PublicKey, derivedPkBytes)
 	if prevDerivedKeyEntry == nil || prevDerivedKeyEntry.isDeleted {
 		return utxoOpsForTxn, fmt.Errorf("_checkDerivedKeySpendingLimit: No derived key entry found")
 	}

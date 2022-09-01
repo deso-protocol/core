@@ -105,7 +105,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	}
 
 	// Get current (previous) derived key entry. We might revert to it later so we copy it.
-	prevDerivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
+	prevDerivedKeyEntry := bav.GetDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
 
 	// Authorize transactions can be signed by both owner and derived keys. However, this
 	// poses a risk in a situation where a malicious derived key, which has previously been
@@ -279,7 +279,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	// If we're past the derived key spending limit block height, we actually need to fetch the derived key
 	// entry again since the basic transfer reduced the txn count on the derived key txn
 	if blockHeight >= bav.Params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
-		derivedKeyEntry = *bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
+		derivedKeyEntry = *bav.GetDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
 	}
 
 	// Earlier we've set a temporary derived key entry that had OperationType set to Valid.
@@ -344,7 +344,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	derivedPublicKey = txMeta.DerivedPublicKey
 
 	// Get the derived key entry. If it's nil or is deleted then we have an error.
-	derivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
+	derivedKeyEntry := bav.GetDerivedKeyMappingForOwner(ownerPublicKey, derivedPublicKey)
 	if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
 		return fmt.Errorf("_disconnectAuthorizeDerivedKey: DerivedKeyEntry for "+
 			"public key %v, derived key %v was found to be nil or deleted: %v",

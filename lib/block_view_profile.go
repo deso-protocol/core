@@ -335,8 +335,8 @@ func (bav *UtxoView) _deleteProfileEntryMappings(profileEntry *ProfileEntry) {
 	bav._setProfileEntryMappings(&tombstoneProfileEntry)
 }
 
-// _getDerivedKeyMappingForOwner fetches the derived key mapping from the utxoView
-func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
+// GetDerivedKeyMappingForOwner fetches the derived key mapping from the utxoView
+func (bav *UtxoView) GetDerivedKeyMappingForOwner(ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
 	// Check if the entry exists in utxoView.
 	ownerPk := NewPublicKey(ownerPublicKey)
 	derivedPk := NewPublicKey(derivedPublicKey)
@@ -347,15 +347,7 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 	}
 
 	// Check if the entry exists in the DB.
-	if bav.Postgres != nil {
-		if entryPG := bav.Postgres.GetDerivedKey(ownerPk, derivedPk); entryPG != nil {
-			entry = entryPG.NewDerivedKeyEntry()
-		} else {
-			entry = nil
-		}
-	} else {
-		entry = DBGetOwnerToDerivedKeyMapping(bav.Handle, bav.Snapshot, *ownerPk, *derivedPk)
-	}
+	entry = bav.GetDbAdapter().GetOwnerToDerivedKeyMapping(*ownerPk, *derivedPk)
 
 	// If an entry exists, update the UtxoView map.
 	if entry != nil {
@@ -411,17 +403,6 @@ func (bav *UtxoView) GetAllDerivedKeyMappingsForOwner(ownerPublicKey []byte) (
 	}
 
 	return derivedKeyMappings, nil
-}
-
-func (bav *UtxoView) GetDerivedKeyEntryForDerivedPublicKey(ownerPublicKeyBytes []byte, derivedPublicKeyBytes []byte) *DerivedKeyEntry {
-	ownerPublicKey := NewPublicKey(ownerPublicKeyBytes)
-	derivedPublicKey := NewPublicKey(derivedPublicKeyBytes)
-	mapValue, existsMapValue := bav.DerivedKeyToDerivedEntry[MakeDerivedKeyMapKey(*ownerPublicKey, *derivedPublicKey)]
-	if existsMapValue {
-		return mapValue
-	}
-
-	return bav.GetDbAdapter().GetOwnerToDerivedKeyMapping(*ownerPublicKey, *derivedPublicKey)
 }
 
 // _setDerivedKeyMapping sets a derived key mapping in the utxoView.
