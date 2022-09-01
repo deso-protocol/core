@@ -317,6 +317,7 @@ const (
 	RuleErrorMessagingMemberNotInGroup              RuleError = "RuleErrorMessagingMemberNotInGroup"
 	RuleErrorMessagingGroupOwnerMutingSelf          RuleError = "RuleErrorMessagingGroupOwnerMutingSelf"
 	RuleErrorMessagingGroupOwnerUnmutingSelf        RuleError = "RuleErrorMessagingGroupOwnerUnmutingSelf"
+	RuleErrorMessagingGroupDoesntExist              RuleError = "RuleErrorMessagingGroupDoesntExist"
 
 	// NFTs
 	RuleErrorTooManyNFTCopies                            RuleError = "RuleErrorTooManyNFTCopies"

@@ -377,11 +377,11 @@ func NewServer(
 		if err != nil {
 			panic(err)
 		}
+	}
 
-		// We only set archival mode true if we're a hypersync node.
-		if IsNodeArchival(_syncType) {
-			archivalMode = true
-		}
+	// We only set archival mode true if we're a hypersync node.
+	if IsNodeArchival(_syncType) {
+		archivalMode = true
 	}
 
 	// Create an empty Server object here so we can pass a reference to it to the
@@ -625,6 +625,12 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 	if !syncingPrefix {
 		// We will assign the peer to a non-existing prefix.
 		for _, prefix = range StatePrefixes.StatePrefixesList {
+			// FIXME: This is a temporary hack that we have to employ until we are confident nodes have
+			// 	downloaded the latest code that sends an empty db chunk for a non-existing prefix.
+			if ok := srv.CheckIfStatePrefixExistsForBlockHeight(
+				srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, prefix); !ok {
+				continue
+			}
 			exists := false
 			for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
 				if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
@@ -661,6 +667,19 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
+}
+
+// FIXME: This is a temporary hack that we have to employ until we are confident nodes have
+// 	downloaded the latest code that sends an empty db chunk for a non-existing prefix. We
+// 	check if the prefix is the newly-added PrefixGroupMembershipIndex and if so, filter it out.
+func (srv *Server) CheckIfStatePrefixExistsForBlockHeight(blockHeight uint64, prefix []byte) bool {
+	switch prefix[0] {
+	case Prefixes.PrefixGroupMembershipIndex[0]:
+		if uint32(blockHeight) < srv.blockchain.params.ForkHeights.DeSoV3MessagesMutingAndPrefixOptimizationBlockHeight {
+			return false
+		}
+	}
+	return true
 }
 
 // GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
@@ -1257,6 +1276,12 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	var completedPrefixes [][]byte
 	for _, prefix := range StatePrefixes.StatePrefixesList {
+		// FIXME: This is a temporary hack that we have to employ until we are confident nodes have
+		// 	downloaded the latest code that sends an empty db chunk for a non-existing prefix.
+		if ok := srv.CheckIfStatePrefixExistsForBlockHeight(
+			srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, prefix); !ok {
+			continue
+		}
 		completed := false
 		// Check if the prefix has been completed.
 		for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
