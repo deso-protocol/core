@@ -1076,7 +1076,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 			}
 			// Make sure we are muting a member that exists in the group.
 			if _, exists := existingGroupMembers[*newlyMutedMember.GroupMemberPublicKey]; !exists {
-				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberDoesntExist,
+				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberNotInGroup,
 					"_connectMessagingGroup: Can't mute a non-existent member (%v)", newlyMutedMember.GroupMemberPublicKey[:])
 			}
 

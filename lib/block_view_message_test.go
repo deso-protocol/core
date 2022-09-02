@@ -2741,7 +2741,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				unmuteList,
 				extraData,
-				RuleErrorMessagingMemberDoesntExist)
+				RuleErrorMessagingMemberNotInGroup)
 		}
 		{
 			// Let us now try to unmute m1 who is not part of the group
