@@ -13,10 +13,6 @@ import (
 	"time"
 )
 
-// Used only to test if mid-block muting still works without flushing to DB
-var flushGroupMessageTxnToDB = true
-var tempUtxoView *UtxoView
-
 func TestBasePointSignature(t *testing.T) {
 	require := require.New(t)
 	// Retrieve the base point bytes and parse them to a public key.
@@ -659,11 +655,7 @@ func _messagingKeyWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, 
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 	}
 	require.Equal(OperationTypeMessagingKey, utxoOps[len(utxoOps)-1].Type)
-	if flushGroupMessageTxnToDB {
-		require.NoError(utxoView.FlushToDb(uint64(blockHeight)))
-	} else {
-		tempUtxoView = utxoView
-	}
+	require.NoError(utxoView.FlushToDb(uint64(blockHeight)))
 	return utxoOps, txn, err
 }
 
@@ -1709,17 +1701,11 @@ func _connectPrivateMessageWithPartyWithExtraData(testMeta *TestMeta, senderPkBy
 	// get mined into the next block.
 	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
 	blockHeight := testMeta.chain.blockTip().Height + 1
-	if !flushGroupMessageTxnToDB {
-		utxoView = tempUtxoView
-	}
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	// ConnectTransaction should treat the amount locked as contributing to the output.
 	if expectedError != nil {
 		require.Equal(true, strings.Contains(err.Error(), expectedError.Error()))
-		if !flushGroupMessageTxnToDB {
-			require.NoError(utxoView.FlushToDb(uint64(blockHeight)))
-		}
 		return
 	}
 	require.NoError(err)
