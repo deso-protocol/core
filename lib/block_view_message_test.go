@@ -3041,7 +3041,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, pk *PublicKey) (tx
 
 	// ALL CORRECT BLOCKHEIGHT TXNS AS FOLLOWS
 
-	if bc.blockTip().Height < bc.params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+	if bc.blockTip().Height < bc.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 		{
 			// Create a txn where m0 adds m0, m1, m2 and m3 as members of the group.
 			// We can add any messaging keys as recipients, but we'll just add base keys for simplicity,
@@ -3759,7 +3759,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, pk *PublicKey) (tx
 		}
 	}
 
-	if bc.blockTip().Height >= bc.params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+	if bc.blockTip().Height >= bc.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 		{
 			// Create a txn where m0 adds m0, m1, m2 and m3 as members of the group.
 			// We can add any messaging keys as recipients, but we'll just add base keys for simplicity,
