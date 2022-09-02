@@ -718,7 +718,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 		var entries []*MessagingGroupEntry
 		var err error
 		blockHeight := testMeta.chain.blockTip().Height + 1
-		if blockHeight >= testMeta.params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+		if blockHeight >= testMeta.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 			entries, err = DBGetAllUserGroupEntriesWithTxn(txn, publicKey)
 			require.NoError(err)
 		} else {
@@ -740,7 +740,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 				// than the entire group chat. If the expected entry assumes the old, full-entry then we will rewrite it
 				// to the empty []*MessagingGroupMember (+ the member entry for the owner).
 				if bytes.Equal(entry.GroupOwnerPublicKey[:], publicKey) &&
-					blockHeight >= testMeta.params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+					blockHeight >= testMeta.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 					actualEntry.MessagingGroupMembers = []*MessagingGroupMember{}
 					for _, member := range expectedEntry.MessagingGroupMembers {
 						if bytes.Equal(member.GroupMemberPublicKey[:], publicKey) {
@@ -783,7 +783,7 @@ func TestMessagingKeys(t *testing.T) {
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 	// Set the DeSo V3 messages block height to 0
 	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
-	params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+	params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
 	params.EncoderMigrationHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization.Height = 0
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	GlobalDeSoParams = *params
@@ -1822,6 +1822,15 @@ func _verifyMessages(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]
 	}
 }
 
+func setExtraDataBasedOnMessagingEntry(messageEntry *MessageEntry) {
+	messageEntry.ExtraData = make(map[string][]byte)
+	messageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
+	messageEntry.ExtraData[SenderMessagingPublicKey] = messageEntry.SenderMessagingPublicKey.ToBytes()
+	messageEntry.ExtraData[SenderMessagingGroupKeyName] = messageEntry.SenderMessagingGroupKeyName.ToBytes()
+	messageEntry.ExtraData[RecipientMessagingPublicKey] = messageEntry.RecipientMessagingPublicKey.ToBytes()
+	messageEntry.ExtraData[RecipientMessagingGroupKeyName] = messageEntry.RecipientMessagingGroupKeyName.ToBytes()
+}
+
 // In these tests we basically want to verify that messages are correctly added to UtxoView and DB
 // after we send V3 group messages.
 func TestGroupMessages(t *testing.T) {
@@ -1837,7 +1846,7 @@ func TestGroupMessages(t *testing.T) {
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 	// Set the DeSo V3 messages block height to 0
 	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
-	params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+	params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
 	params.EncoderMigrationHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization.Height = 0
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	GlobalDeSoParams = *params
@@ -1963,12 +1972,7 @@ func TestGroupMessages(t *testing.T) {
 		//	recipient: 1
 		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
 		// transaction is processed as an extra sanity-check.
-		messageEntry.ExtraData = make(map[string][]byte)
-		messageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
-		messageEntry.ExtraData[SenderMessagingPublicKey] = senderPkBytes
-		messageEntry.ExtraData[SenderMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
-		messageEntry.ExtraData[RecipientMessagingPublicKey] = recipientPkBytes
-		messageEntry.ExtraData[RecipientMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
+		setExtraDataBasedOnMessagingEntry(&messageEntry)
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
 		_verifyMessages(testMeta, expectedMessageEntries)
@@ -2037,12 +2041,7 @@ func TestGroupMessages(t *testing.T) {
 		//	recipient: 2
 		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
 		// transaction is processed as an extra sanity-check.
-		messageEntry.ExtraData = make(map[string][]byte)
-		messageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
-		messageEntry.ExtraData[SenderMessagingPublicKey] = entry.MessagingPublicKey[:]
-		messageEntry.ExtraData[SenderMessagingGroupKeyName] = NewGroupKeyName(defaultKey).ToBytes()
-		messageEntry.ExtraData[RecipientMessagingPublicKey] = recipientPkBytes
-		messageEntry.ExtraData[RecipientMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
+		setExtraDataBasedOnMessagingEntry(&messageEntry)
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
 		// Verify that all the messages are correct.
@@ -2109,12 +2108,7 @@ func TestGroupMessages(t *testing.T) {
 		//	recipient: 4
 		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
 		// transaction is processed as an extra sanity-check.
-		messageEntry.ExtraData = make(map[string][]byte)
-		messageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
-		messageEntry.ExtraData[SenderMessagingPublicKey] = entry.MessagingPublicKey[:]
-		messageEntry.ExtraData[SenderMessagingGroupKeyName] = NewGroupKeyName(defaultKey).ToBytes()
-		messageEntry.ExtraData[RecipientMessagingPublicKey] = entryRecipient.MessagingPublicKey.ToBytes()
-		messageEntry.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(defaultKey).ToBytes()
+		setExtraDataBasedOnMessagingEntry(&messageEntry)
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
 		// Verify that all the messages are correct.
@@ -2145,12 +2139,7 @@ func TestGroupMessages(t *testing.T) {
 		//	recipient: 5
 		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
 		// transaction is processed as an extra sanity-check.
-		messageEntry.ExtraData = make(map[string][]byte)
-		messageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
-		messageEntry.ExtraData[SenderMessagingPublicKey] = entryRecipient.MessagingPublicKey.ToBytes()
-		messageEntry.ExtraData[SenderMessagingGroupKeyName] = NewGroupKeyName(defaultKey).ToBytes()
-		messageEntry.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
-		messageEntry.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(defaultKey).ToBytes()
+		setExtraDataBasedOnMessagingEntry(&messageEntry)
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
 		// Verify that all the messages are correct.
@@ -2211,12 +2200,7 @@ func TestGroupMessages(t *testing.T) {
 		//  m1: 1
 		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
 		// transaction is processed as an extra sanity-check.
-		messageEntry1.ExtraData = make(map[string][]byte)
-		messageEntry1.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
-		messageEntry1.ExtraData[SenderMessagingPublicKey] = m1PubKey
-		messageEntry1.ExtraData[SenderMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
-		messageEntry1.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
-		messageEntry1.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(addingMembersKey).ToBytes()
+		setExtraDataBasedOnMessagingEntry(&messageEntry1)
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry1, true))
 
 		_verifyMessages(testMeta, expectedMessageEntries)
@@ -2348,24 +2332,9 @@ func TestGroupMessages(t *testing.T) {
 		// We set groupOwner=true because of the edge-case where the user who made the group sends the message.
 		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
 		// transaction is processed as an extra sanity-check.
-		messageEntry1.ExtraData = make(map[string][]byte)
-		messageEntry1.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
-		messageEntry1.ExtraData[SenderMessagingPublicKey] = m1PubKey
-		messageEntry1.ExtraData[SenderMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
-		messageEntry1.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
-		messageEntry1.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(addingMembersKey).ToBytes()
-		messageEntry2.ExtraData = make(map[string][]byte)
-		messageEntry2.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
-		messageEntry2.ExtraData[SenderMessagingPublicKey] = m0PublicKey.ToBytes()
-		messageEntry2.ExtraData[SenderMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
-		messageEntry2.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
-		messageEntry2.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(addingMembersKey).ToBytes()
-		messageEntry3.ExtraData = make(map[string][]byte)
-		messageEntry3.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
-		messageEntry3.ExtraData[SenderMessagingPublicKey] = messagingKey.MessagingPublicKey.ToBytes()
-		messageEntry3.ExtraData[SenderMessagingGroupKeyName] = DefaultGroupKeyName().ToBytes()
-		messageEntry3.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
-		messageEntry3.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(addingMembersKey).ToBytes()
+		setExtraDataBasedOnMessagingEntry(&messageEntry1)
+		setExtraDataBasedOnMessagingEntry(&messageEntry2)
+		setExtraDataBasedOnMessagingEntry(&messageEntry3)
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry1, true))
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry2, false))
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry3, false))
@@ -2496,12 +2465,7 @@ func TestGroupMessages(t *testing.T) {
 		// 	m0: 4
 		// 	m2: 1
 
-		messageEntry.ExtraData = make(map[string][]byte)
-		messageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
-		messageEntry.ExtraData[SenderMessagingPublicKey] = m0PublicKey.ToBytes()
-		messageEntry.ExtraData[SenderMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
-		messageEntry.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
-		messageEntry.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(gangKey).ToBytes()
+		setExtraDataBasedOnMessagingEntry(&messageEntry)
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
 
 		// Verify the messages.
@@ -2535,7 +2499,7 @@ func TestGroupMessages(t *testing.T) {
 
 			require.NoError(db.View(func(txn *badger.Txn) error {
 				blockHeight := chain.blockTip().Height
-				if blockHeight < params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+				if blockHeight < params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 					msgKeys, err = DEPRECATEDDBGetAllMessagingGroupEntriesForMemberWithTxn(txn, NewPublicKey(pk))
 				} else {
 					msgKeys, err = DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn(txn, NewPublicKey(pk))
@@ -2574,7 +2538,6 @@ func TestGroupMessages(t *testing.T) {
 			BaseGroupKeyName(),
 			encrypt(privBytes, m0PubKey),
 		})
-		//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 		extraData := make(map[string][]byte)
 		extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
 		_messagingKeyWithExtraDataWithTestMeta(
@@ -2648,7 +2611,6 @@ func TestGroupMessages(t *testing.T) {
 				BaseGroupKeyName(),
 				encrypt(privBytes, m0PubKey),
 			})
-			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 			extraData := make(map[string][]byte)
 			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
@@ -2671,7 +2633,6 @@ func TestGroupMessages(t *testing.T) {
 			BaseGroupKeyName(),
 			encrypt(privBytes, m0PubKey),
 		})
-		//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 		extraData = make(map[string][]byte)
 		extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
 		_messagingKeyWithExtraDataWithTestMeta(
@@ -2713,12 +2674,7 @@ func TestGroupMessages(t *testing.T) {
 		// 	m2: 2
 		// Since we're passed the ExtraData migration, the entry will have the extra data field. We add it after
 		// transaction is processed as an extra sanity-check.
-		unmuteMessageEntry.ExtraData = make(map[string][]byte)
-		unmuteMessageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
-		unmuteMessageEntry.ExtraData[SenderMessagingPublicKey] = m0PublicKey.ToBytes()
-		unmuteMessageEntry.ExtraData[SenderMessagingGroupKeyName] = BaseGroupKeyName().ToBytes()
-		unmuteMessageEntry.ExtraData[RecipientMessagingPublicKey] = entry.MessagingPublicKey.ToBytes()
-		unmuteMessageEntry.ExtraData[RecipientMessagingGroupKeyName] = NewGroupKeyName(gangKey).ToBytes()
+		setExtraDataBasedOnMessagingEntry(&unmuteMessageEntry)
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, unmuteMessageEntry, false))
 
 		// Verify the messages AGAIN.
@@ -2751,7 +2707,6 @@ func TestGroupMessages(t *testing.T) {
 				BaseGroupKeyName(),
 				encrypt(privBytes, m0PubKey),
 			})
-			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 			extraData = make(map[string][]byte)
 			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
@@ -2767,6 +2722,28 @@ func TestGroupMessages(t *testing.T) {
 		}
 
 		{
+			// Let us now try to mute m1 who is not part of the group
+			// This should produce an error since m1 does not exist in the group
+			var unmuteList []*MessagingGroupMember
+			unmuteList = append(unmuteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			extraData = make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			_messagingKeyWithExtraDataWithTestMeta(
+				testMeta,
+				senderPkBytes,
+				senderPrivString,
+				entry.MessagingPublicKey[:],
+				gangKey,
+				[]byte{},
+				unmuteList,
+				extraData,
+				RuleErrorMessagingMemberDoesntExist)
+		}
+		{
 			// Let us now try to unmute m1 who is not part of the group
 			// This should produce an error since m1 does not exist in the group
 			var unmuteList []*MessagingGroupMember
@@ -2775,7 +2752,6 @@ func TestGroupMessages(t *testing.T) {
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
-			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 			extraData = make(map[string][]byte)
 			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
@@ -2800,7 +2776,6 @@ func TestGroupMessages(t *testing.T) {
 				BaseGroupKeyName(),
 				encrypt(privBytes, senderPkBytes),
 			})
-			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 			extraData := make(map[string][]byte)
 			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
@@ -2825,7 +2800,6 @@ func TestGroupMessages(t *testing.T) {
 				BaseGroupKeyName(),
 				encrypt(privBytes, senderPkBytes),
 			})
-			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 			extraData := make(map[string][]byte)
 			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
@@ -2842,8 +2816,8 @@ func TestGroupMessages(t *testing.T) {
 
 		{
 			// Deprecated Hacked Prefix Test
-			// Let us set the DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight to much higher than current blockHeight
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = chain.blockTip().Height + 10
+			// Let us set the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight to much higher than current blockHeight
+			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = chain.blockTip().Height + 10
 			// Let us now mute m2
 			var muteList []*MessagingGroupMember
 			muteList = append(muteList, &MessagingGroupMember{
@@ -2851,7 +2825,6 @@ func TestGroupMessages(t *testing.T) {
 				BaseGroupKeyName(),
 				privBytes,
 			})
-			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 			extraData := make(map[string][]byte)
 			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
 			// This transaction would normally go through after the blockheight, but it would fail prior.
@@ -2867,7 +2840,7 @@ func TestGroupMessages(t *testing.T) {
 				extraData,
 				RuleErrorMessagingMemberAlreadyExists)
 			// reset to 0 for further testing
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
 		}
 
 		{
@@ -2879,7 +2852,6 @@ func TestGroupMessages(t *testing.T) {
 				BaseGroupKeyName(),
 				privBytes,
 			})
-			//require.Equal(false, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 			extraData := make(map[string][]byte)
 			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
@@ -2893,7 +2865,6 @@ func TestGroupMessages(t *testing.T) {
 				extraData,
 				nil)
 			// The decrypted key should match the original private key.
-			//require.Equal(privBytes, m0PrivBytes)
 			// Now it's time to encrypt the message.
 			tstampNanos = uint64(time.Now().UnixNano())
 			testMessage = []byte("DeSo Deprecated HackedMessagingGroupEntry is backwards compatible and " +
@@ -2913,18 +2884,18 @@ func TestGroupMessages(t *testing.T) {
 				NewGroupKeyName(gangKey),
 				nil,
 			}
-			// Let us set the DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight to much higher than current blockHeight,
+			// Let us set the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight to much higher than current blockHeight,
 			// don't flush because we are modifying the fork height. This transaction should pass because the connect logic
 			// will disregard the fork height and ignore the fact that m2 is muted. That's why we don't flush.
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = chain.blockTip().Height + 10
+			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = chain.blockTip().Height + 10
 			_helpConnectPrivateMessageWithPartyAndFlush(testMeta, m2Priv, muteMessageEntry, nil, false)
-			// Now let's try to send a message to the group with DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight set to 0
+			// Now let's try to send a message to the group with DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight set to 0
 			// This should fail since the member is muted.
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
 			_helpConnectPrivateMessageWithParty(testMeta, m2Priv, muteMessageEntry, RuleErrorMessagingMemberMuted)
 			// m2 is currently muted, so the txn should not complete muting should work due to gating of the check-if-muted
 			// functionality. Note: This is just a sanity check and this probably won't happen on mainnet as the blockHeight
-			// does not suddenly decrease below DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight after a muting txn:
+			// does not suddenly decrease below DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight after a muting txn:
 			// The message should be unsuccessfully added, so we still have:
 			// m2 -> group(sender, recipient, m0, m2)
 			// 	sender: 7
@@ -2934,13 +2905,13 @@ func TestGroupMessages(t *testing.T) {
 			// 	m2: 2
 			require.Equal(false, _verifyMessageParty(testMeta, expectedMessageEntries, muteMessageEntry, false))
 
-			// Lower the DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight to zero, otherwise we won't fetch all the group
+			// Lower the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight to zero, otherwise we won't fetch all the group
 			// chats and the _verifyMessages will fail. If we're past the block height, we use the membership index prefix to
 			// store user's group chats. However, if we're before the block height, we use the old deprecated db prefix to
 			// store the group chats that a user is a member of. If a user became a member of a group chat AFTER the block height
 			// the corresponding group chat will not be saved in the deprecated prefix. As this is the case here, we need to
 			// lower the block height to zero to fetch all the group chats.
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight = 0
+			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
 			// Verify the messages AGAIN.
 			_verifyMessages(testMeta, expectedMessageEntries)
 			// Just to sanity-check, verify that the number of messages is as intended.

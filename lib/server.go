@@ -603,10 +603,10 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 	// If peer isn't assigned to any prefix, we will assign him now.
 	if !syncingPrefix {
-		// We will assign the peer to a non-existing prefix.
+		// We will assign the peer to a non-existent prefix.
 		for _, prefix = range StatePrefixes.StatePrefixesList {
 			// FIXME: This is a temporary hack that we have to employ until we are confident nodes have
-			// 	downloaded the latest code that sends an empty db chunk for a non-existing prefix.
+			// 	downloaded the latest code that sends an empty db chunk for a non-existent prefix.
 			if ok := srv.CheckIfStatePrefixExistsForBlockHeight(
 				srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, prefix); !ok {
 				continue
@@ -650,12 +650,12 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 }
 
 // FIXME: This is a temporary hack that we have to employ until we are confident nodes have
-// 	downloaded the latest code that sends an empty db chunk for a non-existing prefix. We
+// 	downloaded the latest code that sends an empty db chunk for a non-existent prefix. We
 // 	check if the prefix is the newly-added PrefixGroupMembershipIndex and if so, filter it out.
 func (srv *Server) CheckIfStatePrefixExistsForBlockHeight(blockHeight uint64, prefix []byte) bool {
 	switch prefix[0] {
 	case Prefixes.PrefixGroupMembershipIndex[0]:
-		if uint32(blockHeight) < srv.blockchain.params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+		if uint32(blockHeight) < srv.blockchain.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 			return false
 		}
 	}
@@ -1257,7 +1257,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	var completedPrefixes [][]byte
 	for _, prefix := range StatePrefixes.StatePrefixesList {
 		// FIXME: This is a temporary hack that we have to employ until we are confident nodes have
-		// 	downloaded the latest code that sends an empty db chunk for a non-existing prefix.
+		// 	downloaded the latest code that sends an empty db chunk for a non-existent prefix.
 		if ok := srv.CheckIfStatePrefixExistsForBlockHeight(
 			srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, prefix); !ok {
 			continue

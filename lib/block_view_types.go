@@ -2039,7 +2039,7 @@ func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, s
 	}
 	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	// adding MuteList to the end for backwards compatibility
-	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization) {
+	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex) {
 		// We sort the MuteList members because they can be added while iterating over
 		// a map, which could lead to inconsistent orderings across nodes when encoding.
 		entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MuteList)))...)
@@ -2096,7 +2096,7 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
 	}
 	// Decoding mute list at the end of the entry.
-	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization) {
+	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex) {
 		muteListLen, err := ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding MuteList length")
@@ -2114,7 +2114,7 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 }
 
 func (entry *MessagingGroupEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization)
+	return GetMigrationVersion(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex)
 }
 
 func (entry *MessagingGroupEntry) GetEncoderType() EncoderType {
@@ -2686,7 +2686,7 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization)
+	return GetMigrationVersion(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {

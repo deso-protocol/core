@@ -4970,7 +4970,7 @@ type TransactionSpendingLimit struct {
 	// transactions
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
 
-	// ===== ENCODER MIGRATION DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization =====
+	// ===== ENCODER MIGRATION DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex =====
 	// IsUnlimited field determines whether this derived key has no spending limit.
 	IsUnlimited bool
 }
@@ -5232,7 +5232,7 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 	}
 
 	// IsUnlimited, gated by the encoder migration.
-	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization) {
+	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex) {
 		data = append(data, BoolToByte(tsl.IsUnlimited))
 	}
 
@@ -5361,7 +5361,7 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
-	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization) {
+	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex) {
 		tsl.IsUnlimited, err = ReadBoolByte(rr)
 		if err != nil {
 			return errors.Wrapf(err, "TransactionSpendingLimit.FromBytes: Problem reading IsUnlimited")
@@ -5408,7 +5408,7 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpendingLimit, blockHeight uint32) (_isUnlimited bool, _err error) {
 	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 7)
 
-	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
 	}
 
@@ -6375,10 +6375,10 @@ func DeserializePubKeyToUint64Map(data []byte) (map[PublicKey]uint64, error) {
 type MessagingGroupOperation byte
 
 const (
-	MessagingGroupOperationAddMembers MessagingGroupOperation = iota
-	MessagingGroupOperationRemoveMembers
-	MessagingGroupOperationMuteMembers
-	MessagingGroupOperationUnmuteMembers
+	MessagingGroupOperationAddMembers    MessagingGroupOperation = 0
+	MessagingGroupOperationRemoveMembers MessagingGroupOperation = 1
+	MessagingGroupOperationMuteMembers   MessagingGroupOperation = 2
+	MessagingGroupOperationUnmuteMembers MessagingGroupOperation = 3
 )
 
 type MessagingGroupMetadata struct {

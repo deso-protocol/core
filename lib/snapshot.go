@@ -780,7 +780,7 @@ func (snap *Snapshot) GetAncestralRecordsKeyWithTxn(txn *badger.Txn, key []byte,
 
 // DBSetAncestralRecordWithTxn sets a record corresponding to our ExistingRecordsMap.
 // We append a []byte{1} to the end to indicate that this is an existing record, and
-// we append a []byte{0} to the end to indicate that this is a NON-existing record. We
+// we append a []byte{0} to the end to indicate that this is a NON-existent record. We
 // need to create this distinction to tell the difference between a record that was
 // updated to have an *empty* value vs a record that was deleted entirely.
 func (snap *Snapshot) DBSetAncestralRecordWithTxn(
@@ -1627,8 +1627,8 @@ type AncestralRecordValue struct {
 // main db flushes and ancestral records flushes. For each main db flush transaction, we
 // will build an ancestral cache that contains maps of historical values that were in the
 // main db before we flushed. In particular, we distinguish between existing and
-// non-existing records. Existing records are those records that had already been present
-// in the main db prior to the flush. Non-existing records were not present in the main db,
+// non-existent records. Existing records are those records that had already been present
+// in the main db prior to the flush. Non-existent records were not present in the main db,
 // and the flush added them for the first time.
 //
 // The AncestralCache is stored in the Snapshot struct in a concurrency-safe deque (bi-directional
