@@ -6375,10 +6375,10 @@ func DeserializePubKeyToUint64Map(data []byte) (map[PublicKey]uint64, error) {
 type MessagingGroupOperation byte
 
 const (
-	MessagingGroupOperationAddMembers MessagingGroupOperation = iota
-	MessagingGroupOperationRemoveMembers
-	MessagingGroupOperationMuteMembers
-	MessagingGroupOperationUnmuteMembers
+	MessagingGroupOperationAddMembers    MessagingGroupOperation = 0
+	MessagingGroupOperationRemoveMembers MessagingGroupOperation = 1
+	MessagingGroupOperationMuteMembers   MessagingGroupOperation = 2
+	MessagingGroupOperationUnmuteMembers MessagingGroupOperation = 3
 )
 
 type MessagingGroupMetadata struct {

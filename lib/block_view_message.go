@@ -968,10 +968,10 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// all valid members.
 
 		// Map all members so that it's easier to check for overlapping members.
-		existingMembers := make(map[PublicKey]bool)
+		existingMembers := make(map[PublicKey]struct{})
 
 		// Sanity-check a group's members can't contain the messagingPublicKey.
-		existingMembers[*messagingPublicKey] = true
+		existingMembers[*messagingPublicKey] = struct{}{}
 
 		// If we're adding more group members, then we need to make sure there are no overlapping members between the
 		// transaction's entry, and the existing entry.
@@ -991,7 +991,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 				}
 
 				// Add the existingMember to our helper structs.
-				existingMembers[*existingMember.GroupMemberPublicKey] = true
+				existingMembers[*existingMember.GroupMemberPublicKey] = struct{}{}
 				newMessagingMembers = append(newMessagingMembers, existingMember)
 			}
 			// Set the mute list to the existing mute list since we won't be changing it.
@@ -1037,7 +1037,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 						"Error, messagingMember already exists (%v)", messagingMember.GroupMemberPublicKey[:])
 			}
 			// Add the messagingMember to our helper structs.
-			existingMembers[*messagingMember.GroupMemberPublicKey] = true
+			existingMembers[*messagingMember.GroupMemberPublicKey] = struct{}{}
 			newMessagingMembers = append(newMessagingMembers, messagingMember)
 		}
 
@@ -1045,7 +1045,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// Muting members assumes the group was already created.
 		if existingEntry == nil || existingEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupDoesntExist,
-				"_connectMessagingGroup: Can't mute members for a non-existing group")
+				"_connectMessagingGroup: Can't mute members for a non-existent group")
 		}
 		// MUTING/UNMUTING functionality notes:
 		// In DeSo V3 Messages, Group Chat Owners can now mute or unmute members. This essentially acts like a
@@ -1057,8 +1057,15 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// the message is muted or not. This would decide whether we reject a message txn or not. However, to check
 		// that, we can't just fetch the entire MessagingGroupEntry which may contains 1000s if not 100,000s of members.
 		// Instead, we will make usage of the membership index. We will especially see this in the flushing logic.
-		for _, existingMutedMember := range existingEntry.MuteList {
-			newMuteList = append(newMuteList, existingMutedMember)
+		existingMutedMembers := make(map[PublicKey]struct{})
+		for _, mutedMember := range existingEntry.MuteList {
+			existingMutedMembers[*mutedMember.GroupMemberPublicKey] = struct{}{}
+			newMuteList = append(newMuteList, mutedMember)
+		}
+		// We will keep this map to keep track of all members in the group.
+		existingGroupMembers := make(map[PublicKey]struct{})
+		for _, groupMember := range existingEntry.MessagingGroupMembers {
+			existingGroupMembers[*groupMember.GroupMemberPublicKey] = struct{}{}
 		}
 
 		for _, newlyMutedMember := range txMeta.MessagingGroupMembers {
@@ -1067,13 +1074,20 @@ func (bav *UtxoView) _connectMessagingGroup(
 				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupOwnerMutingSelf,
 					"_connectMessagingGroup: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
 			}
+			// Make sure we are muting a member that exists in the group.
+			if _, exists := existingGroupMembers[*newlyMutedMember.GroupMemberPublicKey]; !exists {
+				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberDoesntExist,
+					"_connectMessagingGroup: Can't mute a non-existent member (%v)", newlyMutedMember.GroupMemberPublicKey[:])
+			}
+
 			// Add member to newMuteList. We iterate over newMuteList to prevent mute list entries with duplicate public keys.
-			for _, addedMutedMember := range newMuteList {
+			if _, exists := existingMutedMembers[*newlyMutedMember.GroupMemberPublicKey]; !exists {
+				newMuteList = append(newMuteList, newlyMutedMember)
+				existingMutedMembers[*newlyMutedMember.GroupMemberPublicKey] = struct{}{}
+			} else {
 				// Check if member is already muted, in such case we error.
-				if reflect.DeepEqual(addedMutedMember.GroupMemberPublicKey[:], newlyMutedMember.GroupMemberPublicKey[:]) {
-					return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyMuted,
-						"_connectMessagingGroup: Cannot mute member that is already muted (%v).", newlyMutedMember.GroupMemberPublicKey[:])
-				}
+				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyMuted,
+					"_connectMessagingGroup: Cannot mute member that is already muted (%v).", newlyMutedMember.GroupMemberPublicKey[:])
 			}
 			newMuteList = append(newMuteList, newlyMutedMember)
 		}
@@ -1084,20 +1098,21 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// Unmuting members assumes the group was already created.
 		if existingEntry == nil || existingEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupDoesntExist,
-				"_connectMessagingGroup: Can't mute members for a non-existing group")
+				"_connectMessagingGroup: Can't mute members for a non-existent group")
+		}
+		// Keep track of all muted members.
+		existingMutedMembers := make(map[PublicKey]*MessagingGroupMember)
+		for _, mutedMember := range existingEntry.MuteList {
+			existingMutedMembers[*mutedMember.GroupMemberPublicKey] = mutedMember
 		}
 		for _, member := range txMeta.MessagingGroupMembers {
 			isUnmuteValid := false
-			// re-add all muted members except for the member that we're trying to unmute.
-			newMuteList = []*MessagingGroupMember{}
-			for _, toUnmute := range existingEntry.MuteList {
-				// if member not in MuteList, add member to the tempMuteList
-				if !reflect.DeepEqual(toUnmute.GroupMemberPublicKey[:], member.GroupMemberPublicKey[:]) {
-					newMuteList = append(newMuteList, toUnmute)
-				} else {
-					// if member IS in MuteList, then unmute txn is valid, and we continue looping to add remaining members to newMuteList.
-					isUnmuteValid = true
-				}
+			// re-add all muted members except for the member that we're trying to unmute. Check if the member exists
+			// in the mute-list, otherwise we can't unmute them.
+			if _, exists := existingMutedMembers[*member.GroupMemberPublicKey]; exists {
+				isUnmuteValid = true
+				// Unmute the member by deleting it from the helper map of muted members. We will later turn it into the newMuteList.
+				delete(existingMutedMembers, *member.GroupMemberPublicKey)
 			}
 			// If invalid unmuting, then check why:
 			// 1. GroupOwner unmuting herself
@@ -1120,6 +1135,10 @@ func (bav *UtxoView) _connectMessagingGroup(
 				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberNotInGroup,
 					"_connectMessagingGroup: Cannot unmute member that does not exist in group (%v).", member.GroupMemberPublicKey[:])
 			}
+		}
+		// Add all members from the existingMutedMembers to the newMuteList
+		for _, mutedMember := range existingMutedMembers {
+			newMuteList = append(newMuteList, mutedMember)
 		}
 		// Set the messaging members to the existing members since we won't be changing them.
 		newMessagingMembers = existingEntry.MessagingGroupMembers
