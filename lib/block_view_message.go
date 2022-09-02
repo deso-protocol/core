@@ -1075,6 +1075,18 @@ func (bav *UtxoView) _connectMessagingGroup(
 						"_connectMessagingGroup: Cannot mute member that is already muted (%v).", newlyMutedMember.GroupMemberPublicKey[:])
 				}
 			}
+			// Check if newlyMutedMember is a valid member of existingEntry.MessagingGroupMembers. If not, error.
+			memberExists := false
+			for _, existingMember := range existingEntry.MessagingGroupMembers {
+				if reflect.DeepEqual(existingMember.GroupMemberPublicKey[:], newlyMutedMember.GroupMemberPublicKey[:]) {
+					memberExists = true
+					break
+				}
+			}
+			if !memberExists {
+				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberNotInGroup,
+					"_connectMessagingGroup: Cannot mute member that is not in the group (%v).", newlyMutedMember.GroupMemberPublicKey[:])
+			}
 			newMuteList = append(newMuteList, newlyMutedMember)
 		}
 		// Set the messaging members to the existing members since we won't be changing them.
