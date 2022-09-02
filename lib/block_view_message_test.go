@@ -2990,3 +2990,970 @@ func TestGroupMessages(t *testing.T) {
 	require.NoError(err)
 	require.Equal(0, len(messages))
 }
+
+// write a function that takes in a utxoView and a publicKey and returns a list of txns and a list of errors
+func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, pk *PublicKey) (txns []*MsgDeSoTxn, expectedErrors []error) {
+	require := require.New(t)
+	// Assuming all keys are funded for now
+	// Decode the test key so they're easier to use throughout the tests.
+
+	//senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+	//require.NoError(err)
+	//senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
+	//require.NoError(err)
+	//senderPublicKey := NewPublicKey(senderPkBytes)
+
+	m0PubKey, _, err := Base58CheckDecode(m0Pub)
+	require.NoError(err)
+	m0PrivKey, _, err := Base58CheckDecode(m0Priv)
+	require.NoError(err)
+	m0PublicKey := NewPublicKey(m0PubKey)
+
+	m1PubKey, _, err := Base58CheckDecode(m1Pub)
+	require.NoError(err)
+	m1PrivKey, _, err := Base58CheckDecode(m1Priv)
+	_ = m1PrivKey
+	require.NoError(err)
+	m1PublicKey := NewPublicKey(m1PubKey)
+
+	m2PubKey, _, err := Base58CheckDecode(m2Pub)
+	require.NoError(err)
+	m2PrivKey, _, err := Base58CheckDecode(m2Priv)
+	_ = m2PrivKey
+	require.NoError(err)
+	m2PublicKey := NewPublicKey(m2PubKey)
+
+	m3PubKey, _, err := Base58CheckDecode(senderPkString)
+	require.NoError(err)
+	m3PrivKey, _, err := Base58CheckDecode(senderPrivString)
+	_ = m3PrivKey
+	require.NoError(err)
+	m3PublicKey := NewPublicKey(m3PubKey)
+
+	// m4 is a public key that is not in the group.
+	m4PubKey, _, err := Base58CheckDecode(recipientPkString)
+	require.NoError(err)
+	m4PrivKey, _, err := Base58CheckDecode(recipientPrivString)
+	_ = m4PrivKey
+	require.NoError(err)
+	m4PublicKey := NewPublicKey(m4PubKey)
+
+	// Create the group messaging key with m0 as the group owner.
+	gangKey := []byte("gang-gang")
+	priv, _, entry := _generateMessagingKey(m0PubKey, m0PrivKey, gangKey)
+
+	privBytes := priv.Serialize()
+
+	// Define helper functions for encryption/decryption so that we can do some real crypto.
+	encrypt := func(plain, recipient []byte) []byte {
+		recipientPk, err := btcec.ParsePubKey(recipient, btcec.S256())
+		if err != nil {
+			return nil
+		}
+		encryptedMessageBytes, err := EncryptBytesWithPublicKey(
+			plain, recipientPk.ToECDSA())
+		if err != nil {
+			return nil
+		}
+		return encryptedMessageBytes
+	}
+	decrypt := func(cipher, recipientPrivKey []byte) []byte {
+		recipientPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), recipientPrivKey)
+		plain, err := DecryptBytesWithPrivateKey(cipher, recipientPriv.ToECDSA())
+		if err != nil {
+			fmt.Println(err)
+			return nil
+		}
+		return plain
+	}
+	_ = decrypt
+
+	// ALL CORRECT BLOCKHEIGHT TXNS AS FOLLOWS
+
+	if bc.blockTip().Height < bc.params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+		{
+			// Create a txn where m0 adds m0, m1, m2 and m3 as members of the group.
+			// We can add any messaging keys as recipients, but we'll just add base keys for simplicity,
+			// since it's not what we're testing here.
+			// We're making a group chat with: (m0, m1, m2, m3).
+			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+				m0PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m0PubKey),
+			})
+			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+				m2PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m2PubKey),
+			})
+			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+				m3PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m3PubKey),
+			})
+			recipients := entry.MessagingGroupMembers
+			extraData := make(map[string][]byte)
+			extraData = nil
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				recipients, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m0 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should be sent to the group as m0 is not muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m0PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m0PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m1 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should be sent to the group as m1 is not muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m1PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m1PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m1Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m0 mutes m1.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m1 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should not be sent to the group as m1 is muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m1PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m1PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m1Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+		}
+
+		{
+			// Create a txn where m0 mutes m1.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyMuted)
+		}
+
+		{
+			// Create a txn where m0 unmutes m1.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m1 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should be sent to the group as m1 is not muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m1PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m1PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m1Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m0 unmutes m1.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyUnmuted)
+		}
+
+		{
+			// Create a txn where m0 mutes m4.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m4PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m4PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberNotInGroup)
+		}
+
+		{
+			// Create a txn where m0 unmutes m4.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m4PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m4PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberNotInGroup)
+		}
+
+		{
+			// Create a txn where m0 mutes self.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m0PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m0PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingGroupOwnerMutingSelf)
+		}
+
+		{
+			// Create a txn where m0 unmutes self.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m0PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m0PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingGroupOwnerUnmutingSelf)
+		}
+
+		{
+			// Create a txn where m1 mutes m2.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m2PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m2PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m1PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m1Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingSignatureInvalid) // This should fail because m1 is not the group owner.
+		}
+
+		{
+			// Create a txn where m2 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should be sent to the group as m2 is not muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m2PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m2PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m2Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m0 mutes m1, m2, and m3.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			muteList = append(muteList, &MessagingGroupMember{
+				m2PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m2PubKey),
+			})
+			muteList = append(muteList, &MessagingGroupMember{
+				m3PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m3PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m0 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should be sent to the group as m0 is the group owner.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m0PublicKey,
+				m1PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m0PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m1 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should not be sent to the group as m1 is muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m1PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m1PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m1Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+		}
+
+		{
+			// Create a txn where m2 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should not be sent to the group as m2 is muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m2PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m2PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m2Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+		}
+
+		{
+			// Create a txn where m3 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should be sent to the group as m3 is muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m3PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m3PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m3Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+		}
+
+		{
+			// Create a txn where m0 unmutes m1, m2, and m3.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			muteList = append(muteList, &MessagingGroupMember{
+				m2PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m2PubKey),
+			})
+			muteList = append(muteList, &MessagingGroupMember{
+				m3PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m3PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m1 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should be sent to the group as m1 is not muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m1PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m1PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m1Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m2 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should be sent to the group as m2 is not muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m2PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m2PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m2Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m3 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should be sent to the group as m3 is not muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m3PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m3PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m3Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m0 mutes m1.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m0 mutes m1 and m2.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			muteList = append(muteList, &MessagingGroupMember{
+				m2PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m2PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyMuted)
+		}
+
+		{
+			// Create a txn where m0 unmutes m1 and m2.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			muteList = append(muteList, &MessagingGroupMember{
+				m2PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m2PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyUnmuted)
+		}
+
+		{
+			// Create a txn where m0 unmutes m1.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+	}
+
+	if bc.blockTip().Height >= bc.params.ForkHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimizationBlockHeight {
+		{
+			// Create a txn where m0 adds m0, m1, m2 and m3 as members of the group.
+			// We can add any messaging keys as recipients, but we'll just add base keys for simplicity,
+			// since it's not what we're testing here.
+			// We're making a group chat with: (m0, m1, m2, m3).
+			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+				m0PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m0PubKey),
+			})
+			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+				m2PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m2PubKey),
+			})
+			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+				m3PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m3PubKey),
+			})
+			recipients := entry.MessagingGroupMembers
+			extraData := make(map[string][]byte)
+			extraData = nil
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				recipients, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m0 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should be sent to the group as m0 is not muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m0PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m0PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m1 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should be sent to the group as m1 is not muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m1PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m1PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m1Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m0 mutes m1.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyExists) // Need to change this to reflect error of muting before block height. Should be RuleErrorMessagingMutingBeforeBlockHeight
+		}
+
+		{
+			// Create a txn where m1 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should not be sent to the group as m1 is not muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m1PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m1PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m1Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
+
+		{
+			// Create a txn where m0 unmutes m1.
+			var muteList []*MessagingGroupMember
+			muteList = append(muteList, &MessagingGroupMember{
+				m1PublicKey,
+				BaseGroupKeyName(),
+				encrypt(privBytes, m1PubKey),
+			})
+			extraData := make(map[string][]byte)
+			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
+				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				muteList, extraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m0Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyExists) // Need to change this to reflect error of muting before block height. Should be RuleErrorMessagingMutingBeforeBlockHeight
+		}
+	}
+
+	return txns, expectedErrors
+}
