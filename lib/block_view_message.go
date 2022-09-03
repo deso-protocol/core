@@ -118,7 +118,12 @@ func (bav *UtxoView) GetMessagingGroupForMessagingGroupKeyExistence(messagingGro
 	// The owner is a member of their own group by default, hence they will be present in the membership index.
 	ownerPublicKey := &messagingGroupKey.OwnerPublicKey
 	groupKeyName := &messagingGroupKey.GroupKeyName
-	return bav.GetMessagingMemberEntry(ownerPublicKey, ownerPublicKey, groupKeyName, blockHeight, forceFullEntry...)
+	entry := bav.GetMessagingMemberEntry(ownerPublicKey, ownerPublicKey, groupKeyName, blockHeight, forceFullEntry...)
+	// Filter out deleted entries.
+	if entry == nil || entry.isDeleted {
+		return nil
+	}
+	return entry
 }
 
 func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
