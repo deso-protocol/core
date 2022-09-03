@@ -2961,50 +2961,100 @@ func TestGroupMessages(t *testing.T) {
 	require.NoError(err)
 	require.Equal(0, len(messages))
 
-	// Uncomment the following line to test for pre-muting block height.
-	//chain.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 1000000000
+}
 
-	// Call testTestnet to test the testnet code with regnet params.
-	txns, expectedErrors := testTestnet(t, chain, utxoView, senderPublicKey)
+func testMuting(t *testing.T) {
+	require := require.New(t)
+	_ = require
+	chain, params, db := NewLowDifficultyBlockchain()
+	_, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	_ = miner
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+	require.NoError(err)
 
-	// Connect all txns.
-	for ii, txn := range txns {
-		// Reset the spent inputs so we can run the tests again.
-		for _, desoInput := range txn.TxInputs {
-			// Fetch the utxoEntry for this input from the view. Make a copy to
-			// avoid having the iterator change under our feet.
-			utxoKey := UtxoKey(*desoInput)
-			utxoEntry := utxoView.GetUtxoEntryForUtxoKey(&utxoKey)
-			if utxoEntry.isSpent {
-				utxoEntry.isSpent = false
+	// First test for post-muting block height.
+	{
+		chain.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
+		// Call testTestnet to test the testnet code with regnet params.
+		txns, expectedErrors := testTestnet(t, chain, utxoView, senderPkString, senderPrivString, 10)
+		// Connect all txns.
+		for ii, txn := range txns {
+			txnHash := txn.Hash()
+			txnSize := getTxnSize(*txn)
+			blockheight := chain.blockTip().Height + 1
+			utxoOps, totalInput, totalOutput, fees, err := utxoView.ConnectTransaction(txn, txnHash, txnSize, blockheight, true, false)
+
+			fmt.Println(ii, expectedErrors[ii], err)
+			// require that err contains the expected error
+			if err == nil {
+				require.Equal(expectedErrors[ii], err)
+			} else {
+				require.Contains(err.Error(), expectedErrors[ii].Error())
 			}
+			require.Equal(totalInput, totalOutput+fees)
+			_ = utxoOps
 		}
+	}
 
-		utxoOps, totalInput, totalOutput, fees, err := utxoView.ConnectTransaction(txn, txn.Hash(), getTxnSize(*txn), chain.blockTip().Height+1, true, false)
+	// Now test for pre-muting block height.
+	{
+		chain.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 1000000000
+		// Call testTestnet to test the testnet code with regnet params.
+		txns, expectedErrors := testTestnet(t, chain, utxoView, senderPkString, senderPrivString, 10)
+		// Connect all txns.
+		for ii, txn := range txns {
+			txnHash := txn.Hash()
+			txnSize := getTxnSize(*txn)
+			blockheight := chain.blockTip().Height + 1
+			utxoOps, totalInput, totalOutput, fees, err := utxoView.ConnectTransaction(txn, txnHash, txnSize, blockheight, true, false)
 
-		fmt.Println(ii, expectedErrors[ii], err)
-		// require that err contains the expected error
-		if err == nil {
-			require.Equal(expectedErrors[ii], err)
-		} else {
-			require.Contains(err.Error(), expectedErrors[ii].Error())
+			fmt.Println(ii, expectedErrors[ii], err)
+			// require that err contains the expected error
+			if err == nil {
+				require.Equal(expectedErrors[ii], err)
+			} else {
+				require.Contains(err.Error(), expectedErrors[ii].Error())
+			}
+			require.Equal(totalInput, totalOutput+fees)
+			_ = utxoOps
 		}
-		require.Equal(totalInput, totalOutput+fees)
-		_ = utxoOps
 	}
 }
 
 // write a function that takes in a utxoView and a publicKey and returns a list of txns and a list of errors
-func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, pk *PublicKey) (txns []*MsgDeSoTxn, expectedErrors []error) {
+func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey string, fundedPrivKey string, nanosPerTxn uint64) (txns []*MsgDeSoTxn, expectedErrors []error) {
 	require := require.New(t)
-	// Assuming all keys are funded for now
-	// Decode the test key so they're easier to use throughout the tests.
 
-	//senderPkBytes, _, err := Base58CheckDecode(senderPkString)
-	//require.NoError(err)
-	//senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
-	//require.NoError(err)
-	//senderPublicKey := NewPublicKey(senderPkBytes)
+	var (
+		// Set up some addresses
+		m0Pub           = "tBCKY2X1Gbqn95tN1PfsCFLKX6x6h48g5LdHt9T95Wj9Rm6EVKLVpi"
+		m0Priv          = "tbc2uXFwv3CJvr5HdLLKpAtLNCtBafvfxLBMbJFCNdLA61cLB7aLq"
+		m0PkBytes, _, _ = Base58CheckDecode(m0Pub)
+		_               = m0PkBytes
+
+		m1Pub           = "tBCKYGWj36qERG57RKdrnCf6JQad1smGTzeLkj1bfN7UqKwY8SM57a"
+		m1Priv          = "tbc2DtxgxPVB6T6sbFqhgNrPqwb7QUYG5ZS7aEXQ3ZxAyG88YAPVy"
+		m1PkBytes, _, _ = Base58CheckDecode(m1Pub)
+		_               = m1Priv
+		_               = m1PkBytes
+
+		m2Pub           = "tBCKVNYw7WgG59SGP8EdpR9nyywoMBYa3ChLG4UjCBhvFgd4e7oXNg"
+		m2Priv          = "tbc37VGdu4RJ7uJcoGHrDJkr4FZPsVYbyo3dRxdhyQHPNp6jUjbK1"
+		m2PkBytes, _, _ = Base58CheckDecode(m2Pub)
+		_               = m2PkBytes
+
+		m3Pub           = "tBCKWqMGE7xdz78juDSEsDFYt67CuL9VrTiv627Wj2sLwG6B2fcy7o"
+		m3Priv          = "tbc2MkEWaCoVNh5rV4fyAdSmAkLQ9bZLqEMGSLYtoAAxgA1844Y67"
+		m3PkBytes, _, _ = Base58CheckDecode(m3Pub)
+		_               = m3Priv
+		_               = m3PkBytes
+
+		m4Pub           = "tBCKWu6nNQa3cUV8QLwRhX9r6NXcNpDuK7xtscwm27zXJ7MxdnmZ3g"
+		m4Priv          = "tbc2GmpAmkm8CmMjS9NXiAFZHEDGqxSCCpkvkwnY8oqfZXAXnmtFV"
+		m4PkBytes, _, _ = Base58CheckDecode(m4Pub)
+		_               = m4Priv
+		_               = m4PkBytes
+	)
 
 	m0PubKey, _, err := Base58CheckDecode(m0Pub)
 	require.NoError(err)
@@ -3026,20 +3076,35 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, pk *PublicKey) (tx
 	require.NoError(err)
 	m2PublicKey := NewPublicKey(m2PubKey)
 
-	m3PubKey, _, err := Base58CheckDecode(senderPkString)
+	m3PubKey, _, err := Base58CheckDecode(m3Pub)
 	require.NoError(err)
-	m3PrivKey, _, err := Base58CheckDecode(senderPrivString)
+	m3PrivKey, _, err := Base58CheckDecode(m3Priv)
 	_ = m3PrivKey
 	require.NoError(err)
 	m3PublicKey := NewPublicKey(m3PubKey)
 
 	// m4 is a public key that is not in the group.
-	m4PubKey, _, err := Base58CheckDecode(recipientPkString)
+	m4PubKey, _, err := Base58CheckDecode(m4Pub)
 	require.NoError(err)
-	m4PrivKey, _, err := Base58CheckDecode(recipientPrivString)
+	m4PrivKey, _, err := Base58CheckDecode(m4Priv)
 	_ = m4PrivKey
 	require.NoError(err)
 	m4PublicKey := NewPublicKey(m4PubKey)
+
+	// Fund all the keys.
+	registerOrTransfer := func(username string,
+		senderPk string, recipientPk string, senderPriv string) {
+
+		_, _, _ = _doBasicTransferWithViewFlush(
+			t, bc, bc.db, bc.params, senderPk, recipientPk,
+			senderPriv, nanosPerTxn*100, 11)
+	}
+
+	registerOrTransfer("", fundedPublicKey, m0Pub, fundedPrivKey)
+	registerOrTransfer("", fundedPublicKey, m1Pub, fundedPrivKey)
+	registerOrTransfer("", fundedPublicKey, m2Pub, fundedPrivKey)
+	registerOrTransfer("", fundedPublicKey, m3Pub, fundedPrivKey)
+	registerOrTransfer("", fundedPublicKey, m4Pub, fundedPrivKey)
 
 	// Create the group messaging key with m0 as the group owner.
 	gangKey := []byte("gang-gang")
@@ -3554,35 +3619,34 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, pk *PublicKey) (tx
 			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
 		}
 
-		// FAILING DUE TO INVALID SIGNATURE ???
-		//{
-		//	// Create a txn where m3 sends a message to the group.
-		//	tstampNanos := uint64(time.Now().UnixNano())
-		//	testMessage := []byte("This message should not be sent to the group as m3 is muted.")
-		//	encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
-		//	msgEntry := MessageEntry{
-		//		m3PublicKey,
-		//		m0PublicKey,
-		//		encryptedMessage,
-		//		tstampNanos,
-		//		false,
-		//		MessagesVersion3,
-		//		m3PublicKey,
-		//		BaseGroupKeyName(),
-		//		entry.MessagingPublicKey,
-		//		NewGroupKeyName(gangKey),
-		//		nil,
-		//	}
-		//	txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
-		//		msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-		//		msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-		//		msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
-		//	require.NoError(err)
-		//	require.Equal(totalInputMake, changeAmountMake+feesMake)
-		//	_signTxn(t, txn, m3Priv)
-		//	txns = append(txns, txn)
-		//	expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
-		//}
+		{
+			// Create a txn where m3 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should not be sent to the group as m3 is muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m3PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m3PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m3Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+		}
 
 		{
 			// Create a txn where m0 unmutes m1, m2, and m3.
@@ -3672,35 +3736,34 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, pk *PublicKey) (tx
 			expectedErrors = append(expectedErrors, nil)
 		}
 
-		// FAILING DUE TO INVALID SIGNATURE ???
-		//{
-		//	// Create a txn where m3 sends a message to the group.
-		//	tstampNanos := uint64(time.Now().UnixNano())
-		//	testMessage := []byte("This message should be sent to the group as m3 is not muted.")
-		//	encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
-		//	msgEntry := MessageEntry{
-		//		m3PublicKey,
-		//		m0PublicKey,
-		//		encryptedMessage,
-		//		tstampNanos,
-		//		false,
-		//		MessagesVersion3,
-		//		m3PublicKey,
-		//		BaseGroupKeyName(),
-		//		entry.MessagingPublicKey,
-		//		NewGroupKeyName(gangKey),
-		//		nil,
-		//	}
-		//	txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
-		//		msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-		//		msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-		//		msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
-		//	require.NoError(err)
-		//	require.Equal(totalInputMake, changeAmountMake+feesMake)
-		//	_signTxn(t, txn, m3Priv)
-		//	txns = append(txns, txn)
-		//	expectedErrors = append(expectedErrors, nil)
-		//}
+		{
+			// Create a txn where m3 sends a message to the group.
+			tstampNanos := uint64(time.Now().UnixNano())
+			testMessage := []byte("This message should be sent to the group as m3 is not muted.")
+			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			msgEntry := MessageEntry{
+				m3PublicKey,
+				m0PublicKey,
+				encryptedMessage,
+				tstampNanos,
+				false,
+				MessagesVersion3,
+				m3PublicKey,
+				BaseGroupKeyName(),
+				entry.MessagingPublicKey,
+				NewGroupKeyName(gangKey),
+				nil,
+			}
+			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
+				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+			require.NoError(err)
+			require.Equal(totalInputMake, changeAmountMake+feesMake)
+			_signTxn(t, txn, m3Priv)
+			txns = append(txns, txn)
+			expectedErrors = append(expectedErrors, nil)
+		}
 
 		{
 			// Create a txn where m0 mutes m1.
