@@ -2532,22 +2532,9 @@ const (
 	// That is, signatures made with derived keys cannot start with 0x30, unless the underlying transaction has the
 	// derived public key in ExtraData. And if it does, then the header must be 0x30.
 	derSigMagicMaxRecoveryOffset = 0x34
-
-	// compactSigSize is the size of a compact signature. It consists of a compact signature recovery code byte followed
-	// by the R and S components serialized as 32-byte big-endian values. 1+32*2 = 65 for the R and S components. 1+32+32=65.
-	compactSigSize = 65
-
-	// compactSigMagicOffset is a value used when creating the compact signature recovery code inherited from Bitcoin and
-	// has no meaning, but has been retained for compatibility.  For historical purposes, it was originally picked to avoid
-	// a binary representation that would allow compact signatures to be mistaken for other components.
-	compactSigMagicOffset = 27
-
-	// compactSigCompPubKey is a value used when creating the compact signature recovery code to indicate the original
-	// public key was compressed.
-	compactSigCompPubKey = 4
 )
 
-// DeSoSignature is a wrapper around ECDSA signatures used primarily in MsgDeSoTxn transaction type.
+// DeSoSignature is a wrapper around ECDSA signatures used primarily in the MsgDeSoTxn transaction type.
 type DeSoSignature struct {
 	// Sign stores the main ECDSA signature. We use the btcec crypto package for most of the heavy-lifting.
 	Sign *btcec.Signature
@@ -2577,7 +2564,8 @@ func (desoSign *DeSoSignature) ToBytes() []byte {
 	// Serialize the signature using the DER encoding.
 	signatureBytes := desoSign.Sign.Serialize()
 
-	// If the signature contains the recovery id, place it in the header magic in accordance to the DeSo-DER format.
+	// If the signature contains the recovery id, place it in the header magic in accordance with
+	// the DeSo-DER format.
 	if len(signatureBytes) > 0 && desoSign.IsRecoverable {
 		signatureBytes[0] += 0x01 + desoSign.RecoveryId
 	}
@@ -2617,13 +2605,39 @@ func (desoSign *DeSoSignature) FromBytes(signatureBytes []byte) error {
 	return nil
 }
 
-// SerializeCompact encodes the signature into the compact signature format:
+const (
+	// See comment on _btcecSerializeCompact to better understand how these constants are used.
+
+	// btcecCompactSigSize is the size of a btcec compact signature. It consists of a compact signature recovery code
+	// byte followed by the R and S components serialized as 32-byte big-endian values. 1+32*2 = 65 for the R and S
+	// components. 1+32+32=65.
+	btcecCompactSigSize byte = 65
+
+	// This is a magic offset that we need to implement the compact signature concept from btcec.
+	//
+	// btcecCompactSigMagicOffset is a value used when creating the compact signature recovery code inherited from Bitcoin and
+	// has no meaning, but has been retained for compatibility. For historical purposes, it was originally picked to avoid
+	// a binary representation that would allow compact signatures to be mistaken for other components.
+	btcecCompactSigMagicOffset byte = 27
+
+	// btcecCompactSigCompPubKey is a value used when creating the compact signature recovery code to indicate the original
+	// public key was compressed.
+	btcecCompactSigCompPubKey byte = 4
+)
+
+// The concept of a compact signature comes from btcec. It's a weird format that's different from standard DER
+// encoding, but we use it because it allows us to leverage their RecoverCompact function. For some reason, btcec
+// only implemented SignCompact() and RecoverCompact() but not SerializeCompact(). So, for our use-case, we
+// implement the missing Serialize() function and then we call the following to recover the public key:
+// - btcec.RecoverCompact(_btcecSerializeCompact(desoSignature)).
+//
+// _btcecSerializeCompact encodes the signature into the compact signature format:
 // <1-byte compact sig recovery code><32-byte R><32-byte S>
 //
 // The compact sig recovery code is the value 27 + public key recovery ID + 4
 // if the compact signature was created with a compressed public key.
 // Public key recovery ID is in the range [0, 3].
-func (desoSign *DeSoSignature) SerializeCompact() ([]byte, error) {
+func (desoSign *DeSoSignature) _btcecSerializeCompact() ([]byte, error) {
 	// We will change from the btcec signature type to the dcrec signature type. To achieve this, we will create the
 	// ecdsa (R, S) pair using the decred's package.
 	// Reference: https://github.com/decred/dcrd/blob/1eff7/dcrec/secp256k1/modnscalar_test.go#L26
@@ -2638,15 +2652,15 @@ func (desoSign *DeSoSignature) SerializeCompact() ([]byte, error) {
 	// To make sure the signature has been correctly parsed, we verify DER encoding of both signatures matches.
 	verifySignature := decredEC.NewSignature(r, s)
 	if !bytes.Equal(verifySignature.Serialize(), desoSign.Sign.Serialize()) {
-		return nil, fmt.Errorf("SerializeCompact: Problem sanity-checking signature")
+		return nil, fmt.Errorf("_btcecSerializeCompact: Problem sanity-checking signature")
 	}
 
 	// Encode the signature using compact format.
 	// reference: https://github.com/decred/dcrd/blob/1eff7/dcrec/secp256k1/ecdsa/signature.go#L712
-	compactSigRecoveryCode := compactSigMagicOffset + desoSign.RecoveryId + compactSigCompPubKey
+	compactSigRecoveryCode := btcecCompactSigMagicOffset + desoSign.RecoveryId + btcecCompactSigCompPubKey
 
 	// Output <compactSigRecoveryCode><32-byte R><32-byte S>.
-	var b [compactSigSize]byte
+	var b [btcecCompactSigSize]byte
 	b[0] = compactSigRecoveryCode
 	r.PutBytesUnchecked(b[1:33])
 	s.PutBytesUnchecked(b[33:65])
@@ -2656,7 +2670,7 @@ func (desoSign *DeSoSignature) SerializeCompact() ([]byte, error) {
 // RecoverPublicKey attempts to retrieve the signer's public key from the DeSoSignature given the messageHash sha256x2 digest.
 func (desoSign *DeSoSignature) RecoverPublicKey(messageHash []byte) (*btcec.PublicKey, error) {
 	// Serialize signature into the compact encoding.
-	signatureBytes, err := desoSign.SerializeCompact()
+	signatureBytes, err := desoSign._btcecSerializeCompact()
 	if err != nil {
 		return nil, errors.Wrapf(err, "RecoverPublicKey: Problem serializing compact signature")
 	}
@@ -2668,6 +2682,34 @@ func (desoSign *DeSoSignature) RecoverPublicKey(messageHash []byte) (*btcec.Publ
 	}
 
 	return recoveredPublicKey, nil
+}
+
+// SignRecoverable computes a signature that adds a publicKeyRecoveryID to the first byte of a
+// standard DER signature. We call the combination the DeSo-DER signature.
+//
+// Overall, it first computes a standard DER signature, and then it adds (0x01 + recoveryID) to
+// the first byte. This makes it so that the first byte will be between [0x31, 0x34] inclusive,
+// instead of being 0x30, which is the standard DER signature magic number.
+func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) (*DeSoSignature, error) {
+	signature, err := privateKey.Sign(bb)
+	if err != nil {
+		return nil, err
+	}
+
+	// We use SignCompact from the btcec library to get the recoverID. This results in a non-standard
+	// encoding that we need to manipulate in order to get the recoveryID back out. See comment on
+	// _btcecSerializeCompact for more information.
+	signatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, bb, true)
+	if err != nil {
+		return nil, err
+	}
+	recoveryId := (signatureCompact[0] - btcecCompactSigMagicOffset) & ^byte(btcecCompactSigCompPubKey)
+
+	return &DeSoSignature{
+		Sign:          signature,
+		RecoveryId:    recoveryId,
+		IsRecoverable: true,
+	}, nil
 }
 
 type MsgDeSoTxn struct {
@@ -4927,6 +4969,10 @@ type TransactionSpendingLimit struct {
 	// BuyingCreatorPKID || SellingCreatorPKID to number of
 	// transactions
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
+
+	// ===== ENCODER MIGRATION DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex =====
+	// IsUnlimited field determines whether this derived key has no spending limit.
+	IsUnlimited bool
 }
 
 // ToMetamaskString encodes the TransactionSpendingLimit into a Metamask-compatible string. The encoded string will
@@ -5072,6 +5118,11 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 		indentationCounter--
 	}
 
+	// IsUnlimited
+	if tsl.IsUnlimited {
+		str += "FULL ACCESS"
+	}
+
 	return str
 }
 
@@ -5083,7 +5134,7 @@ func _indt(counter int) string {
 	return indentationString
 }
 
-func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
+func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error) {
 	data := []byte{}
 
 	if tsl == nil {
@@ -5180,10 +5231,15 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 		}
 	}
 
+	// IsUnlimited, gated by the encoder migration.
+	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex) {
+		data = append(data, BoolToByte(tsl.IsUnlimited))
+	}
+
 	return data, nil
 }
 
-func (tsl *TransactionSpendingLimit) FromBytes(rr *bytes.Reader) error {
+func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Reader) error {
 	globalDESOLimit, err := ReadUvarint(rr)
 	if err != nil {
 		return err
@@ -5304,6 +5360,14 @@ func (tsl *TransactionSpendingLimit) FromBytes(rr *bytes.Reader) error {
 			tsl.DAOCoinLimitOrderLimitMap[*daoCoinLimitOrderLimitKey] = operationCount
 		}
 	}
+
+	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex) {
+		tsl.IsUnlimited, err = ReadBoolByte(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionSpendingLimit.FromBytes: Problem reading IsUnlimited")
+		}
+	}
+
 	return nil
 }
 
@@ -5315,6 +5379,7 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
+		IsUnlimited:                  tsl.IsUnlimited,
 	}
 
 	for txnType, txnCount := range tsl.TransactionCountLimitMap {
@@ -5338,6 +5403,26 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 	}
 
 	return copyTSL
+}
+
+func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpendingLimit, blockHeight uint32) (_isUnlimited bool, _err error) {
+	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 7)
+
+	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
+	}
+
+	if tsl.IsUnlimited && (tsl.GlobalDESOLimit > 0 ||
+		len(tsl.TransactionCountLimitMap) > 0 ||
+		len(tsl.CreatorCoinOperationLimitMap) > 0 ||
+		len(tsl.DAOCoinOperationLimitMap) > 0 ||
+		len(tsl.NFTOperationLimitMap) > 0 ||
+		len(tsl.DAOCoinLimitOrderLimitMap) > 0) {
+
+		return tsl.IsUnlimited, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
+	}
+
+	return tsl.IsUnlimited, nil
 }
 
 type NFTLimitOperation uint8
@@ -6286,6 +6371,16 @@ func DeserializePubKeyToUint64Map(data []byte) (map[PublicKey]uint64, error) {
 // MessagingGroupMetadata
 // ==================================================================
 
+// MessagingGroupOperation represents V3 Group Chat Messages ExtraData["MessagingGroupOperationType"] values
+type MessagingGroupOperation byte
+
+const (
+	MessagingGroupOperationAddMembers    MessagingGroupOperation = 0
+	MessagingGroupOperationRemoveMembers MessagingGroupOperation = 1
+	MessagingGroupOperationMuteMembers   MessagingGroupOperation = 2
+	MessagingGroupOperationUnmuteMembers MessagingGroupOperation = 3
+)
+
 type MessagingGroupMetadata struct {
 	// This struct is very similar to the MessagingGroupEntry type.
 	MessagingPublicKey    []byte
@@ -6371,4 +6466,50 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 
 func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 	return &MessagingGroupMetadata{}
+}
+
+// GetMessagingGroupOperation returns the messaging group operation based on the transaction. In particular, we check
+// transaction's ExtraData to see whether it's a mute/unmute operation.
+func GetMessagingGroupOperation(txn *MsgDeSoTxn) (MessagingGroupOperation, error) {
+	// If the transaction is nil then we return an error.
+	if txn == nil {
+		return 0, fmt.Errorf("GetMessagingGroupOperation: nil txn")
+	}
+
+	// Make sure this is a messaging group transaction.
+	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
+		return 0, fmt.Errorf("GetMessagingGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
+	}
+
+	// Sanity-check cast the transaction metadata to a messaging group metadata.
+	_, ok := txn.TxnMeta.(*MessagingGroupMetadata)
+	if !ok {
+		return 0, fmt.Errorf("GetMessagingGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
+	}
+
+	// If the transaction's ExtraData is nil then we assume MessagingGroupOperationAddMembers
+	messagingGroupOperation := MessagingGroupOperationAddMembers
+	if txn.ExtraData == nil {
+		return messagingGroupOperation, nil
+	}
+
+	// Check if the transaction's ExtraData contains a MessagingGroupOperationType.
+	if operationTypeBytes, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists && len(operationTypeBytes) == 1 {
+		operationType := MessagingGroupOperation(operationTypeBytes[0])
+
+		switch operationType {
+		case MessagingGroupOperationAddMembers:
+			messagingGroupOperation = MessagingGroupOperationAddMembers
+		case MessagingGroupOperationRemoveMembers:
+			messagingGroupOperation = MessagingGroupOperationRemoveMembers
+		case MessagingGroupOperationMuteMembers:
+			messagingGroupOperation = MessagingGroupOperationMuteMembers
+		case MessagingGroupOperationUnmuteMembers:
+			messagingGroupOperation = MessagingGroupOperationUnmuteMembers
+		default:
+			return 0, fmt.Errorf("GetMessagingGroupOperation: invalid operation type %v", operationType)
+		}
+	}
+
+	return messagingGroupOperation, nil
 }

@@ -755,17 +755,21 @@ func _signTxn(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
 	txn.Signature.SetSignature(txnSignature)
 }
 
+func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrBase58Check string) {
+	signatureType := rand.Int() % 2
+	_signTxnWithDerivedKeyAndType(t, txn, privKeyStrBase58Check, signatureType)
+}
+
 // Signs the transaction with a derived key. Transaction ExtraData contains the derived
 // public key, so that _verifySignature() knows transaction wasn't signed by the owner.
-func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
+func _signTxnWithDerivedKeyAndType(t *testing.T, txn *MsgDeSoTxn, privKeyStrBase58Check string, signatureType int) {
 	require := require.New(t)
 
-	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
+	privKeyBytes, _, err := Base58CheckDecode(privKeyStrBase58Check)
 	require.NoError(err)
 	privateKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
 
 	// We will randomly sign with the standard DER encoding + ExtraData, or with the DeSo-DER encoding.
-	signatureType := rand.Int() % 2
 	if signatureType == 0 {
 		if txn.ExtraData == nil {
 			txn.ExtraData = make(map[string][]byte)
@@ -778,16 +782,10 @@ func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string)
 		txBytes, err := txn.ToBytes(true /*preSignature*/)
 		require.NoError(err)
 		txHash := Sha256DoubleHash(txBytes)[:]
-		signature, err := privateKey.Sign(txHash)
-		require.NoError(err)
 
-		signatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, txHash, true)
+		desoSignature, err := SignRecoverable(txHash, privateKey)
 		require.NoError(err)
-		recoveryId := (signatureCompact[0] - compactSigMagicOffset) & ^byte(compactSigCompPubKey)
-
-		txn.Signature.SetSignature(signature)
-		txn.Signature.RecoveryId = recoveryId
-		txn.Signature.IsRecoverable = true
+		txn.Signature = *desoSignature
 	}
 }
 

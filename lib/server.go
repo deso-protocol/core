@@ -53,6 +53,7 @@ type Server struct {
 	cmgr          *ConnectionManager
 	blockchain    *Blockchain
 	snapshot      *Snapshot
+	forceChecksum bool
 	mempool       *DeSoMempool
 	miner         *DeSoMiner
 	blockProducer *DeSoBlockProducer
@@ -329,42 +330,20 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 //   sync peer is used.
 //
 // TODO: Refactor all these arguments into a config object or something.
-func NewServer(
-	_params *DeSoParams,
-	_listeners []net.Listener,
-	_desoAddrMgr *addrmgr.AddrManager,
-	_connectIps []string,
-	_db *badger.DB,
-	postgres *Postgres,
-	_targetOutboundPeers uint32,
-	_maxInboundPeers uint32,
-	_minerPublicKeys []string,
-	_numMiningThreads uint64,
-	_limitOneInboundConnectionPerIP bool,
-	_hyperSync bool,
-	_syncType NodeSyncType,
-	_maxSyncBlockHeight uint32,
-	_disableEncoderMigrations bool,
-	_rateLimitFeerateNanosPerKB uint64,
-	_minFeeRateNanosPerKB uint64,
-	_stallTimeoutSeconds uint64,
-	_maxBlockTemplatesToCache uint64,
-	_minBlockUpdateIntervalSeconds uint64,
-	_blockCypherAPIKey string,
-	_runReadOnlyUtxoViewUpdater bool,
-	_snapshotBlockHeightPeriod uint64,
-	_dataDir string,
-	_mempoolDumpDir string,
-	_disableNetworking bool,
-	_readOnlyMode bool,
-	_ignoreInboundPeerInvMessages bool,
-	statsd *statsd.Client,
-	_blockProducerSeed string,
-	_trustedBlockProducerPublicKeys []string,
-	_trustedBlockProducerStartHeight uint64,
-	eventManager *EventManager,
-	_nodeMessageChan chan NodeMessage,
-) (_srv *Server, _err error, _shouldRestart bool) {
+func NewServer(_params *DeSoParams, _listeners []net.Listener,
+	_desoAddrMgr *addrmgr.AddrManager, _connectIps []string, _db *badger.DB,
+	postgres *Postgres, _targetOutboundPeers uint32, _maxInboundPeers uint32,
+	_minerPublicKeys []string, _numMiningThreads uint64, _limitOneInboundConnectionPerIP bool,
+	_hyperSync bool, _syncType NodeSyncType, _maxSyncBlockHeight uint32,
+	_disableEncoderMigrations bool, _rateLimitFeerateNanosPerKB uint64, _minFeeRateNanosPerKB uint64,
+	_stallTimeoutSeconds uint64, _maxBlockTemplatesToCache uint64, _minBlockUpdateIntervalSeconds uint64,
+	_blockCypherAPIKey string, _runReadOnlyUtxoViewUpdater bool, _snapshotBlockHeightPeriod uint64,
+	_dataDir string, _mempoolDumpDir string, _disableNetworking bool, _readOnlyMode bool,
+	_ignoreInboundPeerInvMessages bool, statsd *statsd.Client, _blockProducerSeed string,
+	_trustedBlockProducerPublicKeys []string, _trustedBlockProducerStartHeight uint64,
+	eventManager *EventManager, _nodeMessageChan chan NodeMessage, _forceChecksum bool) (
+	_srv *Server, _err error, _shouldRestart bool) {
+
 	var err error
 
 	// Setup snapshot
@@ -377,11 +356,11 @@ func NewServer(
 		if err != nil {
 			panic(err)
 		}
+	}
 
-		// We only set archival mode true if we're a hypersync node.
-		if IsNodeArchival(_syncType) {
-			archivalMode = true
-		}
+	// We only set archival mode true if we're a hypersync node.
+	if IsNodeArchival(_syncType) {
+		archivalMode = true
 	}
 
 	// Create an empty Server object here so we can pass a reference to it to the
@@ -392,6 +371,7 @@ func NewServer(
 		IgnoreInboundPeerInvMessages: _ignoreInboundPeerInvMessages,
 		snapshot:                     _snapshot,
 		nodeMessageChannel:           _nodeMessageChan,
+		forceChecksum:                _forceChecksum,
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -623,8 +603,14 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 	// If peer isn't assigned to any prefix, we will assign him now.
 	if !syncingPrefix {
-		// We will assign the peer to a non-existing prefix.
+		// We will assign the peer to a non-existent prefix.
 		for _, prefix = range StatePrefixes.StatePrefixesList {
+			// FIXME: This is a temporary hack that we have to employ until we are confident nodes have
+			// 	downloaded the latest code that sends an empty db chunk for a non-existent prefix.
+			if ok := srv.CheckIfStatePrefixExistsForBlockHeight(
+				srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, prefix); !ok {
+				continue
+			}
 			exists := false
 			for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
 				if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
@@ -661,6 +647,19 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
+}
+
+// FIXME: This is a temporary hack that we have to employ until we are confident nodes have
+// 	downloaded the latest code that sends an empty db chunk for a non-existent prefix. We
+// 	check if the prefix is the newly-added PrefixGroupMembershipIndex and if so, filter it out.
+func (srv *Server) CheckIfStatePrefixExistsForBlockHeight(blockHeight uint64, prefix []byte) bool {
+	switch prefix[0] {
+	case Prefixes.PrefixGroupMembershipIndex[0]:
+		if uint32(blockHeight) < srv.blockchain.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+			return false
+		}
+	}
+	return true
 }
 
 // GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
@@ -1257,6 +1256,12 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	var completedPrefixes [][]byte
 	for _, prefix := range StatePrefixes.StatePrefixesList {
+		// FIXME: This is a temporary hack that we have to employ until we are confident nodes have
+		// 	downloaded the latest code that sends an empty db chunk for a non-existent prefix.
+		if ok := srv.CheckIfStatePrefixExistsForBlockHeight(
+			srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, prefix); !ok {
+			continue
+		}
 		completed := false
 		// Check if the prefix has been completed.
 		for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
@@ -1298,16 +1303,29 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	if err != nil {
 		glog.Errorf("Server._handleSnapshot: Problem getting checksum bytes, error (%v)", err)
 	}
-	if !reflect.DeepEqual(checksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) {
-		if srv.nodeMessageChannel != nil {
-			srv.nodeMessageChannel <- NodeErase
-		}
+	if reflect.DeepEqual(checksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) {
+		glog.Infof(CLog(Green, fmt.Sprintf("Server._handleSnapshot: State checksum matched "+
+			"what was expected!")))
+	} else {
+		// Checksums didn't match
 		glog.Errorf(CLog(Red, fmt.Sprintf("Server._handleSnapshot: The final db checksum doesn't match the "+
 			"checksum received from the peer. It is likely that HyperSync encountered some unexpected error earlier. "+
 			"You should report this as an issue on DeSo github https://github.com/deso-protocol/core. It is also possible "+
 			"that the peer is misbehaving and sent invalid snapshot chunks. In either way, we'll restart the node and "+
-			"attempt to HyperSync from the beginning.")))
-		return
+			"attempt to HyperSync from the beginning. Local db checksum %v; peer's snapshot checksum %v",
+			checksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
+		if srv.forceChecksum {
+			// If forceChecksum is true we signal an erasure of the state and return here,
+			// which will cut off the sync.
+			if srv.nodeMessageChannel != nil {
+				srv.nodeMessageChannel <- NodeErase
+			}
+			return
+		} else {
+			// Otherwise, if forceChecksum is false, we error but then keep going.
+			glog.Errorf(CLog(Yellow, fmt.Sprintf("Server._handleSnapshot: Ignoring checksum mismatch because "+
+				"--force-checksum is set to false.")))
+		}
 	}
 
 	// After syncing state from a snapshot, we will sync remaining blocks. To do so, we will
@@ -1363,8 +1381,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.snapshot.Status.CurrentBlockHeight = msg.SnapshotMetadata.SnapshotBlockHeight
 	srv.snapshot.Status.SaveStatus()
 
-	glog.Infof("server._handleSnapshot: FINAL snapshot checksum is (%v)",
-		srv.snapshot.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes)
+	glog.Infof("server._handleSnapshot: FINAL snapshot checksum is (%v) (%v)",
+		srv.snapshot.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes,
+		hex.EncodeToString(srv.snapshot.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes))
 
 	// Take care of any callbacks that need to run once the snapshot is completed.
 	srv.eventManager.snapshotCompleted()
@@ -1397,7 +1416,7 @@ func (srv *Server) _startSync() {
 	var bestPeer *Peer
 	for _, peer := range srv.cmgr.GetAllPeers() {
 		if !peer.IsSyncCandidate() {
-			glog.Infof("Peer is not sync candidate: %v", peer)
+			glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", peer, peer.isOutbound)
 			continue
 		}
 
@@ -1462,7 +1481,7 @@ func (srv *Server) _handleNewPeer(pp *Peer) {
 		srv._startSync()
 	}
 	if !isSyncCandidate {
-		glog.Infof("Peer is not sync candidate: %v", pp)
+		glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", pp, pp.isOutbound)
 	}
 }
 

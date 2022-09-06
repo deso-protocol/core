@@ -1504,6 +1504,34 @@ func TestSpendingLimitMetamaskString(t *testing.T) {
 	}
 }
 
+// Test encoding of unlimited derived key spending limits.
+func TestUnlimitedSpendingLimitMetamaskEncoding(t *testing.T) {
+	require := require.New(t)
+
+	// Set the blockheights for encoder migration.
+	GlobalDeSoParams = DeSoTestnetParams
+	GlobalDeSoParams.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
+	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
+		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 0
+	}
+
+	// Encode the spending limit with just the IsUnlimited field.
+	spendingLimit := &TransactionSpendingLimit{
+		IsUnlimited: true,
+	}
+
+	// Test the spending limit encoding using the standard scheme.
+	spendingLimitBytes, err := spendingLimit.ToBytes(1)
+	require.NoError(err)
+	require.Equal(true, reflect.DeepEqual(spendingLimitBytes, []byte{0, 0, 0, 0, 0, 0, 1}))
+
+	// Test the spending limit encoding using the metamask scheme.
+	require.Equal(true, reflect.DeepEqual(
+		"Spending limits on the derived key:\nFULL ACCESS",
+		spendingLimit.ToMetamaskString(&GlobalDeSoParams),
+	))
+}
+
 // Verify that DeSoSignature.SerializeCompact correctly encodes the signature into compact format.
 func TestDeSoSignature_SerializeCompact(t *testing.T) {
 	require := require.New(t)
@@ -1524,21 +1552,15 @@ func TestDeSoSignature_SerializeCompact(t *testing.T) {
 			// Generate a random message and sign it.
 			message := RandomBytes(10)
 			messageHash := Sha256DoubleHash(message)[:]
-			signature, err := privateKey.Sign(messageHash)
+			desoSignature, err := SignRecoverable(messageHash, privateKey)
 			require.NoError(err)
 
-			// Find the recoveryId by using btcec compact signing.
+			// Verify that the compact signature is equal to what we serialized.
 			signatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, messageHash, true)
 			require.NoError(err)
-			// reference: https://github.com/btcsuite/btcd/blob/2f508/btcec/signature.go#L424
-			recoveryId := (signatureCompact[0] - compactSigMagicOffset) & ^byte(compactSigCompPubKey)
-			desoSignature := DeSoSignature{
-				Sign:       signature,
-				RecoveryId: recoveryId,
-			}
 
 			// Use the DeSoSignature.SerializeCompact encoding.
-			signatureCompactCustom, err := desoSignature.SerializeCompact()
+			signatureCompactCustom, err := desoSignature._btcecSerializeCompact()
 			require.NoError(err)
 			// Make sure the btcec and our custom encoding are identical.
 			require.Equal(true, reflect.DeepEqual(signatureCompact, signatureCompactCustom))

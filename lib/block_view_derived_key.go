@@ -53,7 +53,7 @@ func _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey []byte, d
 	transactionSpendingLimit := &TransactionSpendingLimit{}
 	rr := bytes.NewReader(transactionSpendingLimitBytes)
 	// This error is fine because transaction should fail anyway if spending limit cannot be decoded.
-	if err := transactionSpendingLimit.FromBytes(rr); err != nil {
+	if err := transactionSpendingLimit.FromBytes(blockHeight, rr); err != nil {
 		return errors.Wrapf(err, "Error decoding transaction spending limit from extra data")
 	}
 
@@ -192,63 +192,78 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			if memoBytes, exists := txn.ExtraData[DerivedPublicKey]; exists {
 				memo = memoBytes
 			}
-			// If the transaction spending limit key exists, parse it and merge it into the existing transaction
-			// spending limit tracker
 			exists := false
+			// If the transaction spending limit key exists, parse it and merge it into the existing transaction
+			// spending limit tracker.
 			if transactionSpendingLimitBytes, exists = txn.ExtraData[TransactionSpendingLimitKey]; exists {
 				transactionSpendingLimit = &TransactionSpendingLimit{}
 				rr := bytes.NewReader(transactionSpendingLimitBytes)
-				if err := transactionSpendingLimit.FromBytes(rr); err != nil {
+				if err := transactionSpendingLimit.FromBytes(uint64(blockHeight), rr); err != nil {
 					return 0, 0, nil, errors.Wrapf(
 						err, "Error decoding transaction spending limit from extra data")
 				}
-				// TODO: how can we serialize this in a way that we don't have to specify it everytime
-				// Always overwrite the global DESO limit...
-				newTransactionSpendingLimit.GlobalDESOLimit = transactionSpendingLimit.GlobalDESOLimit
-				// Iterate over transaction types and update the counts. Delete keys if the transaction count is zero.
-				for txnType, transactionCount := range transactionSpendingLimit.TransactionCountLimitMap {
-					if transactionCount == 0 {
-						delete(newTransactionSpendingLimit.TransactionCountLimitMap, txnType)
-					} else {
-						newTransactionSpendingLimit.TransactionCountLimitMap[txnType] = transactionCount
-					}
+
+				isUnlimited, err := bav.CheckIfValidUnlimitedSpendingLimit(transactionSpendingLimit, blockHeight)
+				if err != nil {
+					return 0, 0, nil, errors.Wrapf(err,
+						"_connectAuthorizeDerivedKey: invalid unlimited spending limit")
 				}
-				for ccLimitKey, transactionCount := range transactionSpendingLimit.CreatorCoinOperationLimitMap {
-					if transactionCount == 0 {
-						delete(newTransactionSpendingLimit.CreatorCoinOperationLimitMap, ccLimitKey)
-					} else {
-						newTransactionSpendingLimit.CreatorCoinOperationLimitMap[ccLimitKey] = transactionCount
+
+				// A valid unlimited spending limit object only has the IsUnlimited field set.
+				if isUnlimited {
+					newTransactionSpendingLimit.IsUnlimited = true
+				} else {
+					newTransactionSpendingLimit.IsUnlimited = false
+
+					// TODO: how can we serialize this in a way that we don't have to specify it everytime
+					// Always overwrite the global DESO limit...
+					newTransactionSpendingLimit.GlobalDESOLimit = transactionSpendingLimit.GlobalDESOLimit
+					// Iterate over transaction types and update the counts. Delete keys if the transaction count is zero.
+					for txnType, transactionCount := range transactionSpendingLimit.TransactionCountLimitMap {
+						if transactionCount == 0 {
+							delete(newTransactionSpendingLimit.TransactionCountLimitMap, txnType)
+						} else {
+							newTransactionSpendingLimit.TransactionCountLimitMap[txnType] = transactionCount
+						}
 					}
-				}
-				for daoCoinLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinOperationLimitMap {
-					if transactionCount == 0 {
-						delete(newTransactionSpendingLimit.DAOCoinOperationLimitMap, daoCoinLimitKey)
-					} else {
-						newTransactionSpendingLimit.DAOCoinOperationLimitMap[daoCoinLimitKey] = transactionCount
+					for ccLimitKey, transactionCount := range transactionSpendingLimit.CreatorCoinOperationLimitMap {
+						if transactionCount == 0 {
+							delete(newTransactionSpendingLimit.CreatorCoinOperationLimitMap, ccLimitKey)
+						} else {
+							newTransactionSpendingLimit.CreatorCoinOperationLimitMap[ccLimitKey] = transactionCount
+						}
 					}
-				}
-				for nftLimitKey, transactionCount := range transactionSpendingLimit.NFTOperationLimitMap {
-					if transactionCount == 0 {
-						delete(newTransactionSpendingLimit.NFTOperationLimitMap, nftLimitKey)
-					} else {
-						newTransactionSpendingLimit.NFTOperationLimitMap[nftLimitKey] = transactionCount
+					for daoCoinLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinOperationLimitMap {
+						if transactionCount == 0 {
+							delete(newTransactionSpendingLimit.DAOCoinOperationLimitMap, daoCoinLimitKey)
+						} else {
+							newTransactionSpendingLimit.DAOCoinOperationLimitMap[daoCoinLimitKey] = transactionCount
+						}
 					}
-				}
-				for daoCoinLimitOrderLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinLimitOrderLimitMap {
-					if transactionCount == 0 {
-						delete(newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap, daoCoinLimitOrderLimitKey)
-					} else {
-						newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
+					for nftLimitKey, transactionCount := range transactionSpendingLimit.NFTOperationLimitMap {
+						if transactionCount == 0 {
+							delete(newTransactionSpendingLimit.NFTOperationLimitMap, nftLimitKey)
+						} else {
+							newTransactionSpendingLimit.NFTOperationLimitMap[nftLimitKey] = transactionCount
+						}
+					}
+					for daoCoinLimitOrderLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinLimitOrderLimitMap {
+						if transactionCount == 0 {
+							delete(newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap, daoCoinLimitOrderLimitKey)
+						} else {
+							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
+						}
 					}
 				}
 			}
 		}
 		// We skip verifying the access signature if the transaction is signed by the owner.
-		if _, isDerived, err := IsDerivedSignature(txn); isDerived {
-			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectAuthorizeDerivedKey: "+
-					"It looks like this transaction was signed with a derived key, but the signature is malformed: ")
-			}
+		_, isDerived, err := IsDerivedSignature(txn)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectAuthorizeDerivedKey: "+
+				"It looks like this transaction was signed with a derived key, but the signature is malformed: ")
+		}
+		if isDerived {
 			if err = _verifyAccessSignatureWithTransactionSpendingLimit(
 				ownerPublicKey,
 				derivedPublicKey,
@@ -257,6 +272,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 				txMeta.AccessSignature,
 				uint64(blockHeight),
 				bav.Params); err != nil {
+
 				return 0, 0, nil, errors.Wrap(
 					RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid, err.Error())
 			}
