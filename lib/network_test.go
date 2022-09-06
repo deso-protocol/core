@@ -1503,3 +1503,53 @@ func TestSpendingLimitMetamaskString(t *testing.T) {
 		require.Equal(true, _verifyEncodingCorrectness(&spendingLimit, &DeSoMainnetParams))
 	}
 }
+
+// Verify that DeSoSignature.SerializeCompact correctly encodes the signature into compact format.
+func TestDeSoSignature_SerializeCompact(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	// Number of test cases. In each test case we generate a new signer private key.
+	numTestCases := 100
+	// Number of messages signed for each signer private key.
+	numIterations := 10
+
+	for ; numTestCases > 0; numTestCases-- {
+		// Generate a random (private, public) keypair.
+		privateKey, err := btcec.NewPrivateKey(btcec.S256())
+		require.NoError(err)
+		publicKeyBytes := privateKey.PubKey().SerializeCompressed()
+
+		for iter := 0; iter < numIterations; iter++ {
+			// Generate a random message and sign it.
+			message := RandomBytes(10)
+			messageHash := Sha256DoubleHash(message)[:]
+			signature, err := privateKey.Sign(messageHash)
+			require.NoError(err)
+
+			// Find the recoveryId by using btcec compact signing.
+			signatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, messageHash, true)
+			require.NoError(err)
+			// reference: https://github.com/btcsuite/btcd/blob/2f508/btcec/signature.go#L424
+			recoveryId := (signatureCompact[0] - compactSigMagicOffset) & ^byte(compactSigCompPubKey)
+			desoSignature := DeSoSignature{
+				Sign:       signature,
+				RecoveryId: recoveryId,
+			}
+
+			// Use the DeSoSignature.SerializeCompact encoding.
+			signatureCompactCustom, err := desoSignature.SerializeCompact()
+			require.NoError(err)
+			// Make sure the btcec and our custom encoding are identical.
+			require.Equal(true, reflect.DeepEqual(signatureCompact, signatureCompactCustom))
+
+			// Recover the public key from our custom encoding.
+			recoveredPublicKey, _, err := btcec.RecoverCompact(btcec.S256(), signatureCompactCustom, messageHash)
+			require.NoError(err)
+
+			// Verify that the recovered public key matches the original public key.
+			recoveredPublicKeyBytes := recoveredPublicKey.SerializeCompressed()
+			require.Equal(true, reflect.DeepEqual(publicKeyBytes, recoveredPublicKeyBytes))
+		}
+	}
+}
