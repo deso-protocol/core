@@ -34,6 +34,7 @@ type TXIndex struct {
 
 	// Shutdown channel
 	stopUpdateChannel chan struct{}
+	killed            bool
 }
 
 func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string) (
@@ -143,6 +144,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 		CoreChain:         coreChain,
 		Params:            params,
 		stopUpdateChannel: make(chan struct{}),
+		killed:            false,
 	}, nil
 }
 
@@ -191,6 +193,7 @@ func (txi *TXIndex) Start() {
 func (txi *TXIndex) Stop() {
 	glog.Info("TXIndex: Stopping updates and closing database")
 
+	txi.killed = true
 	txi.stopUpdateChannel <- struct{}{}
 	txi.updateWaitGroup.Wait()
 }
@@ -281,6 +284,10 @@ func (txi *TXIndex) Update() error {
 	// For each of the blocks we're removing, delete the transactions from
 	// the transaction index.
 	for _, blockToDetach := range detachBlocks {
+		if txi.killed {
+			glog.Infof(CLog(Yellow, "TxIndex: Update: Killed while detaching blocks"))
+			break
+		}
 		// Go through each txn in the block and delete its mappings from our
 		// txindex.
 		glog.V(1).Infof("Update: Detaching block (height: %d, hash: %v)",
@@ -370,6 +377,10 @@ func (txi *TXIndex) Update() error {
 	// and add their mappings to our txn index. Compute any metadata that might
 	// be useful.
 	for _, blockToAttach := range attachBlocks {
+		if txi.killed {
+			glog.Infof(CLog(Yellow, "TxIndex: Update: Killed while attaching blocks"))
+			break
+		}
 		if blockToAttach.Height%1 == 0 {
 			glog.Infof("Update: Txindex progress: block %d / %d",
 				blockToAttach.Height, blockTipNode.Height)

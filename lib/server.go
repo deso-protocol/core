@@ -356,11 +356,11 @@ func NewServer(_params *DeSoParams, _listeners []net.Listener,
 		if err != nil {
 			panic(err)
 		}
+	}
 
-		// We only set archival mode true if we're a hypersync node.
-		if IsNodeArchival(_syncType) {
-			archivalMode = true
-		}
+	// We only set archival mode true if we're a hypersync node.
+	if IsNodeArchival(_syncType) {
+		archivalMode = true
 	}
 
 	// Create an empty Server object here so we can pass a reference to it to the
@@ -603,8 +603,14 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 	// If peer isn't assigned to any prefix, we will assign him now.
 	if !syncingPrefix {
-		// We will assign the peer to a non-existing prefix.
+		// We will assign the peer to a non-existent prefix.
 		for _, prefix = range StatePrefixes.StatePrefixesList {
+			// FIXME: This is a temporary hack that we have to employ until we are confident nodes have
+			// 	downloaded the latest code that sends an empty db chunk for a non-existent prefix.
+			if ok := srv.CheckIfStatePrefixExistsForBlockHeight(
+				srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, prefix); !ok {
+				continue
+			}
 			exists := false
 			for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
 				if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
@@ -641,6 +647,19 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
+}
+
+// FIXME: This is a temporary hack that we have to employ until we are confident nodes have
+// 	downloaded the latest code that sends an empty db chunk for a non-existent prefix. We
+// 	check if the prefix is the newly-added PrefixGroupMembershipIndex and if so, filter it out.
+func (srv *Server) CheckIfStatePrefixExistsForBlockHeight(blockHeight uint64, prefix []byte) bool {
+	switch prefix[0] {
+	case Prefixes.PrefixGroupMembershipIndex[0]:
+		if uint32(blockHeight) < srv.blockchain.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+			return false
+		}
+	}
+	return true
 }
 
 // GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
@@ -1237,6 +1256,12 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	var completedPrefixes [][]byte
 	for _, prefix := range StatePrefixes.StatePrefixesList {
+		// FIXME: This is a temporary hack that we have to employ until we are confident nodes have
+		// 	downloaded the latest code that sends an empty db chunk for a non-existent prefix.
+		if ok := srv.CheckIfStatePrefixExistsForBlockHeight(
+			srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, prefix); !ok {
+			continue
+		}
 		completed := false
 		// Check if the prefix has been completed.
 		for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
@@ -1287,7 +1312,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			"checksum received from the peer. It is likely that HyperSync encountered some unexpected error earlier. "+
 			"You should report this as an issue on DeSo github https://github.com/deso-protocol/core. It is also possible "+
 			"that the peer is misbehaving and sent invalid snapshot chunks. In either way, we'll restart the node and "+
-			"attempt to HyperSync from the beginning.")))
+			"attempt to HyperSync from the beginning. Local db checksum %v; peer's snapshot checksum %v",
+			checksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
 		if srv.forceChecksum {
 			// If forceChecksum is true we signal an erasure of the state and return here,
 			// which will cut off the sync.
@@ -1390,7 +1416,7 @@ func (srv *Server) _startSync() {
 	var bestPeer *Peer
 	for _, peer := range srv.cmgr.GetAllPeers() {
 		if !peer.IsSyncCandidate() {
-			glog.Infof("Peer is not sync candidate: %v", peer)
+			glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", peer, peer.isOutbound)
 			continue
 		}
 
@@ -1455,7 +1481,7 @@ func (srv *Server) _handleNewPeer(pp *Peer) {
 		srv._startSync()
 	}
 	if !isSyncCandidate {
-		glog.Infof("Peer is not sync candidate: %v", pp)
+		glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", pp, pp.isOutbound)
 	}
 }
 

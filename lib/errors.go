@@ -316,6 +316,15 @@ const (
 	RuleErrorMessagingKeyConnect                    RuleError = "RuleErrorMessagingKeyConnect"
 	RuleErrorMessagingKeySignatureNotProvided       RuleError = "RuleErrorMessagingKeySignatureNotProvided"
 	RuleErrorMessagingKeyBeforeBlockHeight          RuleError = "RuleErrorMessagingKeyBeforeBlockHeight"
+	RuleErrorMessagingMemberMuted                   RuleError = "RuleErrorMessagingMemberMuted"
+	RuleErrorMessagingMemberAlreadyMuted            RuleError = "RuleErrorMessagingMemberAlreadyMuted"
+	RuleErrorMessagingMemberAlreadyUnmuted          RuleError = "RuleErrorMessagingMemberAlreadyUnmuted"
+	RuleErrorMessagingMutingBeforeBlockHeight       RuleError = "RuleErrorMessagingMutingBeforeBlockHeight"
+	RuleErrorMessagingMemberNotInGroup              RuleError = "RuleErrorMessagingMemberNotInGroup"
+	RuleErrorMessagingGroupOwnerMutingSelf          RuleError = "RuleErrorMessagingGroupOwnerMutingSelf"
+	RuleErrorMessagingGroupOwnerUnmutingSelf        RuleError = "RuleErrorMessagingGroupOwnerUnmutingSelf"
+	RuleErrorMessagingGroupDoesntExist              RuleError = "RuleErrorMessagingGroupDoesntExist"
+	RuleErrorMessagingMemberDoesntExist             RuleError = "RuleErrorMessagingMemberDoesntExist"
 
 	// NFTs
 	RuleErrorTooManyNFTCopies                            RuleError = "RuleErrorTooManyNFTCopies"

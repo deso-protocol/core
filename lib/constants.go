@@ -249,8 +249,10 @@ type ForkHeights struct {
 	// ParamUpdater to use a blockHeight-gated function rather than a constant.
 	ParamUpdaterRefactorBlockHeight uint32
 
-	// UnlimitedDerivedKeysBlockHeight allows for derived keys without a spending limit.
-	UnlimitedDerivedKeysBlockHeight uint32
+	// DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight defines the height at which
+	// we introduce derived keys without a spending limit. As well as V3 group chat muting and unmuting, and
+	// also the MembershipIndex prefix.
+	DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -292,7 +294,7 @@ type ForkHeights struct {
 //		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
 //			_, err = rr.ReadByte()
 //			if err != nil {
-//				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte")
+//				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte.")
 //			}
 //		}
 //	MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
@@ -312,15 +314,15 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration              MigrationName = "DefaultMigration"
-	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
+	DefaultMigration                                           MigrationName = "DefaultMigration"
+	DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex MigrationName = "DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex"
 )
 
 type EncoderMigrationHeights struct {
 	DefaultMigration MigrationHeight
 
-	// UnlimitedDerivedKeysMigration coincides with the UnlimitedDerivedKeysBlockHeight block
-	UnlimitedDerivedKeysMigration MigrationHeight
+	// DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization coincides with the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight block
+	DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -330,10 +332,10 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Height:  forkHeights.DefaultHeight,
 			Name:    DefaultMigration,
 		},
-		UnlimitedDerivedKeysMigration: MigrationHeight{
+		DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization: MigrationHeight{
 			Version: 1,
-			Height:  uint64(forkHeights.UnlimitedDerivedKeysBlockHeight),
-			Name:    UnlimitedDerivedKeysMigration,
+			Height:  uint64(forkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight),
+			Name:    DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex,
 		},
 	}
 }
@@ -557,23 +559,23 @@ var RegtestForkHeights = ForkHeights{
 	DeflationBombBlockHeight:     0,
 	SalomonFixBlockHeight:        uint32(0),
 	DeSoFounderRewardBlockHeight: uint32(0),
-	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(0),
-	ParamUpdaterProfileUpdateFixBlockHeight:              uint32(0),
-	UpdateProfileFixBlockHeight:                          uint32(0),
-	BrokenNFTBidsFixBlockHeight:                          uint32(0),
-	DeSoDiamondsBlockHeight:                              uint32(0),
-	NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(0),
-	DeSoV3MessagesBlockHeight:                            uint32(0),
-	BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
-	DAOCoinBlockHeight:                                   uint32(0),
-	ExtraDataOnEntriesBlockHeight:                        uint32(0),
-	DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
-	DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
-	DAOCoinLimitOrderBlockHeight:                         uint32(0),
-	DerivedKeyEthSignatureCompatibilityBlockHeight:       uint32(0),
-	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
-	ParamUpdaterRefactorBlockHeight:                      uint32(0),
-	UnlimitedDerivedKeysBlockHeight:                      uint32(0),
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight:                   uint32(0),
+	ParamUpdaterProfileUpdateFixBlockHeight:                                uint32(0),
+	UpdateProfileFixBlockHeight:                                            uint32(0),
+	BrokenNFTBidsFixBlockHeight:                                            uint32(0),
+	DeSoDiamondsBlockHeight:                                                uint32(0),
+	NFTTransferOrBurnAndDerivedKeysBlockHeight:                             uint32(0),
+	DeSoV3MessagesBlockHeight:                                              uint32(0),
+	BuyNowAndNFTSplitsBlockHeight:                                          uint32(0),
+	DAOCoinBlockHeight:                                                     uint32(0),
+	ExtraDataOnEntriesBlockHeight:                                          uint32(0),
+	DerivedKeySetSpendingLimitsBlockHeight:                                 uint32(0),
+	DerivedKeyTrackSpendingLimitsBlockHeight:                               uint32(0),
+	DAOCoinLimitOrderBlockHeight:                                           uint32(0),
+	DerivedKeyEthSignatureCompatibilityBlockHeight:                         uint32(0),
+	OrderBookDBFetchOptimizationBlockHeight:                                uint32(0),
+	ParamUpdaterRefactorBlockHeight:                                        uint32(0),
+	DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight: uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -714,7 +716,8 @@ var MainnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
-	UnlimitedDerivedKeysBlockHeight: uint32(math.MaxUint32),
+	// TODO: ADD FINAL DATE & TIME HERE
+	DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -963,7 +966,8 @@ var TestnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
-	UnlimitedDerivedKeysBlockHeight: uint32(math.MaxUint32),
+	// TODO: ADD FINAL DATE & TIME HERE
+	DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1185,6 +1189,9 @@ const (
 	// TransactionSpendingLimit
 	TransactionSpendingLimitKey = "TransactionSpendingLimit"
 	DerivedKeyMemoKey           = "DerivedKeyMemo"
+
+	// V3 Group Chat Messages ExtraData Key
+	MessagingGroupOperationType = "MessagingGroupOperationType"
 )
 
 // Defines values that may exist in a transaction's ExtraData map
