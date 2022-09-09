@@ -2576,6 +2576,10 @@ type DerivedKeyEntry struct {
 	isDeleted bool
 }
 
+func (key *DerivedKeyEntry) IsDeleted() bool {
+	return key.isDeleted
+}
+
 func (key *DerivedKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 

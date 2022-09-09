@@ -732,7 +732,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		} else {
 			utxoView, err := mempool.GetAugmentedUniversalView()
 			require.NoError(err)
-			derivedKeyEntry := utxoView._getDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
+			derivedKeyEntry := utxoView.GetDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
 			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
@@ -1637,7 +1637,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		} else {
 			utxoView, err := mempool.GetAugmentedUniversalView()
 			require.NoError(err)
-			derivedKeyEntry := utxoView._getDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
+			derivedKeyEntry := utxoView.GetDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
 			// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 			// To pass the tests, we initialize it to a default struct.
 			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
