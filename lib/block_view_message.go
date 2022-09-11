@@ -787,7 +787,6 @@ func (bav *UtxoView) _connectMessagingGroup(
 		}
 	}
 
-
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
