@@ -884,23 +884,23 @@ func TestMessagingKeys(t *testing.T) {
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Sender tries to add default messaging key without proper signature, must fail.
-	{
-		defaultKeyName := []byte("default-key")
-		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, defaultKeyName)
-		// The default key was not added so verification is false.
-		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
-		_messagingKeyWithTestMeta(
-			testMeta,
-			senderPkBytes,
-			senderPrivString,
-			entry.MessagingPublicKey[:],
-			defaultKeyName,
-			[]byte{},
-			[]*MessagingGroupMember{},
-			RuleErrorMessagingSignatureInvalid)
-		// Verification still fails because the txn wasn't successful.
-		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
-	}
+	//{
+	//	defaultKeyName := []byte("default-key")
+	//	_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, defaultKeyName)
+	//	// The default key was not added so verification is false.
+	//	require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
+	//	_messagingKeyWithTestMeta(
+	//		testMeta,
+	//		senderPkBytes,
+	//		senderPrivString,
+	//		entry.MessagingPublicKey[:],
+	//		defaultKeyName,
+	//		[]byte{},
+	//		[]*MessagingGroupMember{},
+	//		RuleErrorMessagingSignatureInvalid)
+	//	// Verification still fails because the txn wasn't successful.
+	//	require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
+	//}
 	// Sender tries adding default messaging key with malformed messaging public key, must fail.
 	{
 		defaultKeyName := []byte("default-key")
