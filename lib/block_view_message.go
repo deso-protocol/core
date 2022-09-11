@@ -62,73 +62,9 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 	bav._setMessageEntryMappings(&tombstoneMessageEntry)
 }
 
-// GetMessagingMemberEntry will check the membership index for membership of memberPublicKey in the group
-// <groupOwnerPublicKey, groupKeyName>. Based on the blockheight, we fetch the full group or we fetch
-// the simplified message group entry from the membership index. forceFullEntry is an optional parameter that
-// will force us to always fetch the full group entry.
-func (bav *UtxoView) GetMessagingMemberEntry(memberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey,
-	groupKeyName *GroupKeyName, blockHeight uint32, forceFullEntry bool) *MessagingGroupEntry {
-
-	// If either of the provided parameters is nil, we return.
-	if memberPublicKey == nil || groupOwnerPublicKey == nil || groupKeyName == nil {
-		return nil
-	}
-	// If the group is the base key, then we return right away since base key cannot be modified by transactions.
-	messagingGroupKey := NewMessagingGroupKey(groupOwnerPublicKey, groupKeyName[:])
-	if EqualGroupKeyName(&messagingGroupKey.GroupKeyName, BaseGroupKeyName()) {
-		return &MessagingGroupEntry{
-			GroupOwnerPublicKey:   NewPublicKey(messagingGroupKey.OwnerPublicKey[:]),
-			MessagingPublicKey:    NewPublicKey(messagingGroupKey.OwnerPublicKey[:]),
-			MessagingGroupKeyName: BaseGroupKeyName(),
-		}
-	}
-
-	// If the group has already been fetched in this utxoView, then we get it directly from there.
-	if mapValue, exists := bav.MessagingGroupKeyToMessagingGroupEntry[*messagingGroupKey]; exists {
-		return mapValue
-	}
-
-	// If we allow for simplified entries, then we will check the membership index for the member. Note that we don't
-	// check the deprecated prefix for the membership entry, this is because it would require us to change the function's
-	// signature to include the group's messaging public key. However, for simplicity, we keep the signature of
-	// GetMessagingMemberEntry compatible with the new membership index, that's why we don't attempt to fetch entries from
-	// the deprecated prefix, even though it would have saved us some read time. The call to
-	// GetMessagingGroupKeyToMessagingGroupEntryMapping will fetch the full entry.
-	if !forceFullEntry && blockHeight >= bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
-		messagingGroupEntry := DBGetEntryFromMembershipIndex(bav.Handle, bav.Snapshot, memberPublicKey, groupOwnerPublicKey, groupKeyName)
-		if messagingGroupEntry != nil {
-			return messagingGroupEntry
-		}
-	}
-
-	// In case the group entry was not in utxo_view, nor was it in the membership index, we fetch the full group directly.
-	return bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
-}
-
-// GetMessagingGroupForMessagingGroupKeyExistence will check if the group with key messagingGroupKey exists, if so it will fetch
-// the simplified group entry from the membership index. If the forceFullEntry is set or if we're not past the membership
-// index block height, then we will fetch the entire group entry from the db (provided it exists).
-func (bav *UtxoView) GetMessagingGroupForMessagingGroupKeyExistence(messagingGroupKey *MessagingGroupKey,
-	blockHeight uint32, forceFullEntry bool) *MessagingGroupEntry {
-
-	if messagingGroupKey == nil {
-		return nil
-	}
-
-	// The owner is a member of their own group by default, hence they will be present in the membership index.
-	ownerPublicKey := &messagingGroupKey.OwnerPublicKey
-	groupKeyName := &messagingGroupKey.GroupKeyName
-	entry := bav.GetMessagingMemberEntry(
-		ownerPublicKey, ownerPublicKey, groupKeyName, blockHeight, forceFullEntry)
-	// Filter out deleted entries.
-	if entry == nil || entry.isDeleted {
-		return nil
-	}
-	return entry
-}
-
 func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 	messagingGroupKey *MessagingGroupKey) *MessagingGroupEntry {
+
 	// This function is used to get a MessagingGroupEntry given a MessagingGroupKey. The V3 messages are
 	// backwards-compatible, and in particular each user has a built-in MessagingGroupKey, called the
 	// "base group key," which is simply a messaging key corresponding to user's main key.
@@ -240,7 +176,7 @@ func (bav *UtxoView) deleteMessageMappings(message *PGMessage) {
 	bav.setMessageMappings(&deletedMessage)
 }
 
-func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte, blockHeight uint32) (
+func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte) (
 	_messagingGroupEntries []*MessagingGroupEntry, _err error) {
 	// This function will return all groups a user is associated with,
 	// including the base key group, groups the user has created, and groups where
@@ -270,20 +206,10 @@ func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte, bloc
 	}
 
 	// We fetched all the entries from the UtxoView, so we move to the DB.
-	var dbMessagingKeys []*MessagingGroupEntry
-	var err error
-	if blockHeight >= bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
-		dbMessagingKeys, err = DBGetAllUserGroupEntries(bav.Handle, ownerPublicKey)
-		if err != nil {
-			return nil, errors.Wrapf(err, "GetUserMessagingKeys: problem getting "+
-				"messaging keys from the DB")
-		}
-	} else {
-		dbMessagingKeys, err = DEPRECATEDDBGetAllUserGroupEntries(bav.Handle, ownerPublicKey)
-		if err != nil {
-			return nil, errors.Wrapf(err, "GetUserMessagingKeys: problem getting "+
-				"messaging keys from the DB")
-		}
+	dbMessagingKeys, err := DBGetAllUserGroupEntries(bav.Handle, ownerPublicKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetUserMessagingKeys: problem getting "+
+			"messaging keys from the DB")
 	}
 	// Now go through the messaging keys in the DB and add keys we haven't seen before.
 	for _, messagingKeyEntry := range dbMessagingKeys {
@@ -308,21 +234,21 @@ func (bav *UtxoView) GetMessagingGroupEntriesForUser(ownerPublicKey []byte, bloc
 }
 
 // TODO: Update for Postgres
-func (bav *UtxoView) GetMessagesForUser(publicKey []byte, blockHeight uint32) (
+func (bav *UtxoView) GetMessagesForUser(publicKey []byte) (
 	_messageEntries []*MessageEntry, _messagingKeyEntries []*MessagingGroupEntry, _err error) {
 
-	return bav.GetLimitedMessagesForUser(publicKey, math.MaxUint64, blockHeight)
+	return bav.GetLimitedMessagesForUser(publicKey, math.MaxUint64)
 }
 
 // TODO: Update for Postgres
-func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint64, blockHeight uint32) (
+func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint64) (
 	_messageEntries []*MessageEntry, _messagingGroupEntries []*MessagingGroupEntry, _err error) {
 
 	// This function will fetch up to limit number of messages for a public key. To accomplish
 	// this, we will have to fetch messages for each groups that the user has registered.
 
 	// First get all messaging keys for a user.
-	messagingGroupEntries, err := bav.GetMessagingGroupEntriesForUser(ownerPublicKey, blockHeight)
+	messagingGroupEntries, err := bav.GetMessagingGroupEntriesForUser(ownerPublicKey)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "GetLimitedMessagesForUser: "+
 			"problem getting user messaging keys")
@@ -421,7 +347,7 @@ func ValidateGroupPublicKeyAndName(messagingPublicKey, keyName []byte) error {
 // ValidateKeyAndNameWithUtxo validates public key and key name, which are used in DeSo V3 Messages protocol.
 // The function first checks that the key and name are valid and then fetches an entry from UtxoView or DB
 // to check if the key has been previously saved. This is particularly useful for connecting V3 messages.
-func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicKey, keyName []byte, blockHeight uint32) error {
+func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicKey, keyName []byte) error {
 	// First validate the public key and name with ValidateGroupPublicKeyAndName
 	err := ValidateGroupPublicKeyAndName(messagingPublicKey, keyName)
 	if err != nil {
@@ -431,9 +357,7 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicK
 
 	// Fetch the messaging key entry from UtxoView.
 	messagingGroupKey := NewMessagingGroupKey(NewPublicKey(ownerPublicKey), keyName)
-	// To validate a messaging group key, we try to fetch the simplified group entry from the membership index.
-	messagingGroupEntry := bav.GetMessagingGroupForMessagingGroupKeyExistence(
-		messagingGroupKey, blockHeight, false)
+	messagingGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
 	if messagingGroupEntry == nil || messagingGroupEntry.isDeleted {
 		return fmt.Errorf("ValidateKeyAndNameWithUtxo: non-existent messaging key entry "+
 			"for ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
@@ -555,8 +479,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 		senderMessagingKeyName, existsSenderName := txn.ExtraData[SenderMessagingGroupKeyName]
 		if existsSender && existsSenderName {
 			// Validate the key and the name using this helper function to make sure messaging key has been previously authorized.
-			if err = bav.ValidateKeyAndNameWithUtxo(
-				txn.PublicKey, senderMessagingPublicKey, senderMessagingKeyName, blockHeight); err != nil {
+			if err = bav.ValidateKeyAndNameWithUtxo(txn.PublicKey, senderMessagingPublicKey, senderMessagingKeyName); err != nil {
 				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
 					"_connectPrivateMessage: failed to validate public key and key name")
 			}
@@ -567,46 +490,13 @@ func (bav *UtxoView) _connectPrivateMessage(
 		// We do an analogous validation for the recipient's messaging key.
 		recipientMessagingKeyName, existsRecipientName := txn.ExtraData[RecipientMessagingGroupKeyName]
 		if existsRecipient && existsRecipientName {
-			if err := bav.ValidateKeyAndNameWithUtxo(
-				txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName, blockHeight); err != nil {
+			if err := bav.ValidateKeyAndNameWithUtxo(txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
 				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
 					"_connectPrivateMessage: failed to validate public key and key name, error: (%v)", err)
 			}
 			// If everything worked, update the messaging key information in the message entry.
 			messageEntry.RecipientMessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
 			messageEntry.RecipientMessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
-		}
-
-		// After the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight block height we force the usage of V3 messages.
-		if blockHeight >= bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
-			if !(existsSender && existsSenderName && existsRecipient && existsRecipientName) {
-				return 0, 0, nil, errors.Wrapf(
-					RuleErrorPrivateMessageSentWithoutProperMessagingParty,
-					"_connectPrivateMessage: SenderKey, SenderName, RecipientKey, RecipientName should all exist "+
-						"in ExtraData after DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight.")
-			}
-			// Reject message if sender is muted
-			// Here we retrieve the MuteList in an optimized way by using the <MembershipIndex> prefix
-			// which is also known as the "memberGroupEntry". This prevents fetching potentially 1000s of members
-			// of a group chat simply for checking if a member is muted
-			senderMessagingPk := NewPublicKey(senderMessagingPublicKey)
-			// txMeta.RecipientPublicKey is the GroupOwnerPublicKey in disguise
-			groupOwnerMessagingPk := NewPublicKey(txMeta.RecipientPublicKey)
-			messagingGroupKeyName := NewGroupKeyName(recipientMessagingKeyName)
-			messagingGroupEntry := bav.GetMessagingMemberEntry(
-				senderMessagingPk, groupOwnerMessagingPk, messagingGroupKeyName, blockHeight, false)
-			if messagingGroupEntry != nil && !messagingGroupEntry.isDeleted {
-				// Note that this list will contain at most one member if we're past the fork height.
-				// This is because each messagingGroupEntry corresponds to a single person's membership.
-				muteList := messagingGroupEntry.MuteList
-				for _, mutedMember := range muteList {
-					if bytes.Equal(mutedMember.GroupMemberPublicKey[:], txn.PublicKey) {
-						return 0, 0, nil, errors.Wrapf(
-							RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
-								"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
-					}
-				}
-			}
 		}
 	}
 
@@ -852,12 +742,6 @@ func (bav *UtxoView) _connectMessagingGroup(
 			RuleErrorMessagingKeyBeforeBlockHeight, "_connectMessagingGroup: "+
 				"Problem connecting messaging key, too early block height")
 	}
-
-	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
-		return 0, 0, nil, fmt.Errorf("_connectMessagingGroup: called with bad TxnType %s",
-			txn.TxnMeta.GetTxnType().String())
-	}
 	txMeta := txn.TxnMeta.(*MessagingGroupMetadata)
 
 	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
@@ -887,19 +771,14 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 	// We now have a valid messaging public key, key name, and owner public key.
 	// The hard-coded default key is only intended to be registered by the owner, so we will require a signature.
-	//
-	// Note that we decided to relax this constraint after the fork height. Why? Because keeping it would have
-	// required users to go through two confirmations when approving a key with MetaMask vs just one.
-	if blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
-		if EqualGroupKeyName(NewGroupKeyName(txMeta.MessagingGroupKeyName), DefaultGroupKeyName()) {
-			// Verify the GroupOwnerSignature. it should be signature( messagingPublicKey || messagingKeyName )
-			// We need to make sure the default messaging key was authorized by the master public key.
-			// All other keys can be registered by derived keys.
-			bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingGroupKeyName...)
-			if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature, blockHeight, bav.Params); err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
-					"Problem verifying signature bytes, error: %v", RuleErrorMessagingSignatureInvalid)
-			}
+	if EqualGroupKeyName(NewGroupKeyName(txMeta.MessagingGroupKeyName), DefaultGroupKeyName()) {
+		// Verify the GroupOwnerSignature. it should be signature( messagingPublicKey || messagingKeyName )
+		// We need to make sure the default messaging key was authorized by the master public key.
+		// All other keys can be registered by derived keys.
+		bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingGroupKeyName...)
+		if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature, blockHeight, bav.Params); err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+				"Problem verifying signature bytes, error: %v", RuleErrorMessagingSignatureInvalid)
 		}
 	}
 
@@ -935,23 +814,6 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// It's worth noting that we index messaging keys by the owner public key and messaging key name.
 	existingEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
 
-	// We will update the existing entry if it exists, or otherwise create a new utxoView entry. The new entry can currently
-	// only be created if the messagingGroupOperation is MessagingGroupOperationAddMembers. If we update the existing entry,
-	// we will set its MessagingMembers and MuteList to these new values based on the txn.
-	var newMessagingMembers []*MessagingGroupMember
-	var newMuteList []*MessagingGroupMember
-
-	// Determine the messaging group operation.
-	var messagingGroupOperation MessagingGroupOperation
-	if blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
-		messagingGroupOperation = MessagingGroupOperationAddMembers
-	} else {
-		messagingGroupOperation, err = GetMessagingGroupOperation(txn)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
-				"Problem getting messaging group operation")
-		}
-	}
 	// Make sure that the utxoView entry and the transaction entries have the same messaging public keys and encrypted key.
 	// The encrypted key is an auxiliary field that can be used to share the private key of the messaging public keys with
 	// user's main key when registering a messaging key via a derived key. This field will also be used in group chats, as
@@ -963,211 +825,95 @@ func (bav *UtxoView) _connectMessagingGroup(
 		}
 	}
 
-	// Check what type of operation we are performing.
-	switch messagingGroupOperation {
-	case MessagingGroupOperationAddMembers:
-		// In DeSo V3 Messages, a messaging key can initialize a group chat with more than two parties. In group chats, all
-		// messages are encrypted to the group messaging public key. The group members are provided with an encrypted
-		// private key of the group's messagingPublicKey so that each of them can read the messages. We refer to
-		// these group members as messaging members, and for each member we will store a MessagingMember object with the
-		// respective encrypted key. The encrypted key must be addressed to a registered groupKeyName for each member, e.g.
-		// the base or the default key names. In particular, this design choice allows derived keys to read group messages.
-		//
-		// A MessagingGroup transaction can either initialize a groupMessagingKey or add more members. In the former case,
-		// there will be no existing MessagingGroupEntry; however, in the latter case there will be an entry present in DB
-		// or UtxoView. When adding members, we need to make sure that the transaction isn't trying to change data about
-		// existing members. An important limitation is that the current design doesn't support removing recipients. This
-		// would be tricky to impose in consensus, considering that removed users can't *forget* the messaging private key.
-		// Removing users can be facilitated in the application-layer, where we can issue a new group key and share it with
-		// all valid members.
+	// In DeSo V3 Messages, a messaging key can initialize a group chat with more than two parties. In group chats, all
+	// messages are encrypted to the group messaging public key. The group members are provided with an encrypted
+	// private key of the group's messagingPublicKey so that each of them can read the messages. We refer to
+	// these group members as messaging members, and for each member we will store a MessagingMember object with the
+	// respective encrypted key. The encrypted key must be addressed to a registered groupKeyName for each member, e.g.
+	// the base or the default key names. In particular, this design choice allows derived keys to read group messages.
+	//
+	// A MessagingGroup transaction can either initialize a groupMessagingKey or add more members. In the former case,
+	// there will be no existing MessagingGroupEntry; however, in the latter case there will be an entry present in DB
+	// or UtxoView. When adding members, we need to make sure that the transaction isn't trying to change data about
+	// existing members. An important limitation is that the current design doesn't support removing recipients. This
+	// would be tricky to impose in consensus, considering that removed users can't *forget* the messaging private key.
+	// Removing users can be facilitated in the application-layer, where we can issue a new group key and share it with
+	// all valid members.
 
-		// Map all members so that it's easier to check for overlapping members.
-		existingMembers := make(map[PublicKey]bool)
+	// We will keep track of all group messaging members.
+	var messagingMembers []*MessagingGroupMember
+	// Map all members so that it's easier to check for overlapping members.
+	existingMembers := make(map[PublicKey]bool)
 
-		// Sanity-check a group's members can't contain the messagingPublicKey.
-		existingMembers[*messagingPublicKey] = true
+	// Sanity-check a group's members can't contain the messagingPublicKey.
+	existingMembers[*messagingPublicKey] = true
 
-		// If we're adding more group members, then we need to make sure there are no overlapping members between the
-		// transaction's entry, and the existing entry.
-		if existingEntry != nil && !existingEntry.isDeleted {
-			// We make sure we'll add at least one messaging member in the transaction.
-			if len(txMeta.MessagingGroupMembers) == 0 {
-				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingKeyDoesntAddMembers,
-					"_connectMessagingGroup: Can't update a messaging key without any new recipients")
-			}
-
-			// Now iterate through all existing members and make sure there are no overlaps.
-			for _, existingMember := range existingEntry.MessagingGroupMembers {
-				if _, exists := existingMembers[*existingMember.GroupMemberPublicKey]; exists {
-					return 0, 0, nil, errors.Wrapf(
-						RuleErrorMessagingMemberAlreadyExists, "_connectMessagingGroup: "+
-							"Error, member already exists (%v)", existingMember.GroupMemberPublicKey)
-				}
-
-				// Add the existingMember to our helper structs.
-				existingMembers[*existingMember.GroupMemberPublicKey] = true
-				newMessagingMembers = append(newMessagingMembers, existingMember)
-			}
-			// Set the mute list to the existing mute list since we won't be changing it.
-			newMuteList = existingEntry.MuteList
+	// If we're adding more group members, then we need to make sure there are no overlapping members between the
+	// transaction's entry, and the existing entry.
+	if existingEntry != nil && !existingEntry.isDeleted {
+		// We make sure we'll add at least one messaging member in the transaction.
+		if len(txMeta.MessagingGroupMembers) == 0 {
+			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingKeyDoesntAddMembers,
+				"_connectMessagingGroup: Can't update a messaging key without any new recipients")
 		}
 
-		// Validate all members.
-		for _, messagingMember := range txMeta.MessagingGroupMembers {
-			// Encrypted public key cannot be empty, and has to have at least as many bytes as a generic private key.
-			//
-			// Note that if someone is adding themselves to an unencrypted group, then this value can be set to
-			// zeros or G, the elliptic curve group element, which is also OK.
-			if len(messagingMember.EncryptedKey) < btcec.PrivKeyBytesLen {
-				return 0, 0, nil, errors.Wrapf(
-					RuleErrorMessagingMemberEncryptedKeyTooShort, "_connectMessagingGroup: "+
-						"Problem validating messagingMember encrypted key for messagingMember (%v): Encrypted "+
-						"key length %v less than the minimum allowed %v. If this is an unencrypted group "+
-						"member, please set %v zeros for this value", messagingMember.GroupMemberPublicKey[:],
-					len(messagingMember.EncryptedKey), btcec.PrivKeyBytesLen, btcec.PrivKeyBytesLen)
-			}
-
-			// Make sure the messagingMember public key and messaging key name are valid.
-			if err := ValidateGroupPublicKeyAndName(messagingMember.GroupMemberPublicKey[:], messagingMember.GroupMemberKeyName[:]); err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
-					"Problem validating public key or messaging key for messagingMember (%v)", messagingMember.GroupMemberPublicKey[:])
-			}
-
-			// Now make sure messagingMember's MessagingGroupKey has already been added to UtxoView or DB.
-			// We encrypt the groupMessagingKey to recipients' messaging keys.
-			memberMessagingGroupKey := NewMessagingGroupKey(
-				messagingMember.GroupMemberPublicKey, messagingMember.GroupMemberKeyName[:])
-			memberGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(memberMessagingGroupKey)
-			// The messaging key has to exist and cannot be deleted.
-			if memberGroupEntry == nil || memberGroupEntry.isDeleted {
-				return 0, 0, nil, errors.Wrapf(
-					RuleErrorMessagingMemberKeyDoesntExist, "_connectMessagingGroup: "+
-						"Problem verifying messaing key for messagingMember (%v)", messagingMember.GroupMemberPublicKey[:])
-			}
-			// The messagingMember can't be already added to the list of existing members.
-			if _, exists := existingMembers[*messagingMember.GroupMemberPublicKey]; exists {
+		// Now iterate through all existing members and make sure there are no overlaps.
+		for _, existingMember := range existingEntry.MessagingGroupMembers {
+			if _, exists := existingMembers[*existingMember.GroupMemberPublicKey]; exists {
 				return 0, 0, nil, errors.Wrapf(
 					RuleErrorMessagingMemberAlreadyExists, "_connectMessagingGroup: "+
-						"Error, messagingMember already exists (%v)", messagingMember.GroupMemberPublicKey[:])
-			}
-			// Add the messagingMember to our helper structs.
-			existingMembers[*messagingMember.GroupMemberPublicKey] = true
-			newMessagingMembers = append(newMessagingMembers, messagingMember)
-		}
-
-	case MessagingGroupOperationMuteMembers:
-		// Muting members assumes the group was already created.
-		if existingEntry == nil || existingEntry.isDeleted {
-			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupDoesntExist,
-				"_connectMessagingGroup: Can't mute members for a non-existent group")
-		}
-		// MUTING/UNMUTING functionality notes:
-		// In DeSo V3 Messages, Group Chat Owners can now mute or unmute members. This essentially acts like a
-		// "remove member from group" functionality, but can also be used to mute spammers in large channels.
-		// Note: A muted member can still cryptographically read the past AND future messages in the group, however,
-		// they cannot send messages to this group until they are unmuted by the group owner.
-		// Optimization Problem and Solution:
-		// Every time a new message arrives as a txn, we need to check inside _connectPrivateMessage() if the sender of
-		// the message is muted or not. This would decide whether we reject a message txn or not. However, to check
-		// that, we can't just fetch the entire MessagingGroupEntry which may contains 1000s if not 100,000s of members.
-		// Instead, we will make usage of the membership index. We will especially see this in the flushing logic.
-		existingMutedMembers := make(map[PublicKey]bool)
-		for _, mutedMember := range existingEntry.MuteList {
-			existingMutedMembers[*mutedMember.GroupMemberPublicKey] = true
-			newMuteList = append(newMuteList, mutedMember)
-		}
-		// We will keep this map to keep track of all members in the group.
-		existingGroupMembers := make(map[PublicKey]bool)
-		for _, groupMember := range existingEntry.MessagingGroupMembers {
-			existingGroupMembers[*groupMember.GroupMemberPublicKey] = true
-		}
-
-		for _, newlyMutedMember := range txMeta.MessagingGroupMembers {
-			// Make sure GroupOwner is not muting herself
-			if reflect.DeepEqual(newlyMutedMember.GroupMemberPublicKey[:], existingEntry.GroupOwnerPublicKey[:]) {
-				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupOwnerMutingSelf,
-					"_connectMessagingGroup: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
-			}
-			// Make sure we are muting a member that exists in the group.
-			if _, exists := existingGroupMembers[*newlyMutedMember.GroupMemberPublicKey]; !exists {
-				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberDoesntExist,
-					"_connectMessagingGroup: Can't mute a non-existent member (%v)", newlyMutedMember.GroupMemberPublicKey[:])
+						"Error, member already exists (%v)", existingMember.GroupMemberPublicKey)
 			}
 
-			// Add member to newMuteList. We iterate over newMuteList to prevent mute list entries with duplicate public keys.
-			if _, exists := existingMutedMembers[*newlyMutedMember.GroupMemberPublicKey]; !exists {
-				newMuteList = append(newMuteList, newlyMutedMember)
-				existingMutedMembers[*newlyMutedMember.GroupMemberPublicKey] = true
-			} else {
-				// Check if member is already muted, in such case we error.
-				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyMuted,
-					"_connectMessagingGroup: Cannot mute member that is already muted (%v).", newlyMutedMember.GroupMemberPublicKey[:])
-			}
-			newMuteList = append(newMuteList, newlyMutedMember)
+			// Add the existingMember to our helper structs.
+			existingMembers[*existingMember.GroupMemberPublicKey] = true
+			messagingMembers = append(messagingMembers, existingMember)
 		}
-		// Set the messaging members to the existing members since we won't be changing them.
-		newMessagingMembers = existingEntry.MessagingGroupMembers
-
-	case MessagingGroupOperationUnmuteMembers:
-		// Unmuting members assumes the group was already created.
-		if existingEntry == nil || existingEntry.isDeleted {
-			return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupDoesntExist,
-				"_connectMessagingGroup: Can't mute members for a non-existent group")
-		}
-		// Keep track of all muted members.
-		existingMutedMembers := make(map[PublicKey]*MessagingGroupMember)
-		for _, mutedMember := range existingEntry.MuteList {
-			existingMutedMembers[*mutedMember.GroupMemberPublicKey] = mutedMember
-		}
-		for _, member := range txMeta.MessagingGroupMembers {
-			isUnmuteValid := false
-			// re-add all muted members except for the member that we're trying to unmute. Check if the member exists
-			// in the mute-list, otherwise we can't unmute them.
-			if _, exists := existingMutedMembers[*member.GroupMemberPublicKey]; exists {
-				isUnmuteValid = true
-				// Unmute the member by deleting it from the helper map of muted members. We will later turn it into the newMuteList.
-				delete(existingMutedMembers, *member.GroupMemberPublicKey)
-			}
-			// If invalid unmuting, then check why:
-			// 1. GroupOwner unmuting herself
-			// 2. Member already unmuted
-			// 3. Member does not exist in group hence cannot unmute nonexistent member
-			if !isUnmuteValid {
-				// 1. GroupOwner unmuting herself is invalid because GroupOwner can never be muted in the first place
-				if reflect.DeepEqual(member.GroupMemberPublicKey[:], existingEntry.GroupOwnerPublicKey[:]) {
-					return 0, 0, nil, errors.Wrapf(RuleErrorMessagingGroupOwnerUnmutingSelf,
-						"_connectMessagingGroup: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
-				}
-				// 2. Member already unmuted
-				for _, entryMembers := range existingEntry.MessagingGroupMembers {
-					if reflect.DeepEqual(member.GroupMemberPublicKey[:], entryMembers.GroupMemberPublicKey[:]) {
-						return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyUnmuted,
-							"_connectMessagingGroup: Cannot unmute member that is already unmuted (%v).", member.GroupMemberPublicKey[:])
-					}
-				}
-				// 3. Member does not exist in group hence cannot unmute nonexistent member
-				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberNotInGroup,
-					"_connectMessagingGroup: Cannot unmute member that does not exist in group (%v).", member.GroupMemberPublicKey[:])
-			}
-		}
-		// Add all members from the existingMutedMembers to the newMuteList
-		//
-		// Note that map iteration does not produce non-deterministic output because we sort
-		// before serializing.
-		for _, mutedMember := range existingMutedMembers {
-			newMuteList = append(newMuteList, mutedMember)
-		}
-		// Set the messaging members to the existing members since we won't be changing them.
-		newMessagingMembers = existingEntry.MessagingGroupMembers
-	default:
-		// If we're here, then the operation type is invalid. Currently, this can only
-		// happen if the operation is of type MessagingGroupOperationRemoveMembers
-		return 0, 0, nil, errors.Wrapf(err,
-			"_connectMessagingGroup: Error, messaging group operation.")
-
 	}
 
-	// merge extra data
+	// Validate all members.
+	for _, messagingMember := range txMeta.MessagingGroupMembers {
+		// Encrypted public key cannot be empty, and has to have at least as many bytes as a generic private key.
+		//
+		// Note that if someone is adding themselves to an unencrypted group, then this value can be set to
+		// zeros or G, the elliptic curve group element, which is also OK.
+		if len(messagingMember.EncryptedKey) < btcec.PrivKeyBytesLen {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorMessagingMemberEncryptedKeyTooShort, "_connectMessagingGroup: "+
+					"Problem validating messagingMember encrypted key for messagingMember (%v): Encrypted "+
+					"key length %v less than the minimum allowed %v. If this is an unencrypted group "+
+					"member, please set %v zeros for this value", messagingMember.GroupMemberPublicKey[:],
+				len(messagingMember.EncryptedKey), btcec.PrivKeyBytesLen, btcec.PrivKeyBytesLen)
+		}
+
+		// Make sure the messagingMember public key and messaging key name are valid.
+		if err := ValidateGroupPublicKeyAndName(messagingMember.GroupMemberPublicKey[:], messagingMember.GroupMemberKeyName[:]); err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+				"Problem validating public key or messaging key for messagingMember (%v)", messagingMember.GroupMemberPublicKey[:])
+		}
+
+		// Now make sure messagingMember's MessagingGroupKey has already been added to UtxoView or DB.
+		// We encrypt the groupMessagingKey to recipients' messaging keys.
+		memberMessagingGroupKey := NewMessagingGroupKey(
+			messagingMember.GroupMemberPublicKey, messagingMember.GroupMemberKeyName[:])
+		memberGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(memberMessagingGroupKey)
+		// The messaging key has to exist and cannot be deleted.
+		if memberGroupEntry == nil || memberGroupEntry.isDeleted {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorMessagingMemberKeyDoesntExist, "_connectMessagingGroup: "+
+					"Problem verifying messaing key for messagingMember (%v)", messagingMember.GroupMemberPublicKey[:])
+		}
+		// The messagingMember can't be already added to the list of existing members.
+		if _, exists := existingMembers[*messagingMember.GroupMemberPublicKey]; exists {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorMessagingMemberAlreadyExists, "_connectMessagingGroup: "+
+					"Error, messagingMember already exists (%v)", messagingMember.GroupMemberPublicKey[:])
+		}
+		// Add the messagingMember to our helper structs.
+		existingMembers[*messagingMember.GroupMemberPublicKey] = true
+		messagingMembers = append(messagingMembers, messagingMember)
+	}
+
 	var extraData map[string][]byte
 	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
 		var existingExtraData map[string][]byte
@@ -1187,16 +933,15 @@ func (bav *UtxoView) _connectMessagingGroup(
 		GroupOwnerPublicKey:   &messagingGroupKey.OwnerPublicKey,
 		MessagingPublicKey:    messagingPublicKey,
 		MessagingGroupKeyName: NewGroupKeyName(txMeta.MessagingGroupKeyName),
-		MessagingGroupMembers: newMessagingMembers,
-		MuteList:              newMuteList,
+		MessagingGroupMembers: messagingMembers,
 		ExtraData:             extraData,
 	}
 	// Create a utxoOps entry, we make a copy of the existing entry.
-	var prevMessagingGroupEntry *MessagingGroupEntry
+	var prevMessagingKeyEntry *MessagingGroupEntry
 	if existingEntry != nil && !existingEntry.isDeleted {
-		prevMessagingGroupEntry = &MessagingGroupEntry{}
+		prevMessagingKeyEntry = &MessagingGroupEntry{}
 		rr := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
-		if exists, err := DecodeFromBytes(prevMessagingGroupEntry, rr); !exists || err != nil {
+		if exists, err := DecodeFromBytes(prevMessagingKeyEntry, rr); !exists || err != nil {
 			return 0, 0, nil, errors.Wrapf(err,
 				"_connectMessagingGroup: Error decoding previous entry")
 		}
@@ -1206,7 +951,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// Construct UtxoOperation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                  OperationTypeMessagingKey,
-		PrevMessagingKeyEntry: prevMessagingGroupEntry,
+		PrevMessagingKeyEntry: prevMessagingKeyEntry,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -1225,12 +970,6 @@ func (bav *UtxoView) _disconnectMessagingGroup(
 		return fmt.Errorf("_disconnectMessagingGroup: Trying to revert "+
 			"OperationTypeMessagingKey but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
-	}
-
-	// Check that the transaction has the right TxnType.
-	if currentTxn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
-		return fmt.Errorf("_disconnectMessagingGroup: called with bad TxnType %s",
-			currentTxn.TxnMeta.GetTxnType().String())
 	}
 
 	// Now we know the txMeta is MessagingGroupKey
