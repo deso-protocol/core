@@ -772,6 +772,22 @@ func (bav *UtxoView) _connectMessagingGroup(
 			"_connectMessagingGroup: messaging public key and txn public key can't be the same")
 	}
 
+	// We now have a valid messaging public key, key name, and owner public key.
+	// The hard-coded default key is only intended to be registered by the owner, so we will require a signature.
+	if blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight {
+		if EqualGroupKeyName(NewGroupKeyName(txMeta.MessagingGroupKeyName), DefaultGroupKeyName()) {
+			// Verify the GroupOwnerSignature. it should be signature( messagingPublicKey || messagingKeyName )
+			// We need to make sure the default messaging key was authorized by the master public key.
+			// All other keys can be registered by derived keys.
+			bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingGroupKeyName...)
+			if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature, blockHeight, bav.Params); err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+					"Problem verifying signature bytes, error: %v", RuleErrorMessagingSignatureInvalid)
+			}
+		}
+	}
+
+
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
