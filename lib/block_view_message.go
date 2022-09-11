@@ -78,6 +78,9 @@ func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 
 	// If an entry exists in the in-memory map, return the value of that mapping.
 	if mapValue, exists := bav.MessagingGroupKeyToMessagingGroupEntry[*messagingGroupKey]; exists {
+		if mapValue.isDeleted {
+			return nil
+		}
 		return mapValue
 	}
 
