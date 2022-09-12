@@ -771,6 +771,9 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 	// We now have a valid messaging public key, key name, and owner public key.
 	// The hard-coded default key is only intended to be registered by the owner, so we will require a signature.
+	//
+	// Note that we decided to relax this constraint after the fork height. Why? Because keeping it would have
+	// required users to go through two confirmations when approving a key with MetaMask vs just one.
 	if blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight {
 		if EqualGroupKeyName(NewGroupKeyName(txMeta.MessagingGroupKeyName), DefaultGroupKeyName()) {
 			// Verify the GroupOwnerSignature. it should be signature( messagingPublicKey || messagingKeyName )
