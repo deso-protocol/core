@@ -14,6 +14,7 @@ import (
 	"github.com/oleiade/lane"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/semaphore"
+	"math"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -2070,7 +2071,11 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 	// Check if there are any outstanding migrations apart from the migrations we've saved in the db.
 	// If so, add them to the migrationChecksums.
 	for _, migrationHeight := range params.EncoderMigrationHeightsList {
-		if migrationHeight.Height > blockHeight {
+		// We ignore migrations with height equal to the max because these migrations
+		// will have their block heights modified to a rational value before they're
+		// supposed to trigger, and thus we should not store them in the db.
+		if migrationHeight.Height != math.MaxUint32 &&
+			migrationHeight.Height > blockHeight {
 			exists := false
 			for _, migrationChecksum := range migration.migrationChecksums {
 				// If we already have a migration with the same version in our migrationChecksums, we set exists to true.
