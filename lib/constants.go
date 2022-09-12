@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -715,8 +714,8 @@ var MainnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
-	// TODO: ADD FINAL DATE & TIME HERE
-	DeSoUnlimitedDerivedKeysBlockHeight: uint32(math.MaxUint32),
+	// Mon Sept 19 @ 12pm PST
+	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -965,8 +964,8 @@ var TestnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
-	// TODO: ADD FINAL DATE & TIME HERE
-	DeSoUnlimitedDerivedKeysBlockHeight: uint32(math.MaxUint32),
+	// Tues Sept 13 @ 10am PT
+	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
