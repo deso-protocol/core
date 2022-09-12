@@ -4971,7 +4971,7 @@ type TransactionSpendingLimit struct {
 	// transactions
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
 
-	// ===== ENCODER MIGRATION DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex =====
+	// ===== ENCODER MIGRATION UnlimitedDerivedKeysMigration =====
 	// IsUnlimited field determines whether this derived key has no spending limit.
 	IsUnlimited bool
 }
@@ -5233,7 +5233,7 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 	}
 
 	// IsUnlimited, gated by the encoder migration.
-	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex) {
+	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
 		data = append(data, BoolToByte(tsl.IsUnlimited))
 	}
 
@@ -5362,7 +5362,7 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
-	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex) {
+	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
 		tsl.IsUnlimited, err = ReadBoolByte(rr)
 		if err != nil {
 			return errors.Wrapf(err, "TransactionSpendingLimit.FromBytes: Problem reading IsUnlimited")
@@ -5409,7 +5409,7 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpendingLimit, blockHeight uint32) (_isUnlimited bool, _err error) {
 	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 7)
 
-	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight {
 		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
 	}
 
@@ -6372,16 +6372,6 @@ func DeserializePubKeyToUint64Map(data []byte) (map[PublicKey]uint64, error) {
 // MessagingGroupMetadata
 // ==================================================================
 
-// MessagingGroupOperation represents V3 Group Chat Messages ExtraData["MessagingGroupOperationType"] values
-type MessagingGroupOperation byte
-
-const (
-	MessagingGroupOperationAddMembers    MessagingGroupOperation = 0
-	MessagingGroupOperationRemoveMembers MessagingGroupOperation = 1
-	MessagingGroupOperationMuteMembers   MessagingGroupOperation = 2
-	MessagingGroupOperationUnmuteMembers MessagingGroupOperation = 3
-)
-
 type MessagingGroupMetadata struct {
 	// This struct is very similar to the MessagingGroupEntry type.
 	MessagingPublicKey    []byte
@@ -6467,50 +6457,4 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 
 func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 	return &MessagingGroupMetadata{}
-}
-
-// GetMessagingGroupOperation returns the messaging group operation based on the transaction. In particular, we check
-// transaction's ExtraData to see whether it's a mute/unmute operation.
-func GetMessagingGroupOperation(txn *MsgDeSoTxn) (MessagingGroupOperation, error) {
-	// If the transaction is nil then we return an error.
-	if txn == nil {
-		return 0, fmt.Errorf("GetMessagingGroupOperation: nil txn")
-	}
-
-	// Make sure this is a messaging group transaction.
-	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
-		return 0, fmt.Errorf("GetMessagingGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
-	}
-
-	// Sanity-check cast the transaction metadata to a messaging group metadata.
-	_, ok := txn.TxnMeta.(*MessagingGroupMetadata)
-	if !ok {
-		return 0, fmt.Errorf("GetMessagingGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
-	}
-
-	// If the transaction's ExtraData is nil then we assume MessagingGroupOperationAddMembers
-	messagingGroupOperation := MessagingGroupOperationAddMembers
-	if txn.ExtraData == nil {
-		return messagingGroupOperation, nil
-	}
-
-	// Check if the transaction's ExtraData contains a MessagingGroupOperationType.
-	if operationTypeBytes, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists && len(operationTypeBytes) == 1 {
-		operationType := MessagingGroupOperation(operationTypeBytes[0])
-
-		switch operationType {
-		case MessagingGroupOperationAddMembers:
-			messagingGroupOperation = MessagingGroupOperationAddMembers
-		case MessagingGroupOperationRemoveMembers:
-			messagingGroupOperation = MessagingGroupOperationRemoveMembers
-		case MessagingGroupOperationMuteMembers:
-			messagingGroupOperation = MessagingGroupOperationMuteMembers
-		case MessagingGroupOperationUnmuteMembers:
-			messagingGroupOperation = MessagingGroupOperationUnmuteMembers
-		default:
-			return 0, fmt.Errorf("GetMessagingGroupOperation: invalid operation type %v", operationType)
-		}
-	}
-
-	return messagingGroupOperation, nil
 }
