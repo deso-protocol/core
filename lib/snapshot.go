@@ -2048,8 +2048,7 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 			// sanity-check that node has the same "version" of migration version map.
 			exists := false
 			for _, migrationHeight := range params.EncoderMigrationHeightsList {
-				if migrationChecksum.BlockHeight == migrationHeight.Height &&
-					migrationChecksum.Version == migrationHeight.Version {
+				if migrationChecksum.Version == migrationHeight.Version {
 					exists = true
 				}
 			}
