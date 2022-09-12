@@ -10,6 +10,14 @@ type DbAdapter struct {
 	snapshot   *Snapshot
 }
 
+func (bc *Blockchain) NewDbAdapter() *DbAdapter {
+	return &DbAdapter{
+		badgerDb:   bc.db,
+		postgresDb: bc.postgres,
+		snapshot:   bc.snapshot,
+	}
+}
+
 func (bav *UtxoView) GetDbAdapter() *DbAdapter {
 	snap := bav.Snapshot
 	if bav.Postgres != nil {

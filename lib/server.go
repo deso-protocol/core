@@ -53,6 +53,7 @@ type Server struct {
 	cmgr          *ConnectionManager
 	blockchain    *Blockchain
 	snapshot      *Snapshot
+	forceChecksum bool
 	mempool       *DeSoMempool
 	miner         *DeSoMiner
 	blockProducer *DeSoBlockProducer
@@ -364,7 +365,9 @@ func NewServer(
 	_trustedBlockProducerStartHeight uint64,
 	eventManager *EventManager,
 	_nodeMessageChan chan NodeMessage,
-) (_srv *Server, _err error, _shouldRestart bool) {
+	_forceChecksum bool) (
+	_srv *Server, _err error, _shouldRestart bool) {
+
 	var err error
 
 	// Setup snapshot
@@ -392,6 +395,7 @@ func NewServer(
 		IgnoreInboundPeerInvMessages: _ignoreInboundPeerInvMessages,
 		snapshot:                     _snapshot,
 		nodeMessageChannel:           _nodeMessageChan,
+		forceChecksum:                _forceChecksum,
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -623,7 +627,7 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 	// If peer isn't assigned to any prefix, we will assign him now.
 	if !syncingPrefix {
-		// We will assign the peer to a non-existing prefix.
+		// We will assign the peer to a non-existent prefix.
 		for _, prefix = range StatePrefixes.StatePrefixesList {
 			exists := false
 			for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
@@ -1298,16 +1302,29 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	if err != nil {
 		glog.Errorf("Server._handleSnapshot: Problem getting checksum bytes, error (%v)", err)
 	}
-	if !reflect.DeepEqual(checksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) {
-		if srv.nodeMessageChannel != nil {
-			srv.nodeMessageChannel <- NodeErase
-		}
+	if reflect.DeepEqual(checksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) {
+		glog.Infof(CLog(Green, fmt.Sprintf("Server._handleSnapshot: State checksum matched "+
+			"what was expected!")))
+	} else {
+		// Checksums didn't match
 		glog.Errorf(CLog(Red, fmt.Sprintf("Server._handleSnapshot: The final db checksum doesn't match the "+
 			"checksum received from the peer. It is likely that HyperSync encountered some unexpected error earlier. "+
 			"You should report this as an issue on DeSo github https://github.com/deso-protocol/core. It is also possible "+
 			"that the peer is misbehaving and sent invalid snapshot chunks. In either way, we'll restart the node and "+
-			"attempt to HyperSync from the beginning.")))
-		return
+			"attempt to HyperSync from the beginning. Local db checksum %v; peer's snapshot checksum %v",
+			checksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
+		if srv.forceChecksum {
+			// If forceChecksum is true we signal an erasure of the state and return here,
+			// which will cut off the sync.
+			if srv.nodeMessageChannel != nil {
+				srv.nodeMessageChannel <- NodeErase
+			}
+			return
+		} else {
+			// Otherwise, if forceChecksum is false, we error but then keep going.
+			glog.Errorf(CLog(Yellow, fmt.Sprintf("Server._handleSnapshot: Ignoring checksum mismatch because "+
+				"--force-checksum is set to false.")))
+		}
 	}
 
 	// After syncing state from a snapshot, we will sync remaining blocks. To do so, we will
@@ -1363,8 +1380,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.snapshot.Status.CurrentBlockHeight = msg.SnapshotMetadata.SnapshotBlockHeight
 	srv.snapshot.Status.SaveStatus()
 
-	glog.Infof("server._handleSnapshot: FINAL snapshot checksum is (%v)",
-		srv.snapshot.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes)
+	glog.Infof("server._handleSnapshot: FINAL snapshot checksum is (%v) (%v)",
+		srv.snapshot.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes,
+		hex.EncodeToString(srv.snapshot.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes))
 
 	// Take care of any callbacks that need to run once the snapshot is completed.
 	srv.eventManager.snapshotCompleted()
@@ -1397,7 +1415,7 @@ func (srv *Server) _startSync() {
 	var bestPeer *Peer
 	for _, peer := range srv.cmgr.GetAllPeers() {
 		if !peer.IsSyncCandidate() {
-			glog.Infof("Peer is not sync candidate: %v", peer)
+			glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", peer, peer.isOutbound)
 			continue
 		}
 
@@ -1462,7 +1480,7 @@ func (srv *Server) _handleNewPeer(pp *Peer) {
 		srv._startSync()
 	}
 	if !isSyncCandidate {
-		glog.Infof("Peer is not sync candidate: %v", pp)
+		glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", pp, pp.isOutbound)
 	}
 }
 

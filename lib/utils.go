@@ -6,6 +6,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil/hdkeychain"
 	"github.com/unrolled/secure"
+	"math/big"
+	"strings"
 )
 
 const SECURE_MIDDLEWARE_RESTRICTIVE_CONTENT_SECURITY_POLICY = "default-src 'self'"
@@ -121,4 +123,41 @@ func ComputeKeysFromSeedWithNet(seedBytes []byte, index uint32, isTestnet bool) 
 	btcDepositAddress := addressObj.EncodeAddress()
 
 	return pubKey, privKey, btcDepositAddress, nil
+}
+
+func GetNumDigits(val *big.Int) int {
+	quotient := big.NewInt(0).Set(val)
+	zero := big.NewInt(0)
+	ten := big.NewInt(10)
+	numDigits := 0
+	for quotient.Cmp(zero) != 0 {
+		numDigits += 1
+		quotient.Div(quotient, ten)
+	}
+	return numDigits
+}
+
+// Given a value v that is a scaled uint256 with the provided scaling factor, this prints the decimal representation
+// of v as a string
+// Ex: if v = 12345 and scalingFactor = 100, then this outputs 123.45
+func FormatScaledUint256AsDecimalString(v *big.Int, scalingFactor *big.Int) string {
+	wholeNumber := big.NewInt(0).Div(v, scalingFactor)
+	decimalPart := big.NewInt(0).Mod(v, scalingFactor)
+
+	decimalPartIsZero := decimalPart.Cmp(big.NewInt(0)) == 0
+
+	scalingFactorDigits := GetNumDigits(scalingFactor)
+	decimalPartAsString := fmt.Sprintf("%d", decimalPart)
+
+	// Left pad the decimal part with zeros
+	if !decimalPartIsZero && len(decimalPartAsString) != scalingFactorDigits {
+		decimalLeadingZeros := strings.Repeat("0", scalingFactorDigits-len(decimalPartAsString)-1)
+		decimalPartAsString = fmt.Sprintf("%v%v", decimalLeadingZeros, decimalPartAsString)
+	}
+
+	// Trim trailing zeros
+	if !decimalPartIsZero {
+		decimalPartAsString = strings.TrimRight(decimalPartAsString, "0")
+	}
+	return fmt.Sprintf("%d.%v", wholeNumber, decimalPartAsString)
 }

@@ -364,8 +364,8 @@ func MigrationTriggered(blockHeight uint64, migrationName MigrationName) bool {
 		}
 	}
 
-	panic(fmt.Sprintf("Problem finding a migration corresponding to migrationName (%v) "+
-		"check your code!", migrationName))
+	panic(any(fmt.Sprintf("Problem finding a migration corresponding to migrationName (%v) "+
+		"check your code!", migrationName)))
 }
 
 // GetMigrationVersion can be returned in GetVersionByte when implementing DeSoEncoders. The way to do it is simply
@@ -1996,6 +1996,10 @@ func (entry *MessagingGroupEntry) String() string {
 		entry.GroupOwnerPublicKey, entry.MessagingPublicKey, entry.MessagingGroupKeyName, entry.isDeleted)
 }
 
+func (entry *MessagingGroupEntry) IsDeleted() bool {
+	return entry.isDeleted
+}
+
 func sortMessagingGroupMembers(membersArg []*MessagingGroupMember) []*MessagingGroupMember {
 	// Make a deep copy of the members to avoid messing up the slice the caller
 	// used. Not doing this could cause downstream effects, mainly in tests where
@@ -2590,7 +2594,7 @@ func (key *DerivedKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMet
 	data = append(data, EncodeExtraData(key.ExtraData)...)
 	if key.TransactionSpendingLimitTracker != nil {
 		data = append(data, BoolToByte(true))
-		tslBytes, _ := key.TransactionSpendingLimitTracker.ToBytes()
+		tslBytes, _ := key.TransactionSpendingLimitTracker.ToBytes(blockHeight)
 		data = append(data, tslBytes...)
 	} else {
 		data = append(data, BoolToByte(false))
@@ -2636,7 +2640,7 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 
 	if exists, err := ReadBoolByte(rr); exists && err == nil {
 		key.TransactionSpendingLimitTracker = &TransactionSpendingLimit{}
-		err := key.TransactionSpendingLimitTracker.FromBytes(rr)
+		err := key.TransactionSpendingLimitTracker.FromBytes(blockHeight, rr)
 		if err != nil {
 			return errors.Wrapf(err, "DerivedKeyEntry.Decode: Problem decoding TransactionSpendingLimitTracker")
 		}
@@ -2653,7 +2657,7 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {

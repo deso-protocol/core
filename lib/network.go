@@ -8,15 +8,19 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"io"
 	"math"
+	"math/big"
 	"net"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
+	decredEC "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 	"github.com/holiman/uint256"
@@ -2513,6 +2517,202 @@ func (desoOutput *DeSoOutput) GetEncoderType() EncoderType {
 	return EncoderTypeDeSoOutput
 }
 
+const (
+	// derSigMagicOffset is the first byte of the DER signature format. It's a hard-coded value defined as part of the
+	// DER encoding standard.
+	derSigMagicOffset = 0x30
+
+	// derSigMagicMaxRecoveryOffset is the maximal value of the DeSo-DER signature format. We enable public key recovery
+	// from ECDSA signatures. To facilitate this, we add the recovery id to the DER magic 0x30 first byte. The recovery id
+	// is in the range of [0, 3] and corresponds to the compact signature header magic. Adding recovery id to signature
+	// encoding is totally optional and leaving the first byte 0x30 is acceptable. Specifically, the DeSo-DER signatures
+	// have the following format:
+	// <0x30 + optionally (0x01 + recoveryId)> <length of whole message> <0x02> <length of R> <R> 0x2 <length of S> <S>.
+	// At this point, a familiar reader might arrive at some malleability concerns. After all that's why bip-62 enforced
+	// DER signatures. ECDSA malleability is prevented by allowing public key recovery iff it was produced with a derived key.
+	// That is, signatures made with derived keys cannot start with 0x30, unless the underlying transaction has the
+	// derived public key in ExtraData. And if it does, then the header must be 0x30.
+	derSigMagicMaxRecoveryOffset = 0x34
+)
+
+// DeSoSignature is a wrapper around ECDSA signatures used primarily in the MsgDeSoTxn transaction type.
+type DeSoSignature struct {
+	// Sign stores the main ECDSA signature. We use the btcec crypto package for most of the heavy-lifting.
+	Sign *btcec.Signature
+
+	// RecoveryId is the public key recovery id. The RecoveryId is taken from the DeSo-DER signature header magic byte and
+	// must be in the [0, 3] range.
+	RecoveryId byte
+	// IsRecoverable indicates if the original signature contained the public key recovery id.
+	IsRecoverable bool
+}
+
+func (desoSign *DeSoSignature) SetSignature(sign *btcec.Signature) {
+	desoSign.Sign = sign
+}
+
+// Verify is a wrapper around DeSoSignature.Sign.Verify.
+func (desoSign *DeSoSignature) Verify(hash []byte, pubKey *btcec.PublicKey) bool {
+	if desoSign.Sign == nil {
+		return false
+	}
+	return desoSign.Sign.Verify(hash, pubKey)
+}
+
+// ToBytes encodes the signature in accordance to the DeSo-DER ECDSA format.
+// <0x30 + optionally (0x01 + recoveryId)> <length of whole message> <0x02> <length of R> <R> 0x2 <length of S> <S>.
+func (desoSign *DeSoSignature) ToBytes() []byte {
+	// Serialize the signature using the DER encoding.
+	signatureBytes := desoSign.Sign.Serialize()
+
+	// If the signature contains the recovery id, place it in the header magic in accordance with
+	// the DeSo-DER format.
+	if len(signatureBytes) > 0 && desoSign.IsRecoverable {
+		signatureBytes[0] += 0x01 + desoSign.RecoveryId
+	}
+	return signatureBytes
+}
+
+// FromBytes parses the signature bytes encoded in accordance to the DeSo-DER ECDSA format.
+func (desoSign *DeSoSignature) FromBytes(signatureBytes []byte) error {
+	// Signature cannot be an empty byte array.
+	if len(signatureBytes) == 0 {
+		return fmt.Errorf("FromBytes: Signature cannot be empty")
+	}
+
+	// The first byte of the signature must be in the [0x30, 0x34] range.
+	if signatureBytes[0] < derSigMagicOffset || signatureBytes[0] > derSigMagicMaxRecoveryOffset {
+		return fmt.Errorf("FromBytes: DeSo-DER header magic expected in [%v, %v] range but got: %v",
+			derSigMagicOffset, derSigMagicMaxRecoveryOffset, signatureBytes[0])
+	}
+
+	// Copy the signature bytes to make so that we can freely modify it.
+	var err error
+	signatureBytesCopy := make([]byte, len(signatureBytes))
+	copy(signatureBytesCopy, signatureBytes)
+	// If header magic contains the recovery Id, we will retrieve it.
+	if signatureBytes[0] > derSigMagicOffset {
+		// We subtract 1 because DeSo-DER header magic in this case is 0x30 + 0x01 + recoveryId
+		desoSign.RecoveryId = signatureBytes[0] - derSigMagicOffset - 0x01
+		desoSign.IsRecoverable = true
+		// Now set the first byte as the standard DER header offset so that we can parse it with btcec.
+		signatureBytesCopy[0] = derSigMagicOffset
+	}
+	// Parse the signature assuming it's encoded in the standard DER format.
+	desoSign.Sign, err = btcec.ParseDERSignature(signatureBytesCopy, btcec.S256())
+	if err != nil {
+		return errors.Wrapf(err, "Problem parsing signatureBytes")
+	}
+	return nil
+}
+
+const (
+	// See comment on _btcecSerializeCompact to better understand how these constants are used.
+
+	// btcecCompactSigSize is the size of a btcec compact signature. It consists of a compact signature recovery code
+	// byte followed by the R and S components serialized as 32-byte big-endian values. 1+32*2 = 65 for the R and S
+	// components. 1+32+32=65.
+	btcecCompactSigSize byte = 65
+
+	// This is a magic offset that we need to implement the compact signature concept from btcec.
+	//
+	// btcecCompactSigMagicOffset is a value used when creating the compact signature recovery code inherited from Bitcoin and
+	// has no meaning, but has been retained for compatibility. For historical purposes, it was originally picked to avoid
+	// a binary representation that would allow compact signatures to be mistaken for other components.
+	btcecCompactSigMagicOffset byte = 27
+
+	// btcecCompactSigCompPubKey is a value used when creating the compact signature recovery code to indicate the original
+	// public key was compressed.
+	btcecCompactSigCompPubKey byte = 4
+)
+
+// The concept of a compact signature comes from btcec. It's a weird format that's different from standard DER
+// encoding, but we use it because it allows us to leverage their RecoverCompact function. For some reason, btcec
+// only implemented SignCompact() and RecoverCompact() but not SerializeCompact(). So, for our use-case, we
+// implement the missing Serialize() function and then we call the following to recover the public key:
+// - btcec.RecoverCompact(_btcecSerializeCompact(desoSignature)).
+//
+// _btcecSerializeCompact encodes the signature into the compact signature format:
+// <1-byte compact sig recovery code><32-byte R><32-byte S>
+//
+// The compact sig recovery code is the value 27 + public key recovery ID + 4
+// if the compact signature was created with a compressed public key.
+// Public key recovery ID is in the range [0, 3].
+func (desoSign *DeSoSignature) _btcecSerializeCompact() ([]byte, error) {
+	// We will change from the btcec signature type to the dcrec signature type. To achieve this, we will create the
+	// ecdsa (R, S) pair using the decred's package.
+	// Reference: https://github.com/decred/dcrd/blob/1eff7/dcrec/secp256k1/modnscalar_test.go#L26
+	rBytes := desoSign.Sign.R.Bytes()
+	r := &secp256k1.ModNScalar{}
+	r.SetByteSlice(rBytes)
+
+	sBytes := desoSign.Sign.S.Bytes()
+	s := &secp256k1.ModNScalar{}
+	s.SetByteSlice(sBytes)
+
+	// To make sure the signature has been correctly parsed, we verify DER encoding of both signatures matches.
+	verifySignature := decredEC.NewSignature(r, s)
+	if !bytes.Equal(verifySignature.Serialize(), desoSign.Sign.Serialize()) {
+		return nil, fmt.Errorf("_btcecSerializeCompact: Problem sanity-checking signature")
+	}
+
+	// Encode the signature using compact format.
+	// reference: https://github.com/decred/dcrd/blob/1eff7/dcrec/secp256k1/ecdsa/signature.go#L712
+	compactSigRecoveryCode := btcecCompactSigMagicOffset + desoSign.RecoveryId + btcecCompactSigCompPubKey
+
+	// Output <compactSigRecoveryCode><32-byte R><32-byte S>.
+	var b [btcecCompactSigSize]byte
+	b[0] = compactSigRecoveryCode
+	r.PutBytesUnchecked(b[1:33])
+	s.PutBytesUnchecked(b[33:65])
+	return b[:], nil
+}
+
+// RecoverPublicKey attempts to retrieve the signer's public key from the DeSoSignature given the messageHash sha256x2 digest.
+func (desoSign *DeSoSignature) RecoverPublicKey(messageHash []byte) (*btcec.PublicKey, error) {
+	// Serialize signature into the compact encoding.
+	signatureBytes, err := desoSign._btcecSerializeCompact()
+	if err != nil {
+		return nil, errors.Wrapf(err, "RecoverPublicKey: Problem serializing compact signature")
+	}
+
+	// Now recover the public key from the compact encoding.
+	recoveredPublicKey, _, err := btcec.RecoverCompact(btcec.S256(), signatureBytes, messageHash)
+	if err != nil {
+		return nil, errors.Wrapf(err, "RecoverPublicKey: Problem recovering public key from the signature bytes")
+	}
+
+	return recoveredPublicKey, nil
+}
+
+// SignRecoverable computes a signature that adds a publicKeyRecoveryID to the first byte of a
+// standard DER signature. We call the combination the DeSo-DER signature.
+//
+// Overall, it first computes a standard DER signature, and then it adds (0x01 + recoveryID) to
+// the first byte. This makes it so that the first byte will be between [0x31, 0x34] inclusive,
+// instead of being 0x30, which is the standard DER signature magic number.
+func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) (*DeSoSignature, error) {
+	signature, err := privateKey.Sign(bb)
+	if err != nil {
+		return nil, err
+	}
+
+	// We use SignCompact from the btcec library to get the recoverID. This results in a non-standard
+	// encoding that we need to manipulate in order to get the recoveryID back out. See comment on
+	// _btcecSerializeCompact for more information.
+	signatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, bb, true)
+	if err != nil {
+		return nil, err
+	}
+	recoveryId := (signatureCompact[0] - btcecCompactSigMagicOffset) & ^byte(btcecCompactSigCompPubKey)
+
+	return &DeSoSignature{
+		Sign:          signature,
+		RecoveryId:    recoveryId,
+		IsRecoverable: true,
+	}, nil
+}
+
 type MsgDeSoTxn struct {
 	TxInputs  []*DeSoInput
 	TxOutputs []*DeSoOutput
@@ -2541,7 +2741,7 @@ type MsgDeSoTxn struct {
 	// inputs to the transaction. The exception to this rule is that
 	// BLOCK_REWARD and CREATE_deso transactions do not require a signature
 	// since they have no inputs.
-	Signature *btcec.Signature
+	Signature DeSoSignature
 
 	// (!!) **DO_NOT_USE** (!!)
 	//
@@ -2631,8 +2831,8 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	// a zero will be encoded for the length and no signature bytes will be added
 	// beyond it.
 	sigBytes := []byte{}
-	if !preSignature && msg.Signature != nil {
-		sigBytes = msg.Signature.Serialize()
+	if !preSignature && msg.Signature.Sign != nil {
+		sigBytes = msg.Signature.ToBytes()
 	}
 	// Note that even though we encode the length as a varint as opposed to a
 	// fixed-width int, it should always take up just one byte since the length
@@ -2757,7 +2957,7 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 		return nil, fmt.Errorf("_readTransaction.FromBytes: sigLen length %d longer than max %d", sigLen, MaxMessagePayload)
 	}
 
-	ret.Signature = nil
+	ret.Signature.SetSignature(nil)
 	if sigLen != 0 {
 		sigBytes := make([]byte, sigLen)
 		_, err = io.ReadFull(rr, sigBytes)
@@ -2766,12 +2966,10 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 		}
 
 		// Verify that the signature is valid.
-		sig, err := btcec.ParseDERSignature(sigBytes, btcec.S256())
+		err := ret.Signature.FromBytes(sigBytes)
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem parsing DeSoTxn.Signature bytes")
 		}
-		// If everything worked, we set the ret signature to the original.
-		ret.Signature = sig
 	}
 
 	return ret, nil
@@ -2936,7 +3134,7 @@ func (msg *MsgDeSoTxn) UnmarshalJSON(data []byte) error {
 		TxOutputs []*DeSoOutput
 		TxnMeta   DeSoTxnMetadata
 		PublicKey []byte
-		Signature *btcec.Signature
+		Signature DeSoSignature
 		TxnType   uint64
 	}{
 		TxInputs:  msg.TxInputs,
@@ -4772,9 +4970,172 @@ type TransactionSpendingLimit struct {
 	// BuyingCreatorPKID || SellingCreatorPKID to number of
 	// transactions
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
+
+	// ===== ENCODER MIGRATION UnlimitedDerivedKeysMigration =====
+	// IsUnlimited field determines whether this derived key has no spending limit.
+	IsUnlimited bool
 }
 
-func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
+// ToMetamaskString encodes the TransactionSpendingLimit into a Metamask-compatible string. The encoded string will
+// be a part of Access Bytes Encoding 2.0 for derived keys, which creates a human-readable string that MM can sign.
+// The idea behind this function is to create an injective mapping from the TransactionSpendingLimit -> string.
+// This mapping is not intended to be invertible, rather we would also call this function while verifying access bytes.
+// Basically, to verify signature on a derived key, we will call this function as well, instead of attempting to revert
+// the metamask string.
+func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string {
+	var str string
+	var indentationCounter int
+
+	str += "Spending limits on the derived key:\n"
+	indentationCounter++
+
+	// GlobalDESOLimit
+	if tsl.GlobalDESOLimit > 0 {
+		str += _indt(indentationCounter) + "Total $DESO Limit: " + FormatScaledUint256AsDecimalString(
+			big.NewInt(0).SetUint64(tsl.GlobalDESOLimit), big.NewInt(int64(NanosPerUnit))) + " $DESO\n"
+	}
+
+	// Sort an array of strings and add them to the spending limit string str. This will come in handy below,
+	// simplifying the construction of the metamask spending limit string.
+	sortStringsAndAddToLimitStr := func(strList []string) {
+		sort.Strings(strList)
+		for _, limitStr := range strList {
+			str += limitStr
+		}
+	}
+
+	// TransactionCountLimitMap
+	if len(tsl.TransactionCountLimitMap) > 0 {
+		var txnCountStr []string
+		str += _indt(indentationCounter) + "Transaction Count Limit: \n"
+		indentationCounter++
+		for txnType, limit := range tsl.TransactionCountLimitMap {
+			txnCountStr = append(txnCountStr, _indt(indentationCounter)+txnType.String()+": "+
+				strconv.FormatUint(limit, 10)+"\n")
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(txnCountStr)
+		indentationCounter--
+	}
+
+	// CreatorCoinOperationLimitMap
+	if len(tsl.CreatorCoinOperationLimitMap) > 0 {
+		var creatorCoinLimitStr []string
+		str += _indt(indentationCounter) + "Creator Coin Operation Limits:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.CreatorCoinOperationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Creator PKID: " +
+				Base58CheckEncode(limitKey.CreatorPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			creatorCoinLimitStr = append(creatorCoinLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(creatorCoinLimitStr)
+		indentationCounter--
+	}
+
+	// DAOCoinOperationLimitMap
+	if len(tsl.DAOCoinOperationLimitMap) > 0 {
+		var daoCoinOperationLimitStr []string
+		str += _indt(indentationCounter) + "DAO Coin Operation Limits:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.DAOCoinOperationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Creator PKID: " +
+				Base58CheckEncode(limitKey.CreatorPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			daoCoinOperationLimitStr = append(daoCoinOperationLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(daoCoinOperationLimitStr)
+		indentationCounter--
+	}
+
+	// NFTOperationLimitMap
+	if len(tsl.NFTOperationLimitMap) > 0 {
+		var nftOperationLimitKey []string
+		str += _indt(indentationCounter) + "NFT Operation Limits:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.NFTOperationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Block Hash: " + limitKey.BlockHash.String() + "\n"
+			opString += _indt(indentationCounter) + "Serial Number: " +
+				strconv.FormatUint(limitKey.SerialNumber, 10) + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			nftOperationLimitKey = append(nftOperationLimitKey, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(nftOperationLimitKey)
+		indentationCounter--
+	}
+
+	// DAOCoinLimitOrderLimitMap
+	if len(tsl.DAOCoinLimitOrderLimitMap) > 0 {
+		var daoCoinLimitOrderStr []string
+		str += _indt(indentationCounter) + "DAO Coin Limit Order Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.DAOCoinLimitOrderLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Buying DAO Creator PKID: " +
+				Base58CheckEncode(limitKey.BuyingDAOCoinCreatorPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Selling DAO Creator PKID: " +
+				Base58CheckEncode(limitKey.SellingDAOCoinCreatorPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			daoCoinLimitOrderStr = append(daoCoinLimitOrderStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(daoCoinLimitOrderStr)
+		indentationCounter--
+	}
+
+	// IsUnlimited
+	if tsl.IsUnlimited {
+		str += "Unlimited"
+	}
+
+	return str
+}
+
+func _indt(counter int) string {
+	var indentationString string
+	for ; counter > 0; counter-- {
+		indentationString += "\t"
+	}
+	return indentationString
+}
+
+func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error) {
 	data := []byte{}
 
 	if tsl == nil {
@@ -4871,10 +5232,15 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 		}
 	}
 
+	// IsUnlimited, gated by the encoder migration.
+	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
+		data = append(data, BoolToByte(tsl.IsUnlimited))
+	}
+
 	return data, nil
 }
 
-func (tsl *TransactionSpendingLimit) FromBytes(rr *bytes.Reader) error {
+func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Reader) error {
 	globalDESOLimit, err := ReadUvarint(rr)
 	if err != nil {
 		return err
@@ -4995,6 +5361,14 @@ func (tsl *TransactionSpendingLimit) FromBytes(rr *bytes.Reader) error {
 			tsl.DAOCoinLimitOrderLimitMap[*daoCoinLimitOrderLimitKey] = operationCount
 		}
 	}
+
+	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
+		tsl.IsUnlimited, err = ReadBoolByte(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionSpendingLimit.FromBytes: Problem reading IsUnlimited")
+		}
+	}
+
 	return nil
 }
 
@@ -5006,6 +5380,7 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
+		IsUnlimited:                  tsl.IsUnlimited,
 	}
 
 	for txnType, txnCount := range tsl.TransactionCountLimitMap {
@@ -5029,6 +5404,26 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 	}
 
 	return copyTSL
+}
+
+func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpendingLimit, blockHeight uint32) (_isUnlimited bool, _err error) {
+	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 7)
+
+	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight {
+		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
+	}
+
+	if tsl.IsUnlimited && (tsl.GlobalDESOLimit > 0 ||
+		len(tsl.TransactionCountLimitMap) > 0 ||
+		len(tsl.CreatorCoinOperationLimitMap) > 0 ||
+		len(tsl.DAOCoinOperationLimitMap) > 0 ||
+		len(tsl.NFTOperationLimitMap) > 0 ||
+		len(tsl.DAOCoinLimitOrderLimitMap) > 0) {
+
+		return tsl.IsUnlimited, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
+	}
+
+	return tsl.IsUnlimited, nil
 }
 
 type NFTLimitOperation uint8

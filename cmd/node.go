@@ -225,7 +225,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.TrustedBlockProducerStartHeight,
 		eventManager,
 		node.nodeMessageChan,
-	)
+		node.Config.ForceChecksum)
 	if err != nil {
 		if shouldRestart {
 			glog.Infof(lib.CLog(lib.Red, fmt.Sprintf("Start: Got en error while starting server and shouldRestart "+
