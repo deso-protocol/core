@@ -1996,6 +1996,10 @@ func (entry *MessagingGroupEntry) String() string {
 		entry.GroupOwnerPublicKey, entry.MessagingPublicKey, entry.MessagingGroupKeyName, entry.isDeleted)
 }
 
+func (entry *MessagingGroupEntry) IsDeleted() bool {
+	return entry.isDeleted
+}
+
 func sortMessagingGroupMembers(membersArg []*MessagingGroupMember) []*MessagingGroupMember {
 	// Make a deep copy of the members to avoid messing up the slice the caller
 	// used. Not doing this could cause downstream effects, mainly in tests where
