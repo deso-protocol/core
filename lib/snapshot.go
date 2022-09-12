@@ -2073,7 +2073,8 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 		if migrationHeight.Height > blockHeight {
 			exists := false
 			for _, migrationChecksum := range migration.migrationChecksums {
-				if migrationChecksum.BlockHeight == migrationHeight.Height {
+				// If we already have a migration with the same version in our migrationChecksums, we set exists to true.
+				if migrationChecksum.Version == migrationHeight.Version {
 					exists = true
 					break
 				}
