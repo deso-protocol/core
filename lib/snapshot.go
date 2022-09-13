@@ -244,7 +244,7 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 		ExitChannel:                  make(chan bool),
 	}
 	// Now we will set the handler for finishing all operations in the operation channel.
-	snap.OperationChannel.setFinishAllOperationsHandler(snap.PersistChecksumAndMigration)
+	snap.OperationChannel.SetFinishAllOperationsHandler(snap.PersistChecksumAndMigration)
 	// Run the snapshot main loop.
 	go snap.Run()
 
@@ -1782,11 +1782,11 @@ func (opChan *SnapshotOperationChannel) Initialize(snapshotDb *badger.DB, snapsh
 	return nil
 }
 
-func (opChan *SnapshotOperationChannel) setStartOperationHandler(handler func(op *SnapshotOperation) error) {
+func (opChan *SnapshotOperationChannel) SetStartOperationHandler(handler func(op *SnapshotOperation) error) {
 	opChan.startOperationHandler = handler
 }
 
-func (opChan *SnapshotOperationChannel) setFinishAllOperationsHandler(handler func() error) {
+func (opChan *SnapshotOperationChannel) SetFinishAllOperationsHandler(handler func() error) {
 	opChan.finishAllOperationsHandler = handler
 }
 
