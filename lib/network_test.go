@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"github.com/holiman/uint256"
+	"math/big"
 	"math/rand"
 	"reflect"
 	"strconv"
@@ -1428,7 +1429,8 @@ func TestSpendingLimitMetamaskString(t *testing.T) {
 		_verifyEncodingCorrectness := func(tsl *TransactionSpendingLimit, params *DeSoParams) bool {
 			encoding := spendingLimit.ToMetamaskString(params)
 			if tsl.GlobalDESOLimit > 0 {
-				if !strings.Contains(encoding, strconv.FormatUint(tsl.GlobalDESOLimit, 10)) {
+				if !strings.Contains(encoding, FormatScaledUint256AsDecimalString(
+					big.NewInt(0).SetUint64(tsl.GlobalDESOLimit), big.NewInt(int64(NanosPerUnit)))) {
 					return false
 				}
 			}
@@ -1527,7 +1529,7 @@ func TestUnlimitedSpendingLimitMetamaskEncoding(t *testing.T) {
 
 	// Test the spending limit encoding using the metamask scheme.
 	require.Equal(true, reflect.DeepEqual(
-		"Spending limits on the derived key:\nFULL ACCESS",
+		"Spending limits on the derived key:\nUnlimited",
 		spendingLimit.ToMetamaskString(&GlobalDeSoParams),
 	))
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"io"
 	"math"
+	"math/big"
 	"net"
 	"sort"
 	"strconv"
@@ -4990,8 +4991,8 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 
 	// GlobalDESOLimit
 	if tsl.GlobalDESOLimit > 0 {
-		str += _indt(indentationCounter) + "Total $DESO Limit: " +
-			strconv.FormatUint(tsl.GlobalDESOLimit, 10) + " $DESO\n"
+		str += _indt(indentationCounter) + "Total $DESO Limit: " + FormatScaledUint256AsDecimalString(
+			big.NewInt(0).SetUint64(tsl.GlobalDESOLimit), big.NewInt(int64(NanosPerUnit))) + " $DESO\n"
 	}
 
 	// Sort an array of strings and add them to the spending limit string str. This will come in handy below,
@@ -5120,7 +5121,7 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 
 	// IsUnlimited
 	if tsl.IsUnlimited {
-		str += "FULL ACCESS"
+		str += "Unlimited"
 	}
 
 	return str
