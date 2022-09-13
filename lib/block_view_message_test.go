@@ -914,17 +914,20 @@ func TestMessagingKeys(t *testing.T) {
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, defaultKeyName)
 		// The default key was not added so verification is false.
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
-		_messagingKeyWithTestMeta(
-			testMeta,
-			senderPkBytes,
-			senderPrivString,
-			entry.MessagingPublicKey[:],
-			defaultKeyName,
-			[]byte{},
-			[]*MessagingGroupMember{},
-			RuleErrorMessagingSignatureInvalid)
-		// Verification still fails because the txn wasn't successful.
-		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
+		// Only check that signature fails before we reach the block height, otherwise this would interfere with other tests.
+		if chain.blockTip().Height < params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+			_messagingKeyWithTestMeta(
+				testMeta,
+				senderPkBytes,
+				senderPrivString,
+				entry.MessagingPublicKey[:],
+				defaultKeyName,
+				[]byte{},
+				[]*MessagingGroupMember{},
+				RuleErrorMessagingSignatureInvalid)
+			// Verification still fails because the txn wasn't successful.
+			require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
+		}
 	}
 	// Sender tries adding default messaging key with malformed messaging public key, must fail.
 	{

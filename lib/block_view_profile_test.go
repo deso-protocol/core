@@ -3277,10 +3277,10 @@ func TestEthSignature(t *testing.T) {
 	}
 
 	// This data was taken directly from MetaMask personal_sign.
-	signatureHex := "d03fdea89e64e599935c48c3568b8b1481d074e2f93ed0f84fa3fa2962909c276133d7df637795833f64f1fefef0e486897d75d6abd8b7cf4420dcd0b674a8e01b"
-	transactionSpendingLimitHex := "8094ebdc030305c0a90706c0a90716c0a90700000000"
-	expirationBlock := uint64(999999999999)
-	derivedPublicKeyBase58Check := "tBCKWTfCBT1QRmhPaMug7L2QtrH4TDETmMYxP24FGtPaRGpXSpqknN"
+	signatureHex := "d1f84f38ce47c0ea6d67d0cf2c228dbb9f46aca12db514aaf7d8442978334e8f1547cd1999d9e84fe3f4ba3b92fc8d57bf982ebcab8227e94c7650f36c0dd7ad1b"
+	transactionSpendingLimitHex := "80c2d72f0305809f4909a08d06138aa41f0000000000"
+	expirationBlock := uint64(45639)
+	derivedPublicKeyBase58Check := "tBCKYV1wrcCgDhXY3ZnvcX3L1yrFNbYjYzTBFnkxHUcjM9vt84NpbT"
 	ownerPublicKeyBase58Check := "tBCKW6GJpevX6g9kfVz4opSb7gVsJMhES67z4k5Bntxnd7zHcHdgFM"
 
 	// parse signature

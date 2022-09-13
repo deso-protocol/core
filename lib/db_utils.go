@@ -300,8 +300,16 @@ type DBPrefixes struct {
 	// if you simply add a group member after the block height DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight.
 	//
 	// <prefix, GroupMemberPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <MessagingGroupSimplifiedEntry>
+	//
+	// Deprecation comment: We are deprecating this key because there may be some edge cases in which
+	// two groups share the same GroupMessagingPublicKey and yet are actually different groups. The
+	// new index below allows us to distinguish between these by adding the GroupKeyName in the key.
 	DeprecatedPrefixGroupMembershipIndex []byte `prefix_id:"[58]" is_state:"true"` // Deprecated: Use PrefixGroupMembershipIndex instead
 
+	// This prefix is used to store all mappings for messaging groups. The group owner has a mapping
+	// with <grouOwnerPk, groupOwnerPk, groupName> and then everybody else has
+	// <memberPk, groupOwnerPk, groupName>.
+	//
 	// New <MembershipIndex> :
 	// <prefix, GroupMemberPublicKey [33]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <MessagingGroupSimplifiedEntry>
 	PrefixGroupMembershipIndex []byte `prefix_id:"[63]" is_state:"true"`
@@ -2295,10 +2303,12 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 
 // -------------------------------------------------------------------------------------
 // Reposts mapping functions
-// 		<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
-// 		<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
+//
+//	<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
+//	<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
+//
 // -------------------------------------------------------------------------------------
-//PrefixReposterPubKeyRepostedPostHashToRepostPostHash
+// PrefixReposterPubKeyRepostedPostHashToRepostPostHash
 func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash BlockHash, repostPostHash BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, Prefixes.PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
@@ -2336,7 +2346,7 @@ func _dbSeekPrefixForPostHashesYouRepost(yourPubKey []byte) []byte {
 	return append(prefixCopy, yourPubKey...)
 }
 
-//PrefixRepostedPostHashReposterPubKey
+// PrefixRepostedPostHashReposterPubKey
 func _dbKeyForRepostedPostHashReposterPubKey(repostedPostHash *BlockHash, reposterPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, Prefixes.PrefixRepostedPostHashReposterPubKey...)
@@ -2346,7 +2356,7 @@ func _dbKeyForRepostedPostHashReposterPubKey(repostedPostHash *BlockHash, repost
 }
 
 // **For quoted reposts**
-//PrefixRepostedPostHashReposterPubKeyRepostPostHash
+// PrefixRepostedPostHashReposterPubKeyRepostPostHash
 func _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
 	repostedPostHash *BlockHash, reposterPubKey []byte, repostPostHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
@@ -7492,7 +7502,9 @@ func DBGetAllProfilesByCoinValue(handle *badger.DB, snap *Snapshot, fetchEntries
 }
 
 // =====================================================================================
-//  Coin balance entry code - Supports both creator coins and DAO coins
+//
+//	Coin balance entry code - Supports both creator coins and DAO coins
+//
 // =====================================================================================
 func _dbGetPrefixForHODLerPKIDCreatorPKIDToBalanceEntry(isDAOCoin bool) []byte {
 	if isDAOCoin {

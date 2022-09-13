@@ -67,7 +67,7 @@ func (bav *UtxoView) _deleteMessageEntryMappings(messageEntry *MessageEntry) {
 // the simplified message group entry from the membership index. forceFullEntry is an optional parameter that
 // will force us to always fetch the full group entry.
 func (bav *UtxoView) GetMessagingMemberEntry(memberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey,
-	groupKeyName *GroupKeyName, blockHeight uint32, forceFullEntry ...bool) *MessagingGroupEntry {
+	groupKeyName *GroupKeyName, blockHeight uint32, forceFullEntry bool) *MessagingGroupEntry {
 
 	// If either of the provided parameters is nil, we return.
 	if memberPublicKey == nil || groupOwnerPublicKey == nil || groupKeyName == nil {
@@ -94,7 +94,7 @@ func (bav *UtxoView) GetMessagingMemberEntry(memberPublicKey *PublicKey, groupOw
 	// GetMessagingMemberEntry compatible with the new membership index, that's why we don't attempt to fetch entries from
 	// the deprecated prefix, even though it would have saved us some read time. The call to
 	// GetMessagingGroupKeyToMessagingGroupEntryMapping will fetch the full entry.
-	if len(forceFullEntry) == 0 && blockHeight >= bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+	if !forceFullEntry && blockHeight >= bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 		messagingGroupEntry := DBGetEntryFromMembershipIndex(bav.Handle, bav.Snapshot, memberPublicKey, groupOwnerPublicKey, groupKeyName)
 		if messagingGroupEntry != nil {
 			return messagingGroupEntry
@@ -109,7 +109,7 @@ func (bav *UtxoView) GetMessagingMemberEntry(memberPublicKey *PublicKey, groupOw
 // the simplified group entry from the membership index. If the forceFullEntry is set or if we're not past the membership
 // index block height, then we will fetch the entire group entry from the db (provided it exists).
 func (bav *UtxoView) GetMessagingGroupForMessagingGroupKeyExistence(messagingGroupKey *MessagingGroupKey,
-	blockHeight uint32, forceFullEntry ...bool) *MessagingGroupEntry {
+	blockHeight uint32, forceFullEntry bool) *MessagingGroupEntry {
 
 	if messagingGroupKey == nil {
 		return nil
@@ -118,7 +118,8 @@ func (bav *UtxoView) GetMessagingGroupForMessagingGroupKeyExistence(messagingGro
 	// The owner is a member of their own group by default, hence they will be present in the membership index.
 	ownerPublicKey := &messagingGroupKey.OwnerPublicKey
 	groupKeyName := &messagingGroupKey.GroupKeyName
-	entry := bav.GetMessagingMemberEntry(ownerPublicKey, ownerPublicKey, groupKeyName, blockHeight, forceFullEntry...)
+	entry := bav.GetMessagingMemberEntry(
+		ownerPublicKey, ownerPublicKey, groupKeyName, blockHeight, forceFullEntry)
 	// Filter out deleted entries.
 	if entry == nil || entry.isDeleted {
 		return nil
@@ -431,7 +432,8 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicK
 	// Fetch the messaging key entry from UtxoView.
 	messagingGroupKey := NewMessagingGroupKey(NewPublicKey(ownerPublicKey), keyName)
 	// To validate a messaging group key, we try to fetch the simplified group entry from the membership index.
-	messagingGroupEntry := bav.GetMessagingGroupForMessagingGroupKeyExistence(messagingGroupKey, blockHeight)
+	messagingGroupEntry := bav.GetMessagingGroupForMessagingGroupKeyExistence(
+		messagingGroupKey, blockHeight, false)
 	if messagingGroupEntry == nil || messagingGroupEntry.isDeleted {
 		return fmt.Errorf("ValidateKeyAndNameWithUtxo: non-existent messaging key entry "+
 			"for ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
@@ -592,8 +594,10 @@ func (bav *UtxoView) _connectPrivateMessage(
 			groupOwnerMessagingPk := NewPublicKey(txMeta.RecipientPublicKey)
 			messagingGroupKeyName := NewGroupKeyName(recipientMessagingKeyName)
 			messagingGroupEntry := bav.GetMessagingMemberEntry(
-				senderMessagingPk, groupOwnerMessagingPk, messagingGroupKeyName, blockHeight)
+				senderMessagingPk, groupOwnerMessagingPk, messagingGroupKeyName, blockHeight, false)
 			if messagingGroupEntry != nil && !messagingGroupEntry.isDeleted {
+				// Note that this list will contain at most one member if we're past the fork height.
+				// This is because each messagingGroupEntry corresponds to a single person's membership.
 				muteList := messagingGroupEntry.MuteList
 				for _, mutedMember := range muteList {
 					if bytes.Equal(mutedMember.GroupMemberPublicKey[:], txn.PublicKey) {
@@ -883,14 +887,19 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 	// We now have a valid messaging public key, key name, and owner public key.
 	// The hard-coded default key is only intended to be registered by the owner, so we will require a signature.
-	if EqualGroupKeyName(NewGroupKeyName(txMeta.MessagingGroupKeyName), DefaultGroupKeyName()) {
-		// Verify the GroupOwnerSignature. it should be signature( messagingPublicKey || messagingKeyName )
-		// We need to make sure the default messaging key was authorized by the master public key.
-		// All other keys can be registered by derived keys.
-		bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingGroupKeyName...)
-		if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature, blockHeight, bav.Params); err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
-				"Problem verifying signature bytes, error: %v", RuleErrorMessagingSignatureInvalid)
+	//
+	// Note that we decided to relax this constraint after the fork height. Why? Because keeping it would have
+	// required users to go through two confirmations when approving a key with MetaMask vs just one.
+	if blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+		if EqualGroupKeyName(NewGroupKeyName(txMeta.MessagingGroupKeyName), DefaultGroupKeyName()) {
+			// Verify the GroupOwnerSignature. it should be signature( messagingPublicKey || messagingKeyName )
+			// We need to make sure the default messaging key was authorized by the master public key.
+			// All other keys can be registered by derived keys.
+			bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingGroupKeyName...)
+			if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature, blockHeight, bav.Params); err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+					"Problem verifying signature bytes, error: %v", RuleErrorMessagingSignatureInvalid)
+			}
 		}
 	}
 
@@ -973,10 +982,10 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// all valid members.
 
 		// Map all members so that it's easier to check for overlapping members.
-		existingMembers := make(map[PublicKey]struct{})
+		existingMembers := make(map[PublicKey]bool)
 
 		// Sanity-check a group's members can't contain the messagingPublicKey.
-		existingMembers[*messagingPublicKey] = struct{}{}
+		existingMembers[*messagingPublicKey] = true
 
 		// If we're adding more group members, then we need to make sure there are no overlapping members between the
 		// transaction's entry, and the existing entry.
@@ -996,7 +1005,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 				}
 
 				// Add the existingMember to our helper structs.
-				existingMembers[*existingMember.GroupMemberPublicKey] = struct{}{}
+				existingMembers[*existingMember.GroupMemberPublicKey] = true
 				newMessagingMembers = append(newMessagingMembers, existingMember)
 			}
 			// Set the mute list to the existing mute list since we won't be changing it.
@@ -1042,7 +1051,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 						"Error, messagingMember already exists (%v)", messagingMember.GroupMemberPublicKey[:])
 			}
 			// Add the messagingMember to our helper structs.
-			existingMembers[*messagingMember.GroupMemberPublicKey] = struct{}{}
+			existingMembers[*messagingMember.GroupMemberPublicKey] = true
 			newMessagingMembers = append(newMessagingMembers, messagingMember)
 		}
 
@@ -1062,15 +1071,15 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// the message is muted or not. This would decide whether we reject a message txn or not. However, to check
 		// that, we can't just fetch the entire MessagingGroupEntry which may contains 1000s if not 100,000s of members.
 		// Instead, we will make usage of the membership index. We will especially see this in the flushing logic.
-		existingMutedMembers := make(map[PublicKey]struct{})
+		existingMutedMembers := make(map[PublicKey]bool)
 		for _, mutedMember := range existingEntry.MuteList {
-			existingMutedMembers[*mutedMember.GroupMemberPublicKey] = struct{}{}
+			existingMutedMembers[*mutedMember.GroupMemberPublicKey] = true
 			newMuteList = append(newMuteList, mutedMember)
 		}
 		// We will keep this map to keep track of all members in the group.
-		existingGroupMembers := make(map[PublicKey]struct{})
+		existingGroupMembers := make(map[PublicKey]bool)
 		for _, groupMember := range existingEntry.MessagingGroupMembers {
-			existingGroupMembers[*groupMember.GroupMemberPublicKey] = struct{}{}
+			existingGroupMembers[*groupMember.GroupMemberPublicKey] = true
 		}
 
 		for _, newlyMutedMember := range txMeta.MessagingGroupMembers {
@@ -1088,7 +1097,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 			// Add member to newMuteList. We iterate over newMuteList to prevent mute list entries with duplicate public keys.
 			if _, exists := existingMutedMembers[*newlyMutedMember.GroupMemberPublicKey]; !exists {
 				newMuteList = append(newMuteList, newlyMutedMember)
-				existingMutedMembers[*newlyMutedMember.GroupMemberPublicKey] = struct{}{}
+				existingMutedMembers[*newlyMutedMember.GroupMemberPublicKey] = true
 			} else {
 				// Check if member is already muted, in such case we error.
 				return 0, 0, nil, errors.Wrapf(RuleErrorMessagingMemberAlreadyMuted,
@@ -1142,6 +1151,9 @@ func (bav *UtxoView) _connectMessagingGroup(
 			}
 		}
 		// Add all members from the existingMutedMembers to the newMuteList
+		//
+		// Note that map iteration does not produce non-deterministic output because we sort
+		// before serializing.
 		for _, mutedMember := range existingMutedMembers {
 			newMuteList = append(newMuteList, mutedMember)
 		}

@@ -308,26 +308,26 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 
 // NewServer initializes all of the internal data structures. Right now this basically
 // looks as follows:
-// - ConnectionManager starts and keeps track of peers.
-// - When messages are received from peers, they get forwarded on a channel to
-//   the Server to handle them. In that sense the ConnectionManager is basically
-//   just acting as a router.
-// - When the Server receives a message from a peer, it can do any of the following:
-//   * Take no action.
-//   * Use the Blockchain data structure to validate the transaction or update the
+//   - ConnectionManager starts and keeps track of peers.
+//   - When messages are received from peers, they get forwarded on a channel to
+//     the Server to handle them. In that sense the ConnectionManager is basically
+//     just acting as a router.
+//   - When the Server receives a message from a peer, it can do any of the following:
+//   - Take no action.
+//   - Use the Blockchain data structure to validate the transaction or update the
 //     Blockchain data structure.
-//   * Send a new message. This can be a message directed back to that actually sent this
+//   - Send a new message. This can be a message directed back to that actually sent this
 //     message or it can be a message to another peer for whatever reason. When a message
 //     is sent in this way it can also have a deadline on it that the peer needs to
 //     respond by or else it will be disconnected.
-//   * Disconnect the peer. In this case the ConnectionManager gets notified about the
+//   - Disconnect the peer. In this case the ConnectionManager gets notified about the
 //     disconnection and may opt to replace the now-disconnected peer with a new peer.
 //     This happens for example when an outbound peer is disconnected in order to
 //     maintain TargetOutboundPeers.
-// - The server could also receive a control message that a peer has been disconnected.
-//   This can be useful to the server if, for example, it was expecting a response from
-//   a particular peer, which could be the case in initial block download where a single
-//   sync peer is used.
+//   - The server could also receive a control message that a peer has been disconnected.
+//     This can be useful to the server if, for example, it was expecting a response from
+//     a particular peer, which could be the case in initial block download where a single
+//     sync peer is used.
 //
 // TODO: Refactor all these arguments into a config object or something.
 func NewServer(_params *DeSoParams, _listeners []net.Listener,

@@ -93,7 +93,7 @@ func _derivedKeyVerifyTest(t *testing.T, db *badger.DB, chain *Blockchain, trans
 	} else {
 		utxoView, err := mempool.GetAugmentedUniversalView()
 		require.NoError(err)
-		derivedKeyEntry = utxoView._getDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
+		derivedKeyEntry = utxoView.GetDerivedKeyMappingForOwner(senderPkBytes, derivedPublicKey)
 	}
 	// If we removed the derivedKeyEntry from utxoView altogether, it'll be nil.
 	// To pass the tests, we initialize it to a default struct.
@@ -513,7 +513,7 @@ func _doTxnWithBlockHeight(
 		_, transactorPub := btcec.PrivKeyFromBytes(btcec.S256(), transactorPrivBytes)
 		transactorPubBytes := transactorPub.SerializeCompressed()
 		require.NoError(err)
-		if !utxoView._getDerivedKeyMappingForOwner(txn.PublicKey, transactorPubBytes).TransactionSpendingLimitTracker.IsUnlimited {
+		if !utxoView.GetDerivedKeyMappingForOwner(txn.PublicKey, transactorPubBytes).TransactionSpendingLimitTracker.IsUnlimited {
 			utxoOpExpectation++
 		}
 	}
@@ -2841,7 +2841,7 @@ REPEAT:
 		require.NoError(err)
 
 		// Persist the existing spending limit on the derived key.
-		prevDerivedKeyEntry := utxoView._getDerivedKeyMappingForOwner(m1PkBytes, derivedPubBytes)
+		prevDerivedKeyEntry := utxoView.GetDerivedKeyMappingForOwner(m1PkBytes, derivedPubBytes)
 		require.NotNil(prevDerivedKeyEntry)
 		require.Equal(false, prevDerivedKeyEntry.isDeleted)
 		prevTransactionSpendingLimit := &TransactionSpendingLimit{}
@@ -3223,7 +3223,7 @@ REPEAT:
 		require.NoError(err)
 
 		// Persist the existing spending limit on the derived key.
-		prevDerivedKeyEntry := utxoView._getDerivedKeyMappingForOwner(m0PkBytes, derivedPubBytes)
+		prevDerivedKeyEntry := utxoView.GetDerivedKeyMappingForOwner(m0PkBytes, derivedPubBytes)
 		require.NotNil(prevDerivedKeyEntry)
 		require.Equal(false, prevDerivedKeyEntry.isDeleted)
 		prevTransactionSpendingLimit := &TransactionSpendingLimit{}
