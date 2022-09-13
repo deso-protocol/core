@@ -181,7 +181,8 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	}
 
 	operationChannel := &SnapshotOperationChannel{}
-	if err := operationChannel.Initialize(snapshotDb, &snapshotDbMutex); err != nil {
+	// Initialize the SnapshotOperationChannel. We don't set any of the handlers yet because we don't have a snapshot instance yet.
+	if err := operationChannel.Initialize(snapshotDb, &snapshotDbMutex, nil, nil); err != nil {
 		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotOperationChannel"), true
 	}
 
@@ -242,6 +243,8 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 		timer:                        timer,
 		ExitChannel:                  make(chan bool),
 	}
+	// Now we will set the handler for finishing all operations in the operation channel.
+	snap.OperationChannel.SetFinishAllOperationsHandler(snap.PersistChecksumAndMigration)
 	// Run the snapshot main loop.
 	go snap.Run()
 
@@ -441,6 +444,16 @@ func (snap *Snapshot) StartAncestralRecordsFlush(shouldIncrement bool) {
 	snap.OperationChannel.EnqueueOperation(&SnapshotOperation{
 		operationType: SnapshotOperationFlush,
 	})
+}
+
+func (snap *Snapshot) PersistChecksumAndMigration() error {
+	if err := snap.Checksum.SaveChecksum(); err != nil {
+		return errors.Wrapf(err, "PersistChecksumAndMigration: Problem saving checksum")
+	}
+	if err := snap.Migrations.SaveMigrations(); err != nil {
+		return errors.Wrapf(err, "PersistChecksumAndMigration: Problem saving migrations")
+	}
+	return nil
 }
 
 func (snap *Snapshot) PrintChecksum(text string) {
@@ -1723,14 +1736,21 @@ type SnapshotOperationChannel struct {
 
 	snapshotDb      *badger.DB
 	snapshotDbMutex *sync.Mutex
+
+	startOperationHandler      func(op *SnapshotOperation) error
+	finishAllOperationsHandler func() error
 }
 
-func (opChan *SnapshotOperationChannel) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
+func (opChan *SnapshotOperationChannel) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex,
+	startOperationHandler func(op *SnapshotOperation) error, finishAllOperationsHandler func() error) error {
 	opChan.OperationChannel = make(chan *SnapshotOperation, 100000)
 	opChan.StateSemaphore = 0
 
 	opChan.snapshotDb = snapshotDb
 	opChan.snapshotDbMutex = snapshotDbMutex
+
+	opChan.startOperationHandler = startOperationHandler
+	opChan.finishAllOperationsHandler = finishAllOperationsHandler
 
 	if snapshotDb == nil || snapshotDbMutex == nil {
 		opChan.snapshotDbMutex = &sync.Mutex{}
@@ -1762,6 +1782,14 @@ func (opChan *SnapshotOperationChannel) Initialize(snapshotDb *badger.DB, snapsh
 	return nil
 }
 
+func (opChan *SnapshotOperationChannel) SetStartOperationHandler(handler func(op *SnapshotOperation) error) {
+	opChan.startOperationHandler = handler
+}
+
+func (opChan *SnapshotOperationChannel) SetFinishAllOperationsHandler(handler func() error) {
+	opChan.finishAllOperationsHandler = handler
+}
+
 func (opChan *SnapshotOperationChannel) SaveOperationChannel() error {
 	opChan.snapshotDbMutex.Lock()
 	defer opChan.snapshotDbMutex.Unlock()
@@ -1785,7 +1813,14 @@ func (opChan *SnapshotOperationChannel) EnqueueOperation(op *SnapshotOperation) 
 }
 
 func (opChan *SnapshotOperationChannel) DequeueOperationStateless() *SnapshotOperation {
-	return <-opChan.OperationChannel
+	op := <-opChan.OperationChannel
+	if opChan.startOperationHandler != nil {
+		if err := opChan.startOperationHandler(op); err != nil {
+			glog.Errorf("SnapshotOperationChannel.DequeueOperationStateless: Problem executing startOperationHandler "+
+				"on operation (%v), error (%v)", op, err)
+		}
+	}
+	return op
 }
 
 func (opChan *SnapshotOperationChannel) FinishOperation() {
@@ -1796,6 +1831,12 @@ func (opChan *SnapshotOperationChannel) FinishOperation() {
 	if opChan.StateSemaphore == 0 {
 		if err := opChan.SaveOperationChannel(); err != nil {
 			glog.Errorf("SnapshotOperationChannel.FinishOperation: Problem saving StateSemaphore to db, error (%v)", err)
+		}
+		// We will invoke the external finishAllOperationsHandler if it is set.
+		if opChan.finishAllOperationsHandler != nil {
+			if err := opChan.finishAllOperationsHandler(); err != nil {
+				glog.Errorf("SnapshotOperationChannel.FinishOperation: Problem executing finishAllOperationsHandler, error (%v)", err)
+			}
 		}
 	}
 }
