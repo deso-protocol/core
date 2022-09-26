@@ -126,9 +126,7 @@ func (bav *UtxoView) _connectReact(
 	// There are two main checks that need to be done before allowing a reaction:
 	//  - Check that the post exists
 	//  - Check that the person hasn't already reacted with the same emoji
-
 	//TODO (Michel) Validate that EmojiReaction is a valid rune for an emoji before proceeding.
-
 	//	Check that the post to react actually exists.
 	existingPostEntry := bav.GetPostEntryForPostHash(txMeta.PostHash)
 	if existingPostEntry == nil || existingPostEntry.isDeleted {
@@ -198,7 +196,6 @@ func (bav *UtxoView) _disconnectReact(
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	//TODO (Michel) Add block height check
-
 	// Verify that the last operation is a Reaction operation
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectReact: utxoOperations are missing")
@@ -214,7 +211,6 @@ func (bav *UtxoView) _disconnectReact(
 	txMeta := currentTxn.TxnMeta.(*ReactMetadata)
 
 	//TODO (Michel) Check that the post isn't deleted.
-
 	// Before we do anything, let's get the post so we can adjust the emoji map counter later.
 	reactedPostEntry := bav.GetPostEntryForPostHash(txMeta.PostHash)
 	if reactedPostEntry == nil {

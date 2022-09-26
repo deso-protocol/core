@@ -2278,6 +2278,10 @@ func (likeEntry *LikeEntry) GetEncoderType() EncoderType {
 
 func MakeReactionKey(userPk []byte, ReactPostHash BlockHash, ReactEmoji rune) ReactionKey {
 	return ReactionKey{
+<<<<<<< HEAD
+=======
+		// Avoid using the pointer so that it is easier to compare Reaction key structs
+>>>>>>> fb4e83e6a39e4f8e22d0729d4bcda3912e4f4141
 		ReactorPubKey:   *NewPublicKey(userPk),
 		ReactedPostHash: ReactPostHash,
 		ReactEmoji:      ReactEmoji,

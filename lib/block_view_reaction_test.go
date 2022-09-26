@@ -214,37 +214,37 @@ func TestReactTxns(t *testing.T) {
 	}
 	// Attempting "m0 -> fakePostHash" should fail since the post doesn't exist.
 	_, _, _, err = _doReactTxn(
-		testMeta, 10 /*feeRateNanosPerKB*/, m0Pub,
+		testMeta, 10                /*feeRateNanosPerKB*/, m0Pub,
 		fakePostHash, m0Priv, false /*isRemove*/, HappyReaction)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), RuleErrorCannotReactNonexistentPost)
 
 	// p1
 	submitPost(
-		10,       /*feeRateNanosPerKB*/
-		m0Pub,    /*updaterPkBase58Check*/
-		m0Priv,   /*updaterPrivBase58Check*/
-		[]byte{}, /*postHashToModify*/
-		[]byte{}, /*parentStakeID*/
+		10,                                                 /*feeRateNanosPerKB*/
+		m0Pub,                                              /*updaterPkBase58Check*/
+		m0Priv,                                             /*updaterPrivBase58Check*/
+		[]byte{},                                           /*postHashToModify*/
+		[]byte{},                                           /*parentStakeID*/
 		&DeSoBodySchema{Body: "m0 post body 1 no profile"}, /*body*/
 		[]byte{},
 		1602947011*1e9, /*tstampNanos*/
-		false /*isHidden*/)
+		false           /*isHidden*/)
 	post1Txn := txns[len(txns)-1]
 	post1Hash := *post1Txn.Hash()
 
 	// p2
 	{
 		submitPost(
-			10,       /*feeRateNanosPerKB*/
-			m0Pub,    /*updaterPkBase58Check*/
-			m0Priv,   /*updaterPrivBase58Check*/
-			[]byte{}, /*postHashToModify*/
-			[]byte{}, /*parentStakeID*/
+			10,                                                 /*feeRateNanosPerKB*/
+			m0Pub,                                              /*updaterPkBase58Check*/
+			m0Priv,                                             /*updaterPrivBase58Check*/
+			[]byte{},                                           /*postHashToModify*/
+			[]byte{},                                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m0 post body 2 no profile"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post2Txn := txns[len(txns)-1]
 	post2Hash := *post2Txn.Hash()
@@ -252,15 +252,15 @@ func TestReactTxns(t *testing.T) {
 	// p3
 	{
 		submitPost(
-			10,       /*feeRateNanosPerKB*/
-			m1Pub,    /*updaterPkBase58Check*/
-			m1Priv,   /*updaterPrivBase58Check*/
-			[]byte{}, /*postHashToModify*/
-			[]byte{}, /*parentStakeID*/
+			10,                                                 /*feeRateNanosPerKB*/
+			m1Pub,                                              /*updaterPkBase58Check*/
+			m1Priv,                                             /*updaterPrivBase58Check*/
+			[]byte{},                                           /*postHashToModify*/
+			[]byte{},                                           /*parentStakeID*/
 			&DeSoBodySchema{Body: "m1 post body 1 no profile"}, /*body*/
 			[]byte{},
 			1502947013*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post3Txn := txns[len(txns)-1]
 	post3Hash := *post3Txn.Hash()
@@ -270,7 +270,7 @@ func TestReactTxns(t *testing.T) {
 
 	// Duplicating "m0 -> p1" should fail.
 	_, _, _, err = _doReactTxn(
-		testMeta, 10 /*feeRateNanosPerKB*/, m0Pub,
+		testMeta, 10             /*feeRateNanosPerKB*/, m0Pub,
 		post1Hash, m0Priv, false /*isRemove*/, HappyReaction)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), RuleErrorReactEntryAlreadyExists)
@@ -409,7 +409,7 @@ func TestReactTxns(t *testing.T) {
 
 	// Duplicating "m0 -> p1" (unfollow) should fail.
 	_, _, _, err = _doReactTxn(
-		testMeta, 10 /*feeRateNanosPerKB*/, m0Pub,
+		testMeta, 10            /*feeRateNanosPerKB*/, m0Pub,
 		post1Hash, m0Priv, true /*isRemove*/, HappyReaction)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), RuleErrorCannotRemoveReactionWithoutAnExistingReaction)
@@ -528,7 +528,6 @@ func TestReactTxns(t *testing.T) {
 	_executeAllTestRollbackAndFlush(testMeta)
 
 	// TODO (Michel) Everything below is unecessary since we call _executeAllTestRollbackAndFlush
-
 	// Apply all the transactions to a mempool object and make sure we don't get any
 	// errors. Verify the balances align as we go.
 	for ii, tx := range txns {

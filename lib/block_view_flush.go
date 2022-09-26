@@ -3,7 +3,6 @@ package lib
 import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"reflect"
@@ -441,14 +440,14 @@ func (bav *UtxoView) _flushReactEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	// Go through all the entries in the ReactionKeyToReactionEntry map.
+	// Go through all the entries in the LikeKeyToLikeEntry map.
 	for _, reactEntry := range bav.ReactionKeyToReactionEntry {
 
 		if reactEntry.isDeleted {
-			// If the ReactEntry has isDeleted=true then there's nothing to do because
+			// If the LikeEntry has isDeleted=true then there's nothing to do because
 			// we already deleted the entry above.
 		} else {
-			// If the ReactEntry has (isDeleted = false) then we put the corresponding
+			// If the LikeEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DbPutReactMappingsWithTxn(
 				txn, reactEntry.ReactorPubKey, *reactEntry.ReactedPostHash, reactEntry.ReactEmoji); err != nil {
