@@ -2156,6 +2156,10 @@ func (entry *MessagingGroupEntry) String() string {
 		entry.GroupOwnerPublicKey, entry.MessagingPublicKey, entry.MessagingGroupKeyName, entry.isDeleted)
 }
 
+func (entry *MessagingGroupEntry) IsDeleted() bool {
+	return entry.isDeleted
+}
+
 func sortMessagingGroupMembers(membersArg []*MessagingGroupMember) []*MessagingGroupMember {
 	// Make a deep copy of the members to avoid messing up the slice the caller
 	// used. Not doing this could cause downstream effects, mainly in tests where
@@ -2853,7 +2857,7 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex)
+	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {

@@ -2599,10 +2599,10 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	testStage := TestStageBeforeUnlimitedDerivedBlockHeight
 
 	GlobalDeSoParams = *params
-	GlobalDeSoParams.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = unlimitedDerivedKeysBlockHeight
+	GlobalDeSoParams.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = unlimitedDerivedKeysBlockHeight
 	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
 		migration := GlobalDeSoParams.EncoderMigrationHeightsList[ii]
-		if migration.Name == DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex {
+		if migration.Name == UnlimitedDerivedKeysMigration {
 			GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = uint64(unlimitedDerivedKeysBlockHeight)
 		} else {
 			GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 0
@@ -2616,7 +2616,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
-	params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = uint32(0)
+	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
 
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
