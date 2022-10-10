@@ -47,6 +47,12 @@ type UtxoView struct {
 	// Messaging group entries.
 	MessagingGroupKeyToMessagingGroupEntry map[MessagingGroupKey]*MessagingGroupEntry
 
+	// Group Memberships
+	GroupMembershipKeyToMessagingGroupMember map[GroupMembershipKey]*MessagingGroupMember
+
+	// Muted Members
+	MutedMembers map[GroupEnumerationKey]bool
+
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
 
@@ -126,6 +132,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Messages data
 	bav.MessageKeyToMessageEntry = make(map[MessageKey]*MessageEntry)
+	bav.GroupMembershipKeyToMessagingGroupMember = make(map[GroupMembershipKey]*MessagingGroupMember)
+	bav.MutedMembers = make(map[GroupEnumerationKey]bool)
 	bav.MessageMap = make(map[BlockHash]*PGMessage)
 
 	// Messaging group entries

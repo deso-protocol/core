@@ -719,7 +719,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 		var err error
 		blockHeight := testMeta.chain.blockTip().Height + 1
 		if blockHeight >= testMeta.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
-			entries, err = DBGetAllUserGroupEntriesWithTxn(txn, publicKey)
+			entries, err = DBGetAllUserGroupEntriesWithTxn(txn, testMeta.chain.snapshot, publicKey)
 			require.NoError(err)
 		} else {
 			entries, err = DEPRECATEDDBGetAllUserGroupEntriesWithTxn(txn, publicKey)
@@ -2505,7 +2505,7 @@ func TestGroupMessages(t *testing.T) {
 				if blockHeight < params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
 					msgKeys, err = DEPRECATEDDBGetAllMessagingGroupEntriesForMemberWithTxn(txn, NewPublicKey(pk))
 				} else {
-					msgKeys, err = DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn(txn, NewPublicKey(pk))
+					msgKeys, err = DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn(txn, chain.snapshot, NewPublicKey(pk))
 				}
 				return err
 			}))
@@ -2935,6 +2935,15 @@ func TestGroupMessages(t *testing.T) {
 			messages, _, err = utxoView.GetMessagesForUser(m2PubKey, chain.blockTip().Height+1)
 			require.NoError(err)
 			require.Equal(2, len(messages))
+		}
+
+		// TEST REMOVE-MEMBER FROM GROUP CHAT
+		{
+			// get block height
+			blockHeight := chain.blockTip().Height + 1
+			// get rotating version
+			rotatingVersion := getMessagingGroupRotatingVersion(entry, blockHeight)
+			_ = rotatingVersion
 		}
 	}
 
