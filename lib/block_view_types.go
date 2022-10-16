@@ -2233,6 +2233,10 @@ func (entry *AccessGroupEntry) String() string {
 		entry.GroupOwnerPublicKey, entry.AccessPublicKey, entry.AccessGroupKeyName, entry.isDeleted)
 }
 
+func (entry *AccessGroupEntry) IsDeleted() bool {
+	return entry.isDeleted
+}
+
 func sortAccessGroupMembers(membersArg []*AccessGroupMember) []*AccessGroupMember {
 	// Make a deep copy of the members to avoid messing up the slice the caller
 	// used. Not doing this could cause downstream effects, mainly in tests where
