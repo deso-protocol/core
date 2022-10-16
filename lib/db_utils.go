@@ -2002,11 +2002,12 @@ func _dbSeekPrefixForGroupMemberAttributesIndex(groupOwnerPublicKey *PublicKey, 
 }
 
 // _dbKeyForGroupMemberAttributesIndex returns DB key for the PrefixGroupMemberAttributesIndex
-func _dbKeyForGroupMemberAttributesIndex(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey) []byte {
+func _dbKeyForGroupMemberAttributesIndex(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixGroupMemberAttributesIndex...)
 	key := append(prefixCopy, groupOwnerPublicKey[:]...)
 	key = append(key, groupKeyName[:]...)
 	key = append(key, groupMemberPublicKey[:]...)
+	key = append(key, byte(attributeType))
 	return key
 }
 
@@ -2039,66 +2040,62 @@ func DBGetAllAttributesForGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot,
 	return groupMemberAttributes, nil
 }
 
-// DBPutMutedMemberInGroupMutedMembersIndexWithTxn for a given group.
-func DBPutMutedMemberInGroupMutedMembersIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	messagingGroupMember *AccessGroupMember, messagingGroupEntry *AccessGroupEntry) error {
+// DBPutAttributeInGroupMemberAttributesIndexWithTxn for a given group.
+func DBPutAttributeInGroupMemberAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
+	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) error {
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForGroupMemberAttributesIndex(
-		messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.AccessGroupKeyName, messagingGroupMember.GroupMemberPublicKey),
-		EncodeToBytes(blockHeight, nil)); err != nil {
+		groupOwnerPublicKey, groupKeyName, groupMemberPublicKey, attributeType), EncodeToBytes(blockHeight, nil)); err != nil {
 
-		return errors.Wrapf(err, "DBPutMutedMemberInGroupMutedMembersIndexWithTxn: Problem setting muted member with key (%v) "+
-			"and entry (%v) in the db", _dbKeyForGroupMemberAttributesIndex(
-			messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.AccessGroupKeyName, messagingGroupMember.GroupMemberPublicKey),
-			EncodeToBytes(blockHeight, nil))
+		return errors.Wrapf(err, "DBPutAttributeInGroupMemberAttributesIndexWithTxn: "+
+			"problem adding attribute %v for group member %v", attributeType, groupMemberPublicKey)
 	}
 
 	return nil
 }
 
-func DBPutMutedMemberInGroupMutedMembersIndex(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	messagingGroupMember *AccessGroupMember, messagingGroupEntry *AccessGroupEntry) error {
+func DBPutAttributeInGroupMemberAttributesIndex(handle *badger.DB, snap *Snapshot, blockHeight uint64,
+	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutMutedMemberInGroupMutedMembersIndexWithTxn(txn, snap, blockHeight, messagingGroupMember, messagingGroupEntry)
+		return DBPutAttributeInGroupMemberAttributesIndexWithTxn(txn, snap, blockHeight, groupOwnerPublicKey, groupKeyName, groupMemberPublicKey, attributeType)
 	})
 }
 
-// DBIsMemberMutedInGroupMembersIndexWithTxn for a given group.
-func DBIsMemberMutedInGroupMembersIndexWithTxn(txn *badger.Txn, snap *Snapshot,
-	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey) (bool, error) {
+// DBIsAttributeSetForMemberInGroupMemberAttributesIndexWithTxn for a given group.
+func DBIsAttributeSetForMemberInGroupMemberAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
+	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) (bool, error) {
 
 	// db key for the group muted members index.
-	key := _dbKeyForGroupMemberAttributesIndex(groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
+	key := _dbKeyForGroupMemberAttributesIndex(groupOwnerPublicKey, groupKeyName, groupMemberPublicKey, attributeType)
 
 	// Fetch the value from the db.
 	_, err := DBGetWithTxn(txn, snap, key)
 
 	if err != nil {
-		// If the key doesn't exist then the member is not muted.
+		// If the key doesn't exist then the attribute is not set.
 		if err == badger.ErrKeyNotFound {
 			return false, nil
 		}
 		// Otherwise, return the error.
-		return false, errors.Wrapf(err, "DBIsMemberMutedInGroupMembersIndexWithTxn: Problem fetching key %v from db", key)
+		return false, errors.Wrapf(err, "DBIsAttributeSetForMemberInGroupMemberAttributesIndexWithTxn: Problem fetching key %v from db", key)
 	}
 
-	// If the key exists then the member is muted.
+	// If the key exists then the attribute is set.
 	return true, nil
 }
 
-// DBIsMemberMutedInGroupMembersIndex for a given group.
-func DBIsMemberMutedInGroupMembersIndex(handle *badger.DB, snap *Snapshot,
-	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey) (bool, error) {
+// DBIsAttributeSetForMemberInGroupMemberAttributesIndex for a given group.
+func DBIsAttributeSetForMemberInGroupMemberAttributesIndex(handle *badger.DB, snap *Snapshot,
+	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) (bool, error) {
 
-	var isMuted bool
+	var isAttributeSet bool
 	err := handle.View(func(txn *badger.Txn) error {
 		var err error
-		isMuted, err = DBIsMemberMutedInGroupMembersIndexWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
+		isAttributeSet, err = DBIsAttributeSetForMemberInGroupMemberAttributesIndexWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName, groupMemberPublicKey, attributeType)
 		return err
 	})
-
-	return isMuted, err
+	return isAttributeSet, err
 }
 
 // -------------------------------------------------------------------------------------
@@ -4160,8 +4157,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
-		genesisBlock.Header,                                                               // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
+		genesisBlock.Header, // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -8138,7 +8135,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -8265,7 +8262,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true   /*reverse*/, false /*fetchValues*/)
+		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}

@@ -410,7 +410,7 @@ func (bav *UtxoView) isMemberMuted(
 	}
 
 	// If utxoView mapping doesn't exist, check DB.
-	isMuted, err := DBIsMemberMutedInGroupMembersIndex(bav.Handle, bav.Snapshot, messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.AccessGroupKeyName, memberPublicKey)
+	isMuted, err := DBIsAttributeSetForMemberInGroupMemberAttributesIndex(bav.Handle, bav.Snapshot, messagingGroupEntry, member
 	if err != nil {
 		return false, errors.Wrapf(err, "isMemberMuted: Problem checking if member is muted in DB")
 	}
