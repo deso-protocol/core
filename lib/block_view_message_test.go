@@ -905,7 +905,7 @@ func TestMessagingKeys(t *testing.T) {
 			baseKeyName[:],
 			sign,
 			[]*AccessGroupMember{},
-			RuleErrorMessagingKeyNameCannotBeZeros)
+			RuleErrorAccessKeyNameCannotBeZeros)
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Sender tries to add default messaging key without proper signature, must fail.
@@ -924,7 +924,7 @@ func TestMessagingKeys(t *testing.T) {
 				defaultKeyName,
 				[]byte{},
 				[]*AccessGroupMember{},
-				RuleErrorMessagingSignatureInvalid)
+				RuleErrorAccessGroupSignatureInvalid)
 			// Verification still fails because the txn wasn't successful.
 			require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 		}
@@ -960,7 +960,7 @@ func TestMessagingKeys(t *testing.T) {
 			[]byte{},
 			[]byte{},
 			[]*AccessGroupMember{},
-			RuleErrorMessagingKeyNameCannotBeZeros)
+			RuleErrorAccessKeyNameCannotBeZeros)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	{
@@ -975,7 +975,7 @@ func TestMessagingKeys(t *testing.T) {
 			append(defaultKeyName, NewGroupKeyName([]byte{})[:]...),
 			[]byte{},
 			[]*AccessGroupMember{},
-			RuleErrorMessagingKeyNameTooLong)
+			RuleErrorAccessKeyNameTooLong)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Now let's make a valid transaction.
@@ -1054,7 +1054,7 @@ func TestMessagingKeys(t *testing.T) {
 			randomKeyName,
 			[]byte{},
 			[]*AccessGroupMember{},
-			RuleErrorMessagingKeyDoesntAddMembers)
+			RuleErrorAccessKeyDoesntAddMembers)
 		// Verification is still successful.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
@@ -1072,7 +1072,7 @@ func TestMessagingKeys(t *testing.T) {
 			randomKeyName,
 			[]byte{},
 			[]*AccessGroupMember{},
-			RuleErrorMessagingPublicKeyCannotBeDifferent)
+			RuleErrorAccessPublicKeyCannotBeDifferent)
 		// The existing entry will pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 		// The newly-generated entry will fail verification.
@@ -1091,7 +1091,7 @@ func TestMessagingKeys(t *testing.T) {
 			append(randomKeyName, byte(0)),
 			[]byte{},
 			[]*AccessGroupMember{},
-			RuleErrorMessagingKeyDoesntAddMembers)
+			RuleErrorAccessKeyDoesntAddMembers)
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// m1Pub adds some random key, should pass.
@@ -1281,7 +1281,7 @@ func TestMessagingKeys(t *testing.T) {
 			randomGroupKeyName,
 			[]byte{},
 			entry.AccessGroupMembers,
-			RuleErrorMessagingMemberAlreadyExists)
+			RuleErrorAccessMemberAlreadyExists)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Sender tries adding a messaging recipient for m0PubKey with a non-existent key, this should fail.
@@ -1302,7 +1302,7 @@ func TestMessagingKeys(t *testing.T) {
 			randomGroupKeyName,
 			[]byte{},
 			entry.AccessGroupMembers,
-			RuleErrorMessagingMemberKeyDoesntExist)
+			RuleErrorAccessMemberKeyDoesntExist)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Sender tries adding a messaging recipient for m0PubKey with a malformed encrypted key, so we fail.
@@ -1324,7 +1324,7 @@ func TestMessagingKeys(t *testing.T) {
 			randomGroupKeyName,
 			[]byte{},
 			entry.AccessGroupMembers,
-			RuleErrorMessagingMemberEncryptedKeyTooShort)
+			RuleErrorAccessMemberEncryptedKeyTooShort)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Sender tries adding m0PubKey as a recipient twice, this should also fail.
@@ -1349,7 +1349,7 @@ func TestMessagingKeys(t *testing.T) {
 			randomGroupKeyName,
 			[]byte{},
 			entry.AccessGroupMembers,
-			RuleErrorMessagingMemberAlreadyExists)
+			RuleErrorAccessMemberAlreadyExists)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Now we get to passing tests.
@@ -1386,7 +1386,7 @@ func TestMessagingKeys(t *testing.T) {
 			randomGroupKeyName,
 			[]byte{},
 			entry.AccessGroupMembers,
-			RuleErrorMessagingMemberAlreadyExists)
+			RuleErrorAccessMemberAlreadyExists)
 		// The entry still passes verification, because transaction was rejected.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 
@@ -1525,7 +1525,7 @@ func TestMessagingKeys(t *testing.T) {
 			groupKeyName,
 			[]byte{},
 			entry.AccessGroupMembers,
-			RuleErrorMessagingMemberAlreadyExists)
+			RuleErrorAccessMemberAlreadyExists)
 		require.Equal(true, _verifyMessagingKey(testMeta, basePk, expectedEntry))
 
 		// Now add all the entries to our expected entries list.
@@ -2573,7 +2573,7 @@ func TestGroupMessages(t *testing.T) {
 			NewGroupKeyName(gangKey),
 			nil,
 		}
-		_helpConnectPrivateMessageWithParty(testMeta, m0Priv, muteMessageEntry, RuleErrorMessagingMemberMuted)
+		_helpConnectPrivateMessageWithParty(testMeta, m0Priv, muteMessageEntry, RuleErrorAccessMemberMuted)
 		// m0 is currently muted and hence:
 		// The message should NOT be successfully added, so we STILL have:
 		// m0 -> group(sender, recipient, m0, m2)
@@ -2625,7 +2625,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				muteList,
 				extraData,
-				RuleErrorMessagingMemberAlreadyMuted)
+				RuleErrorAccessMemberAlreadyMuted)
 		}
 
 		// UNMUTING TESTS
@@ -2721,7 +2721,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				unmuteList,
 				extraData,
-				RuleErrorMessagingMemberAlreadyUnmuted)
+				RuleErrorAccessMemberAlreadyUnmuted)
 		}
 
 		{
@@ -2744,7 +2744,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				unmuteList,
 				extraData,
-				RuleErrorMessagingMemberNotInGroup)
+				RuleErrorAccessMemberNotInGroup)
 		}
 		{
 			// Let us now try to unmute m1 who is not part of the group
@@ -2766,7 +2766,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				unmuteList,
 				extraData,
-				RuleErrorMessagingMemberNotInGroup)
+				RuleErrorAccessMemberNotInGroup)
 		}
 
 		{
@@ -2790,7 +2790,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				muteList,
 				extraData,
-				RuleErrorMessagingGroupOwnerMutingSelf)
+				RuleErrorAccessGroupOwnerMutingSelf)
 		}
 
 		{
@@ -2814,7 +2814,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				muteList,
 				extraData,
-				RuleErrorMessagingGroupOwnerUnmutingSelf)
+				RuleErrorAccessGroupOwnerUnmutingSelf)
 		}
 
 		{
@@ -2841,7 +2841,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				muteList,
 				extraData,
-				RuleErrorMessagingMemberAlreadyExists)
+				RuleErrorAccessMemberAlreadyExists)
 			// reset to 0 for further testing
 			params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
 		}
@@ -2895,7 +2895,7 @@ func TestGroupMessages(t *testing.T) {
 			// Now let's try to send a message to the group with DeSoAccessGroupsBlockHeight set to 0
 			// This should fail since the member is muted.
 			params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
-			_helpConnectPrivateMessageWithParty(testMeta, m2Priv, muteMessageEntry, RuleErrorMessagingMemberMuted)
+			_helpConnectPrivateMessageWithParty(testMeta, m2Priv, muteMessageEntry, RuleErrorAccessMemberMuted)
 			// m2 is currently muted, so the txn should not complete muting should work due to gating of the check-if-muted
 			// functionality. Note: This is just a sanity check and this probably won't happen on mainnet as the blockHeight
 			// does not suddenly decrease below DeSoAccessGroupsBlockHeight after a muting txn:
@@ -3293,7 +3293,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberMuted)
 		}
 
 		{
@@ -3313,7 +3313,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyMuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberAlreadyMuted)
 		}
 
 		{
@@ -3382,7 +3382,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyUnmuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberAlreadyUnmuted)
 		}
 
 		{
@@ -3402,7 +3402,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberNotInGroup)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberNotInGroup)
 		}
 
 		{
@@ -3422,7 +3422,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberNotInGroup)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberNotInGroup)
 		}
 
 		{
@@ -3442,7 +3442,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingGroupOwnerMutingSelf)
+			expectedErrors = append(expectedErrors, RuleErrorAccessGroupOwnerMutingSelf)
 		}
 
 		{
@@ -3462,7 +3462,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingGroupOwnerUnmutingSelf)
+			expectedErrors = append(expectedErrors, RuleErrorAccessGroupOwnerUnmutingSelf)
 		}
 
 		{
@@ -3482,7 +3482,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingGroupDoesntExist) // This should fail because m1 is not the group owner.
+			expectedErrors = append(expectedErrors, RuleErrorAccessGroupDoesntExist) // This should fail because m1 is not the group owner.
 		}
 
 		{
@@ -3599,7 +3599,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberMuted)
 		}
 
 		{
@@ -3628,7 +3628,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m2Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberMuted)
 		}
 
 		{
@@ -3657,7 +3657,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m3Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberMuted)
 		}
 
 		{
@@ -3819,7 +3819,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyMuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberAlreadyMuted)
 		}
 
 		{
@@ -3844,7 +3844,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyUnmuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberAlreadyUnmuted)
 		}
 
 		{
@@ -3982,7 +3982,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyExists) // Need to change this to reflect error of muting before block height. Should be RuleErrorMessagingMutingBeforeBlockHeight
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberAlreadyExists) // Need to change this to reflect error of muting before block height. Should be RuleErrorMessagingMutingBeforeBlockHeight
 		}
 
 		{
@@ -4031,7 +4031,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyExists) // Need to change this to reflect error of muting before block height. Should be RuleErrorMessagingMutingBeforeBlockHeight
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberAlreadyExists) // Need to change this to reflect error of muting before block height. Should be RuleErrorMessagingMutingBeforeBlockHeight
 		}
 	}
 

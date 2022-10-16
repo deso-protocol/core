@@ -253,7 +253,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 				senderMessagingPk, groupOwnerMessagingPk, messagingGroupKeyName, blockHeight)
 			if messagingGroupMember != nil && messagingGroupMember.IsMuted {
 				return 0, 0, nil, errors.Wrapf(
-					RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
+					RuleErrorAccessMemberMuted, "_connectMessagingGroup: "+
 						"Error, sending member is muted (%v)", messagingGroupMember.GroupMemberPublicKey)
 			}
 
@@ -264,7 +264,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 			//	for _, mutedMember := range muteList {
 			//		if bytes.Equal(mutedMember.GroupMemberPublicKey[:], txn.PublicKey) {
 			//			return 0, 0, nil, errors.Wrapf(
-			//				RuleErrorMessagingMemberMuted, "_connectMessagingGroup: "+
+			//				RuleErrorAccessMemberMuted, "_connectMessagingGroup: "+
 			//					"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
 			//		}
 			//	}
