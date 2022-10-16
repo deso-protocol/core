@@ -403,7 +403,7 @@ func (bav *UtxoView) isMemberMuted(
 	// Create enumeration key.
 	enumerationKey := NewGroupEnumerationKey(messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.AccessGroupKeyName[:], memberPublicKey)
 	// Check if enumerationKey exists in GroupMemberAttributes mapping.
-	muted, exists := bav.GroupMemberAttributes[*enumerationKey]
+	muted, exists := bav.GroupMemberAttributes[*enumerationKey][AccessGroupMemberAttributeIsMuted]
 	// If utxoView mapping exists, return value.
 	if exists {
 		return muted, nil
