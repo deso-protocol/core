@@ -210,10 +210,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 				}
 
 				// A valid unlimited spending limit object only has the IsUnlimited field set.
-				if isUnlimited {
-					newTransactionSpendingLimit.IsUnlimited = true
-				} else {
-					newTransactionSpendingLimit.IsUnlimited = false
+				newTransactionSpendingLimit.IsUnlimited = isUnlimited
+				if !newTransactionSpendingLimit.IsUnlimited {
 
 					// TODO: how can we serialize this in a way that we don't have to specify it everytime
 					// Always overwrite the global DESO limit...

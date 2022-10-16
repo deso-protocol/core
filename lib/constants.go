@@ -253,9 +253,8 @@ type ForkHeights struct {
 	// we introduce derived keys without a spending limit.
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
-	// DeSoAccessGroupsBlockHeight defines the height at which
-	// we introduce derived keys without a spending limit. As well as V3 group chat muting and unmuting, and
-	// also the MembershipIndex prefix.
+	// DeSoAccessGroupsBlockHeight defines the height at which we introduce V3 access groups 
+  // and all associate features like GroupMemberAttributes, additional DB indexes, etc.
 	DeSoAccessGroupsBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -289,25 +288,25 @@ type ForkHeights struct {
 //  1. Add a field to the EncoderMigrationHeights that looks like this:
 //     UtxoEntryTestHeight MigrationHeight
 //
-//  2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
-//     end of RawEncodeWithoutMetadata (note the usage of the MigrationName UtxoEntryTestHeight):
-//     if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
-//     data = append(data, byte(127))
-//     }
-//     And this at the end of RawDecodeWithoutMetadata:
-//     if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
-//     _, err = rr.ReadByte()
-//     if err != nil {
-//     return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte.")
-//     }
-//     }
-//     MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
+// 2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
+//	end of RawEncodeWithoutMetadata (note the usage of the MigrationName UtxoEntryTestHeight):
+//		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
+//			data = append(data, byte(127))
+//		}
+//	And this at the end of RawDecodeWithoutMetadata:
+//		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
+//			_, err = rr.ReadByte()
+//			if err != nil {
+//				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte.")
+//			}
+//		}
+//	MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
 //
-//  3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. Use the
-//     function GetMigrationVersion to chain encoder migrations (Note the variadic parameter of GetMigrationVersion and
-//     the usage of the MigrationName UtxoEntryTestHeight)
+// 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. Use the
+//		function GetMigrationVersion to chain encoder migrations (Note the variadic parameter of GetMigrationVersion and
+//		the usage of the MigrationName UtxoEntryTestHeight)
 //
-//     return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
+//		return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
 //
 // That's it!
 type MigrationName string
@@ -329,7 +328,7 @@ type EncoderMigrationHeights struct {
 	// DeSoUnlimitedDerivedKeys coincides with the DeSoUnlimitedDerivedKeysBlockHeight block
 	DeSoUnlimitedDerivedKeys MigrationHeight
 
-	// DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization coincides with the DeSoAccessGroupsBlockHeight block
+	// DeSoAccessGroups coincides with the DeSoAccessGroupsBlockHeight block
 	DeSoAccessGroups MigrationHeight
 }
 
@@ -588,7 +587,8 @@ var RegtestForkHeights = ForkHeights{
 	DerivedKeyEthSignatureCompatibilityBlockHeight:       uint32(0),
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
-	DeSoAccessGroupsBlockHeight:                          uint32(0),
+	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
+  DeSoAccessGroupsBlockHeight:                          uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -729,7 +729,10 @@ var MainnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
-	// TODO: ADD FINAL DATE & TIME HERE
+	// Mon Sept 19 @ 12pm PST
+	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
+  
+  // TODO: ADD FINAL DATE & TIME HERE
 	DeSoAccessGroupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -979,7 +982,10 @@ var TestnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
-	// TODO: ADD FINAL DATE & TIME HERE
+	// Tues Sept 13 @ 10am PT
+	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
+
+  // TODO: ADD FINAL DATE & TIME HERE
 	DeSoAccessGroupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
