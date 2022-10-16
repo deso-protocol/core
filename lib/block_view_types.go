@@ -75,8 +75,11 @@ const (
 	EncoderTypeUtxoOperationBundle
 	EncoderTypeMessageEntry
 	EncoderTypeGroupKeyName
-	EncoderTypeMessagingGroupEntry
-	EncoderTypeMessagingGroupMember
+	EncoderTypeGroupMembershipKey
+	EncoderTypeGroupEnumerationKey
+	EncoderTypeGroupMemberAttributesKey
+	EncoderTypeAccessGroupEntry
+	EncoderTypeAccessGroupMember
 	EncoderTypeForbiddenPubKeyEntry
 	EncoderTypeLikeEntry
 	EncoderTypeNFTEntry
@@ -149,10 +152,16 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &MessageEntry{}
 	case EncoderTypeGroupKeyName:
 		return &GroupKeyName{}
-	case EncoderTypeMessagingGroupEntry:
-		return &MessagingGroupEntry{}
-	case EncoderTypeMessagingGroupMember:
-		return &MessagingGroupMember{}
+	case EncoderTypeGroupMembershipKey:
+		return &GroupMembershipKey{}
+	case EncoderTypeGroupEnumerationKey:
+		return &GroupEnumerationKey{}
+	case EncoderTypeGroupMemberAttributesKey:
+		return &GroupMemberAttributesKey{}
+	case EncoderTypeAccessGroupEntry:
+		return &AccessGroupEntry{}
+	case EncoderTypeAccessGroupMember:
+		return &AccessGroupMember{}
 	case EncoderTypeForbiddenPubKeyEntry:
 		return &ForbiddenPubKeyEntry{}
 	case EncoderTypeLikeEntry:
@@ -702,8 +711,8 @@ type UtxoOperation struct {
 	// For disconnecting AuthorizeDerivedKey transactions.
 	PrevDerivedKeyEntry *DerivedKeyEntry
 
-	// For disconnecting MessagingGroupKey transactions.
-	PrevMessagingKeyEntry *MessagingGroupEntry
+	// For disconnecting AccessGroupKey transactions.
+	PrevMessagingKeyEntry *AccessGroupEntry
 
 	// Save the previous repost entry and repost count when making an update.
 	PrevRepostEntry *RepostEntry
@@ -1264,7 +1273,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	}
 
 	// PrevMessagingKeyEntry
-	prevMessagingKeyEntry := &MessagingGroupEntry{}
+	prevMessagingKeyEntry := &AccessGroupEntry{}
 	if exist, err := DecodeFromBytes(prevMessagingKeyEntry, rr); exist && err == nil {
 		op.PrevMessagingKeyEntry = prevMessagingKeyEntry
 	} else if err != nil {
@@ -1864,7 +1873,7 @@ func (message *MessageEntry) GetEncoderType() EncoderType {
 	return EncoderTypeMessageEntry
 }
 
-// GroupKeyName helps with handling key names in MessagingGroupKey
+// GroupKeyName helps with handling key names in AccessGroupKey
 type GroupKeyName [MaxMessagingKeyNameCharacters]byte
 
 func (name *GroupKeyName) ToBytes() []byte {
@@ -1942,79 +1951,293 @@ func DefaultGroupKeyName() *GroupKeyName {
 	return NewGroupKeyName([]byte("default-key"))
 }
 
-// MessagingGroupKey is similar to the MessageKey, and is used to index messaging keys for a user.
-type MessagingGroupKey struct {
+// AccessGroupKey is similar to the MessageKey, and is used to index messaging keys for a user.
+type AccessGroupKey struct {
 	OwnerPublicKey PublicKey
 	GroupKeyName   GroupKeyName
 }
 
-func NewMessagingGroupKey(ownerPublicKey *PublicKey, groupKeyName []byte) *MessagingGroupKey {
-	return &MessagingGroupKey{
+func NewAccessGroupKey(ownerPublicKey *PublicKey, groupKeyName []byte) *AccessGroupKey {
+	return &AccessGroupKey{
 		OwnerPublicKey: *ownerPublicKey,
 		GroupKeyName:   *NewGroupKeyName(groupKeyName),
 	}
 }
 
-func (key *MessagingGroupKey) String() string {
+func (key *AccessGroupKey) String() string {
 	return fmt.Sprintf("<OwnerPublicKey: %v, GroupKeyName: %v",
 		key.OwnerPublicKey, key.GroupKeyName)
 }
 
-type MessagingGroupType byte
+// GroupMembershipKey is used to index group memberships for a user.
+type GroupMembershipKey struct {
+	GroupMemberPublicKey PublicKey
+	GroupOwnerPublicKey  PublicKey
+	GroupKeyName         GroupKeyName
+}
 
-const (
-	MessagingGroupEntryType MessagingGroupType = iota
-	MessagingGroupSimplifiedEntryType
-)
+func (key *GroupMembershipKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, key.GroupMemberPublicKey[:]...)
+	data = append(data, key.GroupOwnerPublicKey[:]...)
+	data = append(data, key.GroupKeyName[:]...)
+	return data
+}
 
-// MessagingGroupEntry is used to update messaging keys for a user, this was added in
+func (key *GroupMembershipKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+
+	groupMemberPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(groupMemberPublicKey, rr); exist && err == nil {
+		key.GroupMemberPublicKey = *groupMemberPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupMembershipKey.Decode: Problem reading "+
+			"GroupMemberPublicKey")
+	}
+
+	groupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
+		key.GroupOwnerPublicKey = *groupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupMembershipKey.Decode: Problem reading "+
+			"GroupOwnerPublicKey")
+	}
+
+	groupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
+		key.GroupKeyName = *groupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupMembershipKey.Decode: Problem reading "+
+			"GroupKeyName")
+	}
+
+	return nil
+}
+
+func (key *GroupMembershipKey) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (key *GroupMembershipKey) GetEncoderType() EncoderType {
+	return EncoderTypeGroupMembershipKey
+}
+
+func NewGroupMembershipKey(groupMemberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey, groupKeyName []byte) *GroupMembershipKey {
+	return &GroupMembershipKey{
+		GroupMemberPublicKey: *groupMemberPublicKey,
+		GroupOwnerPublicKey:  *groupOwnerPublicKey,
+		GroupKeyName:         *NewGroupKeyName(groupKeyName),
+	}
+}
+
+func (key *GroupMembershipKey) String() string {
+	return fmt.Sprintf("<GroupMemberPublicKey: %v, GroupOwnerPublicKey: %v, GroupKeyName: %v>",
+		key.GroupMemberPublicKey, key.GroupOwnerPublicKey, key.GroupKeyName)
+}
+
+// Group Enumeration Key is used to index all or subset of members for a group.
+// Contains GroupOwnerPublicKey, GroupKeyName, and GroupMemberPublicKey.
+type GroupEnumerationKey struct {
+	GroupOwnerPublicKey  PublicKey
+	GroupKeyName         GroupKeyName
+	GroupMemberPublicKey PublicKey
+}
+
+func (key *GroupEnumerationKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, key.GroupOwnerPublicKey[:]...)
+	data = append(data, key.GroupKeyName[:]...)
+	data = append(data, key.GroupMemberPublicKey[:]...)
+	return data
+}
+
+func (key *GroupEnumerationKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	groupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
+		key.GroupOwnerPublicKey = *groupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupEnumerationKey.Decode: Problem reading "+
+			"GroupOwnerPublicKey")
+	}
+
+	groupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
+		key.GroupKeyName = *groupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupEnumerationKey.Decode: Problem reading "+
+			"GroupKeyName")
+	}
+
+	groupMemberPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(groupMemberPublicKey, rr); exist && err == nil {
+		key.GroupMemberPublicKey = *groupMemberPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupEnumerationKey.Decode: Problem reading "+
+			"GroupMemberPublicKey")
+	}
+
+	return nil
+}
+
+func (key *GroupEnumerationKey) GetVersionByte(blockHeight uint64) byte {
+	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
+}
+
+func (key *GroupEnumerationKey) GetEncoderType() EncoderType {
+	return EncoderTypeGroupEnumerationKey
+}
+
+func NewGroupEnumerationKey(groupOwnerPublicKey *PublicKey, groupKeyName []byte, groupMemberPublicKey *PublicKey) *GroupEnumerationKey {
+	return &GroupEnumerationKey{
+		GroupOwnerPublicKey:  *groupOwnerPublicKey,
+		GroupKeyName:         *NewGroupKeyName(groupKeyName),
+		GroupMemberPublicKey: *groupMemberPublicKey,
+	}
+}
+
+func (key *GroupEnumerationKey) String() string {
+	return fmt.Sprintf("<GroupOwnerPublicKey: %v, GroupKeyName: %v, GroupMemberPublicKey: %v>",
+		key.GroupOwnerPublicKey, key.GroupKeyName, key.GroupMemberPublicKey)
+}
+
+// GroupMemberAttributesKey is used to index group member attributes for a user in PrefixGroupMemberAttributesIndex
+type GroupMemberAttributesKey struct {
+	GroupOwnerPublicKey  PublicKey
+	GroupKeyName         GroupKeyName
+	GroupMemberPublicKey PublicKey
+	AttributeType        AccessGroupMemberAttributeType
+}
+
+func (key *GroupMemberAttributesKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, key.GroupOwnerPublicKey[:]...)
+	data = append(data, key.GroupKeyName[:]...)
+	data = append(data, key.GroupMemberPublicKey[:]...)
+	data = append(data, []byte{byte(key.AttributeType)}...)
+	return data
+}
+
+func (key *GroupMemberAttributesKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	groupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
+		key.GroupOwnerPublicKey = *groupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupMemberAttributesKey.Decode: Problem reading "+
+			"GroupOwnerPublicKey")
+	}
+
+	groupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
+		key.GroupKeyName = *groupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupMemberAttributesKey.Decode: Problem reading "+
+			"GroupKeyName")
+	}
+
+	groupMemberPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(groupMemberPublicKey, rr); exist && err == nil {
+		key.GroupMemberPublicKey = *groupMemberPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupMemberAttributesKey.Decode: Problem reading "+
+			"GroupMemberPublicKey")
+	}
+
+	attributeType, err := rr.ReadByte()
+	if err != nil {
+		return errors.Wrapf(err, "GroupMemberAttributesKey.Decode: Problem reading "+
+			"AttributeType")
+	}
+	key.AttributeType = AccessGroupMemberAttributeType(attributeType)
+
+	return nil
+}
+
+func (key *GroupMemberAttributesKey) GetVersionByte(blockHeight uint64) byte {
+	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
+}
+
+func (key *GroupMemberAttributesKey) GetEncoderType() EncoderType {
+	return EncoderTypeGroupMemberAttributesKey
+}
+
+func NewGroupMemberAttributesKey(groupOwnerPublicKey *PublicKey, groupKeyName []byte, groupMemberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) *GroupMemberAttributesKey {
+	return &GroupMemberAttributesKey{
+		GroupOwnerPublicKey:  *groupOwnerPublicKey,
+		GroupKeyName:         *NewGroupKeyName(groupKeyName),
+		GroupMemberPublicKey: *groupMemberPublicKey,
+		AttributeType:        attributeType,
+	}
+}
+
+func (key *GroupMemberAttributesKey) String() string {
+	return fmt.Sprintf("<GroupOwnerPublicKey: %v, GroupKeyName: %v, GroupMemberPublicKey: %v, AttributeType: %v>",
+		key.GroupOwnerPublicKey, key.GroupKeyName, key.GroupMemberPublicKey, key.AttributeType)
+}
+
+// AccessGroupEntry is used to update messaging keys for a user, this was added in
 // the DeSo V3 Messages protocol.
-type MessagingGroupEntry struct {
+type AccessGroupEntry struct {
 	// GroupOwnerPublicKey represents the owner public key of the user who created
 	// this group. This key is what is used to index the group metadata in the db.
 	GroupOwnerPublicKey *PublicKey
 
-	// MessagingPublicKey is the key others will use to encrypt messages. The
-	// GroupOwnerPublicKey is used for indexing, but the MessagingPublicKey is the
+	// AccessPublicKey is the key others will use to encrypt messages. The
+	// GroupOwnerPublicKey is used for indexing, but the AccessPublicKey is the
 	// actual key used to encrypt/decrypt messages.
-	MessagingPublicKey *PublicKey
+	AccessPublicKey *PublicKey
 
-	// MessagingGroupKeyName is the name of the messaging key. This is used to identify
+	// AccessGroupKeyName is the name of the messaging key. This is used to identify
 	// the message public key. You can pass any 8-32 character string (byte array).
 	// The standard Messages V3 key is named "default-key"
-	MessagingGroupKeyName *GroupKeyName
+	AccessGroupKeyName *GroupKeyName
 
-	// MessagingGroupMembers is a list of recipients in a group chat. Messaging keys can have
+	// AccessGroupMembers is a list of recipients in a group chat. Messaging keys can have
 	// multiple recipients, where the encrypted private key of the messaging public key
 	// is given to all group members.
-	MessagingGroupMembers []*MessagingGroupMember
+	AccessGroupMembers []*AccessGroupMember // Deprecated
 
 	// ExtraData is an arbitrary key value map
 	ExtraData map[string][]byte
 
-	// MuteList is a list of members that have been currently muted.
-	// Being muted means the member cannot send any messages to the group
-	// but can still cryptographically read new on-chain messages
-	MuteList []*MessagingGroupMember
-
 	// Whether this entry should be deleted when the view is flushed
 	// to the db. This is initially set to false, but can become true if
-	// we disconnect the messaging key from UtxoView
+	// we disconnect the access key from UtxoView
 	isDeleted bool
-
-	groupType MessagingGroupType
 }
 
-func (entry *MessagingGroupEntry) String() string {
-	return fmt.Sprintf("<MessagingGroupEntry: %v | MessagingPublicKey : %v | MessagingGroupKey : %v | isDeleted : %v >",
-		entry.GroupOwnerPublicKey, entry.MessagingPublicKey, entry.MessagingGroupKeyName, entry.isDeleted)
+// NewAccessGroupEntry creates a new AccessGroupEntry object.
+func NewAccessGroupEntry(groupOwnerPublicKey *PublicKey, accessPublicKey *PublicKey, accessGroupKeyName *GroupKeyName,
+	messagingGroupMembers []*AccessGroupMember, extraData map[string][]byte, blockHeight uint64) *AccessGroupEntry {
+
+	accessGroupEntry := AccessGroupEntry{
+		GroupOwnerPublicKey: groupOwnerPublicKey,
+		AccessPublicKey:     accessPublicKey,
+		AccessGroupKeyName:  accessGroupKeyName,
+		AccessGroupMembers:  messagingGroupMembers,
+		ExtraData:           extraData,
+	}
+
+	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		accessGroupEntry = AccessGroupEntry{
+			GroupOwnerPublicKey: groupOwnerPublicKey,
+			AccessPublicKey:     accessPublicKey,
+			AccessGroupKeyName:  accessGroupKeyName,
+			ExtraData:           extraData,
+		}
+	}
+
+	return &accessGroupEntry
 }
 
-func sortMessagingGroupMembers(membersArg []*MessagingGroupMember) []*MessagingGroupMember {
+func (entry *AccessGroupEntry) String() string {
+	return fmt.Sprintf("<GroupOwnerPublicKey: %v | AccessPublicKey : %v | AccessGroupKeyName : %v | isDeleted : %v >",
+		entry.GroupOwnerPublicKey, entry.AccessPublicKey, entry.AccessGroupKeyName, entry.isDeleted)
+}
+
+func sortAccessGroupMembers(membersArg []*AccessGroupMember) []*AccessGroupMember {
 	// Make a deep copy of the members to avoid messing up the slice the caller
 	// used. Not doing this could cause downstream effects, mainly in tests where
 	// the same slice is re-used in txns and in expectations later on.
-	members := make([]*MessagingGroupMember, len(membersArg))
+	members := make([]*AccessGroupMember, len(membersArg))
 	copy(members, membersArg)
 	sort.Slice(members, func(ii, jj int) bool {
 		iiStr := PkToStringMainnet(members[ii].GroupMemberPublicKey[:]) + string(members[ii].GroupMemberKeyName[:]) + string(members[ii].EncryptedKey)
@@ -2024,105 +2247,92 @@ func sortMessagingGroupMembers(membersArg []*MessagingGroupMember) []*MessagingG
 	return members
 }
 
-func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+func (entry *AccessGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var entryBytes []byte
 
 	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.GroupOwnerPublicKey, skipMetadata...)...)
-	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.MessagingPublicKey, skipMetadata...)...)
-	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.MessagingGroupKeyName, skipMetadata...)...)
-	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MessagingGroupMembers)))...)
-	// We sort the MessagingGroupMembers because they can be added while iterating over
-	// a map, which could lead to inconsistent orderings across nodes when encoding.
-	members := sortMessagingGroupMembers(entry.MessagingGroupMembers)
-	for ii := 0; ii < len(members); ii++ {
-		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, members[ii], skipMetadata...)...)
-	}
-	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
-	// adding MuteList to the end for backwards compatibility
-	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex) {
-		// We sort the MuteList members because they can be added while iterating over
+	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.AccessPublicKey, skipMetadata...)...)
+	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.AccessGroupKeyName, skipMetadata...)...)
+	// DeSoAccessGroupsMigration removes the need for AccessGroupMembers field from AccessGroupEntry.
+	// Hence, we only encode the field if the migration has not been triggered.
+	if !MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.AccessGroupMembers)))...)
+		// We sort the AccessGroupMembers because they can be added while iterating over
 		// a map, which could lead to inconsistent orderings across nodes when encoding.
-		entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MuteList)))...)
-		muteListMembers := sortMessagingGroupMembers(entry.MuteList)
-		for ii := 0; ii < len(muteListMembers); ii++ {
-			entryBytes = append(entryBytes, EncodeToBytes(blockHeight, muteListMembers[ii], skipMetadata...)...)
+		members := sortAccessGroupMembers(entry.AccessGroupMembers)
+		for ii := 0; ii < len(members); ii++ {
+			entryBytes = append(entryBytes, EncodeToBytes(blockHeight, members[ii], skipMetadata...)...)
 		}
 	}
+	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	return entryBytes
 }
 
-func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+func (entry *AccessGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
 	groupOwnerPublicKeyBytes := &PublicKey{}
 	if exist, err := DecodeFromBytes(groupOwnerPublicKeyBytes, rr); exist && err == nil {
 		entry.GroupOwnerPublicKey = groupOwnerPublicKeyBytes
 	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding groupOwnerPublicKeyBytes")
+		return errors.Wrapf(err, "AccessGroupEntry.Decode: Problem decoding groupOwnerPublicKeyBytes")
 	}
 
 	messagingPublicKeyBytes := &PublicKey{}
 	if exist, err := DecodeFromBytes(messagingPublicKeyBytes, rr); exist && err == nil {
-		entry.MessagingPublicKey = messagingPublicKeyBytes
+		entry.AccessPublicKey = messagingPublicKeyBytes
 	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding messagingPublicKey")
+		return errors.Wrapf(err, "AccessGroupEntry.Decode: Problem decoding messagingPublicKey")
 	}
 
 	messagingKeyNameBytes := &GroupKeyName{}
 	if exist, err := DecodeFromBytes(messagingKeyNameBytes, rr); exist && err == nil {
-		entry.MessagingGroupKeyName = messagingKeyNameBytes
+		entry.AccessGroupKeyName = messagingKeyNameBytes
 	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding messagingKeyName")
+		return errors.Wrapf(err, "AccessGroupEntry.Decode: Problem decoding messagingKeyName")
 	}
 
-	recipientsLen, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding recipients length")
-	}
-	for ; recipientsLen > 0; recipientsLen-- {
-		recipient := &MessagingGroupMember{}
-		if exist, err := DecodeFromBytes(recipient, rr); exist && err == nil {
-			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, recipient)
-		} else if err != nil {
-			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding recipient")
+	// DeSoAccessGroupsMigration removes the need for AccessGroupMembers field from AccessGroupEntry.
+	// Hence, we only decode the field if the migration has not been triggered.
+	if !MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		recipientsLen, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "AccessGroupEntry.Decode: Problem decoding recipients length")
+		}
+		for ; recipientsLen > 0; recipientsLen-- {
+			recipient := &AccessGroupMember{}
+			if exist, err := DecodeFromBytes(recipient, rr); exist && err == nil {
+				entry.AccessGroupMembers = append(entry.AccessGroupMembers, recipient)
+			} else if err != nil {
+				return errors.Wrapf(err, "AccessGroupEntry.Decode: Problem decoding recipient")
+			}
 		}
 	}
+
 	entry.ExtraData, err = DecodeExtraData(rr)
 	if err != nil && strings.Contains(err.Error(), "EOF") {
 		// To preserve backwards-compatibility, we set an empty map and return if we
 		// encounter an EOF error decoding ExtraData.
-		glog.Warning(err, "MessagingGroupEntry.Decode: problem decoding extra data. "+
+		glog.Warning(err, "AccessGroupEntry.Decode: problem decoding extra data. "+
 			"Please resync your node to upgrade your datadir before the next hard fork.")
 		return nil
 	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding extra data")
+		return errors.Wrapf(err, "AccessGroupEntry.Decode: Problem decoding extra data")
 	}
-	// Decoding mute list at the end of the entry.
-	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex) {
-		muteListLen, err := ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding MuteList length")
-		}
-		for ; muteListLen > 0; muteListLen-- {
-			muteListMember := &MessagingGroupMember{}
-			if exist, err := DecodeFromBytes(muteListMember, rr); exist && err == nil {
-				entry.MuteList = append(entry.MuteList, muteListMember)
-			} else if err != nil {
-				return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding muteListMember")
-			}
-		}
-	}
+
 	return nil
 }
 
-func (entry *MessagingGroupEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex)
+func (entry *AccessGroupEntry) GetVersionByte(blockHeight uint64) byte {
+	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
 }
 
-func (entry *MessagingGroupEntry) GetEncoderType() EncoderType {
-	return EncoderTypeMessagingGroupEntry
+func (entry *AccessGroupEntry) GetEncoderType() EncoderType {
+	return EncoderTypeAccessGroupEntry
 }
 
-// MessagingGroupMember is used to store information about a group chat member.
-type MessagingGroupMember struct {
+// AccessGroupMember is used to store information about a group chat member.
+type AccessGroupMember struct {
 	// GroupMemberPublicKey is the main public key of the group chat member.
 	// Importantly, it isn't a messaging public key.
 	GroupMemberPublicKey *PublicKey
@@ -2132,14 +2342,14 @@ type MessagingGroupMember struct {
 	// messaging keys. It suffices to specify the recipient's main public key
 	// and recipient's messaging key name for the consensus to know how to
 	// index the recipient. That's why we don't actually store the messaging
-	// public key in the MessagingGroupMember entry.
+	// public key in the AccessGroupMember entry.
 	GroupMemberKeyName *GroupKeyName
 
 	// EncryptedKey is the encrypted messaging public key, addressed to the recipient.
 	EncryptedKey []byte
 }
 
-func (rec *MessagingGroupMember) ToBytes() []byte {
+func (rec *AccessGroupMember) ToBytes() []byte {
 	var data []byte
 
 	data = append(data, EncodeByteArray(rec.GroupMemberPublicKey.ToBytes())...)
@@ -2149,30 +2359,31 @@ func (rec *MessagingGroupMember) ToBytes() []byte {
 	return data
 }
 
-func (rec *MessagingGroupMember) FromBytes(rr *bytes.Reader) error {
+func (rec *AccessGroupMember) FromBytes(rr *bytes.Reader) error {
 	var err error
 
 	pkBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.FromBytes: Problem reading GroupMemberPublicKey")
+		return errors.Wrapf(err, "AccessGroupMember.FromBytes: Problem reading GroupMemberPublicKey")
 	}
 	rec.GroupMemberPublicKey = NewPublicKey(pkBytes)
 
 	keyNameBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.FromBytes: Problem reading GroupMemberKeyName")
+		return errors.Wrapf(err, "AccessGroupMember.FromBytes: Problem reading GroupMemberKeyName")
 	}
 	rec.GroupMemberKeyName = NewGroupKeyName(keyNameBytes)
 
 	rec.EncryptedKey, err = DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.FromBytes: Problem reading EncryptedKey")
+		return errors.Wrapf(err, "AccessGroupMember.FromBytes: Problem reading EncryptedKey")
 	}
+
 	return nil
 }
 
-func (rec *MessagingGroupMember) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	data := []byte{}
+func (rec *AccessGroupMember) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
 
 	data = append(data, EncodeToBytes(blockHeight, rec.GroupMemberPublicKey, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, rec.GroupMemberKeyName, skipMetadata...)...)
@@ -2181,14 +2392,14 @@ func (rec *MessagingGroupMember) RawEncodeWithoutMetadata(blockHeight uint64, sk
 	return data
 }
 
-func (rec *MessagingGroupMember) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+func (rec *AccessGroupMember) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	groupMemberPublicKey := &PublicKey{}
 	if exist, err := DecodeFromBytes(groupMemberPublicKey, rr); exist && err == nil {
 		rec.GroupMemberPublicKey = groupMemberPublicKey
 	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
+		return errors.Wrapf(err, "AccessGroupMember.Decode: Problem reading "+
 			"GroupMemberPublicKey")
 	}
 
@@ -2196,24 +2407,25 @@ func (rec *MessagingGroupMember) RawDecodeWithoutMetadata(blockHeight uint64, rr
 	if exist, err := DecodeFromBytes(groupMemberKeyName, rr); exist && err == nil {
 		rec.GroupMemberKeyName = groupMemberKeyName
 	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
+		return errors.Wrapf(err, "AccessGroupMember.Decode: Problem reading "+
 			"GroupMemberKeyName")
 	}
 
 	rec.EncryptedKey, err = DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
+		return errors.Wrapf(err, "AccessGroupMember.Decode: Problem reading "+
 			"EncryptedKey")
 	}
+
 	return nil
 }
 
-func (rec *MessagingGroupMember) GetVersionByte(blockHeight uint64) byte {
-	return 0
+func (rec *AccessGroupMember) GetVersionByte(blockHeight uint64) byte {
+	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
 }
 
-func (rec *MessagingGroupMember) GetEncoderType() EncoderType {
-	return EncoderTypeMessagingGroupMember
+func (rec *AccessGroupMember) GetEncoderType() EncoderType {
+	return EncoderTypeAccessGroupMember
 }
 
 // Entry for a public key forbidden from signing blocks.
@@ -2690,7 +2902,7 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex)
+	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {

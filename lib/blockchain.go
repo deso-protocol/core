@@ -695,11 +695,11 @@ func fastLog2Floor(n uint32) uint8 {
 //
 // In addition, there are two special cases:
 //
-// - When no locators are provided, the stop hash is treated as a request for
-//   that block, so it will either return the node associated with the stop hash
-//   if it is known, or nil if it is unknown
-// - When locators are provided, but none of them are known, nodes starting
-//   after the genesis block will be returned
+//   - When no locators are provided, the stop hash is treated as a request for
+//     that block, so it will either return the node associated with the stop hash
+//     if it is known, or nil if it is unknown
+//   - When locators are provided, but none of them are known, nodes starting
+//     after the genesis block will be returned
 //
 // This is primarily a helper function for the locateBlocks and locateHeaders
 // functions.
@@ -801,11 +801,11 @@ func locateHeaders(locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32,
 //
 // In addition, there are two special cases:
 //
-// - When no locators are provided, the stop hash is treated as a request for
-//   that header, so it will either return the header for the stop hash itself
-//   if it is known, or nil if it is unknown
-// - When locators are provided, but none of them are known, headers starting
-//   after the genesis block will be returned
+//   - When no locators are provided, the stop hash is treated as a request for
+//     that header, so it will either return the header for the stop hash itself
+//     if it is known, or nil if it is unknown
+//   - When locators are provided, but none of them are known, headers starting
+//     after the genesis block will be returned
 //
 // This function is safe for concurrent access.
 func (bc *Blockchain) LocateBestBlockChainHeaders(locator []*BlockHash, stopHash *BlockHash) []*MsgDeSoHeader {
@@ -831,8 +831,9 @@ func (bc *Blockchain) LocateBestBlockChainHeaders(locator []*BlockHash, stopHash
 // from the block being located.
 //
 // For example, assume a block chain with a side chain as depicted below:
-// 	genesis -> 1 -> 2 -> ... -> 15 -> 16  -> 17  -> 18
-// 	                              \-> 16a -> 17a
+//
+//	genesis -> 1 -> 2 -> ... -> 15 -> 16  -> 17  -> 18
+//	                              \-> 16a -> 17a
 //
 // The block locator for block 17a would be the hashes of blocks:
 // [17a 16a 15 14 13 12 11 10 9 8 7 6 4 genesis]
@@ -1115,8 +1116,8 @@ func (ss SyncState) String() string {
 	}
 }
 
-//  - Latest block height is after the latest checkpoint (if enabled)
-//  - Latest block has a timestamp newer than 24 hours ago
+//   - Latest block height is after the latest checkpoint (if enabled)
+//   - Latest block has a timestamp newer than 24 hours ago
 //
 // This function MUST be called with the ChainLock held (for reads).
 func (bc *Blockchain) chainState() SyncState {
@@ -2719,12 +2720,14 @@ var (
 
 // The number of hashing attempts in expectation it would take to produce the
 // hash passed in. This is computed as:
-//    E(min(X_i, ..., X_n)) where:
-//    - n = (number of attempted hashes) and
-//    - the X_i are all U(0, MAX_HASH)
+//
+//	E(min(X_i, ..., X_n)) where:
+//	- n = (number of attempted hashes) and
+//	- the X_i are all U(0, MAX_HASH)
+//
 // -> E(min(X_i, ..., X_n)) = MAX_HASH / (n + 1)
 // -> E(n) ~= MAX_HASH / min_hash - 1
-//    - where min_hash is the block hash
+//   - where min_hash is the block hash
 //
 // We approximate this as MAX_HASH / (min_hash + 1), adding 1 to min_hash in
 // order to mitigate the possibility of a divide-by-zero error.
@@ -4408,7 +4411,7 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 	messagingPublicKey []byte,
 	messagingGroupKeyName []byte,
 	messagingOwnerKeySignature []byte,
-	members []*MessagingGroupMember,
+	members []*AccessGroupMember,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -4416,11 +4419,11 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 	// We don't need to validate info here, so just construct the transaction instead.
 	txn := &MsgDeSoTxn{
 		PublicKey: senderPublicKey,
-		TxnMeta: &MessagingGroupMetadata{
-			MessagingPublicKey:    messagingPublicKey,
-			MessagingGroupKeyName: messagingGroupKeyName,
-			GroupOwnerSignature:   messagingOwnerKeySignature,
-			MessagingGroupMembers: members,
+		TxnMeta: &AccessGroupMetadata{
+			AccessPublicKey:     messagingPublicKey,
+			AccessGroupKeyName:  messagingGroupKeyName,
+			GroupOwnerSignature: messagingOwnerKeySignature,
+			AccessGroupMembers:  members,
 		},
 		ExtraData: extraData,
 		TxOutputs: additionalOutputs,

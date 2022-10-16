@@ -249,61 +249,65 @@ type ForkHeights struct {
 	// ParamUpdater to use a blockHeight-gated function rather than a constant.
 	ParamUpdaterRefactorBlockHeight uint32
 
-	// DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight defines the height at which
+	// DeSoUnlimitedDerivedKeysBlockHeight defines the height at which
+	// we introduce derived keys without a spending limit.
+	DeSoUnlimitedDerivedKeysBlockHeight uint32
+
+	// DeSoAccessGroupsBlockHeight defines the height at which
 	// we introduce derived keys without a spending limit. As well as V3 group chat muting and unmuting, and
 	// also the MembershipIndex prefix.
-	DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight uint32
+	DeSoAccessGroupsBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
 
-// EncoderMigrationHeights is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
+// MigrationName EncoderMigrationHeights is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
 // you should:
 //  0. Typically, encoder migrations should align with hard fork heights. So the first
 //     step is to define a new value in ForkHeights, and set the value accordingly for
 //     mainnet, testnet, and regtest param structs. Add a name for your migration so that
 //     it can be accessed robustly.
-//	1. Define a new block height in the EncoderMigrationHeights struct. This should map
+//  1. Define a new block height in the EncoderMigrationHeights struct. This should map
 //     1:1 with the fork height defined prior.
-//	2. Add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods that
+//  2. Add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods that
 //     trigger at the defined height.
-//	3. Add a condition to GetVersionByte to return version associated with the migration height.
+//  3. Add a condition to GetVersionByte to return version associated with the migration height.
 //
 // So for example, let's say you want to add a migration for UtxoEntry at height 1200.
 //
-// 0. Add a field to ForkHeight that marks the point at which this entry will come
-//    into play:
+//  0. Add a field to ForkHeight that marks the point at which this entry will come
+//     into play:
 //     - Add the following to the ForkHeight struct:
-//         UtxoEntryTestHeight uint64
+//     UtxoEntryTestHeight uint64
 //     - Add the following to the individual param structs (MainnetForkHeights, TestnetForkHeights,
-//       and RegtestForkHeights):
-//         UtxoEntryTestHeight: 1200 (may differ for mainnet vs testnet & regtest)
+//     and RegtestForkHeights):
+//     UtxoEntryTestHeight: 1200 (may differ for mainnet vs testnet & regtest)
 //     - Add the migration name below DefaultMigration
-//     		UtxoEntryTestHeight MigrationName = "UtxoEntryTestHeight"
+//     UtxoEntryTestHeight MigrationName = "UtxoEntryTestHeight"
 //
-// 1. Add a field to the EncoderMigrationHeights that looks like this:
-//		UtxoEntryTestHeight MigrationHeight
+//  1. Add a field to the EncoderMigrationHeights that looks like this:
+//     UtxoEntryTestHeight MigrationHeight
 //
-// 2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
-//	end of RawEncodeWithoutMetadata (note the usage of the MigrationName UtxoEntryTestHeight):
-//		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
-//			data = append(data, byte(127))
-//		}
-//	And this at the end of RawDecodeWithoutMetadata:
-//		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
-//			_, err = rr.ReadByte()
-//			if err != nil {
-//				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte.")
-//			}
-//		}
-//	MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
+//  2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
+//     end of RawEncodeWithoutMetadata (note the usage of the MigrationName UtxoEntryTestHeight):
+//     if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
+//     data = append(data, byte(127))
+//     }
+//     And this at the end of RawDecodeWithoutMetadata:
+//     if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
+//     _, err = rr.ReadByte()
+//     if err != nil {
+//     return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte.")
+//     }
+//     }
+//     MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
 //
-// 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. Use the
-//		function GetMigrationVersion to chain encoder migrations (Note the variadic parameter of GetMigrationVersion and
-//		the usage of the MigrationName UtxoEntryTestHeight)
+//  3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. Use the
+//     function GetMigrationVersion to chain encoder migrations (Note the variadic parameter of GetMigrationVersion and
+//     the usage of the MigrationName UtxoEntryTestHeight)
 //
-//		return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
+//     return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
 //
 // That's it!
 type MigrationName string
@@ -314,15 +318,19 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration                                           MigrationName = "DefaultMigration"
-	DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex MigrationName = "DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex"
+	DefaultMigration              MigrationName = "DefaultMigration"
+	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
+	DeSoAccessGroupsMigration     MigrationName = "DeSoAccessGroupsMigration"
 )
 
 type EncoderMigrationHeights struct {
 	DefaultMigration MigrationHeight
 
-	// DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization coincides with the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight block
-	DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization MigrationHeight
+	// DeSoUnlimitedDerivedKeys coincides with the DeSoUnlimitedDerivedKeysBlockHeight block
+	DeSoUnlimitedDerivedKeys MigrationHeight
+
+	// DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization coincides with the DeSoAccessGroupsBlockHeight block
+	DeSoAccessGroups MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -332,10 +340,15 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Height:  forkHeights.DefaultHeight,
 			Name:    DefaultMigration,
 		},
-		DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization: MigrationHeight{
+		DeSoUnlimitedDerivedKeys: MigrationHeight{
 			Version: 1,
-			Height:  uint64(forkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight),
-			Name:    DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex,
+			Height:  uint64(forkHeights.DeSoUnlimitedDerivedKeysBlockHeight),
+			Name:    UnlimitedDerivedKeysMigration,
+		},
+		DeSoAccessGroups: MigrationHeight{
+			Version: 2,
+			Height:  uint64(forkHeights.DeSoAccessGroupsBlockHeight),
+			Name:    DeSoAccessGroupsMigration,
 		},
 	}
 }
@@ -559,23 +572,23 @@ var RegtestForkHeights = ForkHeights{
 	DeflationBombBlockHeight:     0,
 	SalomonFixBlockHeight:        uint32(0),
 	DeSoFounderRewardBlockHeight: uint32(0),
-	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight:                   uint32(0),
-	ParamUpdaterProfileUpdateFixBlockHeight:                                uint32(0),
-	UpdateProfileFixBlockHeight:                                            uint32(0),
-	BrokenNFTBidsFixBlockHeight:                                            uint32(0),
-	DeSoDiamondsBlockHeight:                                                uint32(0),
-	NFTTransferOrBurnAndDerivedKeysBlockHeight:                             uint32(0),
-	DeSoV3MessagesBlockHeight:                                              uint32(0),
-	BuyNowAndNFTSplitsBlockHeight:                                          uint32(0),
-	DAOCoinBlockHeight:                                                     uint32(0),
-	ExtraDataOnEntriesBlockHeight:                                          uint32(0),
-	DerivedKeySetSpendingLimitsBlockHeight:                                 uint32(0),
-	DerivedKeyTrackSpendingLimitsBlockHeight:                               uint32(0),
-	DAOCoinLimitOrderBlockHeight:                                           uint32(0),
-	DerivedKeyEthSignatureCompatibilityBlockHeight:                         uint32(0),
-	OrderBookDBFetchOptimizationBlockHeight:                                uint32(0),
-	ParamUpdaterRefactorBlockHeight:                                        uint32(0),
-	DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight: uint32(0),
+	BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight: uint32(0),
+	ParamUpdaterProfileUpdateFixBlockHeight:              uint32(0),
+	UpdateProfileFixBlockHeight:                          uint32(0),
+	BrokenNFTBidsFixBlockHeight:                          uint32(0),
+	DeSoDiamondsBlockHeight:                              uint32(0),
+	NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(0),
+	DeSoV3MessagesBlockHeight:                            uint32(0),
+	BuyNowAndNFTSplitsBlockHeight:                        uint32(0),
+	DAOCoinBlockHeight:                                   uint32(0),
+	ExtraDataOnEntriesBlockHeight:                        uint32(0),
+	DerivedKeySetSpendingLimitsBlockHeight:               uint32(0),
+	DerivedKeyTrackSpendingLimitsBlockHeight:             uint32(0),
+	DAOCoinLimitOrderBlockHeight:                         uint32(0),
+	DerivedKeyEthSignatureCompatibilityBlockHeight:       uint32(0),
+	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
+	ParamUpdaterRefactorBlockHeight:                      uint32(0),
+	DeSoAccessGroupsBlockHeight:                          uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -717,7 +730,7 @@ var MainnetForkHeights = ForkHeights{
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
 	// TODO: ADD FINAL DATE & TIME HERE
-	DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight: uint32(math.MaxUint32),
+	DeSoAccessGroupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -967,7 +980,7 @@ var TestnetForkHeights = ForkHeights{
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
 	// TODO: ADD FINAL DATE & TIME HERE
-	DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight: uint32(math.MaxUint32),
+	DeSoAccessGroupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1159,7 +1172,7 @@ const (
 	DerivedPublicKey = "DerivedPublicKey"
 
 	// Messaging keys
-	MessagingPublicKey             = "MessagingPublicKey"
+	MessagingPublicKey             = "AccessPublicKey"
 	SenderMessagingPublicKey       = "SenderMessagingPublicKey"
 	SenderMessagingGroupKeyName    = "SenderMessagingGroupKeyName"
 	RecipientMessagingPublicKey    = "RecipientMessagingPublicKey"
@@ -1182,6 +1195,9 @@ const (
 	MessagesVersion2      = 2
 	MessagesVersion3      = 3
 
+	// Key in MessageEntry's ExtraData map.
+	//
+
 	// Key in transaction's extra data map. If present, this value represents the Node ID of the running node. This maps
 	// to the map of nodes in ./lib/nodes.go
 	NodeSourceMapKey = "NodeSource"
@@ -1191,7 +1207,8 @@ const (
 	DerivedKeyMemoKey           = "DerivedKeyMemo"
 
 	// V3 Group Chat Messages ExtraData Key
-	MessagingGroupOperationType = "MessagingGroupOperationType"
+	AccessGroupOperationType = "AccessGroupOperationType"
+	MessageRotatingVersion   = "MessageRotatingVersion"
 )
 
 // Defines values that may exist in a transaction's ExtraData map

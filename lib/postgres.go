@@ -1911,15 +1911,15 @@ func (postgres *Postgres) flushMessages(tx *pg.Tx, view *UtxoView) error {
 func (postgres *Postgres) flushMessagingGroups(tx *pg.Tx, view *UtxoView) error {
 	var insertMessages []*PGMessagingGroup
 	var deleteMessages []*PGMessagingGroup
-	for _, groupEntry := range view.MessagingGroupKeyToMessagingGroupEntry {
+	for _, groupEntry := range view.AccessGroupKeyToAccessGroupEntry {
 		messagingGroupMembersBytes := bytes.NewBuffer([]byte{})
-		if err := gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.MessagingGroupMembers); err != nil {
+		if err := gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.AccessGroupMembers); err != nil {
 			return err
 		}
 		pgGroupEntry := &PGMessagingGroup{
 			GroupOwnerPublicKey:   groupEntry.GroupOwnerPublicKey,
-			MessagingPublicKey:    groupEntry.MessagingPublicKey,
-			MessagingGroupKeyName: groupEntry.MessagingGroupKeyName,
+			MessagingPublicKey:    groupEntry.AccessPublicKey,
+			MessagingGroupKeyName: groupEntry.AccessGroupKeyName,
 			MessagingGroupMembers: messagingGroupMembersBytes.Bytes(),
 			ExtraData:             groupEntry.ExtraData,
 		}

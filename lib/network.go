@@ -463,7 +463,7 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 	case TxnTypeAuthorizeDerivedKey:
 		return (&AuthorizeDerivedKeyMetadata{}).New(), nil
 	case TxnTypeMessagingGroup:
-		return (&MessagingGroupMetadata{}).New(), nil
+		return (&AccessGroupMetadata{}).New(), nil
 	case TxnTypeDAOCoin:
 		return (&DAOCoinMetadata{}).New(), nil
 	case TxnTypeDAOCoinTransfer:
@@ -4971,7 +4971,7 @@ type TransactionSpendingLimit struct {
 	// transactions
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
 
-	// ===== ENCODER MIGRATION DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex =====
+	// ===== ENCODER MIGRATION UnlimitedDerivedKeysMigration =====
 	// IsUnlimited field determines whether this derived key has no spending limit.
 	IsUnlimited bool
 }
@@ -5233,7 +5233,7 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 	}
 
 	// IsUnlimited, gated by the encoder migration.
-	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex) {
+	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
 		data = append(data, BoolToByte(tsl.IsUnlimited))
 	}
 
@@ -5362,7 +5362,7 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
-	if MigrationTriggered(blockHeight, DeSoUnlimitedDerivedKeysAndMessageMutingAndMembershipIndex) {
+	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
 		tsl.IsUnlimited, err = ReadBoolByte(rr)
 		if err != nil {
 			return errors.Wrapf(err, "TransactionSpendingLimit.FromBytes: Problem reading IsUnlimited")
@@ -5409,7 +5409,7 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpendingLimit, blockHeight uint32) (_isUnlimited bool, _err error) {
 	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 7)
 
-	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
 		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
 	}
 
@@ -6369,29 +6369,38 @@ func DeserializePubKeyToUint64Map(data []byte) (map[PublicKey]uint64, error) {
 }
 
 // ==================================================================
-// MessagingGroupMetadata
+// AccessGroupMetadata
 // ==================================================================
 
-// MessagingGroupOperation represents V3 Group Chat Messages ExtraData["MessagingGroupOperationType"] values
-type MessagingGroupOperation byte
+// AccessGroupOperation represents V3 Group Chat Messages ExtraData["AccessGroupOperationType"] values
+type AccessGroupOperation byte
 
 const (
-	MessagingGroupOperationAddMembers    MessagingGroupOperation = 0
-	MessagingGroupOperationRemoveMembers MessagingGroupOperation = 1
-	MessagingGroupOperationMuteMembers   MessagingGroupOperation = 2
-	MessagingGroupOperationUnmuteMembers MessagingGroupOperation = 3
+	AccessGroupOperationAddMembers    AccessGroupOperation = 0
+	AccessGroupOperationRemoveMembers AccessGroupOperation = 1
+	AccessGroupOperationMuteMembers   AccessGroupOperation = 2
+	AccessGroupOperationUnmuteMembers AccessGroupOperation = 3
 )
 
-type MessagingGroupMetadata struct {
-	// This struct is very similar to the MessagingGroupEntry type.
-	MessagingPublicKey    []byte
-	MessagingGroupKeyName []byte
+// AccessGroupMemberAttributeType represents V3 Group Member Attributes stored in the DB (PrefixGroupMemberAttributesIndex).
+type AccessGroupMemberAttributeType byte
+
+const (
+	AccessGroupMemberAttributeIsMuted            AccessGroupMemberAttributeType = 0
+	AccessGroupMemberAttributeAcceptedMembership AccessGroupMemberAttributeType = 1
+	AccessGroupMemberAttributeIsAdmin            AccessGroupMemberAttributeType = 2
+)
+
+type AccessGroupMetadata struct {
+	// This struct is very similar to the AccessGroupEntry type.
+	AccessPublicKey    []byte
+	AccessGroupKeyName []byte
 	// This value is the signature of the following using the private key
 	// of the GroupOwnerPublicKey (aka txn.PublicKey):
-	// - Sha256DoubleHash(MessagingPublicKey || MessagingGroupKeyName)
+	// - Sha256DoubleHash(AccessPublicKey || AccessGroupKeyName)
 	//
 	// This signature is only required when setting up a group where
-	// - MessagingGroupKeyName = "default-key"
+	// - AccessGroupKeyName = "default-key"
 	// In this case, we want to make sure that people don't accidentally register
 	// this group name with a derived key, and forcing this signature ensures that.
 	// The reason is that if someone accidentally registers the default-key with
@@ -6401,114 +6410,114 @@ type MessagingGroupMetadata struct {
 	// This field is not critical and can be removed in the future.
 	GroupOwnerSignature []byte
 
-	MessagingGroupMembers []*MessagingGroupMember
+	AccessGroupMembers []*AccessGroupMember
 }
 
-func (txnData *MessagingGroupMetadata) GetTxnType() TxnType {
+func (txnData *AccessGroupMetadata) GetTxnType() TxnType {
 	return TxnTypeMessagingGroup
 }
 
-func (txnData *MessagingGroupMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	data := []byte{}
+func (txnData *AccessGroupMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
 
-	data = append(data, UintToBuf(uint64(len(txnData.MessagingPublicKey)))...)
-	data = append(data, txnData.MessagingPublicKey...)
+	data = append(data, UintToBuf(uint64(len(txnData.AccessPublicKey)))...)
+	data = append(data, txnData.AccessPublicKey...)
 
-	data = append(data, UintToBuf(uint64(len(txnData.MessagingGroupKeyName)))...)
-	data = append(data, txnData.MessagingGroupKeyName...)
+	data = append(data, UintToBuf(uint64(len(txnData.AccessGroupKeyName)))...)
+	data = append(data, txnData.AccessGroupKeyName...)
 
 	data = append(data, UintToBuf(uint64(len(txnData.GroupOwnerSignature)))...)
 	data = append(data, txnData.GroupOwnerSignature...)
 
-	data = append(data, UintToBuf(uint64(len(txnData.MessagingGroupMembers)))...)
-	for _, recipient := range txnData.MessagingGroupMembers {
+	data = append(data, UintToBuf(uint64(len(txnData.AccessGroupMembers)))...)
+	for _, recipient := range txnData.AccessGroupMembers {
 		data = append(data, recipient.ToBytes()...)
 	}
 
 	return data, nil
 }
 
-func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
-	ret := MessagingGroupMetadata{}
+func (txnData *AccessGroupMetadata) FromBytes(data []byte) error {
+	ret := AccessGroupMetadata{}
 	rr := bytes.NewReader(data)
 
 	var err error
-	ret.MessagingPublicKey, err = ReadVarString(rr)
+	ret.AccessPublicKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
-			"Problem reading MessagingPublicKey")
+		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
+			"Problem reading AccessPublicKey")
 	}
 
-	ret.MessagingGroupKeyName, err = ReadVarString(rr)
+	ret.AccessGroupKeyName, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
-			"Problem reading MessagingGroupKey")
+		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
+			"Problem reading AccessGroupKey")
 	}
 
 	ret.GroupOwnerSignature, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
+		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
 			"Problem reading GroupOwnerSignature")
 	}
 
 	numRecipients, err := ReadUvarint(rr)
 	for ; numRecipients > 0; numRecipients-- {
-		recipient := &MessagingGroupMember{}
+		recipient := &AccessGroupMember{}
 		if err := recipient.FromBytes(rr); err != nil {
-			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
+			return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
 				"error reading recipient")
 		}
-		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, recipient)
+		ret.AccessGroupMembers = append(ret.AccessGroupMembers, recipient)
 	}
 
 	*txnData = ret
 	return nil
 }
 
-func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
-	return &MessagingGroupMetadata{}
+func (txnData *AccessGroupMetadata) New() DeSoTxnMetadata {
+	return &AccessGroupMetadata{}
 }
 
-// GetMessagingGroupOperation returns the messaging group operation based on the transaction. In particular, we check
+// GetAccessGroupOperation returns the messaging group operation based on the transaction. In particular, we check
 // transaction's ExtraData to see whether it's a mute/unmute operation.
-func GetMessagingGroupOperation(txn *MsgDeSoTxn) (MessagingGroupOperation, error) {
+func GetAccessGroupOperation(txn *MsgDeSoTxn) (AccessGroupOperation, error) {
 	// If the transaction is nil then we return an error.
 	if txn == nil {
-		return 0, fmt.Errorf("GetMessagingGroupOperation: nil txn")
+		return 0, fmt.Errorf("GetAccessGroupOperation: nil txn")
 	}
 
 	// Make sure this is a messaging group transaction.
 	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
-		return 0, fmt.Errorf("GetMessagingGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
+		return 0, fmt.Errorf("GetAccessGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
 	}
 
 	// Sanity-check cast the transaction metadata to a messaging group metadata.
-	_, ok := txn.TxnMeta.(*MessagingGroupMetadata)
+	_, ok := txn.TxnMeta.(*AccessGroupMetadata)
 	if !ok {
-		return 0, fmt.Errorf("GetMessagingGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
+		return 0, fmt.Errorf("GetAccessGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
 	}
 
-	// If the transaction's ExtraData is nil then we assume MessagingGroupOperationAddMembers
-	messagingGroupOperation := MessagingGroupOperationAddMembers
+	// If the transaction's ExtraData is nil then we assume AccessGroupOperationAddMembers
+	messagingGroupOperation := AccessGroupOperationAddMembers
 	if txn.ExtraData == nil {
 		return messagingGroupOperation, nil
 	}
 
-	// Check if the transaction's ExtraData contains a MessagingGroupOperationType.
-	if operationTypeBytes, operationTypeExists := txn.ExtraData[MessagingGroupOperationType]; operationTypeExists && len(operationTypeBytes) == 1 {
-		operationType := MessagingGroupOperation(operationTypeBytes[0])
+	// Check if the transaction's ExtraData contains a AccessGroupOperationType.
+	if operationTypeBytes, operationTypeExists := txn.ExtraData[AccessGroupOperationType]; operationTypeExists && len(operationTypeBytes) == 1 {
+		operationType := AccessGroupOperation(operationTypeBytes[0])
 
 		switch operationType {
-		case MessagingGroupOperationAddMembers:
-			messagingGroupOperation = MessagingGroupOperationAddMembers
-		case MessagingGroupOperationRemoveMembers:
-			messagingGroupOperation = MessagingGroupOperationRemoveMembers
-		case MessagingGroupOperationMuteMembers:
-			messagingGroupOperation = MessagingGroupOperationMuteMembers
-		case MessagingGroupOperationUnmuteMembers:
-			messagingGroupOperation = MessagingGroupOperationUnmuteMembers
+		case AccessGroupOperationAddMembers:
+			messagingGroupOperation = AccessGroupOperationAddMembers
+		case AccessGroupOperationRemoveMembers:
+			messagingGroupOperation = AccessGroupOperationRemoveMembers
+		case AccessGroupOperationMuteMembers:
+			messagingGroupOperation = AccessGroupOperationMuteMembers
+		case AccessGroupOperationUnmuteMembers:
+			messagingGroupOperation = AccessGroupOperationUnmuteMembers
 		default:
-			return 0, fmt.Errorf("GetMessagingGroupOperation: invalid operation type %v", operationType)
+			return 0, fmt.Errorf("GetAccessGroupOperation: invalid operation type %v", operationType)
 		}
 	}
 

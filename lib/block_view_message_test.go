@@ -603,7 +603,7 @@ func TestPrivateMessage(t *testing.T) {
 
 // _generateMessagingKey is used to generate a random messaging key and the signed hash(publicKey || keyName).
 func _generateMessagingKey(senderPub []byte, senderPriv []byte, keyName []byte) (
-	priv *btcec.PrivateKey, sign []byte, messagingKeyEntry *MessagingGroupEntry) {
+	priv *btcec.PrivateKey, sign []byte, messagingKeyEntry *AccessGroupEntry) {
 
 	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPriv)
 
@@ -619,13 +619,13 @@ func _generateMessagingKey(senderPub []byte, senderPriv []byte, keyName []byte) 
 // _messagingKey adds a messaging key entry to a new utxo and flushes to DB.
 func _messagingKey(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
 	senderPk []byte, signerPriv string, messagingPublicKey []byte, messagingKeyName []byte,
-	keySignature []byte, recipients []*MessagingGroupMember) ([]*UtxoOperation, *MsgDeSoTxn, error) {
+	keySignature []byte, recipients []*AccessGroupMember) ([]*UtxoOperation, *MsgDeSoTxn, error) {
 	return _messagingKeyWithExtraData(t, chain, db, params, senderPk, signerPriv, messagingPublicKey, messagingKeyName, keySignature, recipients, nil)
 }
 
 func _messagingKeyWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
 	senderPk []byte, signerPriv string, messagingPublicKey []byte, messagingKeyName []byte,
-	keySignature []byte, recipients []*MessagingGroupMember, extraData map[string][]byte) (
+	keySignature []byte, recipients []*AccessGroupMember, extraData map[string][]byte) (
 	[]*UtxoOperation, *MsgDeSoTxn, error) {
 
 	require := require.New(t)
@@ -660,7 +660,7 @@ func _messagingKeyWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, 
 }
 
 func _messagingKeyWithTestMeta(testMeta *TestMeta, senderPk []byte, signerPriv string,
-	messagingPublicKey []byte, messagingKeyName []byte, keySignature []byte, recipients []*MessagingGroupMember,
+	messagingPublicKey []byte, messagingKeyName []byte, keySignature []byte, recipients []*AccessGroupMember,
 	expectedError error) {
 	_messagingKeyWithExtraDataWithTestMeta(testMeta, senderPk, signerPriv, messagingPublicKey, messagingKeyName,
 		keySignature, recipients, nil, expectedError)
@@ -668,7 +668,7 @@ func _messagingKeyWithTestMeta(testMeta *TestMeta, senderPk []byte, signerPriv s
 
 // _messagingKeyWithTestMeta is used to connect and flush a messaging key to the DB.
 func _messagingKeyWithExtraDataWithTestMeta(testMeta *TestMeta, senderPk []byte, signerPriv string,
-	messagingPublicKey []byte, messagingKeyName []byte, keySignature []byte, recipients []*MessagingGroupMember,
+	messagingPublicKey []byte, messagingKeyName []byte, keySignature []byte, recipients []*AccessGroupMember,
 	extraData map[string][]byte, expectedError error) {
 
 	require := require.New(testMeta.t)
@@ -693,11 +693,11 @@ func _messagingKeyWithExtraDataWithTestMeta(testMeta *TestMeta, senderPk []byte,
 
 // _verifyMessagingKey allows us to verify that a messaging key was properly connected to utxoView and
 // that it matches the expected entry that's provided.
-func _verifyMessagingKey(testMeta *TestMeta, publicKey *PublicKey, entry *MessagingGroupEntry) bool {
-	var utxoMessagingEntry *MessagingGroupEntry
+func _verifyMessagingKey(testMeta *TestMeta, publicKey *PublicKey, entry *AccessGroupEntry) bool {
+	var utxoMessagingEntry *AccessGroupEntry
 
 	require := require.New(testMeta.t)
-	messagingKey := NewMessagingGroupKey(publicKey, entry.MessagingGroupKeyName[:])
+	messagingKey := NewAccessGroupKey(publicKey, entry.AccessGroupKeyName[:])
 	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
 	require.NoError(err)
 	utxoMessagingEntry = utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingKey)
@@ -710,16 +710,16 @@ func _verifyMessagingKey(testMeta *TestMeta, publicKey *PublicKey, entry *Messag
 }
 
 // _verifyAddedMessagingKeys is used to verify that messaging key entries in db match the expected entries.
-func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEntries []*MessagingGroupEntry) {
+func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEntries []*AccessGroupEntry) {
 	require := require.New(testMeta.t)
 
 	require.NoError(testMeta.chain.db.View(func(txn *badger.Txn) error {
 		// Get the DB record.
-		var entries []*MessagingGroupEntry
+		var entries []*AccessGroupEntry
 		var err error
 		blockHeight := testMeta.chain.blockTip().Height + 1
-		if blockHeight >= testMeta.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
-			entries, err = DBGetAllUserGroupEntriesWithTxn(txn, publicKey)
+		if blockHeight >= testMeta.params.ForkHeights.DeSoAccessGroupsBlockHeight {
+			entries, err = DBGetAllUserGroupEntriesWithTxn(txn, testMeta.chain.snapshot, publicKey)
 			require.NoError(err)
 		} else {
 			entries, err = DEPRECATEDDBGetAllUserGroupEntriesWithTxn(txn, publicKey)
@@ -730,24 +730,24 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 		require.Equal(len(entries), len(expectedEntries))
 		// Verify entries one by one.
 		for _, expectedEntry := range expectedEntries {
-			expectedEntry.MessagingGroupMembers = sortMessagingGroupMembers(expectedEntry.MessagingGroupMembers)
+			expectedEntry.AccessGroupMembers = sortAccessGroupMembers(expectedEntry.AccessGroupMembers)
 			ok := false
 			for _, entry := range entries {
-				actualEntry := &MessagingGroupEntry{}
+				actualEntry := &AccessGroupEntry{}
 				_, err = DecodeFromBytes(actualEntry, bytes.NewReader(EncodeToBytes(uint64(blockHeight), expectedEntry)))
 				require.NoError(err)
 				// If we're after the block height then the DB will fetch the simplified membership entry, rather
 				// than the entire group chat. If the expected entry assumes the old, full-entry then we will rewrite it
-				// to the empty []*MessagingGroupMember (+ the member entry for the owner).
+				// to the empty []*AccessGroupMember (+ the member entry for the owner).
 				if bytes.Equal(entry.GroupOwnerPublicKey[:], publicKey) &&
-					blockHeight >= testMeta.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
-					actualEntry.MessagingGroupMembers = []*MessagingGroupMember{}
-					for _, member := range expectedEntry.MessagingGroupMembers {
+					blockHeight >= testMeta.params.ForkHeights.DeSoAccessGroupsBlockHeight {
+					actualEntry.AccessGroupMembers = []*AccessGroupMember{}
+					for _, member := range expectedEntry.AccessGroupMembers {
 						if bytes.Equal(member.GroupMemberPublicKey[:], publicKey) {
-							ownerEntry := &MessagingGroupMember{}
+							ownerEntry := &AccessGroupMember{}
 							_, err = DecodeFromBytes(ownerEntry, bytes.NewReader(EncodeToBytes(uint64(blockHeight), member)))
 							require.NoError(err)
-							actualEntry.MessagingGroupMembers = append(actualEntry.MessagingGroupMembers, ownerEntry)
+							actualEntry.AccessGroupMembers = append(actualEntry.AccessGroupMembers, ownerEntry)
 							break
 						}
 					}
@@ -764,12 +764,12 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 	}))
 }
 
-// _initMessagingKey is a helper function that instantiates a MessagingGroupEntry.
-func _initMessagingKey(senderPub []byte, messagingPublicKey []byte, messagingKeyName []byte) *MessagingGroupEntry {
-	return &MessagingGroupEntry{
-		GroupOwnerPublicKey:   NewPublicKey(senderPub),
-		MessagingPublicKey:    NewPublicKey(messagingPublicKey),
-		MessagingGroupKeyName: NewGroupKeyName(messagingKeyName),
+// _initMessagingKey is a helper function that instantiates a AccessGroupEntry.
+func _initMessagingKey(senderPub []byte, messagingPublicKey []byte, messagingKeyName []byte) *AccessGroupEntry {
+	return &AccessGroupEntry{
+		GroupOwnerPublicKey: NewPublicKey(senderPub),
+		AccessPublicKey:     NewPublicKey(messagingPublicKey),
+		AccessGroupKeyName:  NewGroupKeyName(messagingKeyName),
 	}
 }
 
@@ -783,8 +783,8 @@ func TestMessagingKeys(t *testing.T) {
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 	// Set the DeSo V3 messages block height to 0
 	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
-	params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
-	params.EncoderMigrationHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization.Height = 0
+	params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
+	params.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	GlobalDeSoParams = *params
 
@@ -862,28 +862,28 @@ func TestMessagingKeys(t *testing.T) {
 
 	// Entries is a map keeping track of messaging keys added for each public key. We will use it
 	// to validate the DB state after the flushes.
-	keyEntriesAdded := make(map[PublicKey][]*MessagingGroupEntry)
+	keyEntriesAdded := make(map[PublicKey][]*AccessGroupEntry)
 
 	// Add base keys for all users. These keys are present by default because they're just the main user keys.
 	{
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, BaseGroupKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(senderPkBytes)
+		entry.AccessPublicKey = NewPublicKey(senderPkBytes)
 		keyEntriesAdded[senderPublicKey] = append(keyEntriesAdded[senderPublicKey], entry)
 
 		_, _, entry = _generateMessagingKey(m0PubKey, m0PrivKey, BaseGroupKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(m0PubKey)
+		entry.AccessPublicKey = NewPublicKey(m0PubKey)
 		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], entry)
 
 		_, _, entry = _generateMessagingKey(m1PubKey, m1PrivKey, BaseGroupKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(m1PubKey)
+		entry.AccessPublicKey = NewPublicKey(m1PubKey)
 		keyEntriesAdded[m1PublicKey] = append(keyEntriesAdded[m1PublicKey], entry)
 
 		_, _, entry = _generateMessagingKey(m2PubKey, m2PrivKey, BaseGroupKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(m2PubKey)
+		entry.AccessPublicKey = NewPublicKey(m2PubKey)
 		keyEntriesAdded[m2PublicKey] = append(keyEntriesAdded[m2PublicKey], entry)
 
 		_, _, entry = _generateMessagingKey(m3PubKey, m3PrivKey, BaseGroupKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(m3PubKey)
+		entry.AccessPublicKey = NewPublicKey(m3PubKey)
 		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], entry)
 	}
 
@@ -894,17 +894,17 @@ func TestMessagingKeys(t *testing.T) {
 		baseKeyName := BaseGroupKeyName()
 		_, sign, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, baseKeyName[:])
 		// The base key has the same messaging public key as the owner's main key
-		entry.MessagingPublicKey = &senderPublicKey
+		entry.AccessPublicKey = &senderPublicKey
 		// The base key should always be present in UtxoView. So we expect true.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 		_messagingKeyWithTestMeta(
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			baseKeyName[:],
 			sign,
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			RuleErrorMessagingKeyNameCannotBeZeros)
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
@@ -915,15 +915,15 @@ func TestMessagingKeys(t *testing.T) {
 		// The default key was not added so verification is false.
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 		// Only check that signature fails before we reach the block height, otherwise this would interfere with other tests.
-		if chain.blockTip().Height < params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+		if chain.blockTip().Height < params.ForkHeights.DeSoAccessGroupsBlockHeight {
 			_messagingKeyWithTestMeta(
 				testMeta,
 				senderPkBytes,
 				senderPrivString,
-				entry.MessagingPublicKey[:],
+				entry.AccessPublicKey[:],
 				defaultKeyName,
 				[]byte{},
-				[]*MessagingGroupMember{},
+				[]*AccessGroupMember{},
 				RuleErrorMessagingSignatureInvalid)
 			// Verification still fails because the txn wasn't successful.
 			require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
@@ -939,10 +939,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:15],
+			entry.AccessPublicKey[:15],
 			defaultKeyName,
 			sign,
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			RuleErrorPubKeyLen)
 		// Verification still fails because the txn wasn't successful.
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
@@ -956,10 +956,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			[]byte{},
 			[]byte{},
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			RuleErrorMessagingKeyNameCannotBeZeros)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
@@ -971,10 +971,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			append(defaultKeyName, NewGroupKeyName([]byte{})[:]...),
 			[]byte{},
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			RuleErrorMessagingKeyNameTooLong)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
@@ -988,10 +988,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			defaultKeyName,
 			sign,
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			nil)
 		// Verification is now successful.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
@@ -1008,10 +1008,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomKeyName,
 			[]byte{},
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			nil)
 		// Verification is successful.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
@@ -1028,10 +1028,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomKeyName,
 			sign,
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			nil)
 		// Verification is successful.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
@@ -1050,10 +1050,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomKeyName,
 			[]byte{},
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			RuleErrorMessagingKeyDoesntAddMembers)
 		// Verification is still successful.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
@@ -1068,10 +1068,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			newEntry.MessagingPublicKey[:],
+			newEntry.AccessPublicKey[:],
 			randomKeyName,
 			[]byte{},
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			RuleErrorMessagingPublicKeyCannotBeDifferent)
 		// The existing entry will pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
@@ -1087,10 +1087,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			append(randomKeyName, byte(0)),
 			[]byte{},
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			RuleErrorMessagingKeyDoesntAddMembers)
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
@@ -1103,10 +1103,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			m1PubKey,
 			m1Priv,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomKeyName,
 			[]byte{},
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			nil)
 		require.Equal(true, _verifyMessagingKey(testMeta, &m1PublicKey, entry))
 		// Append the key to the entries added.
@@ -1121,10 +1121,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			m0PubKey,
 			m0Priv,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomKeyName,
 			[]byte{},
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			nil)
 		require.Equal(true, _verifyMessagingKey(testMeta, &m0PublicKey, entry))
 		// Append the key to the entries added.
@@ -1139,10 +1139,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			m3PubKey,
 			m3Priv,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomKeyName[:],
 			sign,
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			nil)
 		require.Equal(true, _verifyMessagingKey(testMeta, &m3PublicKey, entry))
 		// Append the key to the entries added.
@@ -1162,14 +1162,14 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			m3PubKey,
 			m3Priv,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomKeyName[:],
 			sign,
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			extraData,
 			nil,
 		)
-		entry = DBGetMessagingGroupEntry(db, chain.snapshot, NewMessagingGroupKey(&m3PublicKey, entry.MessagingGroupKeyName[:]))
+		entry = DBGetMessagingGroupEntry(db, chain.snapshot, NewAccessGroupKey(&m3PublicKey, entry.AccessGroupKeyName[:]))
 		// We get the entry from the DB so that it has the extra data
 		require.Len(entry.ExtraData, 2)
 		require.Equal(entry.ExtraData["extrakey"], []byte("discussion"))
@@ -1178,11 +1178,11 @@ func TestMessagingKeys(t *testing.T) {
 
 		// For fun, m3 adds group members to the conversation that has extra data
 		//_, sign, _ := _generateMessagingKey(m3PubKey, m3PrivKey, extraDataKeyName)
-		//entry := DBGetMessagingGroupEntry(db, NewMessagingGroupKey(&m3PublicKey, extraDataKeyName))
-		var MessagingGroupMembers []*MessagingGroupMember
+		//entry := DBGetMessagingGroupEntry(db, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
+		var MessagingGroupMembers []*AccessGroupMember
 		members := [][]byte{m3PubKey, m1PubKey, m2PubKey}
 		for _, member := range members {
-			MessagingGroupMembers = append(MessagingGroupMembers, &MessagingGroupMember{
+			MessagingGroupMembers = append(MessagingGroupMembers, &AccessGroupMember{
 				NewPublicKey(member),
 				BaseGroupKeyName(),
 				m3PrivKey,
@@ -1192,19 +1192,19 @@ func TestMessagingKeys(t *testing.T) {
 			"extrakey": []byte("newval"),
 			"newkey":   []byte("test"),
 		}
-		//entry := DBGetMessagingGroupEntry(db, NewMessagingGroupKey(&m3PublicKey, extraDataKeyName))
+		//entry := DBGetMessagingGroupEntry(db, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
 		_messagingKeyWithExtraDataWithTestMeta(
 			testMeta,
 			m3PubKey,
 			m3Priv,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomKeyName[:],
 			sign,
 			MessagingGroupMembers,
 			extraData,
 			nil,
 		)
-		entry = DBGetMessagingGroupEntry(db, chain.snapshot, NewMessagingGroupKey(&m3PublicKey, extraDataKeyName))
+		entry = DBGetMessagingGroupEntry(db, chain.snapshot, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
 		require.True(_verifyMessagingKey(testMeta, &m3PublicKey, entry))
 
 		require.Len(entry.ExtraData, 3)
@@ -1217,12 +1217,12 @@ func TestMessagingKeys(t *testing.T) {
 			if reflect.DeepEqual(pubKey[:], m3PubKey) {
 				continue
 			}
-			keyEntriesAdded[pubKey] = append(keyEntriesAdded[pubKey], &MessagingGroupEntry{
-				GroupOwnerPublicKey:   &m3PublicKey,
-				MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
-				MessagingGroupKeyName: NewGroupKeyName(randomKeyName),
-				MessagingGroupMembers: []*MessagingGroupMember{member},
-				ExtraData:             entry.ExtraData,
+			keyEntriesAdded[pubKey] = append(keyEntriesAdded[pubKey], &AccessGroupEntry{
+				GroupOwnerPublicKey: &m3PublicKey,
+				AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
+				AccessGroupKeyName:  NewGroupKeyName(randomKeyName),
+				AccessGroupMembers:  []*AccessGroupMember{member},
+				ExtraData:           entry.ExtraData,
 			})
 		}
 		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], entry)
@@ -1243,7 +1243,7 @@ func TestMessagingKeys(t *testing.T) {
 		// Can add yourself as a recipient.
 		randomGroupKeyName := []byte("test-key-3")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(senderPkBytes),
 			BaseGroupKeyName(),
 			senderPrivBytes,
@@ -1253,10 +1253,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			nil)
 		// Verify that we're passing.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
@@ -1267,8 +1267,8 @@ func TestMessagingKeys(t *testing.T) {
 		randomGroupKeyName := []byte("test-key-4")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
 		// Can't add messaging public key as a recipient.
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
-			NewPublicKey(entry.MessagingPublicKey[:]),
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+			NewPublicKey(entry.AccessPublicKey[:]),
 			BaseGroupKeyName(),
 			senderPrivBytes,
 		})
@@ -1277,10 +1277,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			RuleErrorMessagingMemberAlreadyExists)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
@@ -1288,7 +1288,7 @@ func TestMessagingKeys(t *testing.T) {
 	{
 		randomGroupKeyName := []byte("test-key-5")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(m0PubKey),
 			NewGroupKeyName([]byte("non-existent-key")),
 			senderPrivBytes,
@@ -1298,10 +1298,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			RuleErrorMessagingMemberKeyDoesntExist)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
@@ -1310,7 +1310,7 @@ func TestMessagingKeys(t *testing.T) {
 		randomGroupKeyName := []byte("test-key-6")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
 		// Encrypted key must have at least 32 bytes.
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(m0PubKey),
 			BaseGroupKeyName(),
 			senderPrivBytes[:15],
@@ -1320,10 +1320,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			RuleErrorMessagingMemberEncryptedKeyTooShort)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
@@ -1331,11 +1331,11 @@ func TestMessagingKeys(t *testing.T) {
 	{
 		randomGroupKeyName := []byte("test-key-7")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(m0PubKey),
 			BaseGroupKeyName(),
 			senderPrivBytes,
-		}, &MessagingGroupMember{
+		}, &AccessGroupMember{
 			NewPublicKey(m0PubKey),
 			BaseGroupKeyName(),
 			senderPrivBytes,
@@ -1345,10 +1345,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			RuleErrorMessagingMemberAlreadyExists)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
@@ -1358,7 +1358,7 @@ func TestMessagingKeys(t *testing.T) {
 		// Sender tries adding a correct recipient for m0PubKey.
 		randomGroupKeyName := []byte("test-key-8")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(m0PubKey),
 			BaseGroupKeyName(),
 			senderPrivBytes,
@@ -1368,10 +1368,10 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			nil)
 		// The entry should now pass verification, since it was added successfully.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
@@ -1382,22 +1382,22 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			RuleErrorMessagingMemberAlreadyExists)
 		// The entry still passes verification, because transaction was rejected.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 
 		// m1PubKey tries to add himself to the group, this will fail because only sender can add
 		// new members.
-		entryCopy := &MessagingGroupEntry{}
+		entryCopy := &AccessGroupEntry{}
 		rr := bytes.NewReader(EncodeToBytes(0, entry))
 		exists, err := DecodeFromBytes(entryCopy, rr)
 		require.Equal(true, exists)
 		require.NoError(err)
-		entryCopy.MessagingGroupMembers[0] = &MessagingGroupMember{
+		entryCopy.AccessGroupMembers[0] = &AccessGroupMember{
 			NewPublicKey(m1PubKey),
 			NewGroupKeyName([]byte("totally-random-key")),
 			senderPrivBytes,
@@ -1407,19 +1407,19 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			m1Priv,
-			entryCopy.MessagingPublicKey[:],
+			entryCopy.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entryCopy.MessagingGroupMembers,
+			entryCopy.AccessGroupMembers,
 			RuleErrorInvalidTransactionSignature)
 
 		// Sender adds m1PubKey to the group chat, this time we will succeed.
-		workingCopy := &MessagingGroupEntry{}
+		workingCopy := &AccessGroupEntry{}
 		rr = bytes.NewReader(EncodeToBytes(0, entry))
 		exists, err = DecodeFromBytes(workingCopy, rr)
 		require.Equal(true, exists)
 		require.NoError(err)
-		workingCopy.MessagingGroupMembers[0] = &MessagingGroupMember{
+		workingCopy.AccessGroupMembers[0] = &AccessGroupMember{
 			NewPublicKey(m1PubKey),
 			NewGroupKeyName([]byte("totally-random-key")),
 			senderPrivBytes,
@@ -1428,14 +1428,14 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			workingCopy.MessagingPublicKey[:],
+			workingCopy.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			workingCopy.MessagingGroupMembers,
+			workingCopy.AccessGroupMembers,
 			nil)
 
 		// Reflect the newly added recipient in the entry.
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(m1PubKey),
 			NewGroupKeyName([]byte("totally-random-key")),
 			senderPrivBytes,
@@ -1446,17 +1446,17 @@ func TestMessagingKeys(t *testing.T) {
 
 		// Recipient entries have the group owner added as a recipient when fetched from the DB.
 		// This is convenient in case we want to fetch the full group messaging key entry as a recipient.
-		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], &MessagingGroupEntry{
-			GroupOwnerPublicKey:   &senderPublicKey,
-			MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
-			MessagingGroupKeyName: NewGroupKeyName(randomGroupKeyName),
-			MessagingGroupMembers: append([]*MessagingGroupMember{}, entry.MessagingGroupMembers[0]),
+		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], &AccessGroupEntry{
+			GroupOwnerPublicKey: &senderPublicKey,
+			AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
+			AccessGroupKeyName:  NewGroupKeyName(randomGroupKeyName),
+			AccessGroupMembers:  append([]*AccessGroupMember{}, entry.AccessGroupMembers[0]),
 		})
-		keyEntriesAdded[m1PublicKey] = append(keyEntriesAdded[m1PublicKey], &MessagingGroupEntry{
-			GroupOwnerPublicKey:   &senderPublicKey,
-			MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
-			MessagingGroupKeyName: NewGroupKeyName(randomGroupKeyName),
-			MessagingGroupMembers: append([]*MessagingGroupMember{}, entry.MessagingGroupMembers[1]),
+		keyEntriesAdded[m1PublicKey] = append(keyEntriesAdded[m1PublicKey], &AccessGroupEntry{
+			GroupOwnerPublicKey: &senderPublicKey,
+			AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
+			AccessGroupKeyName:  NewGroupKeyName(randomGroupKeyName),
+			AccessGroupMembers:  append([]*AccessGroupMember{}, entry.AccessGroupMembers[1]),
 		})
 	}
 	// We will test unencrypted groups, which are intended as large group chats that anyone can join.
@@ -1465,34 +1465,34 @@ func TestMessagingKeys(t *testing.T) {
 		groupKeyName := []byte("open-group")
 		_, _, entry := _generateMessagingKey(m0PubKey, m0PrivKey, groupKeyName)
 		basePk := NewPublicKey(GetS256BasePointCompressed())
-		entry.MessagingPublicKey = basePk
+		entry.AccessPublicKey = basePk
 		require.Equal(false, _verifyMessagingKey(testMeta, basePk, entry))
 		// This should pass.
 		_messagingKeyWithTestMeta(
 			testMeta,
 			m0PubKey,
 			m0Priv,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			groupKeyName,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			nil)
 		// The DB entry should have the messaging public key derived deterministically from the group key name.
 		// Compute the public key and compare it with the DB entry.
 		_, groupPkBytes := btcec.PrivKeyFromBytes(btcec.S256(), Sha256DoubleHash(groupKeyName)[:])
 		groupPk := NewPublicKey(groupPkBytes.SerializeCompressed())
-		expectedEntry := &MessagingGroupEntry{}
+		expectedEntry := &AccessGroupEntry{}
 		rr := bytes.NewReader(EncodeToBytes(0, entry))
 		exists, err := DecodeFromBytes(expectedEntry, rr)
 		require.Equal(true, exists)
 		require.NoError(err)
-		expectedEntry.MessagingPublicKey = groupPk
+		expectedEntry.AccessPublicKey = groupPk
 		expectedEntry.GroupOwnerPublicKey = basePk
 		// Should pass.
 		require.Equal(true, _verifyMessagingKey(testMeta, basePk, expectedEntry))
 
 		// Anyone can add recipients to the group.
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 			&m1PublicKey,
 			BaseGroupKeyName(),
 			senderPrivBytes,
@@ -1501,18 +1501,18 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			m1PubKey,
 			m1Priv,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			groupKeyName,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			nil)
 		// Verify that the entry exists in the DB.
-		expectedEntry = &MessagingGroupEntry{}
+		expectedEntry = &AccessGroupEntry{}
 		rr = bytes.NewReader(EncodeToBytes(0, entry))
 		exists, err = DecodeFromBytes(expectedEntry, rr)
 		require.Equal(true, exists)
 		require.NoError(err)
-		expectedEntry.MessagingPublicKey = groupPk
+		expectedEntry.AccessPublicKey = groupPk
 		expectedEntry.GroupOwnerPublicKey = basePk
 		require.Equal(true, _verifyMessagingKey(testMeta, basePk, expectedEntry))
 
@@ -1521,21 +1521,21 @@ func TestMessagingKeys(t *testing.T) {
 			testMeta,
 			m0PubKey,
 			m0Priv,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			groupKeyName,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			RuleErrorMessagingMemberAlreadyExists)
 		require.Equal(true, _verifyMessagingKey(testMeta, basePk, expectedEntry))
 
 		// Now add all the entries to our expected entries list.
 		keyEntriesAdded[*basePk] = append(keyEntriesAdded[*basePk], expectedEntry)
 
-		keyEntriesAdded[m1PublicKey] = append(keyEntriesAdded[m1PublicKey], &MessagingGroupEntry{
-			GroupOwnerPublicKey:   basePk,
-			MessagingPublicKey:    groupPk,
-			MessagingGroupKeyName: NewGroupKeyName(groupKeyName),
-			MessagingGroupMembers: append([]*MessagingGroupMember{}, &MessagingGroupMember{
+		keyEntriesAdded[m1PublicKey] = append(keyEntriesAdded[m1PublicKey], &AccessGroupEntry{
+			GroupOwnerPublicKey: basePk,
+			AccessPublicKey:     groupPk,
+			AccessGroupKeyName:  NewGroupKeyName(groupKeyName),
+			AccessGroupMembers: append([]*AccessGroupMember{}, &AccessGroupMember{
 				GroupMemberPublicKey: &m1PublicKey,
 				GroupMemberKeyName:   BaseGroupKeyName(),
 				EncryptedKey:         senderPrivBytes,
@@ -1548,40 +1548,40 @@ func TestMessagingKeys(t *testing.T) {
 		randomGroupKeyName := []byte("final-group-key")
 		_, _, entry := _generateMessagingKey(m1PubKey, m1PrivKey, randomGroupKeyName)
 		// Now add a lot of people
-		senderMember := &MessagingGroupMember{
+		senderMember := &AccessGroupMember{
 			NewPublicKey(senderPkBytes),
 			DefaultGroupKeyName(),
 			senderPrivBytes,
 		}
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, senderMember)
-		m0Member := &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, senderMember)
+		m0Member := &AccessGroupMember{
 			NewPublicKey(m0PubKey),
 			NewGroupKeyName([]byte("totally-random-key2")),
 			senderPrivBytes,
 		}
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, m0Member)
-		m2Member := &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, m0Member)
+		m2Member := &AccessGroupMember{
 			NewPublicKey(m2PubKey),
 			BaseGroupKeyName(),
 			senderPrivBytes,
 		}
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, m2Member)
-		m3Member := &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, m2Member)
+		m3Member := &AccessGroupMember{
 			NewPublicKey(m3PubKey),
 			DefaultGroupKeyName(),
 			senderPrivBytes,
 		}
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, m3Member)
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, m3Member)
 		// And finally create the group chat.
 		require.Equal(false, _verifyMessagingKey(testMeta, &m1PublicKey, entry))
 		_messagingKeyWithTestMeta(
 			testMeta,
 			m1PubKey,
 			m1Priv,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			nil)
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, &m1PublicKey, entry))
@@ -1590,29 +1590,29 @@ func TestMessagingKeys(t *testing.T) {
 
 		// Recipient entries have the group owner added as a recipient when fetched from the DB.
 		// This is convenient in case we want to fetch the full group messaging key entry as a recipient.
-		keyEntriesAdded[senderPublicKey] = append(keyEntriesAdded[senderPublicKey], &MessagingGroupEntry{
-			GroupOwnerPublicKey:   &m1PublicKey,
-			MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
-			MessagingGroupKeyName: NewGroupKeyName(randomGroupKeyName),
-			MessagingGroupMembers: append([]*MessagingGroupMember{}, senderMember),
+		keyEntriesAdded[senderPublicKey] = append(keyEntriesAdded[senderPublicKey], &AccessGroupEntry{
+			GroupOwnerPublicKey: &m1PublicKey,
+			AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
+			AccessGroupKeyName:  NewGroupKeyName(randomGroupKeyName),
+			AccessGroupMembers:  append([]*AccessGroupMember{}, senderMember),
 		})
-		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], &MessagingGroupEntry{
-			GroupOwnerPublicKey:   &m1PublicKey,
-			MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
-			MessagingGroupKeyName: NewGroupKeyName(randomGroupKeyName),
-			MessagingGroupMembers: append([]*MessagingGroupMember{}, m0Member),
+		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], &AccessGroupEntry{
+			GroupOwnerPublicKey: &m1PublicKey,
+			AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
+			AccessGroupKeyName:  NewGroupKeyName(randomGroupKeyName),
+			AccessGroupMembers:  append([]*AccessGroupMember{}, m0Member),
 		})
-		keyEntriesAdded[m2PublicKey] = append(keyEntriesAdded[m2PublicKey], &MessagingGroupEntry{
-			GroupOwnerPublicKey:   &m1PublicKey,
-			MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
-			MessagingGroupKeyName: NewGroupKeyName(randomGroupKeyName),
-			MessagingGroupMembers: append([]*MessagingGroupMember{}, m2Member),
+		keyEntriesAdded[m2PublicKey] = append(keyEntriesAdded[m2PublicKey], &AccessGroupEntry{
+			GroupOwnerPublicKey: &m1PublicKey,
+			AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
+			AccessGroupKeyName:  NewGroupKeyName(randomGroupKeyName),
+			AccessGroupMembers:  append([]*AccessGroupMember{}, m2Member),
 		})
-		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], &MessagingGroupEntry{
-			GroupOwnerPublicKey:   &m1PublicKey,
-			MessagingPublicKey:    NewPublicKey(entry.MessagingPublicKey[:]),
-			MessagingGroupKeyName: NewGroupKeyName(randomGroupKeyName),
-			MessagingGroupMembers: append([]*MessagingGroupMember{}, m3Member),
+		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], &AccessGroupEntry{
+			GroupOwnerPublicKey: &m1PublicKey,
+			AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
+			AccessGroupKeyName:  NewGroupKeyName(randomGroupKeyName),
+			AccessGroupMembers:  append([]*AccessGroupMember{}, m3Member),
 		})
 	}
 
@@ -1633,24 +1633,24 @@ func TestMessagingKeys(t *testing.T) {
 	// Finally, verify that there are no more keys, besides the base keys, in the db.
 	{
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, BaseGroupKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(senderPkBytes)
-		keyEntriesAdded[senderPublicKey] = append([]*MessagingGroupEntry{}, entry)
+		entry.AccessPublicKey = NewPublicKey(senderPkBytes)
+		keyEntriesAdded[senderPublicKey] = append([]*AccessGroupEntry{}, entry)
 
 		_, _, entry = _generateMessagingKey(m0PubKey, m0PrivKey, BaseGroupKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(m0PubKey)
-		keyEntriesAdded[m0PublicKey] = append([]*MessagingGroupEntry{}, entry)
+		entry.AccessPublicKey = NewPublicKey(m0PubKey)
+		keyEntriesAdded[m0PublicKey] = append([]*AccessGroupEntry{}, entry)
 
 		_, _, entry = _generateMessagingKey(m1PubKey, m1PrivKey, BaseGroupKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(m1PubKey)
-		keyEntriesAdded[m1PublicKey] = append([]*MessagingGroupEntry{}, entry)
+		entry.AccessPublicKey = NewPublicKey(m1PubKey)
+		keyEntriesAdded[m1PublicKey] = append([]*AccessGroupEntry{}, entry)
 
 		_, _, entry = _generateMessagingKey(m2PubKey, m2PrivKey, BaseGroupKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(m2PubKey)
-		keyEntriesAdded[m2PublicKey] = append([]*MessagingGroupEntry{}, entry)
+		entry.AccessPublicKey = NewPublicKey(m2PubKey)
+		keyEntriesAdded[m2PublicKey] = append([]*AccessGroupEntry{}, entry)
 
 		_, _, entry = _generateMessagingKey(m3PubKey, m3PrivKey, BaseGroupKeyName()[:])
-		entry.MessagingPublicKey = NewPublicKey(m3PubKey)
-		keyEntriesAdded[m3PublicKey] = append([]*MessagingGroupEntry{}, entry)
+		entry.AccessPublicKey = NewPublicKey(m3PubKey)
+		keyEntriesAdded[m3PublicKey] = append([]*AccessGroupEntry{}, entry)
 	}
 	_verifyAddedMessagingKeys(testMeta, senderPkBytes, keyEntriesAdded[senderPublicKey])
 	_verifyAddedMessagingKeys(testMeta, m0PubKey, keyEntriesAdded[m0PublicKey])
@@ -1782,12 +1782,12 @@ func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKe
 	if groupOwner {
 		fetchKey = expectedEntry.SenderPublicKey
 	}
-	messagingKey := utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(&MessagingGroupKey{
+	messagingKey := utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(&AccessGroupKey{
 		*fetchKey,
 		*expectedEntry.RecipientMessagingGroupKeyName,
 	})
 	if messagingKey != nil {
-		for _, recipient := range messagingKey.MessagingGroupMembers {
+		for _, recipient := range messagingKey.AccessGroupMembers {
 			if _, exists := addedEntries[*recipient.GroupMemberPublicKey]; !exists {
 				expectedMessageEntries[*recipient.GroupMemberPublicKey] = append(expectedMessageEntries[*recipient.GroupMemberPublicKey], expectedEntry)
 			}
@@ -1849,8 +1849,8 @@ func TestGroupMessages(t *testing.T) {
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 	// Set the DeSo V3 messages block height to 0
 	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
-	params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
-	params.EncoderMigrationHeights.DeSoUnlimitedDerivedKeysAndV3MessagesMutingAndPrefixOptimization.Height = 0
+	params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
+	params.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	GlobalDeSoParams = *params
 
@@ -1942,7 +1942,7 @@ func TestGroupMessages(t *testing.T) {
 			tstampNanos,
 			false,
 			MessagesVersion1,
-			NewPublicKey(entry.MessagingPublicKey[:]),
+			NewPublicKey(entry.AccessPublicKey[:]),
 			NewGroupKeyName(keyName),
 			NewPublicKey(recipientPkBytes),
 			BaseGroupKeyName(),
@@ -1955,7 +1955,7 @@ func TestGroupMessages(t *testing.T) {
 		// SenderPk tries to submit another malformed V3 message, but this time the recipient is malformed, should fail.
 		messageEntry.SenderMessagingPublicKey = NewPublicKey(senderPkBytes)
 		messageEntry.SenderMessagingGroupKeyName = BaseGroupKeyName()
-		messageEntry.RecipientMessagingPublicKey = entry.MessagingPublicKey
+		messageEntry.RecipientMessagingPublicKey = entry.AccessPublicKey
 		messageEntry.RecipientMessagingGroupKeyName = NewGroupKeyName(keyName)
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, RuleErrorPrivateMessageFailedToValidateMessagingKey)
 		// Should fail.
@@ -2002,10 +2002,10 @@ func TestGroupMessages(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			defaultKey,
 			sign,
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			nil)
 		require.Equal(true, _verifyMessagingKey(testMeta, senderPublicKey, entry))
 
@@ -2031,7 +2031,7 @@ func TestGroupMessages(t *testing.T) {
 			tstampNanos1,
 			false,
 			MessagesVersion3,
-			NewPublicKey(entry.MessagingPublicKey[:]),
+			NewPublicKey(entry.AccessPublicKey[:]),
 			NewGroupKeyName(defaultKey),
 			NewPublicKey(recipientPkBytes),
 			BaseGroupKeyName(),
@@ -2090,10 +2090,10 @@ func TestGroupMessages(t *testing.T) {
 			testMeta,
 			recipientPkBytes,
 			recipientPrivString,
-			entryRecipient.MessagingPublicKey[:],
+			entryRecipient.AccessPublicKey[:],
 			defaultKey,
 			sign,
-			[]*MessagingGroupMember{},
+			[]*AccessGroupMember{},
 			nil)
 		require.Equal(true, _verifyMessagingKey(testMeta, recipientPublicKey, entryRecipient))
 
@@ -2102,7 +2102,7 @@ func TestGroupMessages(t *testing.T) {
 		testMessage3 := []byte{7, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}
 		messageEntry.TstampNanos = tstampNanos3
 		messageEntry.EncryptedText = testMessage3
-		messageEntry.RecipientMessagingPublicKey = entryRecipient.MessagingPublicKey
+		messageEntry.RecipientMessagingPublicKey = entryRecipient.AccessPublicKey
 		messageEntry.RecipientMessagingGroupKeyName = NewGroupKeyName(defaultKey)
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, nil)
 		// Should pass, so we have:
@@ -2132,9 +2132,9 @@ func TestGroupMessages(t *testing.T) {
 		messageEntry.TstampNanos = tstampNanos4
 		messageEntry.EncryptedText = testMessage4
 		messageEntry.SenderPublicKey = NewPublicKey(recipientPkBytes)
-		messageEntry.SenderMessagingPublicKey = entryRecipient.MessagingPublicKey
+		messageEntry.SenderMessagingPublicKey = entryRecipient.AccessPublicKey
 		messageEntry.RecipientPublicKey = NewPublicKey(senderPkBytes)
-		messageEntry.RecipientMessagingPublicKey = entry.MessagingPublicKey
+		messageEntry.RecipientMessagingPublicKey = entry.AccessPublicKey
 		_helpConnectPrivateMessageWithParty(testMeta, recipientPrivString, messageEntry, nil)
 		// Should pass, so we have:
 		// recipient -> sender
@@ -2170,10 +2170,10 @@ func TestGroupMessages(t *testing.T) {
 			testMeta,
 			m1PubKey,
 			m1Priv,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			addingMembersKey,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			nil)
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, m1PublicKey, entry))
@@ -2190,7 +2190,7 @@ func TestGroupMessages(t *testing.T) {
 			MessagesVersion3,
 			NewPublicKey(m1PubKey),
 			BaseGroupKeyName(),
-			entry.MessagingPublicKey,
+			entry.AccessPublicKey,
 			NewGroupKeyName(addingMembersKey),
 			nil,
 		}
@@ -2223,10 +2223,10 @@ func TestGroupMessages(t *testing.T) {
 			testMeta,
 			m1PubKey,
 			m1Priv,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			addingMembersKey,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			nil)
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, m1PublicKey, entry))
@@ -2243,7 +2243,7 @@ func TestGroupMessages(t *testing.T) {
 			MessagesVersion3,
 			NewPublicKey(m1PubKey),
 			BaseGroupKeyName(),
-			entry.MessagingPublicKey,
+			entry.AccessPublicKey,
 			NewGroupKeyName(addingMembersKey),
 			nil,
 		}
@@ -2256,7 +2256,7 @@ func TestGroupMessages(t *testing.T) {
 		//  m1: 2
 
 		// Now add m0 to the group.
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 			m0PublicKey,
 			BaseGroupKeyName(),
 			senderPrivBytes,
@@ -2265,10 +2265,10 @@ func TestGroupMessages(t *testing.T) {
 			testMeta,
 			m1PubKey,
 			m1Priv,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			addingMembersKey,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			nil)
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, m1PublicKey, entry))
@@ -2286,7 +2286,7 @@ func TestGroupMessages(t *testing.T) {
 			MessagesVersion3,
 			m0PublicKey,
 			BaseGroupKeyName(),
-			entry.MessagingPublicKey,
+			entry.AccessPublicKey,
 			NewGroupKeyName(addingMembersKey),
 			nil,
 		}
@@ -2306,7 +2306,7 @@ func TestGroupMessages(t *testing.T) {
 		testMessage3 := []byte{1, 2, 5, 4, 5, 6, 7, 8, 15, 22, 27}
 		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
-		messagingKey := utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(&MessagingGroupKey{
+		messagingKey := utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(&AccessGroupKey{
 			*recipientPublicKey,
 			*DefaultGroupKeyName(),
 		})
@@ -2317,9 +2317,9 @@ func TestGroupMessages(t *testing.T) {
 			tstampNanos3,
 			false,
 			MessagesVersion3,
-			messagingKey.MessagingPublicKey,
+			messagingKey.AccessPublicKey,
 			DefaultGroupKeyName(),
-			entry.MessagingPublicKey,
+			entry.AccessPublicKey,
 			NewGroupKeyName(addingMembersKey),
 			nil,
 		}
@@ -2391,22 +2391,22 @@ func TestGroupMessages(t *testing.T) {
 		// We can add any messaging keys as recipients, but we'll just add base keys for simplicity,
 		// since it's not what we're testing here.
 		// We're making a group chat with: (sender, recipient, m0, m2).
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 			senderPublicKey,
 			BaseGroupKeyName(),
 			encrypt(privBytes, senderPkBytes),
 		})
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 			recipientPublicKey,
 			BaseGroupKeyName(),
 			encrypt(privBytes, recipientPkBytes),
 		})
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 			m0PublicKey,
 			BaseGroupKeyName(),
 			encrypt(privBytes, m0PubKey),
 		})
-		entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 			m2PublicKey,
 			BaseGroupKeyName(),
 			encrypt(privBytes, m2PubKey),
@@ -2416,10 +2416,10 @@ func TestGroupMessages(t *testing.T) {
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			gangKey,
 			[]byte{},
-			entry.MessagingGroupMembers,
+			entry.AccessGroupMembers,
 			nil)
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, senderPublicKey, entry))
@@ -2428,13 +2428,13 @@ func TestGroupMessages(t *testing.T) {
 		// We will fetch the encrypted messaging key from m0, decrypt it, and use it to make the message.
 		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
-		messagingGroupEntries, err := utxoView.GetMessagingGroupEntriesForUser(m0PubKey, chain.blockTip().Height+1)
+		accessGroupEntries, err := utxoView.GetAccessGroupEntriesForUser(m0PubKey, chain.blockTip().Height+1)
 		require.NoError(err)
-		require.NotNil(messagingGroupEntries)
+		require.NotNil(accessGroupEntries)
 		var m0PrivBytes []byte
-		for _, groupEntry := range messagingGroupEntries {
-			if reflect.DeepEqual(groupEntry.MessagingPublicKey[:], entry.MessagingPublicKey[:]) {
-				m0PrivBytes = decrypt(groupEntry.MessagingGroupMembers[0].EncryptedKey, m0PrivKey)
+		for _, groupEntry := range accessGroupEntries {
+			if reflect.DeepEqual(groupEntry.AccessPublicKey[:], entry.AccessPublicKey[:]) {
+				m0PrivBytes = decrypt(groupEntry.AccessGroupMembers[0].EncryptedKey, m0PrivKey)
 				break
 			}
 		}
@@ -2444,7 +2444,7 @@ func TestGroupMessages(t *testing.T) {
 		// Now it's time to encrypt the message.
 		tstampNanos := uint64(time.Now().UnixNano())
 		testMessage := []byte("DeSo V3 Messages work!")
-		encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+		encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 		// Create the corresponding message entry and connect it.
 		messageEntry := MessageEntry{
 			m0PublicKey,
@@ -2455,7 +2455,7 @@ func TestGroupMessages(t *testing.T) {
 			MessagesVersion3,
 			m0PublicKey,
 			BaseGroupKeyName(),
-			entry.MessagingPublicKey,
+			entry.AccessPublicKey,
 			NewGroupKeyName(gangKey),
 			nil,
 		}
@@ -2490,7 +2490,7 @@ func TestGroupMessages(t *testing.T) {
 		require.Equal(1, len(messages))
 
 		// And also sanity-check that the message exists in the group chat.
-		gangMessage, _, err := utxoView.GetMessagesForUser(entry.MessagingPublicKey[:], chain.blockTip().Height+1)
+		gangMessage, _, err := utxoView.GetMessagesForUser(entry.AccessPublicKey[:], chain.blockTip().Height+1)
 		require.NoError(err)
 		require.Equal(1, len(gangMessage))
 
@@ -2498,14 +2498,14 @@ func TestGroupMessages(t *testing.T) {
 		// Define a helper function that does just that.
 		verifyGangMessage := func(msg, pk, priv []byte) {
 			// Get all user messages from the DB.
-			var msgKeys []*MessagingGroupEntry
+			var msgKeys []*AccessGroupEntry
 
 			require.NoError(db.View(func(txn *badger.Txn) error {
 				blockHeight := chain.blockTip().Height
-				if blockHeight < params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+				if blockHeight < params.ForkHeights.DeSoAccessGroupsBlockHeight {
 					msgKeys, err = DEPRECATEDDBGetAllMessagingGroupEntriesForMemberWithTxn(txn, NewPublicKey(pk))
 				} else {
-					msgKeys, err = DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn(txn, NewPublicKey(pk))
+					msgKeys, err = DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn(txn, chain.snapshot, NewPublicKey(pk))
 				}
 				return err
 			}))
@@ -2514,8 +2514,8 @@ func TestGroupMessages(t *testing.T) {
 			// Now single out the gang message, so we can try decrypting it
 			var encryptedKey []byte
 			for _, key := range msgKeys {
-				if reflect.DeepEqual(key.MessagingPublicKey[:], entry.MessagingPublicKey[:]) {
-					encryptedKey = key.MessagingGroupMembers[0].EncryptedKey
+				if reflect.DeepEqual(key.AccessPublicKey[:], entry.AccessPublicKey[:]) {
+					encryptedKey = key.AccessGroupMembers[0].EncryptedKey
 					break
 				}
 			}
@@ -2535,19 +2535,19 @@ func TestGroupMessages(t *testing.T) {
 
 		// MUTING TESTS
 		// Let us now mute m0
-		var muteList []*MessagingGroupMember
-		muteList = append(muteList, &MessagingGroupMember{
+		var muteList []*AccessGroupMember
+		muteList = append(muteList, &AccessGroupMember{
 			m0PublicKey,
 			BaseGroupKeyName(),
 			encrypt(privBytes, m0PubKey),
 		})
 		extraData := make(map[string][]byte)
-		extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+		extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 		_messagingKeyWithExtraDataWithTestMeta(
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			gangKey,
 			[]byte{},
 			muteList,
@@ -2558,7 +2558,7 @@ func TestGroupMessages(t *testing.T) {
 		// Now it's time to encrypt the message.
 		tstampNanos = uint64(time.Now().UnixNano())
 		testMessage = []byte("DeSo Group Chat Muting Works because this won't be sent!")
-		encryptedMessage = encrypt(testMessage, entry.MessagingPublicKey[:])
+		encryptedMessage = encrypt(testMessage, entry.AccessPublicKey[:])
 		// Create the corresponding message entry and connect it.
 		muteMessageEntry := MessageEntry{
 			m0PublicKey,
@@ -2569,7 +2569,7 @@ func TestGroupMessages(t *testing.T) {
 			MessagesVersion3,
 			m0PublicKey,
 			BaseGroupKeyName(),
-			entry.MessagingPublicKey,
+			entry.AccessPublicKey,
 			NewGroupKeyName(gangKey),
 			nil,
 		}
@@ -2608,19 +2608,19 @@ func TestGroupMessages(t *testing.T) {
 		{
 			// Let us now try to mute m0 AGAIN
 			// This should produce an error since m0 is already muted
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m0PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m0PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
 				testMeta,
 				senderPkBytes,
 				senderPrivString,
-				entry.MessagingPublicKey[:],
+				entry.AccessPublicKey[:],
 				gangKey,
 				[]byte{},
 				muteList,
@@ -2630,19 +2630,19 @@ func TestGroupMessages(t *testing.T) {
 
 		// UNMUTING TESTS
 		// Let us now unmute m0
-		var unmuteList []*MessagingGroupMember
-		unmuteList = append(unmuteList, &MessagingGroupMember{
+		var unmuteList []*AccessGroupMember
+		unmuteList = append(unmuteList, &AccessGroupMember{
 			m0PublicKey,
 			BaseGroupKeyName(),
 			encrypt(privBytes, m0PubKey),
 		})
 		extraData = make(map[string][]byte)
-		extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+		extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationUnmuteMembers)}
 		_messagingKeyWithExtraDataWithTestMeta(
 			testMeta,
 			senderPkBytes,
 			senderPrivString,
-			entry.MessagingPublicKey[:],
+			entry.AccessPublicKey[:],
 			gangKey,
 			[]byte{},
 			unmuteList,
@@ -2651,7 +2651,7 @@ func TestGroupMessages(t *testing.T) {
 		// Now it's time to encrypt the message.
 		tstampNanos = uint64(time.Now().UnixNano())
 		testMessage = []byte("DeSo Group Chat Unmuting Works because this will be sent!")
-		encryptedMessage = encrypt(testMessage, entry.MessagingPublicKey[:])
+		encryptedMessage = encrypt(testMessage, entry.AccessPublicKey[:])
 		// Create the corresponding message entry and connect it.
 		unmuteMessageEntry := MessageEntry{
 			m0PublicKey,
@@ -2662,7 +2662,7 @@ func TestGroupMessages(t *testing.T) {
 			MessagesVersion3,
 			m0PublicKey,
 			BaseGroupKeyName(),
-			entry.MessagingPublicKey,
+			entry.AccessPublicKey,
 			NewGroupKeyName(gangKey),
 			nil,
 		}
@@ -2704,19 +2704,19 @@ func TestGroupMessages(t *testing.T) {
 		{
 			// Let us now try to unmute m0 AGAIN
 			// This should produce an error since m0 is already unmuted
-			var unmuteList []*MessagingGroupMember
-			unmuteList = append(unmuteList, &MessagingGroupMember{
+			var unmuteList []*AccessGroupMember
+			unmuteList = append(unmuteList, &AccessGroupMember{
 				m0PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m0PubKey),
 			})
 			extraData = make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationUnmuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
 				testMeta,
 				senderPkBytes,
 				senderPrivString,
-				entry.MessagingPublicKey[:],
+				entry.AccessPublicKey[:],
 				gangKey,
 				[]byte{},
 				unmuteList,
@@ -2727,19 +2727,19 @@ func TestGroupMessages(t *testing.T) {
 		{
 			// Let us now try to mute m1 who is not part of the group
 			// This should produce an error since m1 does not exist in the group
-			var unmuteList []*MessagingGroupMember
-			unmuteList = append(unmuteList, &MessagingGroupMember{
+			var unmuteList []*AccessGroupMember
+			unmuteList = append(unmuteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
 			extraData = make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
 				testMeta,
 				senderPkBytes,
 				senderPrivString,
-				entry.MessagingPublicKey[:],
+				entry.AccessPublicKey[:],
 				gangKey,
 				[]byte{},
 				unmuteList,
@@ -2749,19 +2749,19 @@ func TestGroupMessages(t *testing.T) {
 		{
 			// Let us now try to unmute m1 who is not part of the group
 			// This should produce an error since m1 does not exist in the group
-			var unmuteList []*MessagingGroupMember
-			unmuteList = append(unmuteList, &MessagingGroupMember{
+			var unmuteList []*AccessGroupMember
+			unmuteList = append(unmuteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
 			extraData = make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationUnmuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
 				testMeta,
 				senderPkBytes,
 				senderPrivString,
-				entry.MessagingPublicKey[:],
+				entry.AccessPublicKey[:],
 				gangKey,
 				[]byte{},
 				unmuteList,
@@ -2773,19 +2773,19 @@ func TestGroupMessages(t *testing.T) {
 			// MORE MUTING TESTS
 			// Let us now try to mute group owner "sender" as a sanity check
 			// This should fail because GroupOwner cannot mute/unmute herself
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				senderPublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, senderPkBytes),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
 				testMeta,
 				senderPkBytes,
 				senderPrivString,
-				entry.MessagingPublicKey[:],
+				entry.AccessPublicKey[:],
 				gangKey,
 				[]byte{},
 				muteList,
@@ -2797,19 +2797,19 @@ func TestGroupMessages(t *testing.T) {
 			// MORE UNMUTING TESTS
 			// Let us now try to unmute group owner "sender" as a sanity check
 			// This should fail because GroupOwner cannot mute/unmute herself
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				senderPublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, senderPkBytes),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationUnmuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
 				testMeta,
 				senderPkBytes,
 				senderPrivString,
-				entry.MessagingPublicKey[:],
+				entry.AccessPublicKey[:],
 				gangKey,
 				[]byte{},
 				muteList,
@@ -2819,49 +2819,49 @@ func TestGroupMessages(t *testing.T) {
 
 		{
 			// Deprecated Hacked Prefix Test
-			// Let us set the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight to much higher than current blockHeight
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = chain.blockTip().Height + 10
+			// Let us set the DeSoAccessGroupsBlockHeight to much higher than current blockHeight
+			params.ForkHeights.DeSoAccessGroupsBlockHeight = chain.blockTip().Height + 10
 			// Let us now mute m2
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m2PublicKey,
 				BaseGroupKeyName(),
 				privBytes,
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			// This transaction would normally go through after the blockheight, but it would fail prior.
 			// As the blockheight is not yet reached, this should fail for the "non-muting" reason.
 			_messagingKeyWithExtraDataWithTestMeta(
 				testMeta,
 				senderPkBytes,
 				senderPrivString,
-				entry.MessagingPublicKey[:],
+				entry.AccessPublicKey[:],
 				gangKey,
 				[]byte{},
 				muteList,
 				extraData,
 				RuleErrorMessagingMemberAlreadyExists)
 			// reset to 0 for further testing
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
+			params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
 		}
 
 		{
 			// More Deprecated Hacked Prefix Test
 			// Let us now try to mute m2 again
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m2PublicKey,
 				BaseGroupKeyName(),
 				privBytes,
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			_messagingKeyWithExtraDataWithTestMeta(
 				testMeta,
 				senderPkBytes,
 				senderPrivString,
-				entry.MessagingPublicKey[:],
+				entry.AccessPublicKey[:],
 				gangKey,
 				[]byte{},
 				muteList,
@@ -2872,7 +2872,7 @@ func TestGroupMessages(t *testing.T) {
 			tstampNanos = uint64(time.Now().UnixNano())
 			testMessage = []byte("DeSo Deprecated HackedMessagingGroupEntry is backwards compatible and " +
 				"DeSo Group Chat Muting Works because this won't be sent!")
-			encryptedMessage = encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage = encrypt(testMessage, entry.AccessPublicKey[:])
 			// Create the corresponding message entry and connect it.
 			muteMessageEntry := MessageEntry{
 				m2PublicKey,
@@ -2883,22 +2883,22 @@ func TestGroupMessages(t *testing.T) {
 				MessagesVersion3,
 				m2PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
-			// Let us set the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight to much higher than current blockHeight,
+			// Let us set the DeSoAccessGroupsBlockHeight to much higher than current blockHeight,
 			// don't flush because we are modifying the fork height. This transaction should pass because the connect logic
 			// will disregard the fork height and ignore the fact that m2 is muted. That's why we don't flush.
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = chain.blockTip().Height + 10
+			params.ForkHeights.DeSoAccessGroupsBlockHeight = chain.blockTip().Height + 10
 			_helpConnectPrivateMessageWithPartyAndFlush(testMeta, m2Priv, muteMessageEntry, nil, false)
-			// Now let's try to send a message to the group with DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight set to 0
+			// Now let's try to send a message to the group with DeSoAccessGroupsBlockHeight set to 0
 			// This should fail since the member is muted.
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
+			params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
 			_helpConnectPrivateMessageWithParty(testMeta, m2Priv, muteMessageEntry, RuleErrorMessagingMemberMuted)
 			// m2 is currently muted, so the txn should not complete muting should work due to gating of the check-if-muted
 			// functionality. Note: This is just a sanity check and this probably won't happen on mainnet as the blockHeight
-			// does not suddenly decrease below DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight after a muting txn:
+			// does not suddenly decrease below DeSoAccessGroupsBlockHeight after a muting txn:
 			// The message should be unsuccessfully added, so we still have:
 			// m2 -> group(sender, recipient, m0, m2)
 			// 	sender: 7
@@ -2908,13 +2908,13 @@ func TestGroupMessages(t *testing.T) {
 			// 	m2: 2
 			require.Equal(false, _verifyMessageParty(testMeta, expectedMessageEntries, muteMessageEntry, false))
 
-			// Lower the DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight to zero, otherwise we won't fetch all the group
+			// Lower the DeSoAccessGroupsBlockHeight to zero, otherwise we won't fetch all the group
 			// chats and the _verifyMessages will fail. If we're past the block height, we use the membership index prefix to
 			// store user's group chats. However, if we're before the block height, we use the old deprecated db prefix to
 			// store the group chats that a user is a member of. If a user became a member of a group chat AFTER the block height
 			// the corresponding group chat will not be saved in the deprecated prefix. As this is the case here, we need to
 			// lower the block height to zero to fetch all the group chats.
-			params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
+			params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
 			// Verify the messages AGAIN.
 			_verifyMessages(testMeta, expectedMessageEntries)
 			// Just to sanity-check, verify that the number of messages is as intended.
@@ -2935,6 +2935,15 @@ func TestGroupMessages(t *testing.T) {
 			messages, _, err = utxoView.GetMessagesForUser(m2PubKey, chain.blockTip().Height+1)
 			require.NoError(err)
 			require.Equal(2, len(messages))
+		}
+
+		// TEST REMOVE-MEMBER FROM GROUP CHAT
+		{
+			// get block height
+			blockHeight := chain.blockTip().Height + 1
+			// get rotating version
+			rotatingVersion := getMessagingGroupRotatingVersion(entry, blockHeight)
+			_ = rotatingVersion
 		}
 	}
 
@@ -2977,7 +2986,7 @@ func testMuting(t *testing.T) {
 
 	// First test for post-muting block height.
 	{
-		chain.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
+		chain.params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
 		// Call testTestnet to test the testnet code with regnet params.
 		txns, expectedErrors := testTestnet(t, chain, utxoView, senderPkString, senderPrivString, 10)
 		// Connect all txns.
@@ -3001,7 +3010,7 @@ func testMuting(t *testing.T) {
 
 	// Now test for pre-muting block height.
 	{
-		chain.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 1000000000
+		chain.params.ForkHeights.DeSoAccessGroupsBlockHeight = 1000000000
 		// Call testTestnet to test the testnet code with regnet params.
 		txns, expectedErrors := testTestnet(t, chain, utxoView, senderPkString, senderPrivString, 10)
 		// Connect all txns.
@@ -3141,37 +3150,37 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 	// ALL CORRECT BLOCKHEIGHT TXNS AS FOLLOWS
 
-	if bc.blockTip().Height >= bc.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+	if bc.blockTip().Height >= bc.params.ForkHeights.DeSoAccessGroupsBlockHeight {
 		{
 			// Create a txn where m0 adds m0, m1, m2 and m3 as members of the group.
 			// We can add any messaging keys as recipients, but we'll just add base keys for simplicity,
 			// since it's not what we're testing here.
 			// We're making a group chat with: (m0, m1, m2, m3).
-			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 				m0PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m0PubKey),
 			})
-			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
-			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 				m2PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m2PubKey),
 			})
-			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 				m3PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m3PubKey),
 			})
-			recipients := entry.MessagingGroupMembers
+			recipients := entry.AccessGroupMembers
 			extraData := make(map[string][]byte)
 			extraData = nil
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				recipients, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3184,7 +3193,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m0 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should be sent to the group as m0 is not muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m0PublicKey,
 				m0PublicKey,
@@ -3194,7 +3203,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m0PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3213,7 +3222,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m1 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should be sent to the group as m1 is not muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m1PublicKey,
 				m0PublicKey,
@@ -3223,7 +3232,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m1PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3240,16 +3249,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 mutes m1.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3262,7 +3271,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m1 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should not be sent to the group as m1 is muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m1PublicKey,
 				m0PublicKey,
@@ -3272,7 +3281,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m1PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3289,16 +3298,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 mutes m1.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3309,16 +3318,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 unmutes m1.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationUnmuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3331,7 +3340,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m1 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should be sent to the group as m1 is not muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m1PublicKey,
 				m0PublicKey,
@@ -3341,7 +3350,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m1PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3358,16 +3367,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 unmutes m1.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationUnmuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3378,16 +3387,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 mutes m4.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m4PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m4PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3398,16 +3407,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 unmutes m4.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m4PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m4PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationUnmuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3418,16 +3427,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 mutes self.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m0PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m0PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3438,16 +3447,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 unmutes self.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m0PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m0PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationUnmuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3458,16 +3467,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m1 mutes m2.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m2PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m2PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m1PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m1PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3480,7 +3489,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m2 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should be sent to the group as m2 is not muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m2PublicKey,
 				m0PublicKey,
@@ -3490,7 +3499,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m2PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3507,26 +3516,26 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 mutes m1, m2, and m3.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
-			muteList = append(muteList, &MessagingGroupMember{
+			muteList = append(muteList, &AccessGroupMember{
 				m2PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m2PubKey),
 			})
-			muteList = append(muteList, &MessagingGroupMember{
+			muteList = append(muteList, &AccessGroupMember{
 				m3PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m3PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3539,7 +3548,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m0 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should be sent to the group as m0 is the group owner.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m0PublicKey,
 				m0PublicKey,
@@ -3549,7 +3558,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m0PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3568,7 +3577,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m1 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should not be sent to the group as m1 is muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m1PublicKey,
 				m0PublicKey,
@@ -3578,7 +3587,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m1PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3597,7 +3606,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m2 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should not be sent to the group as m2 is muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m2PublicKey,
 				m0PublicKey,
@@ -3607,7 +3616,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m2PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3626,7 +3635,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m3 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should not be sent to the group as m3 is muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m3PublicKey,
 				m0PublicKey,
@@ -3636,7 +3645,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m3PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3653,26 +3662,26 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 unmutes m1, m2, and m3.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
-			muteList = append(muteList, &MessagingGroupMember{
+			muteList = append(muteList, &AccessGroupMember{
 				m2PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m2PubKey),
 			})
-			muteList = append(muteList, &MessagingGroupMember{
+			muteList = append(muteList, &AccessGroupMember{
 				m3PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m3PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationUnmuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3685,7 +3694,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m1 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should be sent to the group as m1 is not muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m1PublicKey,
 				m0PublicKey,
@@ -3695,7 +3704,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m1PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3714,7 +3723,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m2 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should be sent to the group as m2 is not muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m2PublicKey,
 				m0PublicKey,
@@ -3724,7 +3733,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m2PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3743,7 +3752,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m3 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should be sent to the group as m3 is not muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m3PublicKey,
 				m0PublicKey,
@@ -3753,7 +3762,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m3PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3770,16 +3779,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 mutes m1.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3790,21 +3799,21 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 mutes m1 and m2.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
-			muteList = append(muteList, &MessagingGroupMember{
+			muteList = append(muteList, &AccessGroupMember{
 				m2PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m2PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3815,21 +3824,21 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 unmutes m1 and m2.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
-			muteList = append(muteList, &MessagingGroupMember{
+			muteList = append(muteList, &AccessGroupMember{
 				m2PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m2PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationUnmuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3840,16 +3849,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 unmutes m1.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationUnmuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3859,37 +3868,37 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 		}
 	}
 
-	if bc.blockTip().Height < bc.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+	if bc.blockTip().Height < bc.params.ForkHeights.DeSoAccessGroupsBlockHeight {
 		{
 			// Create a txn where m0 adds m0, m1, m2 and m3 as members of the group.
 			// We can add any messaging keys as recipients, but we'll just add base keys for simplicity,
 			// since it's not what we're testing here.
 			// We're making a group chat with: (m0, m1, m2, m3).
-			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 				m0PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m0PubKey),
 			})
-			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
-			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 				m2PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m2PubKey),
 			})
-			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, &MessagingGroupMember{
+			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
 				m3PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m3PubKey),
 			})
-			recipients := entry.MessagingGroupMembers
+			recipients := entry.AccessGroupMembers
 			extraData := make(map[string][]byte)
 			extraData = nil
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				recipients, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3902,7 +3911,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m0 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should be sent to the group as m0 is not muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m0PublicKey,
 				m0PublicKey,
@@ -3912,7 +3921,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m0PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3931,7 +3940,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m1 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should be sent to the group as m1 is not muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m1PublicKey,
 				m0PublicKey,
@@ -3941,7 +3950,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m1PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -3958,16 +3967,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 mutes m1.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationMuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationMuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
@@ -3980,7 +3989,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// Create a txn where m1 sends a message to the group.
 			tstampNanos := uint64(time.Now().UnixNano())
 			testMessage := []byte("This message should not be sent to the group as m1 is not muted.")
-			encryptedMessage := encrypt(testMessage, entry.MessagingPublicKey[:])
+			encryptedMessage := encrypt(testMessage, entry.AccessPublicKey[:])
 			msgEntry := MessageEntry{
 				m1PublicKey,
 				m0PublicKey,
@@ -3990,7 +3999,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 				MessagesVersion3,
 				m1PublicKey,
 				BaseGroupKeyName(),
-				entry.MessagingPublicKey,
+				entry.AccessPublicKey,
 				NewGroupKeyName(gangKey),
 				nil,
 			}
@@ -4007,16 +4016,16 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 
 		{
 			// Create a txn where m0 unmutes m1.
-			var muteList []*MessagingGroupMember
-			muteList = append(muteList, &MessagingGroupMember{
+			var muteList []*AccessGroupMember
+			muteList = append(muteList, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
 			extraData := make(map[string][]byte)
-			extraData[MessagingGroupOperationType] = []byte{byte(MessagingGroupOperationUnmuteMembers)}
+			extraData[AccessGroupOperationType] = []byte{byte(AccessGroupOperationUnmuteMembers)}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
-				m0PubKey, entry.MessagingPublicKey[:], gangKey, []byte{},
+				m0PubKey, entry.AccessPublicKey[:], gangKey, []byte{},
 				muteList, extraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)

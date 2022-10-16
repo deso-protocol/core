@@ -44,8 +44,17 @@ type UtxoView struct {
 	// Messages data
 	MessageKeyToMessageEntry map[MessageKey]*MessageEntry
 
-	// Messaging group entries.
-	MessagingGroupKeyToMessagingGroupEntry map[MessagingGroupKey]*MessagingGroupEntry
+	// Access group entries.
+	AccessGroupKeyToAccessGroupEntry map[AccessGroupKey]*AccessGroupEntry
+
+	// Group Memberships
+	GroupMembershipKeyToAccessGroupMember map[GroupMembershipKey]*AccessGroupMember
+
+	// GroupMemberAttributes
+	// Mapping of GroupEnumerationKey to a map of attributes to bool.
+	// For example, Member_A in Group_B can have attributes {IsMuted: true, AcceptedMembership: true, IsAdmin: true}
+	// Or if Member_A was unmuted and removed as admin- {IsMuted: false, IsAdmin: false}
+	GroupMemberAttributes map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]bool
 
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
@@ -126,10 +135,12 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Messages data
 	bav.MessageKeyToMessageEntry = make(map[MessageKey]*MessageEntry)
+	bav.GroupMembershipKeyToAccessGroupMember = make(map[GroupMembershipKey]*AccessGroupMember)
+	bav.GroupMemberAttributes = make(map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]bool)
 	bav.MessageMap = make(map[BlockHash]*PGMessage)
 
 	// Messaging group entries
-	bav.MessagingGroupKeyToMessagingGroupEntry = make(map[MessagingGroupKey]*MessagingGroupEntry)
+	bav.AccessGroupKeyToAccessGroupEntry = make(map[AccessGroupKey]*AccessGroupEntry)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -253,10 +264,10 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	}
 
 	// Copy messaging group data
-	newView.MessagingGroupKeyToMessagingGroupEntry = make(map[MessagingGroupKey]*MessagingGroupEntry, len(bav.MessagingGroupKeyToMessagingGroupEntry))
-	for pkid, entry := range bav.MessagingGroupKeyToMessagingGroupEntry {
+	newView.AccessGroupKeyToAccessGroupEntry = make(map[AccessGroupKey]*AccessGroupEntry, len(bav.AccessGroupKeyToAccessGroupEntry))
+	for pkid, entry := range bav.AccessGroupKeyToAccessGroupEntry {
 		newEntry := *entry
-		newView.MessagingGroupKeyToMessagingGroupEntry[pkid] = &newEntry
+		newView.AccessGroupKeyToAccessGroupEntry[pkid] = &newEntry
 	}
 
 	// Copy the follow data

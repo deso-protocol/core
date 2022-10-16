@@ -650,12 +650,13 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 }
 
 // FIXME: This is a temporary hack that we have to employ until we are confident nodes have
-// 	downloaded the latest code that sends an empty db chunk for a non-existent prefix. We
-// 	check if the prefix is the newly-added PrefixGroupMembershipIndex and if so, filter it out.
+//
+//	downloaded the latest code that sends an empty db chunk for a non-existent prefix. We
+//	check if the prefix is the newly-added PrefixGroupMembershipIndex and if so, filter it out.
 func (srv *Server) CheckIfStatePrefixExistsForBlockHeight(blockHeight uint64, prefix []byte) bool {
 	switch prefix[0] {
 	case Prefixes.PrefixGroupMembershipIndex[0]:
-		if uint32(blockHeight) < srv.blockchain.params.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight {
+		if uint32(blockHeight) < srv.blockchain.params.ForkHeights.DeSoAccessGroupsBlockHeight {
 			return false
 		}
 	}

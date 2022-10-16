@@ -1213,11 +1213,11 @@ func TestMessagingKey(t *testing.T) {
 		0x00, 0x01,
 	}
 
-	txMeta := MessagingGroupMetadata{
-		MessagingPublicKey:    m0PkBytes,
-		MessagingGroupKeyName: keyName,
-		GroupOwnerSignature:   signature.Serialize(),
-		MessagingGroupMembers: []*MessagingGroupMember{},
+	txMeta := AccessGroupMetadata{
+		AccessPublicKey:     m0PkBytes,
+		AccessGroupKeyName:  keyName,
+		GroupOwnerSignature: signature.Serialize(),
+		AccessGroupMembers:  []*AccessGroupMember{},
 	}
 
 	data, err := txMeta.ToBytes(false)
@@ -1231,12 +1231,12 @@ func TestMessagingKey(t *testing.T) {
 	require.NoError(err)
 	require.Equal(data, testData)
 
-	txMeta.MessagingGroupMembers = append(txMeta.MessagingGroupMembers, &MessagingGroupMember{
+	txMeta.AccessGroupMembers = append(txMeta.AccessGroupMembers, &AccessGroupMember{
 		GroupMemberPublicKey: NewPublicKey(m1PkBytes),
 		GroupMemberKeyName:   NewGroupKeyName(keyName),
 		EncryptedKey:         encrypted,
 	})
-	txMeta.MessagingGroupMembers = append(txMeta.MessagingGroupMembers, &MessagingGroupMember{
+	txMeta.AccessGroupMembers = append(txMeta.AccessGroupMembers, &AccessGroupMember{
 		GroupMemberPublicKey: NewPublicKey(m2PkBytes),
 		GroupMemberKeyName:   NewGroupKeyName(keyName),
 		EncryptedKey:         encrypted,
@@ -1512,7 +1512,7 @@ func TestUnlimitedSpendingLimitMetamaskEncoding(t *testing.T) {
 
 	// Set the blockheights for encoder migration.
 	GlobalDeSoParams = DeSoTestnetParams
-	GlobalDeSoParams.ForkHeights.DeSoUnlimitedDerivedKeysAndMessagesMutingAndMembershipIndexBlockHeight = 0
+	GlobalDeSoParams.ForkHeights.DeSoAccessGroupsBlockHeight = 0
 	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
 		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 0
 	}
