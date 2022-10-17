@@ -6391,6 +6391,33 @@ const (
 	AccessGroupMemberAttributeIsAdmin            AccessGroupMemberAttributeType = 2
 )
 
+// IsAccessGroupMemberAttributeTypeValid returns true if the given AccessGroupMemberAttributeType is valid.
+func IsAccessGroupMemberAttributeTypeValid(attributeType AccessGroupMemberAttributeType) bool {
+	switch attributeType {
+	case AccessGroupMemberAttributeIsMuted,
+		AccessGroupMemberAttributeAcceptedMembership,
+		AccessGroupMemberAttributeIsAdmin:
+		return true
+	}
+	return false
+}
+
+// AccessGroupEntryAttributeType represents V3 Group Entry Attributes stored in the DB (PrefixGroupEntryAttributesIndex).
+type AccessGroupEntryAttributeType byte
+
+const (
+	AccessGroupEntryAttributeIsChannel AccessGroupEntryAttributeType = 0
+)
+
+// IsAccessGroupEntryAttributeTypeValid returns true if the given AccessGroupEntryAttributeType is valid.
+func IsAccessGroupEntryAttributeTypeValid(attributeType AccessGroupEntryAttributeType) bool {
+	switch attributeType {
+	case AccessGroupEntryAttributeIsChannel:
+		return true
+	}
+	return false
+}
+
 type AccessGroupMetadata struct {
 	// This struct is very similar to the AccessGroupEntry type.
 	AccessPublicKey    []byte

@@ -700,7 +700,7 @@ func _verifyMessagingKey(testMeta *TestMeta, publicKey *PublicKey, entry *Access
 	messagingKey := NewAccessGroupKey(publicKey, entry.AccessGroupKeyName[:])
 	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
 	require.NoError(err)
-	utxoMessagingEntry = utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingKey)
+	utxoMessagingEntry = utxoView.GetAccessGroupKeyToAccessGroupEntryMapping(messagingKey)
 
 	if utxoMessagingEntry == nil || utxoMessagingEntry.isDeleted {
 		return false
@@ -719,7 +719,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 		var err error
 		blockHeight := testMeta.chain.blockTip().Height + 1
 		if blockHeight >= testMeta.params.ForkHeights.DeSoAccessGroupsBlockHeight {
-			entries, err = DBGetAllUserGroupEntriesWithTxn(txn, testMeta.chain.snapshot, publicKey)
+			entries, err = DBGetAllAccessGroupEntriesForMemberWithTxn(txn, testMeta.chain.snapshot, publicKey)
 			require.NoError(err)
 		} else {
 			entries, err = DEPRECATEDDBGetAllUserGroupEntriesWithTxn(txn, publicKey)
@@ -1169,7 +1169,7 @@ func TestMessagingKeys(t *testing.T) {
 			extraData,
 			nil,
 		)
-		entry = DBGetMessagingGroupEntry(db, chain.snapshot, NewAccessGroupKey(&m3PublicKey, entry.AccessGroupKeyName[:]))
+		entry = DBGetAccessGroupEntry(db, chain.snapshot, NewAccessGroupKey(&m3PublicKey, entry.AccessGroupKeyName[:]))
 		// We get the entry from the DB so that it has the extra data
 		require.Len(entry.ExtraData, 2)
 		require.Equal(entry.ExtraData["extrakey"], []byte("discussion"))
@@ -1178,7 +1178,7 @@ func TestMessagingKeys(t *testing.T) {
 
 		// For fun, m3 adds group members to the conversation that has extra data
 		//_, sign, _ := _generateMessagingKey(m3PubKey, m3PrivKey, extraDataKeyName)
-		//entry := DBGetMessagingGroupEntry(db, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
+		//entry := DBGetAccessGroupEntry(db, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
 		var MessagingGroupMembers []*AccessGroupMember
 		members := [][]byte{m3PubKey, m1PubKey, m2PubKey}
 		for _, member := range members {
@@ -1192,7 +1192,7 @@ func TestMessagingKeys(t *testing.T) {
 			"extrakey": []byte("newval"),
 			"newkey":   []byte("test"),
 		}
-		//entry := DBGetMessagingGroupEntry(db, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
+		//entry := DBGetAccessGroupEntry(db, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
 		_messagingKeyWithExtraDataWithTestMeta(
 			testMeta,
 			m3PubKey,
@@ -1204,7 +1204,7 @@ func TestMessagingKeys(t *testing.T) {
 			extraData,
 			nil,
 		)
-		entry = DBGetMessagingGroupEntry(db, chain.snapshot, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
+		entry = DBGetAccessGroupEntry(db, chain.snapshot, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
 		require.True(_verifyMessagingKey(testMeta, &m3PublicKey, entry))
 
 		require.Len(entry.ExtraData, 3)
@@ -1782,7 +1782,7 @@ func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKe
 	if groupOwner {
 		fetchKey = expectedEntry.SenderPublicKey
 	}
-	messagingKey := utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(&AccessGroupKey{
+	messagingKey := utxoView.GetAccessGroupKeyToAccessGroupEntryMapping(&AccessGroupKey{
 		*fetchKey,
 		*expectedEntry.RecipientMessagingGroupKeyName,
 	})
@@ -2306,7 +2306,7 @@ func TestGroupMessages(t *testing.T) {
 		testMessage3 := []byte{1, 2, 5, 4, 5, 6, 7, 8, 15, 22, 27}
 		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
-		messagingKey := utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(&AccessGroupKey{
+		messagingKey := utxoView.GetAccessGroupKeyToAccessGroupEntryMapping(&AccessGroupKey{
 			*recipientPublicKey,
 			*DefaultGroupKeyName(),
 		})

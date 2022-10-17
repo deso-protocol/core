@@ -249,26 +249,15 @@ func (bav *UtxoView) _connectPrivateMessage(
 			// txMeta.RecipientPublicKey is the GroupOwnerPublicKey in disguise
 			groupOwnerMessagingPk := NewPublicKey(txMeta.RecipientPublicKey)
 			messagingGroupKeyName := NewGroupKeyName(recipientMessagingKeyName)
-			messagingGroupMember := bav.GetMessagingMember(
-				senderMessagingPk, groupOwnerMessagingPk, messagingGroupKeyName, blockHeight)
-			if messagingGroupMember != nil && messagingGroupMember.IsMuted {
-				return 0, 0, nil, errors.Wrapf(
-					RuleErrorAccessMemberMuted, "_connectMessagingGroup: "+
-						"Error, sending member is muted (%v)", messagingGroupMember.GroupMemberPublicKey)
+			// check if sender is muted
+			attributeEntry, err := bav.getGroupMemberAttributeEntry(groupOwnerMessagingPk, messagingGroupKeyName, senderMessagingPk, AccessGroupMemberAttributeIsMuted)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: Problem checking if sender is muted")
 			}
-
-			//if messagingGroupEntry != nil && !messagingGroupEntry.isDeleted {
-			//	// Note that this list will contain at most one member if we're past the fork height.
-			//	// This is because each messagingGroupEntry corresponds to a single person's membership.
-			//	muteList := messagingGroupEntry.MuteList
-			//	for _, mutedMember := range muteList {
-			//		if bytes.Equal(mutedMember.GroupMemberPublicKey[:], txn.PublicKey) {
-			//			return 0, 0, nil, errors.Wrapf(
-			//				RuleErrorAccessMemberMuted, "_connectMessagingGroup: "+
-			//					"Error, sending member is muted (%v)", mutedMember.GroupMemberPublicKey)
-			//		}
-			//	}
-			//}
+			if attributeEntry != nil && attributeEntry.IsSet == true {
+				return 0, 0, nil, errors.Wrapf(RuleErrorAccessMemberMuted,
+					"_connectPrivateMessage: Sender is muted")
+			}
 		}
 	}
 

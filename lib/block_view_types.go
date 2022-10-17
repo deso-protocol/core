@@ -78,6 +78,8 @@ const (
 	EncoderTypeGroupMembershipKey
 	EncoderTypeGroupEnumerationKey
 	EncoderTypeGroupMemberAttributesKey
+	EncoderTypeGroupEntryAttributesKey
+	EncoderTypeAttributeEntry
 	EncoderTypeAccessGroupEntry
 	EncoderTypeAccessGroupMember
 	EncoderTypeForbiddenPubKeyEntry
@@ -158,6 +160,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &GroupEnumerationKey{}
 	case EncoderTypeGroupMemberAttributesKey:
 		return &GroupMemberAttributesKey{}
+	case EncoderTypeGroupEntryAttributesKey:
+		return &GroupEntryAttributesKey{}
+	case EncoderTypeAttributeEntry:
+		return &AttributeEntry{}
 	case EncoderTypeAccessGroupEntry:
 		return &AccessGroupEntry{}
 	case EncoderTypeAccessGroupMember:
@@ -2171,6 +2177,120 @@ func NewGroupMemberAttributesKey(groupOwnerPublicKey *PublicKey, groupKeyName []
 func (key *GroupMemberAttributesKey) String() string {
 	return fmt.Sprintf("<GroupOwnerPublicKey: %v, GroupKeyName: %v, GroupMemberPublicKey: %v, AttributeType: %v>",
 		key.GroupOwnerPublicKey, key.GroupKeyName, key.GroupMemberPublicKey, key.AttributeType)
+}
+
+// GroupEntryAttributesKey is used to index group entry attributes for a user in PrefixGroupEntryAttributesIndex
+type GroupEntryAttributesKey struct {
+	GroupOwnerPublicKey PublicKey
+	GroupKeyName        GroupKeyName
+	AttributeType       AccessGroupEntryAttributeType
+}
+
+func (key *GroupEntryAttributesKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, key.GroupOwnerPublicKey[:]...)
+	data = append(data, key.GroupKeyName[:]...)
+	data = append(data, []byte{byte(key.AttributeType)}...)
+	return data
+}
+
+func (key *GroupEntryAttributesKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	groupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
+		key.GroupOwnerPublicKey = *groupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupEntryAttributesKey.Decode: Problem reading "+
+			"GroupOwnerPublicKey")
+	}
+
+	groupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
+		key.GroupKeyName = *groupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupEntryAttributesKey.Decode: Problem reading "+
+			"GroupKeyName")
+	}
+
+	attributeType, err := rr.ReadByte()
+	if err != nil {
+		return errors.Wrapf(err, "GroupEntryAttributesKey.Decode: Problem reading "+
+			"AttributeType")
+	}
+	key.AttributeType = AccessGroupEntryAttributeType(attributeType)
+
+	return nil
+}
+
+func (key *GroupEntryAttributesKey) GetVersionByte(blockHeight uint64) byte {
+	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
+}
+
+func (key *GroupEntryAttributesKey) GetEncoderType() EncoderType {
+	return EncoderTypeGroupEntryAttributesKey
+}
+
+func NewGroupEntryAttributesKey(groupOwnerPublicKey *PublicKey, groupKeyName []byte, attributeType AccessGroupEntryAttributeType) *GroupEntryAttributesKey {
+	return &GroupEntryAttributesKey{
+		GroupOwnerPublicKey: *groupOwnerPublicKey,
+		GroupKeyName:        *NewGroupKeyName(groupKeyName),
+		AttributeType:       attributeType,
+	}
+}
+
+func (key *GroupEntryAttributesKey) String() string {
+	return fmt.Sprintf("<GroupOwnerPublicKey: %v, GroupKeyName: %v, AttributeType: %v>",
+		key.GroupOwnerPublicKey, key.GroupKeyName, key.AttributeType)
+}
+
+// AttributeEntry is used to store the status and value of an attribute
+type AttributeEntry struct {
+	IsSet bool
+	Value []byte
+}
+
+func (entry *AttributeEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, BoolToByte(entry.IsSet))
+	data = append(data, entry.Value...)
+	return data
+}
+
+func (entry *AttributeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	isSet, err := ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AttributeEntry.Decode: Problem reading "+
+			"IsSet")
+	}
+	entry.IsSet = isSet
+
+	value, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AttributeEntry.Decode: Problem reading "+
+			"Value")
+	}
+	entry.Value = value
+
+	return nil
+}
+
+func (entry *AttributeEntry) GetVersionByte(blockHeight uint64) byte {
+	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
+}
+
+func (entry *AttributeEntry) GetEncoderType() EncoderType {
+	return EncoderTypeAttributeEntry
+}
+
+func NewAttributeEntry(isSet bool, value []byte) *AttributeEntry {
+	return &AttributeEntry{
+		IsSet: isSet,
+		Value: value,
+	}
+}
+
+func (entry *AttributeEntry) String() string {
+	return fmt.Sprintf("<IsSet: %v, Value: %v>",
+		entry.IsSet, entry.Value)
 }
 
 // AccessGroupEntry is used to update messaging keys for a user, this was added in

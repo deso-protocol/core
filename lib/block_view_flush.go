@@ -972,9 +972,9 @@ func (bav *UtxoView) _flushMessagingGroupEntriesMembersAttributesToDbWithTxn(txn
 		//
 		// TODO: We should have a single DeleteMappings function in db_utils.go that we push this
 		// complexity into.
-		existingMessagingGroupEntry := DBGetMessagingGroupEntryWithTxn(txn, bav.Snapshot, &messagingGroupKey)
+		existingMessagingGroupEntry := DBGetAccessGroupEntryWithTxn(txn, bav.Snapshot, &messagingGroupKey)
 		if existingMessagingGroupEntry != nil {
-			if err := DBDeleteMessagingGroupEntryWithTxn(txn, bav.Snapshot, &messagingGroupKey); err != nil {
+			if err := DBDeleteAccessGroupEntryWithTxn(txn, bav.Snapshot, &messagingGroupKey); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesMembersAttributesToDbWithTxn: "+
 					"Problem deleting AccessGroupEntry %v from db", *messagingGroupEntry)
 			}
@@ -1042,7 +1042,7 @@ func (bav *UtxoView) _flushMessagingGroupEntriesMembersAttributesToDbWithTxn(txn
 			// TODO: We should have a single PutMappings function in db_utils.go that we push this
 			// complexity into.
 			ownerPublicKey := &messagingGroupKey.OwnerPublicKey
-			if err := DBPutMessagingGroupEntryWithTxn(txn, bav.Snapshot, blockHeight,
+			if err := DBPutAccessGroupEntryWithTxn(txn, bav.Snapshot, blockHeight,
 				ownerPublicKey, messagingGroupEntry); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesMembersAttributesToDbWithTxn: "+
 					"Fail while putting group entry. Problem putting AccessGroupEntry %v to db", *messagingGroupEntry)

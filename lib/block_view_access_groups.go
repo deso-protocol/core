@@ -34,22 +34,12 @@ func (bav *UtxoView) GetMessagingMember(memberPublicKey *PublicKey, groupOwnerPu
 	return messagingGroupMember
 }
 
-// SetMessagingMember will set the membership index and enumeration index of GroupMessagingMember.
+// SetMessagingMember will set the membership mapping of AccessGroupMember.
 func (bav *UtxoView) SetMessagingMember(messagingGroupEntry *AccessGroupEntry,
 	messagingGroupMember *AccessGroupMember, blockHeight uint32) {
 
-	// set utxoView mappings
-	bav._setGroupMembershipKeyToMessagingGroupMemberMapping(messagingGroupEntry, messagingGroupMember)
-
-	//err := DBPutMessagingGroupMemberInMembershipIndex(bav.Handle, bav.Snapshot, uint64(blockHeight), messagingGroupMember, messagingGroupEntry)
-	//if err != nil {
-	//	return errors.Wrapf(err, "SetMessagingMember: Problem putting messaging group member in membership index: ")
-	//}
-	//
-	//err = DBPutMessagingGroupMemberInEnumerationIndex(bav.Handle, bav.Snapshot, uint64(blockHeight), messagingGroupMember, messagingGroupEntry)
-	//if err != nil {
-	//	return errors.Wrapf(err, "SetMessagingMember: Problem putting messaging group member in enumeration index: ")
-	//}
+	// set utxoView mapping
+	bav._setGroupMembershipKeyToAccessGroupMemberMapping(messagingGroupEntry, messagingGroupMember)
 }
 
 // GetMessagingEntry will check the membership index for membership of memberPublicKey in the group
@@ -79,7 +69,7 @@ func (bav *UtxoView) GetMessagingEntry(memberPublicKey *PublicKey, groupOwnerPub
 	}
 
 	// In case the group entry was not in utxo_view, nor was it in the membership index, we fetch the full group directly.
-	return bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
+	return bav.GetAccessGroupKeyToAccessGroupEntryMapping(messagingGroupKey)
 }
 
 // GetMessagingGroupForMessagingGroupKeyExistence will check if the group with key messagingGroupKey exists, if so it will fetch
@@ -104,7 +94,7 @@ func (bav *UtxoView) GetMessagingGroupForMessagingGroupKeyExistence(messagingGro
 	return entry
 }
 
-func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
+func (bav *UtxoView) GetAccessGroupKeyToAccessGroupEntryMapping(
 	messagingGroupKey *AccessGroupKey) *AccessGroupEntry {
 	// This function is used to get a AccessGroupEntry given a AccessGroupKey. The V3 messages are
 	// backwards-compatible, and in particular each user has a built-in AccessGroupKey, called the
@@ -138,29 +128,29 @@ func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 	//		return nil
 	//	}
 	//
-	//	messagingGroupEntry := &AccessGroupEntry{
+	//	accessGroupEntry := &AccessGroupEntry{
 	//		GroupOwnerPublicKey:   pgMessagingGroup.GroupOwnerPublicKey,
 	//		AccessPublicKey:    pgMessagingGroup.AccessPublicKey,
 	//		AccessGroupKeyName: pgMessagingGroup.AccessGroupKeyName,
 	//		AccessGroupMembers: memberEntries,
 	//	}
-	//	bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
-	//	return messagingGroupEntry
+	//	bav._setAccessGroupKeyToAccessGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, accessGroupEntry)
+	//	return accessGroupEntry
 	//
 	//} else {
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory UtxoView mapping.
-	messagingGroupEntry := DBGetMessagingGroupEntry(bav.Handle, bav.Snapshot, messagingGroupKey)
-	if messagingGroupEntry != nil {
-		bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
+	accessGroupEntry := DBGetAccessGroupEntry(bav.Handle, bav.Snapshot, messagingGroupKey)
+	if accessGroupEntry != nil {
+		bav._setAccessGroupKeyToAccessGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, accessGroupEntry)
 	}
-	return messagingGroupEntry
+	return accessGroupEntry
 
 	//}
 }
 
-func (bav *UtxoView) _setGroupMembershipKeyToMessagingGroupMemberMapping(entry *AccessGroupEntry, member *AccessGroupMember) {
+func (bav *UtxoView) _setGroupMembershipKeyToAccessGroupMemberMapping(entry *AccessGroupEntry, member *AccessGroupMember) {
 	if entry == nil || member == nil {
 		return
 	}
@@ -168,12 +158,12 @@ func (bav *UtxoView) _setGroupMembershipKeyToMessagingGroupMemberMapping(entry *
 	bav.GroupMembershipKeyToAccessGroupMember[*groupMembershipKey] = member
 }
 
-func (bav *UtxoView) _setMessagingGroupKeyToMessagingGroupEntryMapping(ownerPublicKey *PublicKey,
+func (bav *UtxoView) _setAccessGroupKeyToAccessGroupEntryMapping(ownerPublicKey *PublicKey,
 	messagingGroupEntry *AccessGroupEntry) {
 
 	// This function shouldn't be called with a nil entry.
 	if messagingGroupEntry == nil {
-		glog.Errorf("_setMessagingGroupKeyToMessagingGroupEntryMapping: Called with nil AccessGroupEntry; " +
+		glog.Errorf("_setAccessGroupKeyToAccessGroupEntryMapping: Called with nil AccessGroupEntry; " +
 			"this should never happen.")
 		return
 	}
@@ -187,15 +177,15 @@ func (bav *UtxoView) _setMessagingGroupKeyToMessagingGroupEntryMapping(ownerPubl
 	bav.AccessGroupKeyToAccessGroupEntry[messagingKey] = messagingGroupEntry
 }
 
-func (bav *UtxoView) _deleteMessagingGroupKeyToMessagingGroupEntryMapping(ownerPublicKey *PublicKey,
-	messagingGroupEntry *AccessGroupEntry) {
+func (bav *UtxoView) _deleteAccessGroupKeyToAccessGroupEntryMapping(ownerPublicKey *PublicKey,
+	accessGroupEntry *AccessGroupEntry) {
 
 	// Create a tombstone entry.
-	tombstoneMessageGroupEntry := *messagingGroupEntry
-	tombstoneMessageGroupEntry.isDeleted = true
+	tombstoneAccessGroupEntry := *accessGroupEntry
+	tombstoneAccessGroupEntry.isDeleted = true
 
 	// Set the mappings to point to the tombstone entry.
-	bav._setMessagingGroupKeyToMessagingGroupEntryMapping(ownerPublicKey, &tombstoneMessageGroupEntry)
+	bav._setAccessGroupKeyToAccessGroupEntryMapping(ownerPublicKey, &tombstoneAccessGroupEntry)
 }
 
 func (bav *UtxoView) GetAccessGroupEntriesForUser(ownerPublicKey []byte, blockHeight uint32) (
@@ -205,32 +195,32 @@ func (bav *UtxoView) GetAccessGroupEntriesForUser(ownerPublicKey []byte, blockHe
 	// the user is a recipient.
 
 	// This is our helper map to keep track of all user messaging keys.
-	messagingKeysMap := make(map[AccessGroupKey]*AccessGroupEntry)
+	accessKeysMap := make(map[AccessGroupKey]*AccessGroupEntry)
 
 	// Start by fetching all the messaging keys that we have in the UtxoView.
-	for messagingKey, messagingKeyEntry := range bav.AccessGroupKeyToAccessGroupEntry {
+	for accessKey, accessKeyEntry := range bav.AccessGroupKeyToAccessGroupEntry {
 		// We don't check for deleted entries now, we will do that later once we add messaging keys
 		// from the DB. For now we also omit the base key, we will add it later when querying the DB.
 
 		// Check if the messaging key corresponds to our public key.
-		if reflect.DeepEqual(messagingKey.OwnerPublicKey[:], ownerPublicKey) {
-			messagingKeysMap[messagingKey] = messagingKeyEntry
+		if reflect.DeepEqual(accessKey.OwnerPublicKey[:], ownerPublicKey) {
+			accessKeysMap[accessKey] = accessKeyEntry
 			continue
 		}
 		// Now we will look for messaging keys where the public key is a recipient of a group chat.
 		if blockHeight >= bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
-			member, err := DBGetGroupMemberForMessagingGroup(bav.Handle, bav.Snapshot, messagingKeyEntry.GroupOwnerPublicKey, messagingKeyEntry.AccessGroupKeyName, NewPublicKey(ownerPublicKey))
+			member, err := DBGetGroupMemberForMessagingGroup(bav.Handle, bav.Snapshot, accessKeyEntry.GroupOwnerPublicKey, accessKeyEntry.AccessGroupKeyName, NewPublicKey(ownerPublicKey))
 			if err != nil {
-				return nil, errors.Wrapf(err, "GetAccessGroupEntriesForUser: Problem getting group members for messaging group: %v", messagingKeyEntry)
+				return nil, errors.Wrapf(err, "GetAccessGroupEntriesForUser: Problem getting group members for messaging group: %v", accessKeyEntry)
 			}
 			if member != nil {
-				messagingKeysMap[messagingKey] = messagingKeyEntry
+				accessKeysMap[accessKey] = accessKeyEntry
 			}
 		} else {
-			for _, recipient := range messagingKeyEntry.AccessGroupMembers {
+			for _, recipient := range accessKeyEntry.AccessGroupMembers {
 				if reflect.DeepEqual(recipient.GroupMemberPublicKey[:], ownerPublicKey) {
 					// If user is a recipient of a group chat, we need to add a modified messaging entry.
-					messagingKeysMap[messagingKey] = messagingKeyEntry
+					accessKeysMap[accessKey] = accessKeyEntry
 					break
 				}
 			}
@@ -259,14 +249,14 @@ func (bav *UtxoView) GetAccessGroupEntriesForUser(ownerPublicKey []byte, blockHe
 		key := *NewAccessGroupKey(
 			messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.AccessGroupKeyName[:])
 		// Check if we have seen the messaging key before.
-		if _, exists := messagingKeysMap[key]; !exists {
-			messagingKeysMap[key] = messagingGroupEntry
+		if _, exists := accessKeysMap[key]; !exists {
+			accessKeysMap[key] = messagingGroupEntry
 		}
 	}
 
 	// We have all the user's messaging keys in our map, so we now turn them into a list.
 	var retMessagingKeyEntries []*AccessGroupEntry
-	for _, messagingKeyEntry := range messagingKeysMap {
+	for _, messagingKeyEntry := range accessKeysMap {
 		// Skip isDeleted entries
 		if messagingKeyEntry.isDeleted {
 			continue
@@ -397,42 +387,98 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicK
 	return nil
 }
 
-// isMemberMuted returns true if the member is muted in the group.
-func (bav *UtxoView) isMemberMuted(
-	messagingGroupEntry *AccessGroupEntry, memberPublicKey *PublicKey) (bool, error) {
+// getGroupMemberAttributeEntry returns the group member attribute entry for the given group member.
+func (bav *UtxoView) getGroupMemberAttributeEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+	memberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) (*AttributeEntry, error) {
 	// Create enumeration key.
-	enumerationKey := NewGroupEnumerationKey(messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.AccessGroupKeyName[:], memberPublicKey)
+	enumerationKey := NewGroupEnumerationKey(groupOwnerPublicKey, groupKeyName[:], memberPublicKey)
 	// Check if enumerationKey exists in GroupMemberAttributes mapping.
-	muted, exists := bav.GroupMemberAttributes[*enumerationKey][AccessGroupMemberAttributeIsMuted]
-	// If utxoView mapping exists, return value.
+	attributeEntry, exists := bav.GroupMemberAttributes[*enumerationKey][attributeType]
 	if exists {
-		return muted, nil
+		// AttributeEntry for this mapping holds IsSet bool and Value []byte.
+		return attributeEntry, nil
 	}
 
-	// If utxoView mapping doesn't exist, check DB.
-	isMuted, err := DBIsAttributeSetForMemberInGroupMemberAttributesIndex(bav.Handle, bav.Snapshot, messagingGroupEntry, member
+	// If utxoView doesn't have the attribute entry, check the DB.
+	attributeEntry, err := DBGetAttributeEntryInGroupMemberAttributesIndex(bav.Handle, bav.Snapshot, groupOwnerPublicKey, groupKeyName, memberPublicKey, attributeType)
 	if err != nil {
-		return false, errors.Wrapf(err, "isMemberMuted: Problem checking if member is muted in DB")
+		return nil, errors.Wrapf(err, "getGroupMemberAttributeEntry: Problem fetching AttributeEntry from db: ")
 	}
-	return isMuted, nil
+	return attributeEntry, nil
 }
 
-// setMemberMuted sets the muted status of a member in the group.
-func (bav *UtxoView) setMutedMembersMapping(
-	messagingGroupEntry *AccessGroupEntry, memberPublicKey *PublicKey, muted bool) {
+// setGroupMemberAttributeMapping sets the muted status of a member in the group.
+func (bav *UtxoView) setGroupMemberAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+	memberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType, isSet bool, value []byte) error {
 	// Create enumeration key.
-	enumerationKey := NewGroupEnumerationKey(messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.AccessGroupKeyName[:], memberPublicKey)
-	// Set mapping in utxoView.
-	bav.GroupMemberAttributes[*enumerationKey] = muted
+	enumerationKey := NewGroupEnumerationKey(groupOwnerPublicKey, groupKeyName[:], memberPublicKey)
+	// Create mapping if it doesn't exist.
+	if _, exists := bav.GroupMemberAttributes[*enumerationKey]; !exists {
+		bav.GroupMemberAttributes[*enumerationKey] = make(map[AccessGroupMemberAttributeType]*AttributeEntry)
+	}
+	// Set attribute.
+	bav.GroupMemberAttributes[*enumerationKey][attributeType] = NewAttributeEntry(isSet, value)
+	return nil
 }
 
-// deleteMutedMembersMapping deletes the entry from the GroupMemberAttributes mapping to reflect no change in the muted status.
-func (bav *UtxoView) deleteMutedMembersMapping(
-	messagingGroupEntry *AccessGroupEntry, memberPublicKey *PublicKey) {
+// deleteGroupMemberAttributeMapping deletes the entry from the GroupMemberAttributes mapping to undo any changes to
+// attribute status in the current block.
+func (bav *UtxoView) deleteGroupMemberAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+	memberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) error {
 	// Create enumeration key.
-	enumerationKey := NewGroupEnumerationKey(messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.AccessGroupKeyName[:], memberPublicKey)
-	// Delete the muted status of the member.
-	delete(bav.GroupMemberAttributes, *enumerationKey)
+	enumerationKey := NewGroupEnumerationKey(groupOwnerPublicKey, groupKeyName[:], memberPublicKey)
+	// Delete attribute if it exists.
+	if _, exists := bav.GroupMemberAttributes[*enumerationKey]; exists {
+		delete(bav.GroupMemberAttributes[*enumerationKey], attributeType)
+	}
+	return nil
+}
+
+// getGroupEntryAttributeEntry returns the group entry attribute entry for the given group.
+func (bav *UtxoView) getGroupEntryAttributeEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+	attributeType AccessGroupEntryAttributeType) (*AttributeEntry, error) {
+	// Create accessGroupKey key.
+	accessGroupKey := NewAccessGroupKey(groupOwnerPublicKey, groupKeyName[:])
+	// Check if accessGroupKey exists in GroupEntryAttributes mapping.
+	attributeEntry, exists := bav.GroupEntryAttributes[*accessGroupKey][attributeType]
+	if exists {
+		// AttributeEntry for this mapping holds IsSet bool and Value []byte.
+		return attributeEntry, nil
+	}
+
+	// If utxoView doesn't have the attribute entry, check the DB.
+	attributeEntry, err := DBGetAttributeEntryInGroupEntryAttributesIndex(bav.Handle, bav.Snapshot, groupOwnerPublicKey, groupKeyName, attributeType)
+	if err != nil {
+		return nil, errors.Wrapf(err, "getGroupEntryAttributeEntry: Problem fetching AttributeEntry from db: ")
+	}
+	return attributeEntry, nil
+}
+
+// setGroupEntryAttributeMapping sets the attribute status of a group.
+func (bav *UtxoView) setGroupEntryAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+	attributeType AccessGroupEntryAttributeType, isSet bool, value []byte) error {
+	// Create accessGroupKey key.
+	accessGroupKey := NewAccessGroupKey(groupOwnerPublicKey, groupKeyName[:])
+	// Create mapping if it doesn't exist.
+	if _, exists := bav.GroupEntryAttributes[*accessGroupKey]; !exists {
+		bav.GroupEntryAttributes[*accessGroupKey] = make(map[AccessGroupEntryAttributeType]*AttributeEntry)
+	}
+	// Set attribute.
+	bav.GroupEntryAttributes[*accessGroupKey][attributeType] = NewAttributeEntry(isSet, value)
+	return nil
+}
+
+// deleteGroupEntryAttributeMapping deletes the entry from the GroupEntryAttributes mapping to undo any changes to
+// attribute status in the current block.
+func (bav *UtxoView) deleteGroupEntryAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+	attributeType AccessGroupEntryAttributeType) error {
+	// Create accessGroupKey key.
+	accessGroupKey := NewAccessGroupKey(groupOwnerPublicKey, groupKeyName[:])
+	// Delete attribute if it exists.
+	if _, exists := bav.GroupEntryAttributes[*accessGroupKey]; exists {
+		delete(bav.GroupEntryAttributes[*accessGroupKey], attributeType)
+	}
+	return nil
 }
 
 // getMessagingGroupRotatingVersion returns the version of the messaging group key.
@@ -593,7 +639,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 	}
 	// First, let's check if this key doesn't already exist in UtxoView or in the DB.
 	// It's worth noting that we index messaging keys by the owner public key and messaging key name.
-	existingEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingGroupKey)
+	existingEntry := bav.GetAccessGroupKeyToAccessGroupEntryMapping(messagingGroupKey)
 
 	// We will update the existing entry if it exists, or otherwise create a new utxoView entry. The new entry can currently
 	// only be created if the messagingGroupOperation is AccessGroupOperationAddMembers. If we update the existing entry,
@@ -698,7 +744,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 				// We encrypt the groupMessagingKey to recipients' messaging keys.
 				memberMessagingGroupKey := NewAccessGroupKey(
 					messagingMember.GroupMemberPublicKey, messagingMember.GroupMemberKeyName[:])
-				memberGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(memberMessagingGroupKey)
+				memberGroupEntry := bav.GetAccessGroupKeyToAccessGroupEntryMapping(memberMessagingGroupKey)
 				// The messaging key has to exist and cannot be deleted.
 				if memberGroupEntry == nil || memberGroupEntry.isDeleted {
 					return 0, 0, nil, errors.Wrapf(
@@ -744,7 +790,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 				// We encrypt the groupMessagingKey to recipients' messaging keys.
 				memberMessagingGroupKey := NewAccessGroupKey(
 					messagingMember.GroupMemberPublicKey, messagingMember.GroupMemberKeyName[:])
-				memberGroupEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(memberMessagingGroupKey)
+				memberGroupEntry := bav.GetAccessGroupKeyToAccessGroupEntryMapping(memberMessagingGroupKey)
 				// The messaging key has to exist and cannot be deleted.
 				if memberGroupEntry == nil || memberGroupEntry.isDeleted {
 					return 0, 0, nil, errors.Wrapf(
@@ -775,13 +821,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// Instead, we will make usage of the membership index. We will especially see this in the flushing logic.
 
 		for _, newlyMutedMember := range txMeta.AccessGroupMembers {
-			// Make sure the IsMuted field is currently set to false as the member is not muted yet.
-			if newlyMutedMember.IsMuted {
-				return 0, 0, nil, errors.Wrapf(
-					RuleErrorMessagingMemberIsMutedAlreadySetToTrue, "_connectMessagingGroup: "+
-						"Problem validating messagingMember IsMuted field for messagingMember (%v): IsMuted field "+
-						"is already set to true", newlyMutedMember.GroupMemberPublicKey[:])
-			}
+
 			// Make sure GroupOwner is not muting herself
 			if reflect.DeepEqual(newlyMutedMember.GroupMemberPublicKey[:], existingEntry.GroupOwnerPublicKey[:]) {
 				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupOwnerMutingSelf,
@@ -794,8 +834,17 @@ func (bav *UtxoView) _connectMessagingGroup(
 					"_connectMessagingGroup: Can't mute a non-existent member (%v)", newlyMutedMember.GroupMemberPublicKey[:])
 			}
 
-			// Set IsMuted to true.
-			newlyMutedMember.IsMuted = true
+			// Get group member attribute entry for this member.
+			attributeEntry, err := bav.getGroupMemberAttributeEntry(existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, newlyMutedMember.GroupMemberPublicKey, AccessGroupMemberAttributeIsMuted)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: Problem getting group member attribute entry")
+			}
+			// Check if the member is already muted.
+			if attributeEntry != nil && attributeEntry.IsSet {
+				return 0, 0, nil, errors.Wrapf(RuleErrorAccessMemberAlreadyMuted,
+					"_connectMessagingGroup: Can't mute a member that's already muted")
+			}
+
 			// Add member to newMuteList
 			newMuteList = append(newMuteList, newlyMutedMember)
 		}
@@ -822,8 +871,17 @@ func (bav *UtxoView) _connectMessagingGroup(
 					"_connectMessagingGroup: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
 			}
 
-			// Set IsMuted to false.
-			newlyUnmutedMember.IsMuted = false
+			// Get group member attribute entry for this member.
+			attributeEntry, err := bav.getGroupMemberAttributeEntry(existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, newlyUnmutedMember.GroupMemberPublicKey, AccessGroupMemberAttributeIsMuted)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: Problem getting group member attribute entry")
+			}
+			// Check if the member is already unmuted.
+			if attributeEntry == nil || !attributeEntry.IsSet {
+				return 0, 0, nil, errors.Wrapf(RuleErrorAccessMemberAlreadyUnmuted,
+					"_connectMessagingGroup: Can't unmute a member that's already unmuted")
+			}
+
 			// Add member to newUnmuteList
 			newUnmuteList = append(newUnmuteList, newlyUnmutedMember)
 		}
@@ -872,19 +930,23 @@ func (bav *UtxoView) _connectMessagingGroup(
 		}
 	}
 
-	// Set mappings and DB entries if blockHeight is greater than muting fork height.
+	// Set mappings and DB entries if blockHeight is greater than access groups fork height.
 	if blockHeight >= bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
 		// Set mappings for newlyMutedMembers
 		for _, newlyMutedMember := range newMuteList {
-			bav.SetMessagingMember(messagingGroupEntry, newlyMutedMember, blockHeight)
+			bav.setGroupMemberAttributeMapping(messagingGroupEntry.GroupOwnerPublicKey,
+				messagingGroupEntry.AccessGroupKeyName, newlyMutedMember.GroupMemberPublicKey,
+				AccessGroupMemberAttributeIsMuted, true, nil)
 		}
 		// Set mappings for newlyUnmutedMembers
 		for _, newlyUnmutedMember := range newUnmuteList {
-			bav.SetMessagingMember(messagingGroupEntry, newlyUnmutedMember, blockHeight)
+			bav.setGroupMemberAttributeMapping(messagingGroupEntry.GroupOwnerPublicKey,
+				messagingGroupEntry.AccessGroupKeyName, newlyUnmutedMember.GroupMemberPublicKey,
+				AccessGroupMemberAttributeIsMuted, false, nil)
 		}
 	}
 
-	bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
+	bav._setAccessGroupKeyToAccessGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
 
 	// Construct UtxoOperation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
@@ -934,7 +996,7 @@ func (bav *UtxoView) _disconnectMessagingGroup(
 		messagingKey = NewAccessGroupKey(NewPublicKey(currentTxn.PublicKey), txMeta.AccessGroupKeyName)
 	}
 
-	messagingKeyEntry := bav.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingKey)
+	messagingKeyEntry := bav.GetAccessGroupKeyToAccessGroupEntryMapping(messagingKey)
 	if messagingKeyEntry == nil || messagingKeyEntry.isDeleted {
 		return fmt.Errorf("_disconnectBasicTransfer: Error, this key was already deleted "+
 			"messagingKey: %v", messagingKey)
@@ -952,10 +1014,10 @@ func (bav *UtxoView) _disconnectMessagingGroup(
 	}
 
 	// Delete this item from UtxoView to indicate we should remove this entry from DB.
-	bav._deleteMessagingGroupKeyToMessagingGroupEntryMapping(&messagingKey.OwnerPublicKey, messagingKeyEntry)
+	bav._deleteAccessGroupKeyToAccessGroupEntryMapping(&messagingKey.OwnerPublicKey, messagingKeyEntry)
 	// If the previous entry exists, we should set it in the utxoview
 	if prevMessagingKeyEntry != nil {
-		bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingKey.OwnerPublicKey, prevMessagingKeyEntry)
+		bav._setAccessGroupKeyToAccessGroupEntryMapping(&messagingKey.OwnerPublicKey, prevMessagingKeyEntry)
 	}
 
 	// Now disconnect the basic transfer.
