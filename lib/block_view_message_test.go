@@ -700,7 +700,7 @@ func _verifyMessagingKey(testMeta *TestMeta, publicKey *PublicKey, entry *Access
 	messagingKey := NewAccessGroupKey(publicKey, entry.AccessGroupKeyName[:])
 	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
 	require.NoError(err)
-	utxoMessagingEntry = utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingKey)
+	utxoMessagingEntry = utxoView.GetAccessGroupKeyToAccessGroupEntryMapping(messagingKey)
 
 	if utxoMessagingEntry == nil || utxoMessagingEntry.isDeleted {
 		return false
@@ -719,7 +719,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 		var err error
 		blockHeight := testMeta.chain.blockTip().Height + 1
 		if blockHeight >= testMeta.params.ForkHeights.DeSoAccessGroupsBlockHeight {
-			entries, err = DBGetAllUserGroupEntriesWithTxn(txn, testMeta.chain.snapshot, publicKey)
+			entries, err = DBGetAllAccessGroupEntriesForMemberWithTxn(txn, testMeta.chain.snapshot, publicKey)
 			require.NoError(err)
 		} else {
 			entries, err = DEPRECATEDDBGetAllUserGroupEntriesWithTxn(txn, publicKey)
@@ -730,7 +730,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 		require.Equal(len(entries), len(expectedEntries))
 		// Verify entries one by one.
 		for _, expectedEntry := range expectedEntries {
-			expectedEntry.AccessGroupMembers = sortAccessGroupMembers(expectedEntry.AccessGroupMembers)
+			expectedEntry.DEPRECATED_AccessGroupMembers = sortAccessGroupMembers(expectedEntry.DEPRECATED_AccessGroupMembers)
 			ok := false
 			for _, entry := range entries {
 				actualEntry := &AccessGroupEntry{}
@@ -741,13 +741,13 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 				// to the empty []*AccessGroupMember (+ the member entry for the owner).
 				if bytes.Equal(entry.GroupOwnerPublicKey[:], publicKey) &&
 					blockHeight >= testMeta.params.ForkHeights.DeSoAccessGroupsBlockHeight {
-					actualEntry.AccessGroupMembers = []*AccessGroupMember{}
-					for _, member := range expectedEntry.AccessGroupMembers {
+					actualEntry.DEPRECATED_AccessGroupMembers = []*AccessGroupMember{}
+					for _, member := range expectedEntry.DEPRECATED_AccessGroupMembers {
 						if bytes.Equal(member.GroupMemberPublicKey[:], publicKey) {
 							ownerEntry := &AccessGroupMember{}
 							_, err = DecodeFromBytes(ownerEntry, bytes.NewReader(EncodeToBytes(uint64(blockHeight), member)))
 							require.NoError(err)
-							actualEntry.AccessGroupMembers = append(actualEntry.AccessGroupMembers, ownerEntry)
+							actualEntry.DEPRECATED_AccessGroupMembers = append(actualEntry.DEPRECATED_AccessGroupMembers, ownerEntry)
 							break
 						}
 					}
@@ -905,7 +905,7 @@ func TestMessagingKeys(t *testing.T) {
 			baseKeyName[:],
 			sign,
 			[]*AccessGroupMember{},
-			RuleErrorMessagingKeyNameCannotBeZeros)
+			RuleErrorAccessKeyNameCannotBeZeros)
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Sender tries to add default messaging key without proper signature, must fail.
@@ -924,7 +924,7 @@ func TestMessagingKeys(t *testing.T) {
 				defaultKeyName,
 				[]byte{},
 				[]*AccessGroupMember{},
-				RuleErrorMessagingSignatureInvalid)
+				RuleErrorAccessGroupSignatureInvalid)
 			// Verification still fails because the txn wasn't successful.
 			require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 		}
@@ -960,7 +960,7 @@ func TestMessagingKeys(t *testing.T) {
 			[]byte{},
 			[]byte{},
 			[]*AccessGroupMember{},
-			RuleErrorMessagingKeyNameCannotBeZeros)
+			RuleErrorAccessKeyNameCannotBeZeros)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	{
@@ -975,7 +975,7 @@ func TestMessagingKeys(t *testing.T) {
 			append(defaultKeyName, NewGroupKeyName([]byte{})[:]...),
 			[]byte{},
 			[]*AccessGroupMember{},
-			RuleErrorMessagingKeyNameTooLong)
+			RuleErrorAccessKeyNameTooLong)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Now let's make a valid transaction.
@@ -1054,7 +1054,7 @@ func TestMessagingKeys(t *testing.T) {
 			randomKeyName,
 			[]byte{},
 			[]*AccessGroupMember{},
-			RuleErrorMessagingKeyDoesntAddMembers)
+			RuleErrorAccessKeyDoesntAddMembers)
 		// Verification is still successful.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
@@ -1072,7 +1072,7 @@ func TestMessagingKeys(t *testing.T) {
 			randomKeyName,
 			[]byte{},
 			[]*AccessGroupMember{},
-			RuleErrorMessagingPublicKeyCannotBeDifferent)
+			RuleErrorAccessPublicKeyCannotBeDifferent)
 		// The existing entry will pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 		// The newly-generated entry will fail verification.
@@ -1091,7 +1091,7 @@ func TestMessagingKeys(t *testing.T) {
 			append(randomKeyName, byte(0)),
 			[]byte{},
 			[]*AccessGroupMember{},
-			RuleErrorMessagingKeyDoesntAddMembers)
+			RuleErrorAccessKeyDoesntAddMembers)
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// m1Pub adds some random key, should pass.
@@ -1169,7 +1169,7 @@ func TestMessagingKeys(t *testing.T) {
 			extraData,
 			nil,
 		)
-		entry = DBGetMessagingGroupEntry(db, chain.snapshot, NewAccessGroupKey(&m3PublicKey, entry.AccessGroupKeyName[:]))
+		entry = DBGetAccessGroupEntry(db, chain.snapshot, NewAccessGroupKey(&m3PublicKey, entry.AccessGroupKeyName[:]))
 		// We get the entry from the DB so that it has the extra data
 		require.Len(entry.ExtraData, 2)
 		require.Equal(entry.ExtraData["extrakey"], []byte("discussion"))
@@ -1178,7 +1178,7 @@ func TestMessagingKeys(t *testing.T) {
 
 		// For fun, m3 adds group members to the conversation that has extra data
 		//_, sign, _ := _generateMessagingKey(m3PubKey, m3PrivKey, extraDataKeyName)
-		//entry := DBGetMessagingGroupEntry(db, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
+		//entry := DBGetAccessGroupEntry(db, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
 		var MessagingGroupMembers []*AccessGroupMember
 		members := [][]byte{m3PubKey, m1PubKey, m2PubKey}
 		for _, member := range members {
@@ -1192,7 +1192,7 @@ func TestMessagingKeys(t *testing.T) {
 			"extrakey": []byte("newval"),
 			"newkey":   []byte("test"),
 		}
-		//entry := DBGetMessagingGroupEntry(db, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
+		//entry := DBGetAccessGroupEntry(db, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
 		_messagingKeyWithExtraDataWithTestMeta(
 			testMeta,
 			m3PubKey,
@@ -1204,7 +1204,7 @@ func TestMessagingKeys(t *testing.T) {
 			extraData,
 			nil,
 		)
-		entry = DBGetMessagingGroupEntry(db, chain.snapshot, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
+		entry = DBGetAccessGroupEntry(db, chain.snapshot, NewAccessGroupKey(&m3PublicKey, extraDataKeyName))
 		require.True(_verifyMessagingKey(testMeta, &m3PublicKey, entry))
 
 		require.Len(entry.ExtraData, 3)
@@ -1218,11 +1218,11 @@ func TestMessagingKeys(t *testing.T) {
 				continue
 			}
 			keyEntriesAdded[pubKey] = append(keyEntriesAdded[pubKey], &AccessGroupEntry{
-				GroupOwnerPublicKey: &m3PublicKey,
-				AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
-				AccessGroupKeyName:  NewGroupKeyName(randomKeyName),
-				AccessGroupMembers:  []*AccessGroupMember{member},
-				ExtraData:           entry.ExtraData,
+				GroupOwnerPublicKey:           &m3PublicKey,
+				AccessPublicKey:               NewPublicKey(entry.AccessPublicKey[:]),
+				AccessGroupKeyName:            NewGroupKeyName(randomKeyName),
+				DEPRECATED_AccessGroupMembers: []*AccessGroupMember{member},
+				ExtraData:                     entry.ExtraData,
 			})
 		}
 		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], entry)
@@ -1243,7 +1243,7 @@ func TestMessagingKeys(t *testing.T) {
 		// Can add yourself as a recipient.
 		randomGroupKeyName := []byte("test-key-3")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(senderPkBytes),
 			BaseGroupKeyName(),
 			senderPrivBytes,
@@ -1256,7 +1256,7 @@ func TestMessagingKeys(t *testing.T) {
 			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.AccessGroupMembers,
+			entry.DEPRECATED_AccessGroupMembers,
 			nil)
 		// Verify that we're passing.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
@@ -1267,7 +1267,7 @@ func TestMessagingKeys(t *testing.T) {
 		randomGroupKeyName := []byte("test-key-4")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
 		// Can't add messaging public key as a recipient.
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(entry.AccessPublicKey[:]),
 			BaseGroupKeyName(),
 			senderPrivBytes,
@@ -1280,15 +1280,15 @@ func TestMessagingKeys(t *testing.T) {
 			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.AccessGroupMembers,
-			RuleErrorMessagingMemberAlreadyExists)
+			entry.DEPRECATED_AccessGroupMembers,
+			RuleErrorAccessMemberAlreadyExists)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Sender tries adding a messaging recipient for m0PubKey with a non-existent key, this should fail.
 	{
 		randomGroupKeyName := []byte("test-key-5")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(m0PubKey),
 			NewGroupKeyName([]byte("non-existent-key")),
 			senderPrivBytes,
@@ -1301,8 +1301,8 @@ func TestMessagingKeys(t *testing.T) {
 			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.AccessGroupMembers,
-			RuleErrorMessagingMemberKeyDoesntExist)
+			entry.DEPRECATED_AccessGroupMembers,
+			RuleErrorAccessMemberKeyDoesntExist)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Sender tries adding a messaging recipient for m0PubKey with a malformed encrypted key, so we fail.
@@ -1310,7 +1310,7 @@ func TestMessagingKeys(t *testing.T) {
 		randomGroupKeyName := []byte("test-key-6")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
 		// Encrypted key must have at least 32 bytes.
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(m0PubKey),
 			BaseGroupKeyName(),
 			senderPrivBytes[:15],
@@ -1323,15 +1323,15 @@ func TestMessagingKeys(t *testing.T) {
 			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.AccessGroupMembers,
-			RuleErrorMessagingMemberEncryptedKeyTooShort)
+			entry.DEPRECATED_AccessGroupMembers,
+			RuleErrorAccessMemberEncryptedKeyTooShort)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Sender tries adding m0PubKey as a recipient twice, this should also fail.
 	{
 		randomGroupKeyName := []byte("test-key-7")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(m0PubKey),
 			BaseGroupKeyName(),
 			senderPrivBytes,
@@ -1348,8 +1348,8 @@ func TestMessagingKeys(t *testing.T) {
 			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.AccessGroupMembers,
-			RuleErrorMessagingMemberAlreadyExists)
+			entry.DEPRECATED_AccessGroupMembers,
+			RuleErrorAccessMemberAlreadyExists)
 		require.Equal(false, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 	}
 	// Now we get to passing tests.
@@ -1358,7 +1358,7 @@ func TestMessagingKeys(t *testing.T) {
 		// Sender tries adding a correct recipient for m0PubKey.
 		randomGroupKeyName := []byte("test-key-8")
 		_, _, entry := _generateMessagingKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(m0PubKey),
 			BaseGroupKeyName(),
 			senderPrivBytes,
@@ -1371,7 +1371,7 @@ func TestMessagingKeys(t *testing.T) {
 			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.AccessGroupMembers,
+			entry.DEPRECATED_AccessGroupMembers,
 			nil)
 		// The entry should now pass verification, since it was added successfully.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
@@ -1385,8 +1385,8 @@ func TestMessagingKeys(t *testing.T) {
 			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.AccessGroupMembers,
-			RuleErrorMessagingMemberAlreadyExists)
+			entry.DEPRECATED_AccessGroupMembers,
+			RuleErrorAccessMemberAlreadyExists)
 		// The entry still passes verification, because transaction was rejected.
 		require.Equal(true, _verifyMessagingKey(testMeta, &senderPublicKey, entry))
 
@@ -1397,7 +1397,7 @@ func TestMessagingKeys(t *testing.T) {
 		exists, err := DecodeFromBytes(entryCopy, rr)
 		require.Equal(true, exists)
 		require.NoError(err)
-		entryCopy.AccessGroupMembers[0] = &AccessGroupMember{
+		entryCopy.DEPRECATED_AccessGroupMembers[0] = &AccessGroupMember{
 			NewPublicKey(m1PubKey),
 			NewGroupKeyName([]byte("totally-random-key")),
 			senderPrivBytes,
@@ -1410,7 +1410,7 @@ func TestMessagingKeys(t *testing.T) {
 			entryCopy.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entryCopy.AccessGroupMembers,
+			entryCopy.DEPRECATED_AccessGroupMembers,
 			RuleErrorInvalidTransactionSignature)
 
 		// Sender adds m1PubKey to the group chat, this time we will succeed.
@@ -1419,7 +1419,7 @@ func TestMessagingKeys(t *testing.T) {
 		exists, err = DecodeFromBytes(workingCopy, rr)
 		require.Equal(true, exists)
 		require.NoError(err)
-		workingCopy.AccessGroupMembers[0] = &AccessGroupMember{
+		workingCopy.DEPRECATED_AccessGroupMembers[0] = &AccessGroupMember{
 			NewPublicKey(m1PubKey),
 			NewGroupKeyName([]byte("totally-random-key")),
 			senderPrivBytes,
@@ -1431,11 +1431,11 @@ func TestMessagingKeys(t *testing.T) {
 			workingCopy.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			workingCopy.AccessGroupMembers,
+			workingCopy.DEPRECATED_AccessGroupMembers,
 			nil)
 
 		// Reflect the newly added recipient in the entry.
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			NewPublicKey(m1PubKey),
 			NewGroupKeyName([]byte("totally-random-key")),
 			senderPrivBytes,
@@ -1447,16 +1447,16 @@ func TestMessagingKeys(t *testing.T) {
 		// Recipient entries have the group owner added as a recipient when fetched from the DB.
 		// This is convenient in case we want to fetch the full group messaging key entry as a recipient.
 		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], &AccessGroupEntry{
-			GroupOwnerPublicKey: &senderPublicKey,
-			AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
-			AccessGroupKeyName:  NewGroupKeyName(randomGroupKeyName),
-			AccessGroupMembers:  append([]*AccessGroupMember{}, entry.AccessGroupMembers[0]),
+			GroupOwnerPublicKey:           &senderPublicKey,
+			AccessPublicKey:               NewPublicKey(entry.AccessPublicKey[:]),
+			AccessGroupKeyName:            NewGroupKeyName(randomGroupKeyName),
+			DEPRECATED_AccessGroupMembers: append([]*AccessGroupMember{}, entry.DEPRECATED_AccessGroupMembers[0]),
 		})
 		keyEntriesAdded[m1PublicKey] = append(keyEntriesAdded[m1PublicKey], &AccessGroupEntry{
-			GroupOwnerPublicKey: &senderPublicKey,
-			AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
-			AccessGroupKeyName:  NewGroupKeyName(randomGroupKeyName),
-			AccessGroupMembers:  append([]*AccessGroupMember{}, entry.AccessGroupMembers[1]),
+			GroupOwnerPublicKey:           &senderPublicKey,
+			AccessPublicKey:               NewPublicKey(entry.AccessPublicKey[:]),
+			AccessGroupKeyName:            NewGroupKeyName(randomGroupKeyName),
+			DEPRECATED_AccessGroupMembers: append([]*AccessGroupMember{}, entry.DEPRECATED_AccessGroupMembers[1]),
 		})
 	}
 	// We will test unencrypted groups, which are intended as large group chats that anyone can join.
@@ -1475,7 +1475,7 @@ func TestMessagingKeys(t *testing.T) {
 			entry.AccessPublicKey[:],
 			groupKeyName,
 			[]byte{},
-			entry.AccessGroupMembers,
+			entry.DEPRECATED_AccessGroupMembers,
 			nil)
 		// The DB entry should have the messaging public key derived deterministically from the group key name.
 		// Compute the public key and compare it with the DB entry.
@@ -1492,7 +1492,7 @@ func TestMessagingKeys(t *testing.T) {
 		require.Equal(true, _verifyMessagingKey(testMeta, basePk, expectedEntry))
 
 		// Anyone can add recipients to the group.
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			&m1PublicKey,
 			BaseGroupKeyName(),
 			senderPrivBytes,
@@ -1504,7 +1504,7 @@ func TestMessagingKeys(t *testing.T) {
 			entry.AccessPublicKey[:],
 			groupKeyName,
 			[]byte{},
-			entry.AccessGroupMembers,
+			entry.DEPRECATED_AccessGroupMembers,
 			nil)
 		// Verify that the entry exists in the DB.
 		expectedEntry = &AccessGroupEntry{}
@@ -1524,8 +1524,8 @@ func TestMessagingKeys(t *testing.T) {
 			entry.AccessPublicKey[:],
 			groupKeyName,
 			[]byte{},
-			entry.AccessGroupMembers,
-			RuleErrorMessagingMemberAlreadyExists)
+			entry.DEPRECATED_AccessGroupMembers,
+			RuleErrorAccessMemberAlreadyExists)
 		require.Equal(true, _verifyMessagingKey(testMeta, basePk, expectedEntry))
 
 		// Now add all the entries to our expected entries list.
@@ -1535,7 +1535,7 @@ func TestMessagingKeys(t *testing.T) {
 			GroupOwnerPublicKey: basePk,
 			AccessPublicKey:     groupPk,
 			AccessGroupKeyName:  NewGroupKeyName(groupKeyName),
-			AccessGroupMembers: append([]*AccessGroupMember{}, &AccessGroupMember{
+			DEPRECATED_AccessGroupMembers: append([]*AccessGroupMember{}, &AccessGroupMember{
 				GroupMemberPublicKey: &m1PublicKey,
 				GroupMemberKeyName:   BaseGroupKeyName(),
 				EncryptedKey:         senderPrivBytes,
@@ -1553,25 +1553,25 @@ func TestMessagingKeys(t *testing.T) {
 			DefaultGroupKeyName(),
 			senderPrivBytes,
 		}
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, senderMember)
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, senderMember)
 		m0Member := &AccessGroupMember{
 			NewPublicKey(m0PubKey),
 			NewGroupKeyName([]byte("totally-random-key2")),
 			senderPrivBytes,
 		}
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, m0Member)
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, m0Member)
 		m2Member := &AccessGroupMember{
 			NewPublicKey(m2PubKey),
 			BaseGroupKeyName(),
 			senderPrivBytes,
 		}
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, m2Member)
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, m2Member)
 		m3Member := &AccessGroupMember{
 			NewPublicKey(m3PubKey),
 			DefaultGroupKeyName(),
 			senderPrivBytes,
 		}
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, m3Member)
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, m3Member)
 		// And finally create the group chat.
 		require.Equal(false, _verifyMessagingKey(testMeta, &m1PublicKey, entry))
 		_messagingKeyWithTestMeta(
@@ -1581,7 +1581,7 @@ func TestMessagingKeys(t *testing.T) {
 			entry.AccessPublicKey[:],
 			randomGroupKeyName,
 			[]byte{},
-			entry.AccessGroupMembers,
+			entry.DEPRECATED_AccessGroupMembers,
 			nil)
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, &m1PublicKey, entry))
@@ -1591,28 +1591,28 @@ func TestMessagingKeys(t *testing.T) {
 		// Recipient entries have the group owner added as a recipient when fetched from the DB.
 		// This is convenient in case we want to fetch the full group messaging key entry as a recipient.
 		keyEntriesAdded[senderPublicKey] = append(keyEntriesAdded[senderPublicKey], &AccessGroupEntry{
-			GroupOwnerPublicKey: &m1PublicKey,
-			AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
-			AccessGroupKeyName:  NewGroupKeyName(randomGroupKeyName),
-			AccessGroupMembers:  append([]*AccessGroupMember{}, senderMember),
+			GroupOwnerPublicKey:           &m1PublicKey,
+			AccessPublicKey:               NewPublicKey(entry.AccessPublicKey[:]),
+			AccessGroupKeyName:            NewGroupKeyName(randomGroupKeyName),
+			DEPRECATED_AccessGroupMembers: append([]*AccessGroupMember{}, senderMember),
 		})
 		keyEntriesAdded[m0PublicKey] = append(keyEntriesAdded[m0PublicKey], &AccessGroupEntry{
-			GroupOwnerPublicKey: &m1PublicKey,
-			AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
-			AccessGroupKeyName:  NewGroupKeyName(randomGroupKeyName),
-			AccessGroupMembers:  append([]*AccessGroupMember{}, m0Member),
+			GroupOwnerPublicKey:           &m1PublicKey,
+			AccessPublicKey:               NewPublicKey(entry.AccessPublicKey[:]),
+			AccessGroupKeyName:            NewGroupKeyName(randomGroupKeyName),
+			DEPRECATED_AccessGroupMembers: append([]*AccessGroupMember{}, m0Member),
 		})
 		keyEntriesAdded[m2PublicKey] = append(keyEntriesAdded[m2PublicKey], &AccessGroupEntry{
-			GroupOwnerPublicKey: &m1PublicKey,
-			AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
-			AccessGroupKeyName:  NewGroupKeyName(randomGroupKeyName),
-			AccessGroupMembers:  append([]*AccessGroupMember{}, m2Member),
+			GroupOwnerPublicKey:           &m1PublicKey,
+			AccessPublicKey:               NewPublicKey(entry.AccessPublicKey[:]),
+			AccessGroupKeyName:            NewGroupKeyName(randomGroupKeyName),
+			DEPRECATED_AccessGroupMembers: append([]*AccessGroupMember{}, m2Member),
 		})
 		keyEntriesAdded[m3PublicKey] = append(keyEntriesAdded[m3PublicKey], &AccessGroupEntry{
-			GroupOwnerPublicKey: &m1PublicKey,
-			AccessPublicKey:     NewPublicKey(entry.AccessPublicKey[:]),
-			AccessGroupKeyName:  NewGroupKeyName(randomGroupKeyName),
-			AccessGroupMembers:  append([]*AccessGroupMember{}, m3Member),
+			GroupOwnerPublicKey:           &m1PublicKey,
+			AccessPublicKey:               NewPublicKey(entry.AccessPublicKey[:]),
+			AccessGroupKeyName:            NewGroupKeyName(randomGroupKeyName),
+			DEPRECATED_AccessGroupMembers: append([]*AccessGroupMember{}, m3Member),
 		})
 	}
 
@@ -1782,12 +1782,12 @@ func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKe
 	if groupOwner {
 		fetchKey = expectedEntry.SenderPublicKey
 	}
-	messagingKey := utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(&AccessGroupKey{
+	messagingKey := utxoView.GetAccessGroupKeyToAccessGroupEntryMapping(&AccessGroupKey{
 		*fetchKey,
 		*expectedEntry.RecipientMessagingGroupKeyName,
 	})
 	if messagingKey != nil {
-		for _, recipient := range messagingKey.AccessGroupMembers {
+		for _, recipient := range messagingKey.DEPRECATED_AccessGroupMembers {
 			if _, exists := addedEntries[*recipient.GroupMemberPublicKey]; !exists {
 				expectedMessageEntries[*recipient.GroupMemberPublicKey] = append(expectedMessageEntries[*recipient.GroupMemberPublicKey], expectedEntry)
 			}
@@ -2173,7 +2173,7 @@ func TestGroupMessages(t *testing.T) {
 			entry.AccessPublicKey[:],
 			addingMembersKey,
 			[]byte{},
-			entry.AccessGroupMembers,
+			entry.DEPRECATED_AccessGroupMembers,
 			nil)
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, m1PublicKey, entry))
@@ -2226,7 +2226,7 @@ func TestGroupMessages(t *testing.T) {
 			entry.AccessPublicKey[:],
 			addingMembersKey,
 			[]byte{},
-			entry.AccessGroupMembers,
+			entry.DEPRECATED_AccessGroupMembers,
 			nil)
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, m1PublicKey, entry))
@@ -2256,7 +2256,7 @@ func TestGroupMessages(t *testing.T) {
 		//  m1: 2
 
 		// Now add m0 to the group.
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			m0PublicKey,
 			BaseGroupKeyName(),
 			senderPrivBytes,
@@ -2268,7 +2268,7 @@ func TestGroupMessages(t *testing.T) {
 			entry.AccessPublicKey[:],
 			addingMembersKey,
 			[]byte{},
-			entry.AccessGroupMembers,
+			entry.DEPRECATED_AccessGroupMembers,
 			nil)
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, m1PublicKey, entry))
@@ -2306,7 +2306,7 @@ func TestGroupMessages(t *testing.T) {
 		testMessage3 := []byte{1, 2, 5, 4, 5, 6, 7, 8, 15, 22, 27}
 		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
-		messagingKey := utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(&AccessGroupKey{
+		messagingKey := utxoView.GetAccessGroupKeyToAccessGroupEntryMapping(&AccessGroupKey{
 			*recipientPublicKey,
 			*DefaultGroupKeyName(),
 		})
@@ -2391,22 +2391,22 @@ func TestGroupMessages(t *testing.T) {
 		// We can add any messaging keys as recipients, but we'll just add base keys for simplicity,
 		// since it's not what we're testing here.
 		// We're making a group chat with: (sender, recipient, m0, m2).
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			senderPublicKey,
 			BaseGroupKeyName(),
 			encrypt(privBytes, senderPkBytes),
 		})
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			recipientPublicKey,
 			BaseGroupKeyName(),
 			encrypt(privBytes, recipientPkBytes),
 		})
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			m0PublicKey,
 			BaseGroupKeyName(),
 			encrypt(privBytes, m0PubKey),
 		})
-		entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+		entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 			m2PublicKey,
 			BaseGroupKeyName(),
 			encrypt(privBytes, m2PubKey),
@@ -2419,7 +2419,7 @@ func TestGroupMessages(t *testing.T) {
 			entry.AccessPublicKey[:],
 			gangKey,
 			[]byte{},
-			entry.AccessGroupMembers,
+			entry.DEPRECATED_AccessGroupMembers,
 			nil)
 		// Everything should pass verification.
 		require.Equal(true, _verifyMessagingKey(testMeta, senderPublicKey, entry))
@@ -2434,7 +2434,7 @@ func TestGroupMessages(t *testing.T) {
 		var m0PrivBytes []byte
 		for _, groupEntry := range accessGroupEntries {
 			if reflect.DeepEqual(groupEntry.AccessPublicKey[:], entry.AccessPublicKey[:]) {
-				m0PrivBytes = decrypt(groupEntry.AccessGroupMembers[0].EncryptedKey, m0PrivKey)
+				m0PrivBytes = decrypt(groupEntry.DEPRECATED_AccessGroupMembers[0].EncryptedKey, m0PrivKey)
 				break
 			}
 		}
@@ -2515,7 +2515,7 @@ func TestGroupMessages(t *testing.T) {
 			var encryptedKey []byte
 			for _, key := range msgKeys {
 				if reflect.DeepEqual(key.AccessPublicKey[:], entry.AccessPublicKey[:]) {
-					encryptedKey = key.AccessGroupMembers[0].EncryptedKey
+					encryptedKey = key.DEPRECATED_AccessGroupMembers[0].EncryptedKey
 					break
 				}
 			}
@@ -2573,7 +2573,7 @@ func TestGroupMessages(t *testing.T) {
 			NewGroupKeyName(gangKey),
 			nil,
 		}
-		_helpConnectPrivateMessageWithParty(testMeta, m0Priv, muteMessageEntry, RuleErrorMessagingMemberMuted)
+		_helpConnectPrivateMessageWithParty(testMeta, m0Priv, muteMessageEntry, RuleErrorAccessMemberMuted)
 		// m0 is currently muted and hence:
 		// The message should NOT be successfully added, so we STILL have:
 		// m0 -> group(sender, recipient, m0, m2)
@@ -2625,7 +2625,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				muteList,
 				extraData,
-				RuleErrorMessagingMemberAlreadyMuted)
+				RuleErrorAccessMemberAlreadyMuted)
 		}
 
 		// UNMUTING TESTS
@@ -2721,7 +2721,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				unmuteList,
 				extraData,
-				RuleErrorMessagingMemberAlreadyUnmuted)
+				RuleErrorAccessMemberAlreadyUnmuted)
 		}
 
 		{
@@ -2744,7 +2744,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				unmuteList,
 				extraData,
-				RuleErrorMessagingMemberNotInGroup)
+				RuleErrorAccessMemberNotInGroup)
 		}
 		{
 			// Let us now try to unmute m1 who is not part of the group
@@ -2766,7 +2766,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				unmuteList,
 				extraData,
-				RuleErrorMessagingMemberNotInGroup)
+				RuleErrorAccessMemberNotInGroup)
 		}
 
 		{
@@ -2790,7 +2790,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				muteList,
 				extraData,
-				RuleErrorMessagingGroupOwnerMutingSelf)
+				RuleErrorAccessGroupOwnerMutingSelf)
 		}
 
 		{
@@ -2814,7 +2814,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				muteList,
 				extraData,
-				RuleErrorMessagingGroupOwnerUnmutingSelf)
+				RuleErrorAccessGroupOwnerUnmutingSelf)
 		}
 
 		{
@@ -2841,7 +2841,7 @@ func TestGroupMessages(t *testing.T) {
 				[]byte{},
 				muteList,
 				extraData,
-				RuleErrorMessagingMemberAlreadyExists)
+				RuleErrorAccessMemberAlreadyExists)
 			// reset to 0 for further testing
 			params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
 		}
@@ -2895,7 +2895,7 @@ func TestGroupMessages(t *testing.T) {
 			// Now let's try to send a message to the group with DeSoAccessGroupsBlockHeight set to 0
 			// This should fail since the member is muted.
 			params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
-			_helpConnectPrivateMessageWithParty(testMeta, m2Priv, muteMessageEntry, RuleErrorMessagingMemberMuted)
+			_helpConnectPrivateMessageWithParty(testMeta, m2Priv, muteMessageEntry, RuleErrorAccessMemberMuted)
 			// m2 is currently muted, so the txn should not complete muting should work due to gating of the check-if-muted
 			// functionality. Note: This is just a sanity check and this probably won't happen on mainnet as the blockHeight
 			// does not suddenly decrease below DeSoAccessGroupsBlockHeight after a muting txn:
@@ -3156,27 +3156,27 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// We can add any messaging keys as recipients, but we'll just add base keys for simplicity,
 			// since it's not what we're testing here.
 			// We're making a group chat with: (m0, m1, m2, m3).
-			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+			entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 				m0PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m0PubKey),
 			})
-			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+			entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
-			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+			entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 				m2PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m2PubKey),
 			})
-			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+			entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 				m3PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m3PubKey),
 			})
-			recipients := entry.AccessGroupMembers
+			recipients := entry.DEPRECATED_AccessGroupMembers
 			extraData := make(map[string][]byte)
 			extraData = nil
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
@@ -3293,7 +3293,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberMuted)
 		}
 
 		{
@@ -3313,7 +3313,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyMuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberAlreadyMuted)
 		}
 
 		{
@@ -3382,7 +3382,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyUnmuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberAlreadyUnmuted)
 		}
 
 		{
@@ -3402,7 +3402,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberNotInGroup)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberNotInGroup)
 		}
 
 		{
@@ -3422,7 +3422,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberNotInGroup)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberNotInGroup)
 		}
 
 		{
@@ -3442,7 +3442,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingGroupOwnerMutingSelf)
+			expectedErrors = append(expectedErrors, RuleErrorAccessGroupOwnerMutingSelf)
 		}
 
 		{
@@ -3462,7 +3462,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingGroupOwnerUnmutingSelf)
+			expectedErrors = append(expectedErrors, RuleErrorAccessGroupOwnerUnmutingSelf)
 		}
 
 		{
@@ -3482,7 +3482,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingGroupDoesntExist) // This should fail because m1 is not the group owner.
+			expectedErrors = append(expectedErrors, RuleErrorAccessGroupDoesntExist) // This should fail because m1 is not the group owner.
 		}
 
 		{
@@ -3599,7 +3599,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberMuted)
 		}
 
 		{
@@ -3628,7 +3628,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m2Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberMuted)
 		}
 
 		{
@@ -3657,7 +3657,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m3Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberMuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberMuted)
 		}
 
 		{
@@ -3819,7 +3819,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyMuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberAlreadyMuted)
 		}
 
 		{
@@ -3844,7 +3844,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyUnmuted)
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberAlreadyUnmuted)
 		}
 
 		{
@@ -3874,27 +3874,27 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			// We can add any messaging keys as recipients, but we'll just add base keys for simplicity,
 			// since it's not what we're testing here.
 			// We're making a group chat with: (m0, m1, m2, m3).
-			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+			entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 				m0PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m0PubKey),
 			})
-			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+			entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 				m1PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m1PubKey),
 			})
-			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+			entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 				m2PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m2PubKey),
 			})
-			entry.AccessGroupMembers = append(entry.AccessGroupMembers, &AccessGroupMember{
+			entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, &AccessGroupMember{
 				m3PublicKey,
 				BaseGroupKeyName(),
 				encrypt(privBytes, m3PubKey),
 			})
-			recipients := entry.AccessGroupMembers
+			recipients := entry.DEPRECATED_AccessGroupMembers
 			extraData := make(map[string][]byte)
 			extraData = nil
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreateMessagingKeyTxn(
@@ -3982,7 +3982,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyExists) // Need to change this to reflect error of muting before block height. Should be RuleErrorMessagingMutingBeforeBlockHeight
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberAlreadyExists) // Need to change this to reflect error of muting before block height. Should be RuleErrorMessagingMutingBeforeBlockHeight
 		}
 
 		{
@@ -4031,7 +4031,7 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
 			txns = append(txns, txn)
-			expectedErrors = append(expectedErrors, RuleErrorMessagingMemberAlreadyExists) // Need to change this to reflect error of muting before block height. Should be RuleErrorMessagingMutingBeforeBlockHeight
+			expectedErrors = append(expectedErrors, RuleErrorAccessMemberAlreadyExists) // Need to change this to reflect error of muting before block height. Should be RuleErrorMessagingMutingBeforeBlockHeight
 		}
 	}
 

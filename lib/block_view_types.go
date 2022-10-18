@@ -78,6 +78,8 @@ const (
 	EncoderTypeGroupMembershipKey
 	EncoderTypeGroupEnumerationKey
 	EncoderTypeGroupMemberAttributesKey
+	EncoderTypeGroupEntryAttributesKey
+	EncoderTypeAttributeEntry
 	EncoderTypeAccessGroupEntry
 	EncoderTypeAccessGroupMember
 	EncoderTypeForbiddenPubKeyEntry
@@ -158,6 +160,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &GroupEnumerationKey{}
 	case EncoderTypeGroupMemberAttributesKey:
 		return &GroupMemberAttributesKey{}
+	case EncoderTypeGroupEntryAttributesKey:
+		return &GroupEntryAttributesKey{}
+	case EncoderTypeAttributeEntry:
+		return &AttributeEntry{}
 	case EncoderTypeAccessGroupEntry:
 		return &AccessGroupEntry{}
 	case EncoderTypeAccessGroupMember:
@@ -2173,6 +2179,120 @@ func (key *GroupMemberAttributesKey) String() string {
 		key.GroupOwnerPublicKey, key.GroupKeyName, key.GroupMemberPublicKey, key.AttributeType)
 }
 
+// GroupEntryAttributesKey is used to index group entry attributes for a user in PrefixGroupEntryAttributesIndex
+type GroupEntryAttributesKey struct {
+	GroupOwnerPublicKey PublicKey
+	GroupKeyName        GroupKeyName
+	AttributeType       AccessGroupEntryAttributeType
+}
+
+func (key *GroupEntryAttributesKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, key.GroupOwnerPublicKey[:]...)
+	data = append(data, key.GroupKeyName[:]...)
+	data = append(data, []byte{byte(key.AttributeType)}...)
+	return data
+}
+
+func (key *GroupEntryAttributesKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	groupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
+		key.GroupOwnerPublicKey = *groupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupEntryAttributesKey.Decode: Problem reading "+
+			"GroupOwnerPublicKey")
+	}
+
+	groupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
+		key.GroupKeyName = *groupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupEntryAttributesKey.Decode: Problem reading "+
+			"GroupKeyName")
+	}
+
+	attributeType, err := rr.ReadByte()
+	if err != nil {
+		return errors.Wrapf(err, "GroupEntryAttributesKey.Decode: Problem reading "+
+			"AttributeType")
+	}
+	key.AttributeType = AccessGroupEntryAttributeType(attributeType)
+
+	return nil
+}
+
+func (key *GroupEntryAttributesKey) GetVersionByte(blockHeight uint64) byte {
+	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
+}
+
+func (key *GroupEntryAttributesKey) GetEncoderType() EncoderType {
+	return EncoderTypeGroupEntryAttributesKey
+}
+
+func NewGroupEntryAttributesKey(groupOwnerPublicKey *PublicKey, groupKeyName []byte, attributeType AccessGroupEntryAttributeType) *GroupEntryAttributesKey {
+	return &GroupEntryAttributesKey{
+		GroupOwnerPublicKey: *groupOwnerPublicKey,
+		GroupKeyName:        *NewGroupKeyName(groupKeyName),
+		AttributeType:       attributeType,
+	}
+}
+
+func (key *GroupEntryAttributesKey) String() string {
+	return fmt.Sprintf("<GroupOwnerPublicKey: %v, GroupKeyName: %v, AttributeType: %v>",
+		key.GroupOwnerPublicKey, key.GroupKeyName, key.AttributeType)
+}
+
+// AttributeEntry is used to store the status and value of an attribute
+type AttributeEntry struct {
+	IsSet bool
+	Value []byte
+}
+
+func (entry *AttributeEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, BoolToByte(entry.IsSet))
+	data = append(data, entry.Value...)
+	return data
+}
+
+func (entry *AttributeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	isSet, err := ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AttributeEntry.Decode: Problem reading "+
+			"IsSet")
+	}
+	entry.IsSet = isSet
+
+	value, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AttributeEntry.Decode: Problem reading "+
+			"Value")
+	}
+	entry.Value = value
+
+	return nil
+}
+
+func (entry *AttributeEntry) GetVersionByte(blockHeight uint64) byte {
+	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
+}
+
+func (entry *AttributeEntry) GetEncoderType() EncoderType {
+	return EncoderTypeAttributeEntry
+}
+
+func NewAttributeEntry(isSet bool, value []byte) *AttributeEntry {
+	return &AttributeEntry{
+		IsSet: isSet,
+		Value: value,
+	}
+}
+
+func (entry *AttributeEntry) String() string {
+	return fmt.Sprintf("<IsSet: %v, Value: %v>",
+		entry.IsSet, entry.Value)
+}
+
 // AccessGroupEntry is used to update messaging keys for a user, this was added in
 // the DeSo V3 Messages protocol.
 type AccessGroupEntry struct {
@@ -2190,10 +2310,10 @@ type AccessGroupEntry struct {
 	// The standard Messages V3 key is named "default-key"
 	AccessGroupKeyName *GroupKeyName
 
-	// AccessGroupMembers is a list of recipients in a group chat. Messaging keys can have
+	// DEPRECATED_AccessGroupMembers is a list of recipients in a group chat. Messaging keys can have
 	// multiple recipients, where the encrypted private key of the messaging public key
 	// is given to all group members.
-	AccessGroupMembers []*AccessGroupMember // Deprecated
+	DEPRECATED_AccessGroupMembers []*AccessGroupMember // Deprecated
 
 	// ExtraData is an arbitrary key value map
 	ExtraData map[string][]byte
@@ -2209,11 +2329,11 @@ func NewAccessGroupEntry(groupOwnerPublicKey *PublicKey, accessPublicKey *Public
 	messagingGroupMembers []*AccessGroupMember, extraData map[string][]byte, blockHeight uint64) *AccessGroupEntry {
 
 	accessGroupEntry := AccessGroupEntry{
-		GroupOwnerPublicKey: groupOwnerPublicKey,
-		AccessPublicKey:     accessPublicKey,
-		AccessGroupKeyName:  accessGroupKeyName,
-		AccessGroupMembers:  messagingGroupMembers,
-		ExtraData:           extraData,
+		GroupOwnerPublicKey:           groupOwnerPublicKey,
+		AccessPublicKey:               accessPublicKey,
+		AccessGroupKeyName:            accessGroupKeyName,
+		DEPRECATED_AccessGroupMembers: messagingGroupMembers,
+		ExtraData:                     extraData,
 	}
 
 	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
@@ -2257,13 +2377,13 @@ func (entry *AccessGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, skip
 	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.GroupOwnerPublicKey, skipMetadata...)...)
 	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.AccessPublicKey, skipMetadata...)...)
 	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.AccessGroupKeyName, skipMetadata...)...)
-	// DeSoAccessGroupsMigration removes the need for AccessGroupMembers field from AccessGroupEntry.
+	// DeSoAccessGroupsMigration removes the need for DEPRECATED_AccessGroupMembers field from AccessGroupEntry.
 	// Hence, we only encode the field if the migration has not been triggered.
 	if !MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
-		entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.AccessGroupMembers)))...)
-		// We sort the AccessGroupMembers because they can be added while iterating over
+		entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.DEPRECATED_AccessGroupMembers)))...)
+		// We sort the DEPRECATED_AccessGroupMembers because they can be added while iterating over
 		// a map, which could lead to inconsistent orderings across nodes when encoding.
-		members := sortAccessGroupMembers(entry.AccessGroupMembers)
+		members := sortAccessGroupMembers(entry.DEPRECATED_AccessGroupMembers)
 		for ii := 0; ii < len(members); ii++ {
 			entryBytes = append(entryBytes, EncodeToBytes(blockHeight, members[ii], skipMetadata...)...)
 		}
@@ -2296,7 +2416,7 @@ func (entry *AccessGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *
 		return errors.Wrapf(err, "AccessGroupEntry.Decode: Problem decoding messagingKeyName")
 	}
 
-	// DeSoAccessGroupsMigration removes the need for AccessGroupMembers field from AccessGroupEntry.
+	// DeSoAccessGroupsMigration removes the need for DEPRECATED_AccessGroupMembers field from AccessGroupEntry.
 	// Hence, we only decode the field if the migration has not been triggered.
 	if !MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
 		recipientsLen, err := ReadUvarint(rr)
@@ -2306,7 +2426,7 @@ func (entry *AccessGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *
 		for ; recipientsLen > 0; recipientsLen-- {
 			recipient := &AccessGroupMember{}
 			if exist, err := DecodeFromBytes(recipient, rr); exist && err == nil {
-				entry.AccessGroupMembers = append(entry.AccessGroupMembers, recipient)
+				entry.DEPRECATED_AccessGroupMembers = append(entry.DEPRECATED_AccessGroupMembers, recipient)
 			} else if err != nil {
 				return errors.Wrapf(err, "AccessGroupEntry.Decode: Problem decoding recipient")
 			}
