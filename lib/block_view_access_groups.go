@@ -123,8 +123,8 @@ func (bav *UtxoView) GetAccessGroupKeyToAccessGroupEntryMapping(
 	//
 	//	memberEntries := []*AccessGroupMember{}
 	//	if err := gob.NewDecoder(
-	//		bytes.NewReader(pgMessagingGroup.AccessGroupMembers)).Decode(&memberEntries); err != nil {
-	//		glog.Errorf("Error decoding AccessGroupMembers from DB: %v", err)
+	//		bytes.NewReader(pgMessagingGroup.DEPRECATED_AccessGroupMembers)).Decode(&memberEntries); err != nil {
+	//		glog.Errorf("Error decoding DEPRECATED_AccessGroupMembers from DB: %v", err)
 	//		return nil
 	//	}
 	//
@@ -132,7 +132,7 @@ func (bav *UtxoView) GetAccessGroupKeyToAccessGroupEntryMapping(
 	//		GroupOwnerPublicKey:   pgMessagingGroup.GroupOwnerPublicKey,
 	//		AccessPublicKey:    pgMessagingGroup.AccessPublicKey,
 	//		AccessGroupKeyName: pgMessagingGroup.AccessGroupKeyName,
-	//		AccessGroupMembers: memberEntries,
+	//		DEPRECATED_AccessGroupMembers: memberEntries,
 	//	}
 	//	bav._setAccessGroupKeyToAccessGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, accessGroupEntry)
 	//	return accessGroupEntry
@@ -217,7 +217,7 @@ func (bav *UtxoView) GetAccessGroupEntriesForUser(ownerPublicKey []byte, blockHe
 				accessKeysMap[accessKey] = accessKeyEntry
 			}
 		} else {
-			for _, recipient := range accessKeyEntry.AccessGroupMembers {
+			for _, recipient := range accessKeyEntry.DEPRECATED_AccessGroupMembers {
 				if reflect.DeepEqual(recipient.GroupMemberPublicKey[:], ownerPublicKey) {
 					// If user is a recipient of a group chat, we need to add a modified messaging entry.
 					accessKeysMap[accessKey] = accessKeyEntry
@@ -529,7 +529,7 @@ func setMessageEntryRotatingVersion(messageEntry *MessageEntry, blockHeight uint
 	}
 }
 
-func (bav *UtxoView) _connectMessagingGroup(
+func (bav *UtxoView) _connectAccessGroupCreate(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
@@ -555,13 +555,13 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// Make sure DeSo V3 messages are live.
 	if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorAccessKeyBeforeBlockHeight, "_connectMessagingGroup: "+
+			RuleErrorAccessKeyBeforeBlockHeight, "_connectAccessGroupCreate: "+
 				"Problem connecting messaging key, too early block height")
 	}
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
-		return 0, 0, nil, fmt.Errorf("_connectMessagingGroup: called with bad TxnType %s",
+	if txn.TxnMeta.GetTxnType() != TxnTypeAccessGroupCreate {
+		return 0, 0, nil, fmt.Errorf("_connectAccessGroupCreate: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
 	txMeta := txn.TxnMeta.(*AccessGroupMetadata)
@@ -569,26 +569,26 @@ func (bav *UtxoView) _connectMessagingGroup(
 	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
 	if EqualGroupKeyName(NewGroupKeyName(txMeta.AccessGroupKeyName), BaseGroupKeyName()) {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorAccessKeyNameCannotBeZeros, "_connectMessagingGroup: "+
+			RuleErrorAccessKeyNameCannotBeZeros, "_connectAccessGroupCreate: "+
 				"Cannot set a zeros-only key name?")
 	}
 
 	// Make sure that the messaging public key and the group key name have the correct format.
 	if err := ValidateGroupPublicKeyAndName(txMeta.AccessPublicKey, txMeta.AccessGroupKeyName); err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: "+
 			"Problem parsing public key: %v", txMeta.AccessPublicKey)
 	}
 
 	// Sanity-check that transaction public key is valid.
 	if err := IsByteArrayValidPublicKey(txn.PublicKey); err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: "+
 			"error %v", RuleErrorAccessOwnerPublicKeyInvalid)
 	}
 
 	// Sanity-check that we're not trying to add a messaging public key identical to the ownerPublicKey.
 	if reflect.DeepEqual(txMeta.AccessPublicKey, txn.PublicKey) {
 		return 0, 0, nil, errors.Wrapf(RuleErrorAccessPublicKeyCannotBeOwnerKey,
-			"_connectMessagingGroup: messaging public key and txn public key can't be the same")
+			"_connectAccessGroupCreate: messaging public key and txn public key can't be the same")
 	}
 
 	// We now have a valid messaging public key, key name, and owner public key.
@@ -603,7 +603,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 			// All other keys can be registered by derived keys.
 			bytes := append(txMeta.AccessPublicKey, txMeta.AccessGroupKeyName...)
 			if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature, blockHeight, bav.Params); err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: "+
 					"Problem verifying signature bytes, error: %v", RuleErrorAccessGroupSignatureInvalid)
 			}
 		}
@@ -614,7 +614,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: ")
+		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: ")
 	}
 
 	// We have validated all information. At this point the inputs and outputs have been processed.
@@ -655,7 +655,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 	} else {
 		messagingGroupOperation, err = GetAccessGroupOperation(txn)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+			return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: "+
 				"Problem getting messaging group operation")
 		}
 	}
@@ -666,7 +666,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 	if existingEntry != nil && !existingEntry.isDeleted {
 		if !reflect.DeepEqual(existingEntry.AccessPublicKey[:], messagingPublicKey[:]) {
 			return 0, 0, nil, errors.Wrapf(RuleErrorAccessPublicKeyCannotBeDifferent,
-				"_connectMessagingGroup: Messaging public key cannot differ from the existing entry")
+				"_connectAccessGroupCreate: Messaging public key cannot differ from the existing entry")
 		}
 	}
 
@@ -702,14 +702,14 @@ func (bav *UtxoView) _connectMessagingGroup(
 				// We make sure we'll add at least one messaging member in the transaction.
 				if len(txMeta.AccessGroupMembers) == 0 {
 					return 0, 0, nil, errors.Wrapf(RuleErrorAccessKeyDoesntAddMembers,
-						"_connectMessagingGroup: Can't update a messaging key without any new recipients")
+						"_connectAccessGroupCreate: Can't update a messaging key without any new recipients")
 				}
 
 				// Now iterate through all existing members and make sure there are no overlaps.
-				for _, existingMember := range existingEntry.AccessGroupMembers {
+				for _, existingMember := range existingEntry.DEPRECATED_AccessGroupMembers {
 					if _, exists := existingMembers[*existingMember.GroupMemberPublicKey]; exists {
 						return 0, 0, nil, errors.Wrapf(
-							RuleErrorAccessMemberAlreadyExists, "_connectMessagingGroup: "+
+							RuleErrorAccessMemberAlreadyExists, "_connectAccessGroupCreate: "+
 								"Error, member already exists (%v)", existingMember.GroupMemberPublicKey)
 					}
 
@@ -727,7 +727,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 				// zeros or G, the elliptic curve group element, which is also OK.
 				if len(messagingMember.EncryptedKey) < btcec.PrivKeyBytesLen {
 					return 0, 0, nil, errors.Wrapf(
-						RuleErrorAccessMemberEncryptedKeyTooShort, "_connectMessagingGroup: "+
+						RuleErrorAccessMemberEncryptedKeyTooShort, "_connectAccessGroupCreate: "+
 							"Problem validating messagingMember encrypted key for messagingMember (%v): Encrypted "+
 							"key length %v less than the minimum allowed %v. If this is an unencrypted group "+
 							"member, please set %v zeros for this value", messagingMember.GroupMemberPublicKey[:],
@@ -736,7 +736,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 				// Make sure the messagingMember public key and messaging key name are valid.
 				if err := ValidateGroupPublicKeyAndName(messagingMember.GroupMemberPublicKey[:], messagingMember.GroupMemberKeyName[:]); err != nil {
-					return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+					return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: "+
 						"Problem validating public key or messaging key for messagingMember (%v)", messagingMember.GroupMemberPublicKey[:])
 				}
 
@@ -748,13 +748,13 @@ func (bav *UtxoView) _connectMessagingGroup(
 				// The messaging key has to exist and cannot be deleted.
 				if memberGroupEntry == nil || memberGroupEntry.isDeleted {
 					return 0, 0, nil, errors.Wrapf(
-						RuleErrorAccessMemberKeyDoesntExist, "_connectMessagingGroup: "+
+						RuleErrorAccessMemberKeyDoesntExist, "_connectAccessGroupCreate: "+
 							"Problem verifying messaing key for messagingMember (%v)", messagingMember.GroupMemberPublicKey[:])
 				}
 				// The messagingMember can't be already added to the list of existing members.
 				if _, exists := existingMembers[*messagingMember.GroupMemberPublicKey]; exists {
 					return 0, 0, nil, errors.Wrapf(
-						RuleErrorAccessMemberAlreadyExists, "_connectMessagingGroup: "+
+						RuleErrorAccessMemberAlreadyExists, "_connectAccessGroupCreate: "+
 							"Error, messagingMember already exists (%v)", messagingMember.GroupMemberPublicKey[:])
 				}
 				// Add the messagingMember to our helper structs.
@@ -773,7 +773,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 				// zeros or G, the elliptic curve group element, which is also OK.
 				if len(messagingMember.EncryptedKey) < btcec.PrivKeyBytesLen {
 					return 0, 0, nil, errors.Wrapf(
-						RuleErrorAccessMemberEncryptedKeyTooShort, "_connectMessagingGroup: "+
+						RuleErrorAccessMemberEncryptedKeyTooShort, "_connectAccessGroupCreate: "+
 							"Problem validating messagingMember encrypted key for messagingMember (%v): Encrypted "+
 							"key length %v less than the minimum allowed %v. If this is an unencrypted group "+
 							"member, please set %v zeros for this value", messagingMember.GroupMemberPublicKey[:],
@@ -782,7 +782,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 				// Make sure the messagingMember public key and messaging key name are valid.
 				if err := ValidateGroupPublicKeyAndName(messagingMember.GroupMemberPublicKey[:], messagingMember.GroupMemberKeyName[:]); err != nil {
-					return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+					return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: "+
 						"Problem validating public key or messaging key for messagingMember (%v)", messagingMember.GroupMemberPublicKey[:])
 				}
 
@@ -794,7 +794,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 				// The messaging key has to exist and cannot be deleted.
 				if memberGroupEntry == nil || memberGroupEntry.isDeleted {
 					return 0, 0, nil, errors.Wrapf(
-						RuleErrorAccessMemberKeyDoesntExist, "_connectMessagingGroup: "+
+						RuleErrorAccessMemberKeyDoesntExist, "_connectAccessGroupCreate: "+
 							"Problem verifying messaging key for messagingMember (%v)", messagingMember.GroupMemberPublicKey[:])
 				}
 
@@ -807,7 +807,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// Muting members assumes the group was already created.
 		if existingEntry == nil || existingEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupDoesntExist,
-				"_connectMessagingGroup: Can't mute members for a non-existent group")
+				"_connectAccessGroupCreate: Can't mute members for a non-existent group")
 		}
 		// MUTING/UNMUTING functionality notes:
 		// In DeSo V3 Messages, Group Chat Owners can now mute or unmute members. This essentially acts like a
@@ -825,24 +825,24 @@ func (bav *UtxoView) _connectMessagingGroup(
 			// Make sure GroupOwner is not muting herself
 			if reflect.DeepEqual(newlyMutedMember.GroupMemberPublicKey[:], existingEntry.GroupOwnerPublicKey[:]) {
 				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupOwnerMutingSelf,
-					"_connectMessagingGroup: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
+					"_connectAccessGroupCreate: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
 			}
 			// Make sure we are muting a member that exists in the group.
 			member := bav.GetMessagingMember(newlyMutedMember.GroupMemberPublicKey, existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, blockHeight)
 			if member == nil {
 				return 0, 0, nil, errors.Wrapf(RuleErrorAccessMemberNotInGroup,
-					"_connectMessagingGroup: Can't mute a non-existent member (%v)", newlyMutedMember.GroupMemberPublicKey[:])
+					"_connectAccessGroupCreate: Can't mute a non-existent member (%v)", newlyMutedMember.GroupMemberPublicKey[:])
 			}
 
 			// Get group member attribute entry for this member.
 			attributeEntry, err := bav.getGroupMemberAttributeEntry(existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, newlyMutedMember.GroupMemberPublicKey, AccessGroupMemberAttributeIsMuted)
 			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: Problem getting group member attribute entry")
+				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: Problem getting group member attribute entry")
 			}
 			// Check if the member is already muted.
 			if attributeEntry != nil && attributeEntry.IsSet {
 				return 0, 0, nil, errors.Wrapf(RuleErrorAccessMemberAlreadyMuted,
-					"_connectMessagingGroup: Can't mute a member that's already muted")
+					"_connectAccessGroupCreate: Can't mute a member that's already muted")
 			}
 
 			// Add member to newMuteList
@@ -853,7 +853,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// Unmuting members assumes the group was already created.
 		if existingEntry == nil || existingEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupDoesntExist,
-				"_connectMessagingGroup: Can't mute members for a non-existent group")
+				"_connectAccessGroupCreate: Can't mute members for a non-existent group")
 		}
 
 		for _, newlyUnmutedMember := range txMeta.AccessGroupMembers {
@@ -862,24 +862,24 @@ func (bav *UtxoView) _connectMessagingGroup(
 			member := bav.GetMessagingMember(newlyUnmutedMember.GroupMemberPublicKey, existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, blockHeight)
 			if member == nil {
 				return 0, 0, nil, errors.Wrapf(RuleErrorAccessMemberNotInGroup,
-					"_connectMessagingGroup: Can't unmute a non-existent member (%v)", newlyUnmutedMember.GroupMemberPublicKey[:])
+					"_connectAccessGroupCreate: Can't unmute a non-existent member (%v)", newlyUnmutedMember.GroupMemberPublicKey[:])
 			}
 
 			// GroupOwner unmuting herself is invalid because GroupOwner can never be muted in the first place
 			if reflect.DeepEqual(newlyUnmutedMember.GroupMemberPublicKey[:], existingEntry.GroupOwnerPublicKey[:]) {
 				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupOwnerUnmutingSelf,
-					"_connectMessagingGroup: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
+					"_connectAccessGroupCreate: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
 			}
 
 			// Get group member attribute entry for this member.
 			attributeEntry, err := bav.getGroupMemberAttributeEntry(existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, newlyUnmutedMember.GroupMemberPublicKey, AccessGroupMemberAttributeIsMuted)
 			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: Problem getting group member attribute entry")
+				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: Problem getting group member attribute entry")
 			}
 			// Check if the member is already unmuted.
 			if attributeEntry == nil || !attributeEntry.IsSet {
 				return 0, 0, nil, errors.Wrapf(RuleErrorAccessMemberAlreadyUnmuted,
-					"_connectMessagingGroup: Can't unmute a member that's already unmuted")
+					"_connectAccessGroupCreate: Can't unmute a member that's already unmuted")
 			}
 
 			// Add member to newUnmuteList
@@ -890,7 +890,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		// If we're here, then the operation type is invalid. Currently, this can only
 		// happen if the operation is of type AccessGroupOperationRemoveMembers
 		return 0, 0, nil, errors.Wrapf(err,
-			"_connectMessagingGroup: Error, messaging group operation.")
+			"_connectAccessGroupCreate: Error, messaging group operation.")
 
 	}
 
@@ -926,7 +926,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 		rr := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
 		if exists, err := DecodeFromBytes(prevMessagingGroupEntry, rr); !exists || err != nil {
 			return 0, 0, nil, errors.Wrapf(err,
-				"_connectMessagingGroup: Error decoding previous entry")
+				"_connectAccessGroupCreate: Error decoding previous entry")
 		}
 	}
 
@@ -973,7 +973,7 @@ func (bav *UtxoView) _disconnectMessagingGroup(
 	}
 
 	// Check that the transaction has the right TxnType.
-	if currentTxn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
+	if currentTxn.TxnMeta.GetTxnType() != TxnTypeAccessGroupCreate {
 		return fmt.Errorf("_disconnectMessagingGroup: called with bad TxnType %s",
 			currentTxn.TxnMeta.GetTxnType().String())
 	}

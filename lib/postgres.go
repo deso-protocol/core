@@ -1352,7 +1352,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				}
 			}
 
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
 
 			// FIXME: Skip PGMetadataMessagingGroup for now since it's not used downstream
 
@@ -1913,7 +1913,7 @@ func (postgres *Postgres) flushMessagingGroups(tx *pg.Tx, view *UtxoView) error 
 	var deleteMessages []*PGMessagingGroup
 	for _, groupEntry := range view.AccessGroupKeyToAccessGroupEntry {
 		messagingGroupMembersBytes := bytes.NewBuffer([]byte{})
-		if err := gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.AccessGroupMembers); err != nil {
+		if err := gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.DEPRECATED_AccessGroupMembers); err != nil {
 			return err
 		}
 		pgGroupEntry := &PGMessagingGroup{
