@@ -1032,6 +1032,7 @@ func (bav *UtxoView) _flushAccessGroupEntriesAndMembersAndAttributesToDbWithTxn(
 			}
 		}
 
+		// Since entry is deleted, there's nothing to do.
 		if accessGroupEntry.isDeleted {
 			// Increment the number of groups deleted.
 			numDeleted++
