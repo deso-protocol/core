@@ -1672,8 +1672,8 @@ func _helpConnectPrivateMessageWithPartyAndFlush(testMeta *TestMeta, senderPrivB
 	entry MessageEntry, expectedError error, flush bool) {
 
 	_connectPrivateMessageWithPartyWithExtraData(testMeta, entry.SenderPublicKey[:], senderPrivBase58, entry.RecipientPublicKey[:],
-		entry.SenderMessagingPublicKey[:], entry.SenderMessagingGroupKeyName[:], entry.RecipientMessagingPublicKey[:],
-		entry.RecipientMessagingGroupKeyName[:], hex.EncodeToString(entry.EncryptedText), entry.TstampNanos, nil, expectedError, flush)
+		entry.SenderMessagingPublicKey[:], entry.SenderAccessGroupKeyName[:], entry.RecipientMessagingPublicKey[:],
+		entry.RecipientAccessGroupKeyName[:], hex.EncodeToString(entry.EncryptedText), entry.TstampNanos, nil, expectedError, flush)
 }
 
 // This helper function connects a private message transaction with the message party in ExtraData.
@@ -1737,8 +1737,8 @@ func _helpConnectPrivateMessageWithParty(testMeta *TestMeta, senderPrivBase58 st
 	entry MessageEntry, expectedError error) {
 
 	_connectPrivateMessageWithParty(testMeta, entry.SenderPublicKey[:], senderPrivBase58, entry.RecipientPublicKey[:],
-		entry.SenderMessagingPublicKey[:], entry.SenderMessagingGroupKeyName[:], entry.RecipientMessagingPublicKey[:],
-		entry.RecipientMessagingGroupKeyName[:], hex.EncodeToString(entry.EncryptedText), entry.TstampNanos, expectedError)
+		entry.SenderMessagingPublicKey[:], entry.SenderAccessGroupKeyName[:], entry.RecipientMessagingPublicKey[:],
+		entry.RecipientAccessGroupKeyName[:], hex.EncodeToString(entry.EncryptedText), entry.TstampNanos, expectedError)
 }
 
 // Verify the message party entry in UtxoView or DB matches the expected entry. Also add the message entries
@@ -1784,7 +1784,7 @@ func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKe
 	}
 	messagingKey := utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(&AccessGroupKey{
 		*fetchKey,
-		*expectedEntry.RecipientMessagingGroupKeyName,
+		*expectedEntry.RecipientAccessGroupKeyName,
 	})
 	if messagingKey != nil {
 		for _, recipient := range messagingKey.AccessGroupMembers {
@@ -1829,9 +1829,9 @@ func setExtraDataBasedOnMessagingEntry(messageEntry *MessageEntry) {
 	messageEntry.ExtraData = make(map[string][]byte)
 	messageEntry.ExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
 	messageEntry.ExtraData[SenderMessagingPublicKey] = messageEntry.SenderMessagingPublicKey.ToBytes()
-	messageEntry.ExtraData[SenderMessagingGroupKeyName] = messageEntry.SenderMessagingGroupKeyName.ToBytes()
+	messageEntry.ExtraData[SenderMessagingGroupKeyName] = messageEntry.SenderAccessGroupKeyName.ToBytes()
 	messageEntry.ExtraData[RecipientMessagingPublicKey] = messageEntry.RecipientMessagingPublicKey.ToBytes()
-	messageEntry.ExtraData[RecipientMessagingGroupKeyName] = messageEntry.RecipientMessagingGroupKeyName.ToBytes()
+	messageEntry.ExtraData[RecipientMessagingGroupKeyName] = messageEntry.RecipientAccessGroupKeyName.ToBytes()
 }
 
 // In these tests we basically want to verify that messages are correctly added to UtxoView and DB
@@ -1954,9 +1954,9 @@ func TestGroupMessages(t *testing.T) {
 
 		// SenderPk tries to submit another malformed V3 message, but this time the recipient is malformed, should fail.
 		messageEntry.SenderMessagingPublicKey = NewPublicKey(senderPkBytes)
-		messageEntry.SenderMessagingGroupKeyName = BaseGroupKeyName()
+		messageEntry.SenderAccessGroupKeyName = BaseGroupKeyName()
 		messageEntry.RecipientMessagingPublicKey = entry.AccessPublicKey
-		messageEntry.RecipientMessagingGroupKeyName = NewGroupKeyName(keyName)
+		messageEntry.RecipientAccessGroupKeyName = NewGroupKeyName(keyName)
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, RuleErrorPrivateMessageFailedToValidateMessagingKey)
 		// Should fail.
 		require.Equal(false, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry, false))
@@ -1964,9 +1964,9 @@ func TestGroupMessages(t *testing.T) {
 		// We will send a v2-like message just to make sure everything is gucci.
 		// We will set version as 3 because we're adding messaging keys.
 		messageEntry.SenderMessagingPublicKey = NewPublicKey(senderPkBytes)
-		messageEntry.SenderMessagingGroupKeyName = BaseGroupKeyName()
+		messageEntry.SenderAccessGroupKeyName = BaseGroupKeyName()
 		messageEntry.RecipientMessagingPublicKey = NewPublicKey(recipientPkBytes)
-		messageEntry.RecipientMessagingGroupKeyName = BaseGroupKeyName()
+		messageEntry.RecipientAccessGroupKeyName = BaseGroupKeyName()
 		messageEntry.Version = MessagesVersion3
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, nil)
 		// Should pass, so we have:
@@ -2103,7 +2103,7 @@ func TestGroupMessages(t *testing.T) {
 		messageEntry.TstampNanos = tstampNanos3
 		messageEntry.EncryptedText = testMessage3
 		messageEntry.RecipientMessagingPublicKey = entryRecipient.AccessPublicKey
-		messageEntry.RecipientMessagingGroupKeyName = NewGroupKeyName(defaultKey)
+		messageEntry.RecipientAccessGroupKeyName = NewGroupKeyName(defaultKey)
 		_helpConnectPrivateMessageWithParty(testMeta, senderPrivString, messageEntry, nil)
 		// Should pass, so we have:
 		// sender -> recipient
@@ -3209,8 +3209,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
@@ -3238,8 +3238,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)
@@ -3287,8 +3287,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)
@@ -3356,8 +3356,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)
@@ -3505,8 +3505,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m2Priv)
@@ -3564,8 +3564,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
@@ -3593,8 +3593,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)
@@ -3622,8 +3622,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m2Priv)
@@ -3651,8 +3651,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m3Priv)
@@ -3710,8 +3710,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)
@@ -3739,8 +3739,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m2Priv)
@@ -3768,8 +3768,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m3Priv)
@@ -3927,8 +3927,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m0Priv)
@@ -3956,8 +3956,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)
@@ -4005,8 +4005,8 @@ func testTestnet(t *testing.T, bc *Blockchain, bav *UtxoView, fundedPublicKey st
 			}
 			txn, totalInputMake, changeAmountMake, feesMake, err := bc.CreatePrivateMessageTxn(
 				msgEntry.SenderPublicKey[:], msgEntry.RecipientPublicKey[:], "", hex.EncodeToString(msgEntry.EncryptedText),
-				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderMessagingGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
-				msgEntry.RecipientMessagingGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
+				msgEntry.SenderMessagingPublicKey[:], msgEntry.SenderAccessGroupKeyName[:], msgEntry.RecipientMessagingPublicKey[:],
+				msgEntry.RecipientAccessGroupKeyName[:], tstampNanos, msgEntry.ExtraData, 10, nil, []*DeSoOutput{})
 			require.NoError(err)
 			require.Equal(totalInputMake, changeAmountMake+feesMake)
 			_signTxn(t, txn, m1Priv)

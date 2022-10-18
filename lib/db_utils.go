@@ -354,7 +354,12 @@ type DBPrefixes struct {
 	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
-	// NEXT_TAG: 66
+
+	PrefixGroupChatMessagesIndex []byte `prefix_id:"[66]" is_state:"true"`
+	PrefixDmThreadIndex          []byte `prefix_id:"[67]" is_state:"true"`
+	PrefixDmMessageIndex         []byte `prefix_id:"[68]" is_state:"true"`
+
+	// NEXT_TAG: 68
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -514,6 +519,15 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixGroupMembershipIndex) {
 		// prefix_id:"[63]"
 		return true, &AccessGroupEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatMessagesIndex) {
+		// prefix_id:"[66]"
+		return true, &MessageEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
+		// prefix_id:"[67]"
+		return true, &MessageEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessageIndex) {
+		// prefix_id:"[68]"
+		return true, &MessageEntry{}
 	}
 
 	return true, nil
@@ -1298,10 +1312,10 @@ func DBPutMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint6
 	if err := IsByteArrayValidPublicKey(messageEntry.RecipientPublicKey[:]); err != nil {
 		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating recipient public key")
 	}
-	if err := ValidateGroupPublicKeyAndName(messageEntry.SenderMessagingPublicKey[:], messageEntry.SenderMessagingGroupKeyName[:]); err != nil {
+	if err := ValidateGroupPublicKeyAndName(messageEntry.SenderMessagingPublicKey[:], messageEntry.SenderAccessGroupKeyName[:]); err != nil {
 		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating sender public key and key name")
 	}
-	if err := ValidateGroupPublicKeyAndName(messageEntry.RecipientMessagingPublicKey[:], messageEntry.RecipientMessagingGroupKeyName[:]); err != nil {
+	if err := ValidateGroupPublicKeyAndName(messageEntry.RecipientMessagingPublicKey[:], messageEntry.RecipientAccessGroupKeyName[:]); err != nil {
 		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating recipient public key and key name")
 	}
 
@@ -2099,6 +2113,137 @@ func DBIsMemberMutedInGroupMembersIndex(handle *badger.DB, snap *Snapshot,
 	})
 
 	return isMuted, err
+}
+
+// -------------------------------------------------------------------------------------
+// PrefixGroupChatMessagesIndex
+// <groupOwnerPublicKey, groupKeyName, timestamp> -> <MessageEntry>
+// -------------------------------------------------------------------------------------
+
+// _dbSeekPrefixForGroupMemberAttributesIndex returns prefix to enumerate over the given member's attributes.
+func _dbKeyForGroupChatMessagesIndex(key GroupChatMessageKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixGroupChatMessagesIndex...)
+	prefixCopy = append(prefixCopy, key.GroupOwnerPublicKey[:]...)
+	prefixCopy = append(prefixCopy, key.GroupKeyName[:]...)
+	prefixCopy = append(prefixCopy, EncodeUint64(key.TstampNanos)...)
+	return prefixCopy
+}
+
+func _dbSeekPrefixForGroupChatMessagesIndex(key GroupChatMessageKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixGroupChatMessagesIndex...)
+	prefixCopy = append(prefixCopy, key.GroupOwnerPublicKey[:]...)
+	prefixCopy = append(prefixCopy, key.GroupKeyName[:]...)
+	return prefixCopy
+}
+
+func DBGetGroupChatMessagesIndex(db *badger.DB, snap *Snapshot, key GroupChatMessageKey) *MessageEntry {
+	var ret *MessageEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetGroupChatMessagesIndexWithTxn(txn, snap, key)
+		return nil
+	})
+	return ret
+}
+
+func DBGetGroupChatMessagesIndexWithTxn(txn *badger.Txn, snap *Snapshot, key GroupChatMessageKey) *MessageEntry {
+
+	prefix := _dbKeyForGroupChatMessagesIndex(key)
+	messagesIndexBytes, err := DBGetWithTxn(txn, snap, prefix)
+	if err != nil {
+		return nil
+	}
+
+	messagingIndex := &MessageEntry{}
+	rr := bytes.NewReader(messagesIndexBytes)
+	DecodeFromBytes(messagingIndex, rr)
+
+	return messagingIndex
+}
+
+// -------------------------------------------------------------------------------------
+// PrefixDmThreadIndex
+// <partyGroupOwnerPublicKey, partyGroupKeyName, partyGroupOwnerPublicKey, partyGroupKeyName> -> <MessageEntry>
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForDmThreadIndex(key DmThreadKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixDmThreadIndex...)
+	prefixCopy = append(prefixCopy, key.XGroupOwnerPublicKey[:]...)
+	prefixCopy = append(prefixCopy, key.XGroupKeyName[:]...)
+	prefixCopy = append(prefixCopy, key.YGroupOwnerPublicKey[:]...)
+	prefixCopy = append(prefixCopy, key.YGroupKeyName[:]...)
+	return prefixCopy
+}
+
+func DBGetDmThreadEntry(db *badger.DB, snap *Snapshot, key DmThreadKey) *MessageEntry {
+	var ret *MessageEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetDmThreadEntryWithTxn(txn, snap, key)
+		return nil
+	})
+	return ret
+}
+
+func DBGetDmThreadEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmThreadKey) *MessageEntry {
+
+	prefix := _dbKeyForDmThreadIndex(key)
+	dmThreadBytes, err := DBGetWithTxn(txn, snap, prefix)
+	if err != nil {
+		return nil
+	}
+
+	dmThread := &MessageEntry{}
+	rr := bytes.NewReader(dmThreadBytes)
+	DecodeFromBytes(dmThread, rr)
+
+	return dmThread
+}
+
+// -------------------------------------------------------------------------------------
+// PrefixDmMessageIndex
+// <partyGroupOwnerPublicKey, partyGroupKeyName, partyGroupOwnerPublicKey, partyGroupKeyName, timestamp> -> <MessageEntry>
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForPrefixDmMessageIndex(key DmMessageKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessageIndex...)
+	prefixCopy = append(prefixCopy, key.MinorGroupOwnerPublicKey[:]...)
+	prefixCopy = append(prefixCopy, key.MinorGroupKeyName[:]...)
+	prefixCopy = append(prefixCopy, key.MajorGroupOwnerPublicKey[:]...)
+	prefixCopy = append(prefixCopy, key.MajorGroupKeyName[:]...)
+	prefixCopy = append(prefixCopy, EncodeUint64(key.TstampNanos)...)
+	return prefixCopy
+}
+
+func _dbSeekPrefixForPrefixDmMessageIndex(key DmMessageKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessageIndex...)
+	prefixCopy = append(prefixCopy, key.MinorGroupOwnerPublicKey[:]...)
+	prefixCopy = append(prefixCopy, key.MinorGroupKeyName[:]...)
+	prefixCopy = append(prefixCopy, key.MajorGroupOwnerPublicKey[:]...)
+	prefixCopy = append(prefixCopy, key.MajorGroupKeyName[:]...)
+	return prefixCopy
+}
+
+func DBGetDmMessageEntry(db *badger.DB, snap *Snapshot, key DmMessageKey) *MessageEntry {
+	var ret *MessageEntry
+	db.View(func(txn *badger.Txn) error {
+		ret = DBGetDmMessageEntryWithTxn(txn, snap, key)
+		return nil
+	})
+	return ret
+}
+
+func DBGetDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessageKey) *MessageEntry {
+
+	prefix := _dbKeyForPrefixDmMessageIndex(key)
+	dmMessageBytes, err := DBGetWithTxn(txn, snap, prefix)
+	if err != nil {
+		return nil
+	}
+
+	dmMessage := &MessageEntry{}
+	rr := bytes.NewReader(dmMessageBytes)
+	DecodeFromBytes(dmMessage, rr)
+
+	return dmMessage
 }
 
 // -------------------------------------------------------------------------------------

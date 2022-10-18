@@ -254,7 +254,7 @@ type ForkHeights struct {
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
 	// DeSoAccessGroupsBlockHeight defines the height at which we introduce V3 access groups 
-  // and all associate features like GroupMemberAttributes, additional DB indexes, etc.
+	// and all associate features like GroupMemberAttributes, additional DB indexes, etc.
 	DeSoAccessGroupsBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -588,7 +588,7 @@ var RegtestForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
-  DeSoAccessGroupsBlockHeight:                          uint32(0),
+	DeSoAccessGroupsBlockHeight:                          uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -731,8 +731,8 @@ var MainnetForkHeights = ForkHeights{
 
 	// Mon Sept 19 @ 12pm PST
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
-  
-  // TODO: ADD FINAL DATE & TIME HERE
+
+	// TODO: ADD FINAL DATE & TIME HERE
 	DeSoAccessGroupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -985,7 +985,7 @@ var TestnetForkHeights = ForkHeights{
 	// Tues Sept 13 @ 10am PT
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
 
-  // TODO: ADD FINAL DATE & TIME HERE
+	// TODO: ADD FINAL DATE & TIME HERE
 	DeSoAccessGroupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -1180,9 +1180,9 @@ const (
 	// Messaging keys
 	MessagingPublicKey             = "AccessPublicKey"
 	SenderMessagingPublicKey       = "SenderMessagingPublicKey"
-	SenderMessagingGroupKeyName    = "SenderMessagingGroupKeyName"
+	SenderMessagingGroupKeyName    = "SenderAccessGroupKeyName"
 	RecipientMessagingPublicKey    = "RecipientMessagingPublicKey"
-	RecipientMessagingGroupKeyName = "RecipientMessagingGroupKeyName"
+	RecipientMessagingGroupKeyName = "RecipientAccessGroupKeyName"
 
 	// Key in transaction's extra data map. If it is there, the NFT is a "Buy Now" NFT and this is the Buy Now Price
 	BuyNowPriceKey = "BuyNowPriceNanos"

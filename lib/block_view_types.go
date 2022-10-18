@@ -526,8 +526,9 @@ const (
 	OperationTypeDAOCoinTransfer              OperationType = 26
 	OperationTypeSpendingLimitAccounting      OperationType = 27
 	OperationTypeDAOCoinLimitOrder            OperationType = 28
+	OperationTypeNewMessage                   OperationType = 29
 
-	// NEXT_TAG = 29
+	// NEXT_TAG = 32
 )
 
 func (op OperationType) String() string {
@@ -713,6 +714,13 @@ type UtxoOperation struct {
 
 	// For disconnecting AccessGroupKey transactions.
 	PrevMessagingKeyEntry *AccessGroupEntry
+
+	// For disconnecting NewMessage transactions.
+	GroupChatMessagesKey GroupChatMessageKey
+	PrevDmThreadIndex    *MessageEntry
+	DmThreadKey          DmThreadKey
+	DmMessageIndexKey    DmMessageKey
+	MessageType          MessageType
 
 	// Save the previous repost entry and repost count when making an update.
 	PrevRepostEntry *RepostEntry
@@ -1728,6 +1736,113 @@ func (mm *MessageKey) StringKey(params *DeSoParams) string {
 	return PkToString(mm.PublicKey[:], params) + "_" + fmt.Sprint(mm.TstampNanos)
 }
 
+type GroupChatMessageKey struct {
+	GroupOwnerPublicKey PublicKey
+	GroupKeyName        GroupKeyName
+	TstampNanos         uint64
+}
+
+func MakeGroupChatMessageKey(groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, tstampNanos uint64) GroupChatMessageKey {
+	return GroupChatMessageKey{
+		GroupOwnerPublicKey: groupOwnerPublicKey,
+		GroupKeyName:        groupKeyName,
+		TstampNanos:         tstampNanos,
+	}
+}
+
+func MakeGroupChatMessageKeyFromMessageEntry(messageEntry *MessageEntry) (GroupChatMessageKey, error) {
+	if messageEntry == nil {
+		return GroupChatMessageKey{}, fmt.Errorf("MakeGroupChatMessageKeyFromMessageEntry: messageEntry is nil")
+	}
+	if messageEntry.RecipientPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil {
+		return GroupChatMessageKey{}, fmt.Errorf("MakeGroupChatMessageKeyFromMessageEntry: messageEntry is missing fields")
+	}
+	return MakeGroupChatMessageKey(
+		*messageEntry.RecipientPublicKey, *messageEntry.RecipientAccessGroupKeyName, messageEntry.TstampNanos), nil
+}
+
+type DmThreadKey struct {
+	XGroupOwnerPublicKey PublicKey
+	XGroupKeyName        GroupKeyName
+	YGroupOwnerPublicKey PublicKey
+	YGroupKeyName        GroupKeyName
+}
+
+func MakeDmThreadKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName,
+	yGroupOwnerPublicKey PublicKey, yGroupKeyName GroupKeyName) DmThreadKey {
+	return DmThreadKey{
+		XGroupOwnerPublicKey: xGroupOwnerPublicKey,
+		XGroupKeyName:        xGroupKeyName,
+		YGroupOwnerPublicKey: yGroupOwnerPublicKey,
+		YGroupKeyName:        yGroupKeyName,
+	}
+}
+
+func MakeDmThreadKeyFromMessageEntry(messageEntry *MessageEntry, shouldReverse bool) (DmThreadKey, error) {
+	if messageEntry == nil {
+		return DmThreadKey{}, fmt.Errorf("MakeDmThreadKeyFromMessageEntry: messageEntry is nil")
+	}
+	if messageEntry.RecipientPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil ||
+		messageEntry.SenderPublicKey == nil || messageEntry.SenderAccessGroupKeyName == nil {
+		return DmThreadKey{}, fmt.Errorf("MakeDmThreadKeyFromMessageEntry: messageEntry is missing fields")
+	}
+	if shouldReverse {
+		return MakeDmThreadKey(
+			*messageEntry.RecipientPublicKey, *messageEntry.RecipientAccessGroupKeyName,
+			*messageEntry.SenderPublicKey, *messageEntry.SenderAccessGroupKeyName), nil
+	} else {
+		return MakeDmThreadKey(
+			*messageEntry.SenderPublicKey, *messageEntry.SenderAccessGroupKeyName,
+			*messageEntry.RecipientPublicKey, *messageEntry.RecipientAccessGroupKeyName), nil
+	}
+}
+
+type DmMessageKey struct {
+	MinorGroupOwnerPublicKey PublicKey
+	MinorGroupKeyName        GroupKeyName
+	MajorGroupOwnerPublicKey PublicKey
+	MajorGroupKeyName        GroupKeyName
+	TstampNanos              uint64
+}
+
+func MakeDmMessageKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName,
+	yGroupOwnerPublicKey PublicKey, yGroupKeyName GroupKeyName, tstampNanos uint64) DmMessageKey {
+
+	minorGroupOwnerPublicKey := xGroupOwnerPublicKey
+	minorGroupKeyName := xGroupKeyName
+	majorGroupOwnerPublicKey := yGroupOwnerPublicKey
+	majorGroupKeyName := yGroupKeyName
+	if bytes.Compare(xGroupOwnerPublicKey.ToBytes(), yGroupOwnerPublicKey.ToBytes()) == 1 {
+		minorGroupOwnerPublicKey = yGroupOwnerPublicKey
+		minorGroupKeyName = yGroupKeyName
+		majorGroupOwnerPublicKey = xGroupOwnerPublicKey
+		majorGroupKeyName = xGroupKeyName
+	}
+
+	return DmMessageKey{
+		MinorGroupOwnerPublicKey: minorGroupOwnerPublicKey,
+		MinorGroupKeyName:        minorGroupKeyName,
+		MajorGroupOwnerPublicKey: majorGroupOwnerPublicKey,
+		MajorGroupKeyName:        majorGroupKeyName,
+		TstampNanos:              tstampNanos,
+	}
+}
+
+func MakeDmMessageKeyFromMessageEntry(messageEntry *MessageEntry) (DmMessageKey, error) {
+	if messageEntry == nil {
+		return DmMessageKey{}, fmt.Errorf("MakeDmMessageKeyFromMessageEntry: messageEntry is nil")
+	}
+	if messageEntry.RecipientPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil ||
+		messageEntry.SenderPublicKey == nil || messageEntry.SenderAccessGroupKeyName == nil {
+		return DmMessageKey{}, fmt.Errorf("MakeDmMessageKeyFromMessageEntry: messageEntry is missing fields")
+	}
+
+	return MakeDmMessageKey(
+		*messageEntry.SenderPublicKey, *messageEntry.SenderAccessGroupKeyName,
+		*messageEntry.RecipientPublicKey, *messageEntry.RecipientAccessGroupKeyName,
+		messageEntry.TstampNanos), nil
+}
+
 // MessageEntry stores the essential content of a message transaction.
 type MessageEntry struct {
 	SenderPublicKey    *PublicKey
@@ -1759,15 +1874,15 @@ type MessageEntry struct {
 	// to encrypt the corresponding message.
 	SenderMessagingPublicKey *PublicKey
 
-	// SenderMessagingGroupKeyName is the sender's key name of SenderMessagingPublicKey
-	SenderMessagingGroupKeyName *GroupKeyName
+	// SenderAccessGroupKeyName is the sender's key name of SenderMessagingPublicKey
+	SenderAccessGroupKeyName *GroupKeyName
 
 	// RecipientMessagingPublicKey is the recipient's messaging public key that was
 	// used to encrypt the corresponding message.
 	RecipientMessagingPublicKey *PublicKey
 
-	// RecipientMessagingGroupKeyName is the recipient's key name of RecipientMessagingPublicKey
-	RecipientMessagingGroupKeyName *GroupKeyName
+	// RecipientAccessGroupKeyName is the recipient's key name of RecipientMessagingPublicKey
+	RecipientAccessGroupKeyName *GroupKeyName
 
 	// Extra data
 	ExtraData map[string][]byte
@@ -1782,9 +1897,9 @@ func (message *MessageEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 	data = append(data, UintToBuf(message.TstampNanos)...)
 	data = append(data, UintToBuf(uint64(message.Version))...)
 	data = append(data, EncodeToBytes(blockHeight, message.SenderMessagingPublicKey, skipMetadata...)...)
-	data = append(data, EncodeToBytes(blockHeight, message.SenderMessagingGroupKeyName, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, message.SenderAccessGroupKeyName, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, message.RecipientMessagingPublicKey, skipMetadata...)...)
-	data = append(data, EncodeToBytes(blockHeight, message.RecipientMessagingGroupKeyName, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, message.RecipientAccessGroupKeyName, skipMetadata...)...)
 	data = append(data, EncodeExtraData(message.ExtraData)...)
 	return data
 }
@@ -1831,7 +1946,7 @@ func (message *MessageEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 
 	senderMessagingKeyName := &GroupKeyName{}
 	if exist, err := DecodeFromBytes(senderMessagingKeyName, rr); exist && err == nil {
-		message.SenderMessagingGroupKeyName = senderMessagingKeyName
+		message.SenderAccessGroupKeyName = senderMessagingKeyName
 	} else if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding sender messaging key name")
 	}
@@ -1845,11 +1960,11 @@ func (message *MessageEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 
 	recipientMessagingKeyName := &GroupKeyName{}
 	if exist, err := DecodeFromBytes(recipientMessagingKeyName, rr); exist && err == nil {
-		message.RecipientMessagingGroupKeyName = recipientMessagingKeyName
+		message.RecipientAccessGroupKeyName = recipientMessagingKeyName
 	} else if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding sender messaging key name")
 	}
-	message.RecipientMessagingGroupKeyName = recipientMessagingKeyName
+	message.RecipientAccessGroupKeyName = recipientMessagingKeyName
 
 	message.ExtraData, err = DecodeExtraData(rr)
 	if err != nil && strings.Contains(err.Error(), "EOF") {

@@ -85,8 +85,8 @@ func (bav *UtxoView) GetMessagingEntry(memberPublicKey *PublicKey, groupOwnerPub
 // GetMessagingGroupForMessagingGroupKeyExistence will check if the group with key messagingGroupKey exists, if so it will fetch
 // the simplified group entry from the membership index. If the forceFullEntry is set or if we're not past the membership
 // index block height, then we will fetch the entire group entry from the db (provided it exists).
-func (bav *UtxoView) GetMessagingGroupForMessagingGroupKeyExistence(messagingGroupKey *AccessGroupKey,
-	blockHeight uint32, forceFullEntry bool) *AccessGroupEntry {
+func (bav *UtxoView) GetMessagingGroupForMessagingGroupKeyExistence(
+	messagingGroupKey *AccessGroupKey, blockHeight uint32) *AccessGroupEntry {
 
 	if messagingGroupKey == nil {
 		return nil
@@ -363,36 +363,68 @@ func ValidateGroupPublicKeyAndName(messagingPublicKey, keyName []byte) error {
 	return nil
 }
 
-// ValidateKeyAndNameWithUtxo validates public key and key name, which are used in DeSo V3 Messages protocol.
+// ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView validates public key and key name, which are used in DeSo V3 Messages protocol.
 // The function first checks that the key and name are valid and then fetches an entry from UtxoView or DB
 // to check if the key has been previously saved. This is particularly useful for connecting V3 messages.
-func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicKey, keyName []byte, blockHeight uint32) error {
-	// First validate the public key and name with ValidateGroupPublicKeyAndName
-	err := ValidateGroupPublicKeyAndName(messagingPublicKey, keyName)
-	if err != nil {
-		return errors.Wrapf(err, "ValidateKeyAndNameWithUtxo: Failed validating "+
-			"messagingPublicKey and keyName")
+func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView(
+	groupOwnerPublicKey, accessPublicKey, groupKeyName []byte, blockHeight uint32) error {
+
+	// First validate the group public key and name with ValidateGroupPublicKeyAndName
+	if err := ValidateGroupPublicKeyAndName(groupOwnerPublicKey, groupKeyName); err != nil {
+		return errors.Wrapf(err, "ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: Failed validating "+
+			"groupOwnerPublicKey and groupKeyName")
+	}
+	// First validate the access public key and name with ValidateGroupPublicKeyAndName
+	if err := ValidateGroupPublicKeyAndName(accessPublicKey, groupKeyName); err != nil {
+		return errors.Wrapf(err, "ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: Failed validating "+
+			"accessPublicKey and groupKeyName")
 	}
 
 	// Fetch the messaging key entry from UtxoView.
-	messagingGroupKey := NewAccessGroupKey(NewPublicKey(ownerPublicKey), keyName)
+	messagingGroupKey := NewAccessGroupKey(NewPublicKey(groupOwnerPublicKey), groupKeyName)
 	// To validate a messaging group key, we try to fetch the simplified group entry from the membership index.
-	messagingGroupEntry := bav.GetMessagingGroupForMessagingGroupKeyExistence(
-		messagingGroupKey, blockHeight, false)
+	messagingGroupEntry := bav.GetMessagingGroupForMessagingGroupKeyExistence(messagingGroupKey, blockHeight)
 	if messagingGroupEntry == nil || messagingGroupEntry.isDeleted {
-		return fmt.Errorf("ValidateKeyAndNameWithUtxo: non-existent messaging key entry "+
-			"for ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
+		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: non-existent messaging key entry "+
+			"for groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
 	}
 
 	// Compare the UtxoEntry with the provided key for more validation.
-	if !reflect.DeepEqual(messagingGroupEntry.AccessPublicKey[:], messagingPublicKey) {
-		return fmt.Errorf("ValidateKeyAndNameWithUtxo: keys don't match for "+
-			"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
+	if !reflect.DeepEqual(messagingGroupEntry.AccessPublicKey[:], accessPublicKey) {
+		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: keys don't match for "+
+			"groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
 	}
 
-	if !EqualGroupKeyName(messagingGroupEntry.AccessGroupKeyName, NewGroupKeyName(keyName)) {
-		return fmt.Errorf("ValidateKeyAndNameWithUtxo: key name don't match for "+
-			"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
+	if !EqualGroupKeyName(messagingGroupEntry.AccessGroupKeyName, NewGroupKeyName(groupKeyName)) {
+		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: key name don't match for "+
+			"groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
+	}
+	return nil
+}
+
+func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
+	groupOwnerPublicKey, groupKeyName []byte, blockHeight uint32) error {
+
+	// First validate the public key and name with ValidateGroupPublicKeyAndName
+	err := ValidateGroupPublicKeyAndName(groupOwnerPublicKey, groupKeyName)
+	if err != nil {
+		return errors.Wrapf(err, "ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: Failed validating "+
+			"accessPublicKey and groupKeyName")
+	}
+
+	// Fetch the messaging key entry from UtxoView.
+	messagingGroupKey := NewAccessGroupKey(NewPublicKey(groupOwnerPublicKey), groupKeyName)
+	// To validate a messaging group key, we try to fetch the simplified group entry from the membership index.
+	messagingGroupEntry := bav.GetMessagingGroupForMessagingGroupKeyExistence(messagingGroupKey, blockHeight)
+	if messagingGroupEntry == nil || messagingGroupEntry.isDeleted {
+		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: non-existent messaging key entry "+
+			"for groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
+	}
+
+	// Sanity-check that the key name matches.
+	if !EqualGroupKeyName(messagingGroupEntry.AccessGroupKeyName, NewGroupKeyName(groupKeyName)) {
+		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: key name don't match for "+
+			"groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
 	}
 	return nil
 }

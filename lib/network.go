@@ -227,6 +227,8 @@ const (
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
 	TxnTypeDAOCoinLimitOrder            TxnType = 26
+	TxnTypeNewMessage                   TxnType = 27
+	TxnTypeUpdateMessage                TxnType = 28
 
 	// NEXT_ID = 27
 )
@@ -260,6 +262,8 @@ const (
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
 	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
+	TxnStringNewMessage                   TxnString = "NEW_MESSAGE"
+	TxnStringUpdateMessage                TxnString = "UPDATE_MESSAGE"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -270,7 +274,7 @@ var (
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
-		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeNewMessage, TxnTypeUpdateMessage,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -278,7 +282,7 @@ var (
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
-		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringNewMessage, TxnStringUpdateMessage,
 	}
 )
 
@@ -344,6 +348,10 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringDAOCoinTransfer
 	case TxnTypeDAOCoinLimitOrder:
 		return TxnStringDAOCoinLimitOrder
+	case TxnTypeNewMessage:
+		return TxnStringNewMessage
+	case TxnTypeUpdateMessage:
+		return TxnStringUpdateMessage
 	default:
 		return TxnStringUndefined
 	}
@@ -403,6 +411,10 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeDAOCoinTransfer
 	case TxnStringDAOCoinLimitOrder:
 		return TxnTypeDAOCoinLimitOrder
+	case TxnStringNewMessage:
+		return TxnTypeNewMessage
+	case TxnStringUpdateMessage:
+		return TxnTypeUpdateMessage
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -470,6 +482,10 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinTransferMetadata{}).New(), nil
 	case TxnTypeDAOCoinLimitOrder:
 		return (&DAOCoinLimitOrderMetadata{}).New(), nil
+	case TxnTypeNewMessage:
+		return (&NewMessageMetadata{}).New(), nil
+	case TxnTypeUpdateMessage:
+		return (&UpdateMessageMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -6522,4 +6538,117 @@ func GetAccessGroupOperation(txn *MsgDeSoTxn) (AccessGroupOperation, error) {
 	}
 
 	return messagingGroupOperation, nil
+}
+
+// =======================================================================================
+// NewMessageMetadata
+// =======================================================================================
+
+type MessageType byte
+
+const (
+	MessageTypeDm        MessageType = 0
+	MessageTypeGroupChat MessageType = 1
+)
+
+type NewMessageMetadata struct {
+	SenderAccessGroupOwnerPublicKey    PublicKey
+	SenderAccessGroupKeyName           GroupKeyName
+	SenderAccessPublicKey              PublicKey
+	RecipientAccessGroupOwnerPublicKey PublicKey
+	RecipientAccessGroupKeyName        GroupKeyName
+	RecipientAccessPublicKey           PublicKey
+	EncryptedText                      []byte
+	TimestampNanos                     uint64
+	MessageType
+}
+
+func (txnData *NewMessageMetadata) GetTxnType() TxnType {
+	return TxnTypeNewMessage
+}
+
+func (txnData *NewMessageMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+
+	data = append(data, EncodeByteArray(txnData.SenderAccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.SenderAccessGroupKeyName.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.RecipientAccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.RecipientAccessGroupKeyName.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.EncryptedText)...)
+	data = append(data, UintToBuf(txnData.TimestampNanos)...)
+	data = append(data, UintToBuf(uint64(txnData.MessageType))...)
+
+	return data, nil
+}
+
+func (txnData *NewMessageMetadata) FromBytes(data []byte) error {
+	var err error
+	ret := NewMessageMetadata{}
+	rr := bytes.NewReader(data)
+
+	// SenderAccessGroupOwnerPublicKey
+	senderAccessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading SenderAccessGroupOwnerPublicKey")
+	}
+	// SenderAccessGroupKeyName
+	senderAccessGroupKeyName, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading SenderAccessGroupKeyName")
+	}
+	if err = ValidateGroupPublicKeyAndName(senderAccessGroupOwnerPublicKeyBytes, senderAccessGroupKeyName); err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Invalid sender access group public key and name")
+	}
+	ret.SenderAccessGroupOwnerPublicKey = *NewPublicKey(senderAccessGroupOwnerPublicKeyBytes)
+	ret.SenderAccessGroupKeyName = *NewGroupKeyName(senderAccessGroupKeyName)
+
+	// RecipientAccessGroupOwnerPublicKey
+	recipientAccessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading RecipientAccessGroupOwnerPublicKey")
+	}
+	// RecipientAccessGroupKeyName
+	recipientAccessGroupKeyName, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading RecipientAccessGroupKeyName")
+	}
+	if err = ValidateGroupPublicKeyAndName(recipientAccessGroupOwnerPublicKeyBytes, recipientAccessGroupKeyName); err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Invalid recipient access group public key and name")
+	}
+	ret.RecipientAccessGroupOwnerPublicKey = *NewPublicKey(recipientAccessGroupOwnerPublicKeyBytes)
+	ret.RecipientAccessGroupKeyName = *NewGroupKeyName(recipientAccessGroupKeyName)
+
+	// EncryptedText
+	ret.EncryptedText, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading EncryptedText")
+	}
+
+	// TimestampNanos
+	ret.TimestampNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading TimestampNanos")
+	}
+
+	// MessageType
+	messageType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading MessageType")
+	}
+	ret.MessageType = MessageType(messageType)
+
+	return nil
+}
+
+func (txnData *NewMessageMetadata) New() DeSoTxnMetadata {
+	return &NewMessageMetadata{}
 }
