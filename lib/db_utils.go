@@ -2160,6 +2160,37 @@ func DBGetGroupChatMessagesIndexWithTxn(txn *badger.Txn, snap *Snapshot, key Gro
 	return messagingIndex
 }
 
+func DBPutGroupChatMessagesIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
+	key GroupChatMessageKey, messageEntry *MessageEntry) error {
+
+	if err := DBSetWithTxn(txn, snap, _dbKeyForGroupChatMessagesIndex(key),
+		EncodeToBytes(blockHeight, messageEntry)); err != nil {
+
+		return errors.Wrapf(err, "DBPutGroupChatMessagesIndexWithTxn: Problem setting group chat messages index "+
+			"with key (%v) and entry (%v) in the db", _dbKeyForGroupChatMessagesIndex(key), messageEntry)
+	}
+
+	return nil
+}
+
+func DBDeleteGroupChatMessagesIndexWithTxn(txn *badger.Txn, snap *Snapshot, key GroupChatMessageKey) error {
+	// First pull up the mapping that exists for the public key passed in.
+	// If one doesn't exist then there's nothing to do.
+	existingMessageEntry := DBGetGroupChatMessagesIndexWithTxn(txn, snap, key)
+	if existingMessageEntry == nil {
+		return nil
+	}
+
+	// When a message exists, delete the mapping for the sender and receiver.
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForGroupChatMessagesIndex(key)); err != nil {
+
+		return errors.Wrapf(err, "DBDeleteGroupChatMessageIndexWithTxn: Deleting mapping for group chat "+
+			"message key: %v", key)
+	}
+
+	return nil
+}
+
 // -------------------------------------------------------------------------------------
 // PrefixDmThreadIndex
 // <partyGroupOwnerPublicKey, partyGroupKeyName, partyGroupOwnerPublicKey, partyGroupKeyName> -> <MessageEntry>
@@ -2196,6 +2227,35 @@ func DBGetDmThreadEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmThreadKey)
 	DecodeFromBytes(dmThread, rr)
 
 	return dmThread
+}
+
+func DBPutDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
+	key DmThreadKey, messageEntry *MessageEntry) error {
+
+	if err := DBSetWithTxn(txn, snap, _dbKeyForDmThreadIndex(key),
+		EncodeToBytes(blockHeight, messageEntry)); err != nil {
+
+		return errors.Wrapf(err, "DBPutDmThreadIndexWithTxn: Problem setting dm thred index "+
+			"with key (%v) and entry (%v) in the db", _dbKeyForDmThreadIndex(key), messageEntry)
+	}
+
+	return nil
+}
+
+func DBDeleteDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, key DmThreadKey) error {
+	existingEntry := DBGetDmThreadEntryWithTxn(txn, snap, key)
+	if existingEntry == nil {
+		return nil
+	}
+
+	// When a message exists, delete the mapping for the sender and receiver.
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForDmThreadIndex(key)); err != nil {
+
+		return errors.Wrapf(err, "DBDeleteDmThreadIndexWithTxn: Deleting mapping for dm thread "+
+			"for dm key: %v", key)
+	}
+
+	return nil
 }
 
 // -------------------------------------------------------------------------------------
@@ -2244,6 +2304,35 @@ func DBGetDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessageKe
 	DecodeFromBytes(dmMessage, rr)
 
 	return dmMessage
+}
+
+func DBPutDmMessageIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
+	key DmMessageKey, messageEntry *MessageEntry) error {
+
+	if err := DBSetWithTxn(txn, snap, _dbKeyForPrefixDmMessageIndex(key),
+		EncodeToBytes(blockHeight, messageEntry)); err != nil {
+
+		return errors.Wrapf(err, "DBPutDmMessageWithTxn: Problem setting dm message index "+
+			"with key (%v) and entry (%v) in the db", _dbKeyForPrefixDmMessageIndex(key), messageEntry)
+	}
+
+	return nil
+}
+
+func DBDeleteDmMessageIndexWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessageKey) error {
+	existingMember := DBGetDmMessageEntryWithTxn(txn, snap, key)
+	if existingMember == nil {
+		return nil
+	}
+
+	// When a message exists, delete the mapping.
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForPrefixDmMessageIndex(key)); err != nil {
+
+		return errors.Wrapf(err, "DBDeleteDmMessageIndexWithTxn: Deleting mapping for dm message"+
+			"with message key: %v", key)
+	}
+
+	return nil
 }
 
 // -------------------------------------------------------------------------------------

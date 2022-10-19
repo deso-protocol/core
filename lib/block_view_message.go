@@ -690,6 +690,7 @@ func (bav *UtxoView) _connectNewMessage(
 
 	switch txMeta.MessageType {
 	case MessageTypeDm:
+		// TODO: Once access group utxo_view logic is finalized, verify that the message fulfills DM criteria.
 		var dmThreadMessageEntry, dmThreadReverse, copyDmThreadMessageEntry *MessageEntry
 		dmThreadKey, err := MakeDmThreadKeyFromMessageEntry(messageEntry, false)
 		if err != nil {
@@ -736,6 +737,7 @@ func (bav *UtxoView) _connectNewMessage(
 		})
 
 	case MessageTypeGroupChat:
+		// TODO: Once access group utxo_view logic is finalized, verify that the message fulfills Group Chat criteria.
 		var groupChatMessage *MessageEntry
 		groupChatMessageKey, err := MakeGroupChatMessageKeyFromMessageEntry(messageEntry)
 		if err != nil {
