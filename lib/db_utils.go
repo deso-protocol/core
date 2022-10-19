@@ -315,7 +315,7 @@ type DBPrefixes struct {
 
 	// Prefix for Enumerating over all the members of a group:
 	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, GroupMemberPublicKey [33]byte> -> <>
-	PrefixGroupEnumerationIndex []byte `prefix_id:"[64]" is_state:"true"`
+	PrefixGroupMemberEnumerationIndex []byte `prefix_id:"[64]" is_state:"true"`
 
 	// Prefix for storing group member attributes:
 	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, GroupMemberPublicKey [33]byte, AccessGroupMemberAttributeType [1]byte> -> []byte
@@ -521,7 +521,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixGroupMembershipIndex) {
 		// prefix_id:"[63]"
 		return true, &AccessGroupMember{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixGroupEnumerationIndex) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixGroupMemberEnumerationIndex) {
 		// prefix_id:"[64]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixGroupMemberAttributesIndex) {
@@ -1869,13 +1869,13 @@ func DBDeleteMemberFromMembershipIndex(handle *badger.DB, snap *Snapshot,
 
 // -------------------------------------------------------------------------------------
 // Enumerate over group members of an access group
-// PrefixGroupEnumerationIndex
+// PrefixGroupMemberEnumerationIndex
 // <prefix, GroupOwnerPublicKey, GroupKeyName, GroupMemberPublicKey> -> <>
 // -------------------------------------------------------------------------------------
 
 // Seek prefix for group enumeration index.
 func _dbSeekPrefixForGroupEnumerationIndex(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixGroupEnumerationIndex...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixGroupMemberEnumerationIndex...)
 	prefixCopy = append(prefixCopy, groupOwnerPublicKey[:]...)
 	prefixCopy = append(prefixCopy, groupKeyName[:]...)
 	return prefixCopy
@@ -1883,7 +1883,7 @@ func _dbSeekPrefixForGroupEnumerationIndex(groupOwnerPublicKey *PublicKey, group
 
 // _dbKeyForGroupEnumerationIndex returns the key for a group enumeration index.
 func _dbKeyForGroupEnumerationIndex(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixGroupEnumerationIndex...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixGroupMemberEnumerationIndex...)
 	key := append(prefixCopy, groupOwnerPublicKey[:]...)
 	key = append(key, groupKeyName[:]...)
 	key = append(key, groupMemberPublicKey[:]...)
