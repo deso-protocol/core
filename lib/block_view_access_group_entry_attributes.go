@@ -2,8 +2,8 @@ package lib
 
 import "github.com/pkg/errors"
 
-// getGroupEntryAttributeEntry returns the group entry attribute entry for the given group.
-func (bav *UtxoView) getGroupEntryAttributeEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+// GetGroupEntryAttributeEntry returns the group entry attribute entry for the given group.
+func (bav *UtxoView) GetGroupEntryAttributeEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
 	attributeType AccessGroupEntryAttributeType) (*AttributeEntry, error) {
 	// Create accessGroupKey key.
 	accessGroupKey := NewAccessGroupKey(groupOwnerPublicKey, groupKeyName[:])
@@ -17,13 +17,13 @@ func (bav *UtxoView) getGroupEntryAttributeEntry(groupOwnerPublicKey *PublicKey,
 	// If utxoView doesn't have the attribute entry, check the DB.
 	attributeEntry, err := DBGetAttributeEntryInGroupEntryAttributesIndex(bav.Handle, bav.Snapshot, groupOwnerPublicKey, groupKeyName, attributeType)
 	if err != nil {
-		return nil, errors.Wrapf(err, "getGroupEntryAttributeEntry: Problem fetching AttributeEntry from db: ")
+		return nil, errors.Wrapf(err, "GetGroupEntryAttributeEntry: Problem fetching AttributeEntry from db: ")
 	}
 	return attributeEntry, nil
 }
 
-// setGroupEntryAttributeMapping sets the attribute status of a group.
-func (bav *UtxoView) setGroupEntryAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+// _setGroupEntryAttributeMapping sets the attribute status of a group.
+func (bav *UtxoView) _setGroupEntryAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
 	attributeType AccessGroupEntryAttributeType, isSet bool, value []byte) error {
 	// Create accessGroupKey key.
 	accessGroupKey := NewAccessGroupKey(groupOwnerPublicKey, groupKeyName[:])
@@ -36,9 +36,9 @@ func (bav *UtxoView) setGroupEntryAttributeMapping(groupOwnerPublicKey *PublicKe
 	return nil
 }
 
-// deleteGroupEntryAttributeMapping deletes the entry from the GroupEntryAttributes mapping to undo any changes to
+// _deleteGroupEntryAttributeMapping deletes the entry from the GroupEntryAttributes mapping to undo any changes to
 // attribute status in the current block.
-func (bav *UtxoView) deleteGroupEntryAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+func (bav *UtxoView) _deleteGroupEntryAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
 	attributeType AccessGroupEntryAttributeType) error {
 	// Create accessGroupKey key.
 	accessGroupKey := NewAccessGroupKey(groupOwnerPublicKey, groupKeyName[:])

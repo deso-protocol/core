@@ -2,8 +2,8 @@ package lib
 
 import "github.com/pkg/errors"
 
-// getGroupMemberAttributeEntry returns the group member attribute entry for the given group member.
-func (bav *UtxoView) getGroupMemberAttributeEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+// GetGroupMemberAttributeEntry returns the group member attribute entry for the given group member.
+func (bav *UtxoView) GetGroupMemberAttributeEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
 	memberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) (*AttributeEntry, error) {
 	// Create enumeration key.
 	enumerationKey := NewGroupEnumerationKey(groupOwnerPublicKey, groupKeyName[:], memberPublicKey)
@@ -17,13 +17,13 @@ func (bav *UtxoView) getGroupMemberAttributeEntry(groupOwnerPublicKey *PublicKey
 	// If utxoView doesn't have the attribute entry, check the DB.
 	attributeEntry, err := DBGetAttributeEntryInGroupMemberAttributesIndex(bav.Handle, bav.Snapshot, groupOwnerPublicKey, groupKeyName, memberPublicKey, attributeType)
 	if err != nil {
-		return nil, errors.Wrapf(err, "getGroupMemberAttributeEntry: Problem fetching AttributeEntry from db: ")
+		return nil, errors.Wrapf(err, "GetGroupMemberAttributeEntry: Problem fetching AttributeEntry from db: ")
 	}
 	return attributeEntry, nil
 }
 
-// setGroupMemberAttributeMapping sets the muted status of a member in the group.
-func (bav *UtxoView) setGroupMemberAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+// _setGroupMemberAttributeMapping sets the muted status of a member in the group.
+func (bav *UtxoView) _setGroupMemberAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
 	memberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType, isSet bool, value []byte) error {
 	// Create enumeration key.
 	enumerationKey := NewGroupEnumerationKey(groupOwnerPublicKey, groupKeyName[:], memberPublicKey)
@@ -36,9 +36,9 @@ func (bav *UtxoView) setGroupMemberAttributeMapping(groupOwnerPublicKey *PublicK
 	return nil
 }
 
-// deleteGroupMemberAttributeMapping deletes the entry from the GroupMemberAttributes mapping to undo any changes to
+// _deleteGroupMemberAttributeMapping deletes the entry from the GroupMemberAttributes mapping to undo any changes to
 // attribute status in the current block.
-func (bav *UtxoView) deleteGroupMemberAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+func (bav *UtxoView) _deleteGroupMemberAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
 	memberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) error {
 	// Create enumeration key.
 	enumerationKey := NewGroupEnumerationKey(groupOwnerPublicKey, groupKeyName[:], memberPublicKey)

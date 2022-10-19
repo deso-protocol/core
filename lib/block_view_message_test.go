@@ -2942,7 +2942,7 @@ func TestGroupMessages(t *testing.T) {
 			// get block height
 			blockHeight := chain.blockTip().Height + 1
 			// get rotating version
-			rotatingVersion := getAccessGroupRotatingVersion(entry, blockHeight)
+			rotatingVersion := GetAccessGroupRotatingVersion(entry, blockHeight)
 			_ = rotatingVersion
 		}
 	}

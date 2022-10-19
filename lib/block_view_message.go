@@ -314,7 +314,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 			groupOwnerAccessPk := NewPublicKey(txMeta.RecipientPublicKey)
 			accessGroupKeyName := NewGroupKeyName(recipientAccessKeyName)
 			// check if sender is muted
-			attributeEntry, err := bav.getGroupMemberAttributeEntry(groupOwnerAccessPk, accessGroupKeyName, senderAccessPk, AccessGroupMemberAttributeIsMuted)
+			attributeEntry, err := bav.GetGroupMemberAttributeEntry(groupOwnerAccessPk, accessGroupKeyName, senderAccessPk, AccessGroupMemberAttributeIsMuted)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: Problem checking if sender is muted")
 			}

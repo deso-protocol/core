@@ -30,15 +30,24 @@ func (bav *UtxoView) GetAccessGroupMember(memberPublicKey *PublicKey, groupOwner
 
 	// If we get here, it means that the group has not been fetched in this utxoView. We fetch it from the db.
 	accessGroupMember := DBGetMemberFromMembershipIndex(bav.Handle, bav.Snapshot, memberPublicKey, groupOwnerPublicKey, groupKeyName)
+	// If member exists in DB, we also set the mapping in utxoView.
+	if accessGroupMember != nil {
+		bav._setGroupMembershipKeyToAccessGroupMemberMapping(accessGroupMember, groupOwnerPublicKey, groupKeyName)
+	}
 	return accessGroupMember
 }
 
-// SetAccessGroupMember will set the membership mapping of AccessGroupMember.
-func (bav *UtxoView) SetAccessGroupMember(accessGroupEntry *AccessGroupEntry,
+// _setAccessGroupMember will set the membership mapping of AccessGroupMember.
+func (bav *UtxoView) _setAccessGroupMember(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
 	accessGroupMember *AccessGroupMember, blockHeight uint32) {
 
+	// If either of the provided parameters is nil, we return.
+	if groupOwnerPublicKey == nil || groupKeyName == nil || accessGroupMember == nil {
+		return
+	}
+
 	// set utxoView mapping
-	bav._setGroupMembershipKeyToAccessGroupMemberMapping(accessGroupEntry, accessGroupMember)
+	bav._setGroupMembershipKeyToAccessGroupMemberMapping(accessGroupMember, groupOwnerPublicKey, groupKeyName)
 }
 
 // GetAccessGroupEntry will check the membership index for membership of memberPublicKey in the group
@@ -149,12 +158,12 @@ func (bav *UtxoView) GetAccessGroupKeyToAccessGroupEntryMapping(
 	//}
 }
 
-func (bav *UtxoView) _setGroupMembershipKeyToAccessGroupMemberMapping(entry *AccessGroupEntry, member *AccessGroupMember) {
-	if entry == nil || member == nil {
-		return
-	}
-	groupMembershipKey := NewGroupMembershipKey(member.GroupMemberPublicKey, entry.GroupOwnerPublicKey, entry.AccessGroupKeyName[:])
-	bav.GroupMembershipKeyToAccessGroupMember[*groupMembershipKey] = member
+func (bav *UtxoView) _setGroupMembershipKeyToAccessGroupMemberMapping(accessGroupMember *AccessGroupMember,
+	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) {
+	// Create group membership key.
+	groupMembershipKey := NewGroupMembershipKey(accessGroupMember.GroupMemberPublicKey, groupOwnerPublicKey, groupKeyName[:])
+	// Set the mapping.
+	bav.GroupMembershipKeyToAccessGroupMember[*groupMembershipKey] = accessGroupMember
 }
 
 func (bav *UtxoView) _setAccessGroupKeyToAccessGroupEntryMapping(ownerPublicKey *PublicKey,
@@ -323,9 +332,9 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, accessPublicKey,
 	return nil
 }
 
-// getAccessGroupRotatingVersion returns the version of the access group key.
+// GetAccessGroupRotatingVersion returns the version of the access group key.
 // The version is used to determine the key rotation period.
-func getAccessGroupRotatingVersion(accessGroupEntry *AccessGroupEntry, blockHeight uint32) uint64 {
+func GetAccessGroupRotatingVersion(accessGroupEntry *AccessGroupEntry, blockHeight uint32) uint64 {
 	rotatingVersion := uint64(0)
 	if MigrationTriggered(uint64(blockHeight), DeSoAccessGroupsMigration) {
 		// Extract ExtraData["MessageRotatingVersion"] from the entry.
@@ -338,18 +347,18 @@ func getAccessGroupRotatingVersion(accessGroupEntry *AccessGroupEntry, blockHeig
 	return rotatingVersion
 }
 
-// setAccessGroupRotatingVersion sets the version of the access group key.
+// _setAccessGroupRotatingVersion sets the version of the access group key.
 // The version is used to determine the key rotation period.
-func setAccessGroupRotatingVersion(accessGroupEntry *AccessGroupEntry, blockHeight uint32, rotatingVersion uint64) {
+func _setAccessGroupRotatingVersion(accessGroupEntry *AccessGroupEntry, blockHeight uint32, rotatingVersion uint64) {
 	if MigrationTriggered(uint64(blockHeight), DeSoAccessGroupsMigration) {
 		// Set the ExtraData["MessageRotatingVersion"] to the provided value.
 		accessGroupEntry.ExtraData[MessageRotatingVersion] = EncodeUint64(rotatingVersion)
 	}
 }
 
-// getMessageEntryRotatingVersion returns the version of the access group key.
+// GetMessageEntryRotatingVersion returns the version of the access group key.
 // The version is used to determine the key rotation period.
-func getMessageEntryRotatingVersion(messageEntry *MessageEntry, blockHeight uint32) uint64 {
+func GetMessageEntryRotatingVersion(messageEntry *MessageEntry, blockHeight uint32) uint64 {
 	rotatingVersion := uint64(0)
 	if MigrationTriggered(uint64(blockHeight), DeSoAccessGroupsMigration) {
 		// Extract ExtraData["MessageEntryRotatingVersion"] from the entry.
@@ -362,9 +371,9 @@ func getMessageEntryRotatingVersion(messageEntry *MessageEntry, blockHeight uint
 	return rotatingVersion
 }
 
-// setMessageEntryRotatingVersion sets the version of the access group key.
+// _setMessageEntryRotatingVersion sets the version of the access group key.
 // The version is used to determine the key rotation period.
-func setMessageEntryRotatingVersion(messageEntry *MessageEntry, blockHeight uint32, rotatingVersion uint64) {
+func _setMessageEntryRotatingVersion(messageEntry *MessageEntry, blockHeight uint32, rotatingVersion uint64) {
 	if MigrationTriggered(uint64(blockHeight), DeSoAccessGroupsMigration) {
 		// Set the ExtraData["MessageEntryRotatingVersion"] to the provided value.
 		messageEntry.ExtraData[MessageRotatingVersion] = EncodeUint64(rotatingVersion)
@@ -677,7 +686,7 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 			}
 
 			// Get group member attribute entry for this member.
-			attributeEntry, err := bav.getGroupMemberAttributeEntry(existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, newlyMutedMember.GroupMemberPublicKey, AccessGroupMemberAttributeIsMuted)
+			attributeEntry, err := bav.GetGroupMemberAttributeEntry(existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, newlyMutedMember.GroupMemberPublicKey, AccessGroupMemberAttributeIsMuted)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: Problem getting group member attribute entry")
 			}
@@ -714,7 +723,7 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 			}
 
 			// Get group member attribute entry for this member.
-			attributeEntry, err := bav.getGroupMemberAttributeEntry(existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, newlyUnmutedMember.GroupMemberPublicKey, AccessGroupMemberAttributeIsMuted)
+			attributeEntry, err := bav.GetGroupMemberAttributeEntry(existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, newlyUnmutedMember.GroupMemberPublicKey, AccessGroupMemberAttributeIsMuted)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: Problem getting group member attribute entry")
 			}
@@ -776,13 +785,13 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 	if blockHeight >= bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
 		// Set mappings for newlyMutedMembers
 		for _, newlyMutedMember := range newMuteList {
-			bav.setGroupMemberAttributeMapping(accessGroupEntry.GroupOwnerPublicKey,
+			bav._setGroupMemberAttributeMapping(accessGroupEntry.GroupOwnerPublicKey,
 				accessGroupEntry.AccessGroupKeyName, newlyMutedMember.GroupMemberPublicKey,
 				AccessGroupMemberAttributeIsMuted, true, nil)
 		}
 		// Set mappings for newlyUnmutedMembers
 		for _, newlyUnmutedMember := range newUnmuteList {
-			bav.setGroupMemberAttributeMapping(accessGroupEntry.GroupOwnerPublicKey,
+			bav._setGroupMemberAttributeMapping(accessGroupEntry.GroupOwnerPublicKey,
 				accessGroupEntry.AccessGroupKeyName, newlyUnmutedMember.GroupMemberPublicKey,
 				AccessGroupMemberAttributeIsMuted, false, nil)
 		}
