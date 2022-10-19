@@ -965,8 +965,8 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 			OperationTypePrivateMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
-		return bav._disconnectMessagingGroup(
-			OperationTypeMessagingKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+		return bav._disconnectAccessGroup(
+			OperationTypeAccessKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
 		return bav._disconnectSubmitPost(

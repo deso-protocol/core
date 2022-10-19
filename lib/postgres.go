@@ -641,13 +641,13 @@ type PGMessage struct {
 	isDeleted bool
 }
 
-type PGMessagingGroup struct {
-	tableName struct{} `pg:"pg_messaging_group"`
+type PGAccessGroup struct {
+	tableName struct{} `pg:"pg_access_group"`
 
-	GroupOwnerPublicKey   *PublicKey    `pg:",type:bytea"`
-	MessagingPublicKey    *PublicKey    `pg:",type:bytea"`
-	MessagingGroupKeyName *GroupKeyName `pg:",type:bytea"`
-	MessagingGroupMembers []byte        `pg:",type:bytea"`
+	GroupOwnerPublicKey *PublicKey    `pg:",type:bytea"`
+	AccessPublicKey     *PublicKey    `pg:",type:bytea"`
+	AccessGroupKeyName  *GroupKeyName `pg:",type:bytea"`
+	AccessGroupMembers  []byte        `pg:",type:bytea"`
 
 	ExtraData map[string][]byte
 }
@@ -1354,7 +1354,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
 
-			// FIXME: Skip PGMetadataMessagingGroup for now since it's not used downstream
+			// FIXME: Skip PGMetadataAccessGroup for now since it's not used downstream
 
 		} else {
 			return fmt.Errorf("InsertTransactionTx: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
@@ -1908,20 +1908,20 @@ func (postgres *Postgres) flushMessages(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushMessagingGroups(tx *pg.Tx, view *UtxoView) error {
-	var insertMessages []*PGMessagingGroup
-	var deleteMessages []*PGMessagingGroup
+func (postgres *Postgres) flushAccessGroups(tx *pg.Tx, view *UtxoView) error {
+	var insertMessages []*PGAccessGroup
+	var deleteMessages []*PGAccessGroup
 	for _, groupEntry := range view.AccessGroupKeyToAccessGroupEntry {
-		messagingGroupMembersBytes := bytes.NewBuffer([]byte{})
-		if err := gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.DEPRECATED_AccessGroupMembers); err != nil {
+		accessGroupMembersBytes := bytes.NewBuffer([]byte{})
+		if err := gob.NewEncoder(accessGroupMembersBytes).Encode(groupEntry.DEPRECATED_AccessGroupMembers); err != nil {
 			return err
 		}
-		pgGroupEntry := &PGMessagingGroup{
-			GroupOwnerPublicKey:   groupEntry.GroupOwnerPublicKey,
-			MessagingPublicKey:    groupEntry.AccessPublicKey,
-			MessagingGroupKeyName: groupEntry.AccessGroupKeyName,
-			MessagingGroupMembers: messagingGroupMembersBytes.Bytes(),
-			ExtraData:             groupEntry.ExtraData,
+		pgGroupEntry := &PGAccessGroup{
+			GroupOwnerPublicKey: groupEntry.GroupOwnerPublicKey,
+			AccessPublicKey:     groupEntry.AccessPublicKey,
+			AccessGroupKeyName:  groupEntry.AccessGroupKeyName,
+			AccessGroupMembers:  accessGroupMembersBytes.Bytes(),
+			ExtraData:           groupEntry.ExtraData,
 		}
 		if groupEntry.isDeleted {
 			deleteMessages = append(deleteMessages, pgGroupEntry)
@@ -1933,16 +1933,16 @@ func (postgres *Postgres) flushMessagingGroups(tx *pg.Tx, view *UtxoView) error 
 	if len(insertMessages) > 0 {
 		// TODO: There should never be a conflict here. Should we raise an error?
 		_, err := tx.Model(&insertMessages).WherePK().OnConflict(
-			"(group_owner_public_key, messaging_group_key_name) DO UPDATE").Returning("NULL").Insert()
+			"(group_owner_public_key, access_group_key_name) DO UPDATE").Returning("NULL").Insert()
 		if err != nil {
-			return fmt.Errorf("flushMessagingGroups: insert: %v", err)
+			return fmt.Errorf("flushAccessGroups: insert: %v", err)
 		}
 	}
 
 	if len(deleteMessages) > 0 {
 		_, err := tx.Model(&deleteMessages).Returning("NULL").Delete()
 		if err != nil {
-			return fmt.Errorf("flushMessagingGroups: delete: %v", err)
+			return fmt.Errorf("flushAccessGroups: delete: %v", err)
 		}
 	}
 

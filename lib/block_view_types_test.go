@@ -147,7 +147,7 @@ func TestMessageEntryDecoding(t *testing.T) {
 	reflect.DeepEqual(encodedIncludingExtraData, append(messageEntryWithExtraDataRemovedBytes[:len(messageEntryWithExtraDataRemovedBytes)-1], encodedExtraData...))
 }
 
-func TestMessagingGroupEntryDecoding(t *testing.T) {
+func TestAccessGroupEntryDecoding(t *testing.T) {
 	// In this test, we check for backwards-compatibility with extra-data.
 	// The way this test is structured won't work with the newly added mute list
 	// so we set the fork height to something high so that the mute list doesn't exist.
@@ -156,62 +156,62 @@ func TestMessagingGroupEntryDecoding(t *testing.T) {
 	GlobalDeSoParams.ForkHeights = fh
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&fh)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&fh)
-	// Create a messaging group entry
-	messagingGroupEntry := &AccessGroupEntry{
+	// Create a access group entry
+	accessGroupEntry := &AccessGroupEntry{
 		GroupOwnerPublicKey: NewPublicKey(m0PkBytes),
 		AccessPublicKey:     NewPublicKey(m0PkBytes),
 		AccessGroupKeyName:  BaseGroupKeyName(),
 	}
 
-	encodedWithExtraData := EncodeToBytes(0, messagingGroupEntry)
+	encodedWithExtraData := EncodeToBytes(0, accessGroupEntry)
 
 	// We know the last byte is a 0 representing the length of the extra data, so chop that off
 	missingExtraDataEncoding := encodedWithExtraData[:len(encodedWithExtraData)-1]
 
-	decodedMessagingGroupEntryMissingExtraData := &AccessGroupEntry{}
+	decodedAccessGroupEntryMissingExtraData := &AccessGroupEntry{}
 	rr := bytes.NewReader(missingExtraDataEncoding)
-	exists, err := DecodeFromBytes(decodedMessagingGroupEntryMissingExtraData, rr)
+	exists, err := DecodeFromBytes(decodedAccessGroupEntryMissingExtraData, rr)
 	require.Equal(t, true, exists)
 	require.NoError(t, err)
 
-	decodedMessagingGroupEntryWithExtraData := &AccessGroupEntry{}
+	decodedAccessGroupEntryWithExtraData := &AccessGroupEntry{}
 	rr = bytes.NewReader(encodedWithExtraData)
-	exists, err = DecodeFromBytes(decodedMessagingGroupEntryWithExtraData, rr)
+	exists, err = DecodeFromBytes(decodedAccessGroupEntryWithExtraData, rr)
 	require.Equal(t, true, exists)
 	require.NoError(t, err)
 
 	// The message decoded without extra data should
-	require.True(t, reflect.DeepEqual(decodedMessagingGroupEntryWithExtraData, decodedMessagingGroupEntryMissingExtraData))
-	require.True(t, reflect.DeepEqual(decodedMessagingGroupEntryMissingExtraData, messagingGroupEntry))
+	require.True(t, reflect.DeepEqual(decodedAccessGroupEntryWithExtraData, decodedAccessGroupEntryMissingExtraData))
+	require.True(t, reflect.DeepEqual(decodedAccessGroupEntryMissingExtraData, accessGroupEntry))
 
 	// Now encode them again and prove they're the same
-	require.True(t, bytes.Equal(encodedWithExtraData, EncodeToBytes(0, decodedMessagingGroupEntryMissingExtraData)))
+	require.True(t, bytes.Equal(encodedWithExtraData, EncodeToBytes(0, decodedAccessGroupEntryMissingExtraData)))
 
 	// Okay now let's set the extra data on the message entry
-	messagingGroupEntry.ExtraData = map[string][]byte{
+	accessGroupEntry.ExtraData = map[string][]byte{
 		"test": {0, 1, 2},
 	}
 
-	encodedExtraData := EncodeExtraData(messagingGroupEntry.ExtraData)
+	encodedExtraData := EncodeExtraData(accessGroupEntry.ExtraData)
 
-	encodedIncludingExtraData := EncodeToBytes(0, messagingGroupEntry)
+	encodedIncludingExtraData := EncodeToBytes(0, accessGroupEntry)
 
 	extraDataBytesRemoved := encodedIncludingExtraData[:len(encodedIncludingExtraData)-len(encodedExtraData)]
 
-	messagingGroupEntryWithExtraDataRemoved := &AccessGroupEntry{}
+	accessGroupEntryWithExtraDataRemoved := &AccessGroupEntry{}
 	rr = bytes.NewReader(extraDataBytesRemoved)
-	exists, err = DecodeFromBytes(messagingGroupEntryWithExtraDataRemoved, rr)
+	exists, err = DecodeFromBytes(accessGroupEntryWithExtraDataRemoved, rr)
 	require.Equal(t, true, exists)
 	require.NoError(t, err)
 
-	messagingGroupEntryWithExtraDataRemovedBytes := EncodeToBytes(0, messagingGroupEntryWithExtraDataRemoved)
+	accessGroupEntryWithExtraDataRemovedBytes := EncodeToBytes(0, accessGroupEntryWithExtraDataRemoved)
 
 	// This should be effectively equivalent to the original message entry above without extra data
-	require.True(t, reflect.DeepEqual(messagingGroupEntryWithExtraDataRemoved, decodedMessagingGroupEntryWithExtraData))
+	require.True(t, reflect.DeepEqual(accessGroupEntryWithExtraDataRemoved, decodedAccessGroupEntryWithExtraData))
 
 	// The bytes should be the same up until the extra data segment of the bytes
-	require.Equal(t, len(encodedIncludingExtraData), len(messagingGroupEntryWithExtraDataRemovedBytes)+len(encodedExtraData)-1)
-	reflect.DeepEqual(encodedIncludingExtraData, append(messagingGroupEntryWithExtraDataRemovedBytes[:len(messagingGroupEntryWithExtraDataRemovedBytes)-1], encodedExtraData...))
+	require.Equal(t, len(encodedIncludingExtraData), len(accessGroupEntryWithExtraDataRemovedBytes)+len(encodedExtraData)-1)
+	reflect.DeepEqual(encodedIncludingExtraData, append(accessGroupEntryWithExtraDataRemovedBytes[:len(accessGroupEntryWithExtraDataRemovedBytes)-1], encodedExtraData...))
 }
 
 // A lazy test based on TestBitcoinExchange to check utxo encoding/decoding.

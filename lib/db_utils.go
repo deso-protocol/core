@@ -246,7 +246,7 @@ type DBPrefixes struct {
 
 	// Prefix for AccessGroupEntries indexed by OwnerPublicKey and GroupKeyName:
 	//
-	// * This index is used to store information about messaging groups. A group is indexed
+	// * This index is used to store information about access groups. A group is indexed
 	//   by the "owner" public key of the user who created the group and the key
 	//   name the owner selected when creating the group (can be anything, user-defined).
 	//
@@ -286,10 +286,10 @@ type DBPrefixes struct {
 	// entry prefix is never modified, you could "reset" the addition of membership index entries in the flush logic
 	// if you simply add a group member after the block height DeSoAccessGroupsBlockHeight.
 	//
-	// <prefix, GroupMemberPublicKey [33]byte, GroupMessagingPublicKey [33]byte> -> <AccessGroupSimplifiedEntry>
+	// <prefix, GroupMemberPublicKey [33]byte, GroupAccessPublicKey [33]byte> -> <AccessGroupSimplifiedEntry>
 	//
 	// Deprecation comment: We are deprecating this key because there may be some edge cases in which
-	// two groups share the same GroupMessagingPublicKey and yet are actually different groups. The
+	// two groups share the same GroupAccessPublicKey and yet are actually different groups. The
 	// new index below allows us to distinguish between these by adding the GroupKeyName in the key.
 	DeprecatedPrefixGroupMembershipIndex []byte `prefix_id:"[58]" is_state:"true"` // Deprecated: Use PrefixGroupMembershipIndex instead
 
@@ -1314,10 +1314,10 @@ func DBPutMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint6
 	if err := IsByteArrayValidPublicKey(messageEntry.RecipientPublicKey[:]); err != nil {
 		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating recipient public key")
 	}
-	if err := ValidateGroupPublicKeyAndName(messageEntry.SenderMessagingPublicKey[:], messageEntry.SenderMessagingGroupKeyName[:]); err != nil {
+	if err := ValidateGroupPublicKeyAndName(messageEntry.SenderAccessPublicKey[:], messageEntry.SenderAccessGroupKeyName[:]); err != nil {
 		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating sender public key and key name")
 	}
-	if err := ValidateGroupPublicKeyAndName(messageEntry.RecipientMessagingPublicKey[:], messageEntry.RecipientMessagingGroupKeyName[:]); err != nil {
+	if err := ValidateGroupPublicKeyAndName(messageEntry.RecipientAccessPublicKey[:], messageEntry.RecipientAccessGroupKeyName[:]); err != nil {
 		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating recipient public key and key name")
 	}
 
@@ -1421,55 +1421,55 @@ func DBGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 	return privateMessages, nil
 }
 
-func _enumerateLimitedMessagesForMessagingKeysReversedWithTxn(
-	txn *badger.Txn, messagingGroupEntries []*AccessGroupEntry,
+func _enumerateLimitedMessagesForAccessKeysReversedWithTxn(
+	txn *badger.Txn, accessGroupEntries []*AccessGroupEntry,
 	limit uint64) (_privateMessages []*MessageEntry, _err error) {
 
-	// Users can have many messaging keys. By default, a users has the base messaging key, which
-	// is just their main public key. Users can also register messaging keys, e.g. keys like the
+	// Users can have many access keys. By default, a users has the base access key, which
+	// is just their main public key. Users can also register access keys, e.g. keys like the
 	// "default-key", which can be used by others when sending messages to the user. The final
-	// category of messaging keys are group chats, which also introduce a new messaging key that
-	// the user can use to decrypt messages. Overall, the user has many messaging keys and needs
+	// category of access keys are group chats, which also introduce a new access key that
+	// the user can use to decrypt messages. Overall, the user has many access keys and needs
 	// to index messages from multiple prefixes. To do so, we will make badger iterators for each
-	// messaging key and scan each valid message prefix in reverse to get messages sorted by timestamps.
+	// access key and scan each valid message prefix in reverse to get messages sorted by timestamps.
 
-	// Get seek prefixes for each messaging key, we will use them to define iterators for message prefix
+	// Get seek prefixes for each access key, we will use them to define iterators for message prefix
 	var prefixes [][]byte
-	for _, keyEntry := range messagingGroupEntries {
+	for _, keyEntry := range accessGroupEntries {
 		prefixes = append(prefixes, _dbSeekPrefixForMessagePublicKey(keyEntry.AccessPublicKey[:]))
 		//prefixes = append(prefixes, _dbSeekPrefixForMessagePartyPublicKey(keyEntry.AccessPublicKey[:]))
 	}
 
 	// Initialize all iterators, add the 0xff byte to the seek prefix so that we can iterate backwards.
-	var messagingIterators []*badger.Iterator
+	var accessIterators []*badger.Iterator
 	for _, prefix := range prefixes {
 		opts := badger.DefaultIteratorOptions
 		opts.Reverse = true
 		iterator := txn.NewIterator(opts)
 		iterator.Seek(append(prefix, 0xff))
 		defer iterator.Close()
-		messagingIterators = append(messagingIterators, iterator)
+		accessIterators = append(accessIterators, iterator)
 	}
 
 	// We will fetch at most (limit) messages.
 	privateMessages := []*MessageEntry{}
 	for ; limit > 0; limit-- {
 
-		// This loop will find the latest message among all messaging keys.
+		// This loop will find the latest message among all access keys.
 		// To do so, we find the greatest timestamp from iterator keys.
 		latestTimestamp := uint64(0)
 		latestTimestampIndex := -1
 		for ii := 0; ii < len(prefixes); ii++ {
-			if !messagingIterators[ii].ValidForPrefix(prefixes[ii]) {
+			if !accessIterators[ii].ValidForPrefix(prefixes[ii]) {
 				continue
 			}
 			// Get the timestamp from the item key
-			key := messagingIterators[ii].Item().Key()
+			key := accessIterators[ii].Item().Key()
 			rr := bytes.NewReader(key[len(prefixes[ii]):])
 			timestamp, err := ReadUvarint(rr)
 			if err != nil {
-				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: problem reading timestamp "+
-					"for messaging iterator from prefix (%v) at key (%v)", prefixes[ii], messagingIterators[ii].Item().Key())
+				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForAccessKeysReversedWithTxn: problem reading timestamp "+
+					"for access iterator from prefix (%v) at key (%v)", prefixes[ii], accessIterators[ii].Item().Key())
 			}
 
 			if timestamp > latestTimestamp {
@@ -1483,29 +1483,29 @@ func _enumerateLimitedMessagesForMessagingKeysReversedWithTxn(
 			break
 		} else {
 			// Get the message bytes and decode the message.
-			messageBytes, err := messagingIterators[latestTimestampIndex].Item().ValueCopy(nil)
+			messageBytes, err := accessIterators[latestTimestampIndex].Item().ValueCopy(nil)
 			if err != nil {
-				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: Problem copying "+
-					"value from messaging iterator from prefix (%v) at key (%v)",
-					prefixes[latestTimestampIndex], messagingIterators[latestTimestampIndex].Item().Key())
+				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForAccessKeysReversedWithTxn: Problem copying "+
+					"value from access iterator from prefix (%v) at key (%v)",
+					prefixes[latestTimestampIndex], accessIterators[latestTimestampIndex].Item().Key())
 			}
 			message := &MessageEntry{}
 			rr := bytes.NewReader(messageBytes)
 			if exists, err := DecodeFromBytes(message, rr); !exists || err != nil {
-				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForMessagingKeysReversedWithTxn: Problem decoding message "+
-					"from messaging iterator from prefix (%v) at key (%v)",
-					prefixes[latestTimestampIndex], messagingIterators[latestTimestampIndex].Item().Key())
+				return nil, errors.Wrapf(err, "_enumerateLimitedMessagesForAccessKeysReversedWithTxn: Problem decoding message "+
+					"from access iterator from prefix (%v) at key (%v)",
+					prefixes[latestTimestampIndex], accessIterators[latestTimestampIndex].Item().Key())
 			}
 			// Add the message to the list of fetched messages
 			privateMessages = append(privateMessages, message)
-			messagingIterators[latestTimestampIndex].Next()
+			accessIterators[latestTimestampIndex].Next()
 		}
 	}
 
 	return privateMessages, nil
 }
 
-func DBGetLimitedMessageForMessagingKeys(handle *badger.DB, messagingKeys []*AccessGroupEntry, limit uint64) (
+func DBGetLimitedMessageForAccessKeys(handle *badger.DB, accessKeys []*AccessGroupEntry, limit uint64) (
 	_privateMessages []*MessageEntry, _err error) {
 
 	// Setting the prefix to a tstamp of zero should return all the messages
@@ -1514,13 +1514,13 @@ func DBGetLimitedMessageForMessagingKeys(handle *badger.DB, messagingKeys []*Acc
 
 	// Goes backwards to get messages in time sorted order.
 	// Limit the number of keys to speed up load times.
-	// Get all user messaging keys.
+	// Get all user access keys.
 
 	err := handle.Update(func(txn *badger.Txn) error {
 		var err error
-		_privateMessages, err = _enumerateLimitedMessagesForMessagingKeysReversedWithTxn(txn, messagingKeys, limit)
+		_privateMessages, err = _enumerateLimitedMessagesForAccessKeysReversedWithTxn(txn, accessKeys, limit)
 		if err != nil {
-			return errors.Wrapf(err, "DBGetLimitedMessageForMessagingKeys: problem getting user messages")
+			return errors.Wrapf(err, "DBGetLimitedMessageForAccessKeys: problem getting user messages")
 		}
 
 		return nil
@@ -1557,7 +1557,7 @@ func DBPutAccessGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight u
 		GroupKeyName:   *accessGroupEntry.AccessGroupKeyName,
 	}
 	if err := DBSetWithTxn(txn, snap, _dbKeyForAccessGroupEntry(accessKey), EncodeToBytes(blockHeight, accessGroupEntry)); err != nil {
-		return errors.Wrapf(err, "DBPutAccessGroupEntryWithTxn: Problem adding messaging key entry mapping: ")
+		return errors.Wrapf(err, "DBPutAccessGroupEntryWithTxn: Problem adding access key entry mapping: ")
 	}
 
 	return nil
@@ -1624,13 +1624,13 @@ func DBDeleteAccessGroupEntry(handle *badger.DB, snap *Snapshot,
 func DBGetAccessGroupEntriesForOwnerWithTxn(txn *badger.Txn, ownerPublicKey *PublicKey) (
 	_accessKeyEntries []*AccessGroupEntry, _err error) {
 
-	// Setting the prefix to owner's public key will allow us to fetch all messaging keys
+	// Setting the prefix to owner's public key will allow us to fetch all access keys
 	// for the user. We enumerate this prefix.
 	prefix := _dbSeekPrefixForAccessGroupEntry(ownerPublicKey)
 	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAccessGroupEntriesForOwnerWithTxn: "+
-			"problem enumerating messaging key entries for prefix (%v)", prefix)
+			"problem enumerating access key entries for prefix (%v)", prefix)
 	}
 
 	// Decode found access key entries.
@@ -1640,7 +1640,7 @@ func DBGetAccessGroupEntriesForOwnerWithTxn(txn *badger.Txn, ownerPublicKey *Pub
 		rr := bytes.NewReader(valBytes)
 		if exists, err := DecodeFromBytes(accessKeyEntry, rr); !exists || err != nil {
 			return nil, errors.Wrapf(err, "DBGetAccessGroupEntriesForOwnerWithTxn: "+
-				"problem decoding messaging key entry for public key (%v)", ownerPublicKey)
+				"problem decoding access key entry for public key (%v)", ownerPublicKey)
 		}
 
 		accessKeyEntries = append(accessKeyEntries, accessKeyEntry)
@@ -1676,16 +1676,16 @@ func DBGetAllAccessGroupEntriesForMemberWithTxn(txn *badger.Txn, snap *Snapshot,
 
 func DBGetAllUserGroupEntries(handle *badger.DB, snap *Snapshot, ownerPublicKey []byte) ([]*AccessGroupEntry, error) {
 	var err error
-	var messagingGroupEntries []*AccessGroupEntry
+	var accessGroupEntries []*AccessGroupEntry
 
 	err = handle.View(func(txn *badger.Txn) error {
-		messagingGroupEntries, err = DBGetAllAccessGroupEntriesForMemberWithTxn(txn, snap, ownerPublicKey)
+		accessGroupEntries, err = DBGetAllAccessGroupEntriesForMemberWithTxn(txn, snap, ownerPublicKey)
 		return err
 	})
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetAllUserGroupEntries: problem getting user messaging keys")
+		return nil, errors.Wrapf(err, "DBGetAllUserGroupEntries: problem getting user access keys")
 	}
-	return messagingGroupEntries, nil
+	return accessGroupEntries, nil
 }
 
 // -------------------------------------------------------------------------------------
@@ -1706,66 +1706,66 @@ func _dbSeekPrefixForGroupMembershipIndex(groupMemberPublicKey *PublicKey) []byt
 	return append(prefixCopy, groupMemberPublicKey[:]...)
 }
 
-func DBPutMessagingGroupOwnerInMembershipIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	groupOwnerPublicKey *PublicKey, messagingGroupEntry *AccessGroupEntry) error {
+func DBPutAccessGroupOwnerInMembershipIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
+	groupOwnerPublicKey *PublicKey, accessGroupEntry *AccessGroupEntry) error {
 
 	ownerGroupEntry := &AccessGroupEntry{
-		GroupOwnerPublicKey: messagingGroupEntry.GroupOwnerPublicKey,
-		AccessPublicKey:     messagingGroupEntry.AccessPublicKey,
-		AccessGroupKeyName:  messagingGroupEntry.AccessGroupKeyName,
-		ExtraData:           messagingGroupEntry.ExtraData,
+		GroupOwnerPublicKey: accessGroupEntry.GroupOwnerPublicKey,
+		AccessPublicKey:     accessGroupEntry.AccessPublicKey,
+		AccessGroupKeyName:  accessGroupEntry.AccessGroupKeyName,
+		ExtraData:           accessGroupEntry.ExtraData,
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForGroupMembershipIndex(
-		groupOwnerPublicKey, messagingGroupEntry.GroupOwnerPublicKey, messagingGroupEntry.AccessGroupKeyName),
+		groupOwnerPublicKey, accessGroupEntry.GroupOwnerPublicKey, accessGroupEntry.AccessGroupKeyName),
 		EncodeToBytes(blockHeight, ownerGroupEntry)); err != nil {
 
-		return errors.Wrapf(err, "DBPutMessagingGroupOwnerInMembershipIndexWithTxn: Problem putting owner in membership index")
+		return errors.Wrapf(err, "DBPutAccessGroupOwnerInMembershipIndexWithTxn: Problem putting owner in membership index")
 	}
 	return nil
 }
 
-func DBGetMessagingGroupMemberFromMembershipIndexWithTxn(txn *badger.Txn, snap *Snapshot, groupOwnerPublicKey *PublicKey,
+func DBGetAccessGroupMemberFromMembershipIndexWithTxn(txn *badger.Txn, snap *Snapshot, groupOwnerPublicKey *PublicKey,
 	groupKeyName *GroupKeyName) *AccessGroupMember {
 
 	return DBGetMemberFromMembershipIndexWithTxn(txn, snap, groupOwnerPublicKey, groupOwnerPublicKey, groupKeyName)
 }
 
-func DBDeleteMessagingGroupOwnerFromMembershipIndexWithTxn(txn *badger.Txn, snap *Snapshot,
-	messagingGroupKey AccessGroupKey) error {
+func DBDeleteAccessGroupOwnerFromMembershipIndexWithTxn(txn *badger.Txn, snap *Snapshot,
+	accessGroupKey AccessGroupKey) error {
 
 	return DBDeleteMemberFromMembershipIndexWithTxn(txn, snap,
-		&messagingGroupKey.OwnerPublicKey, &messagingGroupKey.OwnerPublicKey, &messagingGroupKey.GroupKeyName)
+		&accessGroupKey.OwnerPublicKey, &accessGroupKey.OwnerPublicKey, &accessGroupKey.GroupKeyName)
 }
 
-func DBPutMessagingGroupMemberInMembershipIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	messagingGroupMember *AccessGroupMember, groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) error {
+func DBPutAccessGroupMemberInMembershipIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
+	accessGroupMember *AccessGroupMember, groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) error {
 	// Sanity-check that public keys have the correct length.
 
-	if len(messagingGroupMember.EncryptedKey) < btcec.PrivKeyBytesLen {
-		return fmt.Errorf("DBPutMessagingGroupMemberInMembershipIndexWithTxn: Problem getting recipient "+
-			"entry for public key (%v)", messagingGroupMember.GroupMemberPublicKey)
+	if len(accessGroupMember.EncryptedKey) < btcec.PrivKeyBytesLen {
+		return fmt.Errorf("DBPutAccessGroupMemberInMembershipIndexWithTxn: Problem getting recipient "+
+			"entry for public key (%v)", accessGroupMember.GroupMemberPublicKey)
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForGroupMembershipIndex(
-		messagingGroupMember.GroupMemberPublicKey, groupOwnerPublicKey, groupKeyName),
-		EncodeToBytes(blockHeight, messagingGroupMember)); err != nil {
+		accessGroupMember.GroupMemberPublicKey, groupOwnerPublicKey, groupKeyName),
+		EncodeToBytes(blockHeight, accessGroupMember)); err != nil {
 
-		return errors.Wrapf(err, "DBPutMessagingGroupMemberInMembershipIndexWithTxn: Problem setting messaging recipient with key (%v) "+
+		return errors.Wrapf(err, "DBPutAccessGroupMemberInMembershipIndexWithTxn: Problem setting access recipient with key (%v) "+
 			"and entry (%v) in the db", _dbKeyForGroupMembershipIndex(
-			messagingGroupMember.GroupMemberPublicKey, groupOwnerPublicKey, groupKeyName),
-			EncodeToBytes(blockHeight, messagingGroupMember))
+			accessGroupMember.GroupMemberPublicKey, groupOwnerPublicKey, groupKeyName),
+			EncodeToBytes(blockHeight, accessGroupMember))
 	}
 
 	return nil
 }
 
-func DBPutMessagingGroupMemberInMembershipIndex(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	messagingGroupMember *AccessGroupMember, groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) error {
+func DBPutAccessGroupMemberInMembershipIndex(handle *badger.DB, snap *Snapshot, blockHeight uint64,
+	accessGroupMember *AccessGroupMember, groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutMessagingGroupMemberInMembershipIndexWithTxn(txn, snap, blockHeight,
-			messagingGroupMember, groupOwnerPublicKey, groupKeyName)
+		return DBPutAccessGroupMemberInMembershipIndexWithTxn(txn, snap, blockHeight,
+			accessGroupMember, groupOwnerPublicKey, groupKeyName)
 	})
 }
 
@@ -1776,16 +1776,16 @@ func DBGetMemberFromMembershipIndexWithTxn(txn *badger.Txn, snap *Snapshot, grou
 		groupMemberPublicKey, groupOwnerPublicKey, groupKeyName)
 	// This is a hacked AccessGroupEntry that contains a single member entry
 	// for the member we're fetching in the members list.
-	messagingGroupMemberBytes, err := DBGetWithTxn(txn, snap, key)
+	accessGroupMemberBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		return nil
 	}
 	// Decode the AccessGroupMember.
-	messagingGroupMember := &AccessGroupMember{}
-	rr := bytes.NewReader(messagingGroupMemberBytes)
-	DecodeFromBytes(messagingGroupMember, rr)
+	accessGroupMember := &AccessGroupMember{}
+	rr := bytes.NewReader(accessGroupMemberBytes)
+	DecodeFromBytes(accessGroupMember, rr)
 
-	return messagingGroupMember
+	return accessGroupMember
 }
 
 func DBGetMemberFromMembershipIndex(db *badger.DB, snap *Snapshot, groupMemberPublicKey *PublicKey,
@@ -1802,13 +1802,13 @@ func DBGetMemberFromMembershipIndex(db *badger.DB, snap *Snapshot, groupMemberPu
 func DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn(txn *badger.Txn, snap *Snapshot, groupMemberPublicKey *PublicKey) (
 	[]*AccessGroupEntry, error) {
 
-	// This function is used to fetch all messaging
-	var messagingGroupEntries []*AccessGroupEntry
+	// This function is used to fetch all access
+	var accessGroupEntries []*AccessGroupEntry
 	prefix := _dbSeekPrefixForGroupMembershipIndex(groupMemberPublicKey)
 	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn: "+
-			"problem enumerating messaging key entries for prefix (%v)", prefix)
+			"problem enumerating access key entries for prefix (%v)", prefix)
 	}
 
 	for _, keyBytes := range keysFound {
@@ -1816,7 +1816,7 @@ func DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn(txn *badger.Txn, snap
 		rr := bytes.NewReader(keyBytes)
 		if exists, err := DecodeFromBytes(membershipKey, rr); !exists || err != nil {
 			return nil, errors.Wrapf(err, "DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn: "+
-				"problem decoding messaging key entry for key (%v)", keyBytes)
+				"problem decoding access key entry for key (%v)", keyBytes)
 		}
 		groupOwnerPublicKey := membershipKey.GroupOwnerPublicKey
 		groupKeyName := membershipKey.GroupKeyName
@@ -1824,15 +1824,15 @@ func DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn(txn *badger.Txn, snap
 			OwnerPublicKey: groupOwnerPublicKey,
 			GroupKeyName:   groupKeyName,
 		}
-		messagingGroupEntry := DBGetAccessGroupEntryWithTxn(txn, snap, groupKey)
-		if messagingGroupEntry == nil {
+		accessGroupEntry := DBGetAccessGroupEntryWithTxn(txn, snap, groupKey)
+		if accessGroupEntry == nil {
 			return nil, fmt.Errorf("DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn: "+
-				"problem getting messaging group entry for key (%v)", groupKey)
+				"problem getting access group entry for key (%v)", groupKey)
 		}
-		messagingGroupEntries = append(messagingGroupEntries, messagingGroupEntry)
+		accessGroupEntries = append(accessGroupEntries, accessGroupEntry)
 	}
 
-	return messagingGroupEntries, nil
+	return accessGroupEntries, nil
 }
 
 func DBDeleteMemberFromMembershipIndexWithTxn(txn *badger.Txn, snap *Snapshot,
@@ -1868,7 +1868,7 @@ func DBDeleteMemberFromMembershipIndex(handle *badger.DB, snap *Snapshot,
 // DBDelete
 
 // -------------------------------------------------------------------------------------
-// Enumerate over group members of a messaging group
+// Enumerate over group members of a access group
 // PrefixGroupEnumerationIndex
 // <prefix, GroupOwnerPublicKey, GroupKeyName, GroupMemberPublicKey> -> <>
 // -------------------------------------------------------------------------------------
@@ -1890,55 +1890,55 @@ func _dbKeyForGroupEnumerationIndex(groupOwnerPublicKey *PublicKey, groupKeyName
 	return key
 }
 
-// DBPutMessagingGroupMemberInEnumerationIndexWithTxn puts a mapping from a group member to a group in the db.
-func DBPutMessagingGroupMemberInEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	messagingGroupMember *AccessGroupMember, groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) error {
+// DBPutAccessGroupMemberInEnumerationIndexWithTxn puts a mapping from a group member to a group in the db.
+func DBPutAccessGroupMemberInEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
+	accessGroupMember *AccessGroupMember, groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) error {
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForGroupEnumerationIndex(
-		groupOwnerPublicKey, groupKeyName, messagingGroupMember.GroupMemberPublicKey),
+		groupOwnerPublicKey, groupKeyName, accessGroupMember.GroupMemberPublicKey),
 		EncodeToBytes(blockHeight, nil)); err != nil {
 
-		return errors.Wrapf(err, "DBPutMessagingGroupMemberInMembershipIndexWithTxn: Problem setting messaging recipient with key (%v) "+
+		return errors.Wrapf(err, "DBPutAccessGroupMemberInMembershipIndexWithTxn: Problem setting access recipient with key (%v) "+
 			"and entry (%v) in the db", _dbKeyForGroupEnumerationIndex(
-			groupOwnerPublicKey, groupKeyName, messagingGroupMember.GroupMemberPublicKey),
+			groupOwnerPublicKey, groupKeyName, accessGroupMember.GroupMemberPublicKey),
 			EncodeToBytes(blockHeight, nil))
 	}
 
 	return nil
 }
 
-func DBPutMessagingGroupMemberInEnumerationIndex(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	messagingGroupMember *AccessGroupMember, groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) error {
+func DBPutAccessGroupMemberInEnumerationIndex(handle *badger.DB, snap *Snapshot, blockHeight uint64,
+	accessGroupMember *AccessGroupMember, groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutMessagingGroupMemberInEnumerationIndexWithTxn(txn, snap, blockHeight, messagingGroupMember, groupOwnerPublicKey, groupKeyName)
+		return DBPutAccessGroupMemberInEnumerationIndexWithTxn(txn, snap, blockHeight, accessGroupMember, groupOwnerPublicKey, groupKeyName)
 	})
 }
 
-func DBGetAllGroupMembersForMessagingGroup(handle *badger.DB, snap *Snapshot,
+func DBGetAllGroupMembersForAccessGroup(handle *badger.DB, snap *Snapshot,
 	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) ([]*AccessGroupMember, error) {
 
-	var messagingGroupMembers []*AccessGroupMember
+	var accessGroupMembers []*AccessGroupMember
 
 	err := handle.View(func(txn *badger.Txn) error {
 		var err error
-		messagingGroupMembers, err = DBGetAllGroupMembersForMessagingGroupWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName)
+		accessGroupMembers, err = DBGetAllGroupMembersForAccessGroupWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName)
 		return err
 	})
 
-	return messagingGroupMembers, err
+	return accessGroupMembers, err
 }
 
-// Get all the group members for a given messaging group.
-func DBGetAllGroupMembersForMessagingGroupWithTxn(txn *badger.Txn, snap *Snapshot,
+// Get all the group members for a given access group.
+func DBGetAllGroupMembersForAccessGroupWithTxn(txn *badger.Txn, snap *Snapshot,
 	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) ([]*AccessGroupMember, error) {
-	// enumerate all the group members for a given messaging group.
-	var messagingGroupMembers []*AccessGroupMember
+	// enumerate all the group members for a given access group.
+	var accessGroupMembers []*AccessGroupMember
 	prefix := _dbSeekPrefixForGroupEnumerationIndex(groupOwnerPublicKey, groupKeyName)
 	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetAllGroupMembersForMessagingGroupWithTxn: "+
-			"problem enumerating messaging key entries for prefix (%v)", prefix)
+		return nil, errors.Wrapf(err, "DBGetAllGroupMembersForAccessGroupWithTxn: "+
+			"problem enumerating access key entries for prefix (%v)", prefix)
 	}
 
 	for _, keyBytes := range keysFound {
@@ -1947,38 +1947,38 @@ func DBGetAllGroupMembersForMessagingGroupWithTxn(txn *badger.Txn, snap *Snapsho
 		enumerationKey := &GroupEnumerationKey{}
 		rr := bytes.NewReader(keyBytes)
 		if exists, err := DecodeFromBytes(enumerationKey, rr); !exists || err != nil {
-			return nil, errors.Wrapf(err, "DBGetAllGroupMembersForMessagingGroupWithTxn: "+
+			return nil, errors.Wrapf(err, "DBGetAllGroupMembersForAccessGroupWithTxn: "+
 				"problem decoding key (%v)", keyBytes)
 		}
 		memberPublicKey := &enumerationKey.GroupMemberPublicKey
-		messagingGroupMember := DBGetMemberFromMembershipIndexWithTxn(txn, snap, memberPublicKey, groupOwnerPublicKey, groupKeyName)
-		if messagingGroupMember == nil {
-			return nil, errors.Wrapf(err, "DBGetAllGroupMembersForMessagingGroupWithTxn: "+
-				"problem fetching messaging group member for public key %v", memberPublicKey)
+		accessGroupMember := DBGetMemberFromMembershipIndexWithTxn(txn, snap, memberPublicKey, groupOwnerPublicKey, groupKeyName)
+		if accessGroupMember == nil {
+			return nil, errors.Wrapf(err, "DBGetAllGroupMembersForAccessGroupWithTxn: "+
+				"problem fetching access group member for public key %v", memberPublicKey)
 		}
-		messagingGroupMembers = append(messagingGroupMembers, messagingGroupMember)
+		accessGroupMembers = append(accessGroupMembers, accessGroupMember)
 	}
 
-	return messagingGroupMembers, nil
+	return accessGroupMembers, nil
 }
 
-// DBGetGroupMemberForMessagingGroupWithTxn for a given group.
-func DBGetGroupMemberForMessagingGroupWithTxn(txn *badger.Txn, snap *Snapshot,
+// DBGetGroupMemberForAccessGroupWithTxn for a given group.
+func DBGetGroupMemberForAccessGroupWithTxn(txn *badger.Txn, snap *Snapshot,
 	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey) (*AccessGroupMember, error) {
 	return DBGetMemberFromMembershipIndexWithTxn(txn, snap, groupMemberPublicKey, groupOwnerPublicKey, groupKeyName), nil
 }
 
-func DBGetGroupMemberForMessagingGroup(handle *badger.DB, snap *Snapshot,
+func DBGetGroupMemberForAccessGroup(handle *badger.DB, snap *Snapshot,
 	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey) (*AccessGroupMember, error) {
 
-	var messagingGroupMember *AccessGroupMember
+	var accessGroupMember *AccessGroupMember
 	err := handle.View(func(txn *badger.Txn) error {
 		var err error
-		messagingGroupMember, err = DBGetGroupMemberForMessagingGroupWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
+		accessGroupMember, err = DBGetGroupMemberForAccessGroupWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
 		return err
 	})
 
-	return messagingGroupMember, err
+	return accessGroupMember, err
 }
 
 func DBDeleteMemberFromEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot,
@@ -1986,7 +1986,7 @@ func DBDeleteMemberFromEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot,
 
 	// First pull up the mapping that exists for the public key passed in.
 	// If one doesn't exist then there's nothing to do.
-	existingMember, err := DBGetGroupMemberForMessagingGroupWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
+	existingMember, err := DBGetGroupMemberForAccessGroupWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
 	if err != nil {
 		return errors.Wrapf(err, "DBDeleteMemberFromEnumerationIndexWithTxn: Problem fetching existing member for public key %v", groupMemberPublicKey)
 	}
@@ -2018,12 +2018,12 @@ func DBDeleteMemberFromEnumerationIndex(handle *badger.DB, snap *Snapshot,
 func DBDeleteAllMembersFromEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot,
 	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) error {
 
-	// enumerate all the group members for a given messaging group.
+	// enumerate all the group members for a given access group.
 	prefix := _dbSeekPrefixForGroupEnumerationIndex(groupOwnerPublicKey, groupKeyName)
 	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
 	if err != nil {
 		return errors.Wrapf(err, "DBDeleteAllMembersFromEnumerationIndexWithTxn: "+
-			"problem enumerating messaging key entries for prefix (%v)", prefix)
+			"problem enumerating access key entries for prefix (%v)", prefix)
 	}
 
 	// Delete all the keys found.
@@ -2411,54 +2411,54 @@ func DBDeleteAttributeInGroupEntryAttributesIndexWithTxn(txn *badger.Txn, snap *
 
 // -------------------------------------------------------------------------------------
 // DEPRECATED
-// Messaging recipient
-// <prefix, public key, messaging public key > -> <HackedMessagingGroupEntry>
+// Access recipient
+// <prefix, public key, access public key > -> <HackedAccessGroupEntry>
 // -------------------------------------------------------------------------------------
 
 // Deprecated
-func _DEPRECATEDdbKeyForMessagingGroupMember(memberPublicKey *PublicKey, groupMessagingPublicKey *PublicKey) []byte {
+func _DEPRECATEDdbKeyForAccessGroupMember(memberPublicKey *PublicKey, groupAccessPublicKey *PublicKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.DeprecatedPrefixGroupMembershipIndex...)
 	key := append(prefixCopy, memberPublicKey[:]...)
-	key = append(key, groupMessagingPublicKey[:]...)
+	key = append(key, groupAccessPublicKey[:]...)
 	return key
 }
 
 // Deprecated
-func _DEPRECATEDdbSeekPrefixForMessagingGroupMember(memberPublicKey *PublicKey) []byte {
+func _DEPRECATEDdbSeekPrefixForAccessGroupMember(memberPublicKey *PublicKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.DeprecatedPrefixGroupMembershipIndex...)
 	return append(prefixCopy, memberPublicKey[:]...)
 }
 
 // Deprecated
-func DEPRECATEDDBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	messagingGroupMember *AccessGroupMember, groupOwnerPublicKey *PublicKey,
-	messagingGroupEntry *AccessGroupEntry) error {
+func DEPRECATEDDBPutAccessGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
+	accessGroupMember *AccessGroupMember, groupOwnerPublicKey *PublicKey,
+	accessGroupEntry *AccessGroupEntry) error {
 	// Sanity-check that public keys have the correct length.
 
-	if len(messagingGroupMember.EncryptedKey) < btcec.PrivKeyBytesLen {
-		return fmt.Errorf("DEPRECATEDDBPutMessagingGroupMemberWithTxn: Problem getting recipient "+
-			"entry for public key (%v)", messagingGroupMember.GroupMemberPublicKey)
+	if len(accessGroupMember.EncryptedKey) < btcec.PrivKeyBytesLen {
+		return fmt.Errorf("DEPRECATEDDBPutAccessGroupMemberWithTxn: Problem getting recipient "+
+			"entry for public key (%v)", accessGroupMember.GroupMemberPublicKey)
 	}
 
-	// Entries for group members are stored as MessagingGroupEntries where the only member in
+	// Entries for group members are stored as AccessGroupEntries where the only member in
 	// the entry is the member specified. This is a bit of a hack to allow us to store a "back-reference"
 	// to the GroupEntry inside the value of this field.
 	memberGroupEntry := &AccessGroupEntry{
 		GroupOwnerPublicKey: groupOwnerPublicKey,
-		AccessPublicKey:     messagingGroupEntry.AccessPublicKey,
-		AccessGroupKeyName:  messagingGroupEntry.AccessGroupKeyName,
+		AccessPublicKey:     accessGroupEntry.AccessPublicKey,
+		AccessGroupKeyName:  accessGroupEntry.AccessGroupKeyName,
 		DEPRECATED_AccessGroupMembers: []*AccessGroupMember{
-			messagingGroupMember,
+			accessGroupMember,
 		},
 	}
 
-	if err := DBSetWithTxn(txn, snap, _DEPRECATEDdbKeyForMessagingGroupMember(
-		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.AccessPublicKey),
+	if err := DBSetWithTxn(txn, snap, _DEPRECATEDdbKeyForAccessGroupMember(
+		accessGroupMember.GroupMemberPublicKey, accessGroupEntry.AccessPublicKey),
 		EncodeToBytes(blockHeight, memberGroupEntry)); err != nil {
 
-		return errors.Wrapf(err, "DEPRECATEDDBPutMessagingGroupMemberWithTxn: Problem setting messaging recipient with key (%v) "+
-			"and entry (%v) in the db", _DEPRECATEDdbKeyForMessagingGroupMember(
-			messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.AccessPublicKey),
+		return errors.Wrapf(err, "DEPRECATEDDBPutAccessGroupMemberWithTxn: Problem setting access recipient with key (%v) "+
+			"and entry (%v) in the db", _DEPRECATEDdbKeyForAccessGroupMember(
+			accessGroupMember.GroupMemberPublicKey, accessGroupEntry.AccessPublicKey),
 			EncodeToBytes(blockHeight, memberGroupEntry))
 	}
 
@@ -2466,114 +2466,114 @@ func DEPRECATEDDBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot,
 }
 
 // Deprecated
-func DEPRECATEDDBPutMessagingGroupMember(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	messagingGroupMember *AccessGroupMember, ownerPublicKey *PublicKey, messagingGroupEntry *AccessGroupEntry) error {
+func DEPRECATEDDBPutAccessGroupMember(handle *badger.DB, snap *Snapshot, blockHeight uint64,
+	accessGroupMember *AccessGroupMember, ownerPublicKey *PublicKey, accessGroupEntry *AccessGroupEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DEPRECATEDDBPutMessagingGroupMemberWithTxn(txn, snap, blockHeight, messagingGroupMember, ownerPublicKey, messagingGroupEntry)
+		return DEPRECATEDDBPutAccessGroupMemberWithTxn(txn, snap, blockHeight, accessGroupMember, ownerPublicKey, accessGroupEntry)
 	})
 }
 
 // Deprecated
-func DEPRECATEDDBGetMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, messagingGroupMember *AccessGroupMember,
-	messagingGroupEntry *AccessGroupEntry) *AccessGroupEntry {
+func DEPRECATEDDBGetAccessGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, accessGroupMember *AccessGroupMember,
+	accessGroupEntry *AccessGroupEntry) *AccessGroupEntry {
 
-	key := _DEPRECATEDdbKeyForMessagingGroupMember(
-		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.AccessPublicKey)
+	key := _DEPRECATEDdbKeyForAccessGroupMember(
+		accessGroupMember.GroupMemberPublicKey, accessGroupEntry.AccessPublicKey)
 	// This is a hacked AccessGroupEntry that contains a single member entry
 	// for the member we're fetching in the members list.
-	messagingGroupMemberEntryBytes, err := DBGetWithTxn(txn, snap, key)
+	accessGroupMemberEntryBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		return nil
 	}
-	messagingGroupMemberEntry := &AccessGroupEntry{}
-	rr := bytes.NewReader(messagingGroupMemberEntryBytes)
-	DecodeFromBytes(messagingGroupMemberEntry, rr)
+	accessGroupMemberEntry := &AccessGroupEntry{}
+	rr := bytes.NewReader(accessGroupMemberEntryBytes)
+	DecodeFromBytes(accessGroupMemberEntry, rr)
 
-	return messagingGroupMemberEntry
+	return accessGroupMemberEntry
 }
 
 // Deprecated
-func DEPRECATEDDBGetMessagingMember(db *badger.DB, snap *Snapshot, messagingMember *AccessGroupMember,
-	messagingGroupEntry *AccessGroupEntry) *AccessGroupEntry {
+func DEPRECATEDDBGetAccessMember(db *badger.DB, snap *Snapshot, accessMember *AccessGroupMember,
+	accessGroupEntry *AccessGroupEntry) *AccessGroupEntry {
 
 	var ret *AccessGroupEntry
 	db.View(func(txn *badger.Txn) error {
-		ret = DEPRECATEDDBGetMessagingGroupMemberWithTxn(txn, snap, messagingMember, messagingGroupEntry)
+		ret = DEPRECATEDDBGetAccessGroupMemberWithTxn(txn, snap, accessMember, accessGroupEntry)
 		return nil
 	})
 	return ret
 }
 
 // Deprecated
-func DEPRECATEDDBGetAllMessagingGroupEntriesForMemberWithTxn(txn *badger.Txn, ownerPublicKey *PublicKey) (
+func DEPRECATEDDBGetAllAccessGroupEntriesForMemberWithTxn(txn *badger.Txn, ownerPublicKey *PublicKey) (
 	[]*AccessGroupEntry, error) {
 
-	// This function is used to fetch all messaging
-	var messagingGroupEntries []*AccessGroupEntry
-	prefix := _DEPRECATEDdbSeekPrefixForMessagingGroupMember(ownerPublicKey)
+	// This function is used to fetch all access
+	var accessGroupEntries []*AccessGroupEntry
+	prefix := _DEPRECATEDdbSeekPrefixForAccessGroupMember(ownerPublicKey)
 	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DEPRECATEDDBGetAllMessagingGroupEntriesForMemberWithTxn: "+
-			"problem enumerating messaging key entries for prefix (%v)", prefix)
+		return nil, errors.Wrapf(err, "DEPRECATEDDBGetAllAccessGroupEntriesForMemberWithTxn: "+
+			"problem enumerating access key entries for prefix (%v)", prefix)
 	}
 
 	for _, valBytes := range valuesFound {
-		messagingGroupEntry := &AccessGroupEntry{}
+		accessGroupEntry := &AccessGroupEntry{}
 		rr := bytes.NewReader(valBytes)
-		if exists, err := DecodeFromBytes(messagingGroupEntry, rr); !exists || err != nil {
-			return nil, errors.Wrapf(err, "DEPRECATEDDBGetAllMessagingGroupEntriesForMemberWithTxn: problem reading "+
+		if exists, err := DecodeFromBytes(accessGroupEntry, rr); !exists || err != nil {
+			return nil, errors.Wrapf(err, "DEPRECATEDDBGetAllAccessGroupEntriesForMemberWithTxn: problem reading "+
 				"an entry from DB")
 		}
 
-		messagingGroupEntries = append(messagingGroupEntries, messagingGroupEntry)
+		accessGroupEntries = append(accessGroupEntries, accessGroupEntry)
 	}
 
-	return messagingGroupEntries, nil
+	return accessGroupEntries, nil
 }
 
 // Note this deletes the message for the sender *and* receiver since a mapping
 // should exist for each.
 // Deprecated
-func DEPRECATEDDBDeleteMessagingGroupMemberMappingWithTxn(txn *badger.Txn, snap *Snapshot,
-	messagingGroupMember *AccessGroupMember, messagingGroupEntry *AccessGroupEntry) error {
+func DEPRECATEDDBDeleteAccessGroupMemberMappingWithTxn(txn *badger.Txn, snap *Snapshot,
+	accessGroupMember *AccessGroupMember, accessGroupEntry *AccessGroupEntry) error {
 
 	// First pull up the mapping that exists for the public key passed in.
 	// If one doesn't exist then there's nothing to do.
-	existingMember := DEPRECATEDDBGetMessagingGroupMemberWithTxn(txn, snap, messagingGroupMember, messagingGroupEntry)
+	existingMember := DEPRECATEDDBGetAccessGroupMemberWithTxn(txn, snap, accessGroupMember, accessGroupEntry)
 	if existingMember == nil {
 		return nil
 	}
 
 	// When a message exists, delete the mapping for the sender and receiver.
-	if err := DBDeleteWithTxn(txn, snap, _DEPRECATEDdbKeyForMessagingGroupMember(
-		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.AccessPublicKey)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _DEPRECATEDdbKeyForAccessGroupMember(
+		accessGroupMember.GroupMemberPublicKey, accessGroupEntry.AccessPublicKey)); err != nil {
 
-		return errors.Wrapf(err, "DEPRECATEDDBDeleteMessagingGroupMemberMappingWithTxn: Deleting mapping for public key %v "+
-			"and messaging public key %v failed", messagingGroupMember.GroupMemberPublicKey[:],
-			messagingGroupEntry.AccessPublicKey[:])
+		return errors.Wrapf(err, "DEPRECATEDDBDeleteAccessGroupMemberMappingWithTxn: Deleting mapping for public key %v "+
+			"and access public key %v failed", accessGroupMember.GroupMemberPublicKey[:],
+			accessGroupEntry.AccessPublicKey[:])
 	}
 
 	return nil
 }
 
 // Deprecated
-func DEPRECATEDDBDeleteMessagingGroupMemberMappings(handle *badger.DB, snap *Snapshot,
-	messagingGroupMember *AccessGroupMember, messagingGroupEntry *AccessGroupEntry) error {
+func DEPRECATEDDBDeleteAccessGroupMemberMappings(handle *badger.DB, snap *Snapshot,
+	accessGroupMember *AccessGroupMember, accessGroupEntry *AccessGroupEntry) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DEPRECATEDDBDeleteMessagingGroupMemberMappingWithTxn(txn, snap, messagingGroupMember, messagingGroupEntry)
+		return DEPRECATEDDBDeleteAccessGroupMemberMappingWithTxn(txn, snap, accessGroupMember, accessGroupEntry)
 	})
 }
 
 func DEPRECATEDDBGetAllUserGroupEntriesWithTxn(txn *badger.Txn, ownerPublicKey []byte) ([]*AccessGroupEntry, error) {
-	// This function fetches all MessagingGroupEntries for the user from the DB. This includes the
+	// This function fetches all AccessGroupEntries for the user from the DB. This includes the
 	// base entry, the owner group entries, and the member group entries.
 
 	// We will keep track of all group entries in this array.
 	var userGroupEntries []*AccessGroupEntry
 
-	// First add the base messaging key.
+	// First add the base access key.
 	userGroupEntries = append(userGroupEntries, &AccessGroupEntry{
 		GroupOwnerPublicKey: NewPublicKey(ownerPublicKey),
 		AccessPublicKey:     NewPublicKey(ownerPublicKey),
@@ -2583,13 +2583,13 @@ func DEPRECATEDDBGetAllUserGroupEntriesWithTxn(txn *badger.Txn, ownerPublicKey [
 	// Now add all the groups where this user is the owner
 	ownerGroupEntries, err := DBGetAccessGroupEntriesForOwnerWithTxn(txn, NewPublicKey(ownerPublicKey))
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetAllAccessGroupEntriesForMemberWithTxn: problem getting messaging entries")
+		return nil, errors.Wrapf(err, "DBGetAllAccessGroupEntriesForMemberWithTxn: problem getting access entries")
 	}
 	userGroupEntries = append(userGroupEntries, ownerGroupEntries...)
 
 	// And add the groups where the user is a member
 	// Never use the deprecated function for backwards compatibility here because of no access to blockHeight
-	memberGroupEntries, err := DEPRECATEDDBGetAllMessagingGroupEntriesForMemberWithTxn(txn, NewPublicKey(ownerPublicKey))
+	memberGroupEntries, err := DEPRECATEDDBGetAllAccessGroupEntriesForMemberWithTxn(txn, NewPublicKey(ownerPublicKey))
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllAccessGroupEntriesForMemberWithTxn: problem getting recipient entries")
 	}
@@ -2600,16 +2600,16 @@ func DEPRECATEDDBGetAllUserGroupEntriesWithTxn(txn *badger.Txn, ownerPublicKey [
 
 func DEPRECATEDDBGetAllUserGroupEntries(handle *badger.DB, ownerPublicKey []byte) ([]*AccessGroupEntry, error) {
 	var err error
-	var messagingGroupEntries []*AccessGroupEntry
+	var accessGroupEntries []*AccessGroupEntry
 
 	err = handle.View(func(txn *badger.Txn) error {
-		messagingGroupEntries, err = DEPRECATEDDBGetAllUserGroupEntriesWithTxn(txn, ownerPublicKey)
+		accessGroupEntries, err = DEPRECATEDDBGetAllUserGroupEntriesWithTxn(txn, ownerPublicKey)
 		return err
 	})
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetAllUserGroupEntries: problem getting user messaging keys")
+		return nil, errors.Wrapf(err, "DBGetAllUserGroupEntries: problem getting user access keys")
 	}
-	return messagingGroupEntries, nil
+	return accessGroupEntries, nil
 }
 
 // -------------------------------------------------------------------------------------

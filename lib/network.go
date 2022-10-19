@@ -6523,7 +6523,7 @@ func (txnData *AccessGroupMetadata) New() DeSoTxnMetadata {
 	return &AccessGroupMetadata{}
 }
 
-// GetAccessGroupOperation returns the messaging group operation based on the transaction. In particular, we check
+// GetAccessGroupOperation returns the access group operation based on the transaction. In particular, we check
 // transaction's ExtraData to see whether it's a mute/unmute operation.
 func GetAccessGroupOperation(txn *MsgDeSoTxn) (AccessGroupOperation, error) {
 	// If the transaction is nil then we return an error.
@@ -6531,21 +6531,21 @@ func GetAccessGroupOperation(txn *MsgDeSoTxn) (AccessGroupOperation, error) {
 		return 0, fmt.Errorf("GetAccessGroupOperation: nil txn")
 	}
 
-	// Make sure this is a messaging group transaction.
+	// Make sure this is a access group transaction.
 	if txn.TxnMeta.GetTxnType() != TxnTypeAccessGroupCreate {
 		return 0, fmt.Errorf("GetAccessGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
 	}
 
-	// Sanity-check cast the transaction metadata to a messaging group metadata.
+	// Sanity-check cast the transaction metadata to a access group metadata.
 	_, ok := txn.TxnMeta.(*AccessGroupMetadata)
 	if !ok {
 		return 0, fmt.Errorf("GetAccessGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
 	}
 
 	// If the transaction's ExtraData is nil then we assume AccessGroupOperationAddMembers
-	messagingGroupOperation := AccessGroupOperationAddMembers
+	accessGroupOperation := AccessGroupOperationAddMembers
 	if txn.ExtraData == nil {
-		return messagingGroupOperation, nil
+		return accessGroupOperation, nil
 	}
 
 	// Check if the transaction's ExtraData contains a AccessGroupOperationType.
@@ -6554,17 +6554,17 @@ func GetAccessGroupOperation(txn *MsgDeSoTxn) (AccessGroupOperation, error) {
 
 		switch operationType {
 		case AccessGroupOperationAddMembers:
-			messagingGroupOperation = AccessGroupOperationAddMembers
+			accessGroupOperation = AccessGroupOperationAddMembers
 		case AccessGroupOperationRemoveMembers:
-			messagingGroupOperation = AccessGroupOperationRemoveMembers
+			accessGroupOperation = AccessGroupOperationRemoveMembers
 		case AccessGroupOperationMuteMembers:
-			messagingGroupOperation = AccessGroupOperationMuteMembers
+			accessGroupOperation = AccessGroupOperationMuteMembers
 		case AccessGroupOperationUnmuteMembers:
-			messagingGroupOperation = AccessGroupOperationUnmuteMembers
+			accessGroupOperation = AccessGroupOperationUnmuteMembers
 		default:
 			return 0, fmt.Errorf("GetAccessGroupOperation: invalid operation type %v", operationType)
 		}
 	}
 
-	return messagingGroupOperation, nil
+	return accessGroupOperation, nil
 }

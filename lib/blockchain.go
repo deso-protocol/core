@@ -2913,8 +2913,8 @@ func _computeMaxTxFeeWithMaxChange(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64)
 func (bc *Blockchain) CreatePrivateMessageTxn(
 	senderPublicKey []byte, recipientPublicKey []byte,
 	unencryptedMessageText string, encryptedMessageText string,
-	senderMessagingPublicKey []byte, senderMessagingKeyName []byte,
-	recipientMessagingPublicKey []byte, recipientMessagingKeyName []byte,
+	senderAccessPublicKey []byte, senderAccessKeyName []byte,
+	recipientAccessPublicKey []byte, recipientAccessKeyName []byte,
 	tstampNanos uint64, extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -2956,24 +2956,24 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 
 		// Check for DeSo V3 Messages fields. Specifically, this request could be made with either sender
 		// or recipient public keys and key names. Having one key present is sufficient to set V3.
-		if len(senderMessagingPublicKey) > 0 || len(recipientMessagingPublicKey) > 0 {
+		if len(senderAccessPublicKey) > 0 || len(recipientAccessPublicKey) > 0 {
 
-			// If we're using rotating messaging keys, then we're on {V : 3} messages.
-			if err = ValidateGroupPublicKeyAndName(senderMessagingPublicKey, senderMessagingKeyName); err == nil {
+			// If we're using rotating access keys, then we're on {V : 3} messages.
+			if err = ValidateGroupPublicKeyAndName(senderAccessPublicKey, senderAccessKeyName); err == nil {
 				messageExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
-				messageExtraData[SenderMessagingPublicKey] = senderMessagingPublicKey
-				messageExtraData[SenderMessagingGroupKeyName] = senderMessagingKeyName
+				messageExtraData[SenderAccessPublicKey] = senderAccessPublicKey
+				messageExtraData[SenderAccessGroupKeyName] = senderAccessKeyName
 			}
 
-			if err = ValidateGroupPublicKeyAndName(recipientMessagingPublicKey, recipientMessagingKeyName); err != nil {
+			if err = ValidateGroupPublicKeyAndName(recipientAccessPublicKey, recipientAccessKeyName); err != nil {
 				// If we didn't pass validation of either sender or recipient, then we return an error.
 				if !reflect.DeepEqual(messageExtraData[MessagesVersionString], UintToBuf(MessagesVersion3)) {
 					return nil, 0, 0, 0, err
 				}
 			} else {
 				messageExtraData[MessagesVersionString] = UintToBuf(MessagesVersion3)
-				messageExtraData[RecipientMessagingPublicKey] = recipientMessagingPublicKey
-				messageExtraData[RecipientMessagingGroupKeyName] = recipientMessagingKeyName
+				messageExtraData[RecipientAccessPublicKey] = recipientAccessPublicKey
+				messageExtraData[RecipientAccessGroupKeyName] = recipientAccessKeyName
 			}
 		}
 	}
@@ -2981,10 +2981,10 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	// Delete protected keys
 	if extraData != nil {
 		delete(extraData, MessagesVersionString)
-		delete(extraData, SenderMessagingPublicKey)
-		delete(extraData, SenderMessagingGroupKeyName)
-		delete(extraData, RecipientMessagingPublicKey)
-		delete(extraData, RecipientMessagingGroupKeyName)
+		delete(extraData, SenderAccessPublicKey)
+		delete(extraData, SenderAccessGroupKeyName)
+		delete(extraData, RecipientAccessPublicKey)
+		delete(extraData, RecipientAccessGroupKeyName)
 	}
 
 	// Going to allow this to merge without a block height check because
@@ -4406,11 +4406,11 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
-func (bc *Blockchain) CreateMessagingKeyTxn(
+func (bc *Blockchain) CreateAccessKeyTxn(
 	senderPublicKey []byte,
-	messagingPublicKey []byte,
-	messagingGroupKeyName []byte,
-	messagingOwnerKeySignature []byte,
+	accessPublicKey []byte,
+	accessGroupKeyName []byte,
+	accessOwnerKeySignature []byte,
 	members []*AccessGroupMember,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
@@ -4420,9 +4420,9 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 	txn := &MsgDeSoTxn{
 		PublicKey: senderPublicKey,
 		TxnMeta: &AccessGroupMetadata{
-			AccessPublicKey:     messagingPublicKey,
-			AccessGroupKeyName:  messagingGroupKeyName,
-			GroupOwnerSignature: messagingOwnerKeySignature,
+			AccessPublicKey:     accessPublicKey,
+			AccessGroupKeyName:  accessGroupKeyName,
+			GroupOwnerSignature: accessOwnerKeySignature,
 			AccessGroupMembers:  members,
 		},
 		ExtraData: extraData,
@@ -4434,12 +4434,12 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateMessagingKeyTxn: Problem adding inputs: ")
+		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateAccessKeyTxn: Problem adding inputs: ")
 	}
 
 	// Sanity-check that the spendAmount is zero.
 	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateMessagingKeyTxn: Spend amount "+
+		return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateAccessKeyTxn: Spend amount "+
 			"should be zero but was %d instead: ", spendAmount)
 	}
 

@@ -12,7 +12,7 @@ import (
 
 func (bav *UtxoView) _getMessageEntryForMessageKey(messageKey *MessageKey) *MessageEntry {
 	// It is important to note that this function has to be called with a MessageKey
-	// that's set with *messaging keys* rather than user keys.
+	// that's set with *access keys* rather than user keys.
 
 	// If an entry exists in the in-memory map, return the value of that mapping.
 	mapValue, existsMapValue := bav.MessageKeyToMessageEntry[*messageKey]
@@ -39,13 +39,13 @@ func (bav *UtxoView) _setMessageEntryMappings(messageEntry *MessageEntry) {
 	}
 
 	// Add a mapping for the sender and the recipient.
-	// We index messages by sender and recipient messaging public keys. Group chats add messaging keys for
+	// We index messages by sender and recipient access public keys. Group chats add access keys for
 	// each recipient. As a result, when fetching user messages, we will need to fetch messages for each
-	// messaging key. Indexing by messaging keys instead of user main keys transpired to be more efficient.
-	senderKey := MakeMessageKey(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos)
+	// access key. Indexing by access keys instead of user main keys transpired to be more efficient.
+	senderKey := MakeMessageKey(messageEntry.SenderAccessPublicKey[:], messageEntry.TstampNanos)
 	bav.MessageKeyToMessageEntry[senderKey] = messageEntry
 
-	recipientKey := MakeMessageKey(messageEntry.RecipientMessagingPublicKey[:], messageEntry.TstampNanos)
+	recipientKey := MakeMessageKey(messageEntry.RecipientAccessPublicKey[:], messageEntry.TstampNanos)
 	bav.MessageKeyToMessageEntry[recipientKey] = messageEntry
 }
 
@@ -80,23 +80,23 @@ func (bav *UtxoView) getMessage(messageHash *BlockHash) *PGMessage {
 
 // TODO: Update for Postgres
 func (bav *UtxoView) GetMessagesForUser(publicKey []byte, blockHeight uint32) (
-	_messageEntries []*MessageEntry, _messagingKeyEntries []*AccessGroupEntry, _err error) {
+	_messageEntries []*MessageEntry, _accessKeyEntries []*AccessGroupEntry, _err error) {
 
 	return bav.GetLimitedMessagesForUser(publicKey, math.MaxUint64, blockHeight)
 }
 
 // TODO: Update for Postgres
 func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint64, blockHeight uint32) (
-	_messageEntries []*MessageEntry, _messagingGroupEntries []*AccessGroupEntry, _err error) {
+	_messageEntries []*MessageEntry, _accessGroupEntries []*AccessGroupEntry, _err error) {
 
 	// This function will fetch up to limit number of messages for a public key. To accomplish
 	// this, we will have to fetch messages for each groups that the user has registered.
 
-	// First get all messaging keys for a user.
-	messagingGroupEntries, err := bav.GetAccessGroupEntriesForUser(ownerPublicKey, blockHeight)
+	// First get all access keys for a user.
+	accessGroupEntries, err := bav.GetAccessGroupEntriesForUser(ownerPublicKey, blockHeight)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "GetLimitedMessagesForUser: "+
-			"problem getting user messaging keys")
+			"problem getting user access keys")
 	}
 
 	// We define an auxiliary map to keep track of messages in UtxoView and DB.
@@ -104,11 +104,11 @@ func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint
 
 	// First look for messages in the UtxoView. We don't skip deleted entries for now as we will do it later.
 	for messageKey, messageEntry := range bav.MessageKeyToMessageEntry {
-		for _, messagingKeyEntry := range messagingGroupEntries {
-			if reflect.DeepEqual(messageKey.PublicKey[:], messagingKeyEntry.AccessPublicKey[:]) {
-				// We will add the messages with the sender messaging public key as the MessageKey
+		for _, accessKeyEntry := range accessGroupEntries {
+			if reflect.DeepEqual(messageKey.PublicKey[:], accessKeyEntry.AccessPublicKey[:]) {
+				// We will add the messages with the sender access public key as the MessageKey
 				// so that we have no overlaps in the DB in some weird edge cases.
-				mapKey := MakeMessageKey(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos)
+				mapKey := MakeMessageKey(messageEntry.SenderAccessPublicKey[:], messageEntry.TstampNanos)
 				messagesMap[mapKey] = messageEntry
 				break
 			}
@@ -116,14 +116,14 @@ func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint
 	}
 
 	// We fetched all UtxoView entries, so now look for messages in the DB.
-	dbMessageEntries, err := DBGetLimitedMessageForMessagingKeys(bav.Handle, messagingGroupEntries, limit)
+	dbMessageEntries, err := DBGetLimitedMessageForAccessKeys(bav.Handle, accessGroupEntries, limit)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntries from db: ")
 	}
 	// Now iterate through all the db message entries and add them to our auxiliary map.
 	for _, messageEntry := range dbMessageEntries {
-		// Use the sender messaging public key for the MessageKey to make sure they match the UtxoView entries.
-		mapKey := MakeMessageKey(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos)
+		// Use the sender access public key for the MessageKey to make sure they match the UtxoView entries.
+		mapKey := MakeMessageKey(messageEntry.SenderAccessPublicKey[:], messageEntry.TstampNanos)
 		if _, exists := messagesMap[mapKey]; !exists {
 			messagesMap[mapKey] = messageEntry
 		}
@@ -138,7 +138,7 @@ func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint
 		}
 		messageEntries = append(messageEntries, messageEntry)
 	}
-	return messageEntries, messagingGroupEntries, nil
+	return messageEntries, accessGroupEntries, nil
 }
 
 func (bav *UtxoView) setMessageMappings(message *PGMessage) {
@@ -235,86 +235,86 @@ func (bav *UtxoView) _connectPrivateMessage(
 	// Create a MessageEntry, we do this now because we might modify some of the fields
 	// based on the version of the message.
 	messageEntry := &MessageEntry{
-		SenderPublicKey:                NewPublicKey(txn.PublicKey),
-		RecipientPublicKey:             NewPublicKey(txMeta.RecipientPublicKey),
-		EncryptedText:                  txMeta.EncryptedText,
-		TstampNanos:                    txMeta.TimestampNanos,
-		Version:                        version,
-		SenderMessagingPublicKey:       NewPublicKey(txn.PublicKey),
-		SenderMessagingGroupKeyName:    BaseGroupKeyName(),
-		RecipientMessagingPublicKey:    NewPublicKey(txMeta.RecipientPublicKey),
-		RecipientMessagingGroupKeyName: BaseGroupKeyName(),
-		ExtraData:                      extraData,
+		SenderPublicKey:             NewPublicKey(txn.PublicKey),
+		RecipientPublicKey:          NewPublicKey(txMeta.RecipientPublicKey),
+		EncryptedText:               txMeta.EncryptedText,
+		TstampNanos:                 txMeta.TimestampNanos,
+		Version:                     version,
+		SenderAccessPublicKey:       NewPublicKey(txn.PublicKey),
+		SenderAccessGroupKeyName:    BaseGroupKeyName(),
+		RecipientAccessPublicKey:    NewPublicKey(txMeta.RecipientPublicKey),
+		RecipientAccessGroupKeyName: BaseGroupKeyName(),
+		ExtraData:                   extraData,
 	}
 
-	// If message was encrypted using DeSo V3 Messages, we will look for messaging keys in
-	// ExtraData. V3 allows users to register messaging keys on-chain, and encrypt messages
-	// to these messaging keys, as opposed to encrypting messages to user's main keys.
+	// If message was encrypted using DeSo V3 Messages, we will look for access keys in
+	// ExtraData. V3 allows users to register access keys on-chain, and encrypt messages
+	// to these access keys, as opposed to encrypting messages to user's main keys.
 	if version == MessagesVersion3 {
 		// Make sure DeSo V3 messages are live.
 		if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorPrivateMessageMessagingPartyBeforeBlockHeight,
-				"_connectPrivateMessage: messaging party used before block height")
+				RuleErrorPrivateMessageAccessPartyBeforeBlockHeight,
+				"_connectPrivateMessage: access party used before block height")
 		}
-		// Look for messaging keys in transaction ExtraData
+		// Look for access keys in transaction ExtraData
 		// TODO: Do we want to make the ExtraData keys shorter to save space and transaction cost?
 		if txn.ExtraData == nil {
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorPrivateMessageMissingExtraData,
 				"_connectPrivateMessage: ExtraData cannot be nil")
 		}
-		senderMessagingPublicKey, existsSender := txn.ExtraData[SenderMessagingPublicKey]
-		recipientMessagingPublicKey, existsRecipient := txn.ExtraData[RecipientMessagingPublicKey]
+		senderAccessPublicKey, existsSender := txn.ExtraData[SenderAccessPublicKey]
+		recipientAccessPublicKey, existsRecipient := txn.ExtraData[RecipientAccessPublicKey]
 		// At least one of these fields must exist if this is a V3 message.
 		if !existsSender && !existsRecipient {
 			return 0, 0, nil, errors.Wrapf(
-				RuleErrorPrivateMessageSentWithoutProperMessagingParty,
-				"_connectPrivateMessage: at least one messaging party must be present")
+				RuleErrorPrivateMessageSentWithoutProperAccessParty,
+				"_connectPrivateMessage: at least one access party must be present")
 		}
 
-		// We will now proceed to add sender's and recipient's messaging keys to the message entry.
+		// We will now proceed to add sender's and recipient's access keys to the message entry.
 		// We make sure that both sender public key and key name is present in transaction's ExtraData.
-		senderMessagingKeyName, existsSenderName := txn.ExtraData[SenderMessagingGroupKeyName]
+		senderAccessKeyName, existsSenderName := txn.ExtraData[SenderAccessGroupKeyName]
 		if existsSender && existsSenderName {
-			// Validate the key and the name using this helper function to make sure messaging key has been previously authorized.
+			// Validate the key and the name using this helper function to make sure access key has been previously authorized.
 			if err = bav.ValidateKeyAndNameWithUtxo(
-				txn.PublicKey, senderMessagingPublicKey, senderMessagingKeyName, blockHeight); err != nil {
-				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
+				txn.PublicKey, senderAccessPublicKey, senderAccessKeyName, blockHeight); err != nil {
+				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateAccessKey,
 					"_connectPrivateMessage: failed to validate public key and key name")
 			}
-			// If everything went well, update the messaging key information in the message entry.
-			messageEntry.SenderMessagingPublicKey = NewPublicKey(senderMessagingPublicKey)
-			messageEntry.SenderMessagingGroupKeyName = NewGroupKeyName(senderMessagingKeyName)
+			// If everything went well, update the access key information in the message entry.
+			messageEntry.SenderAccessPublicKey = NewPublicKey(senderAccessPublicKey)
+			messageEntry.SenderAccessGroupKeyName = NewGroupKeyName(senderAccessKeyName)
 		}
-		// We do an analogous validation for the recipient's messaging key.
-		recipientMessagingKeyName, existsRecipientName := txn.ExtraData[RecipientMessagingGroupKeyName]
+		// We do an analogous validation for the recipient's access key.
+		recipientAccessKeyName, existsRecipientName := txn.ExtraData[RecipientAccessGroupKeyName]
 		if existsRecipient && existsRecipientName {
 			if err := bav.ValidateKeyAndNameWithUtxo(
-				txMeta.RecipientPublicKey, recipientMessagingPublicKey, recipientMessagingKeyName, blockHeight); err != nil {
-				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateMessagingKey,
+				txMeta.RecipientPublicKey, recipientAccessPublicKey, recipientAccessKeyName, blockHeight); err != nil {
+				return 0, 0, nil, errors.Wrapf(RuleErrorPrivateMessageFailedToValidateAccessKey,
 					"_connectPrivateMessage: failed to validate public key and key name, error: (%v)", err)
 			}
-			// If everything worked, update the messaging key information in the message entry.
-			messageEntry.RecipientMessagingPublicKey = NewPublicKey(recipientMessagingPublicKey)
-			messageEntry.RecipientMessagingGroupKeyName = NewGroupKeyName(recipientMessagingKeyName)
+			// If everything worked, update the access key information in the message entry.
+			messageEntry.RecipientAccessPublicKey = NewPublicKey(recipientAccessPublicKey)
+			messageEntry.RecipientAccessGroupKeyName = NewGroupKeyName(recipientAccessKeyName)
 		}
 
 		// After the DeSoAccessGroupsBlockHeight block height we force the usage of V3 messages.
 		if blockHeight >= bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
 			if !(existsSender && existsSenderName && existsRecipient && existsRecipientName) {
 				return 0, 0, nil, errors.Wrapf(
-					RuleErrorPrivateMessageSentWithoutProperMessagingParty,
+					RuleErrorPrivateMessageSentWithoutProperAccessParty,
 					"_connectPrivateMessage: SenderKey, SenderName, RecipientKey, RecipientName should all exist "+
 						"in ExtraData after DeSoAccessGroupsBlockHeight.")
 			}
 			// Reject message if sender is muted
-			senderMessagingPk := NewPublicKey(senderMessagingPublicKey)
+			senderAccessPk := NewPublicKey(senderAccessPublicKey)
 			// txMeta.RecipientPublicKey is the GroupOwnerPublicKey in disguise
-			groupOwnerMessagingPk := NewPublicKey(txMeta.RecipientPublicKey)
-			messagingGroupKeyName := NewGroupKeyName(recipientMessagingKeyName)
+			groupOwnerAccessPk := NewPublicKey(txMeta.RecipientPublicKey)
+			accessGroupKeyName := NewGroupKeyName(recipientAccessKeyName)
 			// check if sender is muted
-			attributeEntry, err := bav.getGroupMemberAttributeEntry(groupOwnerMessagingPk, messagingGroupKeyName, senderMessagingPk, AccessGroupMemberAttributeIsMuted)
+			attributeEntry, err := bav.getGroupMemberAttributeEntry(groupOwnerAccessPk, accessGroupKeyName, senderAccessPk, AccessGroupMemberAttributeIsMuted)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: Problem checking if sender is muted")
 			}
@@ -325,10 +325,10 @@ func (bav *UtxoView) _connectPrivateMessage(
 		}
 	}
 
-	// Make sure we don't try to send messages between identical messaging public keys.
+	// Make sure we don't try to send messages between identical access public keys.
 	// We don't allow groups to send messages to themselves; however, a user is allowed to send a message to himself.
 	// This would happen if we set SenderPublicKey == RecipientPublicKey. This could be used as a "saved messages" feature.
-	if reflect.DeepEqual(messageEntry.SenderMessagingPublicKey[:], messageEntry.RecipientMessagingPublicKey[:]) {
+	if reflect.DeepEqual(messageEntry.SenderAccessPublicKey[:], messageEntry.RecipientAccessPublicKey[:]) {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorPrivateMessageSenderPublicKeyEqualsRecipientPublicKey,
 			"_connectPrivateMessage: Parse error: %v", err)
@@ -340,16 +340,16 @@ func (bav *UtxoView) _connectPrivateMessage(
 	// Postgres does not enforce these rule errors
 	if bav.Postgres == nil {
 		// We fetch an entry both for the recipient and the sender. It is worth noting that we're indexing
-		// private messages by the messaging public keys, rather than sender/owner main keys. This is
+		// private messages by the access public keys, rather than sender/owner main keys. This is
 		// particularly useful in group messages, and allows us to later fetch messages from DB more efficiently.
-		senderMessageKey := MakeMessageKey(messageEntry.SenderMessagingPublicKey[:], txMeta.TimestampNanos)
+		senderMessageKey := MakeMessageKey(messageEntry.SenderAccessPublicKey[:], txMeta.TimestampNanos)
 		senderMessage := bav._getMessageEntryForMessageKey(&senderMessageKey)
 		if senderMessage != nil && !senderMessage.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorPrivateMessageExistsWithSenderPublicKeyTstampTuple,
 				"_connectPrivateMessage: Message key: %v", &senderMessageKey)
 		}
-		recipientMessageKey := MakeMessageKey(messageEntry.RecipientMessagingPublicKey[:], txMeta.TimestampNanos)
+		recipientMessageKey := MakeMessageKey(messageEntry.RecipientAccessPublicKey[:], txMeta.TimestampNanos)
 		recipientMessage := bav._getMessageEntryForMessageKey(&recipientMessageKey)
 		if recipientMessage != nil && !recipientMessage.isDeleted {
 			return 0, 0, nil, errors.Wrapf(
@@ -419,7 +419,7 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 		return errors.Wrapf(err, "_disconnectPrivateMessage: ")
 	}
 
-	// We keep track of sender and recipient messaging public keys. We will update them in V3 messages.
+	// We keep track of sender and recipient access public keys. We will update them in V3 messages.
 	senderPkBytes := currentTxn.PublicKey
 	recipientPkBytes := txMeta.RecipientPublicKey
 
@@ -429,26 +429,26 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 			return errors.Wrapf(RuleErrorPrivateMessageMissingExtraData,
 				"_disconnectPrivateMessage: ExtraData cannot be nil")
 		}
-		senderMessagingPublicKey, existsSender := currentTxn.ExtraData[SenderMessagingPublicKey]
-		recipientMessagingPublicKey, existsRecipient := currentTxn.ExtraData[RecipientMessagingPublicKey]
+		senderAccessPublicKey, existsSender := currentTxn.ExtraData[SenderAccessPublicKey]
+		recipientAccessPublicKey, existsRecipient := currentTxn.ExtraData[RecipientAccessPublicKey]
 		// At least one of these fields must exist.
 		if !existsSender && !existsRecipient {
-			return errors.Wrapf(RuleErrorPrivateMessageSentWithoutProperMessagingParty,
-				"_disconnectPrivateMessage: at least one messaging party must be present")
+			return errors.Wrapf(RuleErrorPrivateMessageSentWithoutProperAccessParty,
+				"_disconnectPrivateMessage: at least one access party must be present")
 		}
 		if existsSender {
-			if err := IsByteArrayValidPublicKey(senderMessagingPublicKey); err != nil {
-				return errors.Wrapf(RuleErrorPrivateMessageSentWithoutProperMessagingParty,
-					"_disconnectPrivateMessage: at least one messaging party must be present")
+			if err := IsByteArrayValidPublicKey(senderAccessPublicKey); err != nil {
+				return errors.Wrapf(RuleErrorPrivateMessageSentWithoutProperAccessParty,
+					"_disconnectPrivateMessage: at least one access party must be present")
 			}
-			senderPkBytes = senderMessagingPublicKey
+			senderPkBytes = senderAccessPublicKey
 		}
 		if existsRecipient {
-			if err := IsByteArrayValidPublicKey(recipientMessagingPublicKey); err != nil {
-				return errors.Wrapf(RuleErrorPrivateMessageSentWithoutProperMessagingParty,
-					"_disconnectPrivateMessage: at least one messaging party must be present")
+			if err := IsByteArrayValidPublicKey(recipientAccessPublicKey); err != nil {
+				return errors.Wrapf(RuleErrorPrivateMessageSentWithoutProperAccessParty,
+					"_disconnectPrivateMessage: at least one access party must be present")
 			}
-			recipientPkBytes = recipientMessagingPublicKey
+			recipientPkBytes = recipientAccessPublicKey
 		}
 	}
 
@@ -492,19 +492,19 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 			hex.EncodeToString(txMeta.EncryptedText))
 	}
 
-	// Sanity-check V3 data such as sender and recipient messaging public keys.
+	// Sanity-check V3 data such as sender and recipient access public keys.
 	// In DeSo V3 Messages, all message entries have these fields.
-	if !reflect.DeepEqual(senderMessageEntry.SenderMessagingPublicKey[:], senderPkBytes) {
-		return fmt.Errorf("_disconnectPrivateMessage: sender messaging public key in MessageEntry "+
+	if !reflect.DeepEqual(senderMessageEntry.SenderAccessPublicKey[:], senderPkBytes) {
+		return fmt.Errorf("_disconnectPrivateMessage: sender access public key in MessageEntry "+
 			"did not match the public key in transaction: (%s) != (%s)",
-			hex.EncodeToString(senderMessageEntry.SenderMessagingPublicKey[:]),
+			hex.EncodeToString(senderMessageEntry.SenderAccessPublicKey[:]),
 			hex.EncodeToString(senderPkBytes))
 	}
 
-	if !reflect.DeepEqual(senderMessageEntry.RecipientMessagingPublicKey[:], recipientPkBytes) {
-		return fmt.Errorf("_disconnectPrivateMessage: sender messaging public key in MessageEntry "+
+	if !reflect.DeepEqual(senderMessageEntry.RecipientAccessPublicKey[:], recipientPkBytes) {
+		return fmt.Errorf("_disconnectPrivateMessage: sender access public key in MessageEntry "+
 			"did not match the public key in transaction: (%s) != (%s)",
-			hex.EncodeToString(senderMessageEntry.RecipientMessagingPublicKey[:]),
+			hex.EncodeToString(senderMessageEntry.RecipientAccessPublicKey[:]),
 			hex.EncodeToString(recipientPkBytes))
 	}
 

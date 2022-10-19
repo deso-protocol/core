@@ -1192,7 +1192,7 @@ func TestDAOCoinTransfer(t *testing.T) {
 	require.Equal(txMeta, testMeta)
 }
 
-func TestMessagingKey(t *testing.T) {
+func TestAccessKey(t *testing.T) {
 	require := require.New(t)
 
 	m0PrivBytes, _, err := Base58CheckDecode(m0Priv)

@@ -989,7 +989,7 @@ func (bav *UtxoView) _flushAccessGroupEntriesToDbWithTxn(txn *badger.Txn, blockH
 					// all members are stored in the new membership index. Depending on the blockHeight, we remove
 					// existing entries from the corresponding index.
 
-					if err := DEPRECATEDDBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot,
+					if err := DEPRECATEDDBDeleteAccessGroupMemberMappingWithTxn(txn, bav.Snapshot,
 						member, existingAccessGroupEntry); err != nil {
 						return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
 							"Problem deleting AccessGroupEntry recipients (%v) from db", member)
@@ -1026,7 +1026,7 @@ func (bav *UtxoView) _flushAccessGroupEntriesToDbWithTxn(txn *badger.Txn, blockH
 					// entries to the corresponding index.
 					// The membership index allows us to store only the relevant member in the lists - "DEPRECATED_AccessGroupMembers" &
 					// "MuteList" which otherwise could have been pretty bulky to retrieve for every single message.
-					if err := DEPRECATEDDBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
+					if err := DEPRECATEDDBPutAccessGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
 						member, ownerPublicKey, accessGroupEntry); err != nil {
 						return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
 							"Fail while putting old membership index. Problem putting AccessGroupEntry member (%v) to db", *member)
@@ -1061,14 +1061,14 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 	// Flush group members to db.
 	for groupMembershipKey, accessGroupMember := range bav.GroupMembershipKeyToAccessGroupMember {
 		// add group member to membership index
-		if err := DBPutMessagingGroupMemberInMembershipIndexWithTxn(txn, bav.Snapshot, blockHeight,
+		if err := DBPutAccessGroupMemberInMembershipIndexWithTxn(txn, bav.Snapshot, blockHeight,
 			accessGroupMember, &groupMembershipKey.GroupOwnerPublicKey, &groupMembershipKey.GroupKeyName); err != nil {
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 				"Fail while putting new membership index. Problem putting AccessGroupMember %v to db", *accessGroupMember)
 		}
 
 		// add group member to enumeration index
-		if err := DBPutMessagingGroupMemberInEnumerationIndexWithTxn(txn, bav.Snapshot, blockHeight,
+		if err := DBPutAccessGroupMemberInEnumerationIndexWithTxn(txn, bav.Snapshot, blockHeight,
 			accessGroupMember, &groupMembershipKey.GroupOwnerPublicKey, &groupMembershipKey.GroupKeyName); err != nil {
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 				"Fail while putting new enumeration index. Problem putting AccessGroupMember %v to db", *accessGroupMember)
