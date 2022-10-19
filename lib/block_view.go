@@ -272,9 +272,9 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 
 	// Copy access group data
 	newView.AccessGroupKeyToAccessGroupEntry = make(map[AccessGroupKey]*AccessGroupEntry, len(bav.AccessGroupKeyToAccessGroupEntry))
-	for pkid, entry := range bav.AccessGroupKeyToAccessGroupEntry {
+	for key, entry := range bav.AccessGroupKeyToAccessGroupEntry {
 		newEntry := *entry
-		newView.AccessGroupKeyToAccessGroupEntry[pkid] = &newEntry
+		newView.AccessGroupKeyToAccessGroupEntry[key] = &newEntry
 	}
 
 	newView.GroupMembershipKeyToAccessGroupMember = make(map[GroupMembershipKey]*AccessGroupMember, len(bav.GroupMembershipKeyToAccessGroupMember))

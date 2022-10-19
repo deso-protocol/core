@@ -717,7 +717,7 @@ type UtxoOperation struct {
 	// For disconnecting AuthorizeDerivedKey transactions.
 	PrevDerivedKeyEntry *DerivedKeyEntry
 
-	// For disconnecting AccessGroupKey transactions.
+	// For disconnecting AccessGroup transactions.
 	PrevAccessKeyEntry *AccessGroupEntry
 
 	// Save the previous repost entry and repost count when making an update.
