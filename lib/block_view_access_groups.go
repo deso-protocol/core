@@ -6,7 +6,6 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"math"
 	"reflect"
 )
 
@@ -264,69 +263,6 @@ func (bav *UtxoView) GetAccessGroupEntriesForUser(ownerPublicKey []byte, blockHe
 		retMessagingKeyEntries = append(retMessagingKeyEntries, messagingKeyEntry)
 	}
 	return retMessagingKeyEntries, nil
-}
-
-// TODO: Update for Postgres
-func (bav *UtxoView) GetMessagesForUser(publicKey []byte, blockHeight uint32) (
-	_messageEntries []*MessageEntry, _messagingKeyEntries []*AccessGroupEntry, _err error) {
-
-	return bav.GetLimitedMessagesForUser(publicKey, math.MaxUint64, blockHeight)
-}
-
-// TODO: Update for Postgres
-func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint64, blockHeight uint32) (
-	_messageEntries []*MessageEntry, _messagingGroupEntries []*AccessGroupEntry, _err error) {
-
-	// This function will fetch up to limit number of messages for a public key. To accomplish
-	// this, we will have to fetch messages for each groups that the user has registered.
-
-	// First get all messaging keys for a user.
-	messagingGroupEntries, err := bav.GetAccessGroupEntriesForUser(ownerPublicKey, blockHeight)
-	if err != nil {
-		return nil, nil, errors.Wrapf(err, "GetLimitedMessagesForUser: "+
-			"problem getting user messaging keys")
-	}
-
-	// We define an auxiliary map to keep track of messages in UtxoView and DB.
-	messagesMap := make(map[MessageKey]*MessageEntry)
-
-	// First look for messages in the UtxoView. We don't skip deleted entries for now as we will do it later.
-	for messageKey, messageEntry := range bav.MessageKeyToMessageEntry {
-		for _, messagingKeyEntry := range messagingGroupEntries {
-			if reflect.DeepEqual(messageKey.PublicKey[:], messagingKeyEntry.AccessPublicKey[:]) {
-				// We will add the messages with the sender messaging public key as the MessageKey
-				// so that we have no overlaps in the DB in some weird edge cases.
-				mapKey := MakeMessageKey(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos)
-				messagesMap[mapKey] = messageEntry
-				break
-			}
-		}
-	}
-
-	// We fetched all UtxoView entries, so now look for messages in the DB.
-	dbMessageEntries, err := DBGetLimitedMessageForMessagingKeys(bav.Handle, messagingGroupEntries, limit)
-	if err != nil {
-		return nil, nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntries from db: ")
-	}
-	// Now iterate through all the db message entries and add them to our auxiliary map.
-	for _, messageEntry := range dbMessageEntries {
-		// Use the sender messaging public key for the MessageKey to make sure they match the UtxoView entries.
-		mapKey := MakeMessageKey(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos)
-		if _, exists := messagesMap[mapKey]; !exists {
-			messagesMap[mapKey] = messageEntry
-		}
-	}
-
-	// We have added all message entries to our auxiliary map so now we transform them into a map.
-	var messageEntries []*MessageEntry
-	for _, messageEntry := range messagesMap {
-		// Skip isDeleted entries
-		if messageEntry.isDeleted {
-			continue
-		}
-		messageEntries = append(messageEntries, messageEntry)
-	}
-	return messageEntries, messagingGroupEntries, nil
 }
 
 func ValidateGroupPublicKeyAndName(messagingPublicKey, keyName []byte) error {
