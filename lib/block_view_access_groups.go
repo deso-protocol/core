@@ -223,10 +223,7 @@ func (bav *UtxoView) GetAccessGroupEntriesForUser(ownerPublicKey []byte, blockHe
 		}
 		// Now we will look for access keys where the public key is a recipient of a group chat.
 		if blockHeight >= bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
-			member, err := DBGetGroupMemberForAccessGroup(bav.Handle, bav.Snapshot, accessKeyEntry.GroupOwnerPublicKey, accessKeyEntry.AccessGroupKeyName, NewPublicKey(ownerPublicKey))
-			if err != nil {
-				return nil, errors.Wrapf(err, "GetAccessGroupEntriesForUser: Problem getting group members for access group: %v", accessKeyEntry)
-			}
+			member := bav.GetAccessGroupMember(NewPublicKey(ownerPublicKey), &accessKey.OwnerPublicKey, &accessKey.GroupKeyName, blockHeight)
 			if member != nil {
 				accessKeysMap[accessKey] = accessKeyEntry
 			}
