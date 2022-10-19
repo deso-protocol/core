@@ -9,11 +9,11 @@ import (
 	"reflect"
 )
 
-// GetAccessMember will check the membership index for membership of memberPublicKey in the group
+// GetAccessGroupMember will check the membership index for membership of memberPublicKey in the group
 // <groupOwnerPublicKey, groupKeyName>. Based on the blockheight, we fetch the full group or we fetch
 // the simplified message group entry from the membership index. forceFullEntry is an optional parameter that
 // will force us to always fetch the full group entry.
-func (bav *UtxoView) GetAccessMember(memberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey,
+func (bav *UtxoView) GetAccessGroupMember(memberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey,
 	groupKeyName *GroupKeyName, blockHeight uint32) *AccessGroupMember {
 
 	// If either of the provided parameters is nil, we return.
@@ -33,19 +33,19 @@ func (bav *UtxoView) GetAccessMember(memberPublicKey *PublicKey, groupOwnerPubli
 	return accessGroupMember
 }
 
-// SetAccessMember will set the membership mapping of AccessGroupMember.
-func (bav *UtxoView) SetAccessMember(accessGroupEntry *AccessGroupEntry,
+// SetAccessGroupMember will set the membership mapping of AccessGroupMember.
+func (bav *UtxoView) SetAccessGroupMember(accessGroupEntry *AccessGroupEntry,
 	accessGroupMember *AccessGroupMember, blockHeight uint32) {
 
 	// set utxoView mapping
 	bav._setGroupMembershipKeyToAccessGroupMemberMapping(accessGroupEntry, accessGroupMember)
 }
 
-// GetAccessEntry will check the membership index for membership of memberPublicKey in the group
+// GetAccessGroupEntry will check the membership index for membership of memberPublicKey in the group
 // <groupOwnerPublicKey, groupKeyName>. Based on the blockheight, we fetch the full group or we fetch
 // the simplified message group entry from the membership index. forceFullEntry is an optional parameter that
 // will force us to always fetch the full group entry.
-func (bav *UtxoView) GetAccessEntry(memberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey,
+func (bav *UtxoView) GetAccessGroupEntry(memberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey,
 	groupKeyName *GroupKeyName, blockHeight uint32) *AccessGroupEntry {
 
 	// If either of the provided parameters is nil, we return.
@@ -84,7 +84,7 @@ func (bav *UtxoView) GetAccessGroupForAccessGroupKeyExistence(accessGroupKey *Ac
 	// The owner is a member of their own group by default, hence they will be present in the membership index.
 	ownerPublicKey := &accessGroupKey.OwnerPublicKey
 	groupKeyName := &accessGroupKey.GroupKeyName
-	entry := bav.GetAccessEntry(
+	entry := bav.GetAccessGroupEntry(
 		ownerPublicKey, ownerPublicKey, groupKeyName, blockHeight)
 	// Filter out deleted entries.
 	if entry == nil || entry.isDeleted {
@@ -670,7 +670,7 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 					"_connectAccessGroupCreate: GroupOwner cannot mute herself (%v).", existingEntry.GroupOwnerPublicKey[:])
 			}
 			// Make sure we are muting a member that exists in the group.
-			member := bav.GetAccessMember(newlyMutedMember.GroupMemberPublicKey, existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, blockHeight)
+			member := bav.GetAccessGroupMember(newlyMutedMember.GroupMemberPublicKey, existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, blockHeight)
 			if member == nil {
 				return 0, 0, nil, errors.Wrapf(RuleErrorAccessMemberNotInGroup,
 					"_connectAccessGroupCreate: Can't mute a non-existent member (%v)", newlyMutedMember.GroupMemberPublicKey[:])
@@ -701,7 +701,7 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 		for _, newlyUnmutedMember := range txMeta.AccessGroupMembers {
 
 			// Make sure we are unmuting a member that exists in the group.
-			member := bav.GetAccessMember(newlyUnmutedMember.GroupMemberPublicKey, existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, blockHeight)
+			member := bav.GetAccessGroupMember(newlyUnmutedMember.GroupMemberPublicKey, existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, blockHeight)
 			if member == nil {
 				return 0, 0, nil, errors.Wrapf(RuleErrorAccessMemberNotInGroup,
 					"_connectAccessGroupCreate: Can't unmute a non-existent member (%v)", newlyUnmutedMember.GroupMemberPublicKey[:])

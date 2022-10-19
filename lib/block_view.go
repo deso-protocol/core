@@ -2325,26 +2325,6 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			bav._connectAccessGroupCreate(
 				txn, txHash, blockHeight, verifySignatures)
 
-		//} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupAddMember {
-		//	totalInput, totalOutput, utxoOpsForTxn, err =
-		//		bav._connectAccessGroupAddMember(
-		//			txn, txHash, blockHeight, verifySignatures)
-		//
-		//} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupRemoveMember {
-		//	totalInput, totalOutput, utxoOpsForTxn, err =
-		//		bav._connectAccessGroupRemoveMember(
-		//			txn, txHash, blockHeight, verifySignatures)
-		//
-		//} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupSetMemberAttribute {
-		//	totalInput, totalOutput, utxoOpsForTxn, err =
-		//		bav._connectAccessGroupSetMemberAttribute(
-		//			txn, txHash, blockHeight, verifySignatures)
-		//
-		//} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupSetGroupAttribute {
-		//	totalInput, totalOutput, utxoOpsForTxn, err =
-		//		bav._connectAccessGroupSetGroupAttribute(
-		//			txn, txHash, blockHeight, verifySignatures)
-
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectSubmitPost(
