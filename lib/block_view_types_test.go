@@ -156,7 +156,7 @@ func TestAccessGroupEntryDecoding(t *testing.T) {
 	GlobalDeSoParams.ForkHeights = fh
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&fh)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&fh)
-	// Create a access group entry
+	// Create an access group entry
 	accessGroupEntry := &AccessGroupEntry{
 		GroupOwnerPublicKey: NewPublicKey(m0PkBytes),
 		AccessPublicKey:     NewPublicKey(m0PkBytes),

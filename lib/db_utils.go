@@ -1605,7 +1605,7 @@ func DBDeleteAccessGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 		return nil
 	}
 
-	// When a access key entry exists, delete it from the DB.
+	// When an access key entry exists, delete it from the DB.
 	if err := DBDeleteWithTxn(txn, snap, _dbKeyForAccessGroupEntry(accessGroupKey)); err != nil {
 		return errors.Wrapf(err, "DBDeleteAccessGroupEntryWithTxn: Deleting "+
 			"entry for AccessGroupKey failed: %v", accessGroupKey)
@@ -1868,7 +1868,7 @@ func DBDeleteMemberFromMembershipIndex(handle *badger.DB, snap *Snapshot,
 // DBDelete
 
 // -------------------------------------------------------------------------------------
-// Enumerate over group members of a access group
+// Enumerate over group members of an access group
 // PrefixGroupEnumerationIndex
 // <prefix, GroupOwnerPublicKey, GroupKeyName, GroupMemberPublicKey> -> <>
 // -------------------------------------------------------------------------------------

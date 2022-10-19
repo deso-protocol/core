@@ -616,7 +616,7 @@ func _generateAccessKey(senderPub []byte, senderPriv []byte, keyName []byte) (
 	return priv, signature.Serialize(), _initAccessKey(senderPub, pub, keyName)
 }
 
-// _accessKey adds a access key entry to a new utxo and flushes to DB.
+// _accessKey adds an access key entry to a new utxo and flushes to DB.
 func _accessKey(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
 	senderPk []byte, signerPriv string, accessPublicKey []byte, accessKeyName []byte,
 	keySignature []byte, recipients []*AccessGroupMember) ([]*UtxoOperation, *MsgDeSoTxn, error) {
@@ -666,7 +666,7 @@ func _accessKeyWithTestMeta(testMeta *TestMeta, senderPk []byte, signerPriv stri
 		keySignature, recipients, nil, expectedError)
 }
 
-// _accessKeyWithTestMeta is used to connect and flush a access key to the DB.
+// _accessKeyWithTestMeta is used to connect and flush an access key to the DB.
 func _accessKeyWithExtraDataWithTestMeta(testMeta *TestMeta, senderPk []byte, signerPriv string,
 	accessPublicKey []byte, accessKeyName []byte, keySignature []byte, recipients []*AccessGroupMember,
 	extraData map[string][]byte, expectedError error) {
@@ -691,7 +691,7 @@ func _accessKeyWithExtraDataWithTestMeta(testMeta *TestMeta, senderPk []byte, si
 	testMeta.txns = append(testMeta.txns, txn)
 }
 
-// _verifyAccessKey allows us to verify that a access key was properly connected to utxoView and
+// _verifyAccessKey allows us to verify that an access key was properly connected to utxoView and
 // that it matches the expected entry that's provided.
 func _verifyAccessKey(testMeta *TestMeta, publicKey *PublicKey, entry *AccessGroupEntry) bool {
 	var utxoAccessEntry *AccessGroupEntry
@@ -764,7 +764,7 @@ func _verifyAddedAccessKeys(testMeta *TestMeta, publicKey []byte, expectedEntrie
 	}))
 }
 
-// _initAccessKey is a helper function that instantiates a AccessGroupEntry.
+// _initAccessKey is a helper function that instantiates an AccessGroupEntry.
 func _initAccessKey(senderPub []byte, accessPublicKey []byte, accessKeyName []byte) *AccessGroupEntry {
 	return &AccessGroupEntry{
 		GroupOwnerPublicKey: NewPublicKey(senderPub),
@@ -947,7 +947,7 @@ func TestAccessKeys(t *testing.T) {
 		// Verification still fails because the txn wasn't successful.
 		require.Equal(false, _verifyAccessKey(testMeta, &senderPublicKey, entry))
 	}
-	// Sender tries adding a access key with an empty access key name, must fail.
+	// Sender tries adding an access key with an empty access key name, must fail.
 	{
 		failingKeyName := []byte{}
 		_, _, entry := _generateAccessKey(senderPkBytes, senderPrivBytes, failingKeyName)
@@ -1039,7 +1039,7 @@ func TestAccessKeys(t *testing.T) {
 		keyEntriesAdded[senderPublicKey] = append(keyEntriesAdded[senderPublicKey], entry)
 	}
 	// Sender tries adding the same key again without changing anything, this should fail.
-	// We would accept an update to a access key only if we add group recipients.
+	// We would accept an update to an access key only if we add group recipients.
 	{
 		randomKeyName := []byte("test-key-2")
 		entry := keyEntriesAdded[senderPublicKey][len(keyEntriesAdded[senderPublicKey])-1]
@@ -1262,7 +1262,7 @@ func TestAccessKeys(t *testing.T) {
 		require.Equal(true, _verifyAccessKey(testMeta, &senderPublicKey, entry))
 		keyEntriesAdded[senderPublicKey] = append(keyEntriesAdded[senderPublicKey], entry)
 	}
-	// Sender tries adding a access public key as one of the recipients, this is also forbidden so we fail.
+	// Sender tries adding an access public key as one of the recipients, this is also forbidden so we fail.
 	{
 		randomGroupKeyName := []byte("test-key-4")
 		_, _, entry := _generateAccessKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
@@ -1284,7 +1284,7 @@ func TestAccessKeys(t *testing.T) {
 			RuleErrorAccessMemberAlreadyExists)
 		require.Equal(false, _verifyAccessKey(testMeta, &senderPublicKey, entry))
 	}
-	// Sender tries adding a access recipient for m0PubKey with a non-existent key, this should fail.
+	// Sender tries adding an access recipient for m0PubKey with a non-existent key, this should fail.
 	{
 		randomGroupKeyName := []byte("test-key-5")
 		_, _, entry := _generateAccessKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)
@@ -1305,7 +1305,7 @@ func TestAccessKeys(t *testing.T) {
 			RuleErrorAccessMemberKeyDoesntExist)
 		require.Equal(false, _verifyAccessKey(testMeta, &senderPublicKey, entry))
 	}
-	// Sender tries adding a access recipient for m0PubKey with a malformed encrypted key, so we fail.
+	// Sender tries adding an access recipient for m0PubKey with a malformed encrypted key, so we fail.
 	{
 		randomGroupKeyName := []byte("test-key-6")
 		_, _, entry := _generateAccessKey(senderPkBytes, senderPrivBytes, randomGroupKeyName)

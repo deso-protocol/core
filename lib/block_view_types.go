@@ -2458,7 +2458,7 @@ func (entry *AccessGroupEntry) GetEncoderType() EncoderType {
 // AccessGroupMember is used to store information about a group chat member.
 type AccessGroupMember struct {
 	// GroupMemberPublicKey is the main public key of the group chat member.
-	// Importantly, it isn't a access public key.
+	// Importantly, it isn't an access public key.
 	GroupMemberPublicKey *PublicKey
 
 	// GroupMemberKeyName determines the key of the recipient that the

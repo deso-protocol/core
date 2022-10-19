@@ -6531,12 +6531,12 @@ func GetAccessGroupOperation(txn *MsgDeSoTxn) (AccessGroupOperation, error) {
 		return 0, fmt.Errorf("GetAccessGroupOperation: nil txn")
 	}
 
-	// Make sure this is a access group transaction.
+	// Make sure this is an access group transaction.
 	if txn.TxnMeta.GetTxnType() != TxnTypeAccessGroupCreate {
 		return 0, fmt.Errorf("GetAccessGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
 	}
 
-	// Sanity-check cast the transaction metadata to a access group metadata.
+	// Sanity-check cast the transaction metadata to an access group metadata.
 	_, ok := txn.TxnMeta.(*AccessGroupMetadata)
 	if !ok {
 		return 0, fmt.Errorf("GetAccessGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
@@ -6548,7 +6548,7 @@ func GetAccessGroupOperation(txn *MsgDeSoTxn) (AccessGroupOperation, error) {
 		return accessGroupOperation, nil
 	}
 
-	// Check if the transaction's ExtraData contains a AccessGroupOperationType.
+	// Check if the transaction's ExtraData contains an AccessGroupOperationType.
 	if operationTypeBytes, operationTypeExists := txn.ExtraData[AccessGroupOperationType]; operationTypeExists && len(operationTypeBytes) == 1 {
 		operationType := AccessGroupOperation(operationTypeBytes[0])
 
