@@ -75,11 +75,6 @@ const (
 	EncoderTypeUtxoOperationBundle
 	EncoderTypeMessageEntry
 	EncoderTypeGroupKeyName
-	EncoderTypeGroupMembershipKey
-	EncoderTypeGroupEnumerationKey
-	EncoderTypeGroupMemberAttributesKey
-	EncoderTypeGroupEntryAttributesKey
-	EncoderTypeAttributeEntry
 	EncoderTypeAccessGroupEntry
 	EncoderTypeAccessGroupMember
 	EncoderTypeForbiddenPubKeyEntry
@@ -105,6 +100,11 @@ const (
 	EncoderTypeBlockHash
 	EncoderTypeDAOCoinLimitOrderEntry
 	EncoderTypeFilledDAOCoinLimitOrder
+	EncoderTypeGroupMembershipKey
+	EncoderTypeGroupEnumerationKey
+	EncoderTypeGroupMemberAttributesKey
+	EncoderTypeGroupEntryAttributesKey
+	EncoderTypeAttributeEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
