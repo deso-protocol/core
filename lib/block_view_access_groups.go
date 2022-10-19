@@ -217,7 +217,7 @@ func (bav *UtxoView) GetAccessGroupEntriesForUser(ownerPublicKey []byte, blockHe
 		// from the DB. For now we also omit the base key, we will add it later when querying the DB.
 
 		// Check if the access key corresponds to our public key.
-		if reflect.DeepEqual(accessKey.OwnerPublicKey[:], ownerPublicKey) {
+		if bytes.Equal(accessKey.OwnerPublicKey[:], ownerPublicKey) {
 			accessKeysMap[accessKey] = accessKeyEntry
 			continue
 		}
