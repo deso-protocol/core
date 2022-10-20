@@ -1669,6 +1669,8 @@ func DBGetAllAccessGroupEntriesForMemberWithTxn(txn *badger.Txn, snap *Snapshot,
 
 	// And add the groups where the user is a member
 	// Never use the deprecated function for backwards compatibility here because of no access to blockHeight
+	// NOTE: The current function will only be called if we are after the accessGroups forkHeight, so we don't need to check
+	// for that here.
 	accessGroupEntries, err := DBGetAllEntriesForPublicKeyFromMembershipIndexWithTxn(txn, snap, NewPublicKey(memberPublicKey))
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllAccessGroupEntriesForMemberWithTxn: problem getting recipient entries")
