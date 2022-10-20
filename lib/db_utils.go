@@ -1851,7 +1851,7 @@ func DBDeleteMemberFromMembershipIndexWithTxn(txn *badger.Txn, snap *Snapshot,
 		return nil
 	}
 
-	// When a message exists, delete the mapping for the sender and receiver.
+	// When a member exists, delete the DB entry for the member.
 	if err := DBDeleteWithTxn(txn, snap, _dbKeyForGroupMembershipIndex(
 		groupMemberPublicKey, groupOwnerPublicKey, groupKeyName)); err != nil {
 
@@ -1935,7 +1935,7 @@ func DBGetAllGroupMembersForAccessGroup(handle *badger.DB, snap *Snapshot,
 	return accessGroupMembers, err
 }
 
-// Get all the group members for a given access group.
+// DBGetAllGroupMembersForAccessGroupWithTxn Get all the group members for a given access group.
 func DBGetAllGroupMembersForAccessGroupWithTxn(txn *badger.Txn, snap *Snapshot,
 	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) ([]*AccessGroupMember, error) {
 	// enumerate all the group members for a given access group.

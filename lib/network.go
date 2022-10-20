@@ -6548,7 +6548,13 @@ func GetAccessGroupOperation(txn *MsgDeSoTxn) (AccessGroupOperation, error) {
 	}
 
 	// Check if the transaction's ExtraData contains an AccessGroupOperationType.
-	if operationTypeBytes, operationTypeExists := txn.ExtraData[AccessGroupOperationType]; operationTypeExists && len(operationTypeBytes) == 1 {
+	if operationTypeBytes, operationTypeExists := txn.ExtraData[AccessGroupOperationType]; operationTypeExists {
+		// If len(operationTypeBytes) is not 1 then we return an error.
+		if len(operationTypeBytes) != 1 {
+			return 0, fmt.Errorf("GetAccessGroupOperation: operation type bytes has incorrect "+
+				"length %d", len(operationTypeBytes))
+		}
+
 		operationType := AccessGroupOperation(operationTypeBytes[0])
 
 		switch operationType {
