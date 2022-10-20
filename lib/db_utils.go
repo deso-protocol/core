@@ -318,10 +318,14 @@ type DBPrefixes struct {
 	PrefixGroupMemberEnumerationIndex []byte `prefix_id:"[64]" is_state:"true"`
 
 	// Prefix for storing group member attributes:
+	// The value of this prefix is a byte slice used to store various types of encoded data like
+	// MemberStatus or MemberBadges.
 	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, GroupMemberPublicKey [33]byte, AccessGroupMemberAttributeType [1]byte> -> []byte
 	PrefixGroupMemberAttributesIndex []byte `prefix_id:"[65]" is_state:"true"`
 
 	// Prefix for storing group entry attributes:
+	// The value of this prefix is a byte slice used to store various types of encoded data like
+	// GroupDescription or GroupPictureRawBytes.
 	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, AccessGroupEntryAttributeType [1]byte> -> []byte
 	PrefixGroupEntryAttributesIndex []byte `prefix_id:"[66]" is_state:"true"`
 

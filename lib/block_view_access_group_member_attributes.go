@@ -7,9 +7,8 @@ func (bav *UtxoView) GetGroupMemberAttributeEntry(groupOwnerPublicKey *PublicKey
 	memberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) (*AttributeEntry, error) {
 	// Create enumeration key.
 	enumerationKey := NewGroupEnumerationKey(groupOwnerPublicKey, groupKeyName[:], memberPublicKey)
-	// Check if enumerationKey exists in GroupMemberAttributes mapping.
-	attributeEntry, exists := bav.GroupMemberAttributes[*enumerationKey][attributeType]
-	if exists {
+	// Check if attributeType exists for the enumerationKey. Note: If enumerationKey does not exist in the map, attributeType won't exist either.
+	if attributeEntry, exists := bav.GroupMemberAttributes[*enumerationKey][attributeType]; exists {
 		// AttributeEntry for this mapping holds IsSet bool and Value []byte.
 		return attributeEntry, nil
 	}

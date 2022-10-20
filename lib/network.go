@@ -6537,8 +6537,7 @@ func GetAccessGroupOperation(txn *MsgDeSoTxn) (AccessGroupOperation, error) {
 	}
 
 	// Sanity-check cast the transaction metadata to an access group metadata.
-	_, ok := txn.TxnMeta.(*AccessGroupMetadata)
-	if !ok {
+	if _, ok := txn.TxnMeta.(*AccessGroupMetadata); !ok {
 		return 0, fmt.Errorf("GetAccessGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
 	}
 
