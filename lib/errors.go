@@ -103,6 +103,13 @@ const (
 	RuleErrorPrivateMessageInvalidVersion                          RuleError = "RuleErrorPrivateMessageInvalidVersion"
 	RuleErrorPrivateMessageMissingExtraData                        RuleError = "RuleErrorPrivateMessageMissingExtraData"
 
+	RuleErrorNewMessageEncryptedTextLengthExceedsMax         RuleError = "RuleErrorNewMessageEncryptedTextLengthExceedsMax"
+	RuleErrorNewMessageTimestampNanosCannotBeZero            RuleError = "RuleErrorNewMessageTimestampNanosCannotBeZero"
+	RuleErrorNewMessageDmMessageAlreadyExists                RuleError = "RuleErrorNewMessageDmMessageAlreadyExists"
+	RuleErrorNewMessageMessageSenderDoesNotMatchTxnPublicKey RuleError = "RuleErrorNewMessageMessageSenderDoesNotMatchTxnPublicKey"
+	RuleErrorNewMessageBeforeDeSoAccessGroups                RuleError = "RuleErrorNewMessageBeforeDeSoAccessGroups"
+	RuleErrorNewMessageGroupChatMessageAlreadyExists         RuleError = "RuleErrorNewMessageGroupChatMessageAlreadyExists"
+
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"
 	RuleErrorFollowEntryAlreadyExists                RuleError = "RuleErrorFollowEntryAlreadyExists"

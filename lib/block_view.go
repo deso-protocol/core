@@ -44,6 +44,10 @@ type UtxoView struct {
 	// Messages data
 	MessageKeyToMessageEntry map[MessageKey]*MessageEntry
 
+	GroupChatMessagesIndex map[GroupChatMessageKey]*MessageEntry
+	DmThreadIndex          map[DmThreadKey]*MessageEntry
+	DmMessagesIndex        map[DmMessageKey]*MessageEntry
+
 	// Access group entries.
 	AccessGroupKeyToAccessGroupEntry map[AccessGroupKey]*AccessGroupEntry
 
@@ -144,6 +148,11 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.MessageMap = make(map[BlockHash]*PGMessage)
 
 	// Access groups
+	bav.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*MessageEntry)
+	bav.DmThreadIndex = make(map[DmThreadKey]*MessageEntry)
+	bav.DmMessagesIndex = make(map[DmMessageKey]*MessageEntry)
+
+	// Access group entries
 	bav.AccessGroupKeyToAccessGroupEntry = make(map[AccessGroupKey]*AccessGroupEntry)
 	bav.GroupMembershipKeyToAccessGroupMember = make(map[GroupMembershipKey]*AccessGroupMember)
 	bav.GroupMemberAttributes = make(map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]*AttributeEntry)
@@ -264,10 +273,25 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.MessageKeyToMessageEntry[msgKey] = &newMsgEntry
 	}
 
-	newView.MessageMap = make(map[BlockHash]*PGMessage, len(bav.MessageMap))
-	for txnHash, message := range bav.MessageMap {
-		newMessage := *message
-		newView.MessageMap[txnHash] = &newMessage
+	// Copy group chat message index
+	newView.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*MessageEntry)
+	for gcMsgKey, messageEntry := range bav.GroupChatMessagesIndex {
+		newMessage := *messageEntry
+		newView.GroupChatMessagesIndex[gcMsgKey] = &newMessage
+	}
+
+	// Copy dm thread index
+	newView.DmThreadIndex = make(map[DmThreadKey]*MessageEntry)
+	for dmThreadKey, messageEntry := range bav.DmThreadIndex {
+		newMessage := *messageEntry
+		newView.DmThreadIndex[dmThreadKey] = &newMessage
+	}
+
+	// Copy dm messages index
+	newView.DmMessagesIndex = make(map[DmMessageKey]*MessageEntry)
+	for dmMessageKey, messageEntry := range bav.DmMessagesIndex {
+		newMessage := *messageEntry
+		newView.DmMessagesIndex[dmMessageKey] = &newMessage
 	}
 
 	// Copy access group data
@@ -301,6 +325,13 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 			newAttributes[attribute] = &newValue
 		}
 		newView.GroupEntryAttributes[key] = newAttributes
+	}
+
+	// Copy postgres message map
+	newView.MessageMap = make(map[BlockHash]*PGMessage, len(bav.MessageMap))
+	for txnHash, message := range bav.MessageMap {
+		newMessage := *message
+		newView.MessageMap[txnHash] = &newMessage
 	}
 
 	// Copy the follow data
@@ -964,7 +995,7 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		return bav._disconnectPrivateMessage(
 			OperationTypePrivateMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
 		return bav._disconnectAccessGroup(
 			OperationTypeAccessKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
@@ -1048,6 +1079,9 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		return bav._disconnectAuthorizeDerivedKey(
 			OperationTypeAuthorizeDerivedKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeNewMessage {
+		return bav._disconnectNewMessage(
+			OperationTypeNewMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -2320,7 +2354,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			bav._connectPrivateMessage(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAccessGroupCreate(
 				txn, txHash, blockHeight, verifySignatures)
@@ -2424,6 +2458,10 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			bav._connectAuthorizeDerivedKey(
 				txn, txHash, blockHeight, verifySignatures)
 
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeNewMessage {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectNewMessage(
+				txn, txHash, blockHeight, verifySignatures)
 	} else {
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}

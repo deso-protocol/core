@@ -83,7 +83,7 @@ func (bav *UtxoView) GetAccessGroupEntry(memberPublicKey *PublicKey, groupOwnerP
 // the simplified group entry from the membership index. If the forceFullEntry is set or if we're not past the membership
 // index block height, then we will fetch the entire group entry from the db (provided it exists).
 func (bav *UtxoView) GetAccessGroupForAccessGroupKeyExistence(accessGroupKey *AccessGroupKey,
-	blockHeight uint32, forceFullEntry bool) *AccessGroupEntry {
+	blockHeight uint32) *AccessGroupEntry {
 
 	if accessGroupKey == nil {
 		return nil
@@ -301,36 +301,68 @@ func ValidateGroupPublicKeyAndName(accessPublicKey, keyName []byte) error {
 	return nil
 }
 
-// ValidateKeyAndNameWithUtxo validates public key and key name, which are used in DeSo V3 Messages protocol.
+// ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView validates public key and key name, which are used in DeSo V3 Messages protocol.
 // The function first checks that the key and name are valid and then fetches an entry from UtxoView or DB
 // to check if the key has been previously saved. This is particularly useful for connecting V3 messages.
-func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, accessPublicKey, keyName []byte, blockHeight uint32) error {
-	// First validate the public key and name with ValidateGroupPublicKeyAndName
-	err := ValidateGroupPublicKeyAndName(accessPublicKey, keyName)
-	if err != nil {
-		return errors.Wrapf(err, "ValidateKeyAndNameWithUtxo: Failed validating "+
-			"accessPublicKey and keyName")
+func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView(
+	groupOwnerPublicKey, accessPublicKey, groupKeyName []byte, blockHeight uint32) error {
+
+	// First validate the group public key and name with ValidateGroupPublicKeyAndName
+	if err := ValidateGroupPublicKeyAndName(groupOwnerPublicKey, groupKeyName); err != nil {
+		return errors.Wrapf(err, "ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: Failed validating "+
+			"groupOwnerPublicKey and groupKeyName")
+	}
+	// First validate the access public key and name with ValidateGroupPublicKeyAndName
+	if err := ValidateGroupPublicKeyAndName(accessPublicKey, groupKeyName); err != nil {
+		return errors.Wrapf(err, "ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: Failed validating "+
+			"accessPublicKey and groupKeyName")
 	}
 
 	// Fetch the access key entry from UtxoView.
-	accessGroupKey := NewAccessGroupKey(NewPublicKey(ownerPublicKey), keyName)
-	// To validate an access group key, we try to fetch the simplified group entry from the membership index.
-	accessGroupEntry := bav.GetAccessGroupForAccessGroupKeyExistence(
-		accessGroupKey, blockHeight, false)
+	accessGroupKey := NewAccessGroupKey(NewPublicKey(groupOwnerPublicKey), groupKeyName)
+	// To validate a access group key, we try to fetch the simplified group entry from the membership index.
+	accessGroupEntry := bav.GetAccessGroupForAccessGroupKeyExistence(accessGroupKey, blockHeight)
 	if accessGroupEntry == nil || accessGroupEntry.isDeleted {
-		return fmt.Errorf("ValidateKeyAndNameWithUtxo: non-existent access key entry "+
-			"for ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
+		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: non-existent access key entry "+
+			"for groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
 	}
 
 	// Compare the UtxoEntry with the provided key for more validation.
 	if !reflect.DeepEqual(accessGroupEntry.AccessPublicKey[:], accessPublicKey) {
-		return fmt.Errorf("ValidateKeyAndNameWithUtxo: keys don't match for "+
-			"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
+		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: keys don't match for "+
+			"groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
 	}
 
-	if !EqualGroupKeyName(accessGroupEntry.AccessGroupKeyName, NewGroupKeyName(keyName)) {
-		return fmt.Errorf("ValidateKeyAndNameWithUtxo: key name don't match for "+
-			"ownerPublicKey: %s", PkToString(ownerPublicKey, bav.Params))
+	if !EqualGroupKeyName(accessGroupEntry.AccessGroupKeyName, NewGroupKeyName(groupKeyName)) {
+		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: key name don't match for "+
+			"groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
+	}
+	return nil
+}
+
+func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
+	groupOwnerPublicKey, groupKeyName []byte, blockHeight uint32) error {
+
+	// First validate the public key and name with ValidateGroupPublicKeyAndName
+	err := ValidateGroupPublicKeyAndName(groupOwnerPublicKey, groupKeyName)
+	if err != nil {
+		return errors.Wrapf(err, "ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: Failed validating "+
+			"accessPublicKey and groupKeyName")
+	}
+
+	// Fetch the access key entry from UtxoView.
+	accessGroupKey := NewAccessGroupKey(NewPublicKey(groupOwnerPublicKey), groupKeyName)
+	// To validate a access group key, we try to fetch the simplified group entry from the membership index.
+	accessGroupEntry := bav.GetAccessGroupForAccessGroupKeyExistence(accessGroupKey, blockHeight)
+	if accessGroupEntry == nil || accessGroupEntry.isDeleted {
+		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: non-existent access key entry "+
+			"for groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
+	}
+
+	// Sanity-check that the key name matches.
+	if !EqualGroupKeyName(accessGroupEntry.AccessGroupKeyName, NewGroupKeyName(groupKeyName)) {
+		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: key name don't match for "+
+			"groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
 	}
 	return nil
 }
@@ -414,7 +446,7 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 	}
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeAccessGroupCreate {
+	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
 		return 0, 0, nil, fmt.Errorf("_connectAccessGroupCreate: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
@@ -827,7 +859,7 @@ func (bav *UtxoView) _disconnectAccessGroup(
 	}
 
 	// Check that the transaction has the right TxnType.
-	if currentTxn.TxnMeta.GetTxnType() != TxnTypeAccessGroupCreate {
+	if currentTxn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
 		return fmt.Errorf("_disconnectAccessGroup: called with bad TxnType %s",
 			currentTxn.TxnMeta.GetTxnType().String())
 	}

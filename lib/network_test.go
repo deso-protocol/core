@@ -1223,7 +1223,7 @@ func TestAccessKey(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testTxMeta, err := NewTxnMetadata(TxnTypeAccessGroupCreate)
+	testTxMeta, err := NewTxnMetadata(TxnTypeMessagingGroup)
 	require.NoError(err)
 	err = testTxMeta.FromBytes(data)
 	require.NoError(err)
@@ -1244,7 +1244,7 @@ func TestAccessKey(t *testing.T) {
 	data, err = txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testTxMeta, err = NewTxnMetadata(TxnTypeAccessGroupCreate)
+	testTxMeta, err = NewTxnMetadata(TxnTypeMessagingGroup)
 	require.NoError(err)
 	err = testTxMeta.FromBytes(data)
 	require.NoError(err)
