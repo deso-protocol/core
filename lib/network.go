@@ -201,74 +201,70 @@ type DeSoMessage interface {
 type TxnType uint8
 
 const (
-	TxnTypeUnset                         TxnType = 0
-	TxnTypeBlockReward                   TxnType = 1
-	TxnTypeBasicTransfer                 TxnType = 2
-	TxnTypeBitcoinExchange               TxnType = 3
-	TxnTypePrivateMessage                TxnType = 4
-	TxnTypeSubmitPost                    TxnType = 5
-	TxnTypeUpdateProfile                 TxnType = 6
-	TxnTypeUpdateBitcoinUSDExchangeRate  TxnType = 8
-	TxnTypeFollow                        TxnType = 9
-	TxnTypeLike                          TxnType = 10
-	TxnTypeCreatorCoin                   TxnType = 11
-	TxnTypeSwapIdentity                  TxnType = 12
-	TxnTypeUpdateGlobalParams            TxnType = 13
-	TxnTypeCreatorCoinTransfer           TxnType = 14
-	TxnTypeCreateNFT                     TxnType = 15
-	TxnTypeUpdateNFT                     TxnType = 16
-	TxnTypeAcceptNFTBid                  TxnType = 17
-	TxnTypeNFTBid                        TxnType = 18
-	TxnTypeNFTTransfer                   TxnType = 19
-	TxnTypeAcceptNFTTransfer             TxnType = 20
-	TxnTypeBurnNFT                       TxnType = 21
-	TxnTypeAuthorizeDerivedKey           TxnType = 22
-	TxnTypeAccessGroupCreate             TxnType = 23
-	TxnTypeDAOCoin                       TxnType = 24
-	TxnTypeDAOCoinTransfer               TxnType = 25
-	TxnTypeDAOCoinLimitOrder             TxnType = 26
-	TxnTypeAccessGroupAddMember          TxnType = 27
-	TxnTypeAccessGroupRemoveMember       TxnType = 28
-	TxnTypeAccessGroupSetMemberAttribute TxnType = 29
-	TxnTypeAccessGroupSetGroupAttribute  TxnType = 30
+	TxnTypeUnset                        TxnType = 0
+	TxnTypeBlockReward                  TxnType = 1
+	TxnTypeBasicTransfer                TxnType = 2
+	TxnTypeBitcoinExchange              TxnType = 3
+	TxnTypePrivateMessage               TxnType = 4
+	TxnTypeSubmitPost                   TxnType = 5
+	TxnTypeUpdateProfile                TxnType = 6
+	TxnTypeUpdateBitcoinUSDExchangeRate TxnType = 8
+	TxnTypeFollow                       TxnType = 9
+	TxnTypeLike                         TxnType = 10
+	TxnTypeCreatorCoin                  TxnType = 11
+	TxnTypeSwapIdentity                 TxnType = 12
+	TxnTypeUpdateGlobalParams           TxnType = 13
+	TxnTypeCreatorCoinTransfer          TxnType = 14
+	TxnTypeCreateNFT                    TxnType = 15
+	TxnTypeUpdateNFT                    TxnType = 16
+	TxnTypeAcceptNFTBid                 TxnType = 17
+	TxnTypeNFTBid                       TxnType = 18
+	TxnTypeNFTTransfer                  TxnType = 19
+	TxnTypeAcceptNFTTransfer            TxnType = 20
+	TxnTypeBurnNFT                      TxnType = 21
+	TxnTypeAuthorizeDerivedKey          TxnType = 22
+	TxnTypeMessagingGroup               TxnType = 23
+	TxnTypeDAOCoin                      TxnType = 24
+	TxnTypeDAOCoinTransfer              TxnType = 25
+	TxnTypeDAOCoinLimitOrder            TxnType = 26
+	TxnTypeNewMessage                   TxnType = 27
+	TxnTypeUpdateMessage                TxnType = 28
 
-	// NEXT_ID = 31
+	// NEXT_ID = 27
 )
 
 type TxnString string
 
 const (
-	TxnStringUnset                         TxnString = "UNSET"
-	TxnStringBlockReward                   TxnString = "BLOCK_REWARD"
-	TxnStringBasicTransfer                 TxnString = "BASIC_TRANSFER"
-	TxnStringBitcoinExchange               TxnString = "BITCOIN_EXCHANGE"
-	TxnStringPrivateMessage                TxnString = "PRIVATE_MESSAGE"
-	TxnStringSubmitPost                    TxnString = "SUBMIT_POST"
-	TxnStringUpdateProfile                 TxnString = "UPDATE_PROFILE"
-	TxnStringUpdateBitcoinUSDExchangeRate  TxnString = "UPDATE_BITCOIN_USD_EXCHANGE_RATE"
-	TxnStringFollow                        TxnString = "FOLLOW"
-	TxnStringLike                          TxnString = "LIKE"
-	TxnStringCreatorCoin                   TxnString = "CREATOR_COIN"
-	TxnStringSwapIdentity                  TxnString = "SWAP_IDENTITY"
-	TxnStringUpdateGlobalParams            TxnString = "UPDATE_GLOBAL_PARAMS"
-	TxnStringCreatorCoinTransfer           TxnString = "CREATOR_COIN_TRANSFER"
-	TxnStringCreateNFT                     TxnString = "CREATE_NFT"
-	TxnStringUpdateNFT                     TxnString = "UPDATE_NFT"
-	TxnStringAcceptNFTBid                  TxnString = "ACCEPT_NFT_BID"
-	TxnStringNFTBid                        TxnString = "NFT_BID"
-	TxnStringNFTTransfer                   TxnString = "NFT_TRANSFER"
-	TxnStringAcceptNFTTransfer             TxnString = "ACCEPT_NFT_TRANSFER"
-	TxnStringBurnNFT                       TxnString = "BURN_NFT"
-	TxnStringAuthorizeDerivedKey           TxnString = "AUTHORIZE_DERIVED_KEY"
-	TxnStringAccessGroupCreate             TxnString = "ACCESS_GROUP_CREATE"
-	TxnStringDAOCoin                       TxnString = "DAO_COIN"
-	TxnStringDAOCoinTransfer               TxnString = "DAO_COIN_TRANSFER"
-	TxnStringDAOCoinLimitOrder             TxnString = "DAO_COIN_LIMIT_ORDER"
-	TxnStringAccessGroupAddMember          TxnString = "ACCESS_GROUP_ADD_MEMBER"
-	TxnStringAccessGroupRemoveMember       TxnString = "ACCESS_GROUP_REMOVE_MEMBER"
-	TxnStringAccessGroupSetMemberAttribute TxnString = "ACCESS_GROUP_SET_MEMBER_ATTRIBUTE"
-	TxnStringAccessGroupSetGroupAttribute  TxnString = "ACCESS_GROUP_SET_GROUP_ATTRIBUTE"
-	TxnStringUndefined                     TxnString = "TXN_UNDEFINED"
+	TxnStringUnset                        TxnString = "UNSET"
+	TxnStringBlockReward                  TxnString = "BLOCK_REWARD"
+	TxnStringBasicTransfer                TxnString = "BASIC_TRANSFER"
+	TxnStringBitcoinExchange              TxnString = "BITCOIN_EXCHANGE"
+	TxnStringPrivateMessage               TxnString = "PRIVATE_MESSAGE"
+	TxnStringSubmitPost                   TxnString = "SUBMIT_POST"
+	TxnStringUpdateProfile                TxnString = "UPDATE_PROFILE"
+	TxnStringUpdateBitcoinUSDExchangeRate TxnString = "UPDATE_BITCOIN_USD_EXCHANGE_RATE"
+	TxnStringFollow                       TxnString = "FOLLOW"
+	TxnStringLike                         TxnString = "LIKE"
+	TxnStringCreatorCoin                  TxnString = "CREATOR_COIN"
+	TxnStringSwapIdentity                 TxnString = "SWAP_IDENTITY"
+	TxnStringUpdateGlobalParams           TxnString = "UPDATE_GLOBAL_PARAMS"
+	TxnStringCreatorCoinTransfer          TxnString = "CREATOR_COIN_TRANSFER"
+	TxnStringCreateNFT                    TxnString = "CREATE_NFT"
+	TxnStringUpdateNFT                    TxnString = "UPDATE_NFT"
+	TxnStringAcceptNFTBid                 TxnString = "ACCEPT_NFT_BID"
+	TxnStringNFTBid                       TxnString = "NFT_BID"
+	TxnStringNFTTransfer                  TxnString = "NFT_TRANSFER"
+	TxnStringAcceptNFTTransfer            TxnString = "ACCEPT_NFT_TRANSFER"
+	TxnStringBurnNFT                      TxnString = "BURN_NFT"
+	TxnStringAuthorizeDerivedKey          TxnString = "AUTHORIZE_DERIVED_KEY"
+	TxnStringMessagingGroup               TxnString = "MESSAGING_GROUP"
+	TxnStringDAOCoin                      TxnString = "DAO_COIN"
+	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
+	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
+	TxnStringNewMessage                   TxnString = "NEW_MESSAGE"
+	TxnStringUpdateMessage                TxnString = "UPDATE_MESSAGE"
+	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
 var (
@@ -277,18 +273,16 @@ var (
 		TxnTypeSubmitPost, TxnTypeUpdateProfile, TxnTypeUpdateBitcoinUSDExchangeRate, TxnTypeFollow, TxnTypeLike,
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
-		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeAccessGroupCreate,
-		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeAccessGroupAddMember,
-		TxnTypeAccessGroupRemoveMember, TxnTypeAccessGroupSetMemberAttribute, TxnTypeAccessGroupSetGroupAttribute,
+		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeNewMessage, TxnTypeUpdateMessage,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
 		TxnStringSubmitPost, TxnStringUpdateProfile, TxnStringUpdateBitcoinUSDExchangeRate, TxnStringFollow, TxnStringLike,
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
-		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringAccessGroupCreate,
-		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringAccessGroupAddMember,
-		TxnStringAccessGroupRemoveMember, TxnStringAccessGroupSetMemberAttribute, TxnStringAccessGroupSetGroupAttribute,
+		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringNewMessage, TxnStringUpdateMessage,
 	}
 )
 
@@ -346,22 +340,18 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringBurnNFT
 	case TxnTypeAuthorizeDerivedKey:
 		return TxnStringAuthorizeDerivedKey
-	case TxnTypeAccessGroupCreate:
-		return TxnStringAccessGroupCreate
+	case TxnTypeMessagingGroup:
+		return TxnStringMessagingGroup
 	case TxnTypeDAOCoin:
 		return TxnStringDAOCoin
 	case TxnTypeDAOCoinTransfer:
 		return TxnStringDAOCoinTransfer
 	case TxnTypeDAOCoinLimitOrder:
 		return TxnStringDAOCoinLimitOrder
-	case TxnTypeAccessGroupAddMember:
-		return TxnStringAccessGroupAddMember
-	case TxnTypeAccessGroupRemoveMember:
-		return TxnStringAccessGroupRemoveMember
-	case TxnTypeAccessGroupSetMemberAttribute:
-		return TxnStringAccessGroupSetMemberAttribute
-	case TxnTypeAccessGroupSetGroupAttribute:
-		return TxnStringAccessGroupSetGroupAttribute
+	case TxnTypeNewMessage:
+		return TxnStringNewMessage
+	case TxnTypeUpdateMessage:
+		return TxnStringUpdateMessage
 	default:
 		return TxnStringUndefined
 	}
@@ -413,14 +403,18 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeBurnNFT
 	case TxnStringAuthorizeDerivedKey:
 		return TxnTypeAuthorizeDerivedKey
-	case TxnStringAccessGroupCreate:
-		return TxnTypeAccessGroupCreate
+	case TxnStringMessagingGroup:
+		return TxnTypeMessagingGroup
 	case TxnStringDAOCoin:
 		return TxnTypeDAOCoin
 	case TxnStringDAOCoinTransfer:
 		return TxnTypeDAOCoinTransfer
 	case TxnStringDAOCoinLimitOrder:
 		return TxnTypeDAOCoinLimitOrder
+	case TxnStringNewMessage:
+		return TxnTypeNewMessage
+	case TxnStringUpdateMessage:
+		return TxnTypeUpdateMessage
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -480,7 +474,7 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&BurnNFTMetadata{}).New(), nil
 	case TxnTypeAuthorizeDerivedKey:
 		return (&AuthorizeDerivedKeyMetadata{}).New(), nil
-	case TxnTypeAccessGroupCreate:
+	case TxnTypeMessagingGroup:
 		return (&AccessGroupMetadata{}).New(), nil
 	case TxnTypeDAOCoin:
 		return (&DAOCoinMetadata{}).New(), nil
@@ -488,6 +482,10 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinTransferMetadata{}).New(), nil
 	case TxnTypeDAOCoinLimitOrder:
 		return (&DAOCoinLimitOrderMetadata{}).New(), nil
+	case TxnTypeNewMessage:
+		return (&NewMessageMetadata{}).New(), nil
+	//case TxnTypeUpdateMessage:
+	//return (&UpdateMessageMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -6459,7 +6457,7 @@ type AccessGroupMetadata struct {
 }
 
 func (txnData *AccessGroupMetadata) GetTxnType() TxnType {
-	return TxnTypeAccessGroupCreate
+	return TxnTypeMessagingGroup
 }
 
 func (txnData *AccessGroupMetadata) ToBytes(preSignature bool) ([]byte, error) {
@@ -6532,7 +6530,7 @@ func GetAccessGroupOperation(txn *MsgDeSoTxn) (AccessGroupOperation, error) {
 	}
 
 	// Make sure this is an access group transaction.
-	if txn.TxnMeta.GetTxnType() != TxnTypeAccessGroupCreate {
+	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
 		return 0, fmt.Errorf("GetAccessGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
 	}
 
@@ -6572,4 +6570,117 @@ func GetAccessGroupOperation(txn *MsgDeSoTxn) (AccessGroupOperation, error) {
 	}
 
 	return accessGroupOperation, nil
+}
+
+// =======================================================================================
+// NewMessageMetadata
+// =======================================================================================
+
+type MessageType byte
+
+const (
+	MessageTypeDm        MessageType = 0
+	MessageTypeGroupChat MessageType = 1
+)
+
+type NewMessageMetadata struct {
+	SenderAccessGroupOwnerPublicKey    PublicKey
+	SenderAccessGroupKeyName           GroupKeyName
+	SenderAccessPublicKey              PublicKey
+	RecipientAccessGroupOwnerPublicKey PublicKey
+	RecipientAccessGroupKeyName        GroupKeyName
+	RecipientAccessPublicKey           PublicKey
+	EncryptedText                      []byte
+	TimestampNanos                     uint64
+	MessageType
+}
+
+func (txnData *NewMessageMetadata) GetTxnType() TxnType {
+	return TxnTypeNewMessage
+}
+
+func (txnData *NewMessageMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+
+	data = append(data, EncodeByteArray(txnData.SenderAccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.SenderAccessGroupKeyName.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.RecipientAccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.RecipientAccessGroupKeyName.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.EncryptedText)...)
+	data = append(data, UintToBuf(txnData.TimestampNanos)...)
+	data = append(data, UintToBuf(uint64(txnData.MessageType))...)
+
+	return data, nil
+}
+
+func (txnData *NewMessageMetadata) FromBytes(data []byte) error {
+	var err error
+	ret := NewMessageMetadata{}
+	rr := bytes.NewReader(data)
+
+	// SenderAccessGroupOwnerPublicKey
+	senderAccessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading SenderAccessGroupOwnerPublicKey")
+	}
+	// SenderAccessGroupKeyName
+	senderAccessGroupKeyName, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading SenderAccessGroupKeyName")
+	}
+	if err = ValidateGroupPublicKeyAndName(senderAccessGroupOwnerPublicKeyBytes, senderAccessGroupKeyName); err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Invalid sender access group public key and name")
+	}
+	ret.SenderAccessGroupOwnerPublicKey = *NewPublicKey(senderAccessGroupOwnerPublicKeyBytes)
+	ret.SenderAccessGroupKeyName = *NewGroupKeyName(senderAccessGroupKeyName)
+
+	// RecipientAccessGroupOwnerPublicKey
+	recipientAccessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading RecipientAccessGroupOwnerPublicKey")
+	}
+	// RecipientAccessGroupKeyName
+	recipientAccessGroupKeyName, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading RecipientAccessGroupKeyName")
+	}
+	if err = ValidateGroupPublicKeyAndName(recipientAccessGroupOwnerPublicKeyBytes, recipientAccessGroupKeyName); err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Invalid recipient access group public key and name")
+	}
+	ret.RecipientAccessGroupOwnerPublicKey = *NewPublicKey(recipientAccessGroupOwnerPublicKeyBytes)
+	ret.RecipientAccessGroupKeyName = *NewGroupKeyName(recipientAccessGroupKeyName)
+
+	// EncryptedText
+	ret.EncryptedText, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading EncryptedText")
+	}
+
+	// TimestampNanos
+	ret.TimestampNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading TimestampNanos")
+	}
+
+	// MessageType
+	messageType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading MessageType")
+	}
+	ret.MessageType = MessageType(messageType)
+
+	return nil
+}
+
+func (txnData *NewMessageMetadata) New() DeSoTxnMetadata {
+	return &NewMessageMetadata{}
 }

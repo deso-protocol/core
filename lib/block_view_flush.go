@@ -75,6 +75,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		if err := bav._flushMessageEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
+		if err := bav._flushNewMessageEntriesToDbWithTxn(txn, blockHeight); err != nil {
+			return err
+		}
 		if err := bav._flushBalanceEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
@@ -316,6 +319,70 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 	}
 
 	// At this point all of the MessageEntry mappings in the db should be up-to-date.
+
+	return nil
+}
+
+func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	for groupChatMessageKeyIter, messageEntry := range bav.GroupChatMessagesIndex {
+		groupChatMessageKey := groupChatMessageKeyIter
+
+		if err := DBDeleteGroupChatMessagesIndexWithTxn(txn, bav.Snapshot, groupChatMessageKey); err != nil {
+			return errors.Wrapf(
+				err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
+					"for GroupChatMessageKey: %v: ", &groupChatMessageKey)
+		}
+
+		if messageEntry.isDeleted {
+
+		} else {
+			if err := DBPutGroupChatMessagesIndexWithTxn(txn, bav.Snapshot, blockHeight,
+				groupChatMessageKey, messageEntry); err != nil {
+				return errors.Wrapf(
+					err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry into "+
+						"group chat message index with key %v and value %v", groupChatMessageKey, messageEntry)
+			}
+		}
+	}
+
+	for dmThreadKeyIter, messageEntry := range bav.DmThreadIndex {
+		dmThreadKey := dmThreadKeyIter
+
+		if err := DBDeleteDmThreadIndexWithTxn(txn, bav.Snapshot, dmThreadKey); err != nil {
+			return errors.Wrapf(
+				err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
+					"for DmThreadKey: %v: ", &dmThreadKey)
+		}
+
+		if messageEntry.isDeleted {
+
+		} else {
+			if err := DBPutDmThreadIndexWithTxn(txn, bav.Snapshot, blockHeight, dmThreadKey, messageEntry); err != nil {
+				return errors.Wrapf(err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry "+
+					"into dm thread index with key %v and value %v", dmThreadKey, messageEntry)
+			}
+		}
+	}
+
+	for dmMessageKeyIter, messageEntry := range bav.DmMessagesIndex {
+		dmMessageKey := dmMessageKeyIter
+
+		if err := DBDeleteDmMessageIndexWithTxn(txn, bav.Snapshot, dmMessageKey); err != nil {
+			return errors.Wrapf(
+				err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
+					"for DmMessageKey: %v: ", &dmMessageKey)
+		}
+
+		if messageEntry.isDeleted {
+
+		} else {
+			if err := DBPutDmMessageIndexWithTxn(txn, bav.Snapshot, blockHeight, dmMessageKey, messageEntry); err != nil {
+				return errors.Wrapf(
+					err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry "+
+						"into dm message index with key %v and value %v", dmMessageKey, messageEntry)
+			}
+		}
+	}
 
 	return nil
 }
