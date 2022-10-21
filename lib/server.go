@@ -678,13 +678,7 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 //	downloaded the latest code that sends an empty db chunk for a non-existent prefix. We
 //	check if the prefix is the newly-added PrefixGroupMembershipIndex and if so, filter it out.
 func (srv *Server) CheckIfStatePrefixExistsForBlockHeight(blockHeight uint64, prefix []byte) bool {
-	switch prefix[0] {
-	case Prefixes.PrefixGroupMembershipIndex[0]:
-		if uint32(blockHeight) < srv.blockchain.params.ForkHeights.DeSoAccessGroupsBlockHeight {
-			return false
-		}
-	}
-	return true
+	return prefix[0] != Prefixes.PrefixGroupMembershipIndex[0] || uint32(blockHeight) >= srv.blockchain.params.ForkHeights.DeSoAccessGroupsBlockHeight
 }
 
 // GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
