@@ -166,7 +166,7 @@ func FormatScaledUint256AsDecimalString(v *big.Int, scalingFactor *big.Int) stri
 func SafeMakeSliceWithLength[T any](length uint64 ) (resp []T, outputError error){
 	defer func() {
 		if err := recover(); err != nil {
-			outputError = errors.New(fmt.Sprintf("Error making slice: ", err))
+			outputError = errors.New(fmt.Sprintf("Error making slice: %v", err))
 		}
 	}()
 	resp = make([]T, length)
@@ -176,7 +176,7 @@ func SafeMakeSliceWithLength[T any](length uint64 ) (resp []T, outputError error
 func SafeMakeSliceWithLengthAndCapacity[T any](length uint64, capacity uint64) (resp []T, outputError error){
 	defer func() {
 		if err := recover(); err != nil {
-			outputError = errors.New(fmt.Sprintf("Error making slice: ", err))
+			outputError = errors.New(fmt.Sprintf("Error making slice: %v", err))
 		}
 	}()
 	resp = make([]T, length, capacity)
@@ -186,7 +186,7 @@ func SafeMakeSliceWithLengthAndCapacity[T any](length uint64, capacity uint64) (
 func SafeMakeMapWithLength[K comparable, V any](length uint64) (resp map[K]V, outputError error) {
 	defer func() {
 		if err := recover(); err != nil {
-			outputError = errors.New(fmt.Sprintf("Error making map: ", err))
+			outputError = errors.New(fmt.Sprintf("Error making map: %v", err))
 		}
 	}()
 	resp = make(map[K]V, length)
