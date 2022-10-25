@@ -2744,7 +2744,7 @@ func ExpectedWorkForBlockHash(hash *BlockHash) *BlockHash {
 }
 
 func ComputeTransactionHashes(txns []*MsgDeSoTxn) ([]*BlockHash, error) {
-	txHashes, err := SafeMakeSliceWithLength[*BlockHash](len(txns))
+	txHashes, err := SafeMakeSliceWithLength[*BlockHash](uint64(len(txns)))
 	if err != nil {
 		return nil, err
 	}
