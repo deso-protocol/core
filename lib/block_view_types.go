@@ -2004,6 +2004,7 @@ func sortMessagingGroupMembers(membersArg []*MessagingGroupMember) []*MessagingG
 	// Make a deep copy of the members to avoid messing up the slice the caller
 	// used. Not doing this could cause downstream effects, mainly in tests where
 	// the same slice is re-used in txns and in expectations later on.
+	// TODO: use safe make here? will introduce an error
 	members := make([]*MessagingGroupMember, len(membersArg))
 	copy(members, membersArg)
 	sort.Slice(members, func(ii, jj int) bool {
@@ -2532,7 +2533,10 @@ func (bundle *NFTBidEntryBundle) RawDecodeWithoutMetadata(blockHeight uint64, rr
 	if err != nil {
 		return errors.Wrapf(err, "NFTBidEntryBundle.RawDecodeWithoutMetadata: Problem decoding number of nft bids")
 	}
-	bundle.nftBidEntryBundle = make([]*NFTBidEntry, numEntries)
+	bundle.nftBidEntryBundle, err = SafeMakeSliceWithLength[*NFTBidEntry](numEntries)
+	if err != nil {
+		return errors.Wrapf(err, "NFTBidEntryBundle.RawDecodeWithoutMetadata: Problem creating slice for nftBidEntryBundle")
+	}
 	for ii := uint64(0); ii < numEntries; ii++ {
 		bidEntry := &NFTBidEntry{}
 		if exists, err := DecodeFromBytes(bidEntry, rr); !exists || err != nil {
@@ -2594,6 +2598,7 @@ func (key *DerivedKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMet
 	data = append(data, EncodeExtraData(key.ExtraData)...)
 	if key.TransactionSpendingLimitTracker != nil {
 		data = append(data, BoolToByte(true))
+		// TODO: we need to catch the error here or not raise an error in spending limits .ToBytes
 		tslBytes, _ := key.TransactionSpendingLimitTracker.ToBytes(blockHeight)
 		data = append(data, tslBytes...)
 	} else {
@@ -3700,7 +3705,11 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 	}
 
 	if pkLen > 0 {
-		result := make([]byte, pkLen)
+		var result []byte
+		result, err = SafeMakeSliceWithLength[byte](pkLen)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DecodeByteArray: Problem creating slice")
+		}
 
 		_, err = io.ReadFull(reader, result)
 		if err != nil {
@@ -3719,6 +3728,7 @@ func EncodePKIDuint64Map(pkidMap map[PKID]uint64) []byte {
 	mapLength := uint64(len(pkidMap))
 	data = append(data, UintToBuf(mapLength)...)
 	if mapLength > 0 {
+		// TODO: do we want to use safe make here and introduce an error?
 		keys := make([][33]byte, 0, len(pkidMap))
 		for pkid := range pkidMap {
 			pkidBytes := [33]byte{}
@@ -3755,14 +3765,20 @@ func DecodePKIDuint64Map(rr io.Reader) (map[PKID]uint64, error) {
 	}
 
 	if mapLength > 0 {
-		pkidMap := make(map[PKID]uint64, mapLength)
+		pkidMap, err := SafeMakeMapWithLength[PKID, uint64](mapLength)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DecodePKIDuint64Map: Problem making map for pkidMap")
+		}
 
 		for ii := uint64(0); ii < mapLength; ii++ {
 			pkidLen, err := ReadUvarint(rr)
 			if err != nil {
 				return nil, errors.Wrapf(err, "DecodePKIDuint64Map: Problem reading pkid length at ii: (%v)", ii)
 			}
-			pkidBytes := make([]byte, pkidLen)
+			pkidBytes, err := SafeMakeSliceWithLength[byte](pkidLen)
+			if err != nil {
+				return nil, errors.Wrapf(err, "DecodePKIDuint64Map: Problem making slice for pkidBytes")
+			}
 			_, err = io.ReadFull(rr, pkidBytes)
 			if err != nil {
 				return nil, errors.Wrapf(err, "DecodePKIDuint64Map: Problem reading pkid bytes at ii: (%v)", ii)
@@ -3787,6 +3803,7 @@ func EncodeExtraData(extraData map[string][]byte) []byte {
 	data = append(data, UintToBuf(extraDataLength)...)
 	if extraDataLength > 0 {
 		// Sort the keys of the map
+		// TODO: do we want to use safe make here and introduce an error?
 		keys := make([]string, 0, len(extraData))
 		for key := range extraData {
 			keys = append(keys, key)
@@ -3820,7 +3837,11 @@ func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
 
 	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
 	if extraDataLen != 0 {
-		extraData := make(map[string][]byte, extraDataLen)
+		var extraData map[string][]byte
+		extraData, err = SafeMakeMapWithLength[string, []byte](extraDataLen)
+		if err != nil {
+			return nil, fmt.Errorf("DecodeExtraData: Problem creating map with length %d", extraDataLen)
+		}
 
 		// Loop over each key
 		for ii := uint64(0); ii < extraDataLen; ii++ {
@@ -3832,7 +3853,11 @@ func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
 			}
 
 			// De-serialize the key
-			keyBytes := make([]byte, keyLen)
+			var keyBytes []byte
+			keyBytes, err = SafeMakeSliceWithLength[byte](keyLen)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem creating slice for key #{ii} with length #{keyLen}")
+			}
 			_, err = io.ReadFull(rr, keyBytes)
 			if err != nil {
 				return nil, fmt.Errorf("DecodeExtraData: Problem reading key #{ii}")
@@ -3853,7 +3878,11 @@ func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
 			}
 
 			// De-serialize the value
-			value := make([]byte, valueLen)
+			var value []byte
+			value, err = SafeMakeSliceWithLength[byte](valueLen)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem creating slice for value #{ii} with length #{valueLen}")
+			}
 			_, err = io.ReadFull(rr, value)
 			if err != nil {
 				return nil, fmt.Errorf("DecodeExtraData: Problem read value #{ii}")
@@ -3876,7 +3905,10 @@ func EncodeMapStringUint64(mapStruct map[string]uint64) []byte {
 	data = append(data, UintToBuf(extraDataLength)...)
 	if extraDataLength > 0 {
 		// Sort the keys of the map
-		keys := make([]string, 0, len(mapStruct))
+		keys, err := SafeMakeSliceWithLengthAndCapacity[string](0, extraDataLength)
+		if err != nil {
+			// TODO: do we really want to introduce an error here?
+		}
 		for key := range mapStruct {
 			keys = append(keys, key)
 		}
@@ -3903,7 +3935,11 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 
 	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
 	if extraDataLen != 0 {
-		extraData := make(map[string]uint64, extraDataLen)
+		var extraData map[string]uint64
+		extraData, err = SafeMakeMapWithLength[string, uint64](extraDataLen)
+		if err != nil {
+			return nil, fmt.Errorf("DecodeExtraData: Problem creating extra map with length #{extraDataLen}")
+		}
 
 		// Loop over each key
 		for ii := uint64(0); ii < extraDataLen; ii++ {
@@ -3915,7 +3951,11 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 			}
 
 			// De-serialize the key
-			keyBytes := make([]byte, keyLen)
+			var keyBytes []byte
+			keyBytes, err = SafeMakeSliceWithLength[byte](keyLen)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem creating slice of length #{keyLen} for key #{ii}")
+			}
 			_, err = io.ReadFull(rr, keyBytes)
 			if err != nil {
 				return nil, fmt.Errorf("DecodeExtraData: Problem reading key #{ii}")
@@ -3929,7 +3969,8 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 			}
 
 			// De-serialize the length of the value
-			value, err := ReadUvarint(rr)
+			var value uint64
+			value, err = ReadUvarint(rr)
 			if err != nil {
 				return nil, fmt.Errorf("DecodeExtraData: Problem reading value")
 			}
@@ -3968,7 +4009,10 @@ func DecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
 				intLen, maxUint256BytesLen)
 		}
 
-		numberBytes := make([]byte, intLen)
+		numberBytes, err := SafeMakeSliceWithLength[byte](intLen)
+		if err != nil {
+			return nil, fmt.Errorf("DecodeUint256: Problem making slice of length %v", intLen)
+		}
 		_, err = io.ReadFull(rr, numberBytes)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DecodeUint256: Error reading uint256")

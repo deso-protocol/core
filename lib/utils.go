@@ -5,6 +5,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil/hdkeychain"
+	"github.com/pkg/errors"
 	"github.com/unrolled/secure"
 	"math/big"
 	"strings"
@@ -160,4 +161,34 @@ func FormatScaledUint256AsDecimalString(v *big.Int, scalingFactor *big.Int) stri
 		decimalPartAsString = strings.TrimRight(decimalPartAsString, "0")
 	}
 	return fmt.Sprintf("%d.%v", wholeNumber, decimalPartAsString)
+}
+
+func SafeMakeSliceWithLength[T any](length uint64 ) (resp []T, outputError error){
+	defer func() {
+		if err := recover(); err != nil {
+			outputError = errors.New(fmt.Sprintf("Error making slice: ", err))
+		}
+	}()
+	resp = make([]T, length)
+	return resp, outputError
+}
+
+func SafeMakeSliceWithLengthAndCapacity[T any](length uint64, capacity uint64) (resp []T, outputError error){
+	defer func() {
+		if err := recover(); err != nil {
+			outputError = errors.New(fmt.Sprintf("Error making slice: ", err))
+		}
+	}()
+	resp = make([]T, length, capacity)
+	return resp, outputError
+}
+
+func SafeMakeMapWithLength[K comparable, V any](length uint64) (resp map[K]V, outputError error) {
+	defer func() {
+		if err := recover(); err != nil {
+			outputError = errors.New(fmt.Sprintf("Error making map: ", err))
+		}
+	}()
+	resp = make(map[K]V, length)
+	return resp, outputError
 }
