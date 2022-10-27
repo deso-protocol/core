@@ -3765,7 +3765,7 @@ func DecodePKIDuint64Map(rr io.Reader) (map[PKID]uint64, error) {
 	}
 
 	if mapLength > 0 {
-		pkidMap, err := SafeMakeMapWithLength[PKID, uint64](mapLength)
+		pkidMap, err := SafeMakeMapWithCapacity[PKID, uint64](mapLength)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DecodePKIDuint64Map: Problem making map for pkidMap")
 		}
@@ -3838,7 +3838,7 @@ func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
 	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
 	if extraDataLen != 0 {
 		var extraData map[string][]byte
-		extraData, err = SafeMakeMapWithLength[string, []byte](extraDataLen)
+		extraData, err = SafeMakeMapWithCapacity[string, []byte](extraDataLen)
 		if err != nil {
 			return nil, fmt.Errorf("DecodeExtraData: Problem creating map with length %d", extraDataLen)
 		}
@@ -3936,7 +3936,7 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
 	if extraDataLen != 0 {
 		var extraData map[string]uint64
-		extraData, err = SafeMakeMapWithLength[string, uint64](extraDataLen)
+		extraData, err = SafeMakeMapWithCapacity[string, uint64](extraDataLen)
 		if err != nil {
 			return nil, fmt.Errorf("DecodeExtraData: Problem creating extra map with length #{extraDataLen}")
 		}

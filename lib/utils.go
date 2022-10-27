@@ -163,32 +163,42 @@ func FormatScaledUint256AsDecimalString(v *big.Int, scalingFactor *big.Int) stri
 	return fmt.Sprintf("%d.%v", wholeNumber, decimalPartAsString)
 }
 
-func SafeMakeSliceWithLength[T any](length uint64 ) (resp []T, outputError error){
-	defer func() {
-		if err := recover(); err != nil {
-			outputError = errors.New(fmt.Sprintf("Error making slice: %v", err))
-		}
-	}()
-	resp = make([]T, length)
-	return resp, outputError
+// SafeMakeSliceWithLength catches a panic in the make function and returns and
+// error if the make function panics. Note that we typically do not allow named return
+// value in function signatures. However, in this case, we must use a named return value
+// for the error, so we can properly return an error if make panics.
+func SafeMakeSliceWithLength[T any](length uint64) (_ []T, outputError error){
+	defer SafeMakeRecover(&outputError)
+	return make([]T, length), outputError
 }
 
-func SafeMakeSliceWithLengthAndCapacity[T any](length uint64, capacity uint64) (resp []T, outputError error){
-	defer func() {
-		if err := recover(); err != nil {
-			outputError = errors.New(fmt.Sprintf("Error making slice: %v", err))
-		}
-	}()
-	resp = make([]T, length, capacity)
-	return resp, outputError
+// SafeMakeSliceWithLengthAndCapacity catches a panic in the make function and returns and
+// error if the make function panics. Note that we typically do not allow named return
+// value in function signatures. However, in this case, we must use a named return value
+// for the error, so we can properly return an error if make panics.
+func SafeMakeSliceWithLengthAndCapacity[T any](length uint64, capacity uint64) (_ []T, outputError error){
+	defer SafeMakeRecover(&outputError)
+	return make([]T, length, capacity), outputError
 }
 
-func SafeMakeMapWithLength[K comparable, V any](length uint64) (resp map[K]V, outputError error) {
-	defer func() {
-		if err := recover(); err != nil {
-			outputError = errors.New(fmt.Sprintf("Error making map: %v", err))
-		}
-	}()
-	resp = make(map[K]V, length)
-	return resp, outputError
+// SafeMakeMapWithCapacity catches a panic in the make function and returns and
+// error if the make function panics. Note that we typically do not allow named return
+// value in function signatures. However, in this case, we must use a named return value
+// for the error, so we can properly return an error if make panics.
+func SafeMakeMapWithCapacity[K comparable, V any](length uint64) (_ map[K]V, outputError error) {
+	defer SafeMakeRecover(&outputError)
+	return make(map[K]V, length), outputError
+}
+
+// SafeMakeRecover recovers from a panic and sets the value of error parameter.
+// This function should be called with defer so it ALWAYS runs after the execution of a function.
+// This way if a function execution ends with a panic, SafeMakeRecover will "recover" the panic
+// and set the error appropriately. We set the value of the pointer to the output error such
+// that the calling function will return an error instead of a nil value. Unfortunately,
+// there is no way to overwrite the return value of the calling function with a deferred function
+// without the usage of named return values.
+func SafeMakeRecover(outputError *error) {
+	if err := recover(); err != nil {
+		*outputError = errors.New(fmt.Sprintf("Error in make: %v", err))
+	}
 }
