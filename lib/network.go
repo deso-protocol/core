@@ -6443,7 +6443,7 @@ func DeserializePubKeyToUint64Map(data []byte) (map[PublicKey]uint64, error) {
 	}
 	mm, err := SafeMakeMapWithCapacity[PublicKey, uint64](numKeys)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DeserializePubKeyToUint64Map.FromBytes: Problem creating " +
+		return nil, errors.Wrapf(err, "DeserializePubKeyToUint64Map.FromBytes: Problem creating "+
 			"map")
 	}
 	for ii := uint64(0); ii < numKeys; ii++ {

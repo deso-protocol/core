@@ -167,7 +167,7 @@ func FormatScaledUint256AsDecimalString(v *big.Int, scalingFactor *big.Int) stri
 // error if the make function panics. Note that we typically do not allow named return
 // value in function signatures. However, in this case, we must use a named return value
 // for the error, so we can properly return an error if make panics.
-func SafeMakeSliceWithLength[T any](length uint64) (_ []T, outputError error){
+func SafeMakeSliceWithLength[T any](length uint64) (_ []T, outputError error) {
 	defer SafeMakeRecover(&outputError)
 	return make([]T, length), outputError
 }
@@ -176,7 +176,7 @@ func SafeMakeSliceWithLength[T any](length uint64) (_ []T, outputError error){
 // error if the make function panics. Note that we typically do not allow named return
 // value in function signatures. However, in this case, we must use a named return value
 // for the error, so we can properly return an error if make panics.
-func SafeMakeSliceWithLengthAndCapacity[T any](length uint64, capacity uint64) (_ []T, outputError error){
+func SafeMakeSliceWithLengthAndCapacity[T any](length uint64, capacity uint64) (_ []T, outputError error) {
 	defer SafeMakeRecover(&outputError)
 	return make([]T, length, capacity), outputError
 }
