@@ -6164,7 +6164,11 @@ func (txnData *DAOCoinTransferMetadata) FromBytes(data []byte) error {
 			return fmt.Errorf("DAOCoinTransferMetadata.FromBytes: coinsToTransferLen %d "+
 				"exceeds max %d", intLen, MaxMessagePayload)
 		}
-		coinsToTransferBytes := make([]byte, intLen)
+		coinsToTransferBytes, err := SafeMakeSliceWithLength[byte](intLen)
+		if err != nil {
+			return errors.Wrapf(err,
+				"DAOCoinTransferMetadata.FromBytes: Problem creating slice for coinsToTransfer")
+		}
 		_, err = io.ReadFull(rr, coinsToTransferBytes)
 		if err != nil {
 			return fmt.Errorf("DAOCoinTransferMetadata.FromBytes: Error reading coinsToTransferBytes: %v", err)
@@ -6395,7 +6399,10 @@ func SerializePubKeyToUint64Map(mm map[PublicKey]uint64) ([]byte, error) {
 	if numKeys > 0 {
 		// Sort the keys of the map based on the mainnet public key encoding.
 		// This ensures a deterministic sorting.
-		keys := make([]string, 0, numKeys)
+		keys, err := SafeMakeSliceWithLengthAndCapacity[string](0, numKeys)
+		if err != nil {
+			return nil, err
+		}
 		for key := range mm {
 			keys = append(keys, PkToStringMainnet(key[:]))
 		}
@@ -6434,7 +6441,11 @@ func DeserializePubKeyToUint64Map(data []byte) (map[PublicKey]uint64, error) {
 		return nil, errors.Wrapf(err, "DeserializePubKeyToUint64Map.FromBytes: Problem "+
 			"reading num keys")
 	}
-	mm := make(map[PublicKey]uint64, numKeys)
+	mm, err := SafeMakeMapWithCapacity[PublicKey, uint64](numKeys)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializePubKeyToUint64Map.FromBytes: Problem creating " +
+			"map")
+	}
 	for ii := uint64(0); ii < numKeys; ii++ {
 		// Read in the public key bytes
 		pkBytes := make([]byte, btcec.PubKeyBytesLenCompressed)
