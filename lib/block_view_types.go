@@ -527,14 +527,17 @@ const (
 	OperationTypeAcceptNFTTransfer            OperationType = 21
 	OperationTypeBurnNFT                      OperationType = 22
 	OperationTypeAuthorizeDerivedKey          OperationType = 23
-	OperationTypeAccessKey                    OperationType = 24
+	OperationTypeCreateAccessGroup            OperationType = 24
 	OperationTypeDAOCoin                      OperationType = 25
 	OperationTypeDAOCoinTransfer              OperationType = 26
 	OperationTypeSpendingLimitAccounting      OperationType = 27
 	OperationTypeDAOCoinLimitOrder            OperationType = 28
 	OperationTypeNewMessage                   OperationType = 29
+	OperationTypeUpdateMessage                OperationType = 30
+	OperationTypeAccessGroupMembers           OperationType = 31
+	OperationTypeAccessGroupAttributes        OperationType = 32
 
-	// NEXT_TAG = 32
+	// NEXT_TAG = 33
 )
 
 func (op OperationType) String() string {
@@ -631,9 +634,9 @@ func (op OperationType) String() string {
 		{
 			return "OperationTypeAuthorizeDerivedKey"
 		}
-	case OperationTypeAccessKey:
+	case OperationTypeCreateAccessGroup:
 		{
-			return "OperationTypeAccessKey"
+			return "OperationTypeCreateAccessGroup"
 		}
 	case OperationTypeDAOCoin:
 		{
@@ -719,7 +722,8 @@ type UtxoOperation struct {
 	PrevDerivedKeyEntry *DerivedKeyEntry
 
 	// For disconnecting AccessGroup transactions.
-	PrevAccessKeyEntry *AccessGroupEntry
+	PrevAccessKeyEntry     *AccessGroupEntry
+	PrevAccessGroupMembers []*AccessGroupMember
 
 	// For disconnecting NewMessage transactions.
 	GroupChatMessagesKey GroupChatMessageKey
@@ -1748,6 +1752,34 @@ type GroupChatMessageKey struct {
 	TstampNanos         uint64
 }
 
+func (mm *GroupChatMessageKey) ToBytes() []byte {
+	return append(mm.GroupOwnerPublicKey[:], append(mm.GroupKeyName[:], UintToBuf(mm.TstampNanos)...)...)
+}
+
+func (mm *GroupChatMessageKey) FromBytes(rr *bytes.Reader) error {
+	groupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
+		mm.GroupOwnerPublicKey = *groupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupKey.Decode: problem decoding group owner public key")
+	}
+
+	groupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
+		mm.GroupKeyName = *groupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupKey.Decode: problem decoding group key name")
+	}
+
+	tstampNanos, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupKey.Decode: problem decoding tstamp nanos")
+	}
+	mm.TstampNanos = tstampNanos
+
+	return nil
+}
+
 func MakeGroupChatMessageKey(groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, tstampNanos uint64) GroupChatMessageKey {
 	return GroupChatMessageKey{
 		GroupOwnerPublicKey: groupOwnerPublicKey,
@@ -1809,6 +1841,54 @@ type DmMessageKey struct {
 	MajorGroupOwnerPublicKey PublicKey
 	MajorGroupKeyName        GroupKeyName
 	TstampNanos              uint64
+}
+
+func (mm *DmMessageKey) ToBytes() []byte {
+	var data []byte
+	data = append(data, mm.MinorGroupOwnerPublicKey[:]...)
+	data = append(data, mm.MinorGroupKeyName[:]...)
+	data = append(data, mm.MajorGroupOwnerPublicKey[:]...)
+	data = append(data, mm.MajorGroupKeyName[:]...)
+	data = append(data, UintToBuf(mm.TstampNanos)...)
+	return data
+}
+
+func (mm *DmMessageKey) FromBytes(rr *bytes.Reader) error {
+	minorGroupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(minorGroupOwnerPublicKey, rr); exist && err == nil {
+		mm.MinorGroupOwnerPublicKey = *minorGroupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "DmMessageKey.Decode: problem decoding minor group owner public key")
+	}
+
+	minorGroupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(minorGroupKeyName, rr); exist && err == nil {
+		mm.MinorGroupKeyName = *minorGroupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "DmMessageKey.Decode: problem decoding minor group key name")
+	}
+
+	majorGroupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(majorGroupOwnerPublicKey, rr); exist && err == nil {
+		mm.MajorGroupOwnerPublicKey = *majorGroupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "DmMessageKey.Decode: problem decoding major group owner public key")
+	}
+
+	majorGroupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(majorGroupKeyName, rr); exist && err == nil {
+		mm.MajorGroupKeyName = *majorGroupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "DmMessageKey.Decode: problem decoding major group key name")
+	}
+
+	tstampNanos, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DmMessageKey.Decode: problem decoding tstamp nanos")
+	}
+	mm.TstampNanos = tstampNanos
+
+	return nil
 }
 
 func MakeDmMessageKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName,
@@ -2078,6 +2158,28 @@ type AccessGroupKey struct {
 	GroupKeyName   GroupKeyName
 }
 
+func (key *AccessGroupKey) ToBytes() []byte {
+	return append(key.OwnerPublicKey.ToBytes(), key.GroupKeyName.ToBytes()...)
+}
+
+func (key *AccessGroupKey) FromBytes(rr *bytes.Reader) error {
+	ownerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(ownerPublicKey, rr); exist && err == nil {
+		key.OwnerPublicKey = *ownerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupKey.Decode: problem decoding owner public key")
+	}
+
+	groupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
+		key.GroupKeyName = *groupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupKey.Decode: problem decoding group key name")
+	}
+
+	return nil
+}
+
 func NewAccessGroupKey(ownerPublicKey *PublicKey, groupKeyName []byte) *AccessGroupKey {
 	return &AccessGroupKey{
 		OwnerPublicKey: *ownerPublicKey,
@@ -2161,6 +2263,42 @@ type GroupEnumerationKey struct {
 	GroupOwnerPublicKey  PublicKey
 	GroupKeyName         GroupKeyName
 	GroupMemberPublicKey PublicKey
+}
+
+func (key *GroupEnumerationKey) ToBytes() []byte {
+	var data []byte
+	data = append(data, key.GroupOwnerPublicKey[:]...)
+	data = append(data, key.GroupKeyName[:]...)
+	data = append(data, key.GroupMemberPublicKey[:]...)
+	return data
+}
+
+func (key *GroupEnumerationKey) FromBytes(rr *bytes.Reader) error {
+	groupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
+		key.GroupOwnerPublicKey = *groupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupEnumerationKey.Decode: Problem reading "+
+			"GroupOwnerPublicKey")
+	}
+
+	groupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
+		key.GroupKeyName = *groupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupEnumerationKey.Decode: Problem reading "+
+			"GroupKeyName")
+	}
+
+	groupMemberPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(groupMemberPublicKey, rr); exist && err == nil {
+		key.GroupMemberPublicKey = *groupMemberPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "GroupEnumerationKey.Decode: Problem reading "+
+			"GroupMemberPublicKey")
+	}
+
+	return nil
 }
 
 func (key *GroupEnumerationKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -2586,6 +2724,16 @@ type AccessGroupMember struct {
 
 	// EncryptedKey is the encrypted access public key, addressed to the recipient.
 	EncryptedKey []byte
+
+	isDeleted bool
+}
+
+func NewAccessGroupMember(memberPublicKey *PublicKey, memberKeyName *GroupKeyName, encryptedKey []byte) *AccessGroupMember {
+	return &AccessGroupMember{
+		GroupMemberPublicKey: memberPublicKey,
+		GroupMemberKeyName:   memberKeyName,
+		EncryptedKey:         encryptedKey,
+	}
 }
 
 func (rec *AccessGroupMember) ToBytes() []byte {
@@ -4169,7 +4317,7 @@ func (pe *ProfileEntry) GetEncoderType() EncoderType {
 }
 
 func EncodeByteArray(bytes []byte) []byte {
-	data := []byte{}
+	var data []byte
 
 	data = append(data, UintToBuf(uint64(len(bytes)))...)
 	data = append(data, bytes...)

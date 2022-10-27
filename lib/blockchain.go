@@ -4419,7 +4419,7 @@ func (bc *Blockchain) CreateAccessKeyTxn(
 	// We don't need to validate info here, so just construct the transaction instead.
 	txn := &MsgDeSoTxn{
 		PublicKey: senderPublicKey,
-		TxnMeta: &AccessGroupMetadata{
+		TxnMeta: &CreateAccessGroupMetadata{
 			AccessPublicKey:     accessPublicKey,
 			AccessGroupKeyName:  accessGroupKeyName,
 			GroupOwnerSignature: accessOwnerKeySignature,

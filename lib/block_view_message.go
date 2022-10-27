@@ -688,7 +688,7 @@ func (bav *UtxoView) _connectNewMessage(
 		return 0, 0, nil, RuleErrorNewMessageBeforeDeSoAccessGroups
 	}
 
-	// Check the lenght of the EncryptedText
+	// Check the length of the EncryptedText
 	if uint64(len(txMeta.EncryptedText)) > bav.Params.MaxPrivateMessageLengthBytes {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorNewMessageEncryptedTextLengthExceedsMax, "_connectNewMessage: "+
@@ -725,7 +725,8 @@ func (bav *UtxoView) _connectNewMessage(
 	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
 		txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: ")
+		return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: "+
+			"_connectBasicTransfer failed: ")
 	}
 
 	messageEntry := &MessageEntry{
@@ -871,4 +872,199 @@ func (bav *UtxoView) _disconnectNewMessage(
 	// Now disconnect the basic transfer.
 	return bav._disconnectBasicTransfer(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
+}
+
+func (bav *UtxoView) _connectUpdateMessage(
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeUpdateMessage {
+		return 0, 0, nil, fmt.Errorf("_connectUpdateMessage: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	txMeta := txn.TxnMeta.(*UpdateMessageMetadata)
+
+	if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
+		return 0, 0, nil, errors.Wrapf(RuleErrorUpdateMessageBeforeDeSoAccessGroups,
+			"_connectUpdateMessage: UpdateMessage is not allowed before DeSoV3MessagesBlockHeight")
+	}
+
+	// Check the length of the EncryptedText.
+	if uint64(len(txMeta.EncryptedText)) > bav.Params.MaxPrivateMessageLengthBytes {
+		return 0, 0, nil, errors.Wrapf(RuleErrorNewMessageEncryptedTextLengthExceedsMax,
+			"_connectUpdateMessage: EncryptedText is longer than max allowed")
+	}
+
+	// Sanity checks.
+	if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
+		txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txMeta.SenderAccessGroupKeyName.ToBytes(), blockHeight); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateMessage: "+
+			"SenderAccessGroupOwnerPublicKey and SenderAccessGroupKeyName are invalid")
+	}
+
+	if !bytes.Equal(txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txn.PublicKey) {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorNewMessageMessageSenderDoesNotMatchTxnPublicKey, "_connectUpdateMessage: "+
+				"SenderAccessGroupOwnerPublicKey (%v) does not match txn.PublicKey (%v)",
+			PkToString(txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), bav.Params),
+			PkToString(txn.PublicKey, bav.Params))
+	}
+
+	if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
+		txMeta.RecipientAccessGroupKeyName.ToBytes(), txMeta.RecipientAccessGroupKeyName.ToBytes(), blockHeight); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateMessage: "+
+			"RecipientAccessGroupOwnerPublicKey and RecipientAccessGroupKeyName are invalid")
+	}
+
+	if txMeta.TimestampNanos == 0 {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorNewMessageTimestampNanosCannotBeZero, "_connectUpdateMessage: "+
+				"TimestampNanos cannot be zero")
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateMessage: "+
+			"_connectBasicTransfer failed")
+	}
+
+	messageEntry := &MessageEntry{
+		SenderPublicKey:             &txMeta.SenderAccessGroupOwnerPublicKey,
+		RecipientPublicKey:          &txMeta.RecipientAccessGroupOwnerPublicKey,
+		EncryptedText:               txMeta.EncryptedText,
+		TstampNanos:                 txMeta.TimestampNanos,
+		Version:                     MessagesVersion3,
+		SenderAccessPublicKey:       &txMeta.SenderAccessPublicKey,
+		SenderAccessGroupKeyName:    &txMeta.SenderAccessGroupKeyName,
+		RecipientAccessPublicKey:    &txMeta.RecipientAccessPublicKey,
+		RecipientAccessGroupKeyName: &txMeta.RecipientAccessGroupKeyName,
+		ExtraData:                   mergeExtraData(nil, txn.ExtraData),
+	}
+
+	// switch case for message type
+	switch txMeta.MessageType {
+	case MessageTypeDm:
+		var dmThreadMessageEntry, dmThreadReverse, copyDmThreadMessageEntry *MessageEntry
+
+		// Remove following:
+		_ = copyDmThreadMessageEntry
+
+		dmThreadKey, err := MakeDmThreadKeyFromMessageEntry(messageEntry, false)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectUpdateMessage: "+
+				"MakeDmThreadKeyFromMessageEntry failed")
+		}
+		dmThreadMessageEntry = bav.getDmThreadIndex(dmThreadKey)
+		if dmThreadMessageEntry != nil && !dmThreadMessageEntry.isDeleted {
+			tempDmThread := *dmThreadMessageEntry
+			copyDmThreadMessageEntry = &tempDmThread
+		}
+		dmThreadKeyReverse, err := MakeDmThreadKeyFromMessageEntry(messageEntry, true)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: ")
+		}
+		dmThreadReverse = bav.getDmThreadIndex(dmThreadKey)
+		if dmThreadMessageEntry != nil && !dmThreadMessageEntry.isDeleted {
+			blockHeightUint64 := uint64(blockHeight)
+			if !reflect.DeepEqual(EncodeToBytes(blockHeightUint64, dmThreadMessageEntry), EncodeToBytes(blockHeightUint64, dmThreadReverse)) {
+				glog.Errorf("_connectUpdateMessage: DM thread and DM thread reverse are not equal: "+
+					"dmThreadKey: %v, dmThreadKeyReverse: %v, dmThreadMessageEntry: %v, dmThreadReverse: %v",
+					dmThreadKey, dmThreadKeyReverse, dmThreadMessageEntry, dmThreadReverse)
+			}
+		}
+		dmMessageKey, err := MakeDmMessageKeyFromMessageEntry(messageEntry)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: "+
+				"MakeDmMessageKeyFromMessageEntry failed")
+		}
+		dmMessage := bav.getDmMessagesIndex(dmMessageKey)
+		// Make sure dmMessage already exists because we are updating it.
+		if dmMessage == nil || dmMessage.isDeleted {
+			return 0, 0, nil, errors.Wrapf(RuleErrorUpdateMessageDmMessageDoesNotExist,
+				"_connectUpdateMessage: DM message does not exist: %v", dmMessageKey)
+		}
+
+		// Make sure sender is updating their own message.
+		if !reflect.DeepEqual(dmMessage.SenderPublicKey, txn.PublicKey) {
+			return 0, 0, nil, errors.Wrapf(RuleErrorUpdateMessageDmMessageSenderPublicKeyDoesNotMatch,
+				"_connectUpdateMessage: DM message sender public key does not match: %v", dmMessageKey)
+		}
+
+		// switch case for attribute operation type
+		switch txMeta.AccessGroupAttributeOperationType {
+		case AccessGroupAttributeOperationTypeAdd:
+			// Add attribute to the message.
+			if err := bav._setDmMessageAttributeEntry(dmMessageKey, txMeta.MessageAttributeType, true, txMeta.AccessGroupMessageAttributeBytes); err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectUpdateMessage: "+
+					"error setting DM message attribute entry")
+			}
+		case AccessGroupAttributeOperationTypeRemove:
+			// Remove attribute from the message.
+			if err := bav._setDmMessageAttributeEntry(dmMessageKey, txMeta.MessageAttributeType, false, txMeta.AccessGroupMessageAttributeBytes); err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectUpdateMessage: "+
+					"error setting DM message attribute entry")
+			}
+		}
+
+		// TODO special case for edit message attribute where we also update messageEntry in utxoView since message is edited
+
+		utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+			Type: OperationTypeUpdateMessage,
+			// TODO add new fields to utxoOperation for updateMessage (DM)
+		})
+	case MessageTypeGroupChat:
+		var groupChatMessage *MessageEntry
+		groupChatMessageKey, err := MakeGroupChatMessageKeyFromMessageEntry(messageEntry)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectUpdateMessage: "+
+				"error making group chat message key from message entry")
+		}
+		groupChatMessage = bav.getGroupChatMessagesIndex(groupChatMessageKey)
+		// Make sure groupChatMessage already exists because we are updating it.
+		if groupChatMessage == nil || groupChatMessage.isDeleted {
+			return 0, 0, nil, errors.Wrapf(RuleErrorUpdateMessageGroupChatMessageDoesNotExist,
+				"_connectUpdateMessage: Group chat message does not exist: %v", groupChatMessageKey)
+		}
+
+		// Make sure sender is updating their own message.
+		if !reflect.DeepEqual(groupChatMessage.SenderPublicKey, txn.PublicKey) {
+			return 0, 0, nil, errors.Wrapf(RuleErrorUpdateMessageGroupChatMessageSenderPublicKeyDoesNotMatch,
+				"_connectUpdateMessage: Group chat message sender public key does not match: %v", groupChatMessageKey)
+		}
+
+		// switch case for attribute operation type
+		switch txMeta.AccessGroupAttributeOperationType {
+		case AccessGroupAttributeOperationTypeAdd:
+			// Add attribute to the message.
+			if err := bav._setGroupChatMessageAttributeEntry(groupChatMessageKey, txMeta.MessageAttributeType, true, txMeta.AccessGroupMessageAttributeBytes); err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectUpdateMessage: "+
+					"error setting group chat message attribute entry")
+			}
+		case AccessGroupAttributeOperationTypeRemove:
+			// Remove attribute from the message.
+			if err := bav._setGroupChatMessageAttributeEntry(groupChatMessageKey, txMeta.MessageAttributeType, false, txMeta.AccessGroupMessageAttributeBytes); err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectUpdateMessage: "+
+					"error setting group chat message attribute entry")
+			}
+		}
+
+		utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+			Type: OperationTypeNewMessage,
+			// TODO add new fields to utxoOperation for updateMessage (group chat)
+		})
+	}
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _disconnectUpdateMessage(
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// TODO: Implement this.
+	return nil
 }

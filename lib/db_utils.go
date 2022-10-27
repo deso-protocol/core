@@ -330,7 +330,14 @@ type DBPrefixes struct {
 	PrefixGroupEntryAttributesIndex []byte `prefix_id:"[66]" is_state:"true"`
 
 	// Prefix for storing message entry attributes:
-	// TODO
+	// The value of this prefix is a byte slice used to store various types of encoded data like
+	// IsDirectReply (hash of the message being replied to).
+	// There are two types of messages: Direct Message and Group Message.
+	// This index stores the attributes for both types of messages, but the key is different for each.
+	// For Direct Messages, the key is:
+	// <prefix, MessageType(0) [1]byte, MinorGroupOwnerPublicKey [33]byte, MinorGroupKeyName [32]byte, MajorGroupOwnerPublicKey [33]byte, MajorGroupKeyName [32]byte, TstampNanos uint64, MessageAttributeType [1]byte> -> []byte
+	// For group messages, the key is:
+	// <prefix, MessageType(1) [1]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, TstampNanos uint64, MessageAttributeType [1]byte> -> []byte
 	PrefixMessageEntryAttributesIndex []byte `prefix_id:"[67]" is_state:"true"`
 
 	// Prefix for Authorize Derived Key transactions:
@@ -2431,6 +2438,144 @@ func DBDeleteAttributeInGroupEntryAttributesIndexWithTxn(txn *badger.Txn, snap *
 	}
 
 	return nil
+}
+
+// -------------------------------------------------------------------------------------
+// PrefixMessageEntryAttributesIndex
+// For Direct Messages, the key is:
+// <prefix, MessageType(0) [1]byte, MinorGroupOwnerPublicKey [33]byte, MinorGroupKeyName [32]byte, MajorGroupOwnerPublicKey [33]byte, MajorGroupKeyName [32]byte, TstampNanos uint64, MessageAttributeType [1]byte> -> []byte
+// For group messages, the key is:
+// <prefix, MessageType(1) [1]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, TstampNanos uint64, MessageAttributeType [1]byte> -> []byte
+// -------------------------------------------------------------------------------------
+
+// _dbKeyForDMPrefixMessageEntryAttributesIndex returns the key for the DM prefix message entry attributes index.
+func _dbKeyForDMPrefixMessageEntryAttributesIndex(
+	dmMessageKey DmMessageKey, messageAttributeType MessageAttributeType) []byte {
+
+	prefixCopy := append([]byte{}, Prefixes.PrefixMessageEntryAttributesIndex...)
+	prefixCopy = append(prefixCopy, []byte{byte(MessageTypeDm)}...)
+	prefixCopy = append(prefixCopy, dmMessageKey.MinorGroupOwnerPublicKey[:]...)
+	prefixCopy = append(prefixCopy, dmMessageKey.MinorGroupKeyName[:]...)
+	prefixCopy = append(prefixCopy, dmMessageKey.MajorGroupOwnerPublicKey[:]...)
+	prefixCopy = append(prefixCopy, dmMessageKey.MajorGroupKeyName[:]...)
+	prefixCopy = append(prefixCopy, EncodeUint64(dmMessageKey.TstampNanos)...)
+	prefixCopy = append(prefixCopy, byte(messageAttributeType))
+	return prefixCopy
+}
+
+// _dbKeyForGroupChatPrefixMessageEntryAttributesIndex returns the key for the group chat prefix message entry attributes index.
+func _dbKeyForGroupChatPrefixMessageEntryAttributesIndex(
+	groupChatMessageKey GroupChatMessageKey, messageAttributeType MessageAttributeType) []byte {
+
+	prefixCopy := append([]byte{}, Prefixes.PrefixMessageEntryAttributesIndex...)
+	prefixCopy = append(prefixCopy, []byte{byte(MessageTypeGroupChat)}...)
+	prefixCopy = append(prefixCopy, groupChatMessageKey.GroupOwnerPublicKey[:]...)
+	prefixCopy = append(prefixCopy, groupChatMessageKey.GroupKeyName[:]...)
+	prefixCopy = append(prefixCopy, EncodeUint64(groupChatMessageKey.TstampNanos)...)
+	prefixCopy = append(prefixCopy, byte(messageAttributeType))
+	return prefixCopy
+}
+
+// GetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given GroupChatMessageKey.
+func GetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
+	groupChatMessageKey GroupChatMessageKey, messageAttributeType MessageAttributeType) (*AttributeEntry, error) {
+
+	// Make sure message attribute type is valid
+	if !IsAccessGroupMessageAttributeTypeValid(messageAttributeType) {
+		return nil, fmt.Errorf("GetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
+			"Invalid message attribute type: %v", messageAttributeType)
+	}
+
+	// Get the key for the attribute.
+	key := _dbKeyForGroupChatPrefixMessageEntryAttributesIndex(groupChatMessageKey, messageAttributeType)
+
+	// Get the value for the attribute.
+	value, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// If the key doesn't exist then the attribute is not set.
+		if err == badger.ErrKeyNotFound {
+			return NewAttributeEntry(false, nil), nil
+		}
+		return nil, errors.Wrapf(err, "GetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
+			"Problem getting value for key: %v", key)
+	}
+
+	// If the key exists then the attribute is set.
+	return NewAttributeEntry(true, value), nil
+}
+
+// GetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given DmMessageKey.
+func GetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
+	dmMessageKey DmMessageKey, messageAttributeType MessageAttributeType) (*AttributeEntry, error) {
+
+	// Make sure message attribute type is valid
+	if !IsAccessGroupMessageAttributeTypeValid(messageAttributeType) {
+		return nil, fmt.Errorf("GetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
+			"Invalid message attribute type: %v", messageAttributeType)
+	}
+
+	// Get the key for the attribute.
+	key := _dbKeyForDMPrefixMessageEntryAttributesIndex(dmMessageKey, messageAttributeType)
+
+	// Get the value for the attribute.
+	value, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// If the key doesn't exist then the attribute is not set.
+		if err == badger.ErrKeyNotFound {
+			return NewAttributeEntry(false, nil), nil
+		}
+		return nil, errors.Wrapf(err, "GetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
+			"Problem getting value for key: %v", key)
+	}
+
+	// If the key exists then the attribute is set.
+	return NewAttributeEntry(true, value), nil
+}
+
+// SetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given GroupChatMessageKey.
+func SetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
+	groupChatMessageKey GroupChatMessageKey, messageAttributeType MessageAttributeType,
+	attributeEntry *AttributeEntry) error {
+
+	// Make sure message attribute type is valid
+	if !IsAccessGroupMessageAttributeTypeValid(messageAttributeType) {
+		return fmt.Errorf("SetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
+			"Invalid message attribute type: %v", messageAttributeType)
+	}
+
+	// Get the key for the attribute.
+	key := _dbKeyForGroupChatPrefixMessageEntryAttributesIndex(groupChatMessageKey, messageAttributeType)
+
+	// If the attribute is not set then delete the key.
+	if !attributeEntry.IsSet {
+		return DBDeleteWithTxn(txn, snap, key)
+	} else {
+		// If the attribute is set then set the value.
+		return DBSetWithTxn(txn, snap, key, attributeEntry.Value)
+	}
+}
+
+// SetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given DmMessageKey.
+func SetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
+	dmMessageKey DmMessageKey, messageAttributeType MessageAttributeType,
+	attributeEntry *AttributeEntry) error {
+
+	// Make sure message attribute type is valid
+	if !IsAccessGroupMessageAttributeTypeValid(messageAttributeType) {
+		return fmt.Errorf("SetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
+			"Invalid message attribute type: %v", messageAttributeType)
+	}
+
+	// Get the key for the attribute.
+	key := _dbKeyForDMPrefixMessageEntryAttributesIndex(dmMessageKey, messageAttributeType)
+
+	// If the attribute is not set then delete the key.
+	if !attributeEntry.IsSet {
+		return DBDeleteWithTxn(txn, snap, key)
+	} else {
+		// If the attribute is set then set the value.
+		return DBSetWithTxn(txn, snap, key, attributeEntry.Value)
+	}
 }
 
 // -------------------------------------------------------------------------------------

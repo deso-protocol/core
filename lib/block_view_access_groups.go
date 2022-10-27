@@ -56,6 +56,24 @@ func (bav *UtxoView) _setAccessGroupMember(groupOwnerPublicKey *PublicKey, group
 	bav._setGroupMembershipKeyToAccessGroupMemberMapping(accessGroupMember, groupOwnerPublicKey, groupKeyName)
 }
 
+// _deleteAccessGroupMember will set the membership mapping of AccessGroupMember.isDeleted to true.
+func (bav *UtxoView) _deleteAccessGroupMember(accessGroupMember *AccessGroupMember, groupOwnerPublicKey *PublicKey,
+	groupKeyName *GroupKeyName) {
+
+	// This function shouldn't be called with a nil member.
+	if accessGroupMember == nil || groupOwnerPublicKey == nil || groupKeyName == nil {
+		glog.Errorf("_deleteAccessGroupMember: Called with nil accessGroupMember, groupOwnerPublicKey, or groupKeyName")
+		return
+	}
+
+	// Create a tombstone entry.
+	tombstoneAccessGroupMember := *accessGroupMember
+	tombstoneAccessGroupMember.isDeleted = true
+
+	// set utxoView mapping
+	bav._setGroupMembershipKeyToAccessGroupMemberMapping(&tombstoneAccessGroupMember, groupOwnerPublicKey, groupKeyName)
+}
+
 // GetAccessGroupEntry will check the membership index for membership of memberPublicKey in the group
 // <groupOwnerPublicKey, groupKeyName>. Based on the blockheight, we fetch the full group or we fetch
 // the simplified message group entry from the membership index. forceFullEntry is an optional parameter that
@@ -320,7 +338,7 @@ func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUt
 
 	// Fetch the access key entry from UtxoView.
 	accessGroupKey := NewAccessGroupKey(NewPublicKey(groupOwnerPublicKey), groupKeyName)
-	// To validate a access group key, we try to fetch the simplified group entry from the membership index.
+	// To validate an access group key, we try to fetch the simplified group entry from the membership index.
 	accessGroupEntry := bav.GetAccessGroupForAccessGroupKeyExistence(accessGroupKey, blockHeight)
 	if accessGroupEntry == nil || accessGroupEntry.isDeleted {
 		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: non-existent access key entry "+
@@ -352,7 +370,7 @@ func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 
 	// Fetch the access key entry from UtxoView.
 	accessGroupKey := NewAccessGroupKey(NewPublicKey(groupOwnerPublicKey), groupKeyName)
-	// To validate a access group key, we try to fetch the simplified group entry from the membership index.
+	// To validate an access group key, we try to fetch the simplified group entry from the membership index.
 	accessGroupEntry := bav.GetAccessGroupForAccessGroupKeyExistence(accessGroupKey, blockHeight)
 	if accessGroupEntry == nil || accessGroupEntry.isDeleted {
 		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: non-existent access key entry "+
@@ -446,11 +464,11 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 	}
 
 	// Check that the transaction has the right TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
+	if txn.TxnMeta.GetTxnType() != TxnTypeCreateAccessGroup {
 		return 0, 0, nil, fmt.Errorf("_connectAccessGroupCreate: called with bad TxnType %s",
 			txn.TxnMeta.GetTxnType().String())
 	}
-	txMeta := txn.TxnMeta.(*AccessGroupMetadata)
+	txMeta := txn.TxnMeta.(*CreateAccessGroupMetadata)
 
 	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
 	if EqualGroupKeyName(NewGroupKeyName(txMeta.AccessGroupKeyName), BaseGroupKeyName()) {
@@ -482,18 +500,19 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 	//
 	// Note that we decided to relax this constraint after the fork height. Why? Because keeping it would have
 	// required users to go through two confirmations when approving a key with MetaMask vs just one.
-	if blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
-		if EqualGroupKeyName(NewGroupKeyName(txMeta.AccessGroupKeyName), DefaultGroupKeyName()) {
-			// Verify the GroupOwnerSignature. it should be signature( accessPublicKey || accessKeyName )
-			// We need to make sure the default access key was authorized by the master public key.
-			// All other keys can be registered by derived keys.
-			bytes := append(txMeta.AccessPublicKey, txMeta.AccessGroupKeyName...)
-			if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature, blockHeight, bav.Params); err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: "+
-					"Problem verifying signature bytes, error: %v", RuleErrorAccessGroupSignatureInvalid)
-			}
-		}
-	}
+	// REVIEW LATER:
+	//if blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
+	//	if EqualGroupKeyName(NewGroupKeyName(txMeta.AccessGroupKeyName), DefaultGroupKeyName()) {
+	//		// Verify the GroupOwnerSignature. it should be signature( accessPublicKey || accessKeyName )
+	//		// We need to make sure the default access key was authorized by the master public key.
+	//		// All other keys can be registered by derived keys.
+	//		bytes := append(txMeta.AccessPublicKey, txMeta.AccessGroupKeyName...)
+	//		if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature, blockHeight, bav.Params); err != nil {
+	//			return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: "+
+	//				"Problem verifying signature bytes, error: %v", RuleErrorAccessGroupSignatureInvalid)
+	//		}
+	//	}
+	//}
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
@@ -836,41 +855,41 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 
 	// Construct UtxoOperation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:               OperationTypeAccessKey,
+		Type:               OperationTypeCreateAccessGroup,
 		PrevAccessKeyEntry: prevAccessGroupEntry,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
-func (bav *UtxoView) _disconnectAccessGroup(
+func (bav *UtxoView) _disconnectAccessGroupCreate(
 	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Verify that the last operation is an AccessGroupKey operation
 	if len(utxoOpsForTxn) == 0 {
-		return fmt.Errorf("_disconnectAccessGroup: utxoOperations are missing")
+		return fmt.Errorf("_disconnectAccessGroupCreate: utxoOperations are missing")
 	}
 	operationIndex := len(utxoOpsForTxn) - 1
-	if utxoOpsForTxn[operationIndex].Type != OperationTypeAccessKey {
-		return fmt.Errorf("_disconnectAccessGroup: Trying to revert "+
-			"OperationTypeAccessKey but found type %v",
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeCreateAccessGroup {
+		return fmt.Errorf("_disconnectAccessGroupCreate: Trying to revert "+
+			"OperationTypeCreateAccessGroup but found type %v",
 			utxoOpsForTxn[operationIndex].Type)
 	}
 
 	// Check that the transaction has the right TxnType.
-	if currentTxn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
-		return fmt.Errorf("_disconnectAccessGroup: called with bad TxnType %s",
+	if currentTxn.TxnMeta.GetTxnType() != TxnTypeCreateAccessGroup {
+		return fmt.Errorf("_disconnectAccessGroupCreate: called with bad TxnType %s",
 			currentTxn.TxnMeta.GetTxnType().String())
 	}
 
 	// Now we know the txMeta is AccessGroupKey
-	txMeta := currentTxn.TxnMeta.(*AccessGroupMetadata)
+	txMeta := currentTxn.TxnMeta.(*CreateAccessGroupMetadata)
 
 	// Sanity check that the access public key and key name are valid
 	err := ValidateGroupPublicKeyAndName(txMeta.AccessPublicKey, txMeta.AccessGroupKeyName)
 	if err != nil {
-		return errors.Wrapf(err, "_disconnectAccessGroup: failed validating the access "+
+		return errors.Wrapf(err, "_disconnectAccessGroupCreate: failed validating the access "+
 			"public key and key name")
 	}
 
@@ -909,4 +928,368 @@ func (bav *UtxoView) _disconnectAccessGroup(
 	// Now disconnect the basic transfer.
 	return bav._disconnectBasicTransfer(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
+}
+
+func (bav *UtxoView) _connectAccessGroupMembers(
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// Make sure DeSo V3 messages are live.
+	if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorAccessGroupsBeforeBlockHeight, "_connectAccessGroupMembers: "+
+				"Problem connecting access group members: DeSo V3 messages are not live yet")
+	}
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeAccessGroupMembers {
+		return 0, 0, nil, fmt.Errorf("_connectAccessGroupMembers: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	// Now we know txn.TxnMeta is AccessGroupMembersMetadata
+	txMeta := txn.TxnMeta.(*AccessGroupMembersMetadata)
+
+	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
+	if EqualGroupKeyName(NewGroupKeyName(txMeta.AccessGroupKeyName), BaseGroupKeyName()) {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorAccessKeyNameCannotBeZeros, "_connectAccessGroupMembers: "+
+				"Problem connecting access group members: Cannot add members to base key.")
+	}
+	// Sanity check that the access public key and key name are valid
+	err := ValidateGroupPublicKeyAndName(txMeta.AccessPublicKey, txMeta.AccessGroupKeyName)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: failed validating the access "+
+			"public key and key name")
+	}
+
+	// Sanity check that transaction public key is valid.
+	if err := IsByteArrayValidPublicKey(txn.PublicKey); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: Invalid transaction public key: "+
+			"%v with error: %v", txn.PublicKey, RuleErrorAccessOwnerPublicKeyInvalid)
+	}
+
+	// Sanity check that access public key is not the same as the transaction public key.
+	if reflect.DeepEqual(txMeta.AccessPublicKey, txn.PublicKey) {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorAccessPublicKeyCannotBeOwnerKey, "_connectAccessGroupMembers: "+
+				"Problem connecting access group members: access public key and txn public key cannot be the same.")
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: ")
+	}
+
+	// Get the access key that the transaction metadata points to.
+	var accessGroupKey *AccessGroupKey
+	var accessPublicKey *PublicKey
+	if reflect.DeepEqual(txMeta.AccessPublicKey, GetS256BasePointCompressed()) {
+		accessGroupKey = NewAccessGroupKey(NewPublicKey(GetS256BasePointCompressed()), txMeta.AccessGroupKeyName)
+		_, keyPublic := btcec.PrivKeyFromBytes(btcec.S256(), Sha256DoubleHash(txMeta.AccessGroupKeyName)[:])
+		accessPublicKey = NewPublicKey(keyPublic.SerializeCompressed())
+	} else {
+		accessGroupKey = NewAccessGroupKey(NewPublicKey(txn.PublicKey), txMeta.AccessGroupKeyName)
+		accessPublicKey = NewPublicKey(txMeta.AccessPublicKey)
+	}
+
+	// Get the access key entry from the view. This ensures that only groupOwner can add/remove members.
+	existingEntry := bav.GetAccessGroupKeyToAccessGroupEntryMapping(accessGroupKey)
+	// Make sure the access key already exists because we are adding members to it.
+	if existingEntry == nil || existingEntry.isDeleted {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorAccessKeyDoesntExist, "_connectAccessGroupMembers: "+
+				"Problem connecting access group members: Access key does not exist.")
+	}
+
+	// Make sure access public key is the same as the one in the existing entry.
+	if !reflect.DeepEqual(existingEntry.AccessPublicKey[:], accessPublicKey[:]) {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorAccessPublicKeyCannotBeDifferent, "_connectAccessGroupMembers: "+
+				"Access public key cannot differ from the existing entry.")
+	}
+
+	var newAccessMembers []*AccessGroupMember
+
+	// Determine the operation type.
+	switch txMeta.AccessGroupMemberOperationType {
+	case AccessGroupMemberOperationTypeAdd:
+		// Validate all members.
+		for _, accessMember := range txMeta.AccessGroupMembers {
+			// Encrypted public key cannot be empty, and has to have at least as many bytes as a generic private key.
+			//
+			// Note that if someone is adding themselves to an unencrypted group, then this value can be set to
+			// zeros or G, the elliptic curve group element, which is also OK.
+			if len(accessMember.EncryptedKey) < btcec.PrivKeyBytesLen {
+				return 0, 0, nil, errors.Wrapf(
+					RuleErrorAccessMemberEncryptedKeyTooShort, "_connectAccessGroupMembers: "+
+						"Problem validating accessMember encrypted key for accessMember (%v): Encrypted "+
+						"key length %v less than the minimum allowed %v. If this is an unencrypted group "+
+						"member, please set %v zeros for this value", accessMember.GroupMemberPublicKey[:],
+					len(accessMember.EncryptedKey), btcec.PrivKeyBytesLen, btcec.PrivKeyBytesLen)
+			}
+
+			// Make sure the accessMember public key and access key name are valid.
+			if err := ValidateGroupPublicKeyAndName(accessMember.GroupMemberPublicKey[:], accessMember.GroupMemberKeyName[:]); err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: "+
+					"Problem validating public key or access key for accessMember (%v)", accessMember.GroupMemberPublicKey[:])
+			}
+
+			// REVIEW FOLLOWING:
+			// Now make sure accessMember's AccessGroupKey has already been added to UtxoView or DB.
+			// We encrypt the groupAccessKey to recipients' access keys.
+			memberAccessGroupKey := NewAccessGroupKey(
+				accessMember.GroupMemberPublicKey, accessMember.GroupMemberKeyName[:])
+			memberGroupEntry := bav.GetAccessGroupKeyToAccessGroupEntryMapping(memberAccessGroupKey)
+			// The access key has to exist and cannot be deleted.
+			if memberGroupEntry == nil || memberGroupEntry.isDeleted {
+				return 0, 0, nil, errors.Wrapf(
+					RuleErrorAccessMemberKeyDoesntExist, "_connectAccessGroupCreate: "+
+						"Problem verifying access key for accessMember (%v)", accessMember.GroupMemberPublicKey[:])
+			}
+
+			// Add the accessMember to our helper structs.
+			newAccessMembers = append(newAccessMembers, accessMember)
+		}
+	case AccessGroupMemberOperationTypeRemove:
+		// TODO: Implement this later
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupCreate: "+
+				"Operation type %v not supported yet.", txMeta.AccessGroupMemberOperationType)
+	default:
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupCreate: "+
+				"Operation type %v not supported.", txMeta.AccessGroupMemberOperationType)
+	}
+
+	// Add the new access members to the utxo view.
+	for _, accessMember := range newAccessMembers {
+		bav._setAccessGroupMember(existingEntry.GroupOwnerPublicKey, existingEntry.AccessGroupKeyName, accessMember, blockHeight)
+	}
+
+	// utxoOpsForTxn is an array of UtxoOperations. We append to it below to record the UtxoOperations
+	// associated with this transaction.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                   OperationTypeAccessGroupMembers,
+		PrevAccessGroupMembers: newAccessMembers,
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _disconnectAccessGroupMembers(
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// Verify that the last UtxoOperation is an AccessGroupMembersOperation.
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectAccessGroupMembers: Trying to revert " +
+			"AccessGroupMembers but with no operations")
+	}
+	accessGroupMembersOp := utxoOpsForTxn[len(utxoOpsForTxn)-1]
+	if accessGroupMembersOp.Type != OperationTypeAccessGroupMembers || operationType != OperationTypeAccessGroupMembers {
+		return fmt.Errorf("_disconnectAccessGroupMembers: Trying to revert "+
+			"AccessGroupMembers but found types %v and %v", accessGroupMembersOp.Type, operationType)
+	}
+
+	// Check that the transaction has the right TxnType.
+	if currentTxn.TxnMeta.GetTxnType() != TxnTypeAccessGroupMembers {
+		return fmt.Errorf("_disconnectAccessGroupMembers: called with bad TxnType %s",
+			currentTxn.TxnMeta.GetTxnType().String())
+	}
+
+	// Get the transaction metadata.
+	txMeta := currentTxn.TxnMeta.(*AccessGroupMembersMetadata)
+
+	// Get GroupOwnerPublicKey
+	groupOwnerPublicKey := currentTxn.PublicKey
+
+	// Sanity check that the access public key and key name are valid.
+	if err := ValidateGroupPublicKeyAndName(txMeta.AccessPublicKey[:], txMeta.AccessGroupKeyName[:]); err != nil {
+		return errors.Wrapf(err, "_disconnectAccessGroupMembers: "+
+			"Problem validating access public key or group key name for accessGroup (%v)", txMeta.AccessPublicKey[:])
+	}
+
+	// Get access group members
+	accessGroupMembers := sortAccessGroupMembers(txMeta.AccessGroupMembers)
+
+	// Get previous access group members
+	prevAccessGroupMembers := sortAccessGroupMembers(accessGroupMembersOp.PrevAccessGroupMembers)
+
+	// Loop over members to make sure they are the same.
+	if len(accessGroupMembers) != len(prevAccessGroupMembers) {
+		return fmt.Errorf("_disconnectAccessGroupMembers: Trying to revert " +
+			"AccessGroupMembers but found different number of members")
+	}
+	for ii, accessMember := range accessGroupMembers {
+		// If accessMember is already nil or deleted, return error.
+		if accessMember == nil || accessMember.isDeleted {
+			return fmt.Errorf("_disconnectAccessGroupMembers: Trying to revert " +
+				"AccessGroupMembers but found nil or deleted accessMember")
+		}
+		// Make sure prevAccessGroupMembers[ii] is not nil.
+		if prevAccessGroupMembers[ii] != nil {
+			// If accessMember is not the same as the previous accessMember, return error.
+			if !reflect.DeepEqual(accessMember.GroupMemberPublicKey, prevAccessGroupMembers[ii].GroupMemberPublicKey) ||
+				!reflect.DeepEqual(accessMember.GroupMemberKeyName, prevAccessGroupMembers[ii].GroupMemberKeyName) ||
+				!reflect.DeepEqual(accessMember.EncryptedKey, prevAccessGroupMembers[ii].EncryptedKey) {
+				return fmt.Errorf("_disconnectAccessGroupMembers: Trying to revert "+
+					"AccessGroupMembers but this member was already deleted: %v", accessMember.GroupMemberPublicKey)
+			}
+		}
+
+		// REVIEW FOLLOWING:
+		// Delete the accessMember from the utxo view to indicate we should remove this entry from DB.
+		bav._deleteAccessGroupMember(accessMember, NewPublicKey(groupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
+		// If the previous accessMember is not nil, add it back to the utxo view.
+		if prevAccessGroupMembers[ii] != nil {
+			bav._setAccessGroupMember(NewPublicKey(groupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName), prevAccessGroupMembers[ii], blockHeight)
+		}
+	}
+
+	// Now disconnect the basic transfer.
+	operationIndex := len(utxoOpsForTxn) - 1
+	return bav._disconnectBasicTransfer(currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight)
+}
+
+func (bav *UtxoView) _connectAccessGroupAttributes(
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// Make sure DeSo V3 messages are live.
+	if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorAccessGroupsBeforeBlockHeight, "_connectAccessGroupAttributes: "+
+				"DeSo V3 messages are not live yet.")
+	}
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeAccessGroupAttributes {
+		return 0, 0, nil, fmt.Errorf("_connectAccessGroupAttributes: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+
+	// Get the transaction metadata.
+	txMeta := txn.TxnMeta.(*AccessGroupAttributesMetadata)
+
+	// connect basic transfer to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupAttributes: "+
+			"_connectBasicTransfer failed: ")
+	}
+
+	// switch case for whether attribute holder is member, group, or message.
+	switch txMeta.AttributeHolderKey.(type) {
+	case *GroupEnumerationKey:
+		// Make sure AttributeHolder is member
+		if txMeta.AccessGroupAttributeHolder != AccessGroupAttributeHolderMember {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorAccessGroupAttributesInvalidAttributeHolder, "_connectAccessGroupAttributes: "+
+					"AttributeHolder is not member but attribute holder key is GroupEnumerationKey")
+		}
+
+		groupOwnerPublicKey := &txMeta.AttributeHolderKey.(*GroupEnumerationKey).GroupOwnerPublicKey
+		groupKeyName := &txMeta.AttributeHolderKey.(*GroupEnumerationKey).GroupKeyName
+		memberPublicKey := &txMeta.AttributeHolderKey.(*GroupEnumerationKey).GroupMemberPublicKey
+
+		// TODO? Validate group public key and group key name.
+
+		// Make sure only the group owner can update the group attributes. In the future, we may want to allow
+		// group members to update their own attributes on a case-by-case basis. (e.g. when a group member
+		// wants to set "AcceptedInvitation" to true).
+		if !reflect.DeepEqual(groupOwnerPublicKey, txn.PublicKey) {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorAccessGroupAttributesOperationDenied, "_connectAccessGroupAttributes: "+
+					"Only group owner can add attributes to group members")
+		}
+
+		// Add or remove attribute based on operation type.
+		switch txMeta.AccessGroupAttributeOperationType {
+		case AccessGroupAttributeOperationTypeAdd:
+			// Note: Attribute could already be added, we don't check for that. We simply overwrite it as a change-attribute value mechanism.
+			// Add attribute to member.
+			bav._setGroupMemberAttributeMapping(groupOwnerPublicKey, groupKeyName, memberPublicKey, AccessGroupMemberAttributeType(txMeta.AttributeType), true, txMeta.AttributeValue)
+		case AccessGroupAttributeOperationTypeRemove:
+			// Set attribute to false.
+			bav._setGroupMemberAttributeMapping(groupOwnerPublicKey, groupKeyName, memberPublicKey, AccessGroupMemberAttributeType(txMeta.AttributeType), false, txMeta.AttributeValue)
+		}
+
+	case *AccessGroupKey:
+		// Make sure AttributeHolder is group
+		if txMeta.AccessGroupAttributeHolder != AccessGroupAttributeHolderGroup {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorAccessGroupAttributesInvalidAttributeHolder, "_connectAccessGroupAttributes: "+
+					"AttributeHolder is not group but attribute holder key is AccessGroupKey")
+		}
+
+		groupOwnerPublicKey := &txMeta.AttributeHolderKey.(*AccessGroupKey).OwnerPublicKey
+		groupKeyName := &txMeta.AttributeHolderKey.(*AccessGroupKey).GroupKeyName
+
+		// TODO? Validate group public key and group key name.
+
+		// Make sure only the group owner can update the group attributes. In future, we may want to allow
+		// group admins to update the group attributes as they will be treated as a de-facto group owner.
+		if !reflect.DeepEqual(groupOwnerPublicKey, txn.PublicKey) {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorAccessGroupAttributesOperationDenied, "_connectAccessGroupAttributes: "+
+					"Only group owner can add attributes to group")
+		}
+
+		// Add or remove attribute based on operation type.
+		switch txMeta.AccessGroupAttributeOperationType {
+		case AccessGroupAttributeOperationTypeAdd:
+			// Note: Attribute could already be added, we don't check for that. We simply overwrite it as a change-attribute value mechanism.
+			// Add attribute to group.
+			bav._setGroupEntryAttributeMapping(groupOwnerPublicKey, groupKeyName, AccessGroupEntryAttributeType(txMeta.AttributeType), true, txMeta.AttributeValue)
+		case AccessGroupAttributeOperationTypeRemove:
+			// Set attribute to false.
+			bav._setGroupEntryAttributeMapping(groupOwnerPublicKey, groupKeyName, AccessGroupEntryAttributeType(txMeta.AttributeType), false, txMeta.AttributeValue)
+		}
+
+	//case *GroupChatMessageKey:
+	//	// Make sure AttributeHolder is message
+	//	if txMeta.AccessGroupAttributeHolder != AccessGroupAttributeHolderMessage {
+	//		return 0, 0, nil, errors.Wrapf(
+	//			RuleErrorAccessGroupAttributesInvalidAttributeHolder, "_connectAccessGroupAttributes: "+
+	//				"AttributeHolder is not message but attribute holder key is GroupChatMessageKey")
+	//	}
+	//
+	//	groupOwnerPublicKey := &txMeta.AttributeHolderKey.(*GroupChatMessageKey).GroupOwnerPublicKey
+	//	groupKeyName := &txMeta.AttributeHolderKey.(*GroupChatMessageKey).GroupKeyName
+	//
+	//	// TODO? Validate group public key and group key name.
+	//
+	//	//
+	//case *DmMessageKey:
+	//	// Make sure AttributeHolder is message
+	//	if txMeta.AccessGroupAttributeHolder != AccessGroupAttributeHolderMessage {
+	//		return 0, 0, nil, errors.Wrapf(
+	//			RuleErrorAccessGroupAttributesInvalidAttributeHolder, "_connectAccessGroupAttributes: "+
+	//				"AttributeHolder is not message but attribute holder key is DmMessageKey")
+	//	}
+
+	default:
+		return 0, 0, nil, fmt.Errorf("_connectAccessGroupAttributes: called with bad AttributeHolderType: %v",
+			txMeta.AccessGroupAttributeHolder)
+	}
+
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type: OperationTypeAccessGroupAttributes,
+		// TODO add new fields to utxoOperation for AccessGroupAttributes
+	})
+
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _disconnectAccessGroupAttributes(
+	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// TODO: Implement this
+	return nil
 }

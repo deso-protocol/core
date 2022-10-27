@@ -1213,7 +1213,7 @@ func TestAccessKey(t *testing.T) {
 		0x00, 0x01,
 	}
 
-	txMeta := AccessGroupMetadata{
+	txMeta := CreateAccessGroupMetadata{
 		AccessPublicKey:     m0PkBytes,
 		AccessGroupKeyName:  keyName,
 		GroupOwnerSignature: signature.Serialize(),
@@ -1223,7 +1223,7 @@ func TestAccessKey(t *testing.T) {
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testTxMeta, err := NewTxnMetadata(TxnTypeMessagingGroup)
+	testTxMeta, err := NewTxnMetadata(TxnTypeCreateAccessGroup)
 	require.NoError(err)
 	err = testTxMeta.FromBytes(data)
 	require.NoError(err)
@@ -1244,7 +1244,7 @@ func TestAccessKey(t *testing.T) {
 	data, err = txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testTxMeta, err = NewTxnMetadata(TxnTypeMessagingGroup)
+	testTxMeta, err = NewTxnMetadata(TxnTypeCreateAccessGroup)
 	require.NoError(err)
 	err = testTxMeta.FromBytes(data)
 	require.NoError(err)

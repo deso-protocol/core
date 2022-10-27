@@ -223,14 +223,16 @@ const (
 	TxnTypeAcceptNFTTransfer            TxnType = 20
 	TxnTypeBurnNFT                      TxnType = 21
 	TxnTypeAuthorizeDerivedKey          TxnType = 22
-	TxnTypeMessagingGroup               TxnType = 23
+	TxnTypeCreateAccessGroup            TxnType = 23
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
 	TxnTypeDAOCoinLimitOrder            TxnType = 26
 	TxnTypeNewMessage                   TxnType = 27
 	TxnTypeUpdateMessage                TxnType = 28
+	TxnTypeAccessGroupMembers           TxnType = 29
+	TxnTypeAccessGroupAttributes        TxnType = 30
 
-	// NEXT_ID = 27
+	// NEXT_ID = 31
 )
 
 type TxnString string
@@ -258,12 +260,14 @@ const (
 	TxnStringAcceptNFTTransfer            TxnString = "ACCEPT_NFT_TRANSFER"
 	TxnStringBurnNFT                      TxnString = "BURN_NFT"
 	TxnStringAuthorizeDerivedKey          TxnString = "AUTHORIZE_DERIVED_KEY"
-	TxnStringMessagingGroup               TxnString = "MESSAGING_GROUP"
+	TxnStringCreateAccessGroup            TxnString = "CREATE_ACCESS_GROUP"
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
 	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
 	TxnStringNewMessage                   TxnString = "NEW_MESSAGE"
 	TxnStringUpdateMessage                TxnString = "UPDATE_MESSAGE"
+	TxnStringAccessGroupMembers           TxnString = "ACCESS_GROUP_MEMBERS"
+	TxnStringAccessGroupAttributes        TxnString = "ACCESS_GROUP_ATTRIBUTES"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -273,16 +277,18 @@ var (
 		TxnTypeSubmitPost, TxnTypeUpdateProfile, TxnTypeUpdateBitcoinUSDExchangeRate, TxnTypeFollow, TxnTypeLike,
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
-		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
+		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeCreateAccessGroup,
 		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeNewMessage, TxnTypeUpdateMessage,
+		TxnTypeAccessGroupMembers, TxnTypeAccessGroupAttributes,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
 		TxnStringSubmitPost, TxnStringUpdateProfile, TxnStringUpdateBitcoinUSDExchangeRate, TxnStringFollow, TxnStringLike,
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
-		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
+		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringCreateAccessGroup,
 		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringNewMessage, TxnStringUpdateMessage,
+		TxnStringAccessGroupMembers, TxnStringAccessGroupAttributes,
 	}
 )
 
@@ -340,8 +346,8 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringBurnNFT
 	case TxnTypeAuthorizeDerivedKey:
 		return TxnStringAuthorizeDerivedKey
-	case TxnTypeMessagingGroup:
-		return TxnStringMessagingGroup
+	case TxnTypeCreateAccessGroup:
+		return TxnStringCreateAccessGroup
 	case TxnTypeDAOCoin:
 		return TxnStringDAOCoin
 	case TxnTypeDAOCoinTransfer:
@@ -352,6 +358,10 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringNewMessage
 	case TxnTypeUpdateMessage:
 		return TxnStringUpdateMessage
+	case TxnTypeAccessGroupMembers:
+		return TxnStringAccessGroupMembers
+	case TxnTypeAccessGroupAttributes:
+		return TxnStringAccessGroupAttributes
 	default:
 		return TxnStringUndefined
 	}
@@ -403,8 +413,8 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeBurnNFT
 	case TxnStringAuthorizeDerivedKey:
 		return TxnTypeAuthorizeDerivedKey
-	case TxnStringMessagingGroup:
-		return TxnTypeMessagingGroup
+	case TxnStringCreateAccessGroup:
+		return TxnTypeCreateAccessGroup
 	case TxnStringDAOCoin:
 		return TxnTypeDAOCoin
 	case TxnStringDAOCoinTransfer:
@@ -415,6 +425,10 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeNewMessage
 	case TxnStringUpdateMessage:
 		return TxnTypeUpdateMessage
+	case TxnStringAccessGroupMembers:
+		return TxnTypeAccessGroupMembers
+	case TxnStringAccessGroupAttributes:
+		return TxnTypeAccessGroupAttributes
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -474,8 +488,8 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&BurnNFTMetadata{}).New(), nil
 	case TxnTypeAuthorizeDerivedKey:
 		return (&AuthorizeDerivedKeyMetadata{}).New(), nil
-	case TxnTypeMessagingGroup:
-		return (&AccessGroupMetadata{}).New(), nil
+	case TxnTypeCreateAccessGroup:
+		return (&CreateAccessGroupMetadata{}).New(), nil
 	case TxnTypeDAOCoin:
 		return (&DAOCoinMetadata{}).New(), nil
 	case TxnTypeDAOCoinTransfer:
@@ -484,8 +498,12 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinLimitOrderMetadata{}).New(), nil
 	case TxnTypeNewMessage:
 		return (&NewMessageMetadata{}).New(), nil
-	//case TxnTypeUpdateMessage:
-	//return (&UpdateMessageMetadata{}).New(), nil
+	case TxnTypeUpdateMessage:
+		return (&UpdateMessageMetadata{}).New(), nil
+	case TxnTypeAccessGroupMembers:
+		return (&AccessGroupMembersMetadata{}).New(), nil
+	case TxnTypeAccessGroupAttributes:
+		return (&AccessGroupAttributesMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -6385,7 +6403,7 @@ func DeserializePubKeyToUint64Map(data []byte) (map[PublicKey]uint64, error) {
 }
 
 // ==================================================================
-// AccessGroupMetadata
+// CreateAccessGroupMetadata
 // ==================================================================
 
 // AccessGroupOperation represents V3 Group Chat Messages ExtraData["AccessGroupOperationType"] values
@@ -6402,9 +6420,9 @@ const (
 type AccessGroupMemberAttributeType byte
 
 const (
-	AccessGroupMemberAttributeIsMuted            AccessGroupMemberAttributeType = 0
-	AccessGroupMemberAttributeAcceptedMembership AccessGroupMemberAttributeType = 1
-	AccessGroupMemberAttributeIsAdmin            AccessGroupMemberAttributeType = 2
+	AccessGroupMemberAttributeIsMuted AccessGroupMemberAttributeType = iota
+	AccessGroupMemberAttributeAcceptedMembership
+	AccessGroupMemberAttributeIsAdmin
 )
 
 // IsAccessGroupMemberAttributeTypeValid returns true if the given AccessGroupMemberAttributeType is valid.
@@ -6422,7 +6440,7 @@ func IsAccessGroupMemberAttributeTypeValid(attributeType AccessGroupMemberAttrib
 type AccessGroupEntryAttributeType byte
 
 const (
-	AccessGroupEntryAttributeIsChannel AccessGroupEntryAttributeType = 0
+	AccessGroupEntryAttributeIsChannel AccessGroupEntryAttributeType = iota
 )
 
 // IsAccessGroupEntryAttributeTypeValid returns true if the given AccessGroupEntryAttributeType is valid.
@@ -6434,7 +6452,27 @@ func IsAccessGroupEntryAttributeTypeValid(attributeType AccessGroupEntryAttribut
 	return false
 }
 
-type AccessGroupMetadata struct {
+// MessageAttributeType represents V3 Group Message Attributes stored in the DB (PrefixGroupMessageAttributesIndex).
+type MessageAttributeType byte
+
+const (
+	AccessGroupMessageAttributeIsEdited MessageAttributeType = iota
+	AccessGroupMessageAttributeIsDeleted
+	AccessGroupMessageAttributeIsDirectReply
+)
+
+// IsAccessGroupMessageAttributeTypeValid returns true if the given MessageAttributeType is valid.
+func IsAccessGroupMessageAttributeTypeValid(attributeType MessageAttributeType) bool {
+	switch attributeType {
+	case AccessGroupMessageAttributeIsEdited,
+		AccessGroupMessageAttributeIsDeleted,
+		AccessGroupMessageAttributeIsDirectReply:
+		return true
+	}
+	return false
+}
+
+type CreateAccessGroupMetadata struct {
 	// This struct is very similar to the AccessGroupEntry type.
 	AccessPublicKey    []byte
 	AccessGroupKeyName []byte
@@ -6456,22 +6494,20 @@ type AccessGroupMetadata struct {
 	AccessGroupMembers []*AccessGroupMember
 }
 
-func (txnData *AccessGroupMetadata) GetTxnType() TxnType {
-	return TxnTypeMessagingGroup
+func (txnData *CreateAccessGroupMetadata) GetTxnType() TxnType {
+	return TxnTypeCreateAccessGroup
 }
 
-func (txnData *AccessGroupMetadata) ToBytes(preSignature bool) ([]byte, error) {
+func (txnData *CreateAccessGroupMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 
-	data = append(data, UintToBuf(uint64(len(txnData.AccessPublicKey)))...)
-	data = append(data, txnData.AccessPublicKey...)
-
-	data = append(data, UintToBuf(uint64(len(txnData.AccessGroupKeyName)))...)
-	data = append(data, txnData.AccessGroupKeyName...)
-
-	data = append(data, UintToBuf(uint64(len(txnData.GroupOwnerSignature)))...)
-	data = append(data, txnData.GroupOwnerSignature...)
-
+	// AccessPublicKey
+	data = append(data, EncodeByteArray(txnData.AccessPublicKey)...)
+	// AccessGroupKeyName
+	data = append(data, EncodeByteArray(txnData.AccessGroupKeyName)...)
+	// GroupOwnerSignature
+	data = append(data, EncodeByteArray(txnData.GroupOwnerSignature)...)
+	// AccessGroupMembers
 	data = append(data, UintToBuf(uint64(len(txnData.AccessGroupMembers)))...)
 	for _, recipient := range txnData.AccessGroupMembers {
 		data = append(data, recipient.ToBytes()...)
@@ -6480,26 +6516,26 @@ func (txnData *AccessGroupMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	return data, nil
 }
 
-func (txnData *AccessGroupMetadata) FromBytes(data []byte) error {
-	ret := AccessGroupMetadata{}
+func (txnData *CreateAccessGroupMetadata) FromBytes(data []byte) error {
+	ret := CreateAccessGroupMetadata{}
 	rr := bytes.NewReader(data)
 
 	var err error
 	ret.AccessPublicKey, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
+		return errors.Wrapf(err, "CreateAccessGroupMetadata.FromBytes: "+
 			"Problem reading AccessPublicKey")
 	}
 
 	ret.AccessGroupKeyName, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
+		return errors.Wrapf(err, "CreateAccessGroupMetadata.FromBytes: "+
 			"Problem reading AccessGroupKey")
 	}
 
 	ret.GroupOwnerSignature, err = ReadVarString(rr)
 	if err != nil {
-		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
+		return errors.Wrapf(err, "CreateAccessGroupMetadata.FromBytes: "+
 			"Problem reading GroupOwnerSignature")
 	}
 
@@ -6507,7 +6543,7 @@ func (txnData *AccessGroupMetadata) FromBytes(data []byte) error {
 	for ; numRecipients > 0; numRecipients-- {
 		recipient := &AccessGroupMember{}
 		if err := recipient.FromBytes(rr); err != nil {
-			return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
+			return errors.Wrapf(err, "CreateAccessGroupMetadata.FromBytes: "+
 				"error reading recipient")
 		}
 		ret.AccessGroupMembers = append(ret.AccessGroupMembers, recipient)
@@ -6517,8 +6553,8 @@ func (txnData *AccessGroupMetadata) FromBytes(data []byte) error {
 	return nil
 }
 
-func (txnData *AccessGroupMetadata) New() DeSoTxnMetadata {
-	return &AccessGroupMetadata{}
+func (txnData *CreateAccessGroupMetadata) New() DeSoTxnMetadata {
+	return &CreateAccessGroupMetadata{}
 }
 
 // GetAccessGroupOperation returns the access group operation based on the transaction. In particular, we check
@@ -6530,12 +6566,12 @@ func GetAccessGroupOperation(txn *MsgDeSoTxn) (AccessGroupOperation, error) {
 	}
 
 	// Make sure this is an access group transaction.
-	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
+	if txn.TxnMeta.GetTxnType() != TxnTypeCreateAccessGroup {
 		return 0, fmt.Errorf("GetAccessGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
 	}
 
 	// Sanity-check cast the transaction metadata to an access group metadata.
-	if _, ok := txn.TxnMeta.(*AccessGroupMetadata); !ok {
+	if _, ok := txn.TxnMeta.(*CreateAccessGroupMetadata); !ok {
 		return 0, fmt.Errorf("GetAccessGroupOperation: called on txn with type %v", txn.TxnMeta.GetTxnType())
 	}
 
@@ -6583,6 +6619,7 @@ const (
 	MessageTypeGroupChat MessageType = 1
 )
 
+// NewMessageMetadata is the metadata for a new message transaction.
 type NewMessageMetadata struct {
 	SenderAccessGroupOwnerPublicKey    PublicKey
 	SenderAccessGroupKeyName           GroupKeyName
@@ -6678,9 +6715,403 @@ func (txnData *NewMessageMetadata) FromBytes(data []byte) error {
 	}
 	ret.MessageType = MessageType(messageType)
 
+	*txnData = ret
+
 	return nil
 }
 
 func (txnData *NewMessageMetadata) New() DeSoTxnMetadata {
 	return &NewMessageMetadata{}
+}
+
+// =======================================================================================
+// UpdateMessageMetadata
+// =======================================================================================
+
+// UpdateMessageMetadata is the metadata for a transaction to update a message.
+type UpdateMessageMetadata struct {
+	SenderAccessGroupOwnerPublicKey    PublicKey
+	SenderAccessGroupKeyName           GroupKeyName
+	SenderAccessPublicKey              PublicKey
+	RecipientAccessGroupOwnerPublicKey PublicKey
+	RecipientAccessGroupKeyName        GroupKeyName
+	RecipientAccessPublicKey           PublicKey
+	EncryptedText                      []byte
+	TimestampNanos                     uint64
+	MessageType
+	MessageAttributeType
+	// The Operation Type determines whether the attribute is being added or removed.
+	AccessGroupAttributeOperationType
+	// Stores encoded data about the message attribute. For e.g. if attribute is DirectReply, then this would store
+	// the message hash of the message being replied to. This could be nil for e.g. if attribute is IsDeleted.
+	AccessGroupMessageAttributeBytes []byte
+}
+
+func (txnData *UpdateMessageMetadata) GetTxnType() TxnType {
+	return TxnTypeUpdateMessage
+}
+
+func (txnData *UpdateMessageMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+
+	data = append(data, EncodeByteArray(txnData.SenderAccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.SenderAccessGroupKeyName.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.RecipientAccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.RecipientAccessGroupKeyName.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.EncryptedText)...)
+	data = append(data, UintToBuf(txnData.TimestampNanos)...)
+	data = append(data, UintToBuf(uint64(txnData.MessageType))...)
+	data = append(data, UintToBuf(uint64(txnData.MessageAttributeType))...)
+	data = append(data, UintToBuf(uint64(txnData.AccessGroupAttributeOperationType))...)
+	data = append(data, EncodeByteArray(txnData.AccessGroupMessageAttributeBytes)...)
+
+	return data, nil
+}
+
+func (txnData *UpdateMessageMetadata) FromBytes(data []byte) error {
+	var err error
+	ret := UpdateMessageMetadata{}
+	rr := bytes.NewReader(data)
+
+	// SenderAccessGroupOwnerPublicKey
+	senderAccessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateMessageMetadata.FromBytes: "+
+			"Problem reading SenderAccessGroupOwnerPublicKey")
+	}
+	// SenderAccessGroupKeyName
+	senderAccessGroupKeyName, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateMessageMetadata.FromBytes: "+
+			"Problem reading SenderAccessGroupKeyName")
+	}
+	if err = ValidateGroupPublicKeyAndName(senderAccessGroupOwnerPublicKeyBytes, senderAccessGroupKeyName); err != nil {
+		return errors.Wrapf(err, "UpdateMessageMetadata.FromBytes: "+
+			"Invalid sender access group public key and name")
+	}
+	ret.SenderAccessGroupOwnerPublicKey = *NewPublicKey(senderAccessGroupOwnerPublicKeyBytes)
+	ret.SenderAccessGroupKeyName = *NewGroupKeyName(senderAccessGroupKeyName)
+
+	// RecipientAccessGroupOwnerPublicKey
+	recipientAccessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateMessageMetadata.FromBytes: "+
+			"Problem reading RecipientAccessGroupOwnerPublicKey")
+	}
+	// RecipientAccessGroupKeyName
+	recipientAccessGroupKeyName, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateMessageMetadata.FromBytes: "+
+			"Problem reading RecipientAccessGroupKeyName")
+	}
+	if err = ValidateGroupPublicKeyAndName(recipientAccessGroupOwnerPublicKeyBytes, recipientAccessGroupKeyName); err != nil {
+		return errors.Wrapf(err, "UpdateMessageMetadata.FromBytes: "+
+			"Invalid recipient access group public key and name")
+	}
+	ret.RecipientAccessGroupOwnerPublicKey = *NewPublicKey(recipientAccessGroupOwnerPublicKeyBytes)
+	ret.RecipientAccessGroupKeyName = *NewGroupKeyName(recipientAccessGroupKeyName)
+
+	// EncryptedText
+	ret.EncryptedText, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateMessageMetadata.FromBytes: "+
+			"Problem reading EncryptedText")
+	}
+
+	// TimestampNanos
+	ret.TimestampNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateMessageMetadata.FromBytes: "+
+			"Problem reading TimestampNanos")
+	}
+
+	// MessageType
+	messageType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateMessageMetadata.FromBytes: "+
+			"Problem reading MessageType")
+	}
+	ret.MessageType = MessageType(messageType)
+
+	// MessageAttributeType
+	accessGroupMessageAttributeType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateMessageMetadata.FromBytes: "+
+			"Problem reading MessageAttributeType")
+	}
+	ret.MessageAttributeType = MessageAttributeType(accessGroupMessageAttributeType)
+
+	// AccessGroupAttributeOperationType
+	accessGroupAttributeOperationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateMessageMetadata.FromBytes: "+
+			"Problem reading AccessGroupAttributeOperationType")
+	}
+	ret.AccessGroupAttributeOperationType = AccessGroupAttributeOperationType(accessGroupAttributeOperationType)
+
+	// AccessGroupMessageAttributeBytes
+	ret.AccessGroupMessageAttributeBytes, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateMessageMetadata.FromBytes: "+
+			"Problem reading AccessGroupMessageAttributeBytes")
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *UpdateMessageMetadata) New() DeSoTxnMetadata {
+	return &UpdateMessageMetadata{}
+}
+
+// =======================================================================================
+// AccessGroupMembersMetadata
+// =======================================================================================
+
+type AccessGroupMemberOperationType uint8
+
+const (
+	AccessGroupMemberOperationTypeAdd    AccessGroupMemberOperationType = 0
+	AccessGroupMemberOperationTypeRemove AccessGroupMemberOperationType = 1
+)
+
+// AccessGroupMembersMetadata is the metadata for a transaction to update the members of an access group.
+type AccessGroupMembersMetadata struct {
+	AccessPublicKey    []byte
+	AccessGroupKeyName []byte
+	// The list of members to add/remove from the access group.
+	AccessGroupMembers []*AccessGroupMember
+	// The operation to perform on the members.
+	AccessGroupMemberOperationType
+}
+
+func (txnData *AccessGroupMembersMetadata) GetTxnType() TxnType {
+	return TxnTypeAccessGroupMembers
+}
+
+func (txnData *AccessGroupMembersMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+
+	// AccessPublicKey
+	data = append(data, EncodeByteArray(txnData.AccessPublicKey)...)
+	// AccessGroupKeyName
+	data = append(data, EncodeByteArray(txnData.AccessGroupKeyName)...)
+	// AccessGroupMembers
+	data = append(data, UintToBuf(uint64(len(txnData.AccessGroupMembers)))...)
+	for _, accessGroupMember := range txnData.AccessGroupMembers {
+		data = append(data, accessGroupMember.ToBytes()...)
+	}
+	// AccessGroupMemberOperationType
+	data = append(data, UintToBuf(uint64(txnData.AccessGroupMemberOperationType))...)
+
+	return data, nil
+}
+
+func (txnData *AccessGroupMembersMetadata) FromBytes(data []byte) error {
+	var err error
+	ret := AccessGroupMembersMetadata{}
+	rr := bytes.NewReader(data)
+
+	// AccessPublicKey
+	ret.AccessPublicKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
+			"Problem reading AccessPublicKey")
+	}
+
+	// AccessGroupKeyName
+	ret.AccessGroupKeyName, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
+			"Problem reading AccessGroupKeyName")
+	}
+
+	// AccessGroupMembers
+	numAccessGroupMembers, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
+			"Problem reading numAccessGroupMembers")
+	}
+	ret.AccessGroupMembers = make([]*AccessGroupMember, numAccessGroupMembers)
+	for ii := uint64(0); ii < numAccessGroupMembers; ii++ {
+		ret.AccessGroupMembers[ii] = &AccessGroupMember{}
+		err = ret.AccessGroupMembers[ii].FromBytes(rr)
+		if err != nil {
+			return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
+				"Problem reading AccessGroupMembers[%d]", ii)
+		}
+	}
+
+	// AccessGroupMemberOperationType
+	accessGroupMemberOperationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
+			"Problem reading AccessGroupMemberOperationType")
+	}
+	ret.AccessGroupMemberOperationType = AccessGroupMemberOperationType(accessGroupMemberOperationType)
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *AccessGroupMembersMetadata) New() DeSoTxnMetadata {
+	return &AccessGroupMembersMetadata{}
+}
+
+// =======================================================================================
+// AccessGroupAttributesMetadata
+// =======================================================================================
+
+type AccessGroupAttributeOperationType uint8
+
+const (
+	AccessGroupAttributeOperationTypeAdd    AccessGroupAttributeOperationType = 0
+	AccessGroupAttributeOperationTypeRemove AccessGroupAttributeOperationType = 1
+)
+
+type AccessGroupAttributeHolder uint8
+
+const (
+	AccessGroupAttributeHolderMember  AccessGroupAttributeHolder = 0
+	AccessGroupAttributeHolderGroup   AccessGroupAttributeHolder = 1
+	AccessGroupAttributeHolderMessage AccessGroupAttributeHolder = 2
+)
+
+// AccessGroupAttributesMetadata is the metadata for a transaction to update the attributes of an access group.
+type AccessGroupAttributesMetadata struct {
+	// The holder of the attributes.
+	AccessGroupAttributeHolder
+	// Could be either 1. GroupMemberEnumerationKey or 2. AccessGroupKey or 3. MessageKey: (a) GroupChatMessageKey or (b) DMMessageKey
+	AttributeHolderKey interface{}
+	// The operation to perform on the attribute.
+	AccessGroupAttributeOperationType
+	// The attribute type to add/remove from the member/group/message.
+	AttributeType byte
+	// Raw bytes of the attribute value of member/group/message. Could be nil.
+	AttributeValue []byte
+}
+
+func (txnData *AccessGroupAttributesMetadata) GetTxnType() TxnType {
+	return TxnTypeAccessGroupAttributes
+}
+
+func (txnData *AccessGroupAttributesMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+
+	// AccessGroupAttributeHolder
+	data = append(data, UintToBuf(uint64(txnData.AccessGroupAttributeHolder))...)
+	// AttributeHolderKey
+	switch keyType := txnData.AttributeHolderKey.(type) {
+	case *GroupEnumerationKey:
+		if txnData.AccessGroupAttributeHolder != AccessGroupAttributeHolderMember {
+			return nil, fmt.Errorf("AccessGroupAttributesMetadata.ToBytes: AttributeHolderKey is " +
+				"GroupEnumerationKey but AccessGroupAttributeHolder is not AccessGroupAttributeHolderMember")
+		}
+		data = append(data, keyType.ToBytes()...)
+	case *AccessGroupKey:
+		if txnData.AccessGroupAttributeHolder != AccessGroupAttributeHolderGroup {
+			return nil, fmt.Errorf("AccessGroupAttributesMetadata.ToBytes: AttributeHolderKey is " +
+				"AccessGroupKey but AccessGroupAttributeHolder is not AccessGroupAttributeHolderGroup")
+		}
+		data = append(data, keyType.ToBytes()...)
+	case *GroupChatMessageKey:
+		if txnData.AccessGroupAttributeHolder != AccessGroupAttributeHolderMessage {
+			return nil, fmt.Errorf("AccessGroupAttributesMetadata.ToBytes: AttributeHolderKey is " +
+				"GroupChatMessageKey but AccessGroupAttributeHolder is not AccessGroupAttributeHolderMessage")
+		}
+		data = append(data, keyType.ToBytes()...)
+	case *DmMessageKey:
+		if txnData.AccessGroupAttributeHolder != AccessGroupAttributeHolderMessage {
+			return nil, fmt.Errorf("AccessGroupAttributesMetadata.ToBytes: AttributeHolderKey is " +
+				"DmMessageKey but AccessGroupAttributeHolder is not AccessGroupAttributeHolderMessage")
+		}
+		data = append(data, keyType.ToBytes()...)
+	default:
+		return nil, fmt.Errorf("AccessGroupAttributesMetadata.ToBytes: AttributeHolderKey is of unknown type")
+	}
+	// AccessGroupAttributeOperationType
+	data = append(data, UintToBuf(uint64(txnData.AccessGroupAttributeOperationType))...)
+	// AttributeType
+	data = append(data, txnData.AttributeType)
+	// AttributeValue
+	data = append(data, EncodeByteArray(txnData.AttributeValue)...)
+	return data, nil
+}
+
+func (txnData *AccessGroupAttributesMetadata) FromBytes(data []byte) error {
+	var err error
+	ret := AccessGroupAttributesMetadata{}
+	rr := bytes.NewReader(data)
+
+	// AccessGroupAttributeHolder
+	accessGroupAttributeHolder, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupAttributesMetadata.FromBytes: "+
+			"Problem reading AccessGroupAttributeHolder")
+	}
+	ret.AccessGroupAttributeHolder = AccessGroupAttributeHolder(accessGroupAttributeHolder)
+
+	// AttributeHolderKey
+	switch ret.AccessGroupAttributeHolder {
+	case AccessGroupAttributeHolderMember:
+		ret.AttributeHolderKey = &GroupEnumerationKey{}
+		err = ret.AttributeHolderKey.(*GroupEnumerationKey).FromBytes(rr)
+		if err != nil {
+			return errors.Wrapf(err, "AccessGroupAttributesMetadata.FromBytes: "+
+				"Problem reading AttributeHolderKey as GroupEnumerationKey")
+		}
+	case AccessGroupAttributeHolderGroup:
+		ret.AttributeHolderKey = &AccessGroupKey{}
+		err = ret.AttributeHolderKey.(*AccessGroupKey).FromBytes(rr)
+		if err != nil {
+			return errors.Wrapf(err, "AccessGroupAttributesMetadata.FromBytes: "+
+				"Problem reading AttributeHolderKey as AccessGroupKey")
+		}
+	case AccessGroupAttributeHolderMessage:
+		// We don't know if this is a GroupChatMessageKey or a DmMessageKey, so we have to try both.
+		ret.AttributeHolderKey = &GroupChatMessageKey{}
+		err = ret.AttributeHolderKey.(*GroupChatMessageKey).FromBytes(rr)
+		if err != nil {
+			// Try DmMessageKey
+			ret.AttributeHolderKey = &DmMessageKey{}
+			err = ret.AttributeHolderKey.(*DmMessageKey).FromBytes(rr)
+			if err != nil {
+				return errors.Wrapf(err, "AccessGroupAttributesMetadata.FromBytes: "+
+					"Problem reading AttributeHolderKey as GroupChatMessageKey or DMMessageKey")
+			}
+		}
+	default:
+		return fmt.Errorf("AccessGroupAttributesMetadata.FromBytes: Unknown AccessGroupAttributeHolder: %d",
+			ret.AccessGroupAttributeHolder)
+	}
+
+	// AccessGroupAttributeOperationType
+	accessGroupAttributeOperationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupAttributesMetadata.FromBytes: "+
+			"Problem reading AccessGroupAttributeOperationType")
+	}
+	ret.AccessGroupAttributeOperationType = AccessGroupAttributeOperationType(accessGroupAttributeOperationType)
+
+	// AttributeType
+	attributeType, err := rr.ReadByte()
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupAttributesMetadata.FromBytes: "+
+			"Problem reading AttributeType")
+	}
+	ret.AttributeType = attributeType
+
+	// AttributeValue
+	ret.AttributeValue, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupAttributesMetadata.FromBytes: "+
+			"Problem reading AttributeValue")
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *AccessGroupAttributesMetadata) New() DeSoTxnMetadata {
+	return &AccessGroupAttributesMetadata{}
 }

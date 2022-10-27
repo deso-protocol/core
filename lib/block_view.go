@@ -66,6 +66,12 @@ type UtxoView struct {
 	// Or if Group_A was no longer a channel and had its picture and description removed- {IsChannel: (IsSet: false, Value: nil), GroupPicture: (IsSet: false, Value: nil), GroupDescription: (IsSet: false, Value: nil)}
 	GroupEntryAttributes map[AccessGroupKey]map[AccessGroupEntryAttributeType]*AttributeEntry
 
+	// MessageAttributes
+	// Mapping of MessageKey to a map of MessageEntryAttributeType to AttributeEntry
+	// For example, Message_A can have attributes {IsDeleted: (IsSet: true, Value: nil), IsEdited: (IsSet: true, Value: nil)}
+	// Or if Message_A was emoji reacted {LaughingEmoji: (IsSet: true, Value: nil), SadEmoji: (IsSet: true, Value: nil)}
+	MessageAttributes map[MessageKey]map[MessageAttributeType]*AttributeEntry
+
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
 
@@ -157,6 +163,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.GroupMembershipKeyToAccessGroupMember = make(map[GroupMembershipKey]*AccessGroupMember)
 	bav.GroupMemberAttributes = make(map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]*AttributeEntry)
 	bav.GroupEntryAttributes = make(map[AccessGroupKey]map[AccessGroupEntryAttributeType]*AttributeEntry)
+	bav.MessageAttributes = make(map[MessageKey]map[MessageAttributeType]*AttributeEntry)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -325,6 +332,16 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 			newAttributes[attribute] = &newValue
 		}
 		newView.GroupEntryAttributes[key] = newAttributes
+	}
+
+	newView.MessageAttributes = make(map[MessageKey]map[MessageAttributeType]*AttributeEntry, len(bav.MessageAttributes))
+	for key, attributes := range bav.MessageAttributes {
+		newAttributes := make(map[MessageAttributeType]*AttributeEntry, len(attributes))
+		for attribute, value := range attributes {
+			newValue := *value
+			newAttributes[attribute] = &newValue
+		}
+		newView.MessageAttributes[key] = newAttributes
 	}
 
 	// Copy postgres message map
@@ -995,9 +1012,9 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		return bav._disconnectPrivateMessage(
 			OperationTypePrivateMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
-		return bav._disconnectAccessGroup(
-			OperationTypeAccessKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreateAccessGroup {
+		return bav._disconnectAccessGroupCreate(
+			OperationTypeCreateAccessGroup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
 		return bav._disconnectSubmitPost(
@@ -2354,7 +2371,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			bav._connectPrivateMessage(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateAccessGroup {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAccessGroupCreate(
 				txn, txHash, blockHeight, verifySignatures)

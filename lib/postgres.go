@@ -1352,7 +1352,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				}
 			}
 
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateAccessGroup {
 
 			// FIXME: Skip PGMetadataAccessGroup for now since it's not used downstream
 
