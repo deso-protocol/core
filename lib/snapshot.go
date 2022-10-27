@@ -1329,9 +1329,15 @@ func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
 // The parameter addBytes determines if we want to add or remove bytes from the checksums.
 func (sc *StateChecksum) AddOrRemoveBytesWithMigrations(keyInput []byte, valueInput []byte, blockHeight uint64,
 	encoderMigrationChecksums []*EncoderMigrationChecksum, addBytes bool) error {
-	key := make([]byte, len(keyInput))
+	key, err := SafeMakeSliceWithLength[byte](uint64(len(keyInput)))
+	if err != nil {
+		return err
+	}
 	copy(key, keyInput)
-	value := make([]byte, len(valueInput))
+	value, err := SafeMakeSliceWithLength[byte](uint64(len(valueInput)))
+	if err != nil {
+		return err
+	}
 	copy(value, valueInput)
 
 	// First check if we can add another worker to the worker pool by trying to increment the semaphore.

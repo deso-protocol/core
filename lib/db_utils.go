@@ -3278,7 +3278,10 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Header length")
 	}
-	headerBytes := make([]byte, payloadLen)
+	headerBytes, err := SafeMakeSliceWithLength[byte](uint64(payloadLen))
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem cretaing byte slice for header bytes")
+	}
 	_, err = io.ReadFull(rr, headerBytes[:])
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem reading Header bytes")
