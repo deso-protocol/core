@@ -2559,6 +2559,7 @@ func DBGetDmMessageAttributeEntryInMessageEntryAttributesIndex(handle *badger.DB
 }
 
 // DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given GroupChatMessageKey.
+// This function is used to set, unset, or update the value of an attribute.
 func DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
 	groupChatMessageKey GroupChatMessageKey, messageAttributeType MessageAttributeType,
 	attributeEntry *AttributeEntry) error {
@@ -2582,6 +2583,7 @@ func DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn
 }
 
 // DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndex for a given GroupChatMessageKey.
+// This function is used to set, unset, or update the value of an attribute.
 func DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndex(handle *badger.DB, snap *Snapshot,
 	groupChatMessageKey GroupChatMessageKey, messageAttributeType MessageAttributeType,
 	attributeEntry *AttributeEntry) error {
@@ -2592,6 +2594,7 @@ func DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndex(handle *ba
 }
 
 // DBPutDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given DmMessageKey.
+// This function is used to set, unset, or update the value of an attribute.
 func DBPutDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
 	dmMessageKey DmMessageKey, messageAttributeType MessageAttributeType,
 	attributeEntry *AttributeEntry) error {
@@ -2615,6 +2618,7 @@ func DBPutDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badge
 }
 
 // DBPutDmMessageAttributeEntryInMessageEntryAttributesIndex for a given DmMessageKey.
+// This function is used to set, unset, or update the value of an attribute.
 func DBPutDmMessageAttributeEntryInMessageEntryAttributesIndex(handle *badger.DB, snap *Snapshot,
 	dmMessageKey DmMessageKey, messageAttributeType MessageAttributeType,
 	attributeEntry *AttributeEntry) error {
