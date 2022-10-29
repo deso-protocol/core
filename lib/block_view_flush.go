@@ -1198,6 +1198,38 @@ func (bav *UtxoView) _flushAccessGroupEntryAttributesToDbWithTxn(txn *badger.Txn
 	return nil
 }
 
+func (bav *UtxoView) _flushMessageAttributesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Flush DM message attributes to db.
+	for dmMessageKey, attributeTypeToAttributeEntry := range bav.DmMessageAttributes {
+		for attributeType, attributeEntry := range attributeTypeToAttributeEntry {
+			// If attributeEntry.IsSet is true, we add the attribute to the DB.
+			// Note that DB func will automatically set or delete the attribute in the DB based on the IsSet flag.
+			if attributeEntry != nil {
+				if err := DBPutDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn, bav.Snapshot,
+					dmMessageKey, attributeType, attributeEntry); err != nil {
+					return errors.Wrapf(err, "UtxoView._flushMessageAttributesToDbWithTxn: "+
+						"Fail while putting/deleting message attribute. Problem putting DmMessageAttributeEntry %v to db", *attributeEntry)
+				}
+			}
+		}
+	}
+	// Flush group chat message attributes to db.
+	for groupChatMessageKey, attributeTypeToAttributeEntry := range bav.GroupChatMessageAttributes {
+		for attributeType, attributeEntry := range attributeTypeToAttributeEntry {
+			// If attributeEntry.IsSet is true, we add the attribute to the DB.
+			// Note that DB func will automatically set or delete the attribute in the DB based on the IsSet flag.
+			if attributeEntry != nil {
+				if err := DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn, bav.Snapshot,
+					groupChatMessageKey, attributeType, attributeEntry); err != nil {
+					return errors.Wrapf(err, "UtxoView._flushMessageAttributesToDbWithTxn: "+
+						"Fail while putting/deleting message attribute. Problem putting GroupChatMessageAttributeEntry %v to db", *attributeEntry)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(1).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: flushing %d mappings", len(bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry))
 

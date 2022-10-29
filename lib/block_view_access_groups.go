@@ -1251,28 +1251,6 @@ func (bav *UtxoView) _connectAccessGroupAttributes(
 			bav._setGroupEntryAttributeMapping(groupOwnerPublicKey, groupKeyName, AccessGroupEntryAttributeType(txMeta.AttributeType), false, txMeta.AttributeValue)
 		}
 
-	//case *GroupChatMessageKey:
-	//	// Make sure AttributeHolder is message
-	//	if txMeta.AccessGroupAttributeHolder != AccessGroupAttributeHolderMessage {
-	//		return 0, 0, nil, errors.Wrapf(
-	//			RuleErrorAccessGroupAttributesInvalidAttributeHolder, "_connectAccessGroupAttributes: "+
-	//				"AttributeHolder is not message but attribute holder key is GroupChatMessageKey")
-	//	}
-	//
-	//	groupOwnerPublicKey := &txMeta.AttributeHolderKey.(*GroupChatMessageKey).GroupOwnerPublicKey
-	//	groupKeyName := &txMeta.AttributeHolderKey.(*GroupChatMessageKey).GroupKeyName
-	//
-	//	// TODO? Validate group public key and group key name.
-	//
-	//	//
-	//case *DmMessageKey:
-	//	// Make sure AttributeHolder is message
-	//	if txMeta.AccessGroupAttributeHolder != AccessGroupAttributeHolderMessage {
-	//		return 0, 0, nil, errors.Wrapf(
-	//			RuleErrorAccessGroupAttributesInvalidAttributeHolder, "_connectAccessGroupAttributes: "+
-	//				"AttributeHolder is not message but attribute holder key is DmMessageKey")
-	//	}
-
 	default:
 		return 0, 0, nil, fmt.Errorf("_connectAccessGroupAttributes: called with bad AttributeHolderType: %v",
 			txMeta.AccessGroupAttributeHolder)
@@ -1290,6 +1268,26 @@ func (bav *UtxoView) _disconnectAccessGroupAttributes(
 	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
-	// TODO: Implement this
+	// Verify that the last operation is a AccessGroupAttributes operation.
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectAccessGroupAttributes: utxoOperations are missing")
+	}
+	accessGroupAttributesOp := utxoOpsForTxn[len(utxoOpsForTxn)-1]
+	if accessGroupAttributesOp.Type != OperationTypeAccessGroupAttributes || operationType != OperationTypeAccessGroupAttributes {
+		return fmt.Errorf("_disconnectAccessGroupAttributes: Trying to revert "+
+			"OperationTypeAccessGroupAttributes but found type %v and %v",
+			accessGroupAttributesOp.Type, operationType)
+	}
+
+	// Check that the transaction has the right TxnType.
+	if currentTxn.TxnMeta.GetTxnType() != TxnTypeAccessGroupAttributes {
+		return fmt.Errorf("_disconnectAccessGroupAttributes: called with bad TxnType %s",
+			currentTxn.TxnMeta.GetTxnType().String())
+	}
+
+	// Get the transaction metadata.
+	txMeta := currentTxn.TxnMeta.(*AccessGroupAttributesMetadata)
+	_ = txMeta
+	// TODO rest of the logic
 	return nil
 }

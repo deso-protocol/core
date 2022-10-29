@@ -2476,13 +2476,13 @@ func _dbKeyForGroupChatPrefixMessageEntryAttributesIndex(
 	return prefixCopy
 }
 
-// GetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given GroupChatMessageKey.
-func GetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
+// DBGetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given GroupChatMessageKey.
+func DBGetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
 	groupChatMessageKey GroupChatMessageKey, messageAttributeType MessageAttributeType) (*AttributeEntry, error) {
 
 	// Make sure message attribute type is valid
 	if !IsAccessGroupMessageAttributeTypeValid(messageAttributeType) {
-		return nil, fmt.Errorf("GetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
+		return nil, fmt.Errorf("DBGetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
 			"Invalid message attribute type: %v", messageAttributeType)
 	}
 
@@ -2496,7 +2496,7 @@ func GetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *
 		if err == badger.ErrKeyNotFound {
 			return NewAttributeEntry(false, nil), nil
 		}
-		return nil, errors.Wrapf(err, "GetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
+		return nil, errors.Wrapf(err, "DBGetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
 			"Problem getting value for key: %v", key)
 	}
 
@@ -2504,13 +2504,26 @@ func GetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *
 	return NewAttributeEntry(true, value), nil
 }
 
-// GetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given DmMessageKey.
-func GetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
+// DBGetGroupChatMessageAttributeEntryInMessageEntryAttributesIndex for a given GroupChatMessageKey.
+func DBGetGroupChatMessageAttributeEntryInMessageEntryAttributesIndex(handle *badger.DB, snap *Snapshot,
+	groupChatMessageKey GroupChatMessageKey, messageAttributeType MessageAttributeType) (*AttributeEntry, error) {
+	var attributeEntry *AttributeEntry
+	err := handle.View(func(txn *badger.Txn) error {
+		var err error
+		attributeEntry, err = DBGetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(
+			txn, snap, groupChatMessageKey, messageAttributeType)
+		return err
+	})
+	return attributeEntry, err
+}
+
+// DBGetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given DmMessageKey.
+func DBGetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
 	dmMessageKey DmMessageKey, messageAttributeType MessageAttributeType) (*AttributeEntry, error) {
 
 	// Make sure message attribute type is valid
 	if !IsAccessGroupMessageAttributeTypeValid(messageAttributeType) {
-		return nil, fmt.Errorf("GetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
+		return nil, fmt.Errorf("DBGetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
 			"Invalid message attribute type: %v", messageAttributeType)
 	}
 
@@ -2524,7 +2537,7 @@ func GetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.
 		if err == badger.ErrKeyNotFound {
 			return NewAttributeEntry(false, nil), nil
 		}
-		return nil, errors.Wrapf(err, "GetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
+		return nil, errors.Wrapf(err, "DBGetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
 			"Problem getting value for key: %v", key)
 	}
 
@@ -2532,14 +2545,27 @@ func GetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.
 	return NewAttributeEntry(true, value), nil
 }
 
-// SetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given GroupChatMessageKey.
-func SetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
+// DBGetDmMessageAttributeEntryInMessageEntryAttributesIndex for a given DmMessageKey.
+func DBGetDmMessageAttributeEntryInMessageEntryAttributesIndex(handle *badger.DB, snap *Snapshot,
+	dmMessageKey DmMessageKey, messageAttributeType MessageAttributeType) (*AttributeEntry, error) {
+	var attributeEntry *AttributeEntry
+	err := handle.View(func(txn *badger.Txn) error {
+		var err error
+		attributeEntry, err = DBGetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(
+			txn, snap, dmMessageKey, messageAttributeType)
+		return err
+	})
+	return attributeEntry, err
+}
+
+// DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given GroupChatMessageKey.
+func DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
 	groupChatMessageKey GroupChatMessageKey, messageAttributeType MessageAttributeType,
 	attributeEntry *AttributeEntry) error {
 
 	// Make sure message attribute type is valid
 	if !IsAccessGroupMessageAttributeTypeValid(messageAttributeType) {
-		return fmt.Errorf("SetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
+		return fmt.Errorf("DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
 			"Invalid message attribute type: %v", messageAttributeType)
 	}
 
@@ -2555,14 +2581,24 @@ func SetGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *
 	}
 }
 
-// SetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given DmMessageKey.
-func SetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
+// DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndex for a given GroupChatMessageKey.
+func DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndex(handle *badger.DB, snap *Snapshot,
+	groupChatMessageKey GroupChatMessageKey, messageAttributeType MessageAttributeType,
+	attributeEntry *AttributeEntry) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutGroupChatMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(
+			txn, snap, groupChatMessageKey, messageAttributeType, attributeEntry)
+	})
+}
+
+// DBPutDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn for a given DmMessageKey.
+func DBPutDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
 	dmMessageKey DmMessageKey, messageAttributeType MessageAttributeType,
 	attributeEntry *AttributeEntry) error {
 
 	// Make sure message attribute type is valid
 	if !IsAccessGroupMessageAttributeTypeValid(messageAttributeType) {
-		return fmt.Errorf("SetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
+		return fmt.Errorf("DBPutDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn: "+
 			"Invalid message attribute type: %v", messageAttributeType)
 	}
 
@@ -2576,6 +2612,16 @@ func SetDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(txn *badger.
 		// If the attribute is set then set the value.
 		return DBSetWithTxn(txn, snap, key, attributeEntry.Value)
 	}
+}
+
+// DBPutDmMessageAttributeEntryInMessageEntryAttributesIndex for a given DmMessageKey.
+func DBPutDmMessageAttributeEntryInMessageEntryAttributesIndex(handle *badger.DB, snap *Snapshot,
+	dmMessageKey DmMessageKey, messageAttributeType MessageAttributeType,
+	attributeEntry *AttributeEntry) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DBPutDmMessageAttributeEntryInMessageEntryAttributesIndexWithTxn(
+			txn, snap, dmMessageKey, messageAttributeType, attributeEntry)
+	})
 }
 
 // -------------------------------------------------------------------------------------

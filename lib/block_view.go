@@ -66,11 +66,15 @@ type UtxoView struct {
 	// Or if Group_A was no longer a channel and had its picture and description removed- {IsChannel: (IsSet: false, Value: nil), GroupPicture: (IsSet: false, Value: nil), GroupDescription: (IsSet: false, Value: nil)}
 	GroupEntryAttributes map[AccessGroupKey]map[AccessGroupEntryAttributeType]*AttributeEntry
 
-	// MessageAttributes
+	// DmMessageAttributes
 	// Mapping of MessageKey to a map of MessageEntryAttributeType to AttributeEntry
 	// For example, Message_A can have attributes {IsDeleted: (IsSet: true, Value: nil), IsEdited: (IsSet: true, Value: nil)}
 	// Or if Message_A was emoji reacted {LaughingEmoji: (IsSet: true, Value: nil), SadEmoji: (IsSet: true, Value: nil)}
-	MessageAttributes map[MessageKey]map[MessageAttributeType]*AttributeEntry
+	DmMessageAttributes map[DmMessageKey]map[MessageAttributeType]*AttributeEntry
+
+	// GroupChatMessageAttributes
+	// Same as DmMessageAttributes but for group chat messages
+	GroupChatMessageAttributes map[GroupChatMessageKey]map[MessageAttributeType]*AttributeEntry
 
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
@@ -163,7 +167,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.GroupMembershipKeyToAccessGroupMember = make(map[GroupMembershipKey]*AccessGroupMember)
 	bav.GroupMemberAttributes = make(map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]*AttributeEntry)
 	bav.GroupEntryAttributes = make(map[AccessGroupKey]map[AccessGroupEntryAttributeType]*AttributeEntry)
-	bav.MessageAttributes = make(map[MessageKey]map[MessageAttributeType]*AttributeEntry)
+	bav.DmMessageAttributes = make(map[DmMessageKey]map[MessageAttributeType]*AttributeEntry)
+	bav.GroupChatMessageAttributes = make(map[GroupChatMessageKey]map[MessageAttributeType]*AttributeEntry)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -334,14 +339,24 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.GroupEntryAttributes[key] = newAttributes
 	}
 
-	newView.MessageAttributes = make(map[MessageKey]map[MessageAttributeType]*AttributeEntry, len(bav.MessageAttributes))
-	for key, attributes := range bav.MessageAttributes {
+	newView.DmMessageAttributes = make(map[DmMessageKey]map[MessageAttributeType]*AttributeEntry, len(bav.DmMessageAttributes))
+	for key, attributes := range bav.DmMessageAttributes {
 		newAttributes := make(map[MessageAttributeType]*AttributeEntry, len(attributes))
 		for attribute, value := range attributes {
 			newValue := *value
 			newAttributes[attribute] = &newValue
 		}
-		newView.MessageAttributes[key] = newAttributes
+		newView.DmMessageAttributes[key] = newAttributes
+	}
+
+	newView.GroupChatMessageAttributes = make(map[GroupChatMessageKey]map[MessageAttributeType]*AttributeEntry, len(bav.GroupChatMessageAttributes))
+	for key, attributes := range bav.GroupChatMessageAttributes {
+		newAttributes := make(map[MessageAttributeType]*AttributeEntry, len(attributes))
+		for attribute, value := range attributes {
+			newValue := *value
+			newAttributes[attribute] = &newValue
+		}
+		newView.GroupChatMessageAttributes[key] = newAttributes
 	}
 
 	// Copy postgres message map
