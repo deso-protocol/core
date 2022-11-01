@@ -89,6 +89,10 @@ type UtxoView struct {
 	// DAO coin limit order entry mapping.
 	DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry
 
+	// Association mappings
+	AssociationMapKeyToUserAssociationEntry map[AssociationMapKey]*UserAssociationEntry
+	AssociationMapKeyToPostAssociationEntry map[AssociationMapKey]*PostAssociationEntry
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -159,6 +163,10 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// DAO Coin Limit Order Entries
 	bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry = make(map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry)
+
+	// Associations
+	bav.AssociationMapKeyToUserAssociationEntry = make(map[AssociationMapKey]*UserAssociationEntry)
+	bav.AssociationMapKeyToPostAssociationEntry = make(map[AssociationMapKey]*PostAssociationEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -352,6 +360,18 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for entryKey, entry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
 		newEntry := *entry
 		newView.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[entryKey] = &newEntry
+	}
+
+	// Copy the Associations
+	newView.AssociationMapKeyToUserAssociationEntry = make(map[AssociationMapKey]*UserAssociationEntry, len(bav.AssociationMapKeyToUserAssociationEntry))
+	for entryKey, entry := range bav.AssociationMapKeyToUserAssociationEntry {
+		newEntry := *entry
+		newView.AssociationMapKeyToUserAssociationEntry[entryKey] = &newEntry
+	}
+	newView.AssociationMapKeyToPostAssociationEntry = make(map[AssociationMapKey]*PostAssociationEntry, len(bav.AssociationMapKeyToPostAssociationEntry))
+	for entryKey, entry := range bav.AssociationMapKeyToPostAssociationEntry {
+		newEntry := *entry
+		newView.AssociationMapKeyToPostAssociationEntry[entryKey] = &newEntry
 	}
 	return newView, nil
 }
@@ -1004,6 +1024,13 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		return bav._disconnectAuthorizeDerivedKey(
 			OperationTypeAuthorizeDerivedKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeUserAssociation {
+		return bav._disconnectUserAssociation(
+			OperationTypeUserAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypePostAssociation {
+		return bav._disconnectPostAssociation(
+			OperationTypePostAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -2379,6 +2406,12 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAuthorizeDerivedKey(
 				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeUserAssociation {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUserAssociation(txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypePostAssociation {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectPostAssociation(txn, txHash, blockHeight, verifySignatures)
 
 	} else {
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
