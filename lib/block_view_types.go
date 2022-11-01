@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"math"
 	"math/big"
@@ -100,6 +101,8 @@ const (
 	EncoderTypeBlockHash
 	EncoderTypeDAOCoinLimitOrderEntry
 	EncoderTypeFilledDAOCoinLimitOrder
+	EncoderTypeUserAssociation
+	EncoderTypePostAssociation
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -199,6 +202,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &DAOCoinLimitOrderEntry{}
 	case EncoderTypeFilledDAOCoinLimitOrder:
 		return &FilledDAOCoinLimitOrder{}
+	case EncoderTypeUserAssociation:
+		return &UserAssociationEntry{}
+	case EncoderTypePostAssociation:
+		return &PostAssociationEntry{}
 	}
 
 	// Txindex encoder types
@@ -517,8 +524,10 @@ const (
 	OperationTypeDAOCoinTransfer              OperationType = 26
 	OperationTypeSpendingLimitAccounting      OperationType = 27
 	OperationTypeDAOCoinLimitOrder            OperationType = 28
+	OperationTypeUserAssociation              OperationType = 29
+	OperationTypePostAssociation              OperationType = 30
 
-	// NEXT_TAG = 29
+	// NEXT_TAG = 31
 )
 
 func (op OperationType) String() string {
@@ -634,6 +643,14 @@ func (op OperationType) String() string {
 	case OperationTypeDAOCoinLimitOrder:
 		{
 			return "OperationTypeDAOCoinLimitOrder"
+		}
+	case OperationTypeUserAssociation:
+		{
+			return "OperationTypeUserAssociation"
+		}
+	case OperationTypePostAssociation:
+		{
+			return "OperationTypePostAssociation"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -4517,4 +4534,104 @@ func (order *FilledDAOCoinLimitOrder) GetVersionByte(blockHeight uint64) byte {
 
 func (order *FilledDAOCoinLimitOrder) GetEncoderType() EncoderType {
 	return EncoderTypeFilledDAOCoinLimitOrder
+}
+
+// -----------------------------------
+// Associations
+// -----------------------------------
+
+type UserAssociationEntry struct {
+	AssociationID    uuid.UUID
+	TransactorPKID   *PKID
+	TargetUserPKID   *PKID
+	AssociationType  string
+	AssociationValue string
+	BlockHeight      uint32
+	isDeleted        bool
+}
+
+type PostAssociationEntry struct {
+	AssociationID    uuid.UUID
+	TransactorPKID   *PKID
+	PostHashHex      string
+	AssociationType  string
+	AssociationValue string
+	BlockHeight      uint32
+	isDeleted        bool
+}
+
+func (userAssociation *UserAssociationEntry) Copy() *UserAssociationEntry {
+	return &UserAssociationEntry{
+		AssociationID:    userAssociation.AssociationID, // TODO: is there a way to clone UUIDs?
+		TransactorPKID:   userAssociation.TransactorPKID.NewPKID(),
+		TargetUserPKID:   userAssociation.TargetUserPKID.NewPKID(),
+		AssociationType:  strings.Clone(userAssociation.AssociationType),
+		AssociationValue: strings.Clone(userAssociation.AssociationValue),
+		BlockHeight:      userAssociation.BlockHeight,
+		isDeleted:        userAssociation.isDeleted,
+	}
+}
+
+func (postAssociation *PostAssociationEntry) Copy() *PostAssociationEntry {
+	return &PostAssociationEntry{
+		AssociationID:    postAssociation.AssociationID, // TODO: is there a way to clone UUIDs?
+		TransactorPKID:   postAssociation.TransactorPKID.NewPKID(),
+		PostHashHex:      strings.Clone(postAssociation.PostHashHex),
+		AssociationType:  strings.Clone(postAssociation.AssociationType),
+		AssociationValue: strings.Clone(postAssociation.AssociationValue),
+		BlockHeight:      postAssociation.BlockHeight,
+		isDeleted:        postAssociation.isDeleted,
+	}
+}
+
+func (userAssociation *UserAssociationEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	// TODO
+	return nil
+}
+
+func (postAssociation *PostAssociationEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	// TODO
+	return nil
+}
+
+func (userAssociation *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// TODO
+	return nil
+}
+
+func (postAssociation *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// TODO
+	return nil
+}
+
+func (userAssociation *UserAssociationEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (postAssociation *PostAssociationEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (userAssociation *UserAssociationEntry) GetEncoderType() EncoderType {
+	return EncoderTypeUserAssociation
+}
+
+func (postAssociation *PostAssociationEntry) GetEncoderType() EncoderType {
+	return EncoderTypePostAssociation
+}
+
+type AssociationMapKey struct {
+	AssociationID uuid.UUID
+}
+
+func (userAssociation *UserAssociationEntry) ToMapKey() AssociationMapKey {
+	return AssociationMapKey{
+		AssociationID: userAssociation.AssociationID,
+	}
+}
+
+func (postAssociation *PostAssociationEntry) ToMapKey() AssociationMapKey {
+	return AssociationMapKey{
+		AssociationID: postAssociation.AssociationID,
+	}
 }

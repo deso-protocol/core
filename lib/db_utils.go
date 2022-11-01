@@ -322,7 +322,28 @@ type DBPrefixes struct {
 	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
-	// NEXT_TAG: 63
+
+	// User Association prefixes
+	// PrefixUserAssociationByID:             AssociationID
+	// PrefixUserAssociationByTransactorPKID: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
+	// PrefixUserAssociationByTargetUserPKID: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
+	// PrefixUserAssociationByUserPKIDs:      TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
+	PrefixUserAssociationByID             []byte `prefix_id:"[63]" is_state:"true"`
+	PrefixUserAssociationByTransactorPKID []byte `prefix_id:"[64]" is_state:"true"`
+	PrefixUserAssociationByTargetUserPKID []byte `prefix_id:"[65]" is_state:"true"`
+	PrefixUserAssociationByUserPKIDs      []byte `prefix_id:"[66]" is_state:"true"`
+
+	// Post Association prefixes
+	// PrefixPostAssociationByID:              AssociationID
+	// PrefixPostAssociationByTransactorPKID:  TransactorPKID, AssociationType, AssociationValue, PostHashHex
+	// PrefixPostAssociationByPostHashHex:     PostHashHex, AssociationType, AssociationValue, TransactorPKID
+	// PrefixPostAssociationByAssociationType: AssociationType, AssociationValue, PostHashHex, TransactorPKID
+	PrefixPostAssociationByID              []byte `prefix_id:"[67]" is_state:"true"`
+	PrefixPostAssociationByTransactorPKID  []byte `prefix_id:"[68]" is_state:"true"`
+	PrefixPostAssociationByPostHashHex     []byte `prefix_id:"[69]" is_state:"true"`
+	PrefixPostAssociationByAssociationType []byte `prefix_id:"[70]" is_state:"true"`
+
+	// NEXT_TAG: 71
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -479,6 +500,30 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixDAOCoinLimitOrderByOrderID) {
 		// prefix_id:"[62]"
 		return true, &DAOCoinLimitOrderEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByID) {
+		// prefix_id:"[63]"
+		return true, &UserAssociationEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByTransactorPKID) {
+		// prefix_id:"[64]"
+		return true, &UserAssociationEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByTargetUserPKID) {
+		// prefix_id:"[65]"
+		return true, &UserAssociationEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByUserPKIDs) {
+		// prefix_id:"[66]"
+		return true, &UserAssociationEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByID) {
+		// prefix_id:"[67]"
+		return true, &PostAssociationEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByTransactorPKID) {
+		// prefix_id:"[68]"
+		return true, &PostAssociationEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByPostHashHex) {
+		// prefix_id:"[69]"
+		return true, &PostAssociationEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByAssociationType) {
+		// prefix_id:"[70]"
+		return true, &PostAssociationEntry{}
 	}
 
 	return true, nil

@@ -100,6 +100,12 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		//if err := bav._flushDAOCoinLimitOrderEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		//	return err
 		//}
+		if err := bav._flushUserAssociationEntryToDbWithTxn(txn, blockHeight); err != nil {
+			return err
+		}
+		if err := bav._flushPostAssociationEntryToDbWithTxn(txn, blockHeight); err != nil {
+			return err
+		}
 	}
 
 	// Always flush to BadgerDB.
@@ -1074,5 +1080,15 @@ func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, 
 	glog.V(1).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// At this point all of the DAO coin limit order mappings in the db should be up-to-date.
+	return nil
+}
+
+func (bav *UtxoView) _flushUserAssociationEntryToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// TODO
+	return nil
+}
+
+func (bav *UtxoView) _flushPostAssociationEntryToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// TODO
 	return nil
 }

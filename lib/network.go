@@ -227,8 +227,10 @@ const (
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
 	TxnTypeDAOCoinLimitOrder            TxnType = 26
+	TxnTypeUserAssociation              TxnType = 27
+	TxnTypePostAssociation              TxnType = 28
 
-	// NEXT_ID = 27
+	// NEXT_ID = 29
 )
 
 type TxnString string
@@ -260,6 +262,8 @@ const (
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
 	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
+	TxnStringUserAssociation              TxnString = "USER_ASSOCIATION"
+	TxnStringPostAssociation              TxnString = "POST_ASSOCIATION"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -270,7 +274,7 @@ var (
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
-		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeUserAssociation, TxnTypePostAssociation,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -278,7 +282,7 @@ var (
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
-		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringUserAssociation, TxnStringPostAssociation,
 	}
 )
 
@@ -344,6 +348,10 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringDAOCoinTransfer
 	case TxnTypeDAOCoinLimitOrder:
 		return TxnStringDAOCoinLimitOrder
+	case TxnTypeUserAssociation:
+		return TxnStringUserAssociation
+	case TxnTypePostAssociation:
+		return TxnStringPostAssociation
 	default:
 		return TxnStringUndefined
 	}
@@ -403,6 +411,10 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeDAOCoinTransfer
 	case TxnStringDAOCoinLimitOrder:
 		return TxnTypeDAOCoinLimitOrder
+	case TxnStringUserAssociation:
+		return TxnTypeUserAssociation
+	case TxnStringPostAssociation:
+		return TxnTypePostAssociation
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -470,6 +482,10 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinTransferMetadata{}).New(), nil
 	case TxnTypeDAOCoinLimitOrder:
 		return (&DAOCoinLimitOrderMetadata{}).New(), nil
+	case TxnTypeUserAssociation:
+		return (&UserAssociationMetadata{}).New(), nil
+	case TxnTypePostAssociation:
+		return (&PostAssociationMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -6557,4 +6573,56 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 
 func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 	return &MessagingGroupMetadata{}
+}
+
+// ==================================================================
+// Associations Metadata
+// ==================================================================
+
+type UserAssociationMetadata struct {
+	TargetUserPublicKey *PublicKey
+	AssociationType     string
+	AssociationValue    string
+}
+
+type PostAssociationMetadata struct {
+	PostHashHex      string
+	AssociationType  string
+	AssociationValue string
+}
+
+func (txnData *UserAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeUserAssociation
+}
+
+func (txnData *PostAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypePostAssociation
+}
+
+func (txnData *UserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// TODO
+	return nil, nil
+}
+
+func (txnData *PostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// TODO
+	return nil, nil
+}
+
+func (txnData *UserAssociationMetadata) FromBytes(data []byte) error {
+	// TODO
+	return nil
+}
+
+func (txnData *PostAssociationMetadata) FromBytes(data []byte) error {
+	// TODO
+	return nil
+}
+
+func (txnData *UserAssociationMetadata) New() DeSoTxnMetadata {
+	return &UserAssociationMetadata{}
+}
+
+func (txnData *PostAssociationMetadata) New() DeSoTxnMetadata {
+	return &PostAssociationMetadata{}
 }
