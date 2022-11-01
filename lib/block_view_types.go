@@ -133,6 +133,8 @@ const (
 	EncoderTypeDAOCoinTxindexMetadata
 	EncoderTypeCreateNFTTxindexMetadata
 	EncoderTypeUpdateNFTTxindexMetadata
+	EncoderTypeUserAssociationTxindexMetadata
+	EncoderTypePostAssociationTxindexMetadata
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndTxIndex
@@ -256,6 +258,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &CreateNFTTxindexMetadata{}
 	case EncoderTypeUpdateNFTTxindexMetadata:
 		return &UpdateNFTTxindexMetadata{}
+	case EncoderTypeUserAssociationTxindexMetadata:
+		return &UserAssociationTxindexMetadata{}
+	case EncoderTypePostAssociationTxindexMetadata:
+		return &PostAssociationTxindexMetadata{}
 	default:
 		return nil
 	}
