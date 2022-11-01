@@ -5448,6 +5448,8 @@ type TransactionMetadata struct {
 	CreateNFTTxindexMetadata           *CreateNFTTxindexMetadata           `json:",omitempty"`
 	UpdateNFTTxindexMetadata           *UpdateNFTTxindexMetadata           `json:",omitempty"`
 	DAOCoinLimitOrderTxindexMetadata   *DAOCoinLimitOrderTxindexMetadata   `json:",omitempty"`
+	UserAssociationTxindexMetadata     *UserAssociationTxindexMetadata     `json:",omitempty"`
+	PostAssociationTxindexMetadata     *PostAssociationTxindexMetadata     `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -5508,6 +5510,10 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.UpdateNFTTxindexMetadata, skipMetadata...)...)
 	// encoding DAOCoinLimitOrderTxindexMetadata
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinLimitOrderTxindexMetadata, skipMetadata...)...)
+	// encoding UserAssociationTxindexMetadata
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.UserAssociationTxindexMetadata, skipMetadata...)...)
+	// encoding PostAssociationTxindexMetadata
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.PostAssociationTxindexMetadata, skipMetadata...)...)
 	return data
 }
 
@@ -5700,6 +5706,20 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		txnMeta.DAOCoinLimitOrderTxindexMetadata = CopyDAOCoinLimitOrderTxindexMetadata
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinLimitOrderTxindexMetadata")
+	}
+	// decoding UserAssociationTxindexMetadata
+	CopyUserAssociationTxindexMetadata := &UserAssociationTxindexMetadata{}
+	if exist, err := DecodeFromBytes(CopyUserAssociationTxindexMetadata, rr); exist && err == nil {
+		txnMeta.UserAssociationTxindexMetadata = CopyUserAssociationTxindexMetadata
+	} else {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UserAssociationTxindexMetadata")
+	}
+	// decoding PostAssociationTxindexMetadata
+	CopyPostAssociationTxindexMetadata := &PostAssociationTxindexMetadata{}
+	if exist, err := DecodeFromBytes(CopyPostAssociationTxindexMetadata, rr); exist && err == nil {
+		txnMeta.PostAssociationTxindexMetadata = CopyPostAssociationTxindexMetadata
+	} else {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading PostAssociationTxindexMetadata")
 	}
 	return nil
 }
@@ -8089,7 +8109,7 @@ func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DA
 		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
 	}
 
-	// Store in index: PrefixDAOCoinLimitOrderByOrderID
+	// Delete from index: PrefixDAOCoinLimitOrderByOrderID
 	key = DBKeyForDAOCoinLimitOrderByOrderID(order)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting order from index PrefixDAOCoinLimitOrderByOrderID")
@@ -8299,4 +8319,273 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 	opts.ValueLogFileSize = PerformanceLogValueSize
 
 	return opts
+}
+
+// ---------------------------------------------
+// Associations
+// ---------------------------------------------
+
+type UserAssociationTxindexMetadata struct {
+	TargetUserPublicKey string
+	AssociationType     string
+	AssociationValue    string
+}
+
+type PostAssociationTxindexMetadata struct {
+	PostHashHex      string
+	AssociationType  string
+	AssociationValue string
+}
+
+func (userAssociationMeta *UserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	// TODO
+	return nil
+}
+
+func (postAssociationMeta *PostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	// TODO
+	return nil
+}
+
+func (userAssociationMeta *UserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// TODO
+	return nil
+}
+
+func (postAssociationMeta *PostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// TODO
+	return nil
+}
+
+func (userAssociationMeta *UserAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (postAssociationMeta *PostAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (userAssociationMeta *UserAssociationTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUserAssociationTxindexMetadata
+}
+
+func (postAssociationMeta *PostAssociationTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypePostAssociationTxindexMetadata
+}
+
+func DBKeyForUserAssociationByID(userAssociation *UserAssociationEntry) []byte {
+	// AssociationID
+	return nil // TODO
+}
+
+func DBKeyForUserAssociationByTransactorPKID(userAssociation *UserAssociationEntry) []byte {
+	// TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
+	return nil // TODO
+}
+
+func DBKeyForUserAssociationByTargetUserPKID(userAssociation *UserAssociationEntry) []byte {
+	// TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
+	return nil // TODO
+}
+
+func DBKeyForUserAssociationByUserPKIDs(userAssociation *UserAssociationEntry) []byte {
+	// TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
+	return nil // TODO
+}
+
+func DBKeyForPostAssociationByID(postAssociation *PostAssociationEntry) []byte {
+	// AssociationID
+	return nil // TODO
+}
+
+func DBKeyForPostAssociationByTransactorPKID(postAssociation *PostAssociationEntry) []byte {
+	// TransactorPKID, AssociationType, AssociationValue, PostHashHex
+	return nil // TODO
+}
+
+func DBKeyForPostAssociationByPostHashHex(postAssociation *PostAssociationEntry) []byte {
+	// PostHashHex, AssociationType, AssociationValue, TransactorPKID
+	return nil // TODO
+}
+
+func DBKeyForPostAssociationByAssociationType(postAssociation *PostAssociationEntry) []byte {
+	// AssociationType, AssociationValue, PostHashHex, TransactorPKID
+	return nil // TODO
+}
+
+func DBPutUserAssociationWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	userAssociation *UserAssociationEntry,
+	blockHeight uint64,
+) error {
+	if userAssociation == nil {
+		return nil
+	}
+	userAssociationBytes := EncodeToBytes(blockHeight, userAssociation)
+	userAssociationIDBytes := userAssociation.AssociationID[:]
+
+	// Store entry in index: PrefixUserAssociationByID.
+	key := DBKeyForUserAssociationByID(userAssociation)
+	if err := DBSetWithTxn(txn, snap, key, userAssociationBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByID",
+		)
+	}
+
+	// Store ID in index: PrefixUserAssociationByTransactorPKID.
+	key = DBKeyForUserAssociationByTransactorPKID(userAssociation)
+	if err := DBSetWithTxn(txn, snap, key, userAssociationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTransactorPKID",
+		)
+	}
+
+	// Store ID in index: PrefixUserAssociationByTargetUserPKID.
+	key = DBKeyForUserAssociationByTargetUserPKID(userAssociation)
+	if err := DBSetWithTxn(txn, snap, key, userAssociationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTargetUserPKID",
+		)
+	}
+
+	// Store ID in index: PrefixUserAssociationByUserPKIDs.
+	key = DBKeyForUserAssociationByUserPKIDs(userAssociation)
+	if err := DBSetWithTxn(txn, snap, key, userAssociationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByUserPKIDs")
+	}
+	return nil
+}
+
+func DBDeleteUserAssociationWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	userAssociation *UserAssociationEntry,
+) error {
+	if userAssociation == nil {
+		return nil
+	}
+
+	// Delete from index: PrefixUserAssociationByID.
+	key := DBKeyForUserAssociationByID(userAssociation)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByID",
+		)
+	}
+
+	// Delete from index: PrefixUserAssociationByTransactorPKID.
+	key = DBKeyForUserAssociationByTransactorPKID(userAssociation)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTransactorPKID",
+		)
+	}
+
+	// Delete from index: PrefixUserAssociationByTargetUserPKID.
+	key = DBKeyForUserAssociationByTargetUserPKID(userAssociation)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTargetUserPKID",
+		)
+	}
+
+	// Delete from index: PrefixUserAssociationByUserPKIDs.
+	key = DBKeyForUserAssociationByUserPKIDs(userAssociation)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByUserPKIDs",
+		)
+	}
+	return nil
+}
+
+func DBPutPostAssociationWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	postAssociation *PostAssociationEntry,
+	blockHeight uint64,
+) error {
+	if postAssociation == nil {
+		return nil
+	}
+	postAssociationBytes := EncodeToBytes(blockHeight, postAssociation)
+	postAssociationIDBytes := postAssociation.AssociationID[:]
+
+	// Store entry in index: PrefixPostAssociationByID.
+	key := DBKeyForPostAssociationByID(postAssociation)
+	if err := DBSetWithTxn(txn, snap, key, postAssociationBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByID",
+		)
+	}
+
+	// Store ID in index: PrefixPostAssociationByTransactorPKID.
+	key = DBKeyForPostAssociationByTransactorPKID(postAssociation)
+	if err := DBSetWithTxn(txn, snap, key, postAssociationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByTransactorPKID",
+		)
+	}
+
+	// Store ID in index: PrefixPostAssociationByPostHashHex.
+	key = DBKeyForPostAssociationByPostHashHex(postAssociation)
+	if err := DBSetWithTxn(txn, snap, key, postAssociationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByPostHashHex",
+		)
+	}
+
+	// Store ID in index: PrefixPostAssociationByAssociationType.
+	key = DBKeyForPostAssociationByAssociationType(postAssociation)
+	if err := DBSetWithTxn(txn, snap, key, postAssociationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByAssociationType",
+		)
+	}
+	return nil
+}
+
+func DBDeletePostAssociationWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	postAssociation *PostAssociationEntry,
+) error {
+	if postAssociation == nil {
+		return nil
+	}
+
+	// Delete from index: PrefixPostAssociationByID.
+	key := DBKeyForPostAssociationByID(postAssociation)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByID",
+		)
+	}
+
+	// Delete from index: PrefixPostAssociationByTransactorPKID.
+	key = DBKeyForPostAssociationByTransactorPKID(postAssociation)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByTransactorPKID",
+		)
+	}
+
+	// Delete from index: PrefixPostAssociationByPostHashHex.
+	key = DBKeyForPostAssociationByPostHashHex(postAssociation)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByPostHashHex",
+		)
+	}
+
+	// Delete from index: PrefixPostAssociationByAssociationType.
+	key = DBKeyForPostAssociationByAssociationType(postAssociation)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByAssociationType",
+		)
+	}
+	return nil
 }
