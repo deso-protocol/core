@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"math"
 	"math/big"
@@ -530,10 +529,12 @@ const (
 	OperationTypeDAOCoinTransfer              OperationType = 26
 	OperationTypeSpendingLimitAccounting      OperationType = 27
 	OperationTypeDAOCoinLimitOrder            OperationType = 28
-	OperationTypeUserAssociation              OperationType = 29
-	OperationTypePostAssociation              OperationType = 30
+	OperationTypeCreateUserAssociation        OperationType = 29
+	OperationTypeDeleteUserAssociation        OperationType = 30
+	OperationTypeCreatePostAssociation        OperationType = 31
+	OperationTypeDeletePostAssociation        OperationType = 32
 
-	// NEXT_TAG = 31
+	// NEXT_TAG = 33
 )
 
 func (op OperationType) String() string {
@@ -650,13 +651,21 @@ func (op OperationType) String() string {
 		{
 			return "OperationTypeDAOCoinLimitOrder"
 		}
-	case OperationTypeUserAssociation:
+	case OperationTypeCreateUserAssociation:
 		{
-			return "OperationTypeUserAssociation"
+			return "OperationTypeCreateUserAssociation"
 		}
-	case OperationTypePostAssociation:
+	case OperationTypeDeleteUserAssociation:
 		{
-			return "OperationTypePostAssociation"
+			return "OperationTypeDeleteUserAssociation"
+		}
+	case OperationTypeCreatePostAssociation:
+		{
+			return "OperationTypeCreatePostAssociation"
+		}
+	case OperationTypeDeletePostAssociation:
+		{
+			return "OperationTypeDeletePostAssociation"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -4547,7 +4556,7 @@ func (order *FilledDAOCoinLimitOrder) GetEncoderType() EncoderType {
 // -----------------------------------
 
 type UserAssociationEntry struct {
-	AssociationID    uuid.UUID
+	AssociationID    *BlockHash
 	TransactorPKID   *PKID
 	TargetUserPKID   *PKID
 	AssociationType  string
@@ -4557,7 +4566,7 @@ type UserAssociationEntry struct {
 }
 
 type PostAssociationEntry struct {
-	AssociationID    uuid.UUID
+	AssociationID    *BlockHash
 	TransactorPKID   *PKID
 	PostHashHex      string
 	AssociationType  string
@@ -4568,7 +4577,7 @@ type PostAssociationEntry struct {
 
 func (userAssociation *UserAssociationEntry) Copy() *UserAssociationEntry {
 	return &UserAssociationEntry{
-		AssociationID:    userAssociation.AssociationID, // TODO: is there a way to clone UUIDs?
+		AssociationID:    userAssociation.AssociationID.NewBlockHash(),
 		TransactorPKID:   userAssociation.TransactorPKID.NewPKID(),
 		TargetUserPKID:   userAssociation.TargetUserPKID.NewPKID(),
 		AssociationType:  strings.Clone(userAssociation.AssociationType),
@@ -4580,7 +4589,7 @@ func (userAssociation *UserAssociationEntry) Copy() *UserAssociationEntry {
 
 func (postAssociation *PostAssociationEntry) Copy() *PostAssociationEntry {
 	return &PostAssociationEntry{
-		AssociationID:    postAssociation.AssociationID, // TODO: is there a way to clone UUIDs?
+		AssociationID:    postAssociation.AssociationID.NewBlockHash(),
 		TransactorPKID:   postAssociation.TransactorPKID.NewPKID(),
 		PostHashHex:      strings.Clone(postAssociation.PostHashHex),
 		AssociationType:  strings.Clone(postAssociation.AssociationType),
@@ -4627,17 +4636,5 @@ func (postAssociation *PostAssociationEntry) GetEncoderType() EncoderType {
 }
 
 type AssociationMapKey struct {
-	AssociationID uuid.UUID
-}
-
-func (userAssociation *UserAssociationEntry) ToMapKey() AssociationMapKey {
-	return AssociationMapKey{
-		AssociationID: userAssociation.AssociationID,
-	}
-}
-
-func (postAssociation *PostAssociationEntry) ToMapKey() AssociationMapKey {
-	return AssociationMapKey{
-		AssociationID: postAssociation.AssociationID,
-	}
+	AssociationID BlockHash
 }

@@ -1024,13 +1024,22 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		return bav._disconnectAuthorizeDerivedKey(
 			OperationTypeAuthorizeDerivedKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeUserAssociation {
-		return bav._disconnectUserAssociation(
-			OperationTypeUserAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreateUserAssociation {
+		return bav._disconnectCreateUserAssociation(
+			OperationTypeCreateUserAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypePostAssociation {
-		return bav._disconnectPostAssociation(
-			OperationTypePostAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDeleteUserAssociation {
+		return bav._disconnectDeleteUserAssociation(
+			OperationTypeDeleteUserAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreatePostAssociation {
+		return bav._disconnectCreatePostAssociation(
+			OperationTypeCreatePostAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDeletePostAssociation {
+		return bav._disconnectDeletePostAssociation(
+			OperationTypeDeletePostAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -2407,11 +2416,17 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			bav._connectAuthorizeDerivedKey(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeUserAssociation {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUserAssociation(txn, txHash, blockHeight, verifySignatures)
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateUserAssociation {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCreateUserAssociation(txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypePostAssociation {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectPostAssociation(txn, txHash, blockHeight, verifySignatures)
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeDeleteUserAssociation {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeleteUserAssociation(txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatePostAssociation {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCreatePostAssociation(txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeDeletePostAssociation {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeletePostAssociation(txn, txHash, blockHeight, verifySignatures)
 
 	} else {
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())

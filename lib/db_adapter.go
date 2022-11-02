@@ -31,6 +31,18 @@ func (bav *UtxoView) GetDbAdapter() *DbAdapter {
 }
 
 //
+// Associations
+//
+
+func (adapter *DbAdapter) GetUserAssociationByID(associationID *BlockHash) (*UserAssociationEntry, error) {
+	return nil, nil // TODO
+}
+
+func (adapter *DbAdapter) GetPostAssociationByID(associationID *BlockHash) (*PostAssociationEntry, error) {
+	return nil, nil // TODO
+}
+
+//
 // Balance entry
 //
 
