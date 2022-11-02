@@ -415,6 +415,7 @@ const (
 	RuleErrorAssociationBeforeBlockHeight     RuleError = "RuleErrorAssociationBeforeBlockHeight"
 	RuleErrorAssociationInvalidID             RuleError = "RuleErrorAssociationInvalidID"
 	RuleErrorAssociationNotFound              RuleError = "RuleErrorAssociationNotFound"
+	RuleErrorAssociationAlreadyExists         RuleError = "RuleErrorAssociationAlreadyExists"
 	RuleErrorAssociationInvalidTransactor     RuleError = "RuleErrorAssociationInvalidTransactor"
 	RuleErrorAssociationInvalidType           RuleError = "RuleErrorAssociationInvalidType"
 	RuleErrorAssociationInvalidValue          RuleError = "RuleErrorAssociationInvalidValue"
