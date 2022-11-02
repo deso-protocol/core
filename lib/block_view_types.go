@@ -4568,7 +4568,7 @@ type UserAssociationEntry struct {
 type PostAssociationEntry struct {
 	AssociationID    *BlockHash
 	TransactorPKID   *PKID
-	PostHashHex      string
+	PostHash         *BlockHash
 	AssociationType  string
 	AssociationValue string
 	BlockHeight      uint32
@@ -4591,7 +4591,7 @@ func (postAssociation *PostAssociationEntry) Copy() *PostAssociationEntry {
 	return &PostAssociationEntry{
 		AssociationID:    postAssociation.AssociationID.NewBlockHash(),
 		TransactorPKID:   postAssociation.TransactorPKID.NewPKID(),
-		PostHashHex:      strings.Clone(postAssociation.PostHashHex),
+		PostHash:         postAssociation.PostHash.NewBlockHash(),
 		AssociationType:  strings.Clone(postAssociation.AssociationType),
 		AssociationValue: strings.Clone(postAssociation.AssociationValue),
 		BlockHeight:      postAssociation.BlockHeight,
