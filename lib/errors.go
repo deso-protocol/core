@@ -412,9 +412,14 @@ const (
 	RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized    RuleError = "RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized"
 
 	// Association Errors
-	RuleErrorAssociationBeforeBlockHeight RuleError = "RuleErrorAssociationBeforeBlockHeight"
-	RuleErrorInvalidAssociationID         RuleError = "RuleErrorInvalidAssociationID"
-	RuleErrorAssociationNotFound          RuleError = "RuleErrorAssociationNotFound"
+	RuleErrorAssociationBeforeBlockHeight     RuleError = "RuleErrorAssociationBeforeBlockHeight"
+	RuleErrorAssociationInvalidID             RuleError = "RuleErrorAssociationInvalidID"
+	RuleErrorAssociationNotFound              RuleError = "RuleErrorAssociationNotFound"
+	RuleErrorAssociationInvalidTransactor     RuleError = "RuleErrorAssociationInvalidTransactor"
+	RuleErrorAssociationInvalidType           RuleError = "RuleErrorAssociationInvalidType"
+	RuleErrorAssociationInvalidValue          RuleError = "RuleErrorAssociationInvalidValue"
+	RuleErrorUserAssociationInvalidTargetUser RuleError = "RuleErrorUserAssociationInvalidTargetUser"
+	RuleErrorPostAssociationInvalidPost       RuleError = "RuleErrorPostAssociationInvalidPost"
 
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"
 	HeaderErrorNilPrevHash                                                       RuleError = "HeaderErrorNilPrevHash"
