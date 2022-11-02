@@ -4638,3 +4638,21 @@ func (postAssociation *PostAssociationEntry) GetEncoderType() EncoderType {
 type AssociationMapKey struct {
 	AssociationID BlockHash
 }
+
+func (userAssociation *UserAssociationEntry) Eq(other *UserAssociationEntry) bool {
+	// Compare if two user association entries are equal. Note that their
+	// BlockHeights can differ, and we would still consider them equal.
+	return userAssociation.TransactorPKID.Eq(other.TransactorPKID) &&
+		userAssociation.TargetUserPKID.Eq(other.TargetUserPKID) &&
+		strings.Compare(userAssociation.AssociationType, other.AssociationType) == 0 &&
+		strings.Compare(userAssociation.AssociationValue, other.AssociationValue) == 0
+}
+
+func (postAssociation *PostAssociationEntry) Eq(other *PostAssociationEntry) bool {
+	// Compare if two post association entries are equal. Note that their
+	// BlockHeights can differ, and we would still consider them equal.
+	return postAssociation.TransactorPKID.Eq(other.TransactorPKID) &&
+		postAssociation.PostHash.IsEqual(other.PostHash) &&
+		strings.Compare(postAssociation.AssociationType, other.AssociationType) == 0 &&
+		strings.Compare(postAssociation.AssociationValue, other.AssociationValue) == 0
+}

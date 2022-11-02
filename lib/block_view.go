@@ -164,7 +164,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// DAO Coin Limit Order Entries
 	bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry = make(map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry)
 
-	// Associations
+	// Association entries
 	bav.AssociationMapKeyToUserAssociationEntry = make(map[AssociationMapKey]*UserAssociationEntry)
 	bav.AssociationMapKeyToPostAssociationEntry = make(map[AssociationMapKey]*PostAssociationEntry)
 }
@@ -362,7 +362,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[entryKey] = &newEntry
 	}
 
-	// Copy the Associations
+	// Copy the Association entries
 	newView.AssociationMapKeyToUserAssociationEntry = make(map[AssociationMapKey]*UserAssociationEntry, len(bav.AssociationMapKeyToUserAssociationEntry))
 	for entryKey, entry := range bav.AssociationMapKeyToUserAssociationEntry {
 		newEntry := *entry

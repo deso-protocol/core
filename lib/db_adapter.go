@@ -42,6 +42,14 @@ func (adapter *DbAdapter) GetPostAssociationByID(associationID *BlockHash) (*Pos
 	return nil, nil // TODO
 }
 
+func (adapter *DbAdapter) GetUserAssociationByAttributes(association *UserAssociationEntry) (*UserAssociationEntry, error) {
+	return nil, nil // TODO
+}
+
+func (adapter *DbAdapter) GetPostAssociationByAttributes(association *PostAssociationEntry) (*PostAssociationEntry, error) {
+	return nil, nil // TODO
+}
+
 //
 // Balance entry
 //
