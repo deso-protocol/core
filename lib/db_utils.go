@@ -8325,57 +8325,12 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 // Associations
 // ---------------------------------------------
 
-type UserAssociationTxindexMetadata struct {
-	TargetUserPublicKey string
-	AssociationType     string
-	AssociationValue    string
-}
-
-type PostAssociationTxindexMetadata struct {
-	PostHashHex      string
-	AssociationType  string
-	AssociationValue string
-}
-
-func (userAssociationMeta *UserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	// TODO
-	return nil
-}
-
-func (postAssociationMeta *PostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	// TODO
-	return nil
-}
-
-func (userAssociationMeta *UserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
-	return nil
-}
-
-func (postAssociationMeta *PostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
-	return nil
-}
-
-func (userAssociationMeta *UserAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
-	return 0
-}
-
-func (postAssociationMeta *PostAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
-	return 0
-}
-
-func (userAssociationMeta *UserAssociationTxindexMetadata) GetEncoderType() EncoderType {
-	return EncoderTypeUserAssociationTxindexMetadata
-}
-
-func (postAssociationMeta *PostAssociationTxindexMetadata) GetEncoderType() EncoderType {
-	return EncoderTypePostAssociationTxindexMetadata
-}
-
 func DBKeyForUserAssociationByID(userAssociation *UserAssociationEntry) []byte {
 	// AssociationID
-	return nil // TODO
+	data := []byte{}
+	data = append(data, Prefixes.PrefixUserAssociationByID...)
+	data = append(data, userAssociation.AssociationID.ToBytes()...)
+	return data
 }
 
 func DBKeyForUserAssociationByTransactorPKID(userAssociation *UserAssociationEntry) []byte {
@@ -8395,7 +8350,10 @@ func DBKeyForUserAssociationByUserPKIDs(userAssociation *UserAssociationEntry) [
 
 func DBKeyForPostAssociationByID(postAssociation *PostAssociationEntry) []byte {
 	// AssociationID
-	return nil // TODO
+	data := []byte{}
+	data = append(data, Prefixes.PrefixPostAssociationByID...)
+	data = append(data, postAssociation.AssociationID.ToBytes()...)
+	return data
 }
 
 func DBKeyForPostAssociationByTransactorPKID(postAssociation *PostAssociationEntry) []byte {
@@ -8588,4 +8546,52 @@ func DBDeletePostAssociationWithTxn(
 		)
 	}
 	return nil
+}
+
+type UserAssociationTxindexMetadata struct {
+	TargetUserPublicKey string
+	AssociationType     string
+	AssociationValue    string
+}
+
+type PostAssociationTxindexMetadata struct {
+	PostHashHex      string
+	AssociationType  string
+	AssociationValue string
+}
+
+func (userAssociationMeta *UserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	// TODO
+	return nil
+}
+
+func (postAssociationMeta *PostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	// TODO
+	return nil
+}
+
+func (userAssociationMeta *UserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// TODO
+	return nil
+}
+
+func (postAssociationMeta *PostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// TODO
+	return nil
+}
+
+func (userAssociationMeta *UserAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (postAssociationMeta *PostAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (userAssociationMeta *UserAssociationTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUserAssociationTxindexMetadata
+}
+
+func (postAssociationMeta *PostAssociationTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypePostAssociationTxindexMetadata
 }

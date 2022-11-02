@@ -227,10 +227,12 @@ const (
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
 	TxnTypeDAOCoinLimitOrder            TxnType = 26
-	TxnTypeUserAssociation              TxnType = 27
-	TxnTypePostAssociation              TxnType = 28
+	TxnTypeCreateUserAssociation        TxnType = 27
+	TxnTypeDeleteUserAssociation        TxnType = 28
+	TxnTypeCreatePostAssociation        TxnType = 29
+	TxnTypeDeletePostAssociation        TxnType = 30
 
-	// NEXT_ID = 29
+	// NEXT_ID = 31
 )
 
 type TxnString string
@@ -262,8 +264,10 @@ const (
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
 	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
-	TxnStringUserAssociation              TxnString = "USER_ASSOCIATION"
-	TxnStringPostAssociation              TxnString = "POST_ASSOCIATION"
+	TxnStringCreateUserAssociation        TxnString = "CREATE_USER_ASSOCIATION"
+	TxnStringDeleteUserAssociation        TxnString = "DELETE_USER_ASSOCIATION"
+	TxnStringCreatePostAssociation        TxnString = "CREATE_POST_ASSOCIATION"
+	TxnStringDeletePostAssociation        TxnString = "DELETE_POST_ASSOCIATION"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -274,7 +278,8 @@ var (
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
-		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeUserAssociation, TxnTypePostAssociation,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeCreateUserAssociation,
+		TxnTypeDeleteUserAssociation, TxnTypeCreatePostAssociation, TxnTypeDeletePostAssociation,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -282,7 +287,8 @@ var (
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
-		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringUserAssociation, TxnStringPostAssociation,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringCreateUserAssociation,
+		TxnStringDeleteUserAssociation, TxnStringCreatePostAssociation, TxnStringDeletePostAssociation,
 	}
 )
 
@@ -348,10 +354,14 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringDAOCoinTransfer
 	case TxnTypeDAOCoinLimitOrder:
 		return TxnStringDAOCoinLimitOrder
-	case TxnTypeUserAssociation:
-		return TxnStringUserAssociation
-	case TxnTypePostAssociation:
-		return TxnStringPostAssociation
+	case TxnTypeCreateUserAssociation:
+		return TxnStringCreateUserAssociation
+	case TxnTypeDeleteUserAssociation:
+		return TxnStringDeleteUserAssociation
+	case TxnTypeCreatePostAssociation:
+		return TxnStringCreatePostAssociation
+	case TxnTypeDeletePostAssociation:
+		return TxnStringDeletePostAssociation
 	default:
 		return TxnStringUndefined
 	}
@@ -411,10 +421,14 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeDAOCoinTransfer
 	case TxnStringDAOCoinLimitOrder:
 		return TxnTypeDAOCoinLimitOrder
-	case TxnStringUserAssociation:
-		return TxnTypeUserAssociation
-	case TxnStringPostAssociation:
-		return TxnTypePostAssociation
+	case TxnStringCreateUserAssociation:
+		return TxnTypeCreateUserAssociation
+	case TxnStringDeleteUserAssociation:
+		return TxnTypeDeleteUserAssociation
+	case TxnStringCreatePostAssociation:
+		return TxnTypeCreatePostAssociation
+	case TxnStringDeletePostAssociation:
+		return TxnTypeDeletePostAssociation
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -482,10 +496,14 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinTransferMetadata{}).New(), nil
 	case TxnTypeDAOCoinLimitOrder:
 		return (&DAOCoinLimitOrderMetadata{}).New(), nil
-	case TxnTypeUserAssociation:
-		return (&UserAssociationMetadata{}).New(), nil
-	case TxnTypePostAssociation:
-		return (&PostAssociationMetadata{}).New(), nil
+	case TxnTypeCreateUserAssociation:
+		return (&CreateUserAssociationMetadata{}).New(), nil
+	case TxnTypeDeleteUserAssociation:
+		return (&DeleteUserAssociationMetadata{}).New(), nil
+	case TxnTypeCreatePostAssociation:
+		return (&CreatePostAssociationMetadata{}).New(), nil
+	case TxnTypeDeletePostAssociation:
+		return (&DeletePostAssociationMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -6579,50 +6597,94 @@ func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 // Associations Metadata
 // ==================================================================
 
-type UserAssociationMetadata struct {
+type CreateUserAssociationMetadata struct {
 	TargetUserPublicKey *PublicKey
 	AssociationType     string
 	AssociationValue    string
 }
 
-type PostAssociationMetadata struct {
+type DeleteUserAssociationMetadata struct {
+	AssociationID *BlockHash
+}
+
+type CreatePostAssociationMetadata struct {
 	PostHashHex      string
 	AssociationType  string
 	AssociationValue string
 }
 
-func (txnData *UserAssociationMetadata) GetTxnType() TxnType {
-	return TxnTypeUserAssociation
+type DeletePostAssociationMetadata struct {
+	AssociationID *BlockHash
 }
 
-func (txnData *PostAssociationMetadata) GetTxnType() TxnType {
-	return TxnTypePostAssociation
+func (txnData *CreateUserAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeCreateUserAssociation
 }
 
-func (txnData *UserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+func (txnData *DeleteUserAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeDeleteUserAssociation
+}
+
+func (txnData *CreatePostAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeCreatePostAssociation
+}
+
+func (txnData *DeletePostAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeDeletePostAssociation
+}
+
+func (txnData *CreateUserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	// TODO
 	return nil, nil
 }
 
-func (txnData *PostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+func (txnData *DeleteUserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	// TODO
 	return nil, nil
 }
 
-func (txnData *UserAssociationMetadata) FromBytes(data []byte) error {
+func (txnData *CreatePostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// TODO
+	return nil, nil
+}
+
+func (txnData *DeletePostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	// TODO
+	return nil, nil
+}
+
+func (txnData *CreateUserAssociationMetadata) FromBytes(data []byte) error {
 	// TODO
 	return nil
 }
 
-func (txnData *PostAssociationMetadata) FromBytes(data []byte) error {
+func (txnData *DeleteUserAssociationMetadata) FromBytes(data []byte) error {
 	// TODO
 	return nil
 }
 
-func (txnData *UserAssociationMetadata) New() DeSoTxnMetadata {
-	return &UserAssociationMetadata{}
+func (txnData *CreatePostAssociationMetadata) FromBytes(data []byte) error {
+	// TODO
+	return nil
 }
 
-func (txnData *PostAssociationMetadata) New() DeSoTxnMetadata {
-	return &PostAssociationMetadata{}
+func (txnData *DeletePostAssociationMetadata) FromBytes(data []byte) error {
+	// TODO
+	return nil
+}
+
+func (txnData *CreateUserAssociationMetadata) New() DeSoTxnMetadata {
+	return &CreateUserAssociationMetadata{}
+}
+
+func (txnData *DeleteUserAssociationMetadata) New() DeSoTxnMetadata {
+	return &DeleteUserAssociationMetadata{}
+}
+
+func (txnData *CreatePostAssociationMetadata) New() DeSoTxnMetadata {
+	return &CreatePostAssociationMetadata{}
+}
+
+func (txnData *DeletePostAssociationMetadata) New() DeSoTxnMetadata {
+	return &DeletePostAssociationMetadata{}
 }
