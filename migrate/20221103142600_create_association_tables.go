@@ -10,10 +10,10 @@ func init() {
 		// Create pg_metadata_create_user_association table.
 		_, err := db.Exec(`
 			CREATE TABLE pg_metadata_create_user_association (
-			    transaction_hash       BYTEA PRIMARY KEY,
-			    target_user_public_key BYTEA NOT NULL,
-			    association_type       TEXT NOT NULL,
-			    association_value      TEXT NOT NULL
+				transaction_hash       BYTEA PRIMARY KEY,
+				target_user_public_key BYTEA NOT NULL,
+				association_type       TEXT NOT NULL,
+				association_value      TEXT NOT NULL
 			);
 		`)
 		if err != nil {
@@ -23,8 +23,8 @@ func init() {
 		// Create pg_metadata_delete_user_association table.
 		_, err = db.Exec(`
 			CREATE TABLE pg_metadata_delete_user_association (
-			    transaction_hash BYTEA PRIMARY KEY,
-			    association_id   BYTEA NOT NULL
+				transaction_hash BYTEA PRIMARY KEY,
+				association_id   BYTEA NOT NULL
 			);
 		`)
 		if err != nil {
@@ -34,10 +34,10 @@ func init() {
 		// Create pg_metadata_create_post_association table.
 		_, err = db.Exec(`
 			CREATE TABLE pg_metadata_create_post_association (
-			    transaction_hash  BYTEA PRIMARY KEY,
-			    post_hash_hex     TEXT NOT NULL,
-			    association_type  TEXT NOT NULL,
-			    association_value TEXT NOT NULL
+				transaction_hash  BYTEA PRIMARY KEY,
+				post_hash_hex     TEXT NOT NULL,
+				association_type  TEXT NOT NULL,
+				association_value TEXT NOT NULL
 			);
 		`)
 		if err != nil {
@@ -47,8 +47,8 @@ func init() {
 		// Create pg_metadata_delete_post_association_table.
 		_, err = db.Exec(`
 			CREATE TABLE pg_metadata_delete_post_association (
-			    transaction_hash BYTEA PRIMARY KEY,
-			    association_id   BYTEA NOT NULL
+				transaction_hash BYTEA PRIMARY KEY,
+				association_id   BYTEA NOT NULL
 			);
 		`)
 		if err != nil {
