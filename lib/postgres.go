@@ -3073,22 +3073,24 @@ type PGPostAssociation struct {
 	BlockHeight      uint32     `pg:",use_zero"`
 }
 
-func (userAssociation *PGUserAssociation) FromUserAssociationEntry(userAssociationEntry *UserAssociationEntry) {
+func (userAssociation *PGUserAssociation) FromUserAssociationEntry(userAssociationEntry *UserAssociationEntry) *PGUserAssociation {
 	userAssociation.AssociationID = userAssociationEntry.AssociationID
 	userAssociation.TransactorPKID = userAssociationEntry.TransactorPKID
 	userAssociation.TargetUserPKID = userAssociationEntry.TargetUserPKID
 	userAssociation.AssociationType = userAssociationEntry.AssociationType
 	userAssociation.AssociationValue = userAssociationEntry.AssociationValue
 	userAssociation.BlockHeight = userAssociationEntry.BlockHeight
+	return userAssociation
 }
 
-func (postAssociation *PGPostAssociation) FromPostAssociationEntry(postAssociationEntry *PostAssociationEntry) {
+func (postAssociation *PGPostAssociation) FromPostAssociationEntry(postAssociationEntry *PostAssociationEntry) *PGPostAssociation {
 	postAssociation.AssociationID = postAssociationEntry.AssociationID
 	postAssociation.TransactorPKID = postAssociationEntry.TransactorPKID
 	postAssociation.PostHash = postAssociationEntry.PostHash
 	postAssociation.AssociationType = postAssociationEntry.AssociationType
 	postAssociation.AssociationValue = postAssociationEntry.AssociationValue
 	postAssociation.BlockHeight = postAssociationEntry.BlockHeight
+	return postAssociation
 }
 
 func (userAssociation *PGUserAssociation) ToUserAssociationEntry() *UserAssociationEntry {
@@ -3130,9 +3132,63 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 }
 
 func (postgres *Postgres) flushUserAssociations(tx *pg.Tx, view *UtxoView, blockHeight uint64) error {
-	return nil // TODO
+	var insertAssociations []*PGUserAssociation
+	var deleteAssociations []*PGUserAssociation
+
+	// Iterate through view for associations to flush to db.
+	for _, associationEntry := range view.AssociationMapKeyToUserAssociationEntry {
+		pgAssociation := (&PGUserAssociation{}).FromUserAssociationEntry(associationEntry)
+		if associationEntry.isDeleted {
+			deleteAssociations = append(deleteAssociations, pgAssociation)
+		} else {
+			insertAssociations = append(insertAssociations, pgAssociation)
+		}
+	}
+
+	// Insert new/modified associations.
+	if len(insertAssociations) > 0 {
+		_, err := tx.Model(&insertAssociations).WherePK().OnConflict("(association_id) DO UPDATE").Returning("NULL").Insert()
+		if err != nil {
+			return fmt.Errorf("flushUserAssociations: insert: %v", err)
+		}
+	}
+	// Delete isDeleted=true associations.
+	if len(deleteAssociations) > 0 {
+		_, err := tx.Model(&deleteAssociations).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("flushUserAssociations: delete: %v", err)
+		}
+	}
+	return nil
 }
 
 func (postgres *Postgres) flushPostAssociations(tx *pg.Tx, view *UtxoView, blockHeight uint64) error {
-	return nil // TODO
+	var insertAssociations []*PGPostAssociation
+	var deleteAssociations []*PGPostAssociation
+
+	// Iterate through view for associations to flush to db.
+	for _, associationEntry := range view.AssociationMapKeyToPostAssociationEntry {
+		pgAssociation := (&PGPostAssociation{}).FromPostAssociationEntry(associationEntry)
+		if associationEntry.isDeleted {
+			deleteAssociations = append(deleteAssociations, pgAssociation)
+		} else {
+			insertAssociations = append(insertAssociations, pgAssociation)
+		}
+	}
+
+	// Insert new/modified associations.
+	if len(insertAssociations) > 0 {
+		_, err := tx.Model(&insertAssociations).WherePK().OnConflict("(association_id) DO UPDATE").Returning("NULL").Insert()
+		if err != nil {
+			return fmt.Errorf("flushPostAssociations: insert: %v", err)
+		}
+	}
+	// Delete isDeleted=true associations.
+	if len(deleteAssociations) > 0 {
+		_, err := tx.Model(&deleteAssociations).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("flushPostAssociations: delete: %v", err)
+		}
+	}
+	return nil
 }
