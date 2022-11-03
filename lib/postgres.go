@@ -129,29 +129,33 @@ type PGTransaction struct {
 	IsRecoverable bool       `pg:",use_zero"`
 
 	// Relationships
-	Outputs                     []*PGTransactionOutput         `pg:"rel:has-many,join_fk:output_hash"`
-	MetadataBlockReward         *PGMetadataBlockReward         `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataBitcoinExchange     *PGMetadataBitcoinExchange     `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataPrivateMessage      *PGMetadataPrivateMessage      `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataSubmitPost          *PGMetadataSubmitPost          `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataUpdateExchangeRate  *PGMetadataUpdateExchangeRate  `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataUpdateProfile       *PGMetadataUpdateProfile       `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataFollow              *PGMetadataFollow              `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataLike                *PGMetadataLike                `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataCreatorCoin         *PGMetadataCreatorCoin         `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataCreatorCoinTransfer *PGMetadataCreatorCoinTransfer `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataSwapIdentity        *PGMetadataSwapIdentity        `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataCreateNFT           *PGMetadataCreateNFT           `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataUpdateNFT           *PGMetadataUpdateNFT           `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataAcceptNFTBid        *PGMetadataAcceptNFTBid        `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataNFTBid              *PGMetadataNFTBid              `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataNFTTransfer         *PGMetadataNFTTransfer         `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataAcceptNFTTransfer   *PGMetadataAcceptNFTTransfer   `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataBurnNFT             *PGMetadataBurnNFT             `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataDerivedKey          *PGMetadataDerivedKey          `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataDAOCoin             *PGMetadataDAOCoin             `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataDAOCoinTransfer     *PGMetadataDAOCoinTransfer     `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataDAOCoinLimitOrder   *PGMetadataDAOCoinLimitOrder   `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	Outputs                       []*PGTransactionOutput           `pg:"rel:has-many,join_fk:output_hash"`
+	MetadataBlockReward           *PGMetadataBlockReward           `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataBitcoinExchange       *PGMetadataBitcoinExchange       `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataPrivateMessage        *PGMetadataPrivateMessage        `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataSubmitPost            *PGMetadataSubmitPost            `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataUpdateExchangeRate    *PGMetadataUpdateExchangeRate    `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataUpdateProfile         *PGMetadataUpdateProfile         `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataFollow                *PGMetadataFollow                `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataLike                  *PGMetadataLike                  `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataCreatorCoin           *PGMetadataCreatorCoin           `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataCreatorCoinTransfer   *PGMetadataCreatorCoinTransfer   `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataSwapIdentity          *PGMetadataSwapIdentity          `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataCreateNFT             *PGMetadataCreateNFT             `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataUpdateNFT             *PGMetadataUpdateNFT             `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAcceptNFTBid          *PGMetadataAcceptNFTBid          `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataNFTBid                *PGMetadataNFTBid                `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataNFTTransfer           *PGMetadataNFTTransfer           `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAcceptNFTTransfer     *PGMetadataAcceptNFTTransfer     `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataBurnNFT               *PGMetadataBurnNFT               `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDerivedKey            *PGMetadataDerivedKey            `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDAOCoin               *PGMetadataDAOCoin               `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDAOCoinTransfer       *PGMetadataDAOCoinTransfer       `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDAOCoinLimitOrder     *PGMetadataDAOCoinLimitOrder     `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataCreateUserAssociation *PGMetadataCreateUserAssociation `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDeleteUserAssociation *PGMetadataDeleteUserAssociation `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataCreatePostAssociation *PGMetadataCreatePostAssociation `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDeletePostAssociation *PGMetadataDeletePostAssociation `pg:"rel:belongs-to,join_fk:transaction_hash"`
 }
 
 // PGTransactionOutput represents DeSoOutput, DeSoInput, and UtxoEntry
@@ -1049,6 +1053,10 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	var metadataDAOCoinTransfer []*PGMetadataDAOCoinTransfer
 	var metadataDAOCoinLimitOrder []*PGMetadataDAOCoinLimitOrder
 	var metadataDAOCoinLimitOrderBidderInputs []*PGMetadataDAOCoinLimitOrderBidderInputs
+	var metadataCreateUserAssociations []*PGMetadataCreateUserAssociation
+	var metadataDeleteUserAssociations []*PGMetadataDeleteUserAssociation
+	var metadataCreatePostAssociations []*PGMetadataCreatePostAssociation
+	var metadataDeletePostAssociations []*PGMetadataDeletePostAssociation
 
 	blockHash := blockNode.Hash
 
@@ -1352,6 +1360,38 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				}
 			}
 
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateUserAssociation {
+			txMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
+			metadataCreateUserAssociations = append(metadataCreateUserAssociations, &PGMetadataCreateUserAssociation{
+				TransactionHash:     txnHash,
+				TargetUserPublicKey: txMeta.TargetUserPublicKey,
+				AssociationType:     txMeta.AssociationType,
+				AssociationValue:    txMeta.AssociationValue,
+			})
+
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeDeleteUserAssociation {
+			txMeta := txn.TxnMeta.(*DeleteUserAssociationMetadata)
+			metadataDeleteUserAssociations = append(metadataDeleteUserAssociations, &PGMetadataDeleteUserAssociation{
+				TransactionHash: txnHash,
+				AssociationID:   txMeta.AssociationID,
+			})
+
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatePostAssociation {
+			txMeta := txn.TxnMeta.(*CreatePostAssociationMetadata)
+			metadataCreatePostAssociations = append(metadataCreatePostAssociations, &PGMetadataCreatePostAssociation{
+				TransactionHash:  txnHash,
+				PostHashHex:      txMeta.PostHashHex,
+				AssociationType:  txMeta.AssociationType,
+				AssociationValue: txMeta.AssociationValue,
+			})
+
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeDeletePostAssociation {
+			txMeta := txn.TxnMeta.(*DeletePostAssociationMetadata)
+			metadataDeletePostAssociations = append(metadataDeletePostAssociations, &PGMetadataDeletePostAssociation{
+				TransactionHash: txnHash,
+				AssociationID:   txMeta.AssociationID,
+			})
+
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
 
 			// FIXME: Skip PGMetadataMessagingGroup for now since it's not used downstream
@@ -1525,6 +1565,30 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		}
 	}
 
+	if len(metadataCreateUserAssociations) > 0 {
+		if _, err := tx.Model(&metadataCreateUserAssociations).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
+	if len(metadataDeleteUserAssociations) > 0 {
+		if _, err := tx.Model(&metadataDeleteUserAssociations).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
+	if len(metadataCreatePostAssociations) > 0 {
+		if _, err := tx.Model(&metadataCreatePostAssociations).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
+	if len(metadataDeletePostAssociations) > 0 {
+		if _, err := tx.Model(&metadataDeletePostAssociations).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1613,6 +1677,12 @@ func (postgres *Postgres) FlushView(view *UtxoView, blockHeight uint64) error {
 		//if err := postgres.flushDAOCoinLimitOrders(tx, view); err != nil {
 		//	return err
 		//}
+		if err := postgres.flushUserAssociations(tx, view, blockHeight); err != nil {
+			return err
+		}
+		if err := postgres.flushPostAssociations(tx, view, blockHeight); err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -2943,6 +3013,106 @@ func (postgres *Postgres) GetNotifications(publicKey string) ([]*PGNotification,
 // Associations
 //
 
+// PGMetadataCreateUserAssociation represents CreateUserAssociationMetadata
+type PGMetadataCreateUserAssociation struct {
+	tableName struct{} `pg:"pg_metadata_create_user_association"`
+
+	TransactionHash     *BlockHash `pg:",pk,type:bytea"`
+	TargetUserPublicKey *PublicKey `pg:"target_user_public_key,type:bytea"`
+	AssociationType     string     `pg:",use_zero"`
+	AssociationValue    string     `pg:",use_zero"`
+}
+
+// PGMetadataDeleteUserAssociation represents DeleteUserAssociationMetadata
+type PGMetadataDeleteUserAssociation struct {
+	tableName struct{} `pg:"pg_metadata_delete_user_association"`
+
+	TransactionHash *BlockHash `pg:",pk,type:bytea"`
+	AssociationID   *BlockHash `pg:",type:bytea"`
+}
+
+// PGMetadataCreatePostAssociation represents CreatePostAssociationMetadata
+type PGMetadataCreatePostAssociation struct {
+	tableName struct{} `pg:"pg_metadata_create_post_association"`
+
+	TransactionHash  *BlockHash `pg:",pk,type:bytea"`
+	PostHashHex      string     `pg:",use_zero"`
+	AssociationType  string     `pg:",use_zero"`
+	AssociationValue string     `pg:",use_zero"`
+}
+
+// PGMetadataDeletePostAssociation represents DeletePostAssociationMetadata
+type PGMetadataDeletePostAssociation struct {
+	tableName struct{} `pg:"pg_metadata_delete_post_association"`
+
+	TransactionHash *BlockHash `pg:",pk,type:bytea"`
+	AssociationID   *BlockHash `pg:",type:bytea"`
+}
+
+// PGUserAssociation represents UserAssociationEntry
+type PGUserAssociation struct {
+	tableName struct{} `pg:"pg_user_associations"`
+
+	AssociationID    *BlockHash `pg:",pk,type:bytea"`
+	TransactorPKID   *PKID      `pg:",type:bytea"`
+	TargetUserPKID   *PKID      `pg:",type:bytea"`
+	AssociationType  string     `pg:",use_zero"`
+	AssociationValue string     `pg:",use_zero"`
+	BlockHeight      uint32     `pg:",use_zero"`
+}
+
+// PGPostAssociation represents PostAssociationEntry
+type PGPostAssociation struct {
+	tableName struct{} `pg:"pg_post_associations"`
+
+	AssociationID    *BlockHash `pg:",pk,type:bytea"`
+	TransactorPKID   *PKID      `pg:",type:bytea"`
+	PostHash         *BlockHash `pg:",type:bytea"`
+	AssociationType  string     `pg:",use_zero"`
+	AssociationValue string     `pg:",use_zero"`
+	BlockHeight      uint32     `pg:",use_zero"`
+}
+
+func (userAssociation *PGUserAssociation) FromUserAssociationEntry(userAssociationEntry *UserAssociationEntry) {
+	userAssociation.AssociationID = userAssociationEntry.AssociationID
+	userAssociation.TransactorPKID = userAssociationEntry.TransactorPKID
+	userAssociation.TargetUserPKID = userAssociationEntry.TargetUserPKID
+	userAssociation.AssociationType = userAssociationEntry.AssociationType
+	userAssociation.AssociationValue = userAssociationEntry.AssociationValue
+	userAssociation.BlockHeight = userAssociationEntry.BlockHeight
+}
+
+func (postAssociation *PGPostAssociation) FromPostAssociationEntry(postAssociationEntry *PostAssociationEntry) {
+	postAssociation.AssociationID = postAssociationEntry.AssociationID
+	postAssociation.TransactorPKID = postAssociationEntry.TransactorPKID
+	postAssociation.PostHash = postAssociationEntry.PostHash
+	postAssociation.AssociationType = postAssociationEntry.AssociationType
+	postAssociation.AssociationValue = postAssociationEntry.AssociationValue
+	postAssociation.BlockHeight = postAssociationEntry.BlockHeight
+}
+
+func (userAssociation *PGUserAssociation) ToUserAssociationEntry() *UserAssociationEntry {
+	return &UserAssociationEntry{
+		AssociationID:    userAssociation.AssociationID,
+		TransactorPKID:   userAssociation.TransactorPKID,
+		TargetUserPKID:   userAssociation.TargetUserPKID,
+		AssociationType:  userAssociation.AssociationType,
+		AssociationValue: userAssociation.AssociationValue,
+		BlockHeight:      userAssociation.BlockHeight,
+	}
+}
+
+func (postAssociation *PGPostAssociation) ToPostAssociationEntry() *PostAssociationEntry {
+	return &PostAssociationEntry{
+		AssociationID:    postAssociation.AssociationID,
+		TransactorPKID:   postAssociation.TransactorPKID,
+		PostHash:         postAssociation.PostHash,
+		AssociationType:  postAssociation.AssociationType,
+		AssociationValue: postAssociation.AssociationValue,
+		BlockHeight:      postAssociation.BlockHeight,
+	}
+}
+
 func (postgres *Postgres) GetUserAssociationByID(associationID *BlockHash) (*UserAssociationEntry, error) {
 	return nil, nil // TODO
 }
@@ -2957,4 +3127,12 @@ func (postgres *Postgres) GetUserAssociationByAttributes(associationEntry *UserA
 
 func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
 	return nil, nil // TODO
+}
+
+func (postgres *Postgres) flushUserAssociations(tx *pg.Tx, view *UtxoView, blockHeight uint64) error {
+	return nil // TODO
+}
+
+func (postgres *Postgres) flushPostAssociations(tx *pg.Tx, view *UtxoView, blockHeight uint64) error {
+	return nil // TODO
 }
