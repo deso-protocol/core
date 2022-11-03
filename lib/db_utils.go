@@ -8371,6 +8371,22 @@ func DBKeyForPostAssociationByAssociationType(postAssociation *PostAssociationEn
 	return nil // TODO
 }
 
+func DBGetUserAssociationByID(associationID *BlockHash) (*UserAssociationEntry, error) {
+	return nil, nil // TODO
+}
+
+func DBGetPostAssociationByID(associationID *BlockHash) (*PostAssociationEntry, error) {
+	return nil, nil // TODO
+}
+
+func DBGetUserAssociationByAttributes(associationEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
+	return nil, nil // TODO
+}
+
+func DBGetPostAssociationByAttributes(associationEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
+	return nil, nil // TODO
+}
+
 func DBPutUserAssociationWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
