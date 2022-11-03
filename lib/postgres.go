@@ -2938,3 +2938,23 @@ func (postgres *Postgres) GetNotifications(publicKey string) ([]*PGNotification,
 
 	return notifications, nil
 }
+
+//
+// Associations
+//
+
+func (postgres *Postgres) GetUserAssociationByID(associationID *BlockHash) (*UserAssociationEntry, error) {
+	return nil, nil // TODO
+}
+
+func (postgres *Postgres) GetPostAssociationByID(associationID *BlockHash) (*PostAssociationEntry, error) {
+	return nil, nil // TODO
+}
+
+func (postgres *Postgres) GetUserAssociationByAttributes(associationEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
+	return nil, nil // TODO
+}
+
+func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
+	return nil, nil // TODO
+}

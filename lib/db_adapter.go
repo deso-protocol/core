@@ -35,19 +35,31 @@ func (bav *UtxoView) GetDbAdapter() *DbAdapter {
 //
 
 func (adapter *DbAdapter) GetUserAssociationByID(associationID *BlockHash) (*UserAssociationEntry, error) {
-	return nil, nil // TODO
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetUserAssociationByID(associationID)
+	}
+	return DBGetUserAssociationByID(associationID)
 }
 
 func (adapter *DbAdapter) GetPostAssociationByID(associationID *BlockHash) (*PostAssociationEntry, error) {
-	return nil, nil // TODO
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetPostAssociationByID(associationID)
+	}
+	return DBGetPostAssociationByID(associationID)
 }
 
-func (adapter *DbAdapter) GetUserAssociationByAttributes(association *UserAssociationEntry) (*UserAssociationEntry, error) {
-	return nil, nil // TODO
+func (adapter *DbAdapter) GetUserAssociationByAttributes(associationEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetUserAssociationByAttributes(associationEntry)
+	}
+	return DBGetUserAssociationByAttributes(associationEntry)
 }
 
-func (adapter *DbAdapter) GetPostAssociationByAttributes(association *PostAssociationEntry) (*PostAssociationEntry, error) {
-	return nil, nil // TODO
+func (adapter *DbAdapter) GetPostAssociationByAttributes(associationEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetPostAssociationByAttributes(associationEntry)
+	}
+	return DBGetPostAssociationByAttributes(associationEntry)
 }
 
 //
