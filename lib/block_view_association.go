@@ -72,7 +72,7 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 	}
 
 	// Construct new association entry from metadata.
-	associationEntry := &UserAssociationEntry{
+	currentAssociationEntry := &UserAssociationEntry{
 		AssociationID:    txHash,
 		TransactorPKID:   bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
 		TargetUserPKID:   bav.GetPKIDForPublicKey(txMeta.TargetUserPublicKey.ToBytes()).PKID,
@@ -81,7 +81,7 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 		BlockHeight:      blockHeight,
 	}
 	// Create the association.
-	bav._setUserAssociationEntryMappings(associationEntry)
+	bav._setUserAssociationEntryMappings(currentAssociationEntry)
 
 	// Add a UTXO operation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
@@ -217,7 +217,7 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 
 	// Construct new association entry from metadata.
 	postHashBytes, _ := hex.DecodeString(txMeta.PostHashHex)
-	associationEntry := &PostAssociationEntry{
+	currentAssociationEntry := &PostAssociationEntry{
 		AssociationID:    txHash,
 		TransactorPKID:   bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
 		PostHash:         NewBlockHash(postHashBytes),
@@ -226,7 +226,7 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 		BlockHeight:      blockHeight,
 	}
 	// Create the association.
-	bav._setPostAssociationEntryMappings(associationEntry)
+	bav._setPostAssociationEntryMappings(currentAssociationEntry)
 
 	// Add a UTXO operation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
@@ -308,8 +308,36 @@ func (bav *UtxoView) _disconnectCreateUserAssociation(
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
-	// TODO
-	return nil
+	// Validate the last operation is a CreateUserAssociation operation.
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectCreateUserAssociation: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeCreateUserAssociation {
+		return fmt.Errorf(
+			"_disconnectCreateUserAssociation: trying to revert OperationTypeCreateUserAssociation but found type %v",
+			utxoOpsForTxn[operationIndex].Type,
+		)
+	}
+	txMeta := currentTxn.TxnMeta.(*CreateUserAssociationMetadata)
+	operationData := utxoOpsForTxn[operationIndex]
+
+	// Delete the current association entry.
+	currentAssociationEntry, err := bav.GetUserAssociationByAttributes(currentTxn.PublicKey, txMeta)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectCreateUserAssociation: ")
+	}
+	bav._deleteUserAssociationEntryMappings(currentAssociationEntry)
+
+	// Set the prev association entry, if exists.
+	if operationData.PrevUserAssociationEntry != nil {
+		bav._setUserAssociationEntryMappings(operationData.PrevUserAssociationEntry)
+	}
+
+	// Disconnect the basic transfer.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight,
+	)
 }
 
 func (bav *UtxoView) _disconnectDeleteUserAssociation(
@@ -319,8 +347,29 @@ func (bav *UtxoView) _disconnectDeleteUserAssociation(
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
-	// TODO
-	return nil
+	// Validate the last operation is a DeleteUserAssociation operation.
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectDeleteUserAssociation: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeDeleteUserAssociation {
+		return fmt.Errorf(
+			"_disconnectDeleteUserAssociation: trying to revert OperationTypeDeleteUserAssociation but found type %v",
+			utxoOpsForTxn[operationIndex].Type,
+		)
+	}
+	operationData := utxoOpsForTxn[operationIndex]
+
+	// Set the prev association entry. Error if doesn't exist.
+	if operationData.PrevUserAssociationEntry == nil {
+		return fmt.Errorf("_disconnectDeleteUserAssociation: no deleted association entry found")
+	}
+	bav._setUserAssociationEntryMappings(operationData.PrevUserAssociationEntry)
+
+	// Disconnect the basic transfer.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight,
+	)
 }
 
 func (bav *UtxoView) _disconnectCreatePostAssociation(
@@ -330,8 +379,36 @@ func (bav *UtxoView) _disconnectCreatePostAssociation(
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
-	// TODO
-	return nil
+	// Validate the last operation is a CreatePostAssociation operation.
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectCreatePostAssociation: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeCreatePostAssociation {
+		return fmt.Errorf(
+			"_disconnectCreatePostAssociation: trying to revert OperationTypeCreatePostAssociation but found type %v",
+			utxoOpsForTxn[operationIndex].Type,
+		)
+	}
+	txMeta := currentTxn.TxnMeta.(*CreatePostAssociationMetadata)
+	operationData := utxoOpsForTxn[operationIndex]
+
+	// Delete the current association entry.
+	currentAssociationEntry, err := bav.GetPostAssociationByAttributes(currentTxn.PublicKey, txMeta)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectCreatePostAssociation: ")
+	}
+	bav._deletePostAssociationEntryMappings(currentAssociationEntry)
+
+	// Set the prev association entry, if exists.
+	if operationData.PrevPostAssociationEntry != nil {
+		bav._setPostAssociationEntryMappings(operationData.PrevPostAssociationEntry)
+	}
+
+	// Disconnect the basic transfer.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight,
+	)
 }
 
 func (bav *UtxoView) _disconnectDeletePostAssociation(
@@ -341,8 +418,29 @@ func (bav *UtxoView) _disconnectDeletePostAssociation(
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
-	// TODO
-	return nil
+	// Validate the last operation is a DeletePostAssociation operation.
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectDeletePostAssociation: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeDeletePostAssociation {
+		return fmt.Errorf(
+			"_disconnectDeletePostAssociation: trying to revert OperationTypeDeletePostAssociation but found type %v",
+			utxoOpsForTxn[operationIndex].Type,
+		)
+	}
+	operationData := utxoOpsForTxn[operationIndex]
+
+	// Set the prev association entry. Error if doesn't exist.
+	if operationData.PrevPostAssociationEntry == nil {
+		return fmt.Errorf("_disconnectDeletePostAssociation: no deleted association entry found")
+	}
+	bav._setPostAssociationEntryMappings(operationData.PrevPostAssociationEntry)
+
+	// Disconnect the basic transfer.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txnHash, utxoOpsForTxn[:operationIndex], blockHeight,
+	)
 }
 
 // ###########################
