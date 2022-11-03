@@ -38,28 +38,28 @@ func (adapter *DbAdapter) GetUserAssociationByID(associationID *BlockHash) (*Use
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetUserAssociationByID(associationID)
 	}
-	return DBGetUserAssociationByID(associationID)
+	return DBGetUserAssociationByID(adapter.badgerDb, adapter.snapshot, associationID)
 }
 
 func (adapter *DbAdapter) GetPostAssociationByID(associationID *BlockHash) (*PostAssociationEntry, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetPostAssociationByID(associationID)
 	}
-	return DBGetPostAssociationByID(associationID)
+	return DBGetPostAssociationByID(adapter.badgerDb, adapter.snapshot, associationID)
 }
 
 func (adapter *DbAdapter) GetUserAssociationByAttributes(associationEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetUserAssociationByAttributes(associationEntry)
 	}
-	return DBGetUserAssociationByAttributes(associationEntry)
+	return DBGetUserAssociationByAttributes(adapter.badgerDb, adapter.snapshot, associationEntry)
 }
 
 func (adapter *DbAdapter) GetPostAssociationByAttributes(associationEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetPostAssociationByAttributes(associationEntry)
 	}
-	return DBGetPostAssociationByAttributes(associationEntry)
+	return DBGetPostAssociationByAttributes(adapter.badgerDb, adapter.snapshot, associationEntry)
 }
 
 //
