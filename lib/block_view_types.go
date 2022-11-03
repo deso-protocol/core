@@ -821,6 +821,11 @@ type UtxoOperation struct {
 	// that represent all orders fulfilled by the DAO Coin Limit Order transaction.
 	// These are used to construct notifications for order fulfillment.
 	FilledDAOCoinLimitOrders []*FilledDAOCoinLimitOrder
+
+	// Save the state of any deleted associations, in case we need
+	// to disconnect/revert and re-instate the prev association.
+	PrevUserAssociationEntry *UserAssociationEntry
+	PrevPostAssociationEntry *PostAssociationEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {

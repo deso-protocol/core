@@ -57,8 +57,21 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 		return 0, 0, nil, err
 	}
 
-	// Construct association entry from metadata. At this point, we can assume the metadata
-	// is valid: all PKIDs exist, strings lengths are within the correct range, etc.
+	// At this point, we can assume the metadata is valid: all
+	// PKIDs exist, strings are of an appropriate length, etc.
+
+	// Check if there is an existing matching association entry that will be overwritten.
+	// This existing association entry will be restored if we disconnect this txn.
+	prevAssociationEntry, err := bav.GetUserAssociationByAttributes(txn.PublicKey, txMeta)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectCreateUserAssociation: ")
+	}
+	// Delete the existing association entry, if exists.
+	if prevAssociationEntry != nil {
+		bav._deleteUserAssociationEntryMappings(prevAssociationEntry)
+	}
+
+	// Construct new association entry from metadata.
 	associationEntry := &UserAssociationEntry{
 		AssociationID:    txHash,
 		TransactorPKID:   bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
@@ -67,13 +80,13 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 		AssociationValue: txMeta.AssociationValue,
 		BlockHeight:      blockHeight,
 	}
-
 	// Create the association.
 	bav._setUserAssociationEntryMappings(associationEntry)
 
 	// Add a UTXO operation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type: OperationTypeCreateUserAssociation,
+		Type:                     OperationTypeCreateUserAssociation,
+		PrevUserAssociationEntry: prevAssociationEntry,
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -89,38 +102,58 @@ func (bav *UtxoView) _connectDeleteUserAssociation(
 	_utxoOps []*UtxoOperation,
 	_err error,
 ) {
-	// Error if before starting block height.
+	// Validate the starting block height.
 	if blockHeight < bav.Params.ForkHeights.AssociationsBlockHeight {
 		return 0, 0, nil, RuleErrorAssociationBeforeBlockHeight
 	}
 
-	// Check that the transaction has the right TxnType.
+	// Validate the txn TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeDeleteUserAssociation {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDeleteUserAssociation: called with bad TxnType %s", txn.TxnMeta.GetTxnType().String(),
 		)
 	}
 
+	// Connect a basic transfer to get the total input and the
+	// total output without considering the txn metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectDeleteUserAssociation: ")
+	}
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the txn is signed
+		// by the top-level public key, which we take to be the sender's
+		// public key so there is no need to verify anything further.
+	}
+
 	// Grab the txn metadata.
 	txMeta := txn.TxnMeta.(*DeleteUserAssociationMetadata)
 
 	// Validate the txn metadata.
-	err := bav.IsValidDeleteUserAssociationMetadata(txn.PublicKey, txMeta)
-	if err != nil {
+	if err := bav.IsValidDeleteUserAssociationMetadata(txn.PublicKey, txMeta); err != nil {
 		return 0, 0, nil, err
 	}
 
+	// At this point, we can assume the metadata is valid: the
+	// association ID is non-null and the association entry exists.
+
 	// Delete the association.
-	associationEntry, err := bav.GetUserAssociationByID(txMeta.AssociationID)
+	prevAssociationEntry, err := bav.GetUserAssociationByID(txMeta.AssociationID)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDeleteUserAssociation: error fetching association %s", txMeta.AssociationID.String(),
 		)
 	}
-	bav._deleteUserAssociationEntryMappings(associationEntry)
+	bav._deleteUserAssociationEntryMappings(prevAssociationEntry)
 
-	// TODO
-	return 0, 0, nil, nil
+	// Add a UTXO operation.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                     OperationTypeDeleteUserAssociation,
+		PrevUserAssociationEntry: prevAssociationEntry,
+	})
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _connectCreatePostAssociation(
@@ -168,8 +201,21 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 		return 0, 0, nil, err
 	}
 
-	// Construct association entry from metadata. At this point, we can assume the metadata
-	// is valid: all PKIDs and posts exist, strings lengths are within the correct range, etc.
+	// At this point, we can assume the metadata is valid: all PKIDs
+	// and posts exist, strings are of an appropriate length, etc.
+
+	// Check if there is an existing matching association entry that will be overwritten.
+	// This existing association entry will be restored if we disconnect this txn.
+	prevAssociationEntry, err := bav.GetPostAssociationByAttributes(txn.PublicKey, txMeta)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectCreatePostAssociation: ")
+	}
+	// Delete the existing association entry, if exists.
+	if prevAssociationEntry != nil {
+		bav._deletePostAssociationEntryMappings(prevAssociationEntry)
+	}
+
+	// Construct new association entry from metadata.
 	postHashBytes, _ := hex.DecodeString(txMeta.PostHashHex)
 	associationEntry := &PostAssociationEntry{
 		AssociationID:    txHash,
@@ -179,13 +225,13 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 		AssociationValue: txMeta.AssociationValue,
 		BlockHeight:      blockHeight,
 	}
-
 	// Create the association.
 	bav._setPostAssociationEntryMappings(associationEntry)
 
 	// Add a UTXO operation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type: OperationTypeCreatePostAssociation,
+		Type:                     OperationTypeCreatePostAssociation,
+		PrevPostAssociationEntry: prevAssociationEntry,
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -201,39 +247,58 @@ func (bav *UtxoView) _connectDeletePostAssociation(
 	_utxoOps []*UtxoOperation,
 	_err error,
 ) {
-	// Error if before starting block height.
+	// Validate the starting block height.
 	if blockHeight < bav.Params.ForkHeights.AssociationsBlockHeight {
 		return 0, 0, nil, RuleErrorAssociationBeforeBlockHeight
 	}
 
-	// Check that the transaction has the right TxnType.
+	// Validate the txn TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeDeletePostAssociation {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDeletePostAssociation: called with bad TxnType %s", txn.TxnMeta.GetTxnType().String(),
 		)
 	}
 
+	// Connect a basic transfer to get the total input and the
+	// total output without considering the txn metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectDeleteUserAssociation: ")
+	}
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the txn is signed
+		// by the top-level public key, which we take to be the sender's
+		// public key so there is no need to verify anything further.
+	}
+
 	// Grab the txn metadata.
 	txMeta := txn.TxnMeta.(*DeletePostAssociationMetadata)
-	_ = txMeta
 
 	// Validate the txn metadata.
-	err := bav.IsValidDeletePostAssociationMetadata(txn.PublicKey, txMeta)
-	if err != nil {
+	if err := bav.IsValidDeletePostAssociationMetadata(txn.PublicKey, txMeta); err != nil {
 		return 0, 0, nil, err
 	}
 
+	// At this point, we can assume the metadata is valid: the
+	// association ID is non-null and the association entry exists.
+
 	// Delete the association.
-	associationEntry, err := bav.GetPostAssociationByID(txMeta.AssociationID)
+	prevAssociationEntry, err := bav.GetPostAssociationByID(txMeta.AssociationID)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDeletePostAssociation: error fetching association %s", txMeta.AssociationID.String(),
 		)
 	}
-	bav._deletePostAssociationEntryMappings(associationEntry)
+	bav._deletePostAssociationEntryMappings(prevAssociationEntry)
 
-	// TODO
-	return 0, 0, nil, nil
+	// Add a UTXO operation.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                     OperationTypeDeletePostAssociation,
+		PrevPostAssociationEntry: prevAssociationEntry,
+	})
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _disconnectCreateUserAssociation(
@@ -311,12 +376,6 @@ func (bav *UtxoView) IsValidCreateUserAssociationMetadata(transactorPK []byte, m
 		len(metadata.AssociationType) > MaxAssociationValueCharLength {
 		return RuleErrorAssociationInvalidValue
 	}
-
-	// Validate association doesn't already exist.
-	existingEntry, err := bav.GetUserAssociationByAttributes(transactorPK, metadata)
-	if existingEntry != nil || err != nil {
-		return RuleErrorAssociationAlreadyExists
-	}
 	return nil
 }
 
@@ -377,12 +436,6 @@ func (bav *UtxoView) IsValidCreatePostAssociationMetadata(transactorPK []byte, m
 	if len(metadata.AssociationType) == 0 ||
 		len(metadata.AssociationType) > MaxAssociationValueCharLength {
 		return RuleErrorAssociationInvalidValue
-	}
-
-	// Validate association doesn't already exist.
-	existingEntry, err := bav.GetPostAssociationByAttributes(transactorPK, metadata)
-	if existingEntry != nil || err != nil {
-		return RuleErrorAssociationAlreadyExists
 	}
 	return nil
 }
