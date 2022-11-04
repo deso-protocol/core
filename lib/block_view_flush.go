@@ -75,9 +75,6 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		if err := bav._flushMessageEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
-		if err := bav._flushNewMessageEntriesToDbWithTxn(txn, blockHeight); err != nil {
-			return err
-		}
 		if err := bav._flushBalanceEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
@@ -118,7 +115,13 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushRepostEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
+	if err := bav._flushMessagingGroupEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
 	if err := bav._flushAccessGroupEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushAccessGroupMembersToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
 	// Temporarily flush all DAO Coin Limit orders to badger
@@ -319,70 +322,6 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 	}
 
 	// At this point all of the MessageEntry mappings in the db should be up-to-date.
-
-	return nil
-}
-
-func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	for groupChatMessageKeyIter, messageEntry := range bav.GroupChatMessagesIndex {
-		groupChatMessageKey := groupChatMessageKeyIter
-
-		if err := DBDeleteGroupChatMessagesIndexWithTxn(txn, bav.Snapshot, groupChatMessageKey); err != nil {
-			return errors.Wrapf(
-				err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
-					"for GroupChatMessageKey: %v: ", &groupChatMessageKey)
-		}
-
-		if messageEntry.isDeleted {
-
-		} else {
-			if err := DBPutGroupChatMessagesIndexWithTxn(txn, bav.Snapshot, blockHeight,
-				groupChatMessageKey, messageEntry); err != nil {
-				return errors.Wrapf(
-					err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry into "+
-						"group chat message index with key %v and value %v", groupChatMessageKey, messageEntry)
-			}
-		}
-	}
-
-	for dmThreadKeyIter, messageEntry := range bav.DmThreadIndex {
-		dmThreadKey := dmThreadKeyIter
-
-		if err := DBDeleteDmThreadIndexWithTxn(txn, bav.Snapshot, dmThreadKey); err != nil {
-			return errors.Wrapf(
-				err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
-					"for DmThreadKey: %v: ", &dmThreadKey)
-		}
-
-		if messageEntry.isDeleted {
-
-		} else {
-			if err := DBPutDmThreadIndexWithTxn(txn, bav.Snapshot, blockHeight, dmThreadKey, messageEntry); err != nil {
-				return errors.Wrapf(err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry "+
-					"into dm thread index with key %v and value %v", dmThreadKey, messageEntry)
-			}
-		}
-	}
-
-	for dmMessageKeyIter, messageEntry := range bav.DmMessagesIndex {
-		dmMessageKey := dmMessageKeyIter
-
-		if err := DBDeleteDmMessageIndexWithTxn(txn, bav.Snapshot, dmMessageKey); err != nil {
-			return errors.Wrapf(
-				err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
-					"for DmMessageKey: %v: ", &dmMessageKey)
-		}
-
-		if messageEntry.isDeleted {
-
-		} else {
-			if err := DBPutDmMessageIndexWithTxn(txn, bav.Snapshot, blockHeight, dmMessageKey, messageEntry); err != nil {
-				return errors.Wrapf(
-					err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry "+
-						"into dm message index with key %v and value %v", dmMessageKey, messageEntry)
-			}
-		}
-	}
 
 	return nil
 }
@@ -991,6 +930,8 @@ func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn, blo
 
 func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.DerivedKeyToDerivedEntry))
+	numDeleted := 0
+	numPut := 0
 
 	// Go through all entries in the DerivedKeyToDerivedEntry map and add them to the DB.
 	for derivedKeyMapKey, derivedKeyEntry := range bav.DerivedKeyToDerivedEntry {
@@ -1003,8 +944,6 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn, blockHeig
 				"Problem deleting DerivedKeyEntry %v from db", *derivedKeyEntry)
 		}
 
-		numDeleted := 0
-		numPut := 0
 		if derivedKeyEntry.isDeleted {
 			// Since entry is deleted, there's nothing to do.
 			numDeleted++
@@ -1024,6 +963,73 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn, blockHeig
 	return nil
 }
 
+func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	glog.V(2).Infof("_flushMessagingGroupEntriesToDbWithTxn: flushing %d mappings", len(bav.MessagingGroupKeyToMessagingGroupEntry))
+	numDeleted := 0
+	numPut := 0
+
+	// Go through all entries in MessagingGroupKeyToMessagingGroupEntry and add them to the DB.
+	// These records are part of the DeSo V3 Messages.
+	for messagingGroupKey, messagingGroupEntry := range bav.MessagingGroupKeyToMessagingGroupEntry {
+		// Delete the existing mapping in the DB for this map key, this will be re-added
+		// later if isDeleted=false. Messaging entries can have a list of members, and
+		// we store these members under a separate prefix. To delete a messaging group
+		// we also have to go delete all of the recipients.
+		//
+		// TODO: We should have a single DeleteMappings function in db_utils.go that we push this
+		// complexity into.
+		existingMessagingGroupEntry := DBGetMessagingGroupEntryWithTxn(txn, bav.Snapshot, &messagingGroupKey)
+		if existingMessagingGroupEntry != nil {
+			if err := DBDeleteMessagingGroupEntryWithTxn(txn, bav.Snapshot, &messagingGroupKey); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+					"Problem deleting MessagingGroupEntry %v from db", *messagingGroupEntry)
+			}
+			for _, member := range existingMessagingGroupEntry.MessagingGroupMembers {
+				if err := DBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot,
+					member, existingMessagingGroupEntry); err != nil {
+
+					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+						"Problem deleting MessagingGroupEntry recipients (%v) from db", member)
+				}
+			}
+		}
+
+		if messagingGroupEntry.isDeleted {
+			// Since entry is deleted, there's nothing to do.
+			numDeleted++
+		} else {
+			// The entry isn't deleted so we re-add it to the DB. In particular, we add
+			// all of the recipients.
+			//
+			// TODO: We should have a single PutMappings function in db_utils.go that we push this
+			// complexity into.
+			ownerPublicKey := messagingGroupKey.OwnerPublicKey
+			if err := DBPutMessagingGroupEntryWithTxn(txn, bav.Snapshot, blockHeight,
+				&ownerPublicKey, messagingGroupEntry); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+					"Problem putting MessagingGroupEntry %v to db", *messagingGroupEntry)
+			}
+			for _, recipient := range messagingGroupEntry.MessagingGroupMembers {
+				// Group owner can be one of the recipients, particularly when we want to add the
+				// encrypted key addressed to the owner. This could happen when the group is created
+				// by a derived key, and we want to allow the main owner key to be able to read the chat.
+				if reflect.DeepEqual(recipient.GroupMemberPublicKey[:], ownerPublicKey[:]) {
+					continue
+				}
+				if err := DBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
+					recipient, &ownerPublicKey, messagingGroupEntry); err != nil {
+					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
+						"Problem putting MessagingGroupEntry recipient (%v) to db", recipient)
+				}
+			}
+			numPut++
+		}
+	}
+
+	glog.V(2).Infof("_flushMessagingGroupEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	return nil
+}
+
 func (bav *UtxoView) _flushAccessGroupEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushAccessGroupEntriesToDbWithTxn: flushing %d mappings", len(bav.AccessGroupKeyToAccessGroupEntry))
 	numDeleted := 0
@@ -1039,106 +1045,85 @@ func (bav *UtxoView) _flushAccessGroupEntriesToDbWithTxn(txn *badger.Txn, blockH
 		//
 		// TODO: We should have a single DeleteMappings function in db_utils.go that we push this
 		// complexity into.
-		existingAccessGroupEntry := DBGetAccessGroupEntryWithTxn(txn, bav.Snapshot, &accessGroupKey)
-		if existingAccessGroupEntry != nil {
-			if err := DBDeleteAccessGroupEntryWithTxn(txn, bav.Snapshot, &accessGroupKey); err != nil {
-				return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
-					"Problem deleting AccessGroupEntry %v from db", *accessGroupEntry)
-			}
+		if accessGroupEntry == nil {
+			return fmt.Errorf("UtxoView._flushAccessGroupEntriesToDbWithTxn: accessGroupEntry is nil")
+		}
+		copyAccessGroupEntry := *accessGroupEntry
 
-			if blockHeight >= uint64(bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight) {
-				// After the blockHeight, we store the members of the access group under multiple separate prefixes.
-				// We don't need to delete members here because the group entry itself does not contain a list of
-				// members anymore.
-			} else {
-				for _, member := range existingAccessGroupEntry.DEPRECATED_AccessGroupMembers {
-					// Prior to the fork, group members were stored under the deprecated index. After the fork,
-					// all members are stored in the new membership index. Depending on the blockHeight, we remove
-					// existing entries from the corresponding index.
+		if err := DBDeleteAccessGroupEntryWithTxn(txn, bav.Snapshot,
+			accessGroupKey.AccessGroupOwnerPublicKey, accessGroupKey.AccessGroupKeyName); err != nil {
 
-					if err := DEPRECATEDDBDeleteAccessGroupMemberMappingWithTxn(txn, bav.Snapshot,
-						member, existingAccessGroupEntry); err != nil {
-						return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
-							"Problem deleting AccessGroupEntry recipients (%v) from db", member)
-					}
-
-				}
-			}
+			return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
+				"Problem deleting accessGroupKey %v and accessGroupEntry %v from db",
+				accessGroupKey, copyAccessGroupEntry)
 		}
 
-		// Since entry is deleted, there's nothing to do.
-		if accessGroupEntry.isDeleted {
-			// Increment the number of groups deleted.
+		if copyAccessGroupEntry.isDeleted {
 			numDeleted++
 		} else {
-			// The entry isn't deleted so we re-add it to the DB. In particular, we add
-			// all of the recipients.
-			//
-			// TODO: We should have a single PutMappings function in db_utils.go that we push this
-			// complexity into.
-			ownerPublicKey := &accessGroupKey.OwnerPublicKey
-			if err := DBPutAccessGroupEntryWithTxn(txn, bav.Snapshot, blockHeight,
-				ownerPublicKey, accessGroupEntry); err != nil {
+			if err := DBPutAccessGroupEntryWithTxn(txn, bav.Snapshot, blockHeight, &copyAccessGroupEntry); err != nil {
+
 				return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
-					"Fail while putting group entry. Problem putting AccessGroupEntry %v to db", *accessGroupEntry)
-			}
-			if blockHeight >= uint64(bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight) {
-				// After the blockHeight, we store the members of the access group under multiple separate prefixes.
-				// We don't need to delete members here because the group entry itself does not contain a list of
-				// members anymore.
-			} else {
-				for _, member := range accessGroupEntry.DEPRECATED_AccessGroupMembers {
-					// Prior to the fork, group members were stored under the deprecated index. After the fork,
-					// all members are stored in the new membership index. Depending on the blockheight, we add
-					// entries to the corresponding index.
-					// The membership index allows us to store only the relevant member in the lists - "DEPRECATED_AccessGroupMembers" &
-					// "MuteList" which otherwise could have been pretty bulky to retrieve for every single message.
-					if err := DEPRECATEDDBPutAccessGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
-						member, ownerPublicKey, accessGroupEntry); err != nil {
-						return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
-							"Fail while putting old membership index. Problem putting AccessGroupEntry member (%v) to db", *member)
-					}
-				}
+					"Problem putting accessGroupKey %v and accessGroupEntry %v to db",
+					accessGroupKey, copyAccessGroupEntry)
 			}
 			numPut++
 		}
+		glog.V(2).Infof("_flushAccessGroupEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	}
-
-	// Flushing of indexes introduced after DeSoAccessGroupsBlockHeight.
-	if blockHeight >= uint64(bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight) {
-		// Flush group members
-		if err := bav._flushAccessGroupMembersToDbWithTxn(txn, blockHeight); err != nil {
-			return err
-		}
-		// Flush group member attributes
-		if err := bav._flushAccessGroupMemberAttributesToDbWithTxn(txn, blockHeight); err != nil {
-			return err
-		}
-		// Flush group entry attributes
-		if err := bav._flushAccessGroupEntryAttributesToDbWithTxn(txn, blockHeight); err != nil {
-			return err
-		}
-	}
-
-	glog.V(2).Infof("_flushAccessGroupEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	return nil
 }
 
 func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	glog.V(2).Infof("_flushAccessGroupMembersToDbWithTxn: flushing %d mappings", len(bav.GroupMembershipKeyToAccessGroupMember))
+	numDeleted := 0
+	numPut := 0
+
 	// Flush group members to db.
 	for groupMembershipKey, accessGroupMember := range bav.GroupMembershipKeyToAccessGroupMember {
+		if accessGroupMember == nil {
+			return fmt.Errorf("UtxoView._flushAccessGroupMembersToDbWithTxn:"+
+				" groupMembershipKey: %v, is nil", groupMembershipKey)
+		}
+		copyAccessGroupMember := *accessGroupMember
+
 		// add group member to membership index
-		if err := DBPutAccessGroupMemberInMembershipIndexWithTxn(txn, bav.Snapshot, blockHeight,
-			accessGroupMember, &groupMembershipKey.GroupOwnerPublicKey, &groupMembershipKey.GroupKeyName); err != nil {
+		if err := DBDeleteAccessGroupMemberEntryWithTxn(txn, bav.Snapshot,
+			groupMembershipKey.GroupMemberPublicKey, groupMembershipKey.GroupOwnerPublicKey, groupMembershipKey.GroupKeyName); err != nil {
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
-				"Fail while putting new membership index. Problem putting AccessGroupMember %v to db", *accessGroupMember)
+				"Fail while putting new membership index. Problem putting access group member entry with "+
+				"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
+				groupMembershipKey, copyAccessGroupMember)
+		}
+		if err := DBDeleteAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot,
+			groupMembershipKey.GroupOwnerPublicKey, groupMembershipKey.GroupKeyName, groupMembershipKey.GroupMemberPublicKey); err != nil {
+
+			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
+				"Fail while putting new membership index. Problem putting access group member entry with "+
+				"AccessGroupMembershipKey %v and AccessGroupMember %v to db",
+				groupMembershipKey, copyAccessGroupMember)
 		}
 
 		// add group member to enumeration index
-		if err := DBPutAccessGroupMemberInEnumerationIndexWithTxn(txn, bav.Snapshot, blockHeight,
-			accessGroupMember, &groupMembershipKey.GroupOwnerPublicKey, &groupMembershipKey.GroupKeyName); err != nil {
-			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
-				"Fail while putting new enumeration index. Problem putting AccessGroupMember %v to db", *accessGroupMember)
+		if copyAccessGroupMember.isDeleted {
+			numDeleted++
+		} else {
+			if err := DBPutAccessGroupMemberEntryWithTxn(txn, bav.Snapshot, blockHeight,
+				&copyAccessGroupMember, groupMembershipKey.GroupOwnerPublicKey, groupMembershipKey.GroupKeyName); err != nil {
+
+				return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
+					"Fail while putting new membership index. Problem putting access group member entry with "+
+					"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
+					groupMembershipKey, copyAccessGroupMember)
+			}
+			if err := DBPutAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot, blockHeight,
+				groupMembershipKey.GroupOwnerPublicKey, groupMembershipKey.GroupKeyName, groupMembershipKey.GroupMemberPublicKey); err != nil {
+				return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
+					"Fail while putting new enumeration index. Problem putting access group member entry with "+
+					"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
+					groupMembershipKey, copyAccessGroupMember)
+			}
+			numPut++
 		}
 	}
 	return nil
@@ -1146,55 +1131,55 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 
 func (bav *UtxoView) _flushAccessGroupMemberAttributesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	// Flush group member attributes to db.
-	for enumerationKey, attributeTypeToAttributeEntry := range bav.GroupMemberAttributes {
-		for attributeType, attributeEntry := range attributeTypeToAttributeEntry {
-			// If attributeEntry.IsSet is true, we add the attribute to the DB.
-			if attributeEntry != nil && attributeEntry.IsSet {
-				if err := DBPutAttributeInGroupMemberAttributesIndexWithTxn(txn, bav.Snapshot, blockHeight,
-					&enumerationKey.GroupOwnerPublicKey, &enumerationKey.GroupKeyName, &enumerationKey.GroupMemberPublicKey,
-					attributeType, attributeEntry.Value); err != nil {
-					return errors.Wrapf(err, "UtxoView._flushAccessGroupMemberAttributesToDbWithTxn: "+
-						"Fail while putting group member attribute. Problem putting AccessGroupMemberAttribute %v to db", *attributeEntry)
-				}
-			}
-			// If attributeEntry.IsSet is false, it means that the attribute needs to be deleted from DB.
-			if attributeEntry != nil && !attributeEntry.IsSet {
-				// Delete group member attribute from db.
-				if err := DBDeleteAttributeInGroupMemberAttributesIndexWithTxn(txn, bav.Snapshot, blockHeight,
-					&enumerationKey.GroupOwnerPublicKey, &enumerationKey.GroupKeyName, &enumerationKey.GroupMemberPublicKey,
-					attributeType); err != nil {
-					return errors.Wrapf(err, "UtxoView._flushAccessGroupMemberAttributesToDbWithTxn: "+
-						"Problem deleting group member attribute (%v) from db", attributeType)
-				}
-			}
-		}
-	}
+	//for enumerationKey, attributeTypeToAttributeEntry := range bav.GroupMemberAttributes {
+	//	for attributeType, attributeEntry := range attributeTypeToAttributeEntry {
+	//		// If attributeEntry.IsSet is true, we add the attribute to the DB.
+	//		if attributeEntry != nil && attributeEntry.IsSet {
+	//			if err := DBPutAttributeInGroupMemberAttributesIndexWithTxn(txn, bav.Snapshot, blockHeight,
+	//				&enumerationKey.GroupOwnerPublicKey, &enumerationKey.GroupKeyName, &enumerationKey.GroupMemberPublicKey,
+	//				attributeType, attributeEntry.Value); err != nil {
+	//				return errors.Wrapf(err, "UtxoView._flushAccessGroupMemberAttributesToDbWithTxn: "+
+	//					"Fail while putting group member attribute. Problem putting AccessGroupMemberAttribute %v to db", *attributeEntry)
+	//			}
+	//		}
+	//		// If attributeEntry.IsSet is false, it means that the attribute needs to be deleted from DB.
+	//		if attributeEntry != nil && !attributeEntry.IsSet {
+	//			// Delete group member attribute from db.
+	//			if err := DBDeleteAttributeInGroupMemberAttributesIndexWithTxn(txn, bav.Snapshot, blockHeight,
+	//				&enumerationKey.GroupOwnerPublicKey, &enumerationKey.GroupKeyName, &enumerationKey.GroupMemberPublicKey,
+	//				attributeType); err != nil {
+	//				return errors.Wrapf(err, "UtxoView._flushAccessGroupMemberAttributesToDbWithTxn: "+
+	//					"Problem deleting group member attribute (%v) from db", attributeType)
+	//			}
+	//		}
+	//	}
+	//}
 	return nil
 }
 
 func (bav *UtxoView) _flushAccessGroupEntryAttributesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	// Flush group entry attributes to db.
-	for groupEntryKey, attributeTypeToAttributeEntry := range bav.GroupEntryAttributes {
-		for attributeType, attributeEntry := range attributeTypeToAttributeEntry {
-			// If attributeEntry.IsSet is true, we add the attribute to the DB.
-			if attributeEntry != nil && attributeEntry.IsSet {
-				if err := DBPutAttributeInGroupEntryAttributesIndexWithTxn(txn, bav.Snapshot, uint32(blockHeight),
-					&groupEntryKey.OwnerPublicKey, &groupEntryKey.GroupKeyName, attributeType, attributeEntry.Value); err != nil {
-					return errors.Wrapf(err, "UtxoView._flushAccessGroupEntryAttributesToDbWithTxn: "+
-						"Fail while putting group entry attribute. Problem putting AccessGroupEntryAttribute %v to db", *attributeEntry)
-				}
-			}
-			// If attributeEntry.IsSet is false, it means that the attribute needs to be deleted from DB.
-			if attributeEntry != nil && !attributeEntry.IsSet {
-				// Delete group entry attribute from db.
-				if err := DBDeleteAttributeInGroupEntryAttributesIndexWithTxn(txn, bav.Snapshot, blockHeight,
-					&groupEntryKey.OwnerPublicKey, &groupEntryKey.GroupKeyName, attributeType); err != nil {
-					return errors.Wrapf(err, "UtxoView._flushAccessGroupEntryAttributesToDbWithTxn: "+
-						"Problem deleting group entry attribute (%v) from db", attributeType)
-				}
-			}
-		}
-	}
+	//for groupEntryKey, attributeTypeToAttributeEntry := range bav.GroupEntryAttributes {
+	//	for attributeType, attributeEntry := range attributeTypeToAttributeEntry {
+	//		// If attributeEntry.IsSet is true, we add the attribute to the DB.
+	//		if attributeEntry != nil && attributeEntry.IsSet {
+	//			if err := DBPutAttributeInGroupEntryAttributesIndexWithTxn(txn, bav.Snapshot, uint32(blockHeight),
+	//				&groupEntryKey.AccessGroupOwnerPublicKey, &groupEntryKey.AccessGroupKeyName, attributeType, attributeEntry.Value); err != nil {
+	//				return errors.Wrapf(err, "UtxoView._flushAccessGroupEntryAttributesToDbWithTxn: "+
+	//					"Fail while putting group entry attribute. Problem putting AccessGroupEntryAttribute %v to db", *attributeEntry)
+	//			}
+	//		}
+	//		// If attributeEntry.IsSet is false, it means that the attribute needs to be deleted from DB.
+	//		if attributeEntry != nil && !attributeEntry.IsSet {
+	//			// Delete group entry attribute from db.
+	//			if err := DBDeleteAttributeInGroupEntryAttributesIndexWithTxn(txn, bav.Snapshot, blockHeight,
+	//				&groupEntryKey.AccessGroupOwnerPublicKey, &groupEntryKey.AccessGroupKeyName, attributeType); err != nil {
+	//				return errors.Wrapf(err, "UtxoView._flushAccessGroupEntryAttributesToDbWithTxn: "+
+	//					"Problem deleting group entry attribute (%v) from db", attributeType)
+	//			}
+	//		}
+	//	}
+	//}
 	return nil
 }
 

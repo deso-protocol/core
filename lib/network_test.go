@@ -1192,7 +1192,7 @@ func TestDAOCoinTransfer(t *testing.T) {
 	require.Equal(txMeta, testMeta)
 }
 
-func TestAccessKey(t *testing.T) {
+func TestMessagingKey(t *testing.T) {
 	require := require.New(t)
 
 	m0PrivBytes, _, err := Base58CheckDecode(m0Priv)
@@ -1213,17 +1213,17 @@ func TestAccessKey(t *testing.T) {
 		0x00, 0x01,
 	}
 
-	txMeta := CreateAccessGroupMetadata{
-		AccessPublicKey:     m0PkBytes,
-		AccessGroupKeyName:  keyName,
-		GroupOwnerSignature: signature.Serialize(),
-		AccessGroupMembers:  []*AccessGroupMember{},
+	txMeta := MessagingGroupMetadata{
+		MessagingPublicKey:    m0PkBytes,
+		MessagingGroupKeyName: keyName,
+		GroupOwnerSignature:   signature.Serialize(),
+		MessagingGroupMembers: []*MessagingGroupMember{},
 	}
 
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testTxMeta, err := NewTxnMetadata(TxnTypeCreateAccessGroup)
+	testTxMeta, err := NewTxnMetadata(TxnTypeMessagingGroup)
 	require.NoError(err)
 	err = testTxMeta.FromBytes(data)
 	require.NoError(err)
@@ -1231,12 +1231,12 @@ func TestAccessKey(t *testing.T) {
 	require.NoError(err)
 	require.Equal(data, testData)
 
-	txMeta.AccessGroupMembers = append(txMeta.AccessGroupMembers, &AccessGroupMember{
+	txMeta.MessagingGroupMembers = append(txMeta.MessagingGroupMembers, &MessagingGroupMember{
 		GroupMemberPublicKey: NewPublicKey(m1PkBytes),
 		GroupMemberKeyName:   NewGroupKeyName(keyName),
 		EncryptedKey:         encrypted,
 	})
-	txMeta.AccessGroupMembers = append(txMeta.AccessGroupMembers, &AccessGroupMember{
+	txMeta.MessagingGroupMembers = append(txMeta.MessagingGroupMembers, &MessagingGroupMember{
 		GroupMemberPublicKey: NewPublicKey(m2PkBytes),
 		GroupMemberKeyName:   NewGroupKeyName(keyName),
 		EncryptedKey:         encrypted,
@@ -1244,7 +1244,7 @@ func TestAccessKey(t *testing.T) {
 	data, err = txMeta.ToBytes(false)
 	require.NoError(err)
 
-	testTxMeta, err = NewTxnMetadata(TxnTypeCreateAccessGroup)
+	testTxMeta, err = NewTxnMetadata(TxnTypeMessagingGroup)
 	require.NoError(err)
 	err = testTxMeta.FromBytes(data)
 	require.NoError(err)
