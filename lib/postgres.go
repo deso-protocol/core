@@ -3116,19 +3116,45 @@ func (postAssociation *PGPostAssociation) ToPostAssociationEntry() *PostAssociat
 }
 
 func (postgres *Postgres) GetUserAssociationByID(associationID *BlockHash) (*UserAssociationEntry, error) {
-	return nil, nil // TODO
+	pgAssociation := PGUserAssociation{AssociationID: associationID}
+	if err := postgres.db.Model(&pgAssociation).WherePK().First(); err != nil {
+		return nil, err
+	}
+	return pgAssociation.ToUserAssociationEntry(), nil
 }
 
 func (postgres *Postgres) GetPostAssociationByID(associationID *BlockHash) (*PostAssociationEntry, error) {
-	return nil, nil // TODO
+	pgAssociation := PGPostAssociation{AssociationID: associationID}
+	if err := postgres.db.Model(&pgAssociation).WherePK().First(); err != nil {
+		return nil, err
+	}
+	return pgAssociation.ToPostAssociationEntry(), nil
 }
 
 func (postgres *Postgres) GetUserAssociationByAttributes(associationEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
-	return nil, nil // TODO
+	pgAssociation := PGUserAssociation{}
+	if err := postgres.db.Model(&pgAssociation).
+		Where("transactor_pkid = ?", associationEntry.TransactorPKID).
+		Where("target_user_pkid = ?", associationEntry.TargetUserPKID).
+		Where("association_type = ?", associationEntry.AssociationType).
+		Where("association_value = ?", associationEntry.AssociationValue).
+		First(); err != nil {
+		return nil, err
+	}
+	return pgAssociation.ToUserAssociationEntry(), nil
 }
 
 func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
-	return nil, nil // TODO
+	pgAssociation := PGPostAssociation{}
+	if err := postgres.db.Model(&pgAssociation).
+		Where("transactor_pkid = ?", associationEntry.TransactorPKID).
+		Where("post_hash = ?", associationEntry.PostHash).
+		Where("association_type = ?", associationEntry.AssociationType).
+		Where("association_value = ?", associationEntry.AssociationValue).
+		First(); err != nil {
+		return nil, err
+	}
+	return pgAssociation.ToPostAssociationEntry(), nil
 }
 
 func (postgres *Postgres) flushUserAssociations(tx *pg.Tx, view *UtxoView, blockHeight uint64) error {
