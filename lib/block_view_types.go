@@ -100,8 +100,8 @@ const (
 	EncoderTypeBlockHash
 	EncoderTypeDAOCoinLimitOrderEntry
 	EncoderTypeFilledDAOCoinLimitOrder
-	EncoderTypeUserAssociation
-	EncoderTypePostAssociation
+	EncoderTypeUserAssociationEntry
+	EncoderTypePostAssociationEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -132,8 +132,10 @@ const (
 	EncoderTypeDAOCoinTxindexMetadata
 	EncoderTypeCreateNFTTxindexMetadata
 	EncoderTypeUpdateNFTTxindexMetadata
-	EncoderTypeUserAssociationTxindexMetadata
-	EncoderTypePostAssociationTxindexMetadata
+	EncoderTypeCreateUserAssociationTxindexMetadata
+	EncoderTypeDeleteUserAssociationTxindexMetadata
+	EncoderTypeCreatePostAssociationTxindexMetadata
+	EncoderTypeDeletePostAssociationTxindexMetadata
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndTxIndex
@@ -203,9 +205,9 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &DAOCoinLimitOrderEntry{}
 	case EncoderTypeFilledDAOCoinLimitOrder:
 		return &FilledDAOCoinLimitOrder{}
-	case EncoderTypeUserAssociation:
+	case EncoderTypeUserAssociationEntry:
 		return &UserAssociationEntry{}
-	case EncoderTypePostAssociation:
+	case EncoderTypePostAssociationEntry:
 		return &PostAssociationEntry{}
 	}
 
@@ -257,10 +259,14 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &CreateNFTTxindexMetadata{}
 	case EncoderTypeUpdateNFTTxindexMetadata:
 		return &UpdateNFTTxindexMetadata{}
-	case EncoderTypeUserAssociationTxindexMetadata:
-		return &UserAssociationTxindexMetadata{}
-	case EncoderTypePostAssociationTxindexMetadata:
-		return &PostAssociationTxindexMetadata{}
+	case EncoderTypeCreateUserAssociationTxindexMetadata:
+		return &CreateUserAssociationTxindexMetadata{}
+	case EncoderTypeDeleteUserAssociationTxindexMetadata:
+		return &DeleteUserAssociationTxindexMetadata{}
+	case EncoderTypeCreatePostAssociationTxindexMetadata:
+		return &CreatePostAssociationTxindexMetadata{}
+	case EncoderTypeDeletePostAssociationTxindexMetadata:
+		return &DeletePostAssociationTxindexMetadata{}
 	default:
 		return nil
 	}
@@ -1110,6 +1116,12 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
 	}
 
+	// PrevUserAssociationEntry
+	data = append(data, EncodeToBytes(blockHeight, op.PrevUserAssociationEntry, skipMetadata...)...)
+
+	// PrevPostAssociationEntry
+	data = append(data, EncodeToBytes(blockHeight, op.PrevPostAssociationEntry, skipMetadata...)...)
+
 	return data
 }
 
@@ -1642,6 +1654,22 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 	} else {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FilledDAOCoinLimitOrder")
+	}
+
+	// PrevUserAssociationEntry
+	prevUserAssociationEntry := &UserAssociationEntry{}
+	if exist, err := DecodeFromBytes(prevUserAssociationEntry, rr); exist && err == nil {
+		op.PrevUserAssociationEntry = prevUserAssociationEntry
+	} else if err != nil {
+		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevUserAssociationEntry")
+	}
+
+	// PrevPostAssociationEntry
+	prevPostAssociationEntry := &PostAssociationEntry{}
+	if exist, err := DecodeFromBytes(prevPostAssociationEntry, rr); exist && err == nil {
+		op.PrevPostAssociationEntry = prevPostAssociationEntry
+	} else if err != nil {
+		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevPostAssociationEntry")
 	}
 
 	return nil
@@ -4633,11 +4661,11 @@ func (postAssociation *PostAssociationEntry) GetVersionByte(blockHeight uint64) 
 }
 
 func (userAssociation *UserAssociationEntry) GetEncoderType() EncoderType {
-	return EncoderTypeUserAssociation
+	return EncoderTypeUserAssociationEntry
 }
 
 func (postAssociation *PostAssociationEntry) GetEncoderType() EncoderType {
-	return EncoderTypePostAssociation
+	return EncoderTypePostAssociationEntry
 }
 
 type AssociationMapKey struct {
@@ -4660,4 +4688,96 @@ func (postAssociation *PostAssociationEntry) Eq(other *PostAssociationEntry) boo
 		postAssociation.PostHash.IsEqual(other.PostHash) &&
 		strings.Compare(postAssociation.AssociationType, other.AssociationType) == 0 &&
 		strings.Compare(postAssociation.AssociationValue, other.AssociationValue) == 0
+}
+
+type CreateUserAssociationTxindexMetadata struct {
+	TargetUserPublicKey string
+	AssociationType     string
+	AssociationValue    string
+}
+
+type DeleteUserAssociationTxindexMetadata struct {
+	AssociationID string
+}
+
+type CreatePostAssociationTxindexMetadata struct {
+	PostHashHex      string
+	AssociationType  string
+	AssociationValue string
+}
+
+type DeletePostAssociationTxindexMetadata struct {
+	AssociationID string
+}
+
+func (userAssociationMeta *CreateUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	// TODO
+	return nil
+}
+
+func (userAssociationMeta *DeleteUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	// TODO
+	return nil
+}
+
+func (postAssociationMeta *CreatePostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	// TODO
+	return nil
+}
+
+func (postAssociationMeta *DeletePostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	// TODO
+	return nil
+}
+
+func (userAssociationMeta *CreateUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// TODO
+	return nil
+}
+
+func (userAssociationMeta *DeleteUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// TODO
+	return nil
+}
+
+func (postAssociationMeta *CreatePostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// TODO
+	return nil
+}
+
+func (postAssociationMeta *DeletePostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// TODO
+	return nil
+}
+
+func (userAssociationMeta *CreateUserAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (userAssociationMeta *DeleteUserAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (postAssociationMeta *CreatePostAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (postAssociationMeta *DeletePostAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (userAssociationMeta *CreateUserAssociationTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCreateUserAssociationTxindexMetadata
+}
+
+func (userAssociationMeta *DeleteUserAssociationTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeDeleteUserAssociationTxindexMetadata
+}
+
+func (postAssociationMeta *CreatePostAssociationTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCreatePostAssociationTxindexMetadata
+}
+
+func (postAssociationMeta *DeletePostAssociationTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeDeletePostAssociationTxindexMetadata
 }

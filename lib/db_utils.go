@@ -5428,28 +5428,30 @@ type TransactionMetadata struct {
 	// when looking up output amounts
 	TxnOutputs []*DeSoOutput
 
-	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata       `json:",omitempty"`
-	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata     `json:",omitempty"`
-	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata         `json:",omitempty"`
-	CreatorCoinTransferTxindexMetadata *CreatorCoinTransferTxindexMetadata `json:",omitempty"`
-	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata       `json:",omitempty"`
-	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata          `json:",omitempty"`
-	LikeTxindexMetadata                *LikeTxindexMetadata                `json:",omitempty"`
-	FollowTxindexMetadata              *FollowTxindexMetadata              `json:",omitempty"`
-	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata      `json:",omitempty"`
-	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata        `json:",omitempty"`
-	NFTBidTxindexMetadata              *NFTBidTxindexMetadata              `json:",omitempty"`
-	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
-	NFTTransferTxindexMetadata         *NFTTransferTxindexMetadata         `json:",omitempty"`
-	AcceptNFTTransferTxindexMetadata   *AcceptNFTTransferTxindexMetadata   `json:",omitempty"`
-	BurnNFTTxindexMetadata             *BurnNFTTxindexMetadata             `json:",omitempty"`
-	DAOCoinTxindexMetadata             *DAOCoinTxindexMetadata             `json:",omitempty"`
-	DAOCoinTransferTxindexMetadata     *DAOCoinTransferTxindexMetadata     `json:",omitempty"`
-	CreateNFTTxindexMetadata           *CreateNFTTxindexMetadata           `json:",omitempty"`
-	UpdateNFTTxindexMetadata           *UpdateNFTTxindexMetadata           `json:",omitempty"`
-	DAOCoinLimitOrderTxindexMetadata   *DAOCoinLimitOrderTxindexMetadata   `json:",omitempty"`
-	UserAssociationTxindexMetadata     *UserAssociationTxindexMetadata     `json:",omitempty"`
-	PostAssociationTxindexMetadata     *PostAssociationTxindexMetadata     `json:",omitempty"`
+	BasicTransferTxindexMetadata         *BasicTransferTxindexMetadata         `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata       *BitcoinExchangeTxindexMetadata       `json:",omitempty"`
+	CreatorCoinTxindexMetadata           *CreatorCoinTxindexMetadata           `json:",omitempty"`
+	CreatorCoinTransferTxindexMetadata   *CreatorCoinTransferTxindexMetadata   `json:",omitempty"`
+	UpdateProfileTxindexMetadata         *UpdateProfileTxindexMetadata         `json:",omitempty"`
+	SubmitPostTxindexMetadata            *SubmitPostTxindexMetadata            `json:",omitempty"`
+	LikeTxindexMetadata                  *LikeTxindexMetadata                  `json:",omitempty"`
+	FollowTxindexMetadata                *FollowTxindexMetadata                `json:",omitempty"`
+	PrivateMessageTxindexMetadata        *PrivateMessageTxindexMetadata        `json:",omitempty"`
+	SwapIdentityTxindexMetadata          *SwapIdentityTxindexMetadata          `json:",omitempty"`
+	NFTBidTxindexMetadata                *NFTBidTxindexMetadata                `json:",omitempty"`
+	AcceptNFTBidTxindexMetadata          *AcceptNFTBidTxindexMetadata          `json:",omitempty"`
+	NFTTransferTxindexMetadata           *NFTTransferTxindexMetadata           `json:",omitempty"`
+	AcceptNFTTransferTxindexMetadata     *AcceptNFTTransferTxindexMetadata     `json:",omitempty"`
+	BurnNFTTxindexMetadata               *BurnNFTTxindexMetadata               `json:",omitempty"`
+	DAOCoinTxindexMetadata               *DAOCoinTxindexMetadata               `json:",omitempty"`
+	DAOCoinTransferTxindexMetadata       *DAOCoinTransferTxindexMetadata       `json:",omitempty"`
+	CreateNFTTxindexMetadata             *CreateNFTTxindexMetadata             `json:",omitempty"`
+	UpdateNFTTxindexMetadata             *UpdateNFTTxindexMetadata             `json:",omitempty"`
+	DAOCoinLimitOrderTxindexMetadata     *DAOCoinLimitOrderTxindexMetadata     `json:",omitempty"`
+	CreateUserAssociationTxindexMetadata *CreateUserAssociationTxindexMetadata `json:",omitempty"`
+	DeleteUserAssociationTxindexMetadata *DeleteUserAssociationTxindexMetadata `json:",omitempty"`
+	CreatePostAssociationTxindexMetadata *CreatePostAssociationTxindexMetadata `json:",omitempty"`
+	DeletePostAssociationTxindexMetadata *DeletePostAssociationTxindexMetadata `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -5510,10 +5512,14 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.UpdateNFTTxindexMetadata, skipMetadata...)...)
 	// encoding DAOCoinLimitOrderTxindexMetadata
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinLimitOrderTxindexMetadata, skipMetadata...)...)
-	// encoding UserAssociationTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.UserAssociationTxindexMetadata, skipMetadata...)...)
-	// encoding PostAssociationTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.PostAssociationTxindexMetadata, skipMetadata...)...)
+	// encoding CreateUserAssociationTxindexMetadata
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.CreateUserAssociationTxindexMetadata, skipMetadata...)...)
+	// encoding DeleteUserAssociationTxindexMetadata
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.DeleteUserAssociationTxindexMetadata, skipMetadata...)...)
+	// encoding CreatePostAssociationTxindexMetadata
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.CreatePostAssociationTxindexMetadata, skipMetadata...)...)
+	// encoding DeletePostAssociationTxindexMetadata
+	data = append(data, EncodeToBytes(blockHeight, txnMeta.DeletePostAssociationTxindexMetadata, skipMetadata...)...)
 	return data
 }
 
@@ -5707,19 +5713,33 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinLimitOrderTxindexMetadata")
 	}
-	// decoding UserAssociationTxindexMetadata
-	CopyUserAssociationTxindexMetadata := &UserAssociationTxindexMetadata{}
-	if exist, err := DecodeFromBytes(CopyUserAssociationTxindexMetadata, rr); exist && err == nil {
-		txnMeta.UserAssociationTxindexMetadata = CopyUserAssociationTxindexMetadata
+	// decoding CreateUserAssociationTxindexMetadata
+	CopyCreateUserAssociationTxindexMetadata := &CreateUserAssociationTxindexMetadata{}
+	if exist, err := DecodeFromBytes(CopyCreateUserAssociationTxindexMetadata, rr); exist && err == nil {
+		txnMeta.CreateUserAssociationTxindexMetadata = CopyCreateUserAssociationTxindexMetadata
 	} else {
-		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UserAssociationTxindexMetadata")
+		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreateUserAssociationTxindexMetadata")
 	}
-	// decoding PostAssociationTxindexMetadata
-	CopyPostAssociationTxindexMetadata := &PostAssociationTxindexMetadata{}
-	if exist, err := DecodeFromBytes(CopyPostAssociationTxindexMetadata, rr); exist && err == nil {
-		txnMeta.PostAssociationTxindexMetadata = CopyPostAssociationTxindexMetadata
+	// decoding DeleteUserAssociationTxindexMetadata
+	CopyDeleteUserAssociationTxindexMetadata := &DeleteUserAssociationTxindexMetadata{}
+	if exist, err := DecodeFromBytes(CopyDeleteUserAssociationTxindexMetadata, rr); exist && err == nil {
+		txnMeta.DeleteUserAssociationTxindexMetadata = CopyDeleteUserAssociationTxindexMetadata
 	} else {
-		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading PostAssociationTxindexMetadata")
+		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeleteUserAssociationTxindexMetadata")
+	}
+	// decoding CreatePostAssociationTxindexMetadata
+	CopyCreatePostAssociationTxindexMetadata := &CreatePostAssociationTxindexMetadata{}
+	if exist, err := DecodeFromBytes(CopyCreatePostAssociationTxindexMetadata, rr); exist && err == nil {
+		txnMeta.CreatePostAssociationTxindexMetadata = CopyCreatePostAssociationTxindexMetadata
+	} else {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreatePostAssociationTxindexMetadata")
+	}
+	// decoding DeletePostAssociationTxindexMetadata
+	CopyDeletePostAssociationTxindexMetadata := &DeletePostAssociationTxindexMetadata{}
+	if exist, err := DecodeFromBytes(CopyDeletePostAssociationTxindexMetadata, rr); exist && err == nil {
+		txnMeta.DeletePostAssociationTxindexMetadata = CopyDeletePostAssociationTxindexMetadata
+	} else {
+		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeletePostAssociationTxindexMetadata")
 	}
 	return nil
 }
@@ -8706,52 +8726,4 @@ func DBDeletePostAssociationWithTxn(
 		)
 	}
 	return nil
-}
-
-type UserAssociationTxindexMetadata struct {
-	TargetUserPublicKey string
-	AssociationType     string
-	AssociationValue    string
-}
-
-type PostAssociationTxindexMetadata struct {
-	PostHashHex      string
-	AssociationType  string
-	AssociationValue string
-}
-
-func (userAssociationMeta *UserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	// TODO
-	return nil
-}
-
-func (postAssociationMeta *PostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	// TODO
-	return nil
-}
-
-func (userAssociationMeta *UserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
-	return nil
-}
-
-func (postAssociationMeta *PostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
-	return nil
-}
-
-func (userAssociationMeta *UserAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
-	return 0
-}
-
-func (postAssociationMeta *PostAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
-	return 0
-}
-
-func (userAssociationMeta *UserAssociationTxindexMetadata) GetEncoderType() EncoderType {
-	return EncoderTypeUserAssociationTxindexMetadata
-}
-
-func (postAssociationMeta *PostAssociationTxindexMetadata) GetEncoderType() EncoderType {
-	return EncoderTypePostAssociationTxindexMetadata
 }
