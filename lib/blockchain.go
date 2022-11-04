@@ -4893,3 +4893,151 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 	}
 	return allFeesNanosPerKB[medianPos]
 }
+
+//
+// Associations
+//
+
+func (bc *Blockchain) CreateCreateUserAssociationTxn(
+	transactorPublicKey []byte,
+	metadata *CreateUserAssociationMetadata,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a transaction containing the association fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+	return bc._createAssociationTxn(
+		"CreateCreateUserAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+	)
+}
+
+func (bc *Blockchain) CreateDeleteUserAssociationTxn(
+	transactorPublicKey []byte,
+	metadata *DeleteUserAssociationMetadata,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a transaction containing the association fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+	return bc._createAssociationTxn(
+		"CreateDeleteUserAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+	)
+}
+
+func (bc *Blockchain) CreateCreatePostAssociationTxn(
+	transactorPublicKey []byte,
+	metadata *CreatePostAssociationMetadata,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a transaction containing the association fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+	return bc._createAssociationTxn(
+		"CreateCreatePostAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+	)
+}
+
+func (bc *Blockchain) CreateDeletePostAssociationTxn(
+	transactorPublicKey []byte,
+	metadata *DeletePostAssociationMetadata,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a transaction containing the association fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+	return bc._createAssociationTxn(
+		"CreateDeletePostAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+	)
+}
+
+func (bc *Blockchain) _createAssociationTxn(
+	callingFuncName string,
+	txn *MsgDeSoTxn,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// We don't need to make any tweaks to the amount because
+	// it's basically a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
+		txn, minFeeRateNanosPerKB, mempool,
+	)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"%s: problem adding inputs: %v", callingFuncName, err,
+		)
+	}
+
+	// Validate that the transaction has at least one input, even if it all goes
+	// to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"%s: txn has zero inputs, try increasing the fee rate", callingFuncName,
+		)
+	}
+
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"%s: spend amount is non-zero: %d", callingFuncName, spendAmount,
+		)
+	}
+	return txn, totalInput, changeAmount, fees, nil
+}
