@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -26,6 +28,20 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
+var (
+	// ErrAlreadyStarted is returned when somebody tries to start an already
+	// running service.
+	ErrAlreadyStarted = errors.New("already started")
+	// ErrAlreadyStopped is returned when somebody tries to stop an already
+	// stopped service (without resetting it).
+	ErrAlreadyStopped = errors.New("already stopped")
+	// ErrNodeNeverStarted is returned when somebody tries to find or changge the
+	// running status of the server without never starting it once.
+	ErrNodeNeverStarted = errors.New("never started the node instance")
+	// Error if the atomic compare of swap of the node status fails
+	ErrFailedtoChangeNodeStatus = errors.New("Failed to change the runnnin status of the Node")
+)
+
 type Node struct {
 	Server   *lib.Server
 	ChainDB  *badger.DB
@@ -34,9 +50,11 @@ type Node struct {
 	Config   *Config
 	Postgres *lib.Postgres
 
-	// IsRunning is false when a NewNode is created, set to true on Start(), set to false
-	// after Stop() is called. Mainly used in testing.
-	IsRunning bool
+	// running is false when a NewNode is created, it is set to true on node.Start(),
+	// set to false after Stop() is called. Mainly used in testing.
+	// Use the convinience methods changeRunningStatus/StatusStartToStop/StatusStopToStart to change node status
+	// Use *Node.IsRunning() to retreive the node running status.
+	running *atomic.Bool
 	// runningMutex is held whenever we call Start() or Stop() on the node.
 	runningMutex sync.Mutex
 
@@ -50,6 +68,7 @@ type Node struct {
 
 func NewNode(config *Config) *Node {
 	result := Node{}
+
 	result.Config = config
 	result.Params = config.Params
 	result.internalExitChan = make(chan struct{})
@@ -73,6 +92,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	node.internalExitChan = make(chan struct{})
 	node.nodeMessageChan = make(chan lib.NodeMessage)
+	node.running = &atomic.Bool{}
 
 	// listenToNodeMessages handles the messages received from the engine through the nodeMessageChan.
 	go node.listenToNodeMessages()
@@ -251,7 +271,10 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 			}
 		}
 	}
-	node.IsRunning = true
+	// Change nodes running status to start
+	if err := node.StatusStopToStart(); err != nil {
+		panic(err)
+	}
 
 	if shouldRestart {
 		if node.nodeMessageChan != nil {
@@ -284,14 +307,74 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	}()
 }
 
+// Changes node running status from true to false
+func (node *Node) StatusStartToStop() error {
+	if err := changeRunningStatus(node, true, false); err != nil {
+		glog.Errorf("Error stopping Node -- %v", err)
+		return err
+	}
+	return nil
+}
+
+// Changes node running status from false to true
+func (node *Node) StatusStopToStart() error {
+	if err := changeRunningStatus(node, false, true); err != nil {
+		glog.Errorf("Error stopping Node -- %v", err)
+		return err
+	}
+	return nil
+}
+
+// changes the running status of the node
+func changeRunningStatus(node *Node, currentStatus, newStatus bool) error {
+	// Cannot change status of the node before initializing it
+	// Node is initialized only after calling node.Start()
+	if node.running == nil {
+		return ErrNodeNeverStarted
+	}
+
+	// Cannot change the status of the current and the new status are the same!
+	if currentStatus == newStatus {
+		return errors.New("error invalid input. current and new status values should be different")
+	}
+
+	// No need to change the status if the new status is already the running status
+	if newStatus == node.running.Load() {
+		// cannot change running status to true if the node is already running
+		if newStatus {
+			return ErrAlreadyStarted
+		}
+		// cannot change running status to false if the node is already stopped
+		return ErrAlreadyStopped
+	}
+
+	success := node.running.CompareAndSwap(currentStatus, newStatus)
+	if !success {
+		return ErrFailedtoChangeNodeStatus
+	}
+
+	return nil
+}
+
+// Helper function to check if the node is running.
+// returns false if node.running is not initalized.
+func (node *Node) IsRunning() bool {
+	if node.running == nil {
+		return false
+	}
+	return node.running.Load()
+}
+
 func (node *Node) Stop() {
 	node.runningMutex.Lock()
 	defer node.runningMutex.Unlock()
 
-	if !node.IsRunning {
+	// Change nodes running status to stop
+	if err := node.StatusStartToStop(); err != nil {
+		glog.Errorf("Error stopping Node -- %v", err)
 		return
 	}
-	node.IsRunning = false
+
 	glog.Infof(lib.CLog(lib.Yellow, "Node is shutting down. This might take a minute. Please don't "+
 		"close the node now or else you might corrupt the state."))
 
@@ -353,19 +436,27 @@ func (node *Node) listenToNodeMessages(exitChannels ...*chan struct{}) {
 	case <-node.internalExitChan:
 		break
 	case operation := <-node.nodeMessageChan:
-		if !node.IsRunning {
-			panic("Node.listenToNodeMessages: Node is currently not running, nodeMessageChan should've not been called!")
-		}
-		glog.Infof("Node.listenToNodeMessages: Stopping node")
-		node.Stop()
-		glog.Infof("Node.listenToNodeMessages: Finished stopping node")
 		switch operation {
+		case lib.NodeRestart:
+			if !node.IsRunning() {
+				panic("Node.listenToNodeMessages: Node is currently not running, nodeMessageChan should've not been called!")
+			}
+
+			glog.Infof("Node.listenToNodeMessages: Restarting node.")
+			glog.Infof("Node.listenToNodeMessages: Stopping node")
+			node.Stop()
+			glog.Infof("Node.listenToNodeMessages: Finished stopping node")
+
 		case lib.NodeErase:
+			glog.Infof("Node.listenToNodeMessages: Restarting node with a Database erase.")
+			glog.Infof("Node.listenToNodeMessages: Stopping node")
+			node.Stop()
+			glog.Infof("Node.listenToNodeMessages: Finished stopping node")
+
 			if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
 				glog.Fatal(lib.CLog(lib.Red, fmt.Sprintf("IMPORTANT: Problem removing the directory (%v), you "+
 					"should run `rm -rf %v` to delete it manually. Error: (%v)", node.Config.DataDirectory,
 					node.Config.DataDirectory, err)))
-				return
 			}
 		}
 
