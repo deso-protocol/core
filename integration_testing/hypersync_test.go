@@ -2,31 +2,32 @@ package integration_testing
 
 import (
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 // TestSimpleHyperSync test if a node can successfully hyper sync from another node:
-//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod.
-//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
-//	3. bridge node1 and node2.
-//	4. node2 hypersyncs from node1
-//	5. once done, compare node1 state, db, and checksum matches node2.
+//  1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod.
+//  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
+//  3. bridge node1 and node2.
+//  4. node2 hypersyncs from node1
+//  5. once done, compare node1 state, db, and checksum matches node2.
 func TestSimpleHyperSync(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
+	dbDir1 := getTestDirectory(t, "simple_hyper_sync")
+	dbDir2 := getTestDirectory(t, "simple_hyper_sync_2")
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeHyperSync
 
 	config1.HyperSync = true
@@ -58,28 +59,28 @@ func TestSimpleHyperSync(t *testing.T) {
 }
 
 // TestHyperSyncFromHyperSyncedNode test if a node can successfully hypersync from another hypersynced node:
-//	1. Spawn three nodes node1, node2, node3 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod
-//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
-//	3. bridge node1 and node2.
-//	4. node2 hypersyncs state.
-//	5. once done, bridge node3 and node2 so that node3 hypersyncs from node2.
-//	6. compare node1 state, db, and checksum matches node2, and node3.
+//  1. Spawn three nodes node1, node2, node3 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod
+//  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
+//  3. bridge node1 and node2.
+//  4. node2 hypersyncs state.
+//  5. once done, bridge node3 and node2 so that node3 hypersyncs from node2.
+//  6. compare node1 state, db, and checksum matches node2, and node3.
 func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
-	dbDir3 := getDirectory(t)
+	dbDir1 := getTestDirectory(t, "test_hyper_synced_node")
+	dbDir2 := getTestDirectory(t, "test_hyper_synced_node_2")
+	dbDir3 := getTestDirectory(t, "test_hyper_synced_node_3")
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 	defer os.RemoveAll(dbDir3)
 
-	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
-	config3 := generateConfig(t, 18002, dbDir3, 10)
+	config3 := GenerateTestConfig(t, 18002, dbDir3, 10)
 	config3.SyncType = lib.NodeSyncTypeHyperSyncArchival
 
 	config1.HyperSync = true
@@ -128,23 +129,23 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 }
 
 // TestSimpleHyperSyncRestart test if a node can successfully hyper sync from another node:
-//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod.
-//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
-//	3. bridge node1 and node2.
-//	4. node2 hyper syncs a portion of the state from node1 and then restarts.
-//	5. node2 reconnects to node1 and hypersyncs again.
-//	6. Once node2 finishes sync, compare node1 state, db, and checksum matches node2.
+//  1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod.
+//  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
+//  3. bridge node1 and node2.
+//  4. node2 hyper syncs a portion of the state from node1 and then restarts.
+//  5. node2 reconnects to node1 and hypersyncs again.
+//  6. Once node2 finishes sync, compare node1 state, db, and checksum matches node2.
 func TestSimpleHyperSyncRestart(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
+	dbDir1 := getTestDirectory(t, "test_hyper_sync_restart")
+	dbDir2 := getTestDirectory(t, "test_hyper_sync_restart")
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := generateConfig(t, 18000, dbDir1, 10)
-	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
+	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
 
 	config1.HyperSync = true
 	config1.SyncType = lib.NodeSyncTypeBlockSync
@@ -183,28 +184,28 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 }
 
 // TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer tests if a node can successfully restart while hypersyncing.
-//	1. Spawn three nodes node1, node2, and node3 with max block height of MaxSyncBlockHeight blocks.
-//	2. node1, node3 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
-//	3. bridge node1 and node2
-//	4. node2 hypersyncs from node1 but we restart node2 midway.
-//	5. after restart, bridge node2 with node3 and resume hypersync.
-//	6. once node2 finishes, compare node1, node2, node3 state, db, and checksums are identical.
+//  1. Spawn three nodes node1, node2, and node3 with max block height of MaxSyncBlockHeight blocks.
+//  2. node1, node3 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
+//  3. bridge node1 and node2
+//  4. node2 hypersyncs from node1 but we restart node2 midway.
+//  5. after restart, bridge node2 with node3 and resume hypersync.
+//  6. once node2 finishes, compare node1, node2, node3 state, db, and checksums are identical.
 func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
-	dbDir3 := getDirectory(t)
+	dbDir1 := getTestDirectory(t, "test_hyper_sync_disconnect_switch_peer")
+	dbDir2 := getTestDirectory(t, "test_hyper_sync_disconnect_switch_peer_2")
+	dbDir3 := getTestDirectory(t, "test_hyper_sync_disconnect_switch_peer_3")
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 	defer os.RemoveAll(dbDir3)
 
-	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
-	config3 := generateConfig(t, 18002, dbDir3, 10)
+	config3 := GenerateTestConfig(t, 18002, dbDir3, 10)
 	config3.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.HyperSync = true
@@ -265,13 +266,13 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 //	require := require.New(t)
 //	_ = require
 //
-//	dbDir1 := getDirectory(t)
-//	dbDir2 := getDirectory(t)
+//	dbDir1 := getTestDirectory(t)
+//	dbDir2 := getTestDirectory(t)
 //	defer os.RemoveAll(dbDir1)
 //	defer os.RemoveAll(dbDir2)
 //
-//	config1 := generateConfig(t, 18000, dbDir1, 10)
-//	config2 := generateConfig(t, 18001, dbDir2, 10)
+//	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
+//	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
 //
 //	config1.HyperSync = true
 //	config2.HyperSync = true
@@ -314,13 +315,13 @@ func TestArchivalMode(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
+	dbDir1 := getTestDirectory(t, "test_archival_mode")
+	dbDir2 := getTestDirectory(t, "test_archival_mode_2")
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := generateConfig(t, 18000, dbDir1, 10)
-	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
+	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
 
 	config1.HyperSync = true
 	config2.HyperSync = true
@@ -357,16 +358,16 @@ func TestBlockSyncFromArchivalModeHyperSync(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
-	dbDir3 := getDirectory(t)
+	dbDir1 := getTestDirectory(t, "test_block_sync_archival")
+	dbDir2 := getTestDirectory(t, "test_block_sync_archival_2")
+	dbDir3 := getTestDirectory(t, "test_block_sync_archival_3")
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 	defer os.RemoveAll(dbDir3)
 
-	config1 := generateConfig(t, 18000, dbDir1, 10)
-	config2 := generateConfig(t, 18001, dbDir2, 10)
-	config3 := generateConfig(t, 18002, dbDir3, 10)
+	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
+	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
+	config3 := GenerateTestConfig(t, 18002, dbDir3, 10)
 
 	config1.HyperSync = true
 	config1.SyncType = lib.NodeSyncTypeBlockSync

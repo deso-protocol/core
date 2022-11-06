@@ -2,32 +2,33 @@ package integration_testing
 
 import (
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 // TestSimpleTxIndex test if a node can successfully build txindex after block syncing from another node:
-//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
-//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator, and builds txindex afterwards.
-//	3. bridge node1 and node2
-//	4. node2 syncs MaxSyncBlockHeight blocks from node1, and builds txindex afterwards.
-//	5. compare node1 db and txindex matches node2.
+//  1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
+//  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator, and builds txindex afterwards.
+//  3. bridge node1 and node2
+//  4. node2 syncs MaxSyncBlockHeight blocks from node1, and builds txindex afterwards.
+//  5. compare node1 db and txindex matches node2.
 func TestSimpleTxIndex(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
+	dbDir1 := getTestDirectory(t, "test_simple_tx_index")
+	dbDir2 := getTestDirectory(t, "test_simple_tx_index_2")
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.HyperSync = true
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.HyperSync = true
 	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
 

@@ -1,11 +1,12 @@
 package integration_testing
 
 import (
+	"os"
+	"testing"
+
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 // TestSimpleBlockSync test if a node can mine blocks on regtest
@@ -13,10 +14,10 @@ func TestRegtestMiner(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getDirectory(t)
+	dbDir1 := getTestDirectory(t, "test_regtest_miner")
 	defer os.RemoveAll(dbDir1)
 
-	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
 	config1.Params = &lib.DeSoTestnetParams
 	config1.MaxSyncBlockHeight = 0

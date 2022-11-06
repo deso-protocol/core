@@ -2,31 +2,32 @@ package integration_testing
 
 import (
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 // TestSimpleBlockSync test if a node can successfully sync from another node:
-//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
-//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
-//	3. bridge node1 and node2
-//	4. node2 syncs MaxSyncBlockHeight blocks from node1.
-//	5. compare node1 db matches node2 db.
+//  1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
+//  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
+//  3. bridge node1 and node2
+//  4. node2 syncs MaxSyncBlockHeight blocks from node1.
+//  5. compare node1 db matches node2 db.
 func TestSimpleBlockSync(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
+	dbDir1 := getTestDirectory(t, "block_sync_test")
+	dbDir2 := getTestDirectory(t, "block_sync_test_dir2")
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
@@ -54,25 +55,25 @@ func TestSimpleBlockSync(t *testing.T) {
 }
 
 // TestSimpleSyncRestart tests if a node can successfully restart while syncing blocks.
-//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
-//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
-//	3. bridge node1 and node2
-//	4. node2 syncs between 10 and MaxSyncBlockHeight blocks from node1.
+//  1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
+//  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
+//  3. bridge node1 and node2
+//  4. node2 syncs between 10 and MaxSyncBlockHeight blocks from node1.
 //  5. node2 disconnects from node1 and reboots.
 //  6. node2 reconnects with node1 and syncs remaining blocks.
-//	7. compare node1 db matches node2 db.
+//  7. compare node1 db matches node2 db.
 func TestSimpleSyncRestart(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
+	dbDir1 := getTestDirectory(t, "test_simple_sync_restart")
+	dbDir2 := getTestDirectory(t, "test_simple_sync_restart_2")
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
@@ -105,30 +106,30 @@ func TestSimpleSyncRestart(t *testing.T) {
 
 // TestSimpleSyncDisconnectWithSwitchingToNewPeer tests if a node can successfully restart while syncing blocks, and
 // then connect to a different node and sync the remaining blocks.
-//	1. Spawn three nodes node1, node2, node3 with max block height of MaxSyncBlockHeight blocks.
-//	2. node1 and node3 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
-//	3. bridge node1 and node2
-//	4. node2 syncs between 10 and MaxSyncBlockHeight blocks from node1.
+//  1. Spawn three nodes node1, node2, node3 with max block height of MaxSyncBlockHeight blocks.
+//  2. node1 and node3 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
+//  3. bridge node1 and node2
+//  4. node2 syncs between 10 and MaxSyncBlockHeight blocks from node1.
 //  5. node2 disconnects from node1 and reboots.
 //  6. node2 reconnects with node3 and syncs remaining blocks.
-//	7. compare node1 state matches node2 state.
-//	8. compare node3 state matches node2 state.
+//  7. compare node1 state matches node2 state.
+//  8. compare node3 state matches node2 state.
 func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
-	dbDir3 := getDirectory(t)
+	dbDir1 := getTestDirectory(t, "test_simple_sync_disconnect_switch_new_peer")
+	dbDir2 := getTestDirectory(t, "test_simple_sync_disconnect_switch_new_peer_2")
+	dbDir3 := getTestDirectory(t, "test_simple_sync_disconnect_switch_new_peer_3")
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 	defer os.RemoveAll(dbDir3)
 
-	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeBlockSync
-	config3 := generateConfig(t, 18002, dbDir3, 10)
+	config3 := GenerateTestConfig(t, 18002, dbDir3, 10)
 	config3.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}

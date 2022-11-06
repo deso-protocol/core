@@ -1,12 +1,13 @@
 package integration_testing
 
 import (
-	"github.com/deso-protocol/core/cmd"
-	"github.com/deso-protocol/core/lib"
-	"github.com/stretchr/testify/require"
 	"os"
 	"reflect"
 	"testing"
+
+	"github.com/deso-protocol/core/cmd"
+	"github.com/deso-protocol/core/lib"
+	"github.com/stretchr/testify/require"
 )
 
 // Start blocks to height 5000 and then disconnect
@@ -14,14 +15,14 @@ func TestStateRollback(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
+	dbDir1 := getTestDirectory(t, "get_state_rollback")
+	dbDir2 := getTestDirectory(t, "get_state_rollback_2")
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := generateConfig(t, 18000, dbDir1, 10)
+	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
+	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.MaxSyncBlockHeight = 5000
