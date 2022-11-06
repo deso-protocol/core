@@ -3,6 +3,13 @@ package integration_testing
 import (
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"reflect"
+	"sort"
+	"testing"
+	"time"
+
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
@@ -10,12 +17,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"io/ioutil"
-	"os"
-	"reflect"
-	"sort"
-	"testing"
-	"time"
 )
 
 // This testing suite is the first serious attempt at making a comprehensive functional testing framework for DeSo nodes.
@@ -41,18 +42,18 @@ const MaxSyncBlockHeight = 1500
 const HyperSyncSnapshotPeriod = 1000
 
 // get a random temporary directory.
-func getDirectory(t *testing.T) string {
+func getTestDirectory(t *testing.T, testName string) string {
 	require := require.New(t)
-	dbDir, err := ioutil.TempDir("", "badgerdb")
+	dbDir, err := ioutil.TempDir("", testName)
 	if err != nil {
 		require.NoError(err)
 	}
 	return dbDir
 }
 
-// generateConfig creates a default config for a node, with provided port, db directory, and number of max peers.
+// GenerateTestConfig creates a default config for a node, with provided port, db directory, and number of max peers.
 // It's usually the first step to starting a node.
-func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) *cmd.Config {
+func GenerateTestConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) *cmd.Config {
 	config := &cmd.Config{}
 	params := lib.DeSoMainnetParams
 
@@ -353,7 +354,7 @@ func computeNodeStateChecksum(t *testing.T, node *cmd.Node, blockHeight uint64) 
 
 // Stop the provided node.
 func shutdownNode(t *testing.T, node *cmd.Node) *cmd.Node {
-	if !node.IsRunning {
+	if !node.IsRunning() {
 		t.Fatalf("shutdownNode: can't shutdown, node is already down")
 	}
 
@@ -364,7 +365,7 @@ func shutdownNode(t *testing.T, node *cmd.Node) *cmd.Node {
 
 // Start the provided node.
 func startNode(t *testing.T, node *cmd.Node) *cmd.Node {
-	if node.IsRunning {
+	if node.IsRunning() {
 		t.Fatalf("startNode: node is already running")
 	}
 	// Start the node.
@@ -372,9 +373,9 @@ func startNode(t *testing.T, node *cmd.Node) *cmd.Node {
 	return node
 }
 
-// Restart the provided node.A
+// Restart the provided node.
 func restartNode(t *testing.T, node *cmd.Node) *cmd.Node {
-	if !node.IsRunning {
+	if !node.IsRunning() {
 		t.Fatalf("shutdownNode: can't restart, node already down")
 	}
 
