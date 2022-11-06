@@ -1,12 +1,22 @@
 package cmd
 
 import (
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"testing"
+
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/viper"
-	"os"
-	"path/filepath"
+	"github.com/stretchr/testify/require"
 )
+
+// Global variable that determines the max tip blockheight of syncing nodes throughout test cases.
+const MaxSyncBlockHeight = 1500
+
+// Global variable that allows setting node configuration hypersync snapshot period.
+const HyperSyncSnapshotPeriod = 1000
 
 type Config struct {
 	// Core
@@ -219,4 +229,51 @@ func (config *Config) Print() {
 
 	glog.Infof("Rate Limit Feerate: %d", config.RateLimitFeerate)
 	glog.Infof("Min Feerate: %d", config.MinFeerate)
+}
+
+// GenerateTestConfig creates a default config for a node, with provided port, db directory, and number of max peers.
+// It's usually the first step to starting a node.\
+// FIXME: Duplicating the function to avoid cyclic error in node_test.go. Need to centralizer it.
+func GenerateTestConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) Config {
+	config := Config{}
+	params := lib.DeSoMainnetParams
+
+	params.DNSSeeds = []string{}
+	config.Params = &params
+	config.ProtocolPort = uint16(port)
+	// "/Users/piotr/data_dirs/n98_1"
+	config.DataDirectory = dataDir
+	if err := os.MkdirAll(config.DataDirectory, os.ModePerm); err != nil {
+		t.Fatalf("Could not create data directories (%s): %v", config.DataDirectory, err)
+	}
+	config.TXIndex = false
+	config.HyperSync = false
+	config.MaxSyncBlockHeight = 0
+	config.ConnectIPs = []string{}
+	config.PrivateMode = true
+	config.GlogV = 0
+	config.GlogVmodule = "*bitcoin_manager*=0,*balance*=0,*view*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=0,*blockchain*=0"
+	config.MaxInboundPeers = maxPeers
+	config.TargetOutboundPeers = maxPeers
+	config.StallTimeoutSeconds = 900
+	config.MinFeerate = 1000
+	config.OneInboundPerIp = false
+	config.MaxBlockTemplatesCache = 100
+	config.MaxSyncBlockHeight = 100
+	config.MinBlockUpdateInterval = 10
+	config.SnapshotBlockHeightPeriod = HyperSyncSnapshotPeriod
+	config.MaxSyncBlockHeight = MaxSyncBlockHeight
+	config.SyncType = lib.NodeSyncTypeBlockSync
+	//config.ArchivalMode = true
+
+	return config
+}
+
+func getTestDirectory(t *testing.T, testName string) string {
+	require := require.New(t)
+	dbDir, err := ioutil.TempDir("", testName)
+	if err != nil {
+		require.NoError(err)
+	}
+	return dbDir
 }
