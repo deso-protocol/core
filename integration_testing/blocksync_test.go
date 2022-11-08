@@ -25,15 +25,15 @@ func TestSimpleBlockSync(t *testing.T) {
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
+	config1 := cmd.GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
+	config2 := cmd.GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
+	node1 := cmd.NewNode(&config1)
+	node2 := cmd.NewNode(&config2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -71,15 +71,15 @@ func TestSimpleSyncRestart(t *testing.T) {
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
+	config1 := cmd.GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
+	config2 := cmd.GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
+	node1 := cmd.NewNode(&config1)
+	node2 := cmd.NewNode(&config2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -125,19 +125,19 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	defer os.RemoveAll(dbDir2)
 	defer os.RemoveAll(dbDir3)
 
-	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
+	config1 := cmd.GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
+	config2 := cmd.GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeBlockSync
-	config3 := GenerateTestConfig(t, 18002, dbDir3, 10)
+	config3 := cmd.GenerateTestConfig(t, 18002, dbDir3, 10)
 	config3.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
-	node3 := cmd.NewNode(config3)
+	node1 := cmd.NewNode(&config1)
+	node2 := cmd.NewNode(&config2)
+	node3 := cmd.NewNode(&config3)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
