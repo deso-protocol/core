@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -38,9 +37,31 @@ var (
 	// ErrNodeNeverStarted is returned when somebody tries to find or changge the
 	// running status of the server without never starting it once.
 	ErrNodeNeverStarted = errors.New("never started the node instance")
+	// Cannot set node status to NEVERSTARTED.
+	// NEVERSTARTED is the default status, cannot set deliberately.
+	ErrCannotSetToNeverStarted = errors.New("cannot set the node status to neverstarted")
 	// Error if the atomic compare of swap of the node status fails
-	ErrFailedtoChangeNodeStatus = errors.New("Failed to change the runnnin status of the Node")
+	ErrFailedtoChangeNodeStatus = errors.New("failed to change the status of the node")
+	// Erorr when invalid status is set for node
+	ErrInvalidNodeStatus = errors.New("invalid node status. check cmd/node.go for valid states")
+	// Invalid Status return value for the *Node.LoadStatus() helper function.
+	// byte(255) is a reserved status for invalid status code for the Node
+	INVALIDNODESTATUS = NodeStatus(255)
 )
+
+// Valid status codes for the Node.
+// Status should be retrieved using the helper functions *Node.LoadStatus()
+const (
+	// Status when the node is not initialized or started for the first time
+	NEVERSTARTED NodeStatus = iota // byte(0)
+	// Status when the node is initialized using *Node.Start
+	RUNNING // byte(1)
+	// Status when the node is stopped
+	STOPPED // byte(2)
+)
+
+// custom byte type to indicate the running status of the Node.
+type NodeStatus byte
 
 type Node struct {
 	Server   *lib.Server
@@ -50,11 +71,16 @@ type Node struct {
 	Config   *Config
 	Postgres *lib.Postgres
 
-	// running is false when a NewNode is created, it is set to true on node.Start(),
-	// set to false after Stop() is called. Mainly used in testing.
-	// Use the convinience methods changeRunningStatus/StatusStartToStop/StatusStopToStart to change node status
-	// Use *Node.IsRunning() to retreive the node running status.
-	running *atomic.Bool
+	// status is nil when a NewNode is created, it is initialized and set to RUNNING [byte(1)] on node.Start(),
+	// set to STOPPED [byte(2)] after Stop() is called.
+
+	// Use the convinience methods changeNodeStatus/UpdateStatusRunning/UpdateStatusStopped to change node status.
+	// Use *Node.IsRunning() to check if the node is running.
+	// Use *Node.LoadStatus() to retrieve the status of the node.
+	status *NodeStatus
+	// Held whenver the status of the node is read or altered.
+	// Cannot use runningMutex to safe guard Node status due to deadlocks!
+	statusMutex sync.Mutex
 	// runningMutex is held whenever we call Start() or Stop() on the node.
 	runningMutex sync.Mutex
 
@@ -92,7 +118,6 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	node.internalExitChan = make(chan struct{})
 	node.nodeMessageChan = make(chan lib.NodeMessage)
-	node.running = &atomic.Bool{}
 
 	// listenToNodeMessages handles the messages received from the engine through the nodeMessageChan.
 	go node.listenToNodeMessages()
@@ -271,10 +296,43 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 			}
 		}
 	}
-	// Change nodes running status to start
-	if err := node.StatusStopToStart(); err != nil {
-		panic(err)
+
+	node.statusMutex.Lock()
+	// Load the node status.
+	// This is identify whether the node is initialized for the first time or it's a restart.
+	status, err := node.LoadStatus()
+	// FIXME: Replace panics with return value,
+	// and leave the decision making to the client library of the core whether to crash the app.
+	if err != nil {
+		panic("Failed to load node status")
 	}
+	// Handling the first time initialization and node restart cases separately.
+	// This allows us to log the events and even run exclusive logic if any.
+	switch status {
+	case NEVERSTARTED:
+		glog.Info("Changing node status from NEVERSTARTED to RUNNING...")
+		// The node status is changed from NEVERSTARTED to RUNNING only once
+		// when the node is started for the first time.
+		err = node.UpdateStatusRunning()
+		if err != nil {
+			panic("Failed to initialize the node status to running")
+		}
+	case STOPPED:
+		// This case is called during a node restart.
+		// During restart the Node is first STOPPED before setting the
+		// status again to RUNNING.
+		glog.Info("Changing node status from STOP to RUNNING...")
+		err = node.UpdateStatusRunning()
+		if err != nil {
+			panic("Failed to initialize the node status to running")
+		}
+	default:
+		// Rare occurance. Happens if you set an invalid node status while restarting a node.
+		// cannot start the node if the status of the Node is already set to RUNNING.
+		panic(fmt.Sprintf("Cannot change node status to RUNNING from the current status %v", status))
+
+	}
+	node.statusMutex.Unlock()
 
 	if shouldRestart {
 		if node.nodeMessageChan != nil {
@@ -288,6 +346,10 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	go func() {
 		// If an internalExitChan is triggered then we won't immediately signal a shutdown to the parent context through
 		// the exitChannels. When internal exit is called, we will just restart the node in the background.
+
+		// Example: First call Node.Stop(), then call Node.Start() to internally restart the service.
+		// Since Stop() closes the internalExitChain, the exitChannels sent by the users of the
+		// core library will not closed. Thus ensuring that an internal restart doesn't affect the users of the core library.
 		select {
 		case _, open := <-node.internalExitChan:
 			if !open {
@@ -296,7 +358,9 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		case <-syscallChannel:
 		}
 
+		node.statusMutex.Lock()
 		node.Stop()
+		node.statusMutex.Unlock()
 		for _, channel := range exitChannels {
 			if *channel != nil {
 				close(*channel)
@@ -307,62 +371,125 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	}()
 }
 
-// Changes node running status from true to false
-func (node *Node) StatusStartToStop() error {
-	if err := changeRunningStatus(node, true, false); err != nil {
+// Changes node status to STOPPED.
+// Cannot transition from NEVERSTARTED to STOPPED.
+// Valid transition sequence is NEVERSTARTED->RUNNING->STOPPED.
+func (node *Node) UpdateStatusStopped() error {
+	if err := node.changeNodeStatus(STOPPED); err != nil {
 		glog.Errorf("Error stopping Node -- %v", err)
 		return err
 	}
 	return nil
 }
 
-// Changes node running status from false to true
-func (node *Node) StatusStopToStart() error {
-	if err := changeRunningStatus(node, false, true); err != nil {
+// Changes node status to RUNNING.
+func (node *Node) UpdateStatusRunning() error {
+	if err := node.changeNodeStatus(RUNNING); err != nil {
 		glog.Errorf("Error stopping Node -- %v", err)
 		return err
 	}
 	return nil
+}
+
+// Loads the status of Node.
+// Modifying LoadStatus() and the validateStatus() functions and their tests are hard requirements
+// to add new status codes for the node.
+func (node *Node) LoadStatus() (NodeStatus, error) {
+	// Never initialized the server using *Node.Start()
+	if node.status == nil {
+		return NEVERSTARTED, nil
+	}
+	// using switch and case prevents from adding new invalid codes
+	// without changing the LoadStatus() function and its unit test.
+	switch *node.status {
+	// Node is started using *Node.Start() and not stopped yet.
+	case RUNNING:
+		return RUNNING, nil
+	// Node was once initialized, but currently stopped.
+	// Set to STOPPED on calling *Node.Stop()
+	case STOPPED:
+		return STOPPED, nil
+	// Any other status code apart from the cases above are considered INVALID!!!!
+	default:
+		return INVALIDNODESTATUS, ErrInvalidNodeStatus
+	}
+}
+
+// Verifies whether a status code of the node is a valid status code.
+// Used while changing the status of the node
+// Modifying LoadStatus() and the validateStatus() functions and their tests are hard requirements
+// to add new status codes for the node.
+func validateNodeStatus(status NodeStatus) error {
+	switch status {
+	// Instance of the *Node is created, but not yet intialized using *Node.Start()
+	case NEVERSTARTED:
+		return nil
+	// Node is started using *Node.Start() and not stopped yet.
+	case RUNNING:
+		return nil
+	// Node was once initialized, but currently stopped.
+	// Set to STOPPED on calling *Node.Stop()
+	case STOPPED:
+		return nil
+	// Any other status code apart from the cases above are considered INVALID,
+	default:
+		return ErrInvalidNodeStatus
+	}
 }
 
 // changes the running status of the node
-func changeRunningStatus(node *Node, currentStatus, newStatus bool) error {
-	// Cannot change status of the node before initializing it
-	// Node is initialized only after calling node.Start()
-	if node.running == nil {
+// Always use this function to change the status of the node.
+func (node *Node) changeNodeStatus(newStatus NodeStatus) error {
+	if err := validateNodeStatus(newStatus); err != nil {
+		return err
+	}
+
+	// Cannot deliberately change the status to NEVERSTARTED.
+	// NEVERSTARTED is the default status of the node before the
+	// node is started using *Node.Start().
+	if newStatus == NEVERSTARTED {
+		return ErrCannotSetToNeverStarted
+	}
+	// Load the current status of the Node.
+	status, err := node.LoadStatus()
+	if err != nil {
+		return err
+	}
+
+	// Cannot change the status of the server to STOPPED while it was never initalized
+	// in the first place. Can stop the never only after it's started using *Node.Start().
+	// Valid status transition is NEVERSTARTED -> RUNNING -> STOPPED -> RUNNING
+	if status == NEVERSTARTED && newStatus == STOPPED {
 		return ErrNodeNeverStarted
 	}
 
-	// Cannot change the status of the current and the new status are the same!
-	if currentStatus == newStatus {
-		return errors.New("error invalid input. current and new status values should be different")
-	}
-
-	// No need to change the status if the new status is already the running status
-	if newStatus == node.running.Load() {
-		// cannot change running status to true if the node is already running
-		if newStatus {
+	// No need to change the status if the new status is same as current status.
+	if newStatus == status {
+		switch newStatus {
+		case RUNNING:
 			return ErrAlreadyStarted
+		case STOPPED:
+			return ErrAlreadyStopped
 		}
-		// cannot change running status to false if the node is already stopped
-		return ErrAlreadyStopped
 	}
 
-	success := node.running.CompareAndSwap(currentStatus, newStatus)
-	if !success {
-		return ErrFailedtoChangeNodeStatus
-	}
+	node.status = &newStatus
 
 	return nil
 }
 
 // Helper function to check if the node is running.
-// returns false if node.running is not initalized.
+// returns false if node status is not set to RUNNING
 func (node *Node) IsRunning() bool {
-	if node.running == nil {
+	status, err := node.LoadStatus()
+
+	if err != nil {
 		return false
 	}
-	return node.running.Load()
+	if status == RUNNING {
+		return true
+	}
+	return false
 }
 
 func (node *Node) Stop() {
@@ -370,7 +497,9 @@ func (node *Node) Stop() {
 	defer node.runningMutex.Unlock()
 
 	// Change nodes running status to stop
-	if err := node.StatusStartToStop(); err != nil {
+	// Node has to be in RUNNING status to be able to STOP!
+	// FIXME: Return error in cases where the the node fails to stop. This makes the function testable.
+	if err := node.UpdateStatusStopped(); err != nil {
 		glog.Errorf("Error stopping Node -- %v", err)
 		return
 	}
@@ -438,6 +567,8 @@ func (node *Node) listenToNodeMessages(exitChannels ...*chan struct{}) {
 	case operation := <-node.nodeMessageChan:
 		switch operation {
 		case lib.NodeRestart:
+			// Using Mutex while accessing the Node status to avoid any race conditions
+			node.statusMutex.Lock()
 			if !node.IsRunning() {
 				panic("Node.listenToNodeMessages: Node is currently not running, nodeMessageChan should've not been called!")
 			}
@@ -445,12 +576,19 @@ func (node *Node) listenToNodeMessages(exitChannels ...*chan struct{}) {
 			glog.Infof("Node.listenToNodeMessages: Restarting node.")
 			glog.Infof("Node.listenToNodeMessages: Stopping node")
 			node.Stop()
+			node.statusMutex.Unlock()
 			glog.Infof("Node.listenToNodeMessages: Finished stopping node")
 
 		case lib.NodeErase:
 			glog.Infof("Node.listenToNodeMessages: Restarting node with a Database erase.")
 			glog.Infof("Node.listenToNodeMessages: Stopping node")
-			node.Stop()
+			// cannot stop the node if the node is not already in RUNNING state.
+			// Stop the node and remove the data directory if the server is in RUNNING state.
+			node.statusMutex.Lock()
+			if node.IsRunning() {
+				node.Stop()
+			}
+			node.statusMutex.Unlock()
 			glog.Infof("Node.listenToNodeMessages: Finished stopping node")
 
 			if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
