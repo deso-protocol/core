@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"encoding/hex"
 	"fmt"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -216,11 +215,10 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 	}
 
 	// Construct new association entry from metadata.
-	postHashBytes, _ := hex.DecodeString(txMeta.PostHashHex)
 	currentAssociationEntry := &PostAssociationEntry{
 		AssociationID:    txHash,
 		TransactorPKID:   bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
-		PostHash:         NewBlockHash(postHashBytes),
+		PostHash:         txMeta.PostHash,
 		AssociationType:  txMeta.AssociationType,
 		AssociationValue: txMeta.AssociationValue,
 		BlockHeight:      blockHeight,
@@ -513,12 +511,8 @@ func (bav *UtxoView) IsValidCreatePostAssociationMetadata(transactorPK []byte, m
 		return RuleErrorAssociationInvalidTransactor
 	}
 
-	// Validate PostHashHex.
-	postHashBytes, err := hex.DecodeString(metadata.PostHashHex)
-	if err != nil {
-		return RuleErrorPostAssociationInvalidPost
-	}
-	postEntry := bav.GetPostEntryForPostHash(NewBlockHash(postHashBytes))
+	// Validate PostHash.
+	postEntry := bav.GetPostEntryForPostHash(metadata.PostHash)
 	if postEntry == nil || postEntry.isDeleted {
 		return RuleErrorPostAssociationInvalidPost
 	}
@@ -613,10 +607,9 @@ func (bav *UtxoView) GetUserAssociationByAttributes(transactorPK []byte, metadat
 func (bav *UtxoView) GetPostAssociationByAttributes(transactorPK []byte, metadata *CreatePostAssociationMetadata) (*PostAssociationEntry, error) {
 	// Convert metadata to association entry. At this point, we know the metadata is
 	// already validated: PKIDs and posts exist and string are of an acceptable length.
-	postHashBytes, _ := hex.DecodeString(metadata.PostHashHex)
 	associationEntry := &PostAssociationEntry{
 		TransactorPKID:   bav.GetPKIDForPublicKey(transactorPK).PKID,
-		PostHash:         bav.GetPostEntryForPostHash(NewBlockHash(postHashBytes)).PostHash,
+		PostHash:         metadata.PostHash,
 		AssociationType:  metadata.AssociationType,
 		AssociationValue: metadata.AssociationValue,
 	}

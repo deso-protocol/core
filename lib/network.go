@@ -6608,7 +6608,7 @@ type DeleteUserAssociationMetadata struct {
 }
 
 type CreatePostAssociationMetadata struct {
-	PostHashHex      string
+	PostHash         *BlockHash
 	AssociationType  string
 	AssociationValue string
 }
@@ -6651,7 +6651,7 @@ func (txnData *DeleteUserAssociationMetadata) ToBytes(preSignature bool) ([]byte
 
 func (txnData *CreatePostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
-	data = append(data, EncodeByteArray([]byte(txnData.PostHashHex))...)
+	data = append(data, EncodeByteArray(txnData.PostHash.ToBytes())...)
 	data = append(data, EncodeByteArray([]byte(txnData.AssociationType))...)
 	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	data = append(data, EncodeByteArray([]byte(txnData.AssociationValue))...)

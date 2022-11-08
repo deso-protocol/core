@@ -35,7 +35,7 @@ func init() {
 		_, err = db.Exec(`
 			CREATE TABLE pg_metadata_create_post_association (
 				transaction_hash  BYTEA PRIMARY KEY,
-				post_hash_hex     TEXT NOT NULL,
+				post_hash         BYTEA NOT NULL,
 				association_type  TEXT NOT NULL,
 				association_value TEXT NOT NULL
 			);
