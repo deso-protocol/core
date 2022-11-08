@@ -1381,7 +1381,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 			txMeta := txn.TxnMeta.(*CreatePostAssociationMetadata)
 			metadataCreatePostAssociations = append(metadataCreatePostAssociations, &PGMetadataCreatePostAssociation{
 				TransactionHash:  txnHash,
-				PostHashHex:      txMeta.PostHashHex,
+				PostHash:         txMeta.PostHash,
 				AssociationType:  txMeta.AssociationType,
 				AssociationValue: txMeta.AssociationValue,
 			})
@@ -3037,7 +3037,7 @@ type PGMetadataCreatePostAssociation struct {
 	tableName struct{} `pg:"pg_metadata_create_post_association"`
 
 	TransactionHash  *BlockHash `pg:",pk,type:bytea"`
-	PostHashHex      string     `pg:",use_zero"`
+	PostHash         *BlockHash `pg:",type:bytea"`
 	AssociationType  string     `pg:",use_zero"`
 	AssociationValue string     `pg:",use_zero"`
 }

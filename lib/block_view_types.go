@@ -4789,13 +4789,13 @@ func (associationEntry *PostAssociationEntry) Eq(other *PostAssociationEntry) bo
 }
 
 type CreateUserAssociationTxindexMetadata struct {
-	TargetUserPublicKey string
-	AssociationType     string
-	AssociationValue    string
+	TargetUserPublicKeyBase58Check string
+	AssociationType                string
+	AssociationValue               string
 }
 
 type DeleteUserAssociationTxindexMetadata struct {
-	AssociationID string
+	AssociationIDHex string
 }
 
 type CreatePostAssociationTxindexMetadata struct {
@@ -4805,12 +4805,12 @@ type CreatePostAssociationTxindexMetadata struct {
 }
 
 type DeletePostAssociationTxindexMetadata struct {
-	AssociationID string
+	AssociationIDHex string
 }
 
 func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
-	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.TargetUserPublicKey))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.TargetUserPublicKeyBase58Check))...)
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
 	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
@@ -4820,7 +4820,7 @@ func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawEncodeWit
 
 func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
-	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationID))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationIDHex))...)
 	return data
 }
 
@@ -4836,27 +4836,99 @@ func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawEncodeWit
 
 func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
-	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationID))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationIDHex))...)
 	return data
 }
 
 func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
+	// TargetUserPublicKeyBase58Check
+	targetUserPublicKeyBase58Check, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading TargetUserPublicKeyBas58Check: ")
+	}
+	associationTxindexMeta.TargetUserPublicKeyBase58Check = string(targetUserPublicKeyBase58Check)
+
+	// AssociationType
+	associationType, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AssociationType: ")
+	}
+	associationTxindexMeta.AssociationType = string(associationType)
+
+	_, err = rr.ReadByte()
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AssociationType null terminator byte: ")
+	}
+
+	// AssociationValue
+	associationValue, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AssociationValue: ")
+	}
+	associationTxindexMeta.AssociationValue = string(associationValue)
+
+	_, err = rr.ReadByte()
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AssociationValue null terminator byte: ")
+	}
+
 	return nil
 }
 
 func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
+	// AssociationIDHex
+	associationIDHex, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationTxindexMetadata.Decode: Problem reading AssociationIDHex: ")
+	}
+	associationTxindexMeta.AssociationIDHex = string(associationIDHex)
+
 	return nil
 }
 
 func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
+	// PostHashHex
+	postHashHex, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading PostHashHex: ")
+	}
+	associationTxindexMeta.PostHashHex = string(postHashHex)
+
+	// AssociationType
+	associationType, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AssociationType: ")
+	}
+	associationTxindexMeta.AssociationType = string(associationType)
+
+	_, err = rr.ReadByte()
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AssociationType null terminator byte: ")
+	}
+
+	// AssociationValue
+	associationValue, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AssociationValue: ")
+	}
+	associationTxindexMeta.AssociationValue = string(associationValue)
+
+	_, err = rr.ReadByte()
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AssociationValue null terminator byte: ")
+	}
+
 	return nil
 }
 
 func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
+	// AssociationIDHex
+	associationIDHex, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationTxindexMetadata.Decode: Problem reading AssociationIDHex: ")
+	}
+	associationTxindexMeta.AssociationIDHex = string(associationIDHex)
+
 	return nil
 }
 
