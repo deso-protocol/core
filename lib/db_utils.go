@@ -8347,48 +8347,96 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 
 func DBKeyForUserAssociationByID(userAssociation *UserAssociationEntry) []byte {
 	// AssociationID
-	data := []byte{}
-	data = append(data, Prefixes.PrefixUserAssociationByID...)
-	data = append(data, userAssociation.AssociationID.ToBytes()...)
-	return data
+	var key []byte
+	key = append(key, Prefixes.PrefixUserAssociationByID...)
+	key = append(key, userAssociation.AssociationID.ToBytes()...)
+	return key
 }
 
-func DBKeyForUserAssociationByTransactorPKID(userAssociation *UserAssociationEntry) []byte {
+func DBKeyForUserAssociationByTransactorPKID(associationEntry *UserAssociationEntry) []byte {
 	// TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
-	return nil // TODO
+	var key []byte
+	key = append(key, Prefixes.PrefixUserAssociationByTransactorPKID...)
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, []byte(associationEntry.AssociationType)...)
+	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, []byte(associationEntry.AssociationValue)...)
+	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
+	return key
 }
 
-func DBKeyForUserAssociationByTargetUserPKID(userAssociation *UserAssociationEntry) []byte {
+func DBKeyForUserAssociationByTargetUserPKID(associationEntry *UserAssociationEntry) []byte {
 	// TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
-	return nil // TODO
+	var key []byte
+	key = append(key, Prefixes.PrefixUserAssociationByTargetUserPKID...)
+	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
+	key = append(key, []byte(associationEntry.AssociationType)...)
+	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, []byte(associationEntry.AssociationValue)...)
+	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	return key
 }
 
-func DBKeyForUserAssociationByUserPKIDs(userAssociation *UserAssociationEntry) []byte {
+func DBKeyForUserAssociationByUserPKIDs(associationEntry *UserAssociationEntry) []byte {
 	// TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
-	return nil // TODO
+	var key []byte
+	key = append(key, Prefixes.PrefixUserAssociationByUserPKIDs...)
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
+	key = append(key, []byte(associationEntry.AssociationType)...)
+	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, []byte(associationEntry.AssociationValue)...)
+	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	return key
 }
 
-func DBKeyForPostAssociationByID(postAssociation *PostAssociationEntry) []byte {
+func DBKeyForPostAssociationByID(associationEntry *PostAssociationEntry) []byte {
 	// AssociationID
-	data := []byte{}
-	data = append(data, Prefixes.PrefixPostAssociationByID...)
-	data = append(data, postAssociation.AssociationID.ToBytes()...)
-	return data
+	var key []byte
+	key = append(key, Prefixes.PrefixPostAssociationByID...)
+	key = append(key, associationEntry.AssociationID.ToBytes()...)
+	return key
 }
 
-func DBKeyForPostAssociationByTransactorPKID(postAssociation *PostAssociationEntry) []byte {
-	// TransactorPKID, AssociationType, AssociationValue, PostHashHex
-	return nil // TODO
+func DBKeyForPostAssociationByTransactorPKID(associationEntry *PostAssociationEntry) []byte {
+	// TransactorPKID, AssociationType, AssociationValue, PostHash
+	var key []byte
+	key = append(key, Prefixes.PrefixPostAssociationByTransactorPKID...)
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, []byte(associationEntry.AssociationType)...)
+	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, []byte(associationEntry.AssociationValue)...)
+	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.PostHash.ToBytes()...)
+	return key
 }
 
-func DBKeyForPostAssociationByPostHashHex(postAssociation *PostAssociationEntry) []byte {
-	// PostHashHex, AssociationType, AssociationValue, TransactorPKID
-	return nil // TODO
+func DBKeyForPostAssociationByPostHashHex(associationEntry *PostAssociationEntry) []byte {
+	// PostHash, AssociationType, AssociationValue, TransactorPKID
+	var key []byte
+	key = append(key, Prefixes.PrefixPostAssociationByPostHashHex...)
+	key = append(key, associationEntry.PostHash.ToBytes()...)
+	key = append(key, []byte(associationEntry.AssociationType)...)
+	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, []byte(associationEntry.AssociationValue)...)
+	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	return key
 }
 
-func DBKeyForPostAssociationByAssociationType(postAssociation *PostAssociationEntry) []byte {
-	// AssociationType, AssociationValue, PostHashHex, TransactorPKID
-	return nil // TODO
+func DBKeyForPostAssociationByAssociationType(associationEntry *PostAssociationEntry) []byte {
+	// AssociationType, AssociationValue, PostHash, TransactorPKID
+	var key []byte
+	key = append(key, Prefixes.PrefixPostAssociationByAssociationType...)
+	key = append(key, []byte(associationEntry.AssociationType)...)
+	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, []byte(associationEntry.AssociationValue)...)
+	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.PostHash.ToBytes()...)
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	return key
 }
 
 func DBGetUserAssociationByID(handle *badger.DB, snap *Snapshot, associationID *BlockHash) (*UserAssociationEntry, error) {
