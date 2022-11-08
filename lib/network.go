@@ -6634,23 +6634,35 @@ func (txnData *DeletePostAssociationMetadata) GetTxnType() TxnType {
 }
 
 func (txnData *CreateUserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	// TODO
-	return nil, nil
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.TargetUserPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray([]byte(txnData.AssociationType))...)
+	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+	data = append(data, EncodeByteArray([]byte(txnData.AssociationValue))...)
+	data = append(data, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	return data, nil
 }
 
 func (txnData *DeleteUserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	// TODO
-	return nil, nil
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.AssociationID.ToBytes())...)
+	return data, nil
 }
 
 func (txnData *CreatePostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	// TODO
-	return nil, nil
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(txnData.PostHashHex))...)
+	data = append(data, EncodeByteArray([]byte(txnData.AssociationType))...)
+	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+	data = append(data, EncodeByteArray([]byte(txnData.AssociationValue))...)
+	data = append(data, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	return data, nil
 }
 
 func (txnData *DeletePostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	// TODO
-	return nil, nil
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.AssociationID.ToBytes())...)
+	return data, nil
 }
 
 func (txnData *CreateUserAssociationMetadata) FromBytes(data []byte) error {

@@ -4608,63 +4608,161 @@ type PostAssociationEntry struct {
 	isDeleted        bool
 }
 
-func (userAssociation *UserAssociationEntry) Copy() *UserAssociationEntry {
+func (associationEntry *UserAssociationEntry) Copy() *UserAssociationEntry {
 	return &UserAssociationEntry{
-		AssociationID:    userAssociation.AssociationID.NewBlockHash(),
-		TransactorPKID:   userAssociation.TransactorPKID.NewPKID(),
-		TargetUserPKID:   userAssociation.TargetUserPKID.NewPKID(),
-		AssociationType:  strings.Clone(userAssociation.AssociationType),
-		AssociationValue: strings.Clone(userAssociation.AssociationValue),
-		BlockHeight:      userAssociation.BlockHeight,
-		isDeleted:        userAssociation.isDeleted,
+		AssociationID:    associationEntry.AssociationID.NewBlockHash(),
+		TransactorPKID:   associationEntry.TransactorPKID.NewPKID(),
+		TargetUserPKID:   associationEntry.TargetUserPKID.NewPKID(),
+		AssociationType:  strings.Clone(associationEntry.AssociationType),
+		AssociationValue: strings.Clone(associationEntry.AssociationValue),
+		BlockHeight:      associationEntry.BlockHeight,
+		isDeleted:        associationEntry.isDeleted,
 	}
 }
 
-func (postAssociation *PostAssociationEntry) Copy() *PostAssociationEntry {
+func (associationEntry *PostAssociationEntry) Copy() *PostAssociationEntry {
 	return &PostAssociationEntry{
-		AssociationID:    postAssociation.AssociationID.NewBlockHash(),
-		TransactorPKID:   postAssociation.TransactorPKID.NewPKID(),
-		PostHash:         postAssociation.PostHash.NewBlockHash(),
-		AssociationType:  strings.Clone(postAssociation.AssociationType),
-		AssociationValue: strings.Clone(postAssociation.AssociationValue),
-		BlockHeight:      postAssociation.BlockHeight,
-		isDeleted:        postAssociation.isDeleted,
+		AssociationID:    associationEntry.AssociationID.NewBlockHash(),
+		TransactorPKID:   associationEntry.TransactorPKID.NewPKID(),
+		PostHash:         associationEntry.PostHash.NewBlockHash(),
+		AssociationType:  strings.Clone(associationEntry.AssociationType),
+		AssociationValue: strings.Clone(associationEntry.AssociationValue),
+		BlockHeight:      associationEntry.BlockHeight,
+		isDeleted:        associationEntry.isDeleted,
 	}
 }
 
-func (userAssociation *UserAssociationEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+func (associationEntry *UserAssociationEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.AssociationID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.TransactorPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.TargetUserPKID, skipMetadata...)...)
+	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationType))...)
+	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationValue))...)
+	data = append(data, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	data = append(data, UintToBuf(uint64(associationEntry.BlockHeight))...)
+	return data
+}
+
+func (associationEntry *PostAssociationEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.AssociationID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.TransactorPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.PostHash, skipMetadata...)...)
+	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationType))...)
+	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationValue))...)
+	data = append(data, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	data = append(data, UintToBuf(uint64(associationEntry.BlockHeight))...)
+	return data
+}
+
+func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	// Association
+	associationID := &BlockHash{}
+	if exist, err := DecodeFromBytes(associationID, rr); exist && err == nil {
+		associationEntry.AssociationID = associationID
+	} else if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: problem reading AssociationID")
+	}
+
+	// TransactorPKID
+	transactorPKID := &PKID{}
+	if exist, err := DecodeFromBytes(transactorPKID, rr); exist && err == nil {
+		associationEntry.TransactorPKID = transactorPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: problem reading TransactorPKID")
+	}
+
+	// TargetUserPKID
+	targetUserPKID := &PKID{}
+	if exist, err := DecodeFromBytes(targetUserPKID, rr); exist && err == nil {
+		associationEntry.TargetUserPKID = targetUserPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: problem reading TargetUserPKID")
+	}
+
+	// AssociationType
 	// TODO
+
+	// AssociationValue
+	// TODO
+
+	// BlockHeight
+	entryBlockHeight, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: problem reading BlockHeight")
+	}
+	if blockHeight > uint64(math.MaxUint32) {
+		return fmt.Errorf("UserAssociationEntry.Decode: invalid block height %d: greater than max uint32", entryBlockHeight)
+	}
+	associationEntry.BlockHeight = uint32(blockHeight)
+
 	return nil
 }
 
-func (postAssociation *PostAssociationEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	// Association
+	associationID := &BlockHash{}
+	if exist, err := DecodeFromBytes(associationID, rr); exist && err == nil {
+		associationEntry.AssociationID = associationID
+	} else if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: problem reading AssociationID")
+	}
+
+	// TransactorPKID
+	transactorPKID := &PKID{}
+	if exist, err := DecodeFromBytes(transactorPKID, rr); exist && err == nil {
+		associationEntry.TransactorPKID = transactorPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: problem reading TransactorPKID")
+	}
+
+	// PostHash
+	postHash := &BlockHash{}
+	if exist, err := DecodeFromBytes(postHash, rr); exist && err == nil {
+		associationEntry.PostHash = postHash
+	} else if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: problem reading PostHash")
+	}
+
+	// AssociationType
 	// TODO
+
+	// AssociationValue
+	// TODO
+
+	// BlockHeight
+	entryBlockHeight, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: problem reading BlockHeight")
+	}
+	if blockHeight > uint64(math.MaxUint32) {
+		return fmt.Errorf("PostAssociationEntry.Decode: invalid block height %d: greater than max uint32", entryBlockHeight)
+	}
+	associationEntry.BlockHeight = uint32(blockHeight)
+
 	return nil
 }
 
-func (userAssociation *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
-	return nil
-}
-
-func (postAssociation *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
-	return nil
-}
-
-func (userAssociation *UserAssociationEntry) GetVersionByte(blockHeight uint64) byte {
+func (associationEntry *UserAssociationEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
-func (postAssociation *PostAssociationEntry) GetVersionByte(blockHeight uint64) byte {
+func (associationEntry *PostAssociationEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
-func (userAssociation *UserAssociationEntry) GetEncoderType() EncoderType {
+func (associationEntry *UserAssociationEntry) GetEncoderType() EncoderType {
 	return EncoderTypeUserAssociationEntry
 }
 
-func (postAssociation *PostAssociationEntry) GetEncoderType() EncoderType {
+func (associationEntry *PostAssociationEntry) GetEncoderType() EncoderType {
 	return EncoderTypePostAssociationEntry
 }
 
@@ -4672,22 +4770,22 @@ type AssociationMapKey struct {
 	AssociationID BlockHash
 }
 
-func (userAssociation *UserAssociationEntry) Eq(other *UserAssociationEntry) bool {
+func (associationEntry *UserAssociationEntry) Eq(other *UserAssociationEntry) bool {
 	// Compare if two user association entries are equal. Note that their
 	// BlockHeights can differ, and we would still consider them equal.
-	return userAssociation.TransactorPKID.Eq(other.TransactorPKID) &&
-		userAssociation.TargetUserPKID.Eq(other.TargetUserPKID) &&
-		strings.Compare(userAssociation.AssociationType, other.AssociationType) == 0 &&
-		strings.Compare(userAssociation.AssociationValue, other.AssociationValue) == 0
+	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
+		associationEntry.TargetUserPKID.Eq(other.TargetUserPKID) &&
+		strings.Compare(associationEntry.AssociationType, other.AssociationType) == 0 &&
+		strings.Compare(associationEntry.AssociationValue, other.AssociationValue) == 0
 }
 
-func (postAssociation *PostAssociationEntry) Eq(other *PostAssociationEntry) bool {
+func (associationEntry *PostAssociationEntry) Eq(other *PostAssociationEntry) bool {
 	// Compare if two post association entries are equal. Note that their
 	// BlockHeights can differ, and we would still consider them equal.
-	return postAssociation.TransactorPKID.Eq(other.TransactorPKID) &&
-		postAssociation.PostHash.IsEqual(other.PostHash) &&
-		strings.Compare(postAssociation.AssociationType, other.AssociationType) == 0 &&
-		strings.Compare(postAssociation.AssociationValue, other.AssociationValue) == 0
+	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
+		associationEntry.PostHash.IsEqual(other.PostHash) &&
+		strings.Compare(associationEntry.AssociationType, other.AssociationType) == 0 &&
+		strings.Compare(associationEntry.AssociationValue, other.AssociationValue) == 0
 }
 
 type CreateUserAssociationTxindexMetadata struct {
@@ -4710,74 +4808,86 @@ type DeletePostAssociationTxindexMetadata struct {
 	AssociationID string
 }
 
-func (userAssociationMeta *CreateUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.TargetUserPublicKey))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
+	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
+	data = append(data, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	return data
+}
+
+func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationID))...)
+	return data
+}
+
+func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.PostHashHex))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
+	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
+	data = append(data, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	return data
+}
+
+func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationID))...)
+	return data
+}
+
+func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	// TODO
 	return nil
 }
 
-func (userAssociationMeta *DeleteUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	// TODO
 	return nil
 }
 
-func (postAssociationMeta *CreatePostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	// TODO
 	return nil
 }
 
-func (postAssociationMeta *DeletePostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	// TODO
 	return nil
 }
 
-func (userAssociationMeta *CreateUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
-	return nil
-}
-
-func (userAssociationMeta *DeleteUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
-	return nil
-}
-
-func (postAssociationMeta *CreatePostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
-	return nil
-}
-
-func (postAssociationMeta *DeletePostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// TODO
-	return nil
-}
-
-func (userAssociationMeta *CreateUserAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
-func (userAssociationMeta *DeleteUserAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
-func (postAssociationMeta *CreatePostAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
-func (postAssociationMeta *DeletePostAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
-func (userAssociationMeta *CreateUserAssociationTxindexMetadata) GetEncoderType() EncoderType {
+func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeCreateUserAssociationTxindexMetadata
 }
 
-func (userAssociationMeta *DeleteUserAssociationTxindexMetadata) GetEncoderType() EncoderType {
+func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeDeleteUserAssociationTxindexMetadata
 }
 
-func (postAssociationMeta *CreatePostAssociationTxindexMetadata) GetEncoderType() EncoderType {
+func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeCreatePostAssociationTxindexMetadata
 }
 
-func (postAssociationMeta *DeletePostAssociationTxindexMetadata) GetEncoderType() EncoderType {
+func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeDeletePostAssociationTxindexMetadata
 }
