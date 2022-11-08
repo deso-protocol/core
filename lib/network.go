@@ -6637,9 +6637,7 @@ func (txnData *CreateUserAssociationMetadata) ToBytes(preSignature bool) ([]byte
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.TargetUserPublicKey.ToBytes())...)
 	data = append(data, EncodeByteArray([]byte(txnData.AssociationType))...)
-	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	data = append(data, EncodeByteArray([]byte(txnData.AssociationValue))...)
-	data = append(data, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	return data, nil
 }
 
@@ -6653,9 +6651,7 @@ func (txnData *CreatePostAssociationMetadata) ToBytes(preSignature bool) ([]byte
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.PostHash.ToBytes())...)
 	data = append(data, EncodeByteArray([]byte(txnData.AssociationType))...)
-	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	data = append(data, EncodeByteArray([]byte(txnData.AssociationValue))...)
-	data = append(data, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	return data, nil
 }
 
@@ -6666,22 +6662,82 @@ func (txnData *DeletePostAssociationMetadata) ToBytes(preSignature bool) ([]byte
 }
 
 func (txnData *CreateUserAssociationMetadata) FromBytes(data []byte) error {
-	// TODO
+	rr := bytes.NewReader(data)
+
+	// TargetUserPublicKey
+	targetUserPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading TargetUserPublicKey: ")
+	}
+	txnData.TargetUserPublicKey = NewPublicKey(targetUserPublicKeyBytes)
+
+	// AssociationType
+	associationTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AssociationType: ")
+	}
+	txnData.AssociationType = string(associationTypeBytes)
+
+	// AssociationValue
+	associationValueBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AssociationValue: ")
+	}
+	txnData.AssociationValue = string(associationValueBytes)
+
 	return nil
 }
 
 func (txnData *DeleteUserAssociationMetadata) FromBytes(data []byte) error {
-	// TODO
+	rr := bytes.NewReader(data)
+
+	// AssociationID
+	associationIDBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationMetadata.FromBytes: Problem reading AssociationID: ")
+	}
+	txnData.AssociationID = NewBlockHash(associationIDBytes)
+
 	return nil
 }
 
 func (txnData *CreatePostAssociationMetadata) FromBytes(data []byte) error {
-	// TODO
+	rr := bytes.NewReader(data)
+
+	// PostHash
+	postHashBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading PostHash: ")
+	}
+	txnData.PostHash = NewBlockHash(postHashBytes)
+
+	// AssociationType
+	associationTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AssociationType: ")
+	}
+	txnData.AssociationType = string(associationTypeBytes)
+
+	// AssociationValue
+	associationValueBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AssociationValue: ")
+	}
+	txnData.AssociationValue = string(associationValueBytes)
+
 	return nil
 }
 
 func (txnData *DeletePostAssociationMetadata) FromBytes(data []byte) error {
-	// TODO
+	rr := bytes.NewReader(data)
+
+	// AssociationID
+	associationIDBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationMetadata.FromBytes: Problem reading AssociationID: ")
+	}
+	txnData.AssociationID = NewBlockHash(associationIDBytes)
+
 	return nil
 }
 
