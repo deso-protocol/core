@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
@@ -3118,6 +3119,11 @@ func (postAssociation *PGPostAssociation) ToPostAssociationEntry() *PostAssociat
 func (postgres *Postgres) GetUserAssociationByID(associationID *BlockHash) (*UserAssociationEntry, error) {
 	pgAssociation := PGUserAssociation{AssociationID: associationID}
 	if err := postgres.db.Model(&pgAssociation).WherePK().First(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+
 		return nil, err
 	}
 	return pgAssociation.ToUserAssociationEntry(), nil
@@ -3126,6 +3132,11 @@ func (postgres *Postgres) GetUserAssociationByID(associationID *BlockHash) (*Use
 func (postgres *Postgres) GetPostAssociationByID(associationID *BlockHash) (*PostAssociationEntry, error) {
 	pgAssociation := PGPostAssociation{AssociationID: associationID}
 	if err := postgres.db.Model(&pgAssociation).WherePK().First(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+
 		return nil, err
 	}
 	return pgAssociation.ToPostAssociationEntry(), nil
@@ -3139,6 +3150,11 @@ func (postgres *Postgres) GetUserAssociationByAttributes(associationEntry *UserA
 		Where("association_type = ?", associationEntry.AssociationType).
 		Where("association_value = ?", associationEntry.AssociationValue).
 		First(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+
 		return nil, err
 	}
 	return pgAssociation.ToUserAssociationEntry(), nil
@@ -3152,6 +3168,11 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 		Where("association_type = ?", associationEntry.AssociationType).
 		Where("association_value = ?", associationEntry.AssociationValue).
 		First(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+
 		return nil, err
 	}
 	return pgAssociation.ToPostAssociationEntry(), nil
