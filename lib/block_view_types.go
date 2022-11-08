@@ -4638,9 +4638,7 @@ func (associationEntry *UserAssociationEntry) RawEncodeWithoutMetadata(blockHeig
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.TransactorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.TargetUserPKID, skipMetadata...)...)
 	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationType))...)
-	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationValue))...)
-	data = append(data, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	data = append(data, UintToBuf(uint64(associationEntry.BlockHeight))...)
 	return data
 }
@@ -4651,9 +4649,7 @@ func (associationEntry *PostAssociationEntry) RawEncodeWithoutMetadata(blockHeig
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.TransactorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.PostHash, skipMetadata...)...)
 	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationType))...)
-	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationValue))...)
-	data = append(data, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	data = append(data, UintToBuf(uint64(associationEntry.BlockHeight))...)
 	return data
 }
@@ -4666,7 +4662,7 @@ func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	if exist, err := DecodeFromBytes(associationID, rr); exist && err == nil {
 		associationEntry.AssociationID = associationID
 	} else if err != nil {
-		return errors.Wrapf(err, "UserAssociationEntry.Decode: problem reading AssociationID")
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AssociationID: ")
 	}
 
 	// TransactorPKID
@@ -4674,7 +4670,7 @@ func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	if exist, err := DecodeFromBytes(transactorPKID, rr); exist && err == nil {
 		associationEntry.TransactorPKID = transactorPKID
 	} else if err != nil {
-		return errors.Wrapf(err, "UserAssociationEntry.Decode: problem reading TransactorPKID")
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading TransactorPKID: ")
 	}
 
 	// TargetUserPKID
@@ -4682,19 +4678,27 @@ func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	if exist, err := DecodeFromBytes(targetUserPKID, rr); exist && err == nil {
 		associationEntry.TargetUserPKID = targetUserPKID
 	} else if err != nil {
-		return errors.Wrapf(err, "UserAssociationEntry.Decode: problem reading TargetUserPKID")
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading TargetUserPKID: ")
 	}
 
 	// AssociationType
-	// TODO
+	associationTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AssociationType: ")
+	}
+	associationEntry.AssociationType = string(associationTypeBytes)
 
 	// AssociationValue
-	// TODO
+	associationValueBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AssociationValue: ")
+	}
+	associationEntry.AssociationValue = string(associationValueBytes)
 
 	// BlockHeight
 	entryBlockHeight, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "UserAssociationEntry.Decode: problem reading BlockHeight")
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading BlockHeight: ")
 	}
 	if blockHeight > uint64(math.MaxUint32) {
 		return fmt.Errorf("UserAssociationEntry.Decode: invalid block height %d: greater than max uint32", entryBlockHeight)
@@ -4712,7 +4716,7 @@ func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	if exist, err := DecodeFromBytes(associationID, rr); exist && err == nil {
 		associationEntry.AssociationID = associationID
 	} else if err != nil {
-		return errors.Wrapf(err, "PostAssociationEntry.Decode: problem reading AssociationID")
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AssociationID: ")
 	}
 
 	// TransactorPKID
@@ -4720,7 +4724,7 @@ func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	if exist, err := DecodeFromBytes(transactorPKID, rr); exist && err == nil {
 		associationEntry.TransactorPKID = transactorPKID
 	} else if err != nil {
-		return errors.Wrapf(err, "PostAssociationEntry.Decode: problem reading TransactorPKID")
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading TransactorPKID: ")
 	}
 
 	// PostHash
@@ -4728,19 +4732,27 @@ func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	if exist, err := DecodeFromBytes(postHash, rr); exist && err == nil {
 		associationEntry.PostHash = postHash
 	} else if err != nil {
-		return errors.Wrapf(err, "PostAssociationEntry.Decode: problem reading PostHash")
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading PostHash: ")
 	}
 
 	// AssociationType
-	// TODO
+	associationTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AssociationType: ")
+	}
+	associationEntry.AssociationType = string(associationTypeBytes)
 
 	// AssociationValue
-	// TODO
+	associationValueBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AssociationValue: ")
+	}
+	associationEntry.AssociationValue = string(associationValueBytes)
 
 	// BlockHeight
 	entryBlockHeight, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "PostAssociationEntry.Decode: problem reading BlockHeight")
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading BlockHeight: ")
 	}
 	if blockHeight > uint64(math.MaxUint32) {
 		return fmt.Errorf("PostAssociationEntry.Decode: invalid block height %d: greater than max uint32", entryBlockHeight)
@@ -4812,9 +4824,7 @@ func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawEncodeWit
 	var data []byte
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.TargetUserPublicKeyBase58Check))...)
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
-	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
-	data = append(data, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	return data
 }
 
@@ -4828,9 +4838,7 @@ func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawEncodeWit
 	var data []byte
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.PostHashHex))...)
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
-	data = append(data, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
-	data = append(data, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	return data
 }
 
@@ -4842,92 +4850,72 @@ func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) RawEncodeWit
 
 func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	// TargetUserPublicKeyBase58Check
-	targetUserPublicKeyBase58Check, err := DecodeByteArray(rr)
+	targetUserPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading TargetUserPublicKeyBas58Check: ")
 	}
-	associationTxindexMeta.TargetUserPublicKeyBase58Check = string(targetUserPublicKeyBase58Check)
+	associationTxindexMeta.TargetUserPublicKeyBase58Check = string(targetUserPublicKeyBase58CheckBytes)
 
 	// AssociationType
-	associationType, err := DecodeByteArray(rr)
+	associationTypeBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AssociationType: ")
 	}
-	associationTxindexMeta.AssociationType = string(associationType)
-
-	_, err = rr.ReadByte()
-	if err != nil {
-		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AssociationType null terminator byte: ")
-	}
+	associationTxindexMeta.AssociationType = string(associationTypeBytes)
 
 	// AssociationValue
-	associationValue, err := DecodeByteArray(rr)
+	associationValueBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AssociationValue: ")
 	}
-	associationTxindexMeta.AssociationValue = string(associationValue)
-
-	_, err = rr.ReadByte()
-	if err != nil {
-		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AssociationValue null terminator byte: ")
-	}
+	associationTxindexMeta.AssociationValue = string(associationValueBytes)
 
 	return nil
 }
 
 func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	// AssociationIDHex
-	associationIDHex, err := DecodeByteArray(rr)
+	associationIDHexBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DeleteUserAssociationTxindexMetadata.Decode: Problem reading AssociationIDHex: ")
 	}
-	associationTxindexMeta.AssociationIDHex = string(associationIDHex)
+	associationTxindexMeta.AssociationIDHex = string(associationIDHexBytes)
 
 	return nil
 }
 
 func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	// PostHashHex
-	postHashHex, err := DecodeByteArray(rr)
+	postHashHexBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading PostHashHex: ")
 	}
-	associationTxindexMeta.PostHashHex = string(postHashHex)
+	associationTxindexMeta.PostHashHex = string(postHashHexBytes)
 
 	// AssociationType
-	associationType, err := DecodeByteArray(rr)
+	associationTypeBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AssociationType: ")
 	}
-	associationTxindexMeta.AssociationType = string(associationType)
-
-	_, err = rr.ReadByte()
-	if err != nil {
-		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AssociationType null terminator byte: ")
-	}
+	associationTxindexMeta.AssociationType = string(associationTypeBytes)
 
 	// AssociationValue
-	associationValue, err := DecodeByteArray(rr)
+	associationValueBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AssociationValue: ")
 	}
-	associationTxindexMeta.AssociationValue = string(associationValue)
-
-	_, err = rr.ReadByte()
-	if err != nil {
-		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AssociationValue null terminator byte: ")
-	}
+	associationTxindexMeta.AssociationValue = string(associationValueBytes)
 
 	return nil
 }
 
 func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	// AssociationIDHex
-	associationIDHex, err := DecodeByteArray(rr)
+	associationIDHexBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DeletePostAssociationTxindexMetadata.Decode: Problem reading AssociationIDHex: ")
 	}
-	associationTxindexMeta.AssociationIDHex = string(associationIDHex)
+	associationTxindexMeta.AssociationIDHex = string(associationIDHexBytes)
 
 	return nil
 }
