@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"reflect"
 	"sort"
 	"testing"
@@ -49,43 +48,6 @@ func getTestDirectory(t *testing.T, testName string) string {
 		require.NoError(err)
 	}
 	return dbDir
-}
-
-// GenerateTestConfig creates a default config for a node, with provided port, db directory, and number of max peers.
-// It's usually the first step to starting a node.
-func GenerateTestConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) *cmd.Config {
-	config := &cmd.Config{}
-	params := lib.DeSoMainnetParams
-
-	params.DNSSeeds = []string{}
-	config.Params = &params
-	config.ProtocolPort = uint16(port)
-	// "/Users/piotr/data_dirs/n98_1"
-	config.DataDirectory = dataDir
-	if err := os.MkdirAll(config.DataDirectory, os.ModePerm); err != nil {
-		t.Fatalf("Could not create data directories (%s): %v", config.DataDirectory, err)
-	}
-	config.TXIndex = false
-	config.HyperSync = false
-	config.MaxSyncBlockHeight = 0
-	config.ConnectIPs = []string{}
-	config.PrivateMode = true
-	config.GlogV = 0
-	config.GlogVmodule = "*bitcoin_manager*=0,*balance*=0,*view*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=0,*blockchain*=0"
-	config.MaxInboundPeers = maxPeers
-	config.TargetOutboundPeers = maxPeers
-	config.StallTimeoutSeconds = 900
-	config.MinFeerate = 1000
-	config.OneInboundPerIp = false
-	config.MaxBlockTemplatesCache = 100
-	config.MaxSyncBlockHeight = 100
-	config.MinBlockUpdateInterval = 10
-	config.SnapshotBlockHeightPeriod = HyperSyncSnapshotPeriod
-	config.MaxSyncBlockHeight = MaxSyncBlockHeight
-	config.SyncType = lib.NodeSyncTypeBlockSync
-	//config.ArchivalMode = true
-
-	return config
 }
 
 // waitForNodeToFullySync will busy-wait until provided node is fully current.

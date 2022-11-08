@@ -232,8 +232,7 @@ func (config *Config) Print() {
 }
 
 // GenerateTestConfig creates a default config for a node, with provided port, db directory, and number of max peers.
-// It's usually the first step to starting a node.\
-// FIXME: Duplicating the function to avoid cyclic error in node_test.go. Need to centralizer it.
+// It's usually the first step to starting a node.
 func GenerateTestConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) Config {
 	config := Config{}
 	params := lib.DeSoMainnetParams

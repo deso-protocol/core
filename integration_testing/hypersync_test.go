@@ -25,17 +25,17 @@ func TestSimpleHyperSync(t *testing.T) {
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
+	config1 := cmd.GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
+	config2 := cmd.GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeHyperSync
 
 	config1.HyperSync = true
 	config2.HyperSync = true
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
+	node1 := cmd.NewNode(&config1)
+	node2 := cmd.NewNode(&config2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -76,11 +76,11 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	defer os.RemoveAll(dbDir2)
 	defer os.RemoveAll(dbDir3)
 
-	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
+	config1 := cmd.GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
+	config2 := cmd.GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
-	config3 := GenerateTestConfig(t, 18002, dbDir3, 10)
+	config3 := cmd.GenerateTestConfig(t, 18002, dbDir3, 10)
 	config3.SyncType = lib.NodeSyncTypeHyperSyncArchival
 
 	config1.HyperSync = true
@@ -88,9 +88,9 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	config3.HyperSync = true
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
-	node3 := cmd.NewNode(config3)
+	node1 := cmd.NewNode(&config1)
+	node2 := cmd.NewNode(&config2)
+	node3 := cmd.NewNode(&config3)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -144,8 +144,8 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
-	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
+	config1 := cmd.GenerateTestConfig(t, 18000, dbDir1, 10)
+	config2 := cmd.GenerateTestConfig(t, 18001, dbDir2, 10)
 
 	config1.HyperSync = true
 	config1.SyncType = lib.NodeSyncTypeBlockSync
@@ -153,8 +153,8 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
+	node1 := cmd.NewNode(&config1)
+	node2 := cmd.NewNode(&config2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -201,11 +201,11 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	defer os.RemoveAll(dbDir2)
 	defer os.RemoveAll(dbDir3)
 
-	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
+	config1 := cmd.GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
+	config2 := cmd.GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
-	config3 := GenerateTestConfig(t, 18002, dbDir3, 10)
+	config3 := cmd.GenerateTestConfig(t, 18002, dbDir3, 10)
 	config3.SyncType = lib.NodeSyncTypeBlockSync
 
 	config1.HyperSync = true
@@ -214,9 +214,9 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
-	node3 := cmd.NewNode(config3)
+	node1 := cmd.NewNode(&config1)
+	node2 := cmd.NewNode(&config2)
+	node3 := cmd.NewNode(&config3)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -320,8 +320,8 @@ func TestArchivalMode(t *testing.T) {
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
-	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
+	config1 := cmd.GenerateTestConfig(t, 18000, dbDir1, 10)
+	config2 := cmd.GenerateTestConfig(t, 18001, dbDir2, 10)
 
 	config1.HyperSync = true
 	config2.HyperSync = true
@@ -329,8 +329,8 @@ func TestArchivalMode(t *testing.T) {
 	config1.SyncType = lib.NodeSyncTypeBlockSync
 	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
 
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
+	node1 := cmd.NewNode(&config1)
+	node2 := cmd.NewNode(&config2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -365,9 +365,9 @@ func TestBlockSyncFromArchivalModeHyperSync(t *testing.T) {
 	defer os.RemoveAll(dbDir2)
 	defer os.RemoveAll(dbDir3)
 
-	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
-	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
-	config3 := GenerateTestConfig(t, 18002, dbDir3, 10)
+	config1 := cmd.GenerateTestConfig(t, 18000, dbDir1, 10)
+	config2 := cmd.GenerateTestConfig(t, 18001, dbDir2, 10)
+	config3 := cmd.GenerateTestConfig(t, 18002, dbDir3, 10)
 
 	config1.HyperSync = true
 	config1.SyncType = lib.NodeSyncTypeBlockSync
@@ -377,9 +377,9 @@ func TestBlockSyncFromArchivalModeHyperSync(t *testing.T) {
 	config3.SyncType = lib.NodeSyncTypeBlockSync
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
-	node3 := cmd.NewNode(config3)
+	node1 := cmd.NewNode(&config1)
+	node2 := cmd.NewNode(&config2)
+	node3 := cmd.NewNode(&config3)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)

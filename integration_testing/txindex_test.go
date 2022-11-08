@@ -25,10 +25,10 @@ func TestSimpleTxIndex(t *testing.T) {
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
-	config1 := GenerateTestConfig(t, 18000, dbDir1, 10)
+	config1 := cmd.GenerateTestConfig(t, 18000, dbDir1, 10)
 	config1.HyperSync = true
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := GenerateTestConfig(t, 18001, dbDir2, 10)
+	config2 := cmd.GenerateTestConfig(t, 18001, dbDir2, 10)
 	config2.HyperSync = true
 	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
 
@@ -36,8 +36,8 @@ func TestSimpleTxIndex(t *testing.T) {
 	config2.TXIndex = true
 	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
 
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
+	node1 := cmd.NewNode(&config1)
+	node2 := cmd.NewNode(&config2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
