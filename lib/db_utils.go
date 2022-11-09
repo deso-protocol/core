@@ -505,25 +505,25 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 		return true, &UserAssociationEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByTransactorPKID) {
 		// prefix_id:"[64]"
-		return true, &UserAssociationEntry{}
+		return true, &BlockHash{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByTargetUserPKID) {
 		// prefix_id:"[65]"
-		return true, &UserAssociationEntry{}
+		return true, &BlockHash{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByUserPKIDs) {
 		// prefix_id:"[66]"
-		return true, &UserAssociationEntry{}
+		return true, &BlockHash{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByID) {
 		// prefix_id:"[67]"
 		return true, &PostAssociationEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByTransactorPKID) {
 		// prefix_id:"[68]"
-		return true, &PostAssociationEntry{}
+		return true, &BlockHash{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByPostHash) {
 		// prefix_id:"[69]"
-		return true, &PostAssociationEntry{}
+		return true, &BlockHash{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByAssociationType) {
 		// prefix_id:"[70]"
-		return true, &PostAssociationEntry{}
+		return true, &BlockHash{}
 	}
 
 	return true, nil
@@ -8345,11 +8345,11 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 // Associations
 // ---------------------------------------------
 
-func DBKeyForUserAssociationByID(userAssociation *UserAssociationEntry) []byte {
+func DBKeyForUserAssociationByID(associationEntry *UserAssociationEntry) []byte {
 	// AssociationID
 	var key []byte
 	key = append(key, Prefixes.PrefixUserAssociationByID...)
-	key = append(key, userAssociation.AssociationID.ToBytes()...)
+	key = append(key, associationEntry.AssociationID.ToBytes()...)
 	return key
 }
 
@@ -8602,42 +8602,42 @@ func DBGetPostAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, qu
 func DBPutUserAssociationWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
-	userAssociation *UserAssociationEntry,
+	associationEntry *UserAssociationEntry,
 	blockHeight uint64,
 ) error {
-	if userAssociation == nil {
+	if associationEntry == nil {
 		return nil
 	}
-	userAssociationBytes := EncodeToBytes(blockHeight, userAssociation)
-	userAssociationIDBytes := userAssociation.AssociationID[:]
+	associationEntryBytes := EncodeToBytes(blockHeight, associationEntry)
+	associationIDBytes := EncodeToBytes(blockHeight, associationEntry.AssociationID)
 
 	// Store entry in index: PrefixUserAssociationByID.
-	key := DBKeyForUserAssociationByID(userAssociation)
-	if err := DBSetWithTxn(txn, snap, key, userAssociationBytes); err != nil {
+	key := DBKeyForUserAssociationByID(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationEntryBytes); err != nil {
 		return errors.Wrapf(
 			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByID",
 		)
 	}
 
 	// Store ID in index: PrefixUserAssociationByTransactorPKID.
-	key = DBKeyForUserAssociationByTransactorPKID(userAssociation)
-	if err := DBSetWithTxn(txn, snap, key, userAssociationIDBytes); err != nil {
+	key = DBKeyForUserAssociationByTransactorPKID(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
 		return errors.Wrapf(
 			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTransactorPKID",
 		)
 	}
 
 	// Store ID in index: PrefixUserAssociationByTargetUserPKID.
-	key = DBKeyForUserAssociationByTargetUserPKID(userAssociation)
-	if err := DBSetWithTxn(txn, snap, key, userAssociationIDBytes); err != nil {
+	key = DBKeyForUserAssociationByTargetUserPKID(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
 		return errors.Wrapf(
 			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTargetUserPKID",
 		)
 	}
 
 	// Store ID in index: PrefixUserAssociationByUserPKIDs.
-	key = DBKeyForUserAssociationByUserPKIDs(userAssociation)
-	if err := DBSetWithTxn(txn, snap, key, userAssociationIDBytes); err != nil {
+	key = DBKeyForUserAssociationByUserPKIDs(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
 		return errors.Wrapf(
 			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByUserPKIDs")
 	}
@@ -8647,14 +8647,14 @@ func DBPutUserAssociationWithTxn(
 func DBDeleteUserAssociationWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
-	userAssociation *UserAssociationEntry,
+	associationEntry *UserAssociationEntry,
 ) error {
-	if userAssociation == nil {
+	if associationEntry == nil {
 		return nil
 	}
 
 	// Delete from index: PrefixUserAssociationByID.
-	key := DBKeyForUserAssociationByID(userAssociation)
+	key := DBKeyForUserAssociationByID(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByID",
@@ -8662,7 +8662,7 @@ func DBDeleteUserAssociationWithTxn(
 	}
 
 	// Delete from index: PrefixUserAssociationByTransactorPKID.
-	key = DBKeyForUserAssociationByTransactorPKID(userAssociation)
+	key = DBKeyForUserAssociationByTransactorPKID(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTransactorPKID",
@@ -8670,7 +8670,7 @@ func DBDeleteUserAssociationWithTxn(
 	}
 
 	// Delete from index: PrefixUserAssociationByTargetUserPKID.
-	key = DBKeyForUserAssociationByTargetUserPKID(userAssociation)
+	key = DBKeyForUserAssociationByTargetUserPKID(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTargetUserPKID",
@@ -8678,7 +8678,7 @@ func DBDeleteUserAssociationWithTxn(
 	}
 
 	// Delete from index: PrefixUserAssociationByUserPKIDs.
-	key = DBKeyForUserAssociationByUserPKIDs(userAssociation)
+	key = DBKeyForUserAssociationByUserPKIDs(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByUserPKIDs",
@@ -8690,42 +8690,42 @@ func DBDeleteUserAssociationWithTxn(
 func DBPutPostAssociationWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
-	postAssociation *PostAssociationEntry,
+	associationEntry *PostAssociationEntry,
 	blockHeight uint64,
 ) error {
-	if postAssociation == nil {
+	if associationEntry == nil {
 		return nil
 	}
-	postAssociationBytes := EncodeToBytes(blockHeight, postAssociation)
-	postAssociationIDBytes := postAssociation.AssociationID[:]
+	associationEntryBytes := EncodeToBytes(blockHeight, associationEntry)
+	associationIDBytes := EncodeToBytes(blockHeight, associationEntry.AssociationID)
 
 	// Store entry in index: PrefixPostAssociationByID.
-	key := DBKeyForPostAssociationByID(postAssociation)
-	if err := DBSetWithTxn(txn, snap, key, postAssociationBytes); err != nil {
+	key := DBKeyForPostAssociationByID(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationEntryBytes); err != nil {
 		return errors.Wrapf(
 			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByID",
 		)
 	}
 
 	// Store ID in index: PrefixPostAssociationByTransactorPKID.
-	key = DBKeyForPostAssociationByTransactorPKID(postAssociation)
-	if err := DBSetWithTxn(txn, snap, key, postAssociationIDBytes); err != nil {
+	key = DBKeyForPostAssociationByTransactorPKID(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
 		return errors.Wrapf(
 			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByTransactorPKID",
 		)
 	}
 
 	// Store ID in index: PrefixPostAssociationByPostHash.
-	key = DBKeyForPostAssociationByPostHash(postAssociation)
-	if err := DBSetWithTxn(txn, snap, key, postAssociationIDBytes); err != nil {
+	key = DBKeyForPostAssociationByPostHash(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
 		return errors.Wrapf(
 			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByPostHash",
 		)
 	}
 
 	// Store ID in index: PrefixPostAssociationByAssociationType.
-	key = DBKeyForPostAssociationByAssociationType(postAssociation)
-	if err := DBSetWithTxn(txn, snap, key, postAssociationIDBytes); err != nil {
+	key = DBKeyForPostAssociationByAssociationType(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
 		return errors.Wrapf(
 			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByAssociationType",
 		)
@@ -8736,14 +8736,14 @@ func DBPutPostAssociationWithTxn(
 func DBDeletePostAssociationWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
-	postAssociation *PostAssociationEntry,
+	associationEntry *PostAssociationEntry,
 ) error {
-	if postAssociation == nil {
+	if associationEntry == nil {
 		return nil
 	}
 
 	// Delete from index: PrefixPostAssociationByID.
-	key := DBKeyForPostAssociationByID(postAssociation)
+	key := DBKeyForPostAssociationByID(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
 			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByID",
@@ -8751,7 +8751,7 @@ func DBDeletePostAssociationWithTxn(
 	}
 
 	// Delete from index: PrefixPostAssociationByTransactorPKID.
-	key = DBKeyForPostAssociationByTransactorPKID(postAssociation)
+	key = DBKeyForPostAssociationByTransactorPKID(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
 			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByTransactorPKID",
@@ -8759,7 +8759,7 @@ func DBDeletePostAssociationWithTxn(
 	}
 
 	// Delete from index: PrefixPostAssociationByPostHash.
-	key = DBKeyForPostAssociationByPostHash(postAssociation)
+	key = DBKeyForPostAssociationByPostHash(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
 			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByPostHash",
@@ -8767,7 +8767,7 @@ func DBDeletePostAssociationWithTxn(
 	}
 
 	// Delete from index: PrefixPostAssociationByAssociationType.
-	key = DBKeyForPostAssociationByAssociationType(postAssociation)
+	key = DBKeyForPostAssociationByAssociationType(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
 			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByAssociationType",
