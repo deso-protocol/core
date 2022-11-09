@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"errors"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 	"math"
@@ -11,8 +12,8 @@ func TestUserAssociations(t *testing.T) {
 	// -----------------------
 	// Initialization
 	// -----------------------
-	var createMetadata CreateUserAssociationMetadata
-	var deleteMetadata DeleteUserAssociationMetadata
+	var createMetadata *CreateUserAssociationMetadata
+	var deleteMetadata *DeleteUserAssociationMetadata
 	var err error
 	_ = deleteMetadata
 
@@ -82,24 +83,24 @@ func TestUserAssociations(t *testing.T) {
 	{
 		// RuleErrorAssociationBeforeBlockHeight
 		params.ForkHeights.AssociationsBlockHeight = math.MaxUint32
-		createMetadata = CreateUserAssociationMetadata{
+		createMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
-		_, _, _, err = _doCreateUserAssociationTxnSadPath(testMeta, m0Pub, m0Priv, createMetadata)
+		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationBeforeBlockHeight)
 		params.ForkHeights.AssociationsBlockHeight = uint32(0)
 	}
 	{
 		// RuleErrorAssociationInvalidType: AssociationType is empty
-		createMetadata = CreateUserAssociationMetadata{
+		createMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     "",
 			AssociationValue:    "SQL",
 		}
-		_, _, _, err = _doCreateUserAssociationTxnSadPath(testMeta, m0Pub, m0Priv, createMetadata)
+		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
 	}
@@ -111,34 +112,34 @@ func TestUserAssociations(t *testing.T) {
 		}
 		require.Equal(t, len(associationType), MaxAssociationTypeCharLength+1)
 
-		createMetadata = CreateUserAssociationMetadata{
+		createMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     string(associationType),
 			AssociationValue:    "SQL",
 		}
-		_, _, _, err = _doCreateUserAssociationTxnSadPath(testMeta, m0Pub, m0Priv, createMetadata)
+		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
 	}
 	{
 		// RuleErrorAssociationInvalidType: AssociationType uses reserved prefix
-		createMetadata = CreateUserAssociationMetadata{
+		createMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     AssociationTypeReservedPrefix + "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
-		_, _, _, err = _doCreateUserAssociationTxnSadPath(testMeta, m0Pub, m0Priv, createMetadata)
+		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
 	}
 	{
 		// RuleErrorAssociationTypeInvalidValue: AssociationValue is empty
-		createMetadata = CreateUserAssociationMetadata{
+		createMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "",
 		}
-		_, _, _, err = _doCreateUserAssociationTxnSadPath(testMeta, m0Pub, m0Priv, createMetadata)
+		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
 	}
@@ -150,51 +151,51 @@ func TestUserAssociations(t *testing.T) {
 		}
 		require.Equal(t, len(associationValue), MaxAssociationValueCharLength+1)
 
-		createMetadata = CreateUserAssociationMetadata{
+		createMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    string(associationValue),
 		}
-		_, _, _, err = _doCreateUserAssociationTxnSadPath(testMeta, m0Pub, m0Priv, createMetadata)
+		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
 	}
 	{
 		// RuleErrorAssociationInvalidID
-		deleteMetadata = DeleteUserAssociationMetadata{
+		deleteMetadata = &DeleteUserAssociationMetadata{
 			AssociationID: nil,
 		}
-		_, _, _, err = _doDeleteUserAssociationTxnSadPath(testMeta, m0Pub, m0Priv, deleteMetadata)
+		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteMetadata})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidID)
 	}
 	{
 		// RuleErrorAssociationNotFound
-		deleteMetadata = DeleteUserAssociationMetadata{
+		deleteMetadata = &DeleteUserAssociationMetadata{
 			AssociationID: NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()),
 		}
-		_, _, _, err = _doDeleteUserAssociationTxnSadPath(testMeta, m0Pub, m0Priv, deleteMetadata)
+		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteMetadata})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationNotFound)
 	}
 }
 
-func _doCreateUserAssociationTxnHappyPath(
+func _doAssociationTxnHappyPath(
 	testMeta *TestMeta,
 	TransactorPublicKeyBase58Check string,
 	TransactorPrivateKeyBase58Check string,
-	metadata CreateUserAssociationMetadata,
+	inputTxn MsgDeSoTxn,
 ) {
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances,
 		_getBalance(testMeta.t, testMeta.chain, nil, TransactorPublicKeyBase58Check),
 	)
 
-	currentOps, currentTxn, _, err := _doCreateUserAssociationTxnSadPath(
+	currentOps, currentTxn, _, err := _doAssociationTxnSadPath(
 		testMeta,
 		TransactorPublicKeyBase58Check,
 		TransactorPrivateKeyBase58Check,
-		metadata,
+		inputTxn,
 	)
 
 	require.NoError(testMeta.t, err)
@@ -202,11 +203,11 @@ func _doCreateUserAssociationTxnHappyPath(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _doCreateUserAssociationTxnSadPath(
+func _doAssociationTxnSadPath(
 	testMeta *TestMeta,
 	TransactorPublicKeyBase58Check string,
 	TransactorPrivateKeyBase58Check string,
-	metadata CreateUserAssociationMetadata,
+	inputTxn MsgDeSoTxn,
 ) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 	updaterPkBytes, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
 	require.NoError(testMeta.t, err)
@@ -217,13 +218,45 @@ func _doCreateUserAssociationTxnSadPath(
 	require.NoError(testMeta.t, err)
 
 	// Create the transaction.
-	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.chain.CreateCreateUserAssociationTxn(
-		updaterPkBytes,
-		&metadata,
-		testMeta.feeRateNanosPerKb,
-		nil,
-		[]*DeSoOutput{},
-	)
+	var txn *MsgDeSoTxn
+	var totalInputMake, changeAmountMake, feesMake uint64
+
+	switch inputTxn.TxnMeta.GetTxnType() {
+	case TxnTypeCreateUserAssociation:
+		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateCreateUserAssociationTxn(
+			updaterPkBytes,
+			inputTxn.TxnMeta.(*CreateUserAssociationMetadata),
+			testMeta.feeRateNanosPerKb,
+			nil,
+			[]*DeSoOutput{},
+		)
+	case TxnTypeDeleteUserAssociation:
+		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateDeleteUserAssociationTxn(
+			updaterPkBytes,
+			inputTxn.TxnMeta.(*DeleteUserAssociationMetadata),
+			testMeta.feeRateNanosPerKb,
+			nil,
+			[]*DeSoOutput{},
+		)
+	case TxnTypeCreatePostAssociation:
+		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateCreatePostAssociationTxn(
+			updaterPkBytes,
+			inputTxn.TxnMeta.(*CreatePostAssociationMetadata),
+			testMeta.feeRateNanosPerKb,
+			nil,
+			[]*DeSoOutput{},
+		)
+	case TxnTypeDeletePostAssociation:
+		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateDeletePostAssociationTxn(
+			updaterPkBytes,
+			inputTxn.TxnMeta.(*DeletePostAssociationMetadata),
+			testMeta.feeRateNanosPerKb,
+			nil,
+			[]*DeSoOutput{},
+		)
+	default:
+		err = errors.New("invalid txn type")
+	}
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -246,79 +279,22 @@ func _doCreateUserAssociationTxnSadPath(
 	}
 	require.Equal(testMeta.t, totalInput, totalOutput+fees)
 	require.Equal(testMeta.t, totalInput, totalInputMake)
-	require.Equal(testMeta.t, OperationTypeCreateUserAssociation, utxoOps[len(utxoOps)-1].Type)
-	require.NoError(testMeta.t, utxoView.FlushToDb(0))
-	return utxoOps, txn, testMeta.savedHeight, nil
-}
 
-func _doDeleteUserAssociationTxnHappyPath(
-	testMeta *TestMeta,
-	TransactorPublicKeyBase58Check string,
-	TransactorPrivateKeyBase58Check string,
-	metadata DeleteUserAssociationMetadata,
-) {
-	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances,
-		_getBalance(testMeta.t, testMeta.chain, nil, TransactorPublicKeyBase58Check),
-	)
-
-	currentOps, currentTxn, _, err := _doDeleteUserAssociationTxnSadPath(
-		testMeta,
-		TransactorPublicKeyBase58Check,
-		TransactorPrivateKeyBase58Check,
-		metadata,
-	)
-
-	require.NoError(testMeta.t, err)
-	testMeta.txnOps = append(testMeta.txnOps, currentOps)
-	testMeta.txns = append(testMeta.txns, currentTxn)
-}
-
-func _doDeleteUserAssociationTxnSadPath(
-	testMeta *TestMeta,
-	TransactorPublicKeyBase58Check string,
-	TransactorPrivateKeyBase58Check string,
-	metadata DeleteUserAssociationMetadata,
-) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
-	updaterPkBytes, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
-	require.NoError(testMeta.t, err)
-
-	utxoView, err := NewUtxoView(
-		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot,
-	)
-	require.NoError(testMeta.t, err)
-
-	// Create the transaction.
-	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.chain.CreateDeleteUserAssociationTxn(
-		updaterPkBytes,
-		&metadata,
-		testMeta.feeRateNanosPerKb,
-		nil,
-		[]*DeSoOutput{},
-	)
-	if err != nil {
-		return nil, nil, 0, err
+	var operationType OperationType
+	switch inputTxn.TxnMeta.GetTxnType() {
+	case TxnTypeCreateUserAssociation:
+		operationType = OperationTypeCreateUserAssociation
+	case TxnTypeDeleteUserAssociation:
+		operationType = OperationTypeDeleteUserAssociation
+	case TxnTypeCreatePostAssociation:
+		operationType = OperationTypeCreatePostAssociation
+	case TxnTypeDeletePostAssociation:
+		operationType = OperationTypeDeletePostAssociation
+	default:
+		return nil, nil, 0, errors.New("invalid txn type")
 	}
-	require.Equal(testMeta.t, totalInputMake, changeAmountMake+feesMake)
+	require.Equal(testMeta.t, operationType, utxoOps[len(utxoOps)-1].Type)
 
-	// Sign the transaction now that its inputs are set up.
-	_signTxn(testMeta.t, txn, TransactorPrivateKeyBase58Check)
-
-	// Connect the transaction.
-	utxoOps, totalInput, totalOutput, fees, err := utxoView.ConnectTransaction(
-		txn,
-		txn.Hash(),
-		getTxnSize(*txn),
-		testMeta.savedHeight,
-		true,
-		false,
-	)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	require.Equal(testMeta.t, totalInput, totalOutput+fees)
-	require.Equal(testMeta.t, totalInput, totalInputMake)
-	require.Equal(testMeta.t, OperationTypeCreateUserAssociation, utxoOps[len(utxoOps)-1].Type)
 	require.NoError(testMeta.t, utxoView.FlushToDb(0))
 	return utxoOps, txn, testMeta.savedHeight, nil
 }

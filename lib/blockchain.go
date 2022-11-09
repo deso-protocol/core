@@ -5040,6 +5040,8 @@ func (bc *Blockchain) _createAssociationTxn(
 		err = utxoView.IsValidCreatePostAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*CreatePostAssociationMetadata))
 	case TxnTypeDeletePostAssociation:
 		err = utxoView.IsValidDeletePostAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*DeletePostAssociationMetadata))
+	default:
+		err = errors.New("invalid txn type")
 	}
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("%s: %v", callingFuncName, err)
