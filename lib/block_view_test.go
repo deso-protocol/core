@@ -222,6 +222,7 @@ type TestMeta struct {
 	txns                   []*MsgDeSoTxn
 	expectedSenderBalances []uint64
 	savedHeight            uint32
+	feeRateNanosPerKb      uint64
 }
 
 func _executeAllTestRollbackAndFlush(testMeta *TestMeta) {
