@@ -468,8 +468,8 @@ func (bav *UtxoView) IsValidCreateUserAssociationMetadata(transactorPK []byte, m
 	}
 
 	// Validate AssociationValue.
-	if len(metadata.AssociationType) == 0 ||
-		len(metadata.AssociationType) > MaxAssociationValueCharLength {
+	if len(metadata.AssociationValue) == 0 ||
+		len(metadata.AssociationValue) > MaxAssociationValueCharLength {
 		return RuleErrorAssociationInvalidValue
 	}
 	return nil
@@ -525,8 +525,8 @@ func (bav *UtxoView) IsValidCreatePostAssociationMetadata(transactorPK []byte, m
 	}
 
 	// Validate AssociationValue.
-	if len(metadata.AssociationType) == 0 ||
-		len(metadata.AssociationType) > MaxAssociationValueCharLength {
+	if len(metadata.AssociationValue) == 0 ||
+		len(metadata.AssociationValue) > MaxAssociationValueCharLength {
 		return RuleErrorAssociationInvalidValue
 	}
 	return nil
