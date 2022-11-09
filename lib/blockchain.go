@@ -4919,7 +4919,7 @@ func (bc *Blockchain) CreateCreateUserAssociationTxn(
 		// we've added all the inputs and change.
 	}
 	return bc._createAssociationTxn(
-		"CreateCreateUserAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+		"Blockchain.CreateCreateUserAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
 	)
 }
 
@@ -4945,7 +4945,7 @@ func (bc *Blockchain) CreateDeleteUserAssociationTxn(
 		// we've added all the inputs and change.
 	}
 	return bc._createAssociationTxn(
-		"CreateDeleteUserAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+		"Blockchain.CreateDeleteUserAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
 	)
 }
 
@@ -4971,7 +4971,7 @@ func (bc *Blockchain) CreateCreatePostAssociationTxn(
 		// we've added all the inputs and change.
 	}
 	return bc._createAssociationTxn(
-		"CreateCreatePostAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+		"Blockchain.CreateCreatePostAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
 	)
 }
 
@@ -4997,7 +4997,7 @@ func (bc *Blockchain) CreateDeletePostAssociationTxn(
 		// we've added all the inputs and change.
 	}
 	return bc._createAssociationTxn(
-		"CreateDeletePostAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+		"Blockchain.CreateDeletePostAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
 	)
 }
 
@@ -5013,6 +5013,38 @@ func (bc *Blockchain) _createAssociationTxn(
 	_fees uint64,
 	_err error,
 ) {
+	// Create a new UtxoView. If we have access to a mempool object, use
+	// it to get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"%s: problem creating new utxo view: %v", callingFuncName, err,
+		)
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, fmt.Errorf(
+				"%s: problem getting augmented utxo view from mempool: %v", callingFuncName, err,
+			)
+		}
+	}
+
+	// Validate transaction metadata.
+	switch txn.TxnMeta.GetTxnType() {
+	case TxnTypeCreateUserAssociation:
+		err = utxoView.IsValidCreateUserAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*CreateUserAssociationMetadata))
+	case TxnTypeDeleteUserAssociation:
+		err = utxoView.IsValidDeleteUserAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*DeleteUserAssociationMetadata))
+	case TxnTypeCreatePostAssociation:
+		err = utxoView.IsValidCreatePostAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*CreatePostAssociationMetadata))
+	case TxnTypeDeletePostAssociation:
+		err = utxoView.IsValidDeletePostAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*DeletePostAssociationMetadata))
+	}
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("%s: %v", callingFuncName, err)
+	}
+
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(

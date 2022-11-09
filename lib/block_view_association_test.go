@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 	"math"
 	"testing"
@@ -158,6 +159,24 @@ func TestUserAssociations(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
 	}
+	{
+		// RuleErrorAssociationInvalidID
+		deleteMetadata = DeleteUserAssociationMetadata{
+			AssociationID: nil,
+		}
+		_, _, _, err = _doDeleteUserAssociationTxnSadPath(testMeta, m0Pub, m0Priv, deleteMetadata)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidID)
+	}
+	{
+		// RuleErrorAssociationNotFound
+		deleteMetadata = DeleteUserAssociationMetadata{
+			AssociationID: NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()),
+		}
+		_, _, _, err = _doDeleteUserAssociationTxnSadPath(testMeta, m0Pub, m0Priv, deleteMetadata)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationNotFound)
+	}
 }
 
 func _doCreateUserAssociationTxnHappyPath(
@@ -199,6 +218,78 @@ func _doCreateUserAssociationTxnSadPath(
 
 	// Create the transaction.
 	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.chain.CreateCreateUserAssociationTxn(
+		updaterPkBytes,
+		&metadata,
+		testMeta.feeRateNanosPerKb,
+		nil,
+		[]*DeSoOutput{},
+	)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(testMeta.t, totalInputMake, changeAmountMake+feesMake)
+
+	// Sign the transaction now that its inputs are set up.
+	_signTxn(testMeta.t, txn, TransactorPrivateKeyBase58Check)
+
+	// Connect the transaction.
+	utxoOps, totalInput, totalOutput, fees, err := utxoView.ConnectTransaction(
+		txn,
+		txn.Hash(),
+		getTxnSize(*txn),
+		testMeta.savedHeight,
+		true,
+		false,
+	)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(testMeta.t, totalInput, totalOutput+fees)
+	require.Equal(testMeta.t, totalInput, totalInputMake)
+	require.Equal(testMeta.t, OperationTypeCreateUserAssociation, utxoOps[len(utxoOps)-1].Type)
+	require.NoError(testMeta.t, utxoView.FlushToDb(0))
+	return utxoOps, txn, testMeta.savedHeight, nil
+}
+
+func _doDeleteUserAssociationTxnHappyPath(
+	testMeta *TestMeta,
+	TransactorPublicKeyBase58Check string,
+	TransactorPrivateKeyBase58Check string,
+	metadata DeleteUserAssociationMetadata,
+) {
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances,
+		_getBalance(testMeta.t, testMeta.chain, nil, TransactorPublicKeyBase58Check),
+	)
+
+	currentOps, currentTxn, _, err := _doDeleteUserAssociationTxnSadPath(
+		testMeta,
+		TransactorPublicKeyBase58Check,
+		TransactorPrivateKeyBase58Check,
+		metadata,
+	)
+
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
+func _doDeleteUserAssociationTxnSadPath(
+	testMeta *TestMeta,
+	TransactorPublicKeyBase58Check string,
+	TransactorPrivateKeyBase58Check string,
+	metadata DeleteUserAssociationMetadata,
+) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	updaterPkBytes, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
+	require.NoError(testMeta.t, err)
+
+	utxoView, err := NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot,
+	)
+	require.NoError(testMeta.t, err)
+
+	// Create the transaction.
+	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.chain.CreateDeleteUserAssociationTxn(
 		updaterPkBytes,
 		&metadata,
 		testMeta.feeRateNanosPerKb,
