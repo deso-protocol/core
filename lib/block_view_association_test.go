@@ -14,8 +14,8 @@ func TestUserAssociations(t *testing.T) {
 	// -----------------------
 	var createMetadata *CreateUserAssociationMetadata
 	var deleteMetadata *DeleteUserAssociationMetadata
+	var associationEntry *UserAssociationEntry
 	var err error
-	_ = deleteMetadata
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain()
@@ -177,6 +177,40 @@ func TestUserAssociations(t *testing.T) {
 		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteMetadata})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationNotFound)
+	}
+
+	// -----------------------
+	// Happy paths
+	// -----------------------
+	{
+		// CreateUserAssociation
+		createMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AssociationType:     "ENDORSEMENT",
+			AssociationValue:    "SQL",
+		}
+		_doAssociationTxnHappyPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
+
+		associationEntry, err = utxoView.GetUserAssociationByAttributes(m0PkBytes, createMetadata)
+		require.NoError(t, err)
+		require.NotNil(t, associationEntry)
+		require.NotNil(t, associationEntry.AssociationID)
+		require.Equal(t, associationEntry.TransactorPKID, m0PKID)
+		require.Equal(t, associationEntry.TargetUserPKID, m1PKID)
+		require.Equal(t, associationEntry.AssociationType, "ENDORSEMENT")
+		require.Equal(t, associationEntry.AssociationValue, "SQL")
+		require.NotNil(t, associationEntry.BlockHeight)
+	}
+	{
+		// DeleteUserAssociation
+		deleteMetadata = &DeleteUserAssociationMetadata{
+			AssociationID: associationEntry.AssociationID,
+		}
+		_doAssociationTxnHappyPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteMetadata})
+
+		associationEntry, err = utxoView.GetUserAssociationByID(deleteMetadata.AssociationID)
+		require.NoError(t, err)
+		require.Nil(t, associationEntry)
 	}
 }
 
