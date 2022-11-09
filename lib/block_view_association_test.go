@@ -2,19 +2,22 @@ package lib
 
 import (
 	"errors"
-	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 	"math"
 	"testing"
 )
 
-func TestUserAssociations(t *testing.T) {
+func TestAssociations(t *testing.T) {
 	// -----------------------
 	// Initialization
 	// -----------------------
-	var createMetadata *CreateUserAssociationMetadata
-	var deleteMetadata *DeleteUserAssociationMetadata
-	var associationEntry *UserAssociationEntry
+	var createUserAssociationMetadata *CreateUserAssociationMetadata
+	var deleteUserAssociationMetadata *DeleteUserAssociationMetadata
+	var userAssociationEntry *UserAssociationEntry
+	var createPostAssociationMetadata *CreatePostAssociationMetadata
+	var deletePostAssociationMetadata *DeletePostAssociationMetadata
+	var postAssociationEntry *PostAssociationEntry
+	var postHash *BlockHash
 	var err error
 
 	// Initialize test chain and miner.
@@ -77,30 +80,34 @@ func TestUserAssociations(t *testing.T) {
 		)
 	}
 
-	// -----------------------
-	// Validations
-	// -----------------------
+	// -------------------------------
+	// UserAssociation: validations
+	// -------------------------------
 	{
 		// RuleErrorAssociationBeforeBlockHeight
 		params.ForkHeights.AssociationsBlockHeight = math.MaxUint32
-		createMetadata = &CreateUserAssociationMetadata{
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationBeforeBlockHeight)
 		params.ForkHeights.AssociationsBlockHeight = uint32(0)
 	}
 	{
 		// RuleErrorAssociationInvalidType: AssociationType is empty
-		createMetadata = &CreateUserAssociationMetadata{
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     "",
 			AssociationValue:    "SQL",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
 	}
@@ -112,34 +119,40 @@ func TestUserAssociations(t *testing.T) {
 		}
 		require.Equal(t, len(associationType), MaxAssociationTypeCharLength+1)
 
-		createMetadata = &CreateUserAssociationMetadata{
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     string(associationType),
 			AssociationValue:    "SQL",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
 	}
 	{
 		// RuleErrorAssociationInvalidType: AssociationType uses reserved prefix
-		createMetadata = &CreateUserAssociationMetadata{
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     AssociationTypeReservedPrefix + "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
 	}
 	{
 		// RuleErrorAssociationTypeInvalidValue: AssociationValue is empty
-		createMetadata = &CreateUserAssociationMetadata{
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
 	}
@@ -151,66 +164,264 @@ func TestUserAssociations(t *testing.T) {
 		}
 		require.Equal(t, len(associationValue), MaxAssociationValueCharLength+1)
 
-		createMetadata = &CreateUserAssociationMetadata{
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    string(associationValue),
 		}
-		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
 	}
 	{
 		// RuleErrorAssociationInvalidID
-		deleteMetadata = &DeleteUserAssociationMetadata{
+		deleteUserAssociationMetadata = &DeleteUserAssociationMetadata{
 			AssociationID: nil,
 		}
-		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteMetadata})
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata},
+		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidID)
 	}
 	{
 		// RuleErrorAssociationNotFound
-		deleteMetadata = &DeleteUserAssociationMetadata{
-			AssociationID: NewBlockHash(uint256.NewInt().SetUint64(1).Bytes()),
+		deleteUserAssociationMetadata = &DeleteUserAssociationMetadata{
+			AssociationID: NewBlockHash(RandomBytes(HashSizeBytes)),
 		}
-		_, _, _, err = _doAssociationTxnSadPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteMetadata})
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata},
+		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationNotFound)
 	}
-
-	// -----------------------
-	// Happy paths
-	// -----------------------
+	// ---------------------------------
+	// UserAssociation: happy paths
+	// ---------------------------------
 	{
 		// CreateUserAssociation
-		createMetadata = &CreateUserAssociationMetadata{
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
-		_doAssociationTxnHappyPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createMetadata})
+		_doAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
 
-		associationEntry, err = utxoView.GetUserAssociationByAttributes(m0PkBytes, createMetadata)
+		userAssociationEntry, err = utxoView.GetUserAssociationByAttributes(
+			m0PkBytes, createUserAssociationMetadata,
+		)
 		require.NoError(t, err)
-		require.NotNil(t, associationEntry)
-		require.NotNil(t, associationEntry.AssociationID)
-		require.Equal(t, associationEntry.TransactorPKID, m0PKID)
-		require.Equal(t, associationEntry.TargetUserPKID, m1PKID)
-		require.Equal(t, associationEntry.AssociationType, "ENDORSEMENT")
-		require.Equal(t, associationEntry.AssociationValue, "SQL")
-		require.NotNil(t, associationEntry.BlockHeight)
+		require.NotNil(t, userAssociationEntry)
+		require.NotNil(t, userAssociationEntry.AssociationID)
+		require.Equal(t, userAssociationEntry.TransactorPKID, m0PKID)
+		require.Equal(t, userAssociationEntry.TargetUserPKID, m1PKID)
+		require.Equal(t, userAssociationEntry.AssociationType, "ENDORSEMENT")
+		require.Equal(t, userAssociationEntry.AssociationValue, "SQL")
+		require.NotNil(t, userAssociationEntry.BlockHeight)
 	}
 	{
 		// DeleteUserAssociation
-		deleteMetadata = &DeleteUserAssociationMetadata{
-			AssociationID: associationEntry.AssociationID,
+		deleteUserAssociationMetadata = &DeleteUserAssociationMetadata{
+			AssociationID: userAssociationEntry.AssociationID,
 		}
-		_doAssociationTxnHappyPath(testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteMetadata})
+		_doAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata},
+		)
 
-		associationEntry, err = utxoView.GetUserAssociationByID(deleteMetadata.AssociationID)
+		userAssociationEntry, err = utxoView.GetUserAssociationByID(deleteUserAssociationMetadata.AssociationID)
 		require.NoError(t, err)
-		require.Nil(t, associationEntry)
+		require.Nil(t, userAssociationEntry)
+	}
+	// -------------------------------
+	// PostAssociation: validations
+	// -------------------------------
+	{
+		// Create post
+		_submitPostWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			[]byte{},
+			[]byte{},
+			&DeSoBodySchema{Body: "Hello, world!"},
+			[]byte{},
+			uint64(1668027603792),
+			false,
+		)
+		require.Equal(t, testMeta.txns[len(testMeta.txns)-1].TxnMeta.GetTxnType(), TxnTypeSubmitPost)
+		postHash = testMeta.txns[len(testMeta.txns)-1].Hash()
+		require.NotNil(t, utxoView.GetPostEntryForPostHash(postHash))
+	}
+	{
+		// RuleErrorAssociationBeforeBlockHeight
+		params.ForkHeights.AssociationsBlockHeight = math.MaxUint32
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AssociationType:  "REACTION",
+			AssociationValue: "HEART",
+		}
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationBeforeBlockHeight)
+		params.ForkHeights.AssociationsBlockHeight = uint32(0)
+	}
+	{
+		// RuleErrorPostAssociationInvalidPost
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         NewBlockHash(RandomBytes(HashSizeBytes)),
+			AssociationType:  "REACTION",
+			AssociationValue: "HEART",
+		}
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorPostAssociationInvalidPost)
+	}
+	{
+		// RuleErrorAssociationInvalidType: AssociationType is empty
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AssociationType:  "",
+			AssociationValue: "HEART",
+		}
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
+	}
+	{
+		// RuleErrorAssociationInvalidType: AssociationType is too long
+		var associationType []byte
+		for ii := 0; ii < MaxAssociationTypeCharLength+1; ii++ {
+			associationType = append(associationType, []byte(" ")...)
+		}
+		require.Equal(t, len(associationType), MaxAssociationTypeCharLength+1)
+
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AssociationType:  string(associationType),
+			AssociationValue: "HEART",
+		}
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
+	}
+	{
+		// RuleErrorAssociationInvalidType: AssociationType uses reserved prefix
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AssociationType:  AssociationTypeReservedPrefix + "REACTION",
+			AssociationValue: "HEART",
+		}
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
+	}
+	{
+		// RuleErrorAssociationTypeInvalidValue: AssociationValue is empty
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AssociationType:  "REACTION",
+			AssociationValue: "",
+		}
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
+	}
+	{
+		// RuleErrorAssociationInvalidValue: AssociationValue is too long
+		var associationValue []byte
+		for ii := 0; ii < MaxAssociationValueCharLength+1; ii++ {
+			associationValue = append(associationValue, []byte(" ")...)
+		}
+		require.Equal(t, len(associationValue), MaxAssociationValueCharLength+1)
+
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AssociationType:  "REACTION",
+			AssociationValue: string(associationValue),
+		}
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
+	}
+	{
+		// RuleErrorAssociationInvalidID
+		deletePostAssociationMetadata = &DeletePostAssociationMetadata{
+			AssociationID: nil,
+		}
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidID)
+	}
+	{
+		// RuleErrorAssociationNotFound
+		deletePostAssociationMetadata = &DeletePostAssociationMetadata{
+			AssociationID: NewBlockHash(RandomBytes(HashSizeBytes)),
+		}
+		_, _, _, err = _doAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationNotFound)
+	}
+	// ---------------------------------
+	// PostAssociation: happy paths
+	// ---------------------------------
+	{
+		// CreatePostAssociation
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AssociationType:  "REACTION",
+			AssociationValue: "HEART",
+		}
+		_doAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		)
+
+		postAssociationEntry, err = utxoView.GetPostAssociationByAttributes(
+			m0PkBytes, createPostAssociationMetadata,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, postAssociationEntry)
+		require.NotNil(t, postAssociationEntry.AssociationID)
+		require.Equal(t, postAssociationEntry.TransactorPKID, m0PKID)
+		require.Equal(t, postAssociationEntry.PostHash, postHash)
+		require.Equal(t, postAssociationEntry.AssociationType, "REACTION")
+		require.Equal(t, postAssociationEntry.AssociationValue, "HEART")
+		require.NotNil(t, postAssociationEntry.BlockHeight)
+	}
+	{
+		// DeletePostAssociation
+		deletePostAssociationMetadata = &DeletePostAssociationMetadata{
+			AssociationID: postAssociationEntry.AssociationID,
+		}
+		_doAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata},
+		)
+
+		postAssociationEntry, err = utxoView.GetPostAssociationByID(deletePostAssociationMetadata.AssociationID)
+		require.NoError(t, err)
+		require.Nil(t, postAssociationEntry)
 	}
 }
 
