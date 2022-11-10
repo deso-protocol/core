@@ -14,9 +14,11 @@ func TestAssociations(t *testing.T) {
 	var createUserAssociationMetadata *CreateUserAssociationMetadata
 	var deleteUserAssociationMetadata *DeleteUserAssociationMetadata
 	var userAssociationEntry *UserAssociationEntry
+	var userAssociationEntries []*UserAssociationEntry
 	var createPostAssociationMetadata *CreatePostAssociationMetadata
 	var deletePostAssociationMetadata *DeletePostAssociationMetadata
 	var postAssociationEntry *PostAssociationEntry
+	// var postAssociationEntries []*PostAssociationEntry
 	var postHash *BlockHash
 	var err error
 
@@ -422,6 +424,70 @@ func TestAssociations(t *testing.T) {
 		postAssociationEntry, err = utxoView.GetPostAssociationByID(deletePostAssociationMetadata.AssociationID)
 		require.NoError(t, err)
 		require.Nil(t, postAssociationEntry)
+	}
+	// ---------------------------------
+	// UserAssociation: query API
+	// ---------------------------------
+	{
+		// Create test user associations
+
+		// m0 -> m1, ENDORSEMENT: SQL
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AssociationType:     "ENDORSEMENT",
+			AssociationValue:    "SQL",
+		}
+		_doAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+
+		// m1 -> m2, ENDORSEMENT: SQL
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m2PkBytes),
+			AssociationType:     "ENDORSEMENT",
+			AssociationValue:    "SQL",
+		}
+		_doAssociationTxnHappyPath(
+			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+
+		// m0 -> m3, ENDORSEMENT: JAVA
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m3PkBytes),
+			AssociationType:     "ENDORSEMENT",
+			AssociationValue:    "JAVA",
+		}
+		_doAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+
+		// m0 -> m1, MEMBERSHIP: Acme University Alumni
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AssociationType:     "MEMBERSHIP",
+			AssociationValue:    "Acme University Alumni",
+		}
+		_doAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+
+		// Query for all endorsements of m1
+		userAssociationEntries, err = utxoView.GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AssociationType:     "ENDORSEMENT",
+		})
+		require.NoError(t, err)
+		require.Len(t, userAssociationEntries, 1)
+		require.Equal(t, userAssociationEntries[0].AssociationValue, "SQL")
+
+		// Query for all Acme University Alumni members as defined by m0
+		userAssociationEntries, err = utxoView.GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
+			AssociationType:  "MEMBERSHIP",
+			AssociationValue: "Acme University Alumni",
+		})
+		require.NoError(t, err)
+		require.Len(t, userAssociationEntries, 1)
+		require.Equal(t, userAssociationEntries[0].TargetUserPKID, m1PKID)
 	}
 
 	_executeAllTestRollbackAndFlush(testMeta)

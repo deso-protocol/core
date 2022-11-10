@@ -639,7 +639,13 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(transactorPK []byte, metada
 		associationEntry.TargetUserPKID = bav.GetPKIDForPublicKey(metadata.TargetUserPublicKey.ToBytes()).PKID
 	}
 	// First, check the database.
-	bav.GetDbAdapter().GetUserAssociationsByAttributes(associationEntry)
+	dbAssociationEntries, err := bav.GetDbAdapter().GetUserAssociationsByAttributes(associationEntry)
+	if err != nil {
+		return []*UserAssociationEntry{}, err
+	}
+	for _, dbAssociationEntry := range dbAssociationEntries {
+		associationEntryMap[dbAssociationEntry.AssociationID] = dbAssociationEntry
+	}
 	// Next, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
 	for _, utxoAssociationEntry := range bav.AssociationMapKeyToUserAssociationEntry {
@@ -709,7 +715,13 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(transactorPK []byte, metada
 		associationEntry.TransactorPKID = bav.GetPKIDForPublicKey(transactorPK).PKID
 	}
 	// First, check the database.
-	bav.GetDbAdapter().GetPostAssociationsByAttributes(associationEntry)
+	dbAssociationEntries, err := bav.GetDbAdapter().GetPostAssociationsByAttributes(associationEntry)
+	if err != nil {
+		return []*PostAssociationEntry{}, err
+	}
+	for _, dbAssociationEntry := range dbAssociationEntries {
+		associationEntryMap[dbAssociationEntry.AssociationID] = dbAssociationEntry
+	}
 	// Next, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
 	for _, utxoAssociationEntry := range bav.AssociationMapKeyToPostAssociationEntry {
