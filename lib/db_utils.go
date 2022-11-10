@@ -8599,6 +8599,36 @@ func DBGetPostAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, qu
 	return associationEntry, nil
 }
 
+func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, queryEntry *UserAssociationEntry) ([]*UserAssociationEntry, error) {
+	var ret []*UserAssociationEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetUserAssociationsByAttributesWithTxn(txn, snap, queryEntry)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetUserAssociationsByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, queryEntry *UserAssociationEntry) ([]*UserAssociationEntry, error) {
+	// TODO: DBGetUserAssociationsByAttributesWithTxn
+	return []*UserAssociationEntry{}, nil
+}
+
+func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, queryEntry *PostAssociationEntry) ([]*PostAssociationEntry, error) {
+	var ret []*PostAssociationEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetPostAssociationsByAttributesWithTxn(txn, snap, queryEntry)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetPostAssociationsByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, queryEntry *PostAssociationEntry) ([]*PostAssociationEntry, error) {
+	// TODO: DBGetPostAssociationsByAttributesWithTxn
+	return []*PostAssociationEntry{}, nil
+}
+
 func DBPutUserAssociationWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
