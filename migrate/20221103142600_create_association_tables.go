@@ -74,8 +74,8 @@ func init() {
 		_, err = db.Exec(`
 			CREATE TABLE pg_post_associations (
 				association_id    BYTEA PRIMARY KEY,
+				transactor_pkid   BYTEA NOT NULL,
 				post_hash         BYTEA NOT NULL,
-				target_user_pkid  BYTEA NOT NULL,
 				association_type  TEXT NOT NULL,
 				association_value TEXT NOT NULL,
 				block_height      BIGINT NOT NULL

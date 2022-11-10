@@ -2,7 +2,6 @@ package lib
 
 import (
 	"bytes"
-	"database/sql"
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
@@ -3120,7 +3119,7 @@ func (postgres *Postgres) GetUserAssociationByID(associationID *BlockHash) (*Use
 	pgAssociation := PGUserAssociation{AssociationID: associationID}
 	if err := postgres.db.Model(&pgAssociation).WherePK().First(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
-		if err == sql.ErrNoRows {
+		if err.Error() == "pg: no rows in result set" {
 			return nil, nil
 		}
 
@@ -3133,7 +3132,7 @@ func (postgres *Postgres) GetPostAssociationByID(associationID *BlockHash) (*Pos
 	pgAssociation := PGPostAssociation{AssociationID: associationID}
 	if err := postgres.db.Model(&pgAssociation).WherePK().First(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
-		if err == sql.ErrNoRows {
+		if err.Error() == "pg: no rows in result set" {
 			return nil, nil
 		}
 
@@ -3151,7 +3150,7 @@ func (postgres *Postgres) GetUserAssociationByAttributes(associationEntry *UserA
 		Where("association_value = ?", associationEntry.AssociationValue).
 		First(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
-		if err == sql.ErrNoRows {
+		if err.Error() == "pg: no rows in result set" {
 			return nil, nil
 		}
 
@@ -3169,7 +3168,7 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 		Where("association_value = ?", associationEntry.AssociationValue).
 		First(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
-		if err == sql.ErrNoRows {
+		if err.Error() == "pg: no rows in result set" {
 			return nil, nil
 		}
 
