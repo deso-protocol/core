@@ -3178,13 +3178,91 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 }
 
 func (postgres *Postgres) GetUserAssociationsByAttributes(associationEntry *UserAssociationEntry) ([]*UserAssociationEntry, error) {
-	// TODO: postgres.GetUserAssociationsByAttributes
-	return []*UserAssociationEntry{}, nil
+	var pgAssociations []PGUserAssociation
+
+	// Construct query.
+	query := postgres.db.Model(&pgAssociations)
+	if associationEntry.TransactorPKID != nil {
+		query.Where("transactor_pkid = ?", associationEntry.TransactorPKID)
+	}
+	if associationEntry.TargetUserPKID != nil {
+		query.Where("target_user_pkid = ?", associationEntry.TargetUserPKID)
+	}
+	if associationEntry.AssociationType != "" {
+		if strings.HasSuffix(associationEntry.AssociationType, "*") {
+			query.Where("association_type LIKE ?", associationEntry.AssociationType)
+		} else {
+			query.Where("association_type = ?", associationEntry.AssociationType)
+		}
+	}
+	if associationEntry.AssociationValue != "" {
+		if strings.HasSuffix(associationEntry.AssociationValue, "*") {
+			query.Where("association_value LIKE ?", associationEntry.AssociationValue)
+		} else {
+			query.Where("association_value = ?", associationEntry.AssociationValue)
+		}
+	}
+
+	// Execute query.
+	if err := query.Select(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	// Map from PGAssociation to AssociationEntry.
+	associationEntries := []*UserAssociationEntry{}
+	for _, pgAssociation := range pgAssociations {
+		associationEntries = append(associationEntries, pgAssociation.ToUserAssociationEntry())
+	}
+	return associationEntries, nil
 }
 
 func (postgres *Postgres) GetPostAssociationsByAttributes(associationEntry *PostAssociationEntry) ([]*PostAssociationEntry, error) {
-	// TODO: postgres.GetPostAssociationsByAttributes
-	return []*PostAssociationEntry{}, nil
+	var pgAssociations []PGPostAssociation
+
+	// Construct query.
+	query := postgres.db.Model(&pgAssociations)
+	if associationEntry.TransactorPKID != nil {
+		query.Where("transactor_pkid = ?", associationEntry.TransactorPKID)
+	}
+	if associationEntry.PostHash != nil {
+		query.Where("post_hash = ?", associationEntry.PostHash)
+	}
+	if associationEntry.AssociationType != "" {
+		if strings.HasSuffix(associationEntry.AssociationType, "*") {
+			query.Where("association_type LIKE ?", associationEntry.AssociationType)
+		} else {
+			query.Where("association_type = ?", associationEntry.AssociationType)
+		}
+	}
+	if associationEntry.AssociationValue != "" {
+		if strings.HasSuffix(associationEntry.AssociationValue, "*") {
+			query.Where("association_value LIKE ?", associationEntry.AssociationValue)
+		} else {
+			query.Where("association_value = ?", associationEntry.AssociationValue)
+		}
+	}
+
+	// Execute query.
+	if err := query.Select(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	// Map from PGAssociation to AssociationEntry.
+	associationEntries := []*PostAssociationEntry{}
+	for _, pgAssociation := range pgAssociations {
+		associationEntries = append(associationEntries, pgAssociation.ToPostAssociationEntry())
+	}
+	return associationEntries, nil
 }
 
 func (postgres *Postgres) flushUserAssociations(tx *pg.Tx, view *UtxoView, blockHeight uint64) error {
