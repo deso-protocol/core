@@ -423,6 +423,8 @@ func TestAssociations(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, postAssociationEntry)
 	}
+
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func _doAssociationTxnHappyPath(
