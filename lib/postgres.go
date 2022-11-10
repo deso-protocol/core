@@ -3177,6 +3177,16 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 	return pgAssociation.ToPostAssociationEntry(), nil
 }
 
+func (postgres *Postgres) GetUserAssociationsByAttributes(associationEntry *UserAssociationEntry) ([]*UserAssociationEntry, error) {
+	// TODO: postgres.GetUserAssociationsByAttributes
+	return []*UserAssociationEntry{}, nil
+}
+
+func (postgres *Postgres) GetPostAssociationsByAttributes(associationEntry *PostAssociationEntry) ([]*PostAssociationEntry, error) {
+	// TODO: postgres.GetPostAssociationsByAttributes
+	return []*PostAssociationEntry{}, nil
+}
+
 func (postgres *Postgres) flushUserAssociations(tx *pg.Tx, view *UtxoView, blockHeight uint64) error {
 	var insertAssociations []*PGUserAssociation
 	var deleteAssociations []*PGUserAssociation

@@ -62,6 +62,20 @@ func (adapter *DbAdapter) GetPostAssociationByAttributes(associationEntry *PostA
 	return DBGetPostAssociationByAttributes(adapter.badgerDb, adapter.snapshot, associationEntry)
 }
 
+func (adapter *DbAdapter) GetUserAssociationsByAttributes(associationEntry *UserAssociationEntry) ([]*UserAssociationEntry, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetUserAssociationsByAttributes(associationEntry)
+	}
+	return DBGetUserAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationEntry)
+}
+
+func (adapter *DbAdapter) GetPostAssociationsByAttributes(associationEntry *PostAssociationEntry) ([]*PostAssociationEntry, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetPostAssociationsByAttributes(associationEntry)
+	}
+	return DBGetPostAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationEntry)
+}
+
 //
 // Balance entry
 //
