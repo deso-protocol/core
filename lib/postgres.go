@@ -3142,11 +3142,12 @@ func (postgres *Postgres) GetPostAssociationByID(associationID *BlockHash) (*Pos
 }
 
 func (postgres *Postgres) GetUserAssociationByAttributes(associationEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
+	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	pgAssociation := PGUserAssociation{}
 	if err := postgres.db.Model(&pgAssociation).
 		Where("transactor_pkid = ?", associationEntry.TransactorPKID).
 		Where("target_user_pkid = ?", associationEntry.TargetUserPKID).
-		Where("association_type = ?", associationEntry.AssociationType).
+		Where("LOWER(association_type) = ?", strings.ToLower(associationEntry.AssociationType)).
 		Where("association_value = ?", associationEntry.AssociationValue).
 		First(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
@@ -3160,11 +3161,12 @@ func (postgres *Postgres) GetUserAssociationByAttributes(associationEntry *UserA
 }
 
 func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
+	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	pgAssociation := PGPostAssociation{}
 	if err := postgres.db.Model(&pgAssociation).
 		Where("transactor_pkid = ?", associationEntry.TransactorPKID).
 		Where("post_hash = ?", associationEntry.PostHash).
-		Where("association_type = ?", associationEntry.AssociationType).
+		Where("LOWER(association_type) = ?", strings.ToLower(associationEntry.AssociationType)).
 		Where("association_value = ?", associationEntry.AssociationValue).
 		First(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
@@ -3178,6 +3180,7 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 }
 
 func (postgres *Postgres) GetUserAssociationsByAttributes(associationEntry *UserAssociationEntry) ([]*UserAssociationEntry, error) {
+	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	var pgAssociations []PGUserAssociation
 
 	// Construct query.
@@ -3191,11 +3194,11 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(associationEntry *User
 	if associationEntry.AssociationType != "" {
 		if strings.HasSuffix(associationEntry.AssociationType, AssociationQueryWildcardSuffix) {
 			query.Where(
-				"association_type LIKE ?",
-				associationEntry.AssociationType[:len(associationEntry.AssociationType)-1]+"%",
+				"LOWER(association_type) LIKE ?",
+				strings.ToLower(associationEntry.AssociationType[:len(associationEntry.AssociationType)-1])+"%",
 			)
 		} else {
-			query.Where("association_type = ?", associationEntry.AssociationType)
+			query.Where("LOWER(association_type) = ?", strings.ToLower(associationEntry.AssociationType))
 		}
 	}
 	if associationEntry.AssociationValue != "" {
@@ -3228,6 +3231,7 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(associationEntry *User
 }
 
 func (postgres *Postgres) GetPostAssociationsByAttributes(associationEntry *PostAssociationEntry) ([]*PostAssociationEntry, error) {
+	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	var pgAssociations []PGPostAssociation
 
 	// Construct query.
@@ -3241,11 +3245,11 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(associationEntry *Post
 	if associationEntry.AssociationType != "" {
 		if strings.HasSuffix(associationEntry.AssociationType, AssociationQueryWildcardSuffix) {
 			query.Where(
-				"association_type LIKE ?",
-				associationEntry.AssociationType[:len(associationEntry.AssociationType)-1]+"%",
+				"LOWER(association_type) LIKE ?",
+				strings.ToLower(associationEntry.AssociationType[:len(associationEntry.AssociationType)-1])+"%",
 			)
 		} else {
-			query.Where("association_type = ?", associationEntry.AssociationType)
+			query.Where("LOWER(association_type) = ?", strings.ToLower(associationEntry.AssociationType))
 		}
 	}
 	if associationEntry.AssociationValue != "" {

@@ -4785,18 +4785,22 @@ type AssociationMapKey struct {
 func (associationEntry *UserAssociationEntry) Eq(other *UserAssociationEntry) bool {
 	// Compare if two user association entries are equal. Note that their
 	// BlockHeights can differ, and we would still consider them equal.
+	// Note: AssociationType is case-insensitive while AssociationValue
+	// is case-sensitive.
 	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
 		associationEntry.TargetUserPKID.Eq(other.TargetUserPKID) &&
-		strings.Compare(associationEntry.AssociationType, other.AssociationType) == 0 &&
+		strings.Compare(strings.ToLower(associationEntry.AssociationType), strings.ToLower(other.AssociationType)) == 0 &&
 		strings.Compare(associationEntry.AssociationValue, other.AssociationValue) == 0
 }
 
 func (associationEntry *PostAssociationEntry) Eq(other *PostAssociationEntry) bool {
 	// Compare if two post association entries are equal. Note that their
 	// BlockHeights can differ, and we would still consider them equal.
+	// Note: AssociationType is case-insensitive while AssociationValue
+	// is case-sensitive.
 	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
 		associationEntry.PostHash.IsEqual(other.PostHash) &&
-		strings.Compare(associationEntry.AssociationType, other.AssociationType) == 0 &&
+		strings.Compare(strings.ToLower(associationEntry.AssociationType), strings.ToLower(other.AssociationType)) == 0 &&
 		strings.Compare(associationEntry.AssociationValue, other.AssociationValue) == 0
 }
 

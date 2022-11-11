@@ -445,7 +445,7 @@ func TestAssociations(t *testing.T) {
 		// m1 -> m2, ENDORSEMENT: SQL
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m2PkBytes),
-			AssociationType:     "ENDORSEMENT",
+			AssociationType:     "endorsement",
 			AssociationValue:    "SQL",
 		}
 		_doAssociationTxnHappyPath(
@@ -510,6 +510,18 @@ func TestAssociations(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 1)
 		require.Equal(t, userAssociationEntries[0].AssociationValue, "SQL")
+
+		// Query for all endorse* by m0
+		userAssociationEntries, err = utxoView.GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
+			AssociationType: "endorse*",
+		})
+		require.NoError(t, err)
+		require.Len(t, userAssociationEntries, 2)
+		sort.Slice(userAssociationEntries, func(ii, jj int) bool {
+			return userAssociationEntries[ii].AssociationValue < userAssociationEntries[jj].AssociationValue
+		})
+		require.Equal(t, userAssociationEntries[0].AssociationValue, "JAVA")
+		require.Equal(t, userAssociationEntries[1].AssociationValue, "SQL")
 
 		// Query for all Acme University Alumni members as defined by m0
 		userAssociationEntries, err = utxoView.GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
