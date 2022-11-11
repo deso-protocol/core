@@ -8600,18 +8600,107 @@ func DBGetPostAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, qu
 }
 
 func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, queryEntry *UserAssociationEntry) ([]*UserAssociationEntry, error) {
-	var ret []*UserAssociationEntry
-	var err error
-	handle.View(func(txn *badger.Txn) error {
-		ret, err = DBGetUserAssociationsByAttributesWithTxn(txn, snap, queryEntry)
-		return nil
-	})
-	return ret, err
-}
+	// Construct key based on input query params.
+	var keyPrefix []byte
 
-func DBGetUserAssociationsByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, queryEntry *UserAssociationEntry) ([]*UserAssociationEntry, error) {
-	// TODO: DBGetUserAssociationsByAttributesWithTxn
-	return []*UserAssociationEntry{}, nil
+	if queryEntry.TransactorPKID != nil {
+		if queryEntry.TargetUserPKID != nil {
+			// PrefixUserAssociationByUserPKIDs: TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
+			keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByUserPKIDs...)
+			keyPrefix = append(keyPrefix, queryEntry.TransactorPKID.ToBytes()...)
+			keyPrefix = append(keyPrefix, queryEntry.TargetUserPKID.ToBytes()...)
+		} else {
+			// PrefixUserAssociationByTransactorPKID: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
+			keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByTransactorPKID...)
+			keyPrefix = append(keyPrefix, queryEntry.TransactorPKID.ToBytes()...)
+		}
+	} else if queryEntry.TargetUserPKID != nil {
+		// PrefixUserAssociationByTargetUserPKID: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
+		keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByTargetUserPKID...)
+		keyPrefix = append(keyPrefix, queryEntry.TargetUserPKID.ToBytes()...)
+	} else {
+		return nil, errors.New("DBGetUserAssociationsByAttributes: invalid query params")
+	}
+
+	if (queryEntry.AssociationType == "" || strings.HasSuffix(queryEntry.AssociationType, AssociationQueryWildcardSuffix)) &&
+		queryEntry.AssociationValue != "" {
+		return nil, errors.New("DBGetUserAssociationsByAttributes: invalid query params")
+	}
+	if queryEntry.AssociationType != "" {
+		if strings.HasSuffix(queryEntry.AssociationType, AssociationQueryWildcardSuffix) {
+			if queryEntry.AssociationValue != "" {
+				// AssociationType == ...*, AssociationValue != ""
+				return nil, errors.New("DBGetUserAssociationsByAttributes: invalid query params")
+			}
+			// AssociationType == ...*, AssociationValue == ""
+			keyPrefix = append(keyPrefix, []byte(queryEntry.AssociationType[:len(queryEntry.AssociationType)-1])...)
+		} else {
+			// AssociationType == ...
+			keyPrefix = append(keyPrefix, []byte(queryEntry.AssociationType)...)
+			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+
+			if queryEntry.AssociationValue != "" {
+				if strings.HasSuffix(queryEntry.AssociationValue, AssociationQueryWildcardSuffix) {
+					// AssociationValue == ...*
+					keyPrefix = append(keyPrefix, []byte(queryEntry.AssociationValue[:len(queryEntry.AssociationValue)-1])...)
+				} else {
+					// AssocationValue == ...
+					keyPrefix = append(keyPrefix, []byte(queryEntry.AssociationValue)...)
+					keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+				}
+			}
+		}
+	} else if queryEntry.AssociationValue != "" {
+		// AssociationType == "", AssociationValue != ""
+		return nil, errors.New("DBGetUserAssociationsByAttributes: invalid query params")
+	}
+
+	// Scan for all entries with the given key prefix.
+	_, valsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	var associationIDs []*BlockHash
+
+	// Cast resulting values from bytes to association IDs.
+	for _, valBytes := range valsFound {
+		associationID := &BlockHash{}
+		rr := bytes.NewReader(valBytes)
+		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
+			return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem decoding association id: ")
+		}
+
+		associationIDs = append(associationIDs, associationID)
+	}
+
+	// Map from association IDs to association entries.
+	var associationEntries []*UserAssociationEntry
+
+	for _, associationID := range associationIDs {
+		// Retrieve association entry from db.
+		key := DBKeyForUserAssociationByID(&UserAssociationEntry{AssociationID: associationID})
+		var associationBytes []byte
+		var err error
+
+		handle.View(func(txn *badger.Txn) error {
+			associationBytes, err = DBGetWithTxn(txn, snap, key)
+			return nil
+		})
+		if err != nil {
+			// We don't want to error if the key isn't found. Instead, return nil.
+			if err == badger.ErrKeyNotFound {
+				return nil, nil
+			}
+			return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry")
+		}
+
+		// Decode association entry from bytes.
+		associationEntry := &UserAssociationEntry{}
+		rr := bytes.NewReader(associationBytes)
+		if exist, err := DecodeFromBytes(associationEntry, rr); !exist || err != nil {
+			return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem decoding association entry")
+		}
+
+		associationEntries = append(associationEntries, associationEntry)
+	}
+	return associationEntries, nil
 }
 
 func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, queryEntry *PostAssociationEntry) ([]*PostAssociationEntry, error) {
