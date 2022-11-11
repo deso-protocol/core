@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/stretchr/testify/require"
 	"math"
+	"sort"
 	"testing"
 )
 
@@ -461,6 +462,36 @@ func TestAssociations(t *testing.T) {
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
 		)
 
+		// m1 -> m3, ENDORSEMENT: C
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m3PkBytes),
+			AssociationType:     "ENDORSEMENT",
+			AssociationValue:    "C",
+		}
+		_doAssociationTxnHappyPath(
+			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+
+		// m2 -> m3, ENDORSEMENT: C++
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m3PkBytes),
+			AssociationType:     "ENDORSEMENT",
+			AssociationValue:    "C++",
+		}
+		_doAssociationTxnHappyPath(
+			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+
+		// m4 -> m3, ENDORSMENT: C#
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m3PkBytes),
+			AssociationType:     "ENDORSEMENT",
+			AssociationValue:    "C#",
+		}
+		_doAssociationTxnHappyPath(
+			testMeta, m4Pub, m4Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+
 		// m0 -> m1, MEMBERSHIP: Acme University Alumni
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
@@ -488,6 +519,30 @@ func TestAssociations(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 1)
 		require.Equal(t, userAssociationEntries[0].TargetUserPKID, m1PKID)
+
+		// Query for all Acme University * members as defined by m0
+		userAssociationEntries, err = utxoView.GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
+			AssociationType:  "MEMBERSHIP",
+			AssociationValue: "Acme University *",
+		})
+		require.NoError(t, err)
+		require.Len(t, userAssociationEntries, 1)
+		require.Equal(t, userAssociationEntries[0].TargetUserPKID, m1PKID)
+
+		// Query for all C* endorsements of m3
+		userAssociationEntries, err = utxoView.GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m3PkBytes),
+			AssociationType:     "ENDORSEMENT",
+			AssociationValue:    "C*",
+		})
+		require.NoError(t, err)
+		require.Len(t, userAssociationEntries, 3)
+		sort.Slice(userAssociationEntries, func(ii, jj int) bool {
+			return userAssociationEntries[ii].AssociationValue < userAssociationEntries[jj].AssociationValue
+		})
+		require.Equal(t, userAssociationEntries[0].AssociationValue, "C")
+		require.Equal(t, userAssociationEntries[1].AssociationValue, "C#")
+		require.Equal(t, userAssociationEntries[2].AssociationValue, "C++")
 	}
 
 	_executeAllTestRollbackAndFlush(testMeta)
