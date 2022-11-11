@@ -19,7 +19,7 @@ func TestAssociations(t *testing.T) {
 	var createPostAssociationMetadata *CreatePostAssociationMetadata
 	var deletePostAssociationMetadata *DeletePostAssociationMetadata
 	var postAssociationEntry *PostAssociationEntry
-	// var postAssociationEntries []*PostAssociationEntry
+	var postAssociationEntries []*PostAssociationEntry
 	var postHash *BlockHash
 	var err error
 
@@ -251,7 +251,7 @@ func TestAssociations(t *testing.T) {
 			m1Priv,
 			[]byte{},
 			[]byte{},
-			&DeSoBodySchema{Body: "Hello, world!"},
+			&DeSoBodySchema{Body: "Hello, world! --m1"},
 			[]byte{},
 			uint64(1668027603792),
 			false,
@@ -482,7 +482,7 @@ func TestAssociations(t *testing.T) {
 			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
 		)
 
-		// m4 -> m3, ENDORSMENT: C#
+		// m4 -> m3, ENDORSEMENT: C#
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m3PkBytes),
 			AssociationType:     "ENDORSEMENT",
@@ -543,6 +543,90 @@ func TestAssociations(t *testing.T) {
 		require.Equal(t, userAssociationEntries[0].AssociationValue, "C")
 		require.Equal(t, userAssociationEntries[1].AssociationValue, "C#")
 		require.Equal(t, userAssociationEntries[2].AssociationValue, "C++")
+	}
+	// ---------------------------------
+	// PostAssociation: query API
+	// ---------------------------------
+	{
+		// Create test posts
+		require.NotNil(t, utxoView.GetPostEntryForPostHash(postHash))
+
+		_submitPostWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			[]byte{},
+			[]byte{},
+			&DeSoBodySchema{Body: "Hello, world! --m2"},
+			[]byte{},
+			uint64(1668027603792),
+			false,
+		)
+		require.Equal(t, testMeta.txns[len(testMeta.txns)-1].TxnMeta.GetTxnType(), TxnTypeSubmitPost)
+		postHash2 := testMeta.txns[len(testMeta.txns)-1].Hash()
+		require.NotNil(t, utxoView.GetPostEntryForPostHash(postHash2))
+
+		_submitPostWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m3Pub,
+			m3Priv,
+			[]byte{},
+			[]byte{},
+			&DeSoBodySchema{Body: "Hello, world! --m3"},
+			[]byte{},
+			uint64(1668027603792),
+			false,
+		)
+		require.Equal(t, testMeta.txns[len(testMeta.txns)-1].TxnMeta.GetTxnType(), TxnTypeSubmitPost)
+		postHash3 := testMeta.txns[len(testMeta.txns)-1].Hash()
+		require.NotNil(t, utxoView.GetPostEntryForPostHash(postHash3))
+
+		// Create test post associations
+
+		// m0 -> m1's post, REACTION: HEART
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AssociationType:  "REACTION",
+			AssociationValue: "HEART",
+		}
+		_doAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		)
+
+		// m2 -> m1's post, REACTION: DOWN_VOTE
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AssociationType:  "REACTION",
+			AssociationValue: "DOWN_VOTE",
+		}
+		_doAssociationTxnHappyPath(
+			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		)
+
+		// Query for all reactions on m1's post
+		postAssociationEntries, err = utxoView.GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+			PostHash:        postHash,
+			AssociationType: "REACTION",
+		})
+		require.NoError(t, err)
+		require.Len(t, postAssociationEntries, 2)
+		sort.Slice(postAssociationEntries, func(ii, jj int) bool {
+			return postAssociationEntries[ii].AssociationValue < postAssociationEntries[jj].AssociationValue
+		})
+		require.Equal(t, postAssociationEntries[0].AssociationValue, "DOWN_VOTE")
+		require.Equal(t, postAssociationEntries[1].AssociationValue, "HEART")
+
+		// Query for all down votes on m1's post
+		postAssociationEntries, err = utxoView.GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AssociationType:  "REACTION",
+			AssociationValue: "DOWN_VOTE",
+		})
+		require.NoError(t, err)
+		require.Len(t, postAssociationEntries, 1)
+		require.Equal(t, postAssociationEntries[0].TransactorPKID, m2PKID)
 	}
 
 	_executeAllTestRollbackAndFlush(testMeta)
