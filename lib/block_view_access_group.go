@@ -10,11 +10,11 @@ import (
 // <groupOwnerPublicKey, groupKeyName>. Based on the blockheight, we fetch the full group or we fetch
 // the simplified message group entry from the membership index. forceFullEntry is an optional parameter that
 // will force us to always fetch the full group entry.
-func (bav *UtxoView) GetAccessGroupEntry(memberPublicKey *PublicKey, groupOwnerPublicKey *PublicKey,
-	groupKeyName *GroupKeyName, blockHeight uint32) (*AccessGroupEntry, error) {
+func (bav *UtxoView) GetAccessGroupEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+	blockHeight uint32) (*AccessGroupEntry, error) {
 
 	// If either of the provided parameters is nil, we return.
-	if memberPublicKey == nil || groupOwnerPublicKey == nil || groupKeyName == nil {
+	if groupOwnerPublicKey == nil || groupKeyName == nil {
 		return nil, fmt.Errorf("GetAccessGroupEntry: Called with nil parameter(s)")
 	}
 
@@ -43,7 +43,7 @@ func (bav *UtxoView) GetAccessGroupForAccessGroupKeyExistence(accessGroupKey *Ac
 	ownerPublicKey := &accessGroupKey.AccessGroupOwnerPublicKey
 	groupKeyName := &accessGroupKey.AccessGroupKeyName
 	entry, err := bav.GetAccessGroupEntry(
-		ownerPublicKey, ownerPublicKey, groupKeyName, blockHeight)
+		ownerPublicKey, groupKeyName, blockHeight)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetAccessGroupForAccessGroupKeyExistence: Problem getting "+
 			"access group entry for access group key %v", accessGroupKey)
@@ -263,9 +263,9 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 	// we will explain in more detail later.
 
 	// Make sure DeSo V3 messages are live.
-	if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorAccessKeyBeforeBlockHeight, "_connectAccessGroupCreate: "+
+			RuleErrorAccessGroupsBeforeBlockHeight, "_connectAccessGroupCreate: "+
 				"Problem connecting access key, too early block height")
 	}
 
@@ -279,7 +279,7 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
 	if EqualGroupKeyName(NewGroupKeyName(txMeta.AccessGroupKeyName), BaseGroupKeyName()) {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorAccessKeyNameCannotBeZeros, "_connectAccessGroupCreate: "+
+			RuleErrorAccessGroupsNameCannotBeZeros, "_connectAccessGroupCreate: "+
 				"Cannot set a zeros-only key name?")
 	}
 
@@ -289,24 +289,10 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 			"Problem parsing public key: %v", txMeta.AccessGroupPublicKey)
 	}
 
-	// Sanity-check that transaction public key is valid.
-	if err := IsByteArrayValidPublicKey(txn.PublicKey); err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: "+
-			"error %v", RuleErrorAccessOwnerPublicKeyInvalid)
-	}
-
 	// Sanity-check that we're not trying to add an access public key identical to the ownerPublicKey.
 	if reflect.DeepEqual(txMeta.AccessGroupPublicKey, txn.PublicKey) {
 		return 0, 0, nil, errors.Wrapf(RuleErrorAccessPublicKeyCannotBeOwnerKey,
 			"_connectAccessGroupCreate: access public key and txn public key can't be the same")
-	}
-
-	// Connect basic txn to get the total input and the total output without
-	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: ")
 	}
 
 	// We have validated all information. At this point the inputs and outputs have been processed.
@@ -319,8 +305,12 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 	// by the base element public key. To register an unencrypted group chat, the access key transaction
 	// should contain the base element as the access public key. Below, we check for this and adjust the
 	// accessGroupKey and accessPublicKey appropriately so that we can properly index the DB entry.
-	var accessGroupKey *AccessGroupKey
-	var accessPublicKey *PublicKey
+
+	accessPublicKey := NewPublicKey(txMeta.AccessGroupPublicKey)
+	accessGroupKey := &AccessGroupKey{
+		AccessGroupOwnerPublicKey: *NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
+		AccessGroupKeyName:        *NewGroupKeyName(txMeta.AccessGroupKeyName),
+	}
 
 	// First, let's check if this key doesn't already exist in UtxoView or in the DB.
 	// It's worth noting that we index access keys by the owner public key and access key name.
@@ -347,6 +337,14 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 			existingExtraData = existingEntry.ExtraData
 		}
 		extraData = mergeExtraData(existingExtraData, txn.ExtraData)
+	}
+
+	// Connect basic txn to get the total input and the total output without
+	// considering the transaction metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: ")
 	}
 
 	// TODO: Currently, it is technically possible for any user to add *any other* user to *any group* with
@@ -423,9 +421,9 @@ func (bav *UtxoView) _disconnectAccessGroupCreate(
 			"accessKey: %v", accessKey)
 	}
 	// sanity check that the existing entry matches the transaction metadata.
-	if !reflect.DeepEqual(accessGroupEntry.AccessGroupOwnerPublicKey, txMeta.AccessGroupOwnerPublicKey) ||
-		!reflect.DeepEqual(accessGroupEntry.AccessGroupKeyName, txMeta.AccessGroupKeyName) ||
-		!reflect.DeepEqual(accessGroupEntry.AccessGroupPublicKey, txMeta.AccessGroupPublicKey) {
+	if !reflect.DeepEqual(accessGroupEntry.AccessGroupOwnerPublicKey.ToBytes(), NewPublicKey(txMeta.AccessGroupOwnerPublicKey).ToBytes()) ||
+		!reflect.DeepEqual(accessGroupEntry.AccessGroupKeyName.ToBytes(), NewGroupKeyName(txMeta.AccessGroupKeyName).ToBytes()) ||
+		!reflect.DeepEqual(accessGroupEntry.AccessGroupPublicKey.ToBytes(), NewPublicKey(txMeta.AccessGroupPublicKey).ToBytes()) {
 		return fmt.Errorf("_disconnectAccessGroupCreate: The existing access group entry doesn't match the "+
 			"transaction metadata. Existing entry: %v, txMeta: %v", accessGroupEntry, txMeta)
 	}

@@ -1738,7 +1738,7 @@ func DBGetAccessGroupEntryByAccessGroupId(db *badger.DB, snap *Snapshot,
 		ret, err = DBGetAccessGroupEntryByAccessGroupIdWithTxn(txn, snap, accessGroupOwnerPublicKey, accessGroupKeyName)
 		return err
 	})
-	if err != nil && err != badger.ErrKeyNotFound {
+	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAccessGroupEntryByAccessGroupId: Problem getting access group entry")
 	}
 
@@ -1751,6 +1751,9 @@ func DBGetAccessGroupEntryByAccessGroupIdWithTxn(txn *badger.Txn, snap *Snapshot
 	prefix := _dbKeyForAccessGroupEntry(*accessGroupOwnerPublicKey, *accessGroupKeyName)
 
 	accessGroupEntryBytes, err := DBGetWithTxn(txn, snap, prefix)
+	if err == badger.ErrKeyNotFound {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAccessGroupEntryByAccessGroupIdWithTxn: Problem getting access group entry")
 	}

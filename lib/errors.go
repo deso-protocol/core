@@ -103,9 +103,8 @@ const (
 	RuleErrorPrivateMessageInvalidVersion                          RuleError = "RuleErrorPrivateMessageInvalidVersion"
 	RuleErrorPrivateMessageMissingExtraData                        RuleError = "RuleErrorPrivateMessageMissingExtraData"
 
-	RuleErrorAccessKeyBeforeBlockHeight                 RuleError = "RuleErrorAccessKeyBeforeBlockHeight"
-	RuleErrorAccessKeyNameCannotBeZeros                 RuleError = "RuleErrorAccessKeyNameCannotBeZeros"
-	RuleErrorAccessOwnerPublicKeyInvalid                RuleError = "RuleErrorAccessOwnerPublicKeyInvalid"
+	RuleErrorAccessGroupsBeforeBlockHeight              RuleError = "RuleErrorAccessGroupsBeforeBlockHeight"
+	RuleErrorAccessGroupsNameCannotBeZeros              RuleError = "RuleErrorAccessGroupsNameCannotBeZeros"
 	RuleErrorAccessPublicKeyCannotBeOwnerKey            RuleError = "RuleErrorAccessPublicKeyCannotBeOwnerKey"
 	RuleErrorAccessPublicKeyCannotBeDifferent           RuleError = "RuleErrorAccessPublicKeyCannotBeDifferent"
 	RuleErrorAccessGroupAlreadyExists                   RuleError = "RuleErrorAccessGroupAlreadyExists"

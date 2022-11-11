@@ -102,7 +102,7 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Make sure DeSo V3 messages are live.
-	if blockHeight < bav.Params.ForkHeights.DeSoV3MessagesBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorAccessGroupMembersBeforeBlockHeight, "_connectAccessGroupMembers: "+
 				"Problem connecting access group members: DeSo V3 messages are not live yet")
@@ -119,14 +119,8 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
 	if EqualGroupKeyName(NewGroupKeyName(txMeta.AccessGroupKeyName), BaseGroupKeyName()) {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorAccessKeyNameCannotBeZeros, "_connectAccessGroupMembers: "+
+			RuleErrorAccessGroupsNameCannotBeZeros, "_connectAccessGroupMembers: "+
 				"Problem connecting access group members: Cannot add members to base key.")
-	}
-
-	// Sanity check that transaction public key is valid.
-	if err := IsByteArrayValidPublicKey(txn.PublicKey); err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: Invalid transaction public key: "+
-			"%v with error: %v", txn.PublicKey, RuleErrorAccessOwnerPublicKeyInvalid)
 	}
 
 	// Connect basic txn to get the total input and the total output without

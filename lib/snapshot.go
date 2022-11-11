@@ -346,7 +346,8 @@ func (snap *Snapshot) ForceResetToLastSnapshot(chain *Blockchain) error {
 
 	// Now, disconnect the blocks to the beginning of the snapshot epoch, or equivalently, end of the last snapshot epoch.
 	lastEpochHeight := snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight
-	err := chain.DisconnectBlocksToHeight(lastEpochHeight)
+	// We use nil for the snapshot, because snapshot hasn't been created yet.
+	err := chain.DisconnectBlocksToHeight(lastEpochHeight, nil)
 	if err != nil {
 		return errors.Wrapf(err, "ForceResetToLastSnapshot: Problem disconnecting blocks")
 	}

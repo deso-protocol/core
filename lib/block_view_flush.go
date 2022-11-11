@@ -1069,8 +1069,8 @@ func (bav *UtxoView) _flushAccessGroupEntriesToDbWithTxn(txn *badger.Txn, blockH
 			}
 			numPut++
 		}
-		glog.V(2).Infof("_flushAccessGroupEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	}
+	glog.V(2).Infof("_flushAccessGroupEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	return nil
 }
 
