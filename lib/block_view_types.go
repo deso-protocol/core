@@ -4703,7 +4703,7 @@ func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	if blockHeight > uint64(math.MaxUint32) {
 		return fmt.Errorf("UserAssociationEntry.Decode: invalid block height %d: greater than max uint32", entryBlockHeight)
 	}
-	associationEntry.BlockHeight = uint32(blockHeight)
+	associationEntry.BlockHeight = uint32(entryBlockHeight)
 
 	return nil
 }
@@ -4757,7 +4757,7 @@ func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	if blockHeight > uint64(math.MaxUint32) {
 		return fmt.Errorf("PostAssociationEntry.Decode: invalid block height %d: greater than max uint32", entryBlockHeight)
 	}
-	associationEntry.BlockHeight = uint32(blockHeight)
+	associationEntry.BlockHeight = uint32(entryBlockHeight)
 
 	return nil
 }
