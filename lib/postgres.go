@@ -3189,15 +3189,21 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(associationEntry *User
 		query.Where("target_user_pkid = ?", associationEntry.TargetUserPKID)
 	}
 	if associationEntry.AssociationType != "" {
-		if strings.HasSuffix(associationEntry.AssociationType, "*") {
-			query.Where("association_type LIKE ?", associationEntry.AssociationType)
+		if strings.HasSuffix(associationEntry.AssociationType, AssociationQueryWildcardSuffix) {
+			query.Where(
+				"association_type LIKE ?",
+				associationEntry.AssociationType[:len(associationEntry.AssociationType)-1]+"%",
+			)
 		} else {
 			query.Where("association_type = ?", associationEntry.AssociationType)
 		}
 	}
 	if associationEntry.AssociationValue != "" {
-		if strings.HasSuffix(associationEntry.AssociationValue, "*") {
-			query.Where("association_value LIKE ?", associationEntry.AssociationValue)
+		if strings.HasSuffix(associationEntry.AssociationValue, AssociationQueryWildcardSuffix) {
+			query.Where(
+				"association_value LIKE ?",
+				associationEntry.AssociationValue[:len(associationEntry.AssociationValue)-1]+"%",
+			)
 		} else {
 			query.Where("association_value = ?", associationEntry.AssociationValue)
 		}
@@ -3233,15 +3239,21 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(associationEntry *Post
 		query.Where("post_hash = ?", associationEntry.PostHash)
 	}
 	if associationEntry.AssociationType != "" {
-		if strings.HasSuffix(associationEntry.AssociationType, "*") {
-			query.Where("association_type LIKE ?", associationEntry.AssociationType)
+		if strings.HasSuffix(associationEntry.AssociationType, AssociationQueryWildcardSuffix) {
+			query.Where(
+				"association_type LIKE ?",
+				associationEntry.AssociationType[:len(associationEntry.AssociationType)-1]+"%",
+			)
 		} else {
 			query.Where("association_type = ?", associationEntry.AssociationType)
 		}
 	}
 	if associationEntry.AssociationValue != "" {
-		if strings.HasSuffix(associationEntry.AssociationValue, "*") {
-			query.Where("association_value LIKE ?", associationEntry.AssociationValue)
+		if strings.HasSuffix(associationEntry.AssociationValue, AssociationQueryWildcardSuffix) {
+			query.Where(
+				"association_value LIKE ?",
+				associationEntry.AssociationValue[:len(associationEntry.AssociationValue)-1]+"%",
+			)
 		} else {
 			query.Where("association_value = ?", associationEntry.AssociationValue)
 		}

@@ -10,6 +10,7 @@ import (
 const MaxAssociationTypeCharLength int = 64
 const MaxAssociationValueCharLength int = 256
 const AssociationTypeReservedPrefix = "DESO"
+const AssociationQueryWildcardSuffix = "*"
 
 func (bav *UtxoView) _connectCreateUserAssociation(
 	txn *MsgDeSoTxn,
@@ -641,7 +642,7 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(transactorPK []byte, metada
 	// First, check the database.
 	dbAssociationEntries, err := bav.GetDbAdapter().GetUserAssociationsByAttributes(associationEntry)
 	if err != nil {
-		return []*UserAssociationEntry{}, err
+		return nil, err
 	}
 	for _, dbAssociationEntry := range dbAssociationEntries {
 		associationEntryMap[dbAssociationEntry.AssociationID] = dbAssociationEntry
@@ -661,7 +662,7 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(transactorPK []byte, metada
 		}
 		// If AssociationType is set, they have to match or prefix if using *.
 		if associationEntry.AssociationType != "" {
-			if strings.HasSuffix(associationEntry.AssociationType, "*") {
+			if strings.HasSuffix(associationEntry.AssociationType, AssociationQueryWildcardSuffix) {
 				// AssociationType uses a * wildcard suffix.
 				if !strings.HasPrefix(
 					utxoAssociationEntry.AssociationType,
@@ -678,7 +679,7 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(transactorPK []byte, metada
 		}
 		// If AssociationValue is set, they have to match or prefix is using *.
 		if associationEntry.AssociationValue != "" {
-			if strings.HasSuffix(associationEntry.AssociationValue, "*") {
+			if strings.HasSuffix(associationEntry.AssociationValue, AssociationQueryWildcardSuffix) {
 				// AssociationValue uses * wildcard suffix.
 				if !strings.HasPrefix(
 					utxoAssociationEntry.AssociationValue,
@@ -696,7 +697,7 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(transactorPK []byte, metada
 		associationEntryMap[utxoAssociationEntry.AssociationID] = utxoAssociationEntry
 	}
 	// Convert map to slice.
-	associationEntries := []*UserAssociationEntry{}
+	var associationEntries []*UserAssociationEntry
 	for _, matchingAssociationEntry := range associationEntryMap {
 		associationEntries = append(associationEntries, matchingAssociationEntry)
 	}
@@ -717,7 +718,7 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(transactorPK []byte, metada
 	// First, check the database.
 	dbAssociationEntries, err := bav.GetDbAdapter().GetPostAssociationsByAttributes(associationEntry)
 	if err != nil {
-		return []*PostAssociationEntry{}, err
+		return nil, err
 	}
 	for _, dbAssociationEntry := range dbAssociationEntries {
 		associationEntryMap[dbAssociationEntry.AssociationID] = dbAssociationEntry
@@ -737,7 +738,7 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(transactorPK []byte, metada
 		}
 		// If AssociationType is set, they have to match or prefix if using *.
 		if associationEntry.AssociationType != "" {
-			if strings.HasSuffix(associationEntry.AssociationType, "*") {
+			if strings.HasSuffix(associationEntry.AssociationType, AssociationQueryWildcardSuffix) {
 				// AssociationType uses a * wildcard suffix.
 				if !strings.HasPrefix(
 					utxoAssociationEntry.AssociationType,
@@ -754,7 +755,7 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(transactorPK []byte, metada
 		}
 		// If AssociationValue is set, they have to match or prefix is using *.
 		if associationEntry.AssociationValue != "" {
-			if strings.HasSuffix(associationEntry.AssociationValue, "*") {
+			if strings.HasSuffix(associationEntry.AssociationValue, AssociationQueryWildcardSuffix) {
 				// AssociationValue uses * wildcard suffix.
 				if !strings.HasPrefix(
 					utxoAssociationEntry.AssociationValue,
@@ -772,7 +773,7 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(transactorPK []byte, metada
 		associationEntryMap[utxoAssociationEntry.AssociationID] = utxoAssociationEntry
 	}
 	// Convert map to slice.
-	associationEntries := []*PostAssociationEntry{}
+	var associationEntries []*PostAssociationEntry
 	for _, matchingAssociationEntry := range associationEntryMap {
 		associationEntries = append(associationEntries, matchingAssociationEntry)
 	}
