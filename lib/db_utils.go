@@ -181,6 +181,7 @@ type DBPrefixes struct {
 	PrefixCreatorPKIDHODLerPKIDToBalanceEntry []byte `prefix_id:"[34]" is_state:"true"`
 
 	PrefixPosterPublicKeyTimestampPostHash []byte `prefix_id:"[35]" is_state:"true"`
+
 	// If no mapping exists for a particular public key, then the PKID is simply
 	// the public key itself.
 	// <prefix_id, [33]byte> -> <PKID [33]byte>
@@ -322,7 +323,10 @@ type DBPrefixes struct {
 	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
-	// NEXT_TAG: 63
+
+	PrefixPosterPublicKeyTimestampCommentPostHash []byte `prefix_id:"[63]" is_state:"true"`
+
+	// NEXT_TAG: 64
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -5899,6 +5903,14 @@ func _dbKeyForPosterPublicKeyTimestampPostHash(publicKey []byte, timestampNanos 
 	key = append(key, postHash[:]...)
 	return key
 }
+func _dbKeyForPosterPublicKeyTimestampCommentPostHash(publicKey []byte, timestampNanos uint64, postHash *BlockHash) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	key := append([]byte{}, Prefixes.PrefixPosterPublicKeyTimestampCommentPostHash...)
+	key = append(key, publicKey...)
+	key = append(key, EncodeUint64(timestampNanos)...)
+	key = append(key, postHash[:]...)
+	return key
+}
 func _dbKeyForTstampPostHash(tstampNanos uint64, postHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	key := append([]byte{}, Prefixes.PrefixTstampNanosPostHash...)
@@ -5981,6 +5993,14 @@ func DBDeletePostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 		parentStakeIDKey := _dbKeyForCommentParentStakeIDToPostHash(
 			extendedStakeID, postEntry.TimestampNanos, postEntry.PostHash)
 		if err := DBDeleteWithTxn(txn, snap, parentStakeIDKey); err != nil {
+
+			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Problem "+
+				"deleting mapping for comment: %v: %v", postEntry, err)
+		}
+
+		commentPostID := _dbKeyForPosterPublicKeyTimestampCommentPostHash(
+			extendedStakeID, postEntry.TimestampNanos, postEntry.PostHash)
+		if err := DBDeleteWithTxn(txn, snap, commentPostID); err != nil {
 
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Problem "+
 				"deleting mapping for comment: %v: %v", postEntry, err)
@@ -6076,6 +6096,14 @@ func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight 
 		parentStakeIDKey := _dbKeyForCommentParentStakeIDToPostHash(
 			extendedStakeID, postEntry.TimestampNanos, postEntry.PostHash)
 		if err := DBSetWithTxn(txn, snap, parentStakeIDKey, []byte{}); err != nil {
+
+			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
+				"adding mapping for comment: %v: %v", postEntry, err)
+		}
+
+		commentPostIDKey := _dbKeyForPosterPublicKeyTimestampCommentPostHash(
+			postEntry.PosterPublicKey, postEntry.TimestampNanos, postEntry.PostHash)
+		if err := DBSetWithTxn(txn, snap, commentPostIDKey, []byte{}); err != nil {
 
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for comment: %v: %v", postEntry, err)

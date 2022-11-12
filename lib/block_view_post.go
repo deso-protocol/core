@@ -450,7 +450,86 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 	return allCorePosts, commentsByPostHash, nil
 }
 
-func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool, nftRequired bool) (_posts []*PostEntry, _err error) {
+func (bav *UtxoView) fetchPostsForPublicKeyWithPrefix(dbPostsPrefix []byte, publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool, nftRequired bool, includeComments bool) (_posts []*PostEntry, _err error) {
+	handle := bav.Handle
+	// FIXME: Db operation like this shouldn't happen in utxoview.
+	dbPrefix := append([]byte{}, dbPostsPrefix...)
+	dbPrefix = append(dbPrefix, publicKey...)
+	var prefix []byte
+	if startPostHash != nil {
+		startPostEntry := bav.GetPostEntryForPostHash(startPostHash)
+		if startPostEntry == nil {
+			return nil, fmt.Errorf("GetPostsPaginatedForPublicKeyOrderedByTimestamp: Invalid start post hash")
+		}
+		prefix = append(dbPrefix, EncodeUint64(startPostEntry.TimestampNanos)...)
+		prefix = append(prefix, startPostEntry.PostHash[:]...)
+	} else {
+		maxBigEndianUint64Bytes := []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
+		prefix = append(dbPrefix, maxBigEndianUint64Bytes...)
+	}
+	timestampSizeBytes := 8
+	var posts []*PostEntry
+	err := handle.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+
+		opts.PrefetchValues = false
+
+		// Go in reverse order
+		opts.Reverse = true
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		it.Seek(prefix)
+		if startPostHash != nil {
+			// Skip the first post if we have a startPostHash.
+			it.Next()
+		}
+		for ; it.ValidForPrefix(dbPrefix) && uint64(len(posts)) < limit; it.Next() {
+			rawKey := it.Item().Key()
+
+			keyWithoutPrefix := rawKey[1:]
+			//posterPublicKey := keyWithoutPrefix[:HashSizeBytes]
+			publicKeySizeBytes := HashSizeBytes + 1
+			//tstampNanos := DecodeUint64(keyWithoutPrefix[publicKeySizeBytes:(publicKeySizeBytes + timestampSizeBytes)])
+
+			postHash := &BlockHash{}
+			copy(postHash[:], keyWithoutPrefix[(publicKeySizeBytes+timestampSizeBytes):])
+			postEntry := bav.GetPostEntryForPostHash(postHash)
+			if postEntry == nil {
+				return fmt.Errorf("Missing post entry")
+			}
+
+			if postEntry.isDeleted || postEntry.IsHidden {
+				continue
+			}
+
+			// Do not include comments if we do not require it
+			if !includeComments && postEntry.ParentStakeID != nil {
+				continue
+			}
+
+			// mediaRequired set to determine if we only want posts that include media and ignore posts without
+			if mediaRequired && !postEntry.HasMedia() {
+				continue
+			}
+
+			// nftRequired set to determine if we only want posts that are NFTs
+			if nftRequired && !postEntry.IsNFT {
+				continue
+			}
+
+			posts = append(posts, postEntry)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return posts, nil
+}
+
+func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool, nftRequired bool, includeComments bool) (_posts []*PostEntry, _err error) {
 	if bav.Postgres != nil {
 		var startTime uint64 = math.MaxUint64
 		if startPostHash != nil {
@@ -470,81 +549,34 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 			bav.setPostMappings(post)
 		}
 	} else {
-		handle := bav.Handle
-		// FIXME: Db operation like this shouldn't happen in utxoview.
-		dbPrefix := append([]byte{}, Prefixes.PrefixPosterPublicKeyTimestampPostHash...)
-		dbPrefix = append(dbPrefix, publicKey...)
-		var prefix []byte
-		if startPostHash != nil {
-			startPostEntry := bav.GetPostEntryForPostHash(startPostHash)
-			if startPostEntry == nil {
-				return nil, fmt.Errorf("GetPostsPaginatedForPublicKeyOrderedByTimestamp: Invalid start post hash")
-			}
-			prefix = append(dbPrefix, EncodeUint64(startPostEntry.TimestampNanos)...)
-			prefix = append(prefix, startPostEntry.PostHash[:]...)
-		} else {
-			maxBigEndianUint64Bytes := []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
-			prefix = append(dbPrefix, maxBigEndianUint64Bytes...)
-		}
-		timestampSizeBytes := 8
-		var posts []*PostEntry
-		err := handle.View(func(txn *badger.Txn) error {
-			opts := badger.DefaultIteratorOptions
+		posts, err := bav.fetchPostsForPublicKeyWithPrefix(Prefixes.PrefixPosterPublicKeyTimestampPostHash, publicKey, startPostHash, limit, mediaRequired, nftRequired, includeComments);
 
-			opts.PrefetchValues = false
-
-			// Go in reverse order
-			opts.Reverse = true
-
-			it := txn.NewIterator(opts)
-			defer it.Close()
-			it.Seek(prefix)
-			if startPostHash != nil {
-				// Skip the first post if we have a startPostHash.
-				it.Next()
-			}
-			for ; it.ValidForPrefix(dbPrefix) && uint64(len(posts)) < limit; it.Next() {
-				rawKey := it.Item().Key()
-
-				keyWithoutPrefix := rawKey[1:]
-				//posterPublicKey := keyWithoutPrefix[:HashSizeBytes]
-				publicKeySizeBytes := HashSizeBytes + 1
-				//tstampNanos := DecodeUint64(keyWithoutPrefix[publicKeySizeBytes:(publicKeySizeBytes + timestampSizeBytes)])
-
-				postHash := &BlockHash{}
-				copy(postHash[:], keyWithoutPrefix[(publicKeySizeBytes+timestampSizeBytes):])
-				postEntry := bav.GetPostEntryForPostHash(postHash)
-				if postEntry == nil {
-					return fmt.Errorf("Missing post entry")
-				}
-				if postEntry.isDeleted || postEntry.ParentStakeID != nil || postEntry.IsHidden {
-					continue
-				}
-
-				// mediaRequired set to determine if we only want posts that include media and ignore posts without
-				if mediaRequired && !postEntry.HasMedia() {
-					continue
-				}
-
-				// nftRequired set to determine if we only want posts that are NFTs
-				if nftRequired && !postEntry.IsNFT {
-					continue
-				}
-
-				posts = append(posts, postEntry)
-			}
-			return nil
-		})
 		if err != nil {
 			return nil, err
+		}
+
+		if includeComments {
+			comments, err := bav.fetchPostsForPublicKeyWithPrefix(Prefixes.PrefixPosterPublicKeyTimestampCommentPostHash, publicKey, startPostHash, limit, mediaRequired, nftRequired, includeComments);
+
+			if err != nil {
+				return nil, err
+			}
+
+			posts = append(posts, comments...)
+			spew.Dump(len(comments))
 		}
 	}
 
 	var postEntries []*PostEntry
 	// Iterate over the view. Put all posts authored by the public key into our mempool posts slice
 	for _, postEntry := range bav.PostHashToPostEntry {
+		// Do not include comments if we do not require it
+		if !includeComments && len(postEntry.ParentStakeID) != 0 {
+			continue
+		}
+
 		// Ignore deleted or hidden posts and any comments.
-		if postEntry.isDeleted || postEntry.IsHidden || len(postEntry.ParentStakeID) != 0 {
+		if postEntry.isDeleted || postEntry.IsHidden {
 			continue
 		}
 
