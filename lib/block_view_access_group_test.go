@@ -3,8 +3,6 @@ package lib
 import (
 	"bytes"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -94,7 +92,7 @@ func TestAccessGroupCreate(t *testing.T) {
 	groupName3 := []byte("group3")
 	groupName4 := []byte("group4")
 	groupName5 := []byte("group5")
-	tm := testMeta{
+	tm := blockViewTestMeta{
 		t:       t,
 		chain:   chain,
 		db:      db,
@@ -107,10 +105,10 @@ func TestAccessGroupCreate(t *testing.T) {
 	tv1 := _createAccessGroupCreateTestVector(tm, "TEST 1: (FAIL) Try connecting access group create transaction "+
 		"before fork height", m0Priv, m0PubBytes, groupPk1, groupName1, nil,
 		RuleErrorAccessGroupsBeforeBlockHeight)
-	tv1.connectCallback = func(tv *testVector) {
+	tv1.connectCallback = func(tv *blockViewTestVector) {
 		tv.params.ForkHeights.DeSoAccessGroupsBlockHeight = uint32(0)
 	}
-	tv1.disconnectCallback = func(tv *testVector) {
+	tv1.disconnectCallback = func(tv *blockViewTestVector) {
 		tv.params.ForkHeights.DeSoAccessGroupsBlockHeight = uint32(1000)
 	}
 	tv2 := _createAccessGroupCreateTestVector(tm, "TEST 2: (PASS) Try connecting access group create transaction "+
@@ -153,11 +151,11 @@ func TestAccessGroupCreate(t *testing.T) {
 		"submitted by user 3, but reusing the keyname", m2Priv, m2PubBytes, groupPk2, groupName5, nil,
 		RuleErrorAccessGroupAlreadyExists)
 
-	tvv := [][]*testVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14}}
-	tes := testSuite{
-		testMeta:             tm,
+	tvv := [][]*blockViewTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14}}
+	tes := blockViewTestSuite{
+		blockViewTestMeta:    tm,
 		testVectorsByBlock:   tvv,
-		testVectorDependency: make(map[identifier][]identifier),
+		testVectorDependency: make(map[blockViewTestIdentifier][]blockViewTestIdentifier),
 	}
 	tes.run()
 
@@ -174,167 +172,8 @@ func TestAccessGroupCreate(t *testing.T) {
 	//_verifyMempoolUtxoViewEntryForAccessGroupCreate(t, mempool, true, m0PubBytes, groupPk1, groupName1, nil)
 }
 
-type InputType byte
-
-const (
-	InputTypeAccessGroupCreate InputType = iota
-)
-
-type InputSpace interface {
-	IsDependency(other InputSpace) bool
-	GetInputType() InputType
-}
-
-type accessGroupCreateTestData struct {
-	userPrivateKey            string
-	accessGroupOwnerPublicKey []byte
-	accessGroupPublicKey      []byte
-	accessGroupName           []byte
-	extraData                 map[string][]byte
-
-	_expectedConnectError error
-}
-
-func (data *accessGroupCreateTestData) IsDependency(other InputSpace) bool {
-	otherData := other.(*accessGroupCreateTestData)
-
-	return bytes.Equal(data.accessGroupOwnerPublicKey, otherData.accessGroupOwnerPublicKey) &&
-		bytes.Equal(data.accessGroupName, otherData.accessGroupName)
-}
-
-func (data *accessGroupCreateTestData) GetInputType() InputType {
-	return InputTypeAccessGroupCreate
-}
-
-type testMeta struct {
-	t       *testing.T
-	chain   *Blockchain
-	db      *badger.DB
-	pg      *Postgres
-	params  *DeSoParams
-	mempool *DeSoMempool
-	miner   *DeSoMiner
-}
-
-type identifier string
-
-type testVector struct {
-	testMeta
-	id                 identifier
-	inputSpace         InputSpace
-	getTransaction     func(tv *testVector) (_transaction *MsgDeSoTxn, _expectedConnectUtxoViewError error)
-	verifyMempoolEntry func(tv *testVector, expectDeleted bool)
-	verifyDbEntry      func(tv *testVector, expectDeleted bool)
-	connectCallback    func(tv *testVector)
-	disconnectCallback func(tv *testVector)
-}
-
-type testSuite struct {
-	testMeta
-	testVectorsByBlock   [][]*testVector
-	testVectorsInDb      []*testVector
-	testVectorsInMempool []*testVector
-	testVectorDependency map[identifier][]identifier
-}
-
-func (tes *testSuite) run() {
-	//require := require.New(tes.t)
-	for _, testVectors := range tes.testVectorsByBlock {
-		// Run all the test vectors for this block.
-		tes.testConnectDisconnectBlock(testVectors)
-	}
-}
-
-func (tes *testSuite) testConnectBlock(testVectors []*testVector) (
-	_validTransactions []bool, _addedBlock *MsgDeSoBlock) {
-	require := require.New(tes.t)
-
-	validTransactions := make([]bool, len(testVectors))
-	for ii, tv := range testVectors {
-		glog.Infof("Running test vector: %v", tv.id)
-		txn, _expectedErr := tv.getTransaction(tv)
-		_, err := tes.mempool.ProcessTransaction(txn, false, false, 0, true)
-		if _expectedErr != nil {
-			require.Contains(err.Error(), _expectedErr.Error())
-			validTransactions[ii] = false
-		} else {
-			require.NoError(err)
-			tv.verifyMempoolEntry(tv, false)
-			validTransactions[ii] = true
-		}
-		if tv.connectCallback != nil {
-			tv.connectCallback(tv)
-		}
-	}
-	addedBlock, err := tes.miner.MineAndProcessSingleBlock(0, tes.mempool)
-	require.NoError(err)
-	_ = addedBlock
-
-	for ii, tv := range testVectors {
-		if !validTransactions[ii] {
-			continue
-		}
-		tv.verifyDbEntry(tv, false)
-	}
-
-	return validTransactions, addedBlock
-}
-
-func (tes *testSuite) testConnectDisconnectBlock(testVectors []*testVector) {
-	require := require.New(tes.t)
-
-	validTransactions, addedBlock := tes.testConnectBlock(testVectors)
-	blockHeight := tes.chain.BlockTip().Height
-	utxoView, err := NewUtxoView(tes.db, tes.params, tes.pg, tes.chain.snapshot)
-	require.NoError(err)
-	txHashes, err := ComputeTransactionHashes(addedBlock.Txns)
-	require.NoError(err)
-	blockHash, err := addedBlock.Header.Hash()
-	require.NoError(err)
-	utxoOps, err := GetUtxoOperationsForBlock(tes.db, tes.chain.snapshot, blockHash)
-	err = utxoView.DisconnectBlock(addedBlock, txHashes, utxoOps, uint64(blockHeight))
-	require.NoError(err)
-	for ii, tv := range testVectors {
-		if !validTransactions[ii] {
-			continue
-		}
-		tv.verifyMempoolEntry(tv, true)
-	}
-
-	err = tes.chain.DisconnectBlocksToHeight(uint64(blockHeight)-1, tes.chain.snapshot)
-	require.NoError(err)
-	for ii := len(testVectors) - 1; ii >= 0; ii-- {
-		if !validTransactions[ii] {
-			continue
-		}
-		tv := testVectors[ii]
-		tv.verifyDbEntry(tv, true)
-		if tv.disconnectCallback != nil {
-			tv.disconnectCallback(tv)
-		}
-	}
-}
-
-func (tes *testSuite) addTestVectorToMempool(tv *testVector) {
-	require := require.New(tes.t)
-	require.NotNil(tes.testVectorDependency)
-	require.Nil(tes.testVectorDependency[tv.id])
-
-	for _, tvInDb := range tes.testVectorsInDb {
-		if tvInDb.inputSpace.IsDependency(tv.inputSpace) {
-			tes.testVectorDependency[tv.id] = append(tes.testVectorDependency[tv.id], tvInDb.id)
-		}
-	}
-	for _, tvInMempool := range tes.testVectorsInMempool {
-		if tvInMempool.inputSpace.IsDependency(tv.inputSpace) {
-			tes.testVectorDependency[tv.id] = append(tes.testVectorDependency[tv.id], tvInMempool.id)
-		}
-	}
-	tes.testVectorsInMempool = append(tes.testVectorsInMempool, tv)
-}
-
-func _createAccessGroupCreateTestVector(tm testMeta, id string, userPrivateKey string, accessGroupOwnerPublicKey []byte,
-	accessGroupPublicKey []byte, accessGroupName []byte, extraData map[string][]byte, _expectedConnectError error) (_tv *testVector) {
+func _createAccessGroupCreateTestVector(tm blockViewTestMeta, id string, userPrivateKey string, accessGroupOwnerPublicKey []byte,
+	accessGroupPublicKey []byte, accessGroupName []byte, extraData map[string][]byte, _expectedConnectError error) (_tv *blockViewTestVector) {
 
 	require := require.New(tm.t)
 	testData := &accessGroupCreateTestData{
@@ -345,30 +184,30 @@ func _createAccessGroupCreateTestVector(tm testMeta, id string, userPrivateKey s
 		extraData:                 extraData,
 		_expectedConnectError:     _expectedConnectError,
 	}
-	return &testVector{
-		testMeta:   tm,
-		id:         identifier(id),
-		inputSpace: testData,
-		getTransaction: func(tv *testVector) (*MsgDeSoTxn, error) {
+	return &blockViewTestVector{
+		blockViewTestMeta: tm,
+		id:                blockViewTestIdentifier(id),
+		inputSpace:        testData,
+		getTransaction: func(tv *blockViewTestVector) (*MsgDeSoTxn, error) {
 			dataSpace := tv.inputSpace.(*accessGroupCreateTestData)
 			txn, err := _createSignedAccessGroupCreateTransaction(
-				tv.testMeta.t, tv.testMeta.chain, tv.testMeta.mempool,
+				tv.blockViewTestMeta.t, tv.blockViewTestMeta.chain, tv.blockViewTestMeta.mempool,
 				dataSpace.userPrivateKey, dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupPublicKey,
 				dataSpace.accessGroupName, dataSpace.extraData)
 			require.NoError(err)
 			return txn, dataSpace._expectedConnectError
 		},
-		verifyMempoolEntry: func(tv *testVector, expectDeleted bool) {
+		verifyMempoolEntry: func(tv *blockViewTestVector, expectDeleted bool) {
 			dataSpace := tv.inputSpace.(*accessGroupCreateTestData)
 			_verifyMempoolUtxoViewEntryForAccessGroupCreate(
-				tv.testMeta.t, tv.testMeta.mempool, expectDeleted,
+				tv.blockViewTestMeta.t, tv.blockViewTestMeta.mempool, expectDeleted,
 				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupPublicKey,
 				dataSpace.accessGroupName, dataSpace.extraData)
 		},
-		verifyDbEntry: func(tv *testVector, expectDeleted bool) {
+		verifyDbEntry: func(tv *blockViewTestVector, expectDeleted bool) {
 			dataSpace := tv.inputSpace.(*accessGroupCreateTestData)
 			_verifyDbEntryForAccessGroupCreate(
-				tv.testMeta.t, tv.testMeta.chain, expectDeleted,
+				tv.blockViewTestMeta.t, tv.blockViewTestMeta.chain, expectDeleted,
 				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupPublicKey,
 				dataSpace.accessGroupName, dataSpace.extraData)
 		},

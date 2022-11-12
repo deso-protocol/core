@@ -1,10 +1,12 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "net/http/pprof"
@@ -60,6 +62,165 @@ var (
 	paramUpdaterPriv          = "tbc1jF5hXKspbYUVqkSwyyrs9oSho8yA6vZURvBNLySVESFsRmaGf"
 	paramUpdaterPkBytes, _, _ = Base58CheckDecode(paramUpdaterPub)
 )
+
+type blockViewTestInputType byte
+
+const (
+	InputTypeAccessGroupCreate blockViewTestInputType = iota
+)
+
+type blockViewTestInputSpace interface {
+	IsDependency(other blockViewTestInputSpace) bool
+	GetInputType() blockViewTestInputType
+}
+
+type accessGroupCreateTestData struct {
+	userPrivateKey            string
+	accessGroupOwnerPublicKey []byte
+	accessGroupPublicKey      []byte
+	accessGroupName           []byte
+	extraData                 map[string][]byte
+
+	_expectedConnectError error
+}
+
+func (data *accessGroupCreateTestData) IsDependency(other blockViewTestInputSpace) bool {
+	otherData := other.(*accessGroupCreateTestData)
+
+	return bytes.Equal(data.accessGroupOwnerPublicKey, otherData.accessGroupOwnerPublicKey) &&
+		bytes.Equal(data.accessGroupName, otherData.accessGroupName)
+}
+
+func (data *accessGroupCreateTestData) GetInputType() blockViewTestInputType {
+	return InputTypeAccessGroupCreate
+}
+
+type blockViewTestMeta struct {
+	t       *testing.T
+	chain   *Blockchain
+	db      *badger.DB
+	pg      *Postgres
+	params  *DeSoParams
+	mempool *DeSoMempool
+	miner   *DeSoMiner
+}
+
+type blockViewTestIdentifier string
+
+type blockViewTestVector struct {
+	blockViewTestMeta
+	id                 blockViewTestIdentifier
+	inputSpace         blockViewTestInputSpace
+	getTransaction     func(tv *blockViewTestVector) (_transaction *MsgDeSoTxn, _expectedConnectUtxoViewError error)
+	verifyMempoolEntry func(tv *blockViewTestVector, expectDeleted bool)
+	verifyDbEntry      func(tv *blockViewTestVector, expectDeleted bool)
+	connectCallback    func(tv *blockViewTestVector)
+	disconnectCallback func(tv *blockViewTestVector)
+}
+
+type blockViewTestSuite struct {
+	blockViewTestMeta
+	testVectorsByBlock   [][]*blockViewTestVector
+	testVectorsInDb      []*blockViewTestVector
+	testVectorsInMempool []*blockViewTestVector
+	testVectorDependency map[blockViewTestIdentifier][]blockViewTestIdentifier
+}
+
+func (tes *blockViewTestSuite) run() {
+	//require := require.New(tes.t)
+	for _, testVectors := range tes.testVectorsByBlock {
+		// Run all the test vectors for this block.
+		tes.testConnectDisconnectBlock(testVectors)
+	}
+}
+
+func (tes *blockViewTestSuite) testConnectBlock(testVectors []*blockViewTestVector) (
+	_validTransactions []bool, _addedBlock *MsgDeSoBlock) {
+	require := require.New(tes.t)
+
+	validTransactions := make([]bool, len(testVectors))
+	for ii, tv := range testVectors {
+		glog.Infof("Running test vector: %v", tv.id)
+		txn, _expectedErr := tv.getTransaction(tv)
+		_, err := tes.mempool.ProcessTransaction(txn, false, false, 0, true)
+		if _expectedErr != nil {
+			require.Contains(err.Error(), _expectedErr.Error())
+			validTransactions[ii] = false
+		} else {
+			require.NoError(err)
+			tv.verifyMempoolEntry(tv, false)
+			validTransactions[ii] = true
+		}
+		if tv.connectCallback != nil {
+			tv.connectCallback(tv)
+		}
+	}
+	addedBlock, err := tes.miner.MineAndProcessSingleBlock(0, tes.mempool)
+	require.NoError(err)
+	_ = addedBlock
+
+	for ii, tv := range testVectors {
+		if !validTransactions[ii] {
+			continue
+		}
+		tv.verifyDbEntry(tv, false)
+	}
+
+	return validTransactions, addedBlock
+}
+
+func (tes *blockViewTestSuite) testConnectDisconnectBlock(testVectors []*blockViewTestVector) {
+	require := require.New(tes.t)
+
+	validTransactions, addedBlock := tes.testConnectBlock(testVectors)
+	blockHeight := tes.chain.BlockTip().Height
+	utxoView, err := NewUtxoView(tes.db, tes.params, tes.pg, tes.chain.snapshot)
+	require.NoError(err)
+	txHashes, err := ComputeTransactionHashes(addedBlock.Txns)
+	require.NoError(err)
+	blockHash, err := addedBlock.Header.Hash()
+	require.NoError(err)
+	utxoOps, err := GetUtxoOperationsForBlock(tes.db, tes.chain.snapshot, blockHash)
+	err = utxoView.DisconnectBlock(addedBlock, txHashes, utxoOps, uint64(blockHeight))
+	require.NoError(err)
+	for ii, tv := range testVectors {
+		if !validTransactions[ii] {
+			continue
+		}
+		tv.verifyMempoolEntry(tv, true)
+	}
+
+	err = tes.chain.DisconnectBlocksToHeight(uint64(blockHeight)-1, tes.chain.snapshot)
+	require.NoError(err)
+	for ii := len(testVectors) - 1; ii >= 0; ii-- {
+		if !validTransactions[ii] {
+			continue
+		}
+		tv := testVectors[ii]
+		tv.verifyDbEntry(tv, true)
+		if tv.disconnectCallback != nil {
+			tv.disconnectCallback(tv)
+		}
+	}
+}
+
+func (tes *blockViewTestSuite) addTestVectorToMempool(tv *blockViewTestVector) {
+	require := require.New(tes.t)
+	require.NotNil(tes.testVectorDependency)
+	require.Nil(tes.testVectorDependency[tv.id])
+
+	for _, tvInDb := range tes.testVectorsInDb {
+		if tvInDb.inputSpace.IsDependency(tv.inputSpace) {
+			tes.testVectorDependency[tv.id] = append(tes.testVectorDependency[tv.id], tvInDb.id)
+		}
+	}
+	for _, tvInMempool := range tes.testVectorsInMempool {
+		if tvInMempool.inputSpace.IsDependency(tv.inputSpace) {
+			tes.testVectorDependency[tv.id] = append(tes.testVectorDependency[tv.id], tvInMempool.id)
+		}
+	}
+	tes.testVectorsInMempool = append(tes.testVectorsInMempool, tv)
+}
 
 func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, pkSenderStr string, pkReceiverStr string, privStr string,
