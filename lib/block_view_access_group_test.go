@@ -14,6 +14,7 @@ func TestAccessGroupCreate(t *testing.T) {
 
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -150,26 +151,20 @@ func TestAccessGroupCreate(t *testing.T) {
 	tv14 := _createAccessGroupCreateTestVector(tm, "TEST 14: (FAIL) Try connecting group create transaction "+
 		"submitted by user 3, but reusing the keyname", m2Priv, m2PubBytes, groupPk2, groupName5, nil,
 		RuleErrorAccessGroupAlreadyExists)
+	extraData1 := make(map[string][]byte)
+	extraData1["test1"] = []byte("test1")
+	extraData1["test2"] = []byte("test2")
+	tv15 := _createAccessGroupCreateTestVector(tm, "TEST 15: (PASS) Try connecting group create transaction "+
+		"submitted by user 3, with ExtraData", m2Priv, m2PubBytes, groupPk2, groupName3, extraData1,
+		nil)
 
-	tvv := [][]*blockViewTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14}}
+	tvv := [][]*blockViewTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14, tv15}}
 	tes := blockViewTestSuite{
 		blockViewTestMeta:    tm,
 		testVectorsByBlock:   tvv,
 		testVectorDependency: make(map[blockViewTestIdentifier][]blockViewTestIdentifier),
 	}
 	tes.run()
-
-	//txn0, err := _createSignedAccessGroupCreateTransaction(
-	//	t, chain, mempool, m0Priv, m0PubBytes, groupPk1, groupName1, nil)
-	//_, err = mempool.ProcessTransaction(txn0, false, false, 0, true)
-	//require.Contains(err.Error(), RuleErrorAccessGroupsBeforeBlockHeight)
-	//_verifyMempoolUtxoViewEntryForAccessGroupCreate(t, mempool, false, m0PubBytes, groupPk1, groupName1, nil)
-	//
-	//params.ForkHeights.DeSoAccessGroupsBlockHeight = uint32(0)
-	//_, err = mempool.ProcessTransaction(txn0, false, false, 0, true)
-	//require.NoError(err)
-	//
-	//_verifyMempoolUtxoViewEntryForAccessGroupCreate(t, mempool, true, m0PubBytes, groupPk1, groupName1, nil)
 }
 
 func _createAccessGroupCreateTestVector(tm blockViewTestMeta, id string, userPrivateKey string, accessGroupOwnerPublicKey []byte,
