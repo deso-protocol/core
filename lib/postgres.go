@@ -2396,12 +2396,15 @@ func (postgres *Postgres) GetPosts(posts []*PGPost) []*PGPost {
 	return posts
 }
 
-func (postgres *Postgres) GetPostsForPublicKey(publicKey []byte, startTime uint64, limit uint64) []*PGPost {
+func (postgres *Postgres) GetPostsForPublicKey(publicKey []byte, startTime uint64, limit uint64, includeComments bool) []*PGPost {
 	var posts []*PGPost
-	err := postgres.db.Model(&posts).
+	query := postgres.db.Model(&posts).
 		Where("poster_public_key = ?", publicKey).Where("timestamp < ?", startTime).
-		Where("hidden IS NULL").Where("parent_post_hash IS NULL").
-		OrderExpr("timestamp DESC").Limit(int(limit)).Select()
+		Where("hidden IS NULL")
+	if !includeComments {
+		query = query.Where("parent_post_hash IS NULL")
+	}
+	err := query.OrderExpr("timestamp DESC").Limit(int(limit)).Select()
 	if err != nil {
 		return nil
 	}
