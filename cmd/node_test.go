@@ -18,22 +18,16 @@ func TestNodeIsRunning(t *testing.T) {
 	testNode := NewNode(&testConfig)
 
 	// expected running status should be false before the node is started
-	expectedRunningStatus := false
-	actualRunningStatus := testNode.IsRunning()
-	require.Equal(t, actualRunningStatus, expectedRunningStatus)
+	require.False(t, testNode.IsRunning())
 
 	// Start the node
 	testNode.Start()
 	// expected running status should be true after the server is started
-	expectedRunningStatus = true
-	actualRunningStatus = testNode.IsRunning()
-	require.Equal(t, actualRunningStatus, expectedRunningStatus)
+	require.True(t, testNode.IsRunning())
 
 	// stop the node
 	testNode.Stop()
-	expectedRunningStatus = false
-	actualRunningStatus = testNode.IsRunning()
-	require.Equal(t, actualRunningStatus, expectedRunningStatus)
+	require.False(t, testNode.IsRunning())
 
 }
 
@@ -68,7 +62,7 @@ func TestNodeStatusRunning(t *testing.T) {
 	actualErr = testNode.UpdateStatusRunning()
 	require.NoError(t, actualErr)
 	// Once the running flag is changed, the isRunning function should return true
-	require.Equal(t, true, testNode.IsRunning())
+	require.True(t, testNode.IsRunning())
 
 }
 
