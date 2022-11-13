@@ -301,10 +301,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// Load the node status.
 	// This is to identify whether the node is initialized for the first time or it's a restart.
 	status, err := node.LoadStatus()
-	// FIXME: Replace panics with return value,
-	// and leave the decision making to the client library of the core whether to crash the app.
 	if err != nil {
-		panic("Failed to load node status")
+		glog.Fatal("Failed to load node status")
 	}
 	// Handling the first time initialization and node restart cases separately.
 	// This allows us to log the events and even run exclusive logic if any.
@@ -315,7 +313,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		// when the node is started for the first time.
 		err = node.UpdateStatusRunning()
 		if err != nil {
-			panic("Failed to initialize the node status to running")
+			glog.Fatalf("Error running Node -- %v", err)
 		}
 	case STOPPED:
 		// This case is called during a node restart.
@@ -324,7 +322,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		glog.Info("Changing node status from STOP to RUNNING...")
 		err = node.UpdateStatusRunning()
 		if err != nil {
-			panic("Failed to initialize the node status to running")
+			glog.Fatalf("Error running Node -- %v", err)
 		}
 	default:
 		// Rare occurrence. Happens if you set an invalid node status while restarting a node.
@@ -376,7 +374,6 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 // Valid transition sequence is NEVERSTARTED->RUNNING->STOPPED.
 func (node *Node) UpdateStatusStopped() error {
 	if err := node.changeNodeStatus(STOPPED); err != nil {
-		glog.Errorf("Error stopping Node -- %v", err)
 		return err
 	}
 	return nil
@@ -385,7 +382,6 @@ func (node *Node) UpdateStatusStopped() error {
 // Changes node status to RUNNING.
 func (node *Node) UpdateStatusRunning() error {
 	if err := node.changeNodeStatus(RUNNING); err != nil {
-		glog.Errorf("Error stopping Node -- %v", err)
 		return err
 	}
 	return nil
@@ -486,10 +482,8 @@ func (node *Node) IsRunning() bool {
 	if err != nil {
 		return false
 	}
-	if status == RUNNING {
-		return true
-	}
-	return false
+
+	return status == RUNNING
 }
 
 func (node *Node) Stop() {
