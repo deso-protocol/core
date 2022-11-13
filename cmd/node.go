@@ -74,11 +74,11 @@ type Node struct {
 	// status is nil when a NewNode is created, it is initialized and set to RUNNING [byte(1)] on node.Start(),
 	// set to STOPPED [byte(2)] after Stop() is called.
 
-	// Use the convinience methods changeNodeStatus/UpdateStatusRunning/UpdateStatusStopped to change node status.
+	// Use the convenience methods changeNodeStatus/UpdateStatusRunning/UpdateStatusStopped to change node status.
 	// Use *Node.IsRunning() to check if the node is running.
 	// Use *Node.LoadStatus() to retrieve the status of the node.
 	status *NodeStatus
-	// Held whenver the status of the node is read or altered.
+	// Held whenever the status of the node is read or altered.
 	// Cannot use runningMutex to safe guard Node status due to deadlocks!
 	statusMutex sync.Mutex
 	// runningMutex is held whenever we call Start() or Stop() on the node.
@@ -299,7 +299,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	node.statusMutex.Lock()
 	// Load the node status.
-	// This is identify whether the node is initialized for the first time or it's a restart.
+	// This is to identify whether the node is initialized for the first time or it's a restart.
 	status, err := node.LoadStatus()
 	// FIXME: Replace panics with return value,
 	// and leave the decision making to the client library of the core whether to crash the app.
@@ -327,7 +327,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 			panic("Failed to initialize the node status to running")
 		}
 	default:
-		// Rare occurance. Happens if you set an invalid node status while restarting a node.
+		// Rare occurrence. Happens if you set an invalid node status while restarting a node.
 		// cannot start the node if the status of the Node is already set to RUNNING.
 		panic(fmt.Sprintf("Cannot change node status to RUNNING from the current status %v", status))
 
@@ -421,7 +421,7 @@ func (node *Node) LoadStatus() (NodeStatus, error) {
 // to add new status codes for the node.
 func validateNodeStatus(status NodeStatus) error {
 	switch status {
-	// Instance of the *Node is created, but not yet intialized using *Node.Start()
+	// Instance of the *Node is created, but not yet initialized using *Node.Start()
 	case NEVERSTARTED:
 		return nil
 	// Node is started using *Node.Start() and not stopped yet.
@@ -456,7 +456,7 @@ func (node *Node) changeNodeStatus(newStatus NodeStatus) error {
 		return err
 	}
 
-	// Cannot change the status of the server to STOPPED while it was never initalized
+	// Cannot change the status of the server to STOPPED while it was never initialized
 	// in the first place. Can stop the never only after it's started using *Node.Start().
 	// Valid status transition is NEVERSTARTED -> RUNNING -> STOPPED -> RUNNING
 	if status == NEVERSTARTED && newStatus == STOPPED {
