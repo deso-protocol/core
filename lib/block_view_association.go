@@ -568,7 +568,7 @@ func (bav *UtxoView) GetUserAssociationByID(associationID *BlockHash) (*UserAsso
 	// First, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
 	associationEntry, exists := bav.AssociationMapKeyToUserAssociationEntry[AssociationMapKey{AssociationID: *associationID}]
-	if exists {
+	if exists && associationEntry != nil && !associationEntry.isDeleted {
 		return associationEntry, nil
 	}
 	// If not found in the UTXO view, next check the database.
@@ -579,7 +579,7 @@ func (bav *UtxoView) GetPostAssociationByID(associationID *BlockHash) (*PostAsso
 	// First, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
 	associationEntry, exists := bav.AssociationMapKeyToPostAssociationEntry[AssociationMapKey{AssociationID: *associationID}]
-	if exists {
+	if exists && associationEntry != nil && !associationEntry.isDeleted {
 		return associationEntry, nil
 	}
 	// If not found in the UTXO view, next check the database.
@@ -598,6 +598,9 @@ func (bav *UtxoView) GetUserAssociationByAttributes(transactorPK []byte, metadat
 	// First, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
 	for _, utxoAssociationEntry := range bav.AssociationMapKeyToUserAssociationEntry {
+		if utxoAssociationEntry.isDeleted {
+			continue
+		}
 		if associationEntry.Eq(utxoAssociationEntry) {
 			return utxoAssociationEntry, nil
 		}
@@ -618,6 +621,9 @@ func (bav *UtxoView) GetPostAssociationByAttributes(transactorPK []byte, metadat
 	// First, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
 	for _, utxoAssociationEntry := range bav.AssociationMapKeyToPostAssociationEntry {
+		if utxoAssociationEntry.isDeleted {
+			continue
+		}
 		if associationEntry.Eq(utxoAssociationEntry) {
 			return utxoAssociationEntry, nil
 		}
@@ -650,6 +656,11 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(transactorPK []byte, metada
 	// Next, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
 	for _, utxoAssociationEntry := range bav.AssociationMapKeyToUserAssociationEntry {
+		// Skip if UTXO view association entry is deleted.
+		if utxoAssociationEntry.isDeleted {
+			continue
+		}
+
 		// If TransactorPKID is set, they have to match.
 		if associationEntry.TransactorPKID != nil &&
 			!associationEntry.TransactorPKID.Eq(utxoAssociationEntry.TransactorPKID) {
@@ -665,14 +676,17 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(transactorPK []byte, metada
 			if strings.HasSuffix(associationEntry.AssociationType, AssociationQueryWildcardSuffix) {
 				// AssociationType uses a * wildcard suffix.
 				if !strings.HasPrefix(
-					utxoAssociationEntry.AssociationType,
-					associationEntry.AssociationType[:len(associationEntry.AssociationType)-1],
+					strings.ToLower(utxoAssociationEntry.AssociationType),
+					strings.ToLower(associationEntry.AssociationType[:len(associationEntry.AssociationType)-1]),
 				) {
 					continue
 				}
 			} else {
 				// AssociationTypes must exact match.
-				if strings.Compare(associationEntry.AssociationType, utxoAssociationEntry.AssociationType) != 0 {
+				if strings.Compare(
+					strings.ToLower(associationEntry.AssociationType),
+					strings.ToLower(utxoAssociationEntry.AssociationType),
+				) != 0 {
 					continue
 				}
 			}
@@ -726,6 +740,11 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(transactorPK []byte, metada
 	// Next, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
 	for _, utxoAssociationEntry := range bav.AssociationMapKeyToPostAssociationEntry {
+		// Skip if UTXO view association entry is deleted.
+		if utxoAssociationEntry.isDeleted {
+			continue
+		}
+
 		// If TransactorPKID is set, they have to match.
 		if associationEntry.TransactorPKID != nil &&
 			!associationEntry.TransactorPKID.Eq(utxoAssociationEntry.TransactorPKID) {
@@ -741,14 +760,17 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(transactorPK []byte, metada
 			if strings.HasSuffix(associationEntry.AssociationType, AssociationQueryWildcardSuffix) {
 				// AssociationType uses a * wildcard suffix.
 				if !strings.HasPrefix(
-					utxoAssociationEntry.AssociationType,
-					associationEntry.AssociationType[:len(associationEntry.AssociationType)-1],
+					strings.ToLower(utxoAssociationEntry.AssociationType),
+					strings.ToLower(associationEntry.AssociationType[:len(associationEntry.AssociationType)-1]),
 				) {
 					continue
 				}
 			} else {
 				// AssociationTypes must exact match.
-				if strings.Compare(associationEntry.AssociationType, utxoAssociationEntry.AssociationType) != 0 {
+				if strings.Compare(
+					strings.ToLower(associationEntry.AssociationType),
+					strings.ToLower(utxoAssociationEntry.AssociationType),
+				) != 0 {
 					continue
 				}
 			}

@@ -9,6 +9,13 @@ import (
 )
 
 func TestAssociations(t *testing.T) {
+	// Run all tests twice: once flushing all txns to the
+	// db, and once just keeping all txns in the mempool.
+	_testAssociations(t, true)
+	_testAssociations(t, false)
+}
+
+func _testAssociations(t *testing.T, flushToDB bool) {
 	// -----------------------
 	// Initialization
 	// -----------------------
@@ -20,6 +27,7 @@ func TestAssociations(t *testing.T) {
 	var deletePostAssociationMetadata *DeletePostAssociationMetadata
 	var postAssociationEntry *PostAssociationEntry
 	var postAssociationEntries []*PostAssociationEntry
+	var submitPostMetadata *SubmitPostMetadata
 	var postHash *BlockHash
 	var err error
 
@@ -28,18 +36,17 @@ func TestAssociations(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true)
 	params.ForkHeights.AssociationsBlockHeight = uint32(0)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
-	_ = utxoView
+	utxoView := func() *UtxoView {
+		newUtxoView, err := mempool.GetAugmentedUniversalView()
+		require.NoError(t, err)
+		return newUtxoView
+	}
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
 		_, err = miner.MineAndProcessSingleBlock(0, mempool)
 		require.NoError(t, err)
 	}
-
-	// We take the block tip to be the blockchain height rather than the header chain height.
-	savedHeight := chain.blockTip().Height + 1
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
@@ -49,7 +56,7 @@ func TestAssociations(t *testing.T) {
 		db:                db,
 		mempool:           mempool,
 		miner:             miner,
-		savedHeight:       savedHeight,
+		savedHeight:       chain.blockTip().Height + 1,
 		feeRateNanosPerKb: uint64(101),
 	}
 
@@ -94,8 +101,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationBeforeBlockHeight)
@@ -108,8 +115,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     "",
 			AssociationValue:    "SQL",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
@@ -127,8 +134,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     string(associationType),
 			AssociationValue:    "SQL",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
@@ -140,8 +147,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     AssociationTypeReservedPrefix + "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
@@ -153,8 +160,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
@@ -172,8 +179,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    string(associationValue),
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
@@ -183,8 +190,8 @@ func TestAssociations(t *testing.T) {
 		deleteUserAssociationMetadata = &DeleteUserAssociationMetadata{
 			AssociationID: nil,
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidID)
@@ -194,8 +201,8 @@ func TestAssociations(t *testing.T) {
 		deleteUserAssociationMetadata = &DeleteUserAssociationMetadata{
 			AssociationID: NewBlockHash(RandomBytes(HashSizeBytes)),
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationNotFound)
@@ -210,11 +217,11 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 
-		userAssociationEntry, err = utxoView.GetUserAssociationByAttributes(
+		userAssociationEntry, err = utxoView().GetUserAssociationByAttributes(
 			m0PkBytes, createUserAssociationMetadata,
 		)
 		require.NoError(t, err)
@@ -231,11 +238,11 @@ func TestAssociations(t *testing.T) {
 		deleteUserAssociationMetadata = &DeleteUserAssociationMetadata{
 			AssociationID: userAssociationEntry.AssociationID,
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata}, flushToDB,
 		)
 
-		userAssociationEntry, err = utxoView.GetUserAssociationByID(deleteUserAssociationMetadata.AssociationID)
+		userAssociationEntry, err = utxoView().GetUserAssociationByID(deleteUserAssociationMetadata.AssociationID)
 		require.NoError(t, err)
 		require.Nil(t, userAssociationEntry)
 	}
@@ -244,21 +251,18 @@ func TestAssociations(t *testing.T) {
 	// -------------------------------
 	{
 		// Create post
-		_submitPostWithTestMeta(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
-			[]byte{},
-			[]byte{},
-			&DeSoBodySchema{Body: "Hello, world! --m1"},
-			[]byte{},
-			uint64(1668027603792),
-			false,
+		submitPostMetadata = &SubmitPostMetadata{
+			Body: []byte("Hello, world! --m1"),
+		}
+		_submitAssociationTxnHappyPath(
+			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: submitPostMetadata}, flushToDB,
 		)
+
 		require.Equal(t, testMeta.txns[len(testMeta.txns)-1].TxnMeta.GetTxnType(), TxnTypeSubmitPost)
 		postHash = testMeta.txns[len(testMeta.txns)-1].Hash()
-		require.NotNil(t, utxoView.GetPostEntryForPostHash(postHash))
+		postEntry := utxoView().GetPostEntryForPostHash(postHash)
+		require.NotNil(t, postEntry)
+		require.Equal(t, postEntry.Body, submitPostMetadata.Body)
 	}
 	{
 		// RuleErrorAssociationBeforeBlockHeight
@@ -268,8 +272,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationBeforeBlockHeight)
@@ -282,8 +286,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorPostAssociationInvalidPost)
@@ -295,8 +299,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:  "",
 			AssociationValue: "HEART",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
@@ -314,8 +318,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:  string(associationType),
 			AssociationValue: "HEART",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
@@ -327,8 +331,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:  AssociationTypeReservedPrefix + "REACTION",
 			AssociationValue: "HEART",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
@@ -340,8 +344,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:  "REACTION",
 			AssociationValue: "",
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
@@ -359,8 +363,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:  "REACTION",
 			AssociationValue: string(associationValue),
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
@@ -370,8 +374,8 @@ func TestAssociations(t *testing.T) {
 		deletePostAssociationMetadata = &DeletePostAssociationMetadata{
 			AssociationID: nil,
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidID)
@@ -381,8 +385,8 @@ func TestAssociations(t *testing.T) {
 		deletePostAssociationMetadata = &DeletePostAssociationMetadata{
 			AssociationID: NewBlockHash(RandomBytes(HashSizeBytes)),
 		}
-		_, _, _, err = _doAssociationTxnSadPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata},
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationNotFound)
@@ -397,11 +401,11 @@ func TestAssociations(t *testing.T) {
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 
-		postAssociationEntry, err = utxoView.GetPostAssociationByAttributes(
+		postAssociationEntry, err = utxoView().GetPostAssociationByAttributes(
 			m0PkBytes, createPostAssociationMetadata,
 		)
 		require.NoError(t, err)
@@ -418,11 +422,11 @@ func TestAssociations(t *testing.T) {
 		deletePostAssociationMetadata = &DeletePostAssociationMetadata{
 			AssociationID: postAssociationEntry.AssociationID,
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata}, flushToDB,
 		)
 
-		postAssociationEntry, err = utxoView.GetPostAssociationByID(deletePostAssociationMetadata.AssociationID)
+		postAssociationEntry, err = utxoView().GetPostAssociationByID(deletePostAssociationMetadata.AssociationID)
 		require.NoError(t, err)
 		require.Nil(t, postAssociationEntry)
 	}
@@ -438,8 +442,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 
 		// m1 -> m2, ENDORSEMENT: SQL
@@ -448,8 +452,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     "endorsement",
 			AssociationValue:    "SQL",
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 
 		// m0 -> m3, ENDORSEMENT: JAVA
@@ -458,8 +462,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "JAVA",
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 
 		// m1 -> m3, ENDORSEMENT: C
@@ -468,8 +472,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "C",
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 
 		// m2 -> m3, ENDORSEMENT: C++
@@ -478,8 +482,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "C++",
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 
 		// m4 -> m3, ENDORSEMENT: C#
@@ -488,8 +492,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "C#",
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m4Pub, m4Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m4Pub, m4Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 
 		// m0 -> m1, MEMBERSHIP: Acme University Alumni
@@ -498,12 +502,12 @@ func TestAssociations(t *testing.T) {
 			AssociationType:     "MEMBERSHIP",
 			AssociationValue:    "Acme University Alumni",
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 
 		// Query for all endorsements of m1
-		userAssociationEntries, err = utxoView.GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     "ENDORSEMENT",
 		})
@@ -512,7 +516,7 @@ func TestAssociations(t *testing.T) {
 		require.Equal(t, userAssociationEntries[0].AssociationValue, "SQL")
 
 		// Query for all endorse* by m0
-		userAssociationEntries, err = utxoView.GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
 			AssociationType: "endorse*",
 		})
 		require.NoError(t, err)
@@ -524,7 +528,7 @@ func TestAssociations(t *testing.T) {
 		require.Equal(t, userAssociationEntries[1].AssociationValue, "SQL")
 
 		// Query for all Acme University Alumni members as defined by m0
-		userAssociationEntries, err = utxoView.GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
 			AssociationType:  "MEMBERSHIP",
 			AssociationValue: "Acme University Alumni",
 		})
@@ -533,7 +537,7 @@ func TestAssociations(t *testing.T) {
 		require.Equal(t, userAssociationEntries[0].TargetUserPKID, m1PKID)
 
 		// Query for all Acme University * members as defined by m0
-		userAssociationEntries, err = utxoView.GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
 			AssociationType:  "MEMBERSHIP",
 			AssociationValue: "Acme University *",
 		})
@@ -542,7 +546,7 @@ func TestAssociations(t *testing.T) {
 		require.Equal(t, userAssociationEntries[0].TargetUserPKID, m1PKID)
 
 		// Query for all C* endorsements of m3
-		userAssociationEntries, err = utxoView.GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m3PkBytes),
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "C*",
@@ -561,39 +565,27 @@ func TestAssociations(t *testing.T) {
 	// ---------------------------------
 	{
 		// Create test posts
-		require.NotNil(t, utxoView.GetPostEntryForPostHash(postHash))
+		require.NotNil(t, utxoView().GetPostEntryForPostHash(postHash))
 
-		_submitPostWithTestMeta(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m2Pub,
-			m2Priv,
-			[]byte{},
-			[]byte{},
-			&DeSoBodySchema{Body: "Hello, world! --m2"},
-			[]byte{},
-			uint64(1668027603792),
-			false,
+		submitPostMetadata = &SubmitPostMetadata{
+			Body: []byte("Hello, world! --m2"),
+		}
+		_submitAssociationTxnHappyPath(
+			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: submitPostMetadata}, flushToDB,
 		)
 		require.Equal(t, testMeta.txns[len(testMeta.txns)-1].TxnMeta.GetTxnType(), TxnTypeSubmitPost)
 		postHash2 := testMeta.txns[len(testMeta.txns)-1].Hash()
-		require.NotNil(t, utxoView.GetPostEntryForPostHash(postHash2))
+		require.NotNil(t, utxoView().GetPostEntryForPostHash(postHash2))
 
-		_submitPostWithTestMeta(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m3Pub,
-			m3Priv,
-			[]byte{},
-			[]byte{},
-			&DeSoBodySchema{Body: "Hello, world! --m3"},
-			[]byte{},
-			uint64(1668027603792),
-			false,
+		submitPostMetadata = &SubmitPostMetadata{
+			Body: []byte("Hello, world! --m3"),
+		}
+		_submitAssociationTxnHappyPath(
+			testMeta, m3Pub, m3Priv, MsgDeSoTxn{TxnMeta: submitPostMetadata}, flushToDB,
 		)
 		require.Equal(t, testMeta.txns[len(testMeta.txns)-1].TxnMeta.GetTxnType(), TxnTypeSubmitPost)
 		postHash3 := testMeta.txns[len(testMeta.txns)-1].Hash()
-		require.NotNil(t, utxoView.GetPostEntryForPostHash(postHash3))
+		require.NotNil(t, utxoView().GetPostEntryForPostHash(postHash3))
 
 		// Create test post associations
 
@@ -603,8 +595,8 @@ func TestAssociations(t *testing.T) {
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 
 		// m2 -> m1's post, REACTION: DOWN_VOTE
@@ -613,12 +605,12 @@ func TestAssociations(t *testing.T) {
 			AssociationType:  "REACTION",
 			AssociationValue: "DOWN_VOTE",
 		}
-		_doAssociationTxnHappyPath(
-			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata},
+		_submitAssociationTxnHappyPath(
+			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 
 		// Query for all reactions on m1's post
-		postAssociationEntries, err = utxoView.GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
 			PostHash:        postHash,
 			AssociationType: "REACTION",
 		})
@@ -631,7 +623,7 @@ func TestAssociations(t *testing.T) {
 		require.Equal(t, postAssociationEntries[1].AssociationValue, "HEART")
 
 		// Query for all down votes on m1's post
-		postAssociationEntries, err = utxoView.GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AssociationType:  "REACTION",
 			AssociationValue: "DOWN_VOTE",
@@ -644,22 +636,24 @@ func TestAssociations(t *testing.T) {
 	_executeAllTestRollbackAndFlush(testMeta)
 }
 
-func _doAssociationTxnHappyPath(
+func _submitAssociationTxnHappyPath(
 	testMeta *TestMeta,
 	TransactorPublicKeyBase58Check string,
 	TransactorPrivateKeyBase58Check string,
 	inputTxn MsgDeSoTxn,
+	flushToDB bool,
 ) {
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances,
-		_getBalance(testMeta.t, testMeta.chain, nil, TransactorPublicKeyBase58Check),
+		_getBalance(testMeta.t, testMeta.chain, testMeta.mempool, TransactorPublicKeyBase58Check),
 	)
 
-	currentOps, currentTxn, _, err := _doAssociationTxnSadPath(
+	currentOps, currentTxn, _, err := _submitAssociationTxnSadPath(
 		testMeta,
 		TransactorPublicKeyBase58Check,
 		TransactorPrivateKeyBase58Check,
 		inputTxn,
+		flushToDB,
 	)
 
 	require.NoError(testMeta.t, err)
@@ -667,18 +661,14 @@ func _doAssociationTxnHappyPath(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _doAssociationTxnSadPath(
+func _submitAssociationTxnSadPath(
 	testMeta *TestMeta,
 	TransactorPublicKeyBase58Check string,
 	TransactorPrivateKeyBase58Check string,
 	inputTxn MsgDeSoTxn,
+	flushToDB bool,
 ) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 	updaterPkBytes, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
-	require.NoError(testMeta.t, err)
-
-	utxoView, err := NewUtxoView(
-		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot,
-	)
 	require.NoError(testMeta.t, err)
 
 	// Create the transaction.
@@ -691,7 +681,7 @@ func _doAssociationTxnSadPath(
 			updaterPkBytes,
 			inputTxn.TxnMeta.(*CreateUserAssociationMetadata),
 			testMeta.feeRateNanosPerKb,
-			nil,
+			testMeta.mempool,
 			[]*DeSoOutput{},
 		)
 	case TxnTypeDeleteUserAssociation:
@@ -699,7 +689,7 @@ func _doAssociationTxnSadPath(
 			updaterPkBytes,
 			inputTxn.TxnMeta.(*DeleteUserAssociationMetadata),
 			testMeta.feeRateNanosPerKb,
-			nil,
+			testMeta.mempool,
 			[]*DeSoOutput{},
 		)
 	case TxnTypeCreatePostAssociation:
@@ -707,7 +697,7 @@ func _doAssociationTxnSadPath(
 			updaterPkBytes,
 			inputTxn.TxnMeta.(*CreatePostAssociationMetadata),
 			testMeta.feeRateNanosPerKb,
-			nil,
+			testMeta.mempool,
 			[]*DeSoOutput{},
 		)
 	case TxnTypeDeletePostAssociation:
@@ -715,7 +705,25 @@ func _doAssociationTxnSadPath(
 			updaterPkBytes,
 			inputTxn.TxnMeta.(*DeletePostAssociationMetadata),
 			testMeta.feeRateNanosPerKb,
-			nil,
+			testMeta.mempool,
+			[]*DeSoOutput{},
+		)
+	case TxnTypeSubmitPost:
+		// SubmitPost is not technically an association txn type, but we include it
+		// here so that we can reuse this helper function to create SubmitPost txns
+		// with and without flushing the mempool.
+		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateSubmitPostTxn(
+			updaterPkBytes,
+			[]byte{},
+			[]byte{},
+			inputTxn.TxnMeta.(*SubmitPostMetadata).Body,
+			[]byte{},
+			false,
+			uint64(1668027603792),
+			make(map[string][]byte),
+			false,
+			testMeta.feeRateNanosPerKb,
+			testMeta.mempool,
 			[]*DeSoOutput{},
 		)
 	default:
@@ -730,7 +738,7 @@ func _doAssociationTxnSadPath(
 	_signTxn(testMeta.t, txn, TransactorPrivateKeyBase58Check)
 
 	// Connect the transaction.
-	utxoOps, totalInput, totalOutput, fees, err := utxoView.ConnectTransaction(
+	utxoOps, totalInput, totalOutput, fees, err := testMeta.mempool.universalUtxoView.ConnectTransaction(
 		txn,
 		txn.Hash(),
 		getTxnSize(*txn),
@@ -754,11 +762,16 @@ func _doAssociationTxnSadPath(
 		operationType = OperationTypeCreatePostAssociation
 	case TxnTypeDeletePostAssociation:
 		operationType = OperationTypeDeletePostAssociation
+	case TxnTypeSubmitPost:
+		operationType = OperationTypeSubmitPost
 	default:
 		return nil, nil, 0, errors.New("invalid txn type")
 	}
 	require.Equal(testMeta.t, operationType, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(testMeta.t, utxoView.FlushToDb(0))
+	if flushToDB {
+		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(0))
+	}
+	require.NoError(testMeta.t, testMeta.mempool.RegenerateReadOnlyView())
 	return utxoOps, txn, testMeta.savedHeight, nil
 }
