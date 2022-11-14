@@ -115,6 +115,7 @@ const (
 	RuleErrorAccessGroupMemberOperationTypeNotSupported RuleError = "RuleErrorAccessGroupMemberOperationTypeNotSupported"
 	RuleErrorAccessMemberDoesntExist                    RuleError = "RuleErrorAccessMemberDoesntExist"
 	RuleErrorAccessGroupMemberListDuplicateMember       RuleError = "RuleErrorAccessGroupMemberListDuplicateMember"
+	RuleErrorAccessGroupMemberCantAddOwnerBySameGroup   RuleError = "RuleErrorAccessGroupMemberCantAddOwnerBySameGroup"
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"

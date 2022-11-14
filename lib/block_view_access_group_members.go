@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/pkg/errors"
 )
@@ -170,6 +171,11 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 			//  2) Validate that there are no overlapping members added in the same transaction.
 			// 	3) Validate that the member's group exist
 			// 	4) Validate that the member wasn't already added to the group.
+			if bytes.Equal(txMeta.AccessGroupOwnerPublicKey, accessMember.AccessGroupMemberPublicKey) &&
+				bytes.Equal(NewGroupKeyName(txMeta.AccessGroupKeyName).ToBytes(), NewGroupKeyName(accessMember.AccessGroupMemberKeyName).ToBytes()) {
+				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupMemberCantAddOwnerBySameGroup,
+					"_disconnectAccessGroupMembers: Can't add the owner of the group as a member of the group using the same group key name.")
+			}
 			if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 				accessMember.AccessGroupMemberPublicKey[:], accessMember.AccessGroupMemberKeyName[:], blockHeight); err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: "+

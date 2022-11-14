@@ -8,6 +8,40 @@ import (
 	"testing"
 )
 
+type accessGroupMembersTestData struct {
+	userPrivateKey            string
+	accessGroupOwnerPublicKey []byte
+	accessGroupKeyName        []byte
+	accessGroupMembersList    []*AccessGroupMember
+	operationType             AccessGroupMemberOperationType
+	extraData                 map[string][]byte
+	expectedConnectError      error
+}
+
+func (data *accessGroupMembersTestData) IsDependency(other blockViewTestInputSpace) bool {
+	otherData := other.(*accessGroupMembersTestData)
+
+	isSameGroup := bytes.Equal(data.accessGroupOwnerPublicKey, otherData.accessGroupOwnerPublicKey) &&
+		bytes.Equal(data.accessGroupKeyName, otherData.accessGroupKeyName)
+	isSameMembers := false
+	for _, member := range data.accessGroupMembersList {
+		for _, otherMember := range otherData.accessGroupMembersList {
+			if bytes.Equal(member.AccessGroupMemberPublicKey, otherMember.AccessGroupMemberPublicKey) {
+				isSameMembers = true
+				break
+			}
+		}
+		if isSameMembers {
+			break
+		}
+	}
+	return isSameGroup && isSameMembers
+}
+
+func (data *accessGroupMembersTestData) GetInputType() blockViewTestInputType {
+	return BlockViewTestInputTypeAccessGroupMembers
+}
+
 func TestAccessGroupMembers(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -87,6 +121,7 @@ func TestAccessGroupMembers(t *testing.T) {
 	_ = groupPk3
 
 	groupName1 := []byte("group1")
+	groupName2 := []byte("group2")
 
 	tm := blockViewTestMeta{
 		t:       t,
@@ -103,51 +138,43 @@ func TestAccessGroupMembers(t *testing.T) {
 	tv2Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
-	tv2 := _createAccessGroupMembersTestVector(tm, "TEST 2: (PASS) Connect access group members transaction to the "+
-		"access group made by user 0, adding user 0 as member", m0Priv, m0PubBytes, groupName1, tv2Members, AccessGroupMemberOperationTypeAdd,
-		nil)
+	tv2 := _createAccessGroupMembersTestVector(tm, "TEST 2: (FAIL) Connect access group members transaction to the "+
+		"access group made by user 0 with group name 1, adding user 0 as member with the same access group name 1", m0Priv, m0PubBytes,
+		groupName1, tv2Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessGroupMemberCantAddOwnerBySameGroup)
+	tv3Members := []*AccessGroupMember{{
+		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil,
+	}}
+	tv3 := _createAccessGroupMembersTestVector(tm, "TEST 3: (PASS) Connect access group members transaction to the "+
+		"access group made by user 0 with group name 1, adding user 0 as member with the base access group", m0Priv, m0PubBytes,
+		groupName1, tv3Members, AccessGroupMemberOperationTypeAdd, nil)
+	tv4 := _createAccessGroupCreateTestVector(tm, "TEST 4: (PASS) Connect access group create transaction made by "+
+		"user 0 with group name 2", m0Priv, m0PubBytes, groupPk2, groupName2, nil, nil)
+	tv5Members := []*AccessGroupMember{{
+		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil,
+	}}
+	tv5 := _createAccessGroupMembersTestVector(tm, "TEST 5: (FAIL) Connect access group members transaction to the "+
+		"access group made by user 0 with group name 1, again adding user 0 by base group key", m0Priv, m0PubBytes, groupName1,
+		tv5Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessMemberAlreadyExists)
+	tv6Members := []*AccessGroupMember{{
+		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName2, EncryptedKey: []byte{1}, ExtraData: nil,
+	}}
+	tv6 := _createAccessGroupMembersTestVector(tm, "TEST 5: (PASS) Connect access group members transaction to the "+
+		"access group made by user 0 with group name 1, again adding user 0 but by group name 2", m0Priv, m0PubBytes, groupName1,
+		tv6Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessMemberAlreadyExists)
+	tv7Members := []*AccessGroupMember{{
+		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil,
+	}}
+	tv7 := _createAccessGroupMembersTestVector(tm, "TEST 7: (PASS) Connect access group members transaction to the "+
+		"access group made by user 0 with group name 2, adding user 0 by group name 1", m0Priv, m0PubBytes, groupName2,
+		tv7Members, AccessGroupMemberOperationTypeAdd, nil)
 
-	tvv := [][]*blockViewTestVector{{tv1, tv2}}
+	tvv := [][]*blockViewTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7}}
 	tes := blockViewTestSuite{
 		blockViewTestMeta:    tm,
 		testVectorsByBlock:   tvv,
 		testVectorDependency: make(map[blockViewTestIdentifier][]blockViewTestIdentifier),
 	}
 	tes.run()
-}
-
-type accessGroupMembersTestData struct {
-	userPrivateKey            string
-	accessGroupOwnerPublicKey []byte
-	accessGroupKeyName        []byte
-	accessGroupMembersList    []*AccessGroupMember
-	operationType             AccessGroupMemberOperationType
-	extraData                 map[string][]byte
-	expectedConnectError      error
-}
-
-func (data *accessGroupMembersTestData) IsDependency(other blockViewTestInputSpace) bool {
-	otherData := other.(*accessGroupMembersTestData)
-
-	isSameGroup := bytes.Equal(data.accessGroupOwnerPublicKey, otherData.accessGroupOwnerPublicKey) &&
-		bytes.Equal(data.accessGroupKeyName, otherData.accessGroupKeyName)
-	isSameMembers := false
-	for _, member := range data.accessGroupMembersList {
-		for _, otherMember := range otherData.accessGroupMembersList {
-			if bytes.Equal(member.AccessGroupMemberPublicKey, otherMember.AccessGroupMemberPublicKey) {
-				isSameMembers = true
-				break
-			}
-		}
-		if isSameMembers {
-			break
-		}
-	}
-	return isSameGroup && isSameMembers
-}
-
-func (data *accessGroupMembersTestData) GetInputType() blockViewTestInputType {
-	return BlockViewTestInputTypeAccessGroupMembers
 }
 
 func _createAccessGroupMembersTestVector(tm blockViewTestMeta, id string, userPrivateKey string, accessGroupOwnerPublicKey []byte,
