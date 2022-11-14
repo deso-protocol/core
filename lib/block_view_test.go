@@ -245,13 +245,21 @@ func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 
 		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
 		require.NoError(testMeta.t, err)
+		if testMeta.mempool != nil {
+			// If set, we want to disconnect using the current mempool's
+			// UTXO view to track disconnects across txns in this loop.
+			utxoView = testMeta.mempool.universalUtxoView
+		}
 
 		currentHash := currentTxn.Hash()
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
 		require.NoError(testMeta.t, err)
 
 		blockHeight := uint64(testMeta.chain.BlockTip().Height)
-		require.NoError(testMeta.t, utxoView.FlushToDb(blockHeight+1))
+		// Flushing a UTXO view wipes all records. We flush a copy instead to retain the original.
+		utxoViewCopy, err := utxoView.CopyUtxoView()
+		require.NoError(testMeta.t, err)
+		require.NoError(testMeta.t, utxoViewCopy.FlushToDb(blockHeight+1))
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.

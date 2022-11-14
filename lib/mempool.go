@@ -381,7 +381,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		""     /*dataDir*/, "")
+		"" /*dataDir*/, "")
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -1806,25 +1806,6 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			AssociationIDHex: hex.EncodeToString(realTxMeta.AssociationID.ToBytes()),
 		}
 
-		associationEntry, err := utxoView.GetUserAssociationByID(realTxMeta.AssociationID)
-		if err != nil {
-			glog.Errorf(
-				"Update DeleteUserAssociation TxIndex: error retrieving association %v: %v",
-				realTxMeta.AssociationID,
-				err,
-			)
-			return txnMeta
-		}
-
-		targetUserPublicKeyBase58Check := PkToString(
-			utxoView.GetPublicKeyForPKID(associationEntry.TargetUserPKID),
-			utxoView.Params,
-		)
-
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: targetUserPublicKeyBase58Check,
-			Metadata:             "AssociationTargetUserPublicKeyBase58Check",
-		})
 	case TxnTypeCreatePostAssociation:
 		realTxMeta := txn.TxnMeta.(*CreatePostAssociationMetadata)
 
@@ -1842,27 +1823,10 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		})
 	case TxnTypeDeletePostAssociation:
 		realTxMeta := txn.TxnMeta.(*DeletePostAssociationMetadata)
-
 		txnMeta.DeletePostAssociationTxindexMetadata = &DeletePostAssociationTxindexMetadata{
 			AssociationIDHex: hex.EncodeToString(realTxMeta.AssociationID.ToBytes()),
 		}
 
-		associationEntry, err := utxoView.GetPostAssociationByID(realTxMeta.AssociationID)
-		if err != nil {
-			glog.Errorf(
-				"Update DeletePostAssociation TxIndex: error retrieving association %v: %v",
-				realTxMeta.AssociationID,
-				err,
-			)
-			return txnMeta
-		}
-
-		postEntry := utxoView.GetPostEntryForPostHash(associationEntry.PostHash)
-
-		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
-			Metadata:             "AssociationTargetPostCreatorPublicKeyBase58Check",
-		})
 	}
 	return txnMeta
 }
