@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
@@ -66,33 +65,13 @@ var (
 type blockViewTestInputType byte
 
 const (
-	InputTypeAccessGroupCreate blockViewTestInputType = iota
+	BlockViewTestInputTypeAccessGroupCreate blockViewTestInputType = iota
+	BlockViewTestInputTypeAccessGroupMembers
 )
 
 type blockViewTestInputSpace interface {
 	IsDependency(other blockViewTestInputSpace) bool
 	GetInputType() blockViewTestInputType
-}
-
-type accessGroupCreateTestData struct {
-	userPrivateKey            string
-	accessGroupOwnerPublicKey []byte
-	accessGroupPublicKey      []byte
-	accessGroupName           []byte
-	extraData                 map[string][]byte
-
-	_expectedConnectError error
-}
-
-func (data *accessGroupCreateTestData) IsDependency(other blockViewTestInputSpace) bool {
-	otherData := other.(*accessGroupCreateTestData)
-
-	return bytes.Equal(data.accessGroupOwnerPublicKey, otherData.accessGroupOwnerPublicKey) &&
-		bytes.Equal(data.accessGroupName, otherData.accessGroupName)
-}
-
-func (data *accessGroupCreateTestData) GetInputType() blockViewTestInputType {
-	return InputTypeAccessGroupCreate
 }
 
 type blockViewTestMeta struct {

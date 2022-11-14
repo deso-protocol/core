@@ -4197,21 +4197,20 @@ func (bc *Blockchain) CreateAccessGroupCreateTxn(
 
 func (bc *Blockchain) CreateAccessGroupMembersTxn(
 	userPublicKey []byte,
-	accessGroupPublicKey []byte,
 	accessGroupKeyName []byte,
 	accessGroupMemberList []*AccessGroupMember,
-	extraData map[string][]byte,
+	operationType AccessGroupMemberOperationType,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	txn := &MsgDeSoTxn{
 		PublicKey: userPublicKey,
 		TxnMeta: &AccessGroupMembersMetadata{
-			AccessGroupOwnerPublicKey: userPublicKey,
-			AccessGroupKeyName:        accessGroupKeyName,
-			AccessGroupMembersList:    accessGroupMemberList,
+			AccessGroupOwnerPublicKey:      userPublicKey,
+			AccessGroupKeyName:             accessGroupKeyName,
+			AccessGroupMembersList:         accessGroupMemberList,
+			AccessGroupMemberOperationType: operationType,
 		},
-		ExtraData: extraData,
 		TxOutputs: additionalOutputs,
 	}
 

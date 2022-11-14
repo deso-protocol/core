@@ -8,6 +8,26 @@ import (
 	"testing"
 )
 
+type accessGroupCreateTestData struct {
+	userPrivateKey            string
+	accessGroupOwnerPublicKey []byte
+	accessGroupPublicKey      []byte
+	accessGroupName           []byte
+	extraData                 map[string][]byte
+	expectedConnectError      error
+}
+
+func (data *accessGroupCreateTestData) IsDependency(other blockViewTestInputSpace) bool {
+	otherData := other.(*accessGroupCreateTestData)
+
+	return bytes.Equal(data.accessGroupOwnerPublicKey, otherData.accessGroupOwnerPublicKey) &&
+		bytes.Equal(data.accessGroupName, otherData.accessGroupName)
+}
+
+func (data *accessGroupCreateTestData) GetInputType() blockViewTestInputType {
+	return BlockViewTestInputTypeAccessGroupCreate
+}
+
 func TestAccessGroupCreate(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -85,9 +105,6 @@ func TestAccessGroupCreate(t *testing.T) {
 	groupPk3 := groupPriv3.PubKey().SerializeCompressed()
 	_ = groupPk3
 
-	// ===================================================================================
-	// Test #1: Make sure transaction fails before the block height.
-	// ===================================================================================
 	groupName1 := []byte("group1")
 	groupName2 := []byte("group2")
 	groupName3 := []byte("group3")
@@ -168,7 +185,7 @@ func TestAccessGroupCreate(t *testing.T) {
 }
 
 func _createAccessGroupCreateTestVector(tm blockViewTestMeta, id string, userPrivateKey string, accessGroupOwnerPublicKey []byte,
-	accessGroupPublicKey []byte, accessGroupName []byte, extraData map[string][]byte, _expectedConnectError error) (_tv *blockViewTestVector) {
+	accessGroupPublicKey []byte, accessGroupName []byte, extraData map[string][]byte, expectedConnectError error) (_tv *blockViewTestVector) {
 
 	require := require.New(tm.t)
 	testData := &accessGroupCreateTestData{
@@ -177,7 +194,7 @@ func _createAccessGroupCreateTestVector(tm blockViewTestMeta, id string, userPri
 		accessGroupPublicKey:      accessGroupPublicKey,
 		accessGroupName:           accessGroupName,
 		extraData:                 extraData,
-		_expectedConnectError:     _expectedConnectError,
+		expectedConnectError:      expectedConnectError,
 	}
 	return &blockViewTestVector{
 		blockViewTestMeta: tm,
@@ -190,7 +207,7 @@ func _createAccessGroupCreateTestVector(tm blockViewTestMeta, id string, userPri
 				dataSpace.userPrivateKey, dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupPublicKey,
 				dataSpace.accessGroupName, dataSpace.extraData)
 			require.NoError(err)
-			return txn, dataSpace._expectedConnectError
+			return txn, dataSpace.expectedConnectError
 		},
 		verifyMempoolEntry: func(tv *blockViewTestVector, expectDeleted bool) {
 			dataSpace := tv.inputSpace.(*accessGroupCreateTestData)
@@ -242,12 +259,14 @@ func _verifyMempoolUtxoViewEntryForAccessGroupCreate(t *testing.T, mempool *DeSo
 		require.Equal(true, exists)
 		require.NotNil(accessGroupEntry)
 		require.Equal(false, accessGroupEntry.isDeleted)
-		require.Equal(true, _verifyEqualAccessGroupCreateEntry(t, accessGroupEntry, accessGroupOwnerPublicKey, accessGroupPublicKey, accessGroupKeyName, extraData))
+		require.Equal(true, _verifyEqualAccessGroupCreateEntry(
+			t, accessGroupEntry, accessGroupOwnerPublicKey, accessGroupPublicKey, accessGroupKeyName, extraData))
 	} else {
 		if !exists || accessGroupEntry == nil || accessGroupEntry.isDeleted {
 			return
 		}
-		require.Equal(false, _verifyEqualAccessGroupCreateEntry(t, accessGroupEntry, accessGroupOwnerPublicKey, accessGroupPublicKey, accessGroupKeyName, extraData))
+		require.Equal(false, _verifyEqualAccessGroupCreateEntry(
+			t, accessGroupEntry, accessGroupOwnerPublicKey, accessGroupPublicKey, accessGroupKeyName, extraData))
 	}
 
 }

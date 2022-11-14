@@ -1881,10 +1881,7 @@ func DBPutAccessGroupMemberEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHe
 		return fmt.Errorf("DBPutAccessGroupMemberEntryWithTxn: accessGroupMemberEntry is nil or " +
 			"accessGroupMemberEntry.AccessGroupMemberPublicKey is nil")
 	}
-	if reflect.DeepEqual(accessGroupOwnerPublicKey.ToBytes(), NewPublicKey([]byte{}).ToBytes()) {
-		glog.Errorf("DBPutAccessGroupMemberEntryWithTxn: accessGroupOwnerPublicKey is empty")
-	}
-	if reflect.DeepEqual(groupKeyName.ToBytes(), NewGroupKeyName([]byte{}).ToBytes()) {
+	if reflect.DeepEqual(groupKeyName.ToBytes(), BaseGroupKeyName().ToBytes()) {
 		glog.Errorf("DBPutAccessGroupMemberEntryWithTxn: groupKeyName is empty")
 	}
 

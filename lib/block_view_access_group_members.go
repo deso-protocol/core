@@ -141,7 +141,7 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	}
 
 	// Make sure there are no duplicate members with the same AccessGroupMemberPublicKey in the transaction's metadata.
-	var accessGroupMemberPublicKeys map[PublicKey]struct{}
+	accessGroupMemberPublicKeys := make(map[PublicKey]struct{})
 	for _, accessMember := range txMeta.AccessGroupMembersList {
 		memberPublicKey := *NewPublicKey(accessMember.AccessGroupMemberPublicKey)
 		if _, exists := accessGroupMemberPublicKeys[memberPublicKey]; !exists {
@@ -244,7 +244,7 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 			"AccessGroupMembersList but with no operations")
 	}
 	accessGroupMembersOp := utxoOpsForTxn[len(utxoOpsForTxn)-1]
-	if accessGroupMembersOp.Type != OperationTypeAccessGroupMembers || operationType != OperationTypeAccessGroupMembers {
+	if accessGroupMembersOp.Type != OperationTypeAccessGroupMembers {
 		return fmt.Errorf("_disconnectAccessGroupMembers: Trying to revert "+
 			"AccessGroupMembersList but found types %v and %v", accessGroupMembersOp.Type, operationType)
 	}
