@@ -62,19 +62,63 @@ var (
 	paramUpdaterPkBytes, _, _ = Base58CheckDecode(paramUpdaterPub)
 )
 
-type blockViewTestInputType byte
+// ================================== TRANSACTION TEST FRAMEWORK ==============================================
+// transactionTest is a new testing framework intended to streamline testing of blockchain transactions.
+// The idea behind this framework is to create a unified unit testing structure that can be used to test different
+// edge-cases of how transactions are connected/disconnected without having to write a lot of boilerplate code. Most
+// of our current unit tests are written in a way that's hard to read and non-intuitive to maintain. While this worked
+// well when our transaction set was small, as we expand DeSo adding more and more complex abstractions, we also need
+// to keep simplifying the development process, minimizing the range of potential errors, and lowering the amount of
+// brain RAM required to cover all edge-cases. Right now, adding a new transaction involves accommodating multiple
+// components of the codebase such as utxoOps, DeSoEncoders, badger, postgres, snapshot, txindex, etc. The transactionTest
+// framework is supposed to make it easy to test all of these components for a newly-added transaction, and somewhat
+// "guide" you in testing them. The framework is designed with simplicity and modularity in mind. It also allows for
+// easy debugging and test isolation. The framework is meant to be used in conjunction with the existing unit tests,
+// and not replace them. Ideally, we could write additional parallel tests for the current unit tests that will stress-test
+// the existing transactions even more.
+//
+// The general premise for the transactionTest framework is that real-life transactions follow a rather simple life-cycle.
+// Transactions are assembled into a block via a mempool and once all of them are connected, the block is mined and
+// everything is flushed at once to the db (be it badger or postgres). There is no other way that transactions can be
+// connected. In particular, it will never be the case that transaction will be flushed without a whole block being mined;
+// however, this is what we do in our unit tests, which is counter-intuitive, and (on a side-note) has created a lot of
+// overhead when developing complex features such as hypersync. When a transaction is connected, it will create UtxoView
+// and UtxoOps mappings; which will be persisted to the db when the block is mined and the mempool is flushed. Next,
+// transaction can be disconnected when the block is disconnected. There is no other way for a transaction to be
+// disconnected, and the order in which transactions are disconnected is always the reverse of the order in which they were
+// connected. When a transaction is disconnected, it will either set a "isDeleted" entry in UtxoView, which will indicate
+// that a db record should be deleted, or it will set a "previous" entry in UtxoView according to the UtxoOps, which will
+// be flushed to the db. The transactionTest framework is essentially trying to verify that all of these steps are properly
+// followed, and all the utxoView entries are properly set and then flushed to the db.
+//
+// When using the transactionTest framework the developer will be defining a list of transactions that he wants to test
+// in-order. These transactions will be described by creating transactionTestVector structs that will contain all the
+// information needed to create a transaction and verify the utxoView mappings and db records after the transaction is
+// connected and flushed. Once a collection of testVectors is defined, the developer will need to create a transactionTestSuite
+// object containing previously defined testVectors. Finally, the developer will need to call the Run() method on the
+// transactionTestSuite object. This will run the test suite and verify that all the testVectors are properly connected
+// and disconnected.
+// ============================================================================================================
+
+// TransactionTestInputType specifies the type of input that a transactionTestVector will use.
+type transactionTestInputType byte
 
 const (
-	BlockViewTestInputTypeAccessGroupCreate blockViewTestInputType = iota
-	BlockViewTestInputTypeAccessGroupMembers
+	transactionTestInputTypeAccessGroupCreate transactionTestInputType = iota
+	transactionTestInputTypeAccessGroupMembers
 )
 
-type blockViewTestInputSpace interface {
-	IsDependency(other blockViewTestInputSpace) bool
-	GetInputType() blockViewTestInputType
+type transactionTestInputSpace interface {
+	// IsDependency should return true if the other input space will have overlapping utxoView/utxoOps mappings or db records
+	// with the current input space. This is used by the transactionTest framework to determine which transactionTestVector
+	// will describe entries that will be flushed to the db after both test vectors are applied.
+	IsDependency(other transactionTestInputSpace) bool
+	// Get input type should just return a unique transactionTestInputType associated with the particular input space.
+	GetInputType() transactionTestInputType
 }
 
-type blockViewTestMeta struct {
+// transactionTestMeta defines some environmental variables about the blockchain.
+type transactionTestMeta struct {
 	t       *testing.T
 	chain   *Blockchain
 	db      *badger.DB
@@ -84,28 +128,29 @@ type blockViewTestMeta struct {
 	miner   *DeSoMiner
 }
 
-type blockViewTestIdentifier string
+// transactionTestIdentifier is a unique identifier for a transactionTestVector.
+type transactionTestIdentifier string
 
-type blockViewTestVector struct {
-	blockViewTestMeta
-	id                 blockViewTestIdentifier
-	inputSpace         blockViewTestInputSpace
-	getTransaction     func(tv *blockViewTestVector) (_transaction *MsgDeSoTxn, _expectedConnectUtxoViewError error)
-	verifyMempoolEntry func(tv *blockViewTestVector, expectDeleted bool)
-	verifyDbEntry      func(tv *blockViewTestVector, expectDeleted bool)
-	connectCallback    func(tv *blockViewTestVector)
-	disconnectCallback func(tv *blockViewTestVector)
+type transactionTestVector struct {
+	transactionTestMeta
+	id                 transactionTestIdentifier
+	inputSpace         transactionTestInputSpace
+	getTransaction     func(tv *transactionTestVector) (_transaction *MsgDeSoTxn, _expectedConnectUtxoViewError error)
+	verifyMempoolEntry func(tv *transactionTestVector, expectDeleted bool)
+	verifyDbEntry      func(tv *transactionTestVector, expectDeleted bool)
+	connectCallback    func(tv *transactionTestVector)
+	disconnectCallback func(tv *transactionTestVector)
 }
 
-type blockViewTestSuite struct {
-	blockViewTestMeta
-	testVectorsByBlock   [][]*blockViewTestVector
-	testVectorsInDb      []*blockViewTestVector
-	testVectorsInMempool []*blockViewTestVector
-	testVectorDependency map[blockViewTestIdentifier][]blockViewTestIdentifier
+type transactionTestSuite struct {
+	transactionTestMeta
+	testVectorsByBlock   [][]*transactionTestVector
+	testVectorsInDb      []*transactionTestVector
+	testVectorsInMempool []*transactionTestVector
+	testVectorDependency map[transactionTestIdentifier][]transactionTestIdentifier
 }
 
-func (tes *blockViewTestSuite) run() {
+func (tes *transactionTestSuite) run() {
 	//require := require.New(tes.t)
 	for _, testVectors := range tes.testVectorsByBlock {
 		// Run all the test vectors for this block.
@@ -113,7 +158,7 @@ func (tes *blockViewTestSuite) run() {
 	}
 }
 
-func (tes *blockViewTestSuite) testConnectBlock(testVectors []*blockViewTestVector) (
+func (tes *transactionTestSuite) testConnectBlock(testVectors []*transactionTestVector) (
 	_validTransactions []bool, _addedBlock *MsgDeSoBlock) {
 	require := require.New(tes.t)
 
@@ -148,7 +193,7 @@ func (tes *blockViewTestSuite) testConnectBlock(testVectors []*blockViewTestVect
 	return validTransactions, addedBlock
 }
 
-func (tes *blockViewTestSuite) testConnectDisconnectBlock(testVectors []*blockViewTestVector) {
+func (tes *transactionTestSuite) testConnectDisconnectBlock(testVectors []*transactionTestVector) {
 	require := require.New(tes.t)
 
 	validTransactions, addedBlock := tes.testConnectBlock(testVectors)
@@ -183,7 +228,7 @@ func (tes *blockViewTestSuite) testConnectDisconnectBlock(testVectors []*blockVi
 	}
 }
 
-func (tes *blockViewTestSuite) addTestVectorToMempool(tv *blockViewTestVector) {
+func (tes *transactionTestSuite) addTestVectorToMempool(tv *transactionTestVector) {
 	require := require.New(tes.t)
 	require.NotNil(tes.testVectorDependency)
 	require.Nil(tes.testVectorDependency[tv.id])

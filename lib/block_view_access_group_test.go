@@ -17,15 +17,15 @@ type accessGroupCreateTestData struct {
 	expectedConnectError      error
 }
 
-func (data *accessGroupCreateTestData) IsDependency(other blockViewTestInputSpace) bool {
+func (data *accessGroupCreateTestData) IsDependency(other transactionTestInputSpace) bool {
 	otherData := other.(*accessGroupCreateTestData)
 
 	return bytes.Equal(data.accessGroupOwnerPublicKey, otherData.accessGroupOwnerPublicKey) &&
 		bytes.Equal(data.accessGroupName, otherData.accessGroupName)
 }
 
-func (data *accessGroupCreateTestData) GetInputType() blockViewTestInputType {
-	return BlockViewTestInputTypeAccessGroupCreate
+func (data *accessGroupCreateTestData) GetInputType() transactionTestInputType {
+	return transactionTestInputTypeAccessGroupCreate
 }
 
 func TestAccessGroupCreate(t *testing.T) {
@@ -110,7 +110,7 @@ func TestAccessGroupCreate(t *testing.T) {
 	groupName3 := []byte("group3")
 	groupName4 := []byte("group4")
 	groupName5 := []byte("group5")
-	tm := blockViewTestMeta{
+	tm := transactionTestMeta{
 		t:       t,
 		chain:   chain,
 		db:      db,
@@ -123,10 +123,10 @@ func TestAccessGroupCreate(t *testing.T) {
 	tv1 := _createAccessGroupCreateTestVector(tm, "TEST 1: (FAIL) Try connecting access group create transaction "+
 		"before fork height", m0Priv, m0PubBytes, groupPk1, groupName1, nil,
 		RuleErrorAccessGroupsBeforeBlockHeight)
-	tv1.connectCallback = func(tv *blockViewTestVector) {
+	tv1.connectCallback = func(tv *transactionTestVector) {
 		tv.params.ForkHeights.DeSoAccessGroupsBlockHeight = uint32(0)
 	}
-	tv1.disconnectCallback = func(tv *blockViewTestVector) {
+	tv1.disconnectCallback = func(tv *transactionTestVector) {
 		tv.params.ForkHeights.DeSoAccessGroupsBlockHeight = uint32(1000)
 	}
 	tv2 := _createAccessGroupCreateTestVector(tm, "TEST 2: (PASS) Try connecting access group create transaction "+
@@ -175,17 +175,17 @@ func TestAccessGroupCreate(t *testing.T) {
 		"submitted by user 3, with ExtraData", m2Priv, m2PubBytes, groupPk2, groupName3, extraData1,
 		nil)
 
-	tvv := [][]*blockViewTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14, tv15}}
-	tes := blockViewTestSuite{
-		blockViewTestMeta:    tm,
+	tvv := [][]*transactionTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14, tv15}}
+	tes := transactionTestSuite{
+		transactionTestMeta:  tm,
 		testVectorsByBlock:   tvv,
-		testVectorDependency: make(map[blockViewTestIdentifier][]blockViewTestIdentifier),
+		testVectorDependency: make(map[transactionTestIdentifier][]transactionTestIdentifier),
 	}
 	tes.run()
 }
 
-func _createAccessGroupCreateTestVector(tm blockViewTestMeta, id string, userPrivateKey string, accessGroupOwnerPublicKey []byte,
-	accessGroupPublicKey []byte, accessGroupName []byte, extraData map[string][]byte, expectedConnectError error) (_tv *blockViewTestVector) {
+func _createAccessGroupCreateTestVector(tm transactionTestMeta, id string, userPrivateKey string, accessGroupOwnerPublicKey []byte,
+	accessGroupPublicKey []byte, accessGroupName []byte, extraData map[string][]byte, expectedConnectError error) (_tv *transactionTestVector) {
 
 	require := require.New(tm.t)
 	testData := &accessGroupCreateTestData{
@@ -196,30 +196,30 @@ func _createAccessGroupCreateTestVector(tm blockViewTestMeta, id string, userPri
 		extraData:                 extraData,
 		expectedConnectError:      expectedConnectError,
 	}
-	return &blockViewTestVector{
-		blockViewTestMeta: tm,
-		id:                blockViewTestIdentifier(id),
-		inputSpace:        testData,
-		getTransaction: func(tv *blockViewTestVector) (*MsgDeSoTxn, error) {
+	return &transactionTestVector{
+		transactionTestMeta: tm,
+		id:                  transactionTestIdentifier(id),
+		inputSpace:          testData,
+		getTransaction: func(tv *transactionTestVector) (*MsgDeSoTxn, error) {
 			dataSpace := tv.inputSpace.(*accessGroupCreateTestData)
 			txn, err := _createSignedAccessGroupCreateTransaction(
-				tv.blockViewTestMeta.t, tv.blockViewTestMeta.chain, tv.blockViewTestMeta.mempool,
+				tv.transactionTestMeta.t, tv.transactionTestMeta.chain, tv.transactionTestMeta.mempool,
 				dataSpace.userPrivateKey, dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupPublicKey,
 				dataSpace.accessGroupName, dataSpace.extraData)
 			require.NoError(err)
 			return txn, dataSpace.expectedConnectError
 		},
-		verifyMempoolEntry: func(tv *blockViewTestVector, expectDeleted bool) {
+		verifyMempoolEntry: func(tv *transactionTestVector, expectDeleted bool) {
 			dataSpace := tv.inputSpace.(*accessGroupCreateTestData)
 			_verifyMempoolUtxoViewEntryForAccessGroupCreate(
-				tv.blockViewTestMeta.t, tv.blockViewTestMeta.mempool, expectDeleted,
+				tv.transactionTestMeta.t, tv.transactionTestMeta.mempool, expectDeleted,
 				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupPublicKey,
 				dataSpace.accessGroupName, dataSpace.extraData)
 		},
-		verifyDbEntry: func(tv *blockViewTestVector, expectDeleted bool) {
+		verifyDbEntry: func(tv *transactionTestVector, expectDeleted bool) {
 			dataSpace := tv.inputSpace.(*accessGroupCreateTestData)
 			_verifyDbEntryForAccessGroupCreate(
-				tv.blockViewTestMeta.t, tv.blockViewTestMeta.chain, expectDeleted,
+				tv.transactionTestMeta.t, tv.transactionTestMeta.chain, expectDeleted,
 				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupPublicKey,
 				dataSpace.accessGroupName, dataSpace.extraData)
 		},
