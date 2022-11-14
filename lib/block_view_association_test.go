@@ -633,6 +633,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[0].TransactorPKID, m2PKID)
 	}
 
+	// Flush mempool to the db and test rollbacks.
+	mempool.universalUtxoView.FlushToDb(0)
 	_executeAllTestRollbackAndFlush(testMeta)
 }
 
