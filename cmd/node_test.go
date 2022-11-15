@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -101,7 +104,7 @@ func TestNodeUpdateStatusStopped(t *testing.T) {
 // Node status is change in the following sequence,
 // NEVERSTARTED -> RUNNING -> STOP -> RUNNING
 // In each state change it's tested for valid change in status.
-func TestNodechangeNodeStatus(t *testing.T) {
+func TestNodeUpdateStatus(t *testing.T) {
 	testDir := getTestDirectory(t, "test_node_change_running_status")
 	defer os.RemoveAll(testDir)
 
@@ -117,13 +120,13 @@ func TestNodechangeNodeStatus(t *testing.T) {
 	// This is an invalid status transition.
 	// Node status cannot needs to transitioned to RUNNING before changing to STOPPED
 	expError := ErrNodeNeverStarted
-	actualError := testNode.changeNodeStatus(STOPPED)
+	actualError := testNode.UpdateStatus(STOPPED)
 	require.ErrorIs(t, actualError, expError)
 
 	// Cannot set the status to NEVERSTARTED,
 	// It's the default value before the Node is initialized.
 	expError = ErrCannotSetToNeverStarted
-	actualError = testNode.changeNodeStatus(NEVERSTARTED)
+	actualError = testNode.UpdateStatus(NEVERSTARTED)
 	require.ErrorIs(t, actualError, expError)
 	// Starting the node.
 	// The current status of the node is RUNNING.
@@ -131,47 +134,47 @@ func TestNodechangeNodeStatus(t *testing.T) {
 	// The status should be changed to RUNNING.
 	// This successfully tests the transition of status from NEVERSTARTED to RUNNING
 	expectedStatus := RUNNING
-	actualStatus, err := testNode.LoadStatus()
+	actualStatus, err := testNode.GetStatus()
 	require.NoError(t, err)
 	require.Equal(t, actualStatus, expectedStatus)
 
 	// Cannot set the status to NEVERSTARTED,
 	// It's the default value before the Node is initialized.
 	expError = ErrCannotSetToNeverStarted
-	actualError = testNode.changeNodeStatus(NEVERSTARTED)
+	actualError = testNode.UpdateStatus(NEVERSTARTED)
 	require.ErrorIs(t, actualError, expError)
 
 	// Cannot expect the Node status to changed from STOPPED to RUNNING,
 	// while it's current state is RUNNING
 	expError = ErrAlreadyStarted
-	actualError = testNode.changeNodeStatus(RUNNING)
+	actualError = testNode.UpdateStatus(RUNNING)
 	require.ErrorIs(t, actualError, expError)
 
 	// Stopping the node.
 	// This should transition the Node state from RUNNING to STOPPED.
 	testNode.Stop()
 	expectedStatus = STOPPED
-	actualStatus, err = testNode.LoadStatus()
+	actualStatus, err = testNode.GetStatus()
 	require.NoError(t, err)
 	require.Equal(t, actualStatus, expectedStatus)
 
 	// Cannot set the status to NEVERSTARTED,
 	// It's the default value before the Node is initialized.
 	expError = ErrCannotSetToNeverStarted
-	actualError = testNode.changeNodeStatus(NEVERSTARTED)
+	actualError = testNode.UpdateStatus(NEVERSTARTED)
 	require.ErrorIs(t, actualError, expError)
 
 	// Cannot expect the Node status to changed from NEVERSTARTED to STOPPED,
 	// while it's current state is STOPPED
 	expError = ErrAlreadyStopped
-	actualError = testNode.changeNodeStatus(STOPPED)
+	actualError = testNode.UpdateStatus(STOPPED)
 	require.ErrorIs(t, actualError, expError)
 
 	// Changing status from STOPPED to RUNNING
 	testNode.Start()
 	// The following tests validates a successful transition of state from STOP to RUNNING
 	expectedStatus = RUNNING
-	actualStatus, err = testNode.LoadStatus()
+	actualStatus, err = testNode.GetStatus()
 	require.NoError(t, err)
 	require.Equal(t, actualStatus, expectedStatus)
 	testNode.Stop()
@@ -179,22 +182,22 @@ func TestNodechangeNodeStatus(t *testing.T) {
 	// Set the Node status to an invalid status code
 	// protects from the ignorance of adding new status codes to the iota sequence!
 	expError = ErrInvalidNodeStatus
-	actualError = testNode.changeNodeStatus(NodeStatus(3))
+	actualError = testNode.UpdateStatus(NodeStatus(3))
 	require.ErrorIs(t, actualError, expError)
 
 	expError = ErrInvalidNodeStatus
-	actualError = testNode.changeNodeStatus(NodeStatus(4))
+	actualError = testNode.UpdateStatus(NodeStatus(4))
 	require.ErrorIs(t, actualError, expError)
 
 	expError = ErrInvalidNodeStatus
-	actualError = testNode.changeNodeStatus(NodeStatus(5))
+	actualError = testNode.UpdateStatus(NodeStatus(5))
 	require.ErrorIs(t, actualError, expError)
 
 }
 
-// Tests for *Node.LoadStatus()
+// Tests for *Node.GetStatus()
 // Loads the status of node after node operations and tests its correctness.
-func TestLoadStatus(t *testing.T) {
+func TestGetStatus(t *testing.T) {
 	testDir := getTestDirectory(t, "test_load_status")
 	defer os.RemoveAll(testDir)
 
@@ -206,7 +209,7 @@ func TestLoadStatus(t *testing.T) {
 
 	// Status is set to NEVERSTARTED before the node is started.
 	expectedStatus := NEVERSTARTED
-	actualStatus, err := testNode.LoadStatus()
+	actualStatus, err := testNode.GetStatus()
 	require.NoError(t, err)
 	require.Equal(t, actualStatus, expectedStatus)
 
@@ -215,7 +218,7 @@ func TestLoadStatus(t *testing.T) {
 
 	// The status is expected to be RUNNING once the node is started.
 	expectedStatus = RUNNING
-	actualStatus, err = testNode.LoadStatus()
+	actualStatus, err = testNode.GetStatus()
 	require.NoError(t, err)
 	require.Equal(t, actualStatus, expectedStatus)
 
@@ -224,7 +227,7 @@ func TestLoadStatus(t *testing.T) {
 
 	// The status is expected to be STOPPED once the node is stopped.
 	expectedStatus = STOPPED
-	actualStatus, err = testNode.LoadStatus()
+	actualStatus, err = testNode.GetStatus()
 	require.NoError(t, err)
 	require.Equal(t, actualStatus, expectedStatus)
 
@@ -234,10 +237,9 @@ func TestLoadStatus(t *testing.T) {
 
 	// expect error and invalid status code
 	expectedStatus = INVALIDNODESTATUS
-	actualStatus, err = testNode.LoadStatus()
+	actualStatus, err = testNode.GetStatus()
 	require.ErrorIs(t, err, ErrInvalidNodeStatus)
 	require.Equal(t, actualStatus, expectedStatus)
-
 }
 
 func TestValidateNodeStatus(t *testing.T) {
@@ -249,5 +251,38 @@ func TestValidateNodeStatus(t *testing.T) {
 	for i := 0; i < len(inputs); i++ {
 		err = validateNodeStatus(inputs[i])
 		require.ErrorIs(t, err, errors[i])
+	}
+}
+
+// Stop the node and test whether the internalExitChan fires as expected.
+func TestNodeStop(t *testing.T) {
+	testDir := getTestDirectory(t, "test_load_status")
+	defer os.RemoveAll(testDir)
+
+	testConfig := GenerateTestConfig(t, 18000, testDir, 10)
+
+	testConfig.ConnectIPs = []string{"deso-seed-2.io:17000"}
+
+	testNode := NewNode(&testConfig)
+	testNode.Start()
+
+	// stop the node
+	go func() {
+		err := testNode.Stop()
+		require.NoError(t, err)
+	}()
+
+	// Test whether the node stops successfully under three seconds.
+	select {
+	case <-testNode.Quit():
+	case <-time.After(3 * time.Second):
+		pid := os.Getpid()
+		p, err := os.FindProcess(pid)
+		if err != nil {
+			panic(err)
+		}
+		err = p.Signal(syscall.SIGABRT)
+		fmt.Println(err)
+		t.Fatal("timed out waiting for shutdown")
 	}
 }
