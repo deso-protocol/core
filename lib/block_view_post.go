@@ -450,7 +450,7 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 	return allCorePosts, commentsByPostHash, nil
 }
 
-func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool, nftRequired bool) (_posts []*PostEntry, _err error) {
+func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool, onlyNFTs bool, onlyPosts bool) (_posts []*PostEntry, _err error) {
 	if bav.Postgres != nil {
 		var startTime uint64 = math.MaxUint64
 		if startPostHash != nil {
@@ -463,10 +463,15 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 			if mediaRequired && !post.HasMedia() {
 				continue
 			}
-			// nftRequired set to determine if we only want posts that are NFTs
-			if nftRequired && !post.NFT {
+
+			// onlyNFTs set to determine if we only want posts that are NFTs
+			if onlyNFTs && !post.NFT {
 				continue
 			}
+			if onlyPosts && post.NFT {
+				continue
+			}
+
 			bav.setPostMappings(post)
 		}
 	} else {
@@ -526,8 +531,11 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 					continue
 				}
 
-				// nftRequired set to determine if we only want posts that are NFTs
-				if nftRequired && !postEntry.IsNFT {
+				// onlyNFTs set to determine if we only want posts that are NFTs
+				if onlyNFTs && !postEntry.IsNFT {
+					continue
+				}
+				if onlyPosts && postEntry.IsNFT {
 					continue
 				}
 
@@ -553,8 +561,11 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 			continue
 		}
 
-		// nftRequired set to determine if we only want posts that are NFTs
-		if nftRequired && !postEntry.IsNFT {
+		// onlyNFTs set to determine if we only want posts that are NFTs
+		if onlyNFTs && !postEntry.IsNFT {
+			continue
+		}
+		if onlyPosts && postEntry.IsNFT {
 			continue
 		}
 
