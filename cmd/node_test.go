@@ -45,31 +45,31 @@ func TestNodeStatusRunning(t *testing.T) {
 	testNode := NewNode(&testConfig)
 
 	// Can change the status to RUNNING from the state NEVERSTARTED
-	actualErr := testNode.UpdateStatusRunning()
+	actualErr := testNode.SetStatusRunning()
 	require.NoError(t, actualErr)
 
 	// Change status from RUNNING to STOPPED
-	actualErr = testNode.UpdateStatusStopped()
+	actualErr = testNode.SetStatusStopped()
 	require.NoError(t, actualErr)
 
 	// start the server
 	// Cannot change status to RUNNING while the node is already RUNNING!
 	testNode.Start()
 	expErr := ErrAlreadyStarted
-	actualErr = testNode.UpdateStatusRunning()
+	actualErr = testNode.SetStatusRunning()
 	require.ErrorIs(t, actualErr, expErr)
 
 	// Stop the node
 	testNode.Stop()
 	// Should be able to change status to RUNNING from STOP.
-	actualErr = testNode.UpdateStatusRunning()
+	actualErr = testNode.SetStatusRunning()
 	require.NoError(t, actualErr)
 	// Once the running flag is changed, the isRunning function should return true
 	require.True(t, testNode.IsRunning())
 
 }
 
-func TestNodeUpdateStatusStopped(t *testing.T) {
+func TestNodeSetStatusStopped(t *testing.T) {
 	testDir := getTestDirectory(t, "test_node_change_running_status")
 	defer os.RemoveAll(testDir)
 
@@ -82,7 +82,7 @@ func TestNodeUpdateStatusStopped(t *testing.T) {
 	// Need to call node.start() to atleast once to be able to change node status
 	// Cannot change status of node which never got initialized in the first place
 	expErr := ErrNodeNeverStarted
-	actualErr := testNode.UpdateStatusStopped()
+	actualErr := testNode.SetStatusStopped()
 	require.ErrorIs(t, actualErr, expErr)
 
 	// start the node
@@ -90,21 +90,21 @@ func TestNodeUpdateStatusStopped(t *testing.T) {
 	// Once the server is started
 	testNode.Start()
 
-	actualErr = testNode.UpdateStatusStopped()
+	actualErr = testNode.SetStatusStopped()
 	require.NoError(t, actualErr)
 
 	// stop the node
 	testNode.Stop()
 
 	expErr = ErrAlreadyStopped
-	actualErr = testNode.UpdateStatusStopped()
+	actualErr = testNode.SetStatusStopped()
 	require.ErrorIs(t, actualErr, expErr)
 }
 
 // Node status is change in the following sequence,
 // NEVERSTARTED -> RUNNING -> STOP -> RUNNING
 // In each state change it's tested for valid change in status.
-func TestNodeUpdateStatus(t *testing.T) {
+func TestNodeSetStatus(t *testing.T) {
 	testDir := getTestDirectory(t, "test_node_change_running_status")
 	defer os.RemoveAll(testDir)
 
@@ -120,13 +120,13 @@ func TestNodeUpdateStatus(t *testing.T) {
 	// This is an invalid status transition.
 	// Node status cannot needs to transitioned to RUNNING before changing to STOPPED
 	expError := ErrNodeNeverStarted
-	actualError := testNode.UpdateStatus(STOPPED)
+	actualError := testNode.SetStatus(STOPPED)
 	require.ErrorIs(t, actualError, expError)
 
 	// Cannot set the status to NEVERSTARTED,
 	// It's the default value before the Node is initialized.
 	expError = ErrCannotSetToNeverStarted
-	actualError = testNode.UpdateStatus(NEVERSTARTED)
+	actualError = testNode.SetStatus(NEVERSTARTED)
 	require.ErrorIs(t, actualError, expError)
 	// Starting the node.
 	// The current status of the node is RUNNING.
@@ -141,13 +141,13 @@ func TestNodeUpdateStatus(t *testing.T) {
 	// Cannot set the status to NEVERSTARTED,
 	// It's the default value before the Node is initialized.
 	expError = ErrCannotSetToNeverStarted
-	actualError = testNode.UpdateStatus(NEVERSTARTED)
+	actualError = testNode.SetStatus(NEVERSTARTED)
 	require.ErrorIs(t, actualError, expError)
 
 	// Cannot expect the Node status to changed from STOPPED to RUNNING,
 	// while it's current state is RUNNING
 	expError = ErrAlreadyStarted
-	actualError = testNode.UpdateStatus(RUNNING)
+	actualError = testNode.SetStatus(RUNNING)
 	require.ErrorIs(t, actualError, expError)
 
 	// Stopping the node.
@@ -161,13 +161,13 @@ func TestNodeUpdateStatus(t *testing.T) {
 	// Cannot set the status to NEVERSTARTED,
 	// It's the default value before the Node is initialized.
 	expError = ErrCannotSetToNeverStarted
-	actualError = testNode.UpdateStatus(NEVERSTARTED)
+	actualError = testNode.SetStatus(NEVERSTARTED)
 	require.ErrorIs(t, actualError, expError)
 
 	// Cannot expect the Node status to changed from NEVERSTARTED to STOPPED,
 	// while it's current state is STOPPED
 	expError = ErrAlreadyStopped
-	actualError = testNode.UpdateStatus(STOPPED)
+	actualError = testNode.SetStatus(STOPPED)
 	require.ErrorIs(t, actualError, expError)
 
 	// Changing status from STOPPED to RUNNING
@@ -182,15 +182,15 @@ func TestNodeUpdateStatus(t *testing.T) {
 	// Set the Node status to an invalid status code
 	// protects from the ignorance of adding new status codes to the iota sequence!
 	expError = ErrInvalidNodeStatus
-	actualError = testNode.UpdateStatus(NodeStatus(3))
+	actualError = testNode.SetStatus(NodeStatus(3))
 	require.ErrorIs(t, actualError, expError)
 
 	expError = ErrInvalidNodeStatus
-	actualError = testNode.UpdateStatus(NodeStatus(4))
+	actualError = testNode.SetStatus(NodeStatus(4))
 	require.ErrorIs(t, actualError, expError)
 
 	expError = ErrInvalidNodeStatus
-	actualError = testNode.UpdateStatus(NodeStatus(5))
+	actualError = testNode.SetStatus(NodeStatus(5))
 	require.ErrorIs(t, actualError, expError)
 
 }

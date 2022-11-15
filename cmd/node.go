@@ -72,7 +72,7 @@ type Node struct {
 	// status is nil when a NewNode is created, it is initialized and set to RUNNING [byte(1)] on node.Start(),
 	// set to STOPPED [byte(2)] after Stop() is called.
 
-	// Use the convenience methods UpdateStatus/UpdateStatusRunning/UpdateStatusStopped to change node status.
+	// Use the convenience methods SetStatus/SetStatusRunning/SetStatusStopped to change node status.
 	// Use *Node.IsRunning() to check if the node is running.
 	// Use *Node.GetStatus() to retrieve the status of the node.
 	// Use *Node.getStatusWithoutLock() if the statusMutex is held by the caller.
@@ -305,7 +305,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		glog.Info("Changing node status from NEVERSTARTED to RUNNING...")
 		// The node status is changed from NEVERSTARTED to RUNNING only once
 		// when the node is started for the first time.
-		err = node.UpdateStatusRunning()
+		err = node.SetStatusRunning()
 		if err != nil {
 			glog.Fatalf("Error running Node -- %v", err)
 		}
@@ -314,7 +314,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		// During restart the Node is first STOPPED before setting the
 		// status again to RUNNING.
 		glog.Info("Changing node status from STOP to RUNNING...")
-		err = node.UpdateStatusRunning()
+		err = node.SetStatusRunning()
 		if err != nil {
 			glog.Fatalf("Error running Node -- %v", err)
 		}
@@ -364,16 +364,16 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 // Changes node status to STOPPED.
 // Cannot transition from NEVERSTARTED to STOPPED.
 // Valid transition sequence is NEVERSTARTED->RUNNING->STOPPED.
-func (node *Node) UpdateStatusStopped() error {
-	if err := node.updateStatusWithoutLock(STOPPED); err != nil {
+func (node *Node) SetStatusStopped() error {
+	if err := node.setStatusWithoutLock(STOPPED); err != nil {
 		return err
 	}
 	return nil
 }
 
 // Changes node status to RUNNING.
-func (node *Node) UpdateStatusRunning() error {
-	if err := node.updateStatusWithoutLock(RUNNING); err != nil {
+func (node *Node) SetStatusRunning() error {
+	if err := node.setStatusWithoutLock(RUNNING); err != nil {
 		return err
 	}
 	return nil
@@ -436,7 +436,7 @@ func validateNodeStatus(status NodeStatus) error {
 
 // changes the running status of the node
 // Always use this function to change the status of the node.
-func (node *Node) updateStatusWithoutLock(newStatus NodeStatus) error {
+func (node *Node) setStatusWithoutLock(newStatus NodeStatus) error {
 	if err := validateNodeStatus(newStatus); err != nil {
 		return err
 	}
@@ -476,13 +476,13 @@ func (node *Node) updateStatusWithoutLock(newStatus NodeStatus) error {
 }
 
 // Wrapper function for changing node status with statusMutex
-// use updateStatusWithoutLock if the lock is held by the caller.
+// use SetStatusWithoutLock if the lock is held by the caller.
 // calling this function while the statusMutex lock is already held will lead to deadlocks!
-func (node *Node) UpdateStatus(newStatus NodeStatus) error {
+func (node *Node) SetStatus(newStatus NodeStatus) error {
 	node.statusMutex.Lock()
 	defer node.statusMutex.Unlock()
 
-	return node.updateStatusWithoutLock(newStatus)
+	return node.setStatusWithoutLock(newStatus)
 
 }
 
@@ -504,7 +504,7 @@ func (node *Node) Stop() error {
 
 	// Change nodes running status to stop
 	// Node's current status has to be RUNNING to be able to STOP!
-	if err := node.UpdateStatusStopped(); err != nil {
+	if err := node.SetStatusStopped(); err != nil {
 		glog.Errorf("Error stopping Node -- %v", err)
 		return err
 	}
