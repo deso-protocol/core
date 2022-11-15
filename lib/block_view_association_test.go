@@ -506,6 +506,13 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 
+		// Failed query:
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
+			AssociationValue: "C#",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params")
+
 		// Query for all endorsements of m1
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
