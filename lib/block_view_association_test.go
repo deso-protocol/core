@@ -485,6 +485,16 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 
+		// m2 -> m1, ENDORSEMENT: JavaScript
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AssociationType:     "ENDORSEMENT",
+			AssociationValue:    "JavaScript",
+		}
+		_submitAssociationTxnHappyPath(
+			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
+		)
+
 		// m1 -> m2, ENDORSEMENT: SQL
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m2PkBytes),
@@ -545,12 +555,13 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 
-		// Failed query:
+		// Query for all endorsements of m0 (none exist)
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
-			AssociationValue: "C#",
+			TargetUserPublicKey: NewPublicKey(m0PkBytes),
+			AssociationType:     "ENDORSEMENT",
 		})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.NoError(t, err)
+		require.Empty(t, userAssociationEntries)
 
 		// Query for all endorsements of m1
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
@@ -558,8 +569,21 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			AssociationType:     "ENDORSEMENT",
 		})
 		require.NoError(t, err)
+		require.Len(t, userAssociationEntries, 2)
+		sort.Slice(userAssociationEntries, func(ii, jj int) bool {
+			return userAssociationEntries[ii].AssociationValue < userAssociationEntries[jj].AssociationValue
+		})
+		require.Equal(t, userAssociationEntries[0].AssociationValue, "JavaScript")
+		require.Equal(t, userAssociationEntries[1].AssociationValue, "SQL")
+
+		// Query for all endorsements of m1 by m2
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m2PkBytes, &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AssociationType:     "ENDORSEMENT",
+		})
+		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 1)
-		require.Equal(t, userAssociationEntries[0].AssociationValue, "SQL")
+		require.Equal(t, userAssociationEntries[0].AssociationValue, "JavaScript")
 
 		// Query for all ENDORSEMENT: SQL by m0
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
@@ -614,6 +638,47 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntries[0].AssociationValue, "C")
 		require.Equal(t, userAssociationEntries[1].AssociationValue, "C#")
 		require.Equal(t, userAssociationEntries[2].AssociationValue, "C++")
+
+		// Failed query if Badger: no Transactor or TargetUser specified
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
+			AssociationType:  "ENDORSEMENT",
+			AssociationValue: "C#",
+		})
+		if chain.postgres != nil {
+			require.NoError(t, err)
+			require.Len(t, userAssociationEntries, 1)
+			require.Equal(t, userAssociationEntries[0].TargetUserPKID, m3PKID)
+		} else {
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid query params")
+		}
+
+		// Failed query if Badger: empty AssociationType and non-empty AssociationValue
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m4PkBytes, &CreateUserAssociationMetadata{
+			AssociationValue: "C#",
+		})
+		if chain.postgres != nil {
+			require.NoError(t, err)
+			require.Len(t, userAssociationEntries, 1)
+			require.Equal(t, userAssociationEntries[0].TargetUserPKID, m3PKID)
+		} else {
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid query params")
+		}
+
+		// Failed query if Badger: wildcard AssociationType and non-empty AssociationValue
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m4PkBytes, &CreateUserAssociationMetadata{
+			AssociationType:  "ENDORSE*",
+			AssociationValue: "C#",
+		})
+		if chain.postgres != nil {
+			require.NoError(t, err)
+			require.Len(t, userAssociationEntries, 1)
+			require.Equal(t, userAssociationEntries[0].TargetUserPKID, m3PKID)
+		} else {
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid query params")
+		}
 	}
 	// ---------------------------------
 	// PostAssociation: query API
@@ -749,6 +814,15 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[0].AssociationValue, "HEART")
 		require.Equal(t, postAssociationEntries[0].PostHash, postHash)
 
+		// Query for all m0's REACTION*
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m0PkBytes, &CreatePostAssociationMetadata{
+			AssociationType: "reaction*",
+		})
+		require.NoError(t, err)
+		require.Len(t, postAssociationEntries, 1)
+		require.Equal(t, postAssociationEntries[0].AssociationValue, "HEART")
+		require.Equal(t, postAssociationEntries[0].PostHash, postHash)
+
 		// Query for all r/* tags on m2's post
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
 			PostHash:         postHash2,
@@ -772,6 +846,34 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 1)
 		require.Equal(t, postAssociationEntries[0].TransactorPKID, m3PKID)
+
+		// Failed query if Badger: non-empty Transactor, wildcard AssociationType, non-empty AssociationValue
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m3PkBytes, &CreatePostAssociationMetadata{
+			AssociationType:  "TAG*",
+			AssociationValue: "NSFW",
+		})
+		if chain.postgres != nil {
+			require.NoError(t, err)
+			require.Len(t, postAssociationEntries, 1)
+			require.Equal(t, postAssociationEntries[0].PostHash, postHash2)
+		} else {
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid query params")
+		}
+
+		// Failed query if Badger: non-empty Transactor, wildcard AssociationType, non-empty PostHash
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m3PkBytes, &CreatePostAssociationMetadata{
+			PostHash:        postHash2,
+			AssociationType: "TAG*",
+		})
+		if chain.postgres != nil {
+			require.NoError(t, err)
+			require.Len(t, postAssociationEntries, 1)
+			require.Equal(t, postAssociationEntries[0].AssociationValue, "NSFW")
+		} else {
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid query params")
+		}
 	}
 
 	// Flush mempool to the db and test rollbacks.
