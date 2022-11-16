@@ -1,11 +1,13 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "net/http/pprof"
@@ -112,6 +114,9 @@ type transactionTestInputSpace interface {
 	// IsDependency should return true if the other input space will have overlapping utxoView/utxoOps mappings or db records
 	// with the current input space. This is used by the transactionTest framework to determine which transactionTestVector
 	// will describe entries that will be flushed to the db after both test vectors are applied.
+	// We assume that IsDependant is a symmetric relation, i.e. IsDependency(TV1, TV2) == IsDependency(TV2, TV1); however,
+	// it is not necessarily a transitive relation, i.e. IsDependency(TV1, TV2) && IsDependency(TV2, TV3) does
+	// not have to imply IsDependency(TV1, TV3).
 	IsDependency(other transactionTestInputSpace) bool
 	// Get input type should just return a unique transactionTestInputType associated with the particular input space.
 	GetInputType() transactionTestInputType
@@ -131,6 +136,18 @@ type transactionTestMeta struct {
 // transactionTestIdentifier is a unique identifier for a transactionTestVector.
 type transactionTestIdentifier string
 
+// transactionTestVector is the main struct that comprises the unit tests for the transaction testing framework.
+// It contains the transactionTestMetadata, the test's id, the inputSpace for the test -- the data that will be used to
+// construct the transaction when the test vector is processed by the test suite's run. In addition, the test vector
+// contains a methods such as getTransaction, which will be called to get the transaction out of this test vector.
+// It's worth noting that getTransaction should return both the _transaction and the _expectedConnectUtxoViewError in case
+// we want to check a failing transaction and make sure it returns the anticipated error.
+// The test vector also contains validation functions verifyMempoolEntry and verifyDbEntry which will be used to verify
+// that a correct entry exists in the mempool and the db after the transaction has been connected/disconnected (in the
+// latter case, the expectDeleted bool will be passed as true).
+// The testVector also allows specifying two callback functions connectCallback, which will be called once the transaction
+// acquired from getTransaction has been connected, and disconnectCallback, which will be called when the transaction
+// gets disconnected.
 type transactionTestVector struct {
 	transactionTestMeta
 	id                 transactionTestIdentifier
@@ -142,20 +159,62 @@ type transactionTestVector struct {
 	disconnectCallback func(tv *transactionTestVector)
 }
 
+// transactionTestSuite is the main component of the transaction testing framework. It contains the test metadata
+// transactionTestMeta, and the test vectors ordered sequentially block by block in the order in which they should be
+// connected to the blockchain.
+// The remaining fields are for internal use only: _testVectorsInDb keeps track of test vectors that have already been
+// flushed to the db, while _testVectorsInMempool keeps track of all the test vectors that have currently been connected
+// to the mempool. Lastly, _testVectorDependency keeps track of all the test vectors which should be skipped from checking
+// verifyMempoolEntry and verifyDbEntry because there has been a later test vector (test vector identified by map key id) that
+// had a pairwise IsDependency evaluate to true. This is used to avoid checking the same utxoView or db records repeatedly:
+// once for the latest testVector, and twice, thrice, etc. for the earlier, dependent testVectors.
 type transactionTestSuite struct {
 	transactionTestMeta
-	testVectorsByBlock   [][]*transactionTestVector
-	testVectorsInDb      []*transactionTestVector
-	testVectorsInMempool []*transactionTestVector
-	testVectorDependency map[transactionTestIdentifier][]transactionTestIdentifier
+	testVectorsByBlock [][]*transactionTestVector
+
+	_testVectorsInDb      []*transactionTestVector
+	_testVectorsInMempool []*transactionTestVector
+	_testVectorDependency map[transactionTestIdentifier][]transactionTestIdentifier
 }
 
-func (tes *transactionTestSuite) run() {
-	//require := require.New(tes.t)
+// Run is the main method of the transactionTestSuite. It will run the test suite and verify that all the testVectors are
+// pass a variety of tests.
+func (tes *transactionTestSuite) Run() {
+	require := require.New(tes.t)
 	for _, testVectors := range tes.testVectorsByBlock {
 		// Run all the test vectors for this block.
+		dbChecksumBeforeConnectDisconnect, err := tes.GetDbStateChecksum()
+		require.NoError(err)
 		tes.testConnectDisconnectBlock(testVectors)
+		dbChecksumAfterConnectDisconnect, err := tes.GetDbStateChecksum()
+		require.NoError(err)
+		if !bytes.Equal(dbChecksumBeforeConnectDisconnect, dbChecksumAfterConnectDisconnect) {
+			tes.t.Errorf("db checksum mismatch before and after connect/disconnect block. This means "+
+				"some entries are not properly deleted from the db after disconnecting a block: "+
+				"dbChecksumBeforeConnectDisconnect: %v, dbChecksumAfterConnectDisconnect: %v",
+				dbChecksumBeforeConnectDisconnect, dbChecksumAfterConnectDisconnect)
+		}
+		fmt.Println("Run: successfully connected/disconnected block and verified db state")
+		tes.testConnectBlock(testVectors)
 	}
+}
+
+func (tes *transactionTestSuite) GetDbStateChecksum() (_dbChecksum []byte, _err error) {
+	// Get the current db state checksum.
+	verificationMigration := EncoderMigration{}
+	verificationMigration.InitializeSingleHeight(tes.db, tes.chain.snapshot.SnapshotDb, tes.chain.snapshot.SnapshotDbMutex,
+		0, tes.params)
+	if err := verificationMigration.StartMigrations(); err != nil {
+		return nil, errors.Wrapf(err, "GetDbStateChecksum: Problem starting verification migration.")
+	}
+	if len(verificationMigration.migrationChecksums) != 1 {
+		return nil, errors.Errorf("GetDbStateChecksum: Number of migration checksums is invalid.")
+	}
+	verificationChecksum, err := verificationMigration.migrationChecksums[0].Checksum.ToBytes()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetDbStateChecksum: Problem getting verification migration.")
+	}
+	return verificationChecksum, nil
 }
 
 func (tes *transactionTestSuite) testConnectBlock(testVectors []*transactionTestVector) (
@@ -217,9 +276,6 @@ func (tes *transactionTestSuite) testConnectDisconnectBlock(testVectors []*trans
 	err = tes.chain.DisconnectBlocksToHeight(uint64(blockHeight)-1, tes.chain.snapshot)
 	require.NoError(err)
 	for ii := len(testVectors) - 1; ii >= 0; ii-- {
-		if !validTransactions[ii] {
-			continue
-		}
 		tv := testVectors[ii]
 		tv.verifyDbEntry(tv, true)
 		if tv.disconnectCallback != nil {
@@ -230,20 +286,20 @@ func (tes *transactionTestSuite) testConnectDisconnectBlock(testVectors []*trans
 
 func (tes *transactionTestSuite) addTestVectorToMempool(tv *transactionTestVector) {
 	require := require.New(tes.t)
-	require.NotNil(tes.testVectorDependency)
-	require.Nil(tes.testVectorDependency[tv.id])
+	require.NotNil(tes._testVectorDependency)
+	require.Nil(tes._testVectorDependency[tv.id])
 
-	for _, tvInDb := range tes.testVectorsInDb {
+	for _, tvInDb := range tes._testVectorsInDb {
 		if tvInDb.inputSpace.IsDependency(tv.inputSpace) {
-			tes.testVectorDependency[tv.id] = append(tes.testVectorDependency[tv.id], tvInDb.id)
+			tes._testVectorDependency[tv.id] = append(tes._testVectorDependency[tv.id], tvInDb.id)
 		}
 	}
-	for _, tvInMempool := range tes.testVectorsInMempool {
+	for _, tvInMempool := range tes._testVectorsInMempool {
 		if tvInMempool.inputSpace.IsDependency(tv.inputSpace) {
-			tes.testVectorDependency[tv.id] = append(tes.testVectorDependency[tv.id], tvInMempool.id)
+			tes._testVectorDependency[tv.id] = append(tes._testVectorDependency[tv.id], tvInMempool.id)
 		}
 	}
-	tes.testVectorsInMempool = append(tes.testVectorsInMempool, tv)
+	tes._testVectorsInMempool = append(tes._testVectorsInMempool, tv)
 }
 
 func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.DB,

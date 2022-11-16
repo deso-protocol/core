@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/pkg/errors"
 	"reflect"
@@ -83,7 +84,7 @@ func (bav *UtxoView) GetAccessGroupEntryWithAccessGroupKey(
 			"access group entry for access group key %v", accessGroupKey)
 	}
 	if accessGroupEntry != nil {
-		if err := bav._setAccessGroupKeyToAccessGroupEntryMapping(&accessGroupKey.AccessGroupOwnerPublicKey, accessGroupEntry); err != nil {
+		if err := bav._setAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntry); err != nil {
 			return nil, errors.Wrapf(err, "GetAccessGroupEntryWithAccessGroupKey: Problem setting "+
 				"access group entry for access group key %v", accessGroupKey)
 		}
@@ -91,31 +92,30 @@ func (bav *UtxoView) GetAccessGroupEntryWithAccessGroupKey(
 	return accessGroupEntry, nil
 }
 
-func (bav *UtxoView) _setAccessGroupKeyToAccessGroupEntryMapping(ownerPublicKey *PublicKey,
-	accessGroupEntry *AccessGroupEntry) error {
+func (bav *UtxoView) _setAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntry *AccessGroupEntry) error {
 
 	// This function shouldn't be called with a nil entry.
-	if accessGroupEntry == nil {
-		return fmt.Errorf("_setAccessGroupKeyToAccessGroupEntryMapping: Called with nil AccessGroupEntry; " +
-			"this should never happen.")
+	if accessGroupEntry == nil || accessGroupEntry.AccessGroupOwnerPublicKey == nil || accessGroupEntry.AccessGroupKeyName == nil {
+		return fmt.Errorf("_setAccessGroupKeyToAccessGroupEntryMapping: Called with nil AccessGroupEntry, " +
+			"AccessGroupEntry.AccessGroupOwnerPublicKey, or AccessGroupEntry.AccessGroupKeyName; this should never happen")
 	}
 
 	// Create a key for the UtxoView mapping. We always put user's owner public key as part of the map key.
 	// Note that this is different from message entries, which are indexed by access public keys.
 	accessKey := AccessGroupKey{
-		AccessGroupOwnerPublicKey: *ownerPublicKey,
+		AccessGroupOwnerPublicKey: *accessGroupEntry.AccessGroupOwnerPublicKey,
 		AccessGroupKeyName:        *accessGroupEntry.AccessGroupKeyName,
 	}
 	bav.AccessGroupKeyToAccessGroupEntry[accessKey] = accessGroupEntry
 	return nil
 }
 
-func (bav *UtxoView) _deleteAccessGroupKeyToAccessGroupEntryMapping(ownerPublicKey *PublicKey,
-	accessGroupEntry *AccessGroupEntry) error {
+func (bav *UtxoView) _deleteAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntry *AccessGroupEntry) error {
 
-	if accessGroupEntry == nil {
-		return fmt.Errorf("_deleteAccessGroupKeyToAccessGroupEntryMapping: Called with nil AccessGroupEntry; " +
-			"this should never happen.")
+	// This function shouldn't be called with a nil entry.
+	if accessGroupEntry == nil || accessGroupEntry.AccessGroupOwnerPublicKey == nil || accessGroupEntry.AccessGroupKeyName == nil {
+		return fmt.Errorf("_deleteAccessGroupKeyToAccessGroupEntryMapping: Called with nil AccessGroupEntry, " +
+			"AccessGroupEntry.AccessGroupOwnerPublicKey, or AccessGroupEntry.AccessGroupKeyName; this should never happen")
 	}
 
 	// Create a tombstone entry.
@@ -123,7 +123,7 @@ func (bav *UtxoView) _deleteAccessGroupKeyToAccessGroupEntryMapping(ownerPublicK
 	tombstoneAccessGroupEntry.isDeleted = true
 
 	// Set the mappings to point to the tombstone entry.
-	if err := bav._setAccessGroupKeyToAccessGroupEntryMapping(ownerPublicKey, &tombstoneAccessGroupEntry); err != nil {
+	if err := bav._setAccessGroupKeyToAccessGroupEntryMapping(&tombstoneAccessGroupEntry); err != nil {
 		return errors.Wrapf(err, "_deleteAccessGroupKeyToAccessGroupEntryMapping: Problem setting "+
 			"access group entry for access group key %v", accessGroupEntry)
 	}
@@ -239,30 +239,29 @@ func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 	return nil
 }
 
+// Access group is the general abstraction for secure on-chain sharing of private keys such as encryption keys.
+//
+// An AccessGroup is identified by a pair of <accessGroupOwnerPublicKey, accessGroupKeyName>. Where
+// accessGroupOwnerPublicKey is the public key of the user who registers the group (in this case also txn.PublicKey),
+// and accessGroupKeyName is the 32-byte name of the group.
+//
+// Access group consist of the <accessGroupOwnerPublicKey, accessGroupKeyName> identifier pair, along with the
+// accessGroupPublicKey, which is the public key that is shared within the access group. Together, this data forms
+// access group metadata. The purpose of the _connectAccessGroupCreate function and the AccessGroupCreate transaction
+// is to register this metadata.
+//
+// Aside from metadata, access groups also have members with whom the private key of the accessGrouPublicKey is shared.
+// Access group members are added or updated in a separate transaction called AccessGroupMembers, which has its own connect
+// function, namely _connectAccessGroupMembers. In addition, access group can have attributes, which are key-value pairs
+// that are used to store additional information about the access group. Attributes are added or updated in a separate
+// transaction called AccessGroupAttributes, which has its own connect function, namely _connectAccessGroupAttributes.
+// Access group attributes are the main venue for utilizing the generality of access groups, ranging from on-chain private
+// group chats, to private content.
 func (bav *UtxoView) _connectAccessGroupCreate(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
-	// Access groups are a part of DeSo V3 Messages.
-	//
-	// An AccessGroupKey is a pair of an <ownerPublicKey, groupKeyName>. AccessGroupKeys are registered on-chain
-	// and are intended to be used as senders/recipients of privateMessage transactions, as opposed to users' main
-	// keys. AccessGroupKeys solve the problem with messages for holders of derived keys, who previously had no
-	// way to properly encrypt/decrypt messages, as they don't have access to user's main private key.
-	//
-	// A groupKeyName is a byte array between 1-32 bytes that labels the AccessGroupKey. Applications have the
-	// choice to label users' AccessGroupKeys as they desire. For instance, a groupKeyName could represent the name
-	// of an on-chain group chat. On the db level, groupKeyNames are always filled to 32 bytes with []byte(0) suffix.
-	//
-	// We hard-code two AccessGroupKeys:
-	// 	[]byte{}              : user's ownerPublicKey. This key is registered for all users natively.
-	//	[]byte("default-key") : intended to be registered when authorizing a derived key for the first time.
-	//
-	// The proposed flow is to register a default-key whenever first authorizing a derived key for a user. This way,
-	// the derived key can be used for sending and receiving messages. DeSo V3 Messages also enable group chats, which
-	// we will explain in more detail later.
-
-	// Make sure DeSo V3 messages are live.
+	// Make sure access groups are live.
 	if blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorAccessGroupsBeforeBlockHeight, "_connectAccessGroupCreate: "+
@@ -276,11 +275,11 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 	}
 	txMeta := txn.TxnMeta.(*AccessGroupCreateMetadata)
 
-	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
-	if EqualGroupKeyName(NewGroupKeyName(txMeta.AccessGroupKeyName), BaseGroupKeyName()) {
-		return 0, 0, nil, errors.Wrapf(
-			RuleErrorAccessGroupsNameCannotBeZeros, "_connectAccessGroupCreate: "+
-				"Cannot set a zeros-only key name?")
+	// Sanity-check that the access group owner public key is the same as the transaction's sender. For now, groups can
+	// only be registered for the sender's own public key.
+	if !bytes.Equal(txn.PublicKey, txMeta.AccessGroupOwnerPublicKey) {
+		return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupOwnerPublicKeyCannotBeDifferent,
+			"_connectAccessGroupCreate: access public key and txn public key must be the same")
 	}
 
 	// Make sure that the access public key and the group key name have the correct format.
@@ -289,40 +288,42 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 			"Problem parsing public key: %v", txMeta.AccessGroupPublicKey)
 	}
 
-	// Sanity-check that we're not trying to add an access public key identical to the ownerPublicKey.
-	if reflect.DeepEqual(txMeta.AccessGroupPublicKey, txn.PublicKey) {
+	// Sanity-check that we're not trying to add an access public key identical to the ownerPublicKey. This is reserved
+	// for the base access group.
+	if bytes.Equal(txMeta.AccessGroupPublicKey, txn.PublicKey) {
 		return 0, 0, nil, errors.Wrapf(RuleErrorAccessPublicKeyCannotBeOwnerKey,
 			"_connectAccessGroupCreate: access public key and txn public key can't be the same")
 	}
 
-	// We have validated all information. At this point the inputs and outputs have been processed.
-	// Now we need to handle the metadata. We will proceed to add the key to UtxoView, and generate UtxoOps.
+	// If the key name is just a list of 0s, then return because this name is reserved for the base key access group.
+	// The base key access group is a special group natively registered for every user. The base key access group
+	// is an "access group expansion" of user's public key, i.e. accessGroupPublicKey = accessGroupOwnerPublicKey.
+	// We decided to hard-code the base access group for convenience, since it's useful in some use-cases of access
+	// such as DMs.
+	if EqualGroupKeyName(NewGroupKeyName(txMeta.AccessGroupKeyName), BaseGroupKeyName()) {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorAccessGroupsNameCannotBeZeros, "_connectAccessGroupCreate: "+
+				"Cannot set a zeros-only key name?")
+	}
 
-	// We support "unencrypted" groups, which are a special-case of group chats that are intended for public
-	// access. For example, this could be used to make discussion groups, which anyone can discover and join.
-	// To do so, we hard-code an owner public key which will index all unencrypted group chats. We choose the
-	// secp256k1 base element. Essentially, unencrypted groups are treated as access keys that are created
-	// by the base element public key. To register an unencrypted group chat, the access key transaction
-	// should contain the base element as the access public key. Below, we check for this and adjust the
-	// accessGroupKey and accessPublicKey appropriately so that we can properly index the DB entry.
+	// We have validated all transaction metadata information. We will proceed to add the access group to UtxoView.
 
+	// Create the access group identifier key, as previously mentioned it is a pair of
+	// <accessGroupOwnerPublicKey, accessGroupKeyName>.
 	accessPublicKey := NewPublicKey(txMeta.AccessGroupPublicKey)
 	accessGroupKey := &AccessGroupKey{
 		AccessGroupOwnerPublicKey: *NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
 		AccessGroupKeyName:        *NewGroupKeyName(txMeta.AccessGroupKeyName),
 	}
 
-	// First, let's check if this key doesn't already exist in UtxoView or in the DB.
-	// It's worth noting that we index access keys by the owner public key and access key name.
+	// Let's check if this key doesn't already exist in UtxoView or in the DB.
 	existingEntry, err := bav.GetAccessGroupEntryWithAccessGroupKey(accessGroupKey)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: ")
 	}
 
-	// Make sure that the utxoView entry and the transaction entries have the same access public keys and encrypted key.
-	// The encrypted key is an auxiliary field that can be used to share the private key of the access public keys with
-	// user's main key when registering an access key via a derived key. This field will also be used in group chats, as
-	// we will later overload the AccessGroupEntry struct for storing access keys for group participants.
+	// If there already exists an access group with this key, then we return an error as we don't allow re-registering
+	// access groups.
 	if existingEntry != nil && !existingEntry.isDeleted {
 		return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupAlreadyExists,
 			"_connectAccessGroupCreate: Access group already exists for access group owner public key %v "+
@@ -332,11 +333,7 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 	// merge extra data
 	var extraData map[string][]byte
 	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
-		var existingExtraData map[string][]byte
-		if existingEntry != nil && !existingEntry.isDeleted {
-			existingExtraData = existingEntry.ExtraData
-		}
-		extraData = mergeExtraData(existingExtraData, txn.ExtraData)
+		extraData = mergeExtraData(make(map[string][]byte), txn.ExtraData)
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -347,11 +344,6 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: ")
 	}
 
-	// TODO: Currently, it is technically possible for any user to add *any other* user to *any group* with
-	// a garbage EncryptedKey. This can be filtered out at the app layer, though, and for now it leaves the
-	// app layer with more flexibility compared to if we implemented an explicit permissioning model at the
-	// consensus level.
-
 	// Create an AccessGroupEntry, so we can add the entry to UtxoView.
 	accessGroupEntry := &AccessGroupEntry{
 		AccessGroupOwnerPublicKey: &accessGroupKey.AccessGroupOwnerPublicKey,
@@ -360,11 +352,12 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 		ExtraData:                 extraData,
 	}
 
-	if err := bav._setAccessGroupKeyToAccessGroupEntryMapping(&accessGroupKey.AccessGroupOwnerPublicKey, accessGroupEntry); err != nil {
+	if err := bav._setAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntry); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: ")
 	}
 
-	// Construct UtxoOperation.
+	// Construct UtxoOperation. Since we can only set/unset an access group with _connect/_disconnect, we don't need to
+	// store any information in the UtxoOperation. Transaction metadata is sufficient.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type: OperationTypeCreateAccessGroup,
 	})
@@ -372,14 +365,16 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
+// _disconnectAccessGroupCreate is the inverse of _connectAccessGroupCreate. It deletes the access group from UtxoView.
 func (bav *UtxoView) _disconnectAccessGroupCreate(
 	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
-	// Verify that the last operation is an AccessGroupKey operation
+	// Verify that the last operation is an AccessGroupKey operation.
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectAccessGroupCreate: utxoOperations are missing")
 	}
+	// If the last operation is not an AccessGroupKey operation, then we return an error.
 	operationIndex := len(utxoOpsForTxn) - 1
 	if utxoOpsForTxn[operationIndex].Type != OperationTypeCreateAccessGroup {
 		return fmt.Errorf("_disconnectAccessGroupCreate: Trying to revert "+
@@ -403,36 +398,35 @@ func (bav *UtxoView) _disconnectAccessGroupCreate(
 			"public key and key name")
 	}
 
-	// Get the access key that the transaction metadata points to.
-	var accessKey *AccessGroupKey
-	// TODO: Remove. We can define a separate db index for the discovery of unencrypted group chats.
-	if reflect.DeepEqual(txMeta.AccessGroupPublicKey, GetS256BasePointCompressed()) {
-		accessKey = NewAccessGroupKey(NewPublicKey(GetS256BasePointCompressed()), txMeta.AccessGroupKeyName)
-	} else {
-		accessKey = NewAccessGroupKey(NewPublicKey(currentTxn.PublicKey), txMeta.AccessGroupKeyName)
+	// Sanity-check that the access group owner public key is the same as the transaction's sender public key.
+	if !bytes.Equal(txMeta.AccessGroupOwnerPublicKey, currentTxn.PublicKey) {
+		return fmt.Errorf("_disconnectAccessGroupCreate: access group owner public key %v is "+
+			"not the same as the transaction's sender public key %v", txMeta.AccessGroupOwnerPublicKey, currentTxn.PublicKey)
 	}
 
+	// Get the access key that the transaction metadata points to.
+	accessKey := NewAccessGroupKey(NewPublicKey(currentTxn.PublicKey), txMeta.AccessGroupKeyName)
 	accessGroupEntry, err := bav.GetAccessGroupEntryWithAccessGroupKey(accessKey)
 	if err != nil {
 		return errors.Wrapf(err, "_disconnectAccessGroupCreate: Problem getting access group entry: ")
 	}
+	// If the access group entry is nil or is deleted, then we return an error.
 	if accessGroupEntry == nil || accessGroupEntry.isDeleted {
 		return fmt.Errorf("_disconnectBasicTransfer: Error, this key was already deleted "+
 			"accessKey: %v", accessKey)
 	}
 	// sanity check that the existing entry matches the transaction metadata.
-	if !reflect.DeepEqual(accessGroupEntry.AccessGroupOwnerPublicKey.ToBytes(), NewPublicKey(txMeta.AccessGroupOwnerPublicKey).ToBytes()) ||
-		!reflect.DeepEqual(accessGroupEntry.AccessGroupKeyName.ToBytes(), NewGroupKeyName(txMeta.AccessGroupKeyName).ToBytes()) ||
-		!reflect.DeepEqual(accessGroupEntry.AccessGroupPublicKey.ToBytes(), NewPublicKey(txMeta.AccessGroupPublicKey).ToBytes()) {
+	if !bytes.Equal(accessGroupEntry.AccessGroupOwnerPublicKey.ToBytes(), NewPublicKey(txMeta.AccessGroupOwnerPublicKey).ToBytes()) ||
+		!bytes.Equal(accessGroupEntry.AccessGroupKeyName.ToBytes(), NewGroupKeyName(txMeta.AccessGroupKeyName).ToBytes()) ||
+		!bytes.Equal(accessGroupEntry.AccessGroupPublicKey.ToBytes(), NewPublicKey(txMeta.AccessGroupPublicKey).ToBytes()) {
 		return fmt.Errorf("_disconnectAccessGroupCreate: The existing access group entry doesn't match the "+
 			"transaction metadata. Existing entry: %v, txMeta: %v", accessGroupEntry, txMeta)
 	}
 
 	// Delete this item from UtxoView to indicate we should remove this entry from DB.
-	if err := bav._deleteAccessGroupKeyToAccessGroupEntryMapping(&accessKey.AccessGroupOwnerPublicKey, accessGroupEntry); err != nil {
+	if err := bav._deleteAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntry); err != nil {
 		return errors.Wrapf(err, "_disconnectAccessGroupCreate: Problem deleting access group entry: ")
 	}
-	// If the previous entry exists, we should set it in the utxoview
 
 	// Now disconnect the basic transfer.
 	return bav._disconnectBasicTransfer(

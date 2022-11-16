@@ -106,7 +106,7 @@ const (
 	RuleErrorAccessGroupsBeforeBlockHeight              RuleError = "RuleErrorAccessGroupsBeforeBlockHeight"
 	RuleErrorAccessGroupsNameCannotBeZeros              RuleError = "RuleErrorAccessGroupsNameCannotBeZeros"
 	RuleErrorAccessPublicKeyCannotBeOwnerKey            RuleError = "RuleErrorAccessPublicKeyCannotBeOwnerKey"
-	RuleErrorAccessPublicKeyCannotBeDifferent           RuleError = "RuleErrorAccessPublicKeyCannotBeDifferent"
+	RuleErrorAccessGroupOwnerPublicKeyCannotBeDifferent RuleError = "RuleErrorAccessGroupOwnerPublicKeyCannotBeDifferent"
 	RuleErrorAccessGroupAlreadyExists                   RuleError = "RuleErrorAccessGroupAlreadyExists"
 	RuleErrorAccessGroupMembersBeforeBlockHeight        RuleError = "RuleErrorAccessGroupMembersBeforeBlockHeight"
 	RuleErrorAccessGroupDoesntExist                     RuleError = "RuleErrorAccessGroupDoesntExist"

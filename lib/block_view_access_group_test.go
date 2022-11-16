@@ -177,11 +177,11 @@ func TestAccessGroupCreate(t *testing.T) {
 
 	tvv := [][]*transactionTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14, tv15}}
 	tes := transactionTestSuite{
-		transactionTestMeta:  tm,
-		testVectorsByBlock:   tvv,
-		testVectorDependency: make(map[transactionTestIdentifier][]transactionTestIdentifier),
+		transactionTestMeta:   tm,
+		testVectorsByBlock:    tvv,
+		_testVectorDependency: make(map[transactionTestIdentifier][]transactionTestIdentifier),
 	}
-	tes.run()
+	tes.Run()
 }
 
 func _createAccessGroupCreateTestVector(tm transactionTestMeta, id string, userPrivateKey string, accessGroupOwnerPublicKey []byte,
