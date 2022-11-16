@@ -8717,7 +8717,6 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, queryE
 					// AssociationType == ...*, (Association != "" || PostHash != nil)
 					return nil, errors.New("DBGetPostAssociationsByAttributes: invalid query params")
 				}
-
 				keyPrefix = append(keyPrefix, []byte(strings.ToLower(queryEntry.AssociationType[:len(queryEntry.AssociationType)-1]))...)
 			} else {
 				keyPrefix = append(keyPrefix, []byte(strings.ToLower(queryEntry.AssociationType))...)
