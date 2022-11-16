@@ -21,6 +21,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	// -----------------------
 	var createUserAssociationMetadata *CreateUserAssociationMetadata
 	var deleteUserAssociationMetadata *DeleteUserAssociationMetadata
+	var associationID *BlockHash
 	var userAssociationEntry *UserAssociationEntry
 	var userAssociationEntries []*UserAssociationEntry
 	var createPostAssociationMetadata *CreatePostAssociationMetadata
@@ -232,6 +233,25 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntry.AssociationType, "ENDORSEMENT")
 		require.Equal(t, userAssociationEntry.AssociationValue, "SQL")
 		require.NotNil(t, userAssociationEntry.BlockHeight)
+		associationID = userAssociationEntry.AssociationID
+	}
+	{
+		// Test overwriting UserAssociation
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AssociationType:     "ENDORSEMENT",
+			AssociationValue:    "SQL",
+		}
+		_submitAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
+		)
+
+		userAssociationEntry, err = utxoView().GetUserAssociationByAttributes(
+			m0PkBytes, createUserAssociationMetadata,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, userAssociationEntry)
+		require.NotEqual(t, userAssociationEntry.AssociationID, associationID)
 	}
 	{
 		// DeleteUserAssociation
@@ -416,6 +436,25 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntry.AssociationType, "REACTION")
 		require.Equal(t, postAssociationEntry.AssociationValue, "HEART")
 		require.NotNil(t, postAssociationEntry.BlockHeight)
+		associationID = postAssociationEntry.AssociationID
+	}
+	{
+		// Test overwriting PostAssociation
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AssociationType:  "REACTION",
+			AssociationValue: "HEART",
+		}
+		_submitAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
+		)
+
+		postAssociationEntry, err = utxoView().GetPostAssociationByAttributes(
+			m0PkBytes, createPostAssociationMetadata,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, postAssociationEntry)
+		require.NotEqual(t, postAssociationEntry.AssociationID, associationID)
 	}
 	{
 		// DeletePostAssociation
@@ -522,6 +561,15 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Len(t, userAssociationEntries, 1)
 		require.Equal(t, userAssociationEntries[0].AssociationValue, "SQL")
 
+		// Query for all ENDORSEMENT: SQL by m0
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
+			AssociationType:  "ENDORSEMENT",
+			AssociationValue: "SQL",
+		})
+		require.NoError(t, err)
+		require.Len(t, userAssociationEntries, 1)
+		require.Equal(t, userAssociationEntries[0].TargetUserPKID, m1PKID)
+
 		// Query for all endorse* by m0
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
 			AssociationType: "endorse*",
@@ -616,10 +664,63 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 
+		// m0 -> m1's post, TAG: r/funny
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AssociationType:  "TAG",
+			AssociationValue: "r/funny",
+		}
+		_submitAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
+		)
+
+		// m0 -> m2's post, TAG: r/funny
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash2,
+			AssociationType:  "TAG",
+			AssociationValue: "r/funny",
+		}
+		_submitAssociationTxnHappyPath(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
+		)
+
+		// m1 -> m2's post, TAG: r/new
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash2,
+			AssociationType:  "TAG",
+			AssociationValue: "r/new",
+		}
+		_submitAssociationTxnHappyPath(
+			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
+		)
+
+		// m3 -> m2's post, TAG: NSFW
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash2,
+			AssociationType:  "TAG",
+			AssociationValue: "NSFW",
+		}
+		_submitAssociationTxnHappyPath(
+			testMeta, m3Pub, m3Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
+		)
+
 		// Query for all reactions on m1's post
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
 			PostHash:        postHash,
 			AssociationType: "REACTION",
+		})
+		require.NoError(t, err)
+		require.Len(t, postAssociationEntries, 2)
+		sort.Slice(postAssociationEntries, func(ii, jj int) bool {
+			return postAssociationEntries[ii].AssociationValue < postAssociationEntries[jj].AssociationValue
+		})
+		require.Equal(t, postAssociationEntries[0].AssociationValue, "DOWN_VOTE")
+		require.Equal(t, postAssociationEntries[1].AssociationValue, "HEART")
+
+		// Query for all REACT* on m1's post
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+			PostHash:        postHash,
+			AssociationType: "REACT*",
 		})
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 2)
@@ -638,6 +739,39 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 1)
 		require.Equal(t, postAssociationEntries[0].TransactorPKID, m2PKID)
+
+		// Query for all m0's reactions
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m0PkBytes, &CreatePostAssociationMetadata{
+			AssociationType: "REACTION",
+		})
+		require.NoError(t, err)
+		require.Len(t, postAssociationEntries, 1)
+		require.Equal(t, postAssociationEntries[0].AssociationValue, "HEART")
+		require.Equal(t, postAssociationEntries[0].PostHash, postHash)
+
+		// Query for all r/* tags on m2's post
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+			PostHash:         postHash2,
+			AssociationType:  "tag",
+			AssociationValue: "r/*",
+		})
+		require.NoError(t, err)
+		require.Len(t, postAssociationEntries, 2)
+		sort.Slice(postAssociationEntries, func(ii, jj int) bool {
+			return postAssociationEntries[ii].AssociationValue < postAssociationEntries[jj].AssociationValue
+		})
+		require.Equal(t, postAssociationEntries[0].AssociationValue, "r/funny")
+		require.Equal(t, postAssociationEntries[1].AssociationValue, "r/new")
+
+		// Query for all NSFW tags on m2's post
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+			PostHash:         postHash2,
+			AssociationType:  "tag",
+			AssociationValue: "NSFW",
+		})
+		require.NoError(t, err)
+		require.Len(t, postAssociationEntries, 1)
+		require.Equal(t, postAssociationEntries[0].TransactorPKID, m3PKID)
 	}
 
 	// Flush mempool to the db and test rollbacks.
