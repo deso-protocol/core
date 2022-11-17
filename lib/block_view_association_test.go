@@ -661,6 +661,12 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntries[1].AssociationValue, "C#")
 		require.Equal(t, userAssociationEntries[2].AssociationValue, "C++")
 
+		// Failed query: no params specified
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params")
+		require.Nil(t, userAssociationEntries)
+
 		// Failed query if Badger: no Transactor or TargetUser specified
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
 			AssociationType:  "ENDORSEMENT",
@@ -938,6 +944,12 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 1)
 		require.Equal(t, postAssociationEntries[0].TransactorPKID, m1PKID)
+
+		// Failed query: no params specified
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params")
+		require.Nil(t, postAssociationEntries)
 
 		// Failed query if Badger: non-empty Transactor, wildcard AssociationType, non-empty AssociationValue
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m3PkBytes, &CreatePostAssociationMetadata{
