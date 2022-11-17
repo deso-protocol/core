@@ -381,7 +381,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		"" /*dataDir*/, "")
+		""     /*dataDir*/, "")
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -1800,6 +1800,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: targetUserPublicKeyBase58Check,
 			Metadata:             "AssociationTargetUserPublicKeyBase58Check",
 		})
+
 	case TxnTypeDeleteUserAssociation:
 		realTxMeta := txn.TxnMeta.(*DeleteUserAssociationMetadata)
 		txnMeta.DeleteUserAssociationTxindexMetadata = &DeleteUserAssociationTxindexMetadata{
@@ -1821,6 +1822,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
 			Metadata:             "AssociationTargetPostCreatorPublicKeyBase58Check",
 		})
+
 	case TxnTypeDeletePostAssociation:
 		realTxMeta := txn.TxnMeta.(*DeletePostAssociationMetadata)
 		txnMeta.DeletePostAssociationTxindexMetadata = &DeletePostAssociationTxindexMetadata{

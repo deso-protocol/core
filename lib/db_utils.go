@@ -8530,24 +8530,8 @@ func DBGetUserAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, qu
 		return nil, errors.Wrapf(err, "DBGetUserAssociationByAttributes: problem decoding association ID")
 	}
 
-	// Retrieve association entry from db.
-	key = DBKeyForUserAssociationByID(&UserAssociationEntry{AssociationID: associationID})
-	associationBytes, err = DBGetWithTxn(txn, snap, key)
-	if err != nil {
-		// We don't want to error if the key isn't found. Instead, return nil.
-		if err == badger.ErrKeyNotFound {
-			return nil, nil
-		}
-		return nil, errors.Wrapf(err, "DBGetUserAssociationByAttributes: problem retrieving association entry")
-	}
-
-	// Decode association entry from bytes.
-	associationEntry := &UserAssociationEntry{}
-	rr = bytes.NewReader(associationBytes)
-	if exist, err := DecodeFromBytes(associationEntry, rr); !exist || err != nil {
-		return nil, errors.Wrapf(err, "DBGetUserAssociationByAttributes: problem decoding association entry")
-	}
-	return associationEntry, nil
+	// Retrieve association entry from db by ID.
+	return DBGetUserAssociationByIDWithTxn(txn, snap, associationID)
 }
 
 func DBGetPostAssociationByAttributes(handle *badger.DB, snap *Snapshot, queryEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
@@ -8579,24 +8563,8 @@ func DBGetPostAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, qu
 		return nil, errors.Wrapf(err, "DBGetPostAssociationByAttributes: problem decoding association ID")
 	}
 
-	// Retrieve association entry from db.
-	key = DBKeyForPostAssociationByID(&PostAssociationEntry{AssociationID: associationID})
-	associationBytes, err = DBGetWithTxn(txn, snap, key)
-	if err != nil {
-		// We don't want to error if the key isn't found. Instead, return nil.
-		if err == badger.ErrKeyNotFound {
-			return nil, nil
-		}
-		return nil, errors.Wrapf(err, "DBGetPostAssociationByAttributes: problem retrieving association entry")
-	}
-
-	// Decode association entry from bytes.
-	associationEntry := &PostAssociationEntry{}
-	rr = bytes.NewReader(associationBytes)
-	if exist, err := DecodeFromBytes(associationEntry, rr); !exist || err != nil {
-		return nil, errors.Wrapf(err, "DBGetPostAssociationByAttributes: problem decoding association entry")
-	}
-	return associationEntry, nil
+	// Retrieve association entry from db by ID.
+	return DBGetPostAssociationByIDWithTxn(txn, snap, associationID)
 }
 
 func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, queryEntry *UserAssociationEntry) ([]*UserAssociationEntry, error) {
@@ -8670,30 +8638,11 @@ func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, queryE
 	var associationEntries []*UserAssociationEntry
 
 	for _, associationID := range associationIDs {
-		// Retrieve association entry from db.
-		key := DBKeyForUserAssociationByID(&UserAssociationEntry{AssociationID: associationID})
-		var associationBytes []byte
-		var err error
-
-		handle.View(func(txn *badger.Txn) error {
-			associationBytes, err = DBGetWithTxn(txn, snap, key)
-			return nil
-		})
+		// Retrieve association entry from db by ID.
+		associationEntry, err := DBGetUserAssociationByID(handle, snap, associationID)
 		if err != nil {
-			// We don't want to error if the key isn't found. Instead, return nil.
-			if err == badger.ErrKeyNotFound {
-				return nil, nil
-			}
-			return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry")
+			return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
 		}
-
-		// Decode association entry from bytes.
-		associationEntry := &UserAssociationEntry{}
-		rr := bytes.NewReader(associationBytes)
-		if exist, err := DecodeFromBytes(associationEntry, rr); !exist || err != nil {
-			return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem decoding association entry")
-		}
-
 		associationEntries = append(associationEntries, associationEntry)
 	}
 	return associationEntries, nil
@@ -8836,30 +8785,11 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, queryE
 	var associationEntries []*PostAssociationEntry
 
 	for _, associationID := range associationIDs {
-		// Retrieve association entry from db.
-		key := DBKeyForPostAssociationByID(&PostAssociationEntry{AssociationID: associationID})
-		var associationBytes []byte
-		var err error
-
-		handle.View(func(txn *badger.Txn) error {
-			associationBytes, err = DBGetWithTxn(txn, snap, key)
-			return nil
-		})
+		// Retrieve association entry from db by ID.
+		associationEntry, err := DBGetPostAssociationByID(handle, snap, associationID)
 		if err != nil {
-			// We don't want to error if the key isn't found. Instead, return nil.
-			if err == badger.ErrKeyNotFound {
-				return nil, nil
-			}
-			return nil, errors.Wrapf(err, "DBGetPostAssociationsByAttributes: problem retrieving association entry")
+			return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
 		}
-
-		// Decode association entry from bytes.
-		associationEntry := &PostAssociationEntry{}
-		rr := bytes.NewReader(associationBytes)
-		if exist, err := DecodeFromBytes(associationEntry, rr); !exist || err != nil {
-			return nil, errors.Wrapf(err, "DBGetPostAssociationsByAttributes: problem decoding association entry")
-		}
-
 		associationEntries = append(associationEntries, associationEntry)
 	}
 	return associationEntries, nil

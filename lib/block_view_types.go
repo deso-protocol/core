@@ -4657,7 +4657,7 @@ func (associationEntry *PostAssociationEntry) RawEncodeWithoutMetadata(blockHeig
 func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
-	// Association
+	// AssociationID
 	associationID := &BlockHash{}
 	if exist, err := DecodeFromBytes(associationID, rr); exist && err == nil {
 		associationEntry.AssociationID = associationID
@@ -4711,7 +4711,7 @@ func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
-	// Association
+	// AssociationID
 	associationID := &BlockHash{}
 	if exist, err := DecodeFromBytes(associationID, rr); exist && err == nil {
 		associationEntry.AssociationID = associationID
