@@ -236,6 +236,17 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		associationID = userAssociationEntry.AssociationID
 	}
 	{
+		// RuleErrorAssociationInvalidTransactor: m1 trying to delete m0's association
+		deleteUserAssociationMetadata = &DeleteUserAssociationMetadata{
+			AssociationID: associationID,
+		}
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata}, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidTransactor)
+	}
+	{
 		// Test overwriting UserAssociation
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
@@ -437,6 +448,17 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntry.AssociationValue, "HEART")
 		require.NotNil(t, postAssociationEntry.BlockHeight)
 		associationID = postAssociationEntry.AssociationID
+	}
+	{
+		// RuleErrorAssociationInvalidTransactor: m1 trying to delete m0's association
+		deletePostAssociationMetadata = &DeletePostAssociationMetadata{
+			AssociationID: associationID,
+		}
+		_, _, _, err = _submitAssociationTxnSadPath(
+			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata}, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidTransactor)
 	}
 	{
 		// Test overwriting PostAssociation
