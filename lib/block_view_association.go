@@ -633,6 +633,14 @@ func (bav *UtxoView) GetPostAssociationByAttributes(transactorPK []byte, metadat
 }
 
 func (bav *UtxoView) GetUserAssociationsByAttributes(transactorPK []byte, metadata *CreateUserAssociationMetadata) ([]*UserAssociationEntry, error) {
+	// Error if no params are set.
+	if transactorPK == nil &&
+		metadata.TargetUserPublicKey == nil &&
+		metadata.AssociationType == "" &&
+		metadata.AssociationValue == "" {
+		return nil, errors.New("GetUserAssociationsByAttributes: invalid query params")
+	}
+
 	associationEntryMap := map[*BlockHash]*UserAssociationEntry{}
 	// Convert metadata to association entry.
 	associationEntry := &UserAssociationEntry{
@@ -719,6 +727,14 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(transactorPK []byte, metada
 }
 
 func (bav *UtxoView) GetPostAssociationsByAttributes(transactorPK []byte, metadata *CreatePostAssociationMetadata) ([]*PostAssociationEntry, error) {
+	// Error if no params are set.
+	if transactorPK == nil &&
+		metadata.PostHash == nil &&
+		metadata.AssociationType == "" &&
+		metadata.AssociationValue == "" {
+		return nil, errors.New("GetPostAssociationsByAttributes: invalid query params")
+	}
+
 	associationEntryMap := map[*BlockHash]*PostAssociationEntry{}
 	// Convert metadata to association entry.
 	associationEntry := &PostAssociationEntry{
