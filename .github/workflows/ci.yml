@@ -80,7 +80,9 @@ jobs:
         run: go run scripts/migrate.go migrate
 
       - name: Run go test
-        run: go test -run TestDAOCoinLimitOrder -v ./lib
+        run: >-
+          go test -run TestAssociations -v ./lib &&
+          go test -run TestDAOCoinLimitOrder -v ./lib
 
       - name: Rollback migrations
         run: go run scripts/migrate.go rollback
