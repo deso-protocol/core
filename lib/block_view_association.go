@@ -10,7 +10,6 @@ import (
 const MaxAssociationTypeCharLength int = 64
 const MaxAssociationValueCharLength int = 256
 const AssociationTypeReservedPrefix = "DESO"
-const AssociationQueryWildcardSuffix = "*"
 
 func (bav *UtxoView) _connectCreateUserAssociation(
 	txn *MsgDeSoTxn,
@@ -632,29 +631,25 @@ func (bav *UtxoView) GetPostAssociationByAttributes(transactorPK []byte, metadat
 	return bav.GetDbAdapter().GetPostAssociationByAttributes(associationEntry)
 }
 
-func (bav *UtxoView) GetUserAssociationsByAttributes(transactorPK []byte, metadata *CreateUserAssociationMetadata) ([]*UserAssociationEntry, error) {
-	// Error if no params are set.
-	if transactorPK == nil &&
-		metadata.TargetUserPublicKey == nil &&
-		metadata.AssociationType == "" &&
-		metadata.AssociationValue == "" {
+func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssociationQuery) ([]*UserAssociationEntry, error) {
+	// Validate query params.
+	if associationQuery.TransactorPKID == nil &&
+		associationQuery.TargetUserPKID == nil &&
+		associationQuery.AssociationType == "" &&
+		associationQuery.AssociationTypePrefix == "" &&
+		associationQuery.AssociationValue == "" &&
+		associationQuery.AssociationValuePrefix == "" {
 		return nil, errors.New("GetUserAssociationsByAttributes: invalid query params")
 	}
-
+	if (associationQuery.AssociationType != "" && associationQuery.AssociationTypePrefix != "") ||
+		(associationQuery.AssociationValue != "" && associationQuery.AssociationValuePrefix != "") {
+		return nil, errors.New("GetUserAssociationsByAttributes: invalid query params")
+	}
+	// Store matching associations in a map indexed by AssociationID to
+	// prevent duplicate associations retrieved from the db + UTXO view.
 	associationEntryMap := map[*BlockHash]*UserAssociationEntry{}
-	// Convert metadata to association entry.
-	associationEntry := &UserAssociationEntry{
-		AssociationType:  metadata.AssociationType,
-		AssociationValue: metadata.AssociationValue,
-	}
-	if transactorPK != nil {
-		associationEntry.TransactorPKID = bav.GetPKIDForPublicKey(transactorPK).PKID
-	}
-	if metadata.TargetUserPublicKey != nil {
-		associationEntry.TargetUserPKID = bav.GetPKIDForPublicKey(metadata.TargetUserPublicKey.ToBytes()).PKID
-	}
 	// First, check the database.
-	dbAssociationEntries, err := bav.GetDbAdapter().GetUserAssociationsByAttributes(associationEntry)
+	dbAssociationEntries, err := bav.GetDbAdapter().GetUserAssociationsByAttributes(associationQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -670,50 +665,44 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(transactorPK []byte, metada
 		}
 
 		// If TransactorPKID is set, they have to match.
-		if associationEntry.TransactorPKID != nil &&
-			!associationEntry.TransactorPKID.Eq(utxoAssociationEntry.TransactorPKID) {
+		if associationQuery.TransactorPKID != nil &&
+			!associationQuery.TransactorPKID.Eq(utxoAssociationEntry.TransactorPKID) {
 			continue
 		}
 		// If TargetUserPKID is set, they have to match.
-		if associationEntry.TargetUserPKID != nil &&
-			!associationEntry.TargetUserPKID.Eq(utxoAssociationEntry.TargetUserPKID) {
+		if associationQuery.TargetUserPKID != nil &&
+			!associationQuery.TargetUserPKID.Eq(utxoAssociationEntry.TargetUserPKID) {
 			continue
 		}
-		// If AssociationType is set, they have to match or prefix if using *.
-		if associationEntry.AssociationType != "" {
-			if strings.HasSuffix(associationEntry.AssociationType, AssociationQueryWildcardSuffix) {
-				// AssociationType uses a * wildcard suffix.
-				if !strings.HasPrefix(
-					strings.ToLower(utxoAssociationEntry.AssociationType),
-					strings.ToLower(associationEntry.AssociationType[:len(associationEntry.AssociationType)-1]),
-				) {
-					continue
-				}
-			} else {
-				// AssociationTypes must exact match.
-				if strings.Compare(
-					strings.ToLower(associationEntry.AssociationType),
-					strings.ToLower(utxoAssociationEntry.AssociationType),
-				) != 0 {
-					continue
-				}
+		// If AssociationType is set, they have to match.
+		if associationQuery.AssociationType != "" {
+			if strings.Compare(
+				strings.ToLower(associationQuery.AssociationType),
+				strings.ToLower(utxoAssociationEntry.AssociationType),
+			) != 0 {
+				continue
+			}
+		} else if associationQuery.AssociationTypePrefix != "" {
+			// If AssociationTypePrefix is set, they have to prefix match.
+			if !strings.HasPrefix(
+				strings.ToLower(utxoAssociationEntry.AssociationType),
+				strings.ToLower(associationQuery.AssociationTypePrefix),
+			) {
+				continue
 			}
 		}
-		// If AssociationValue is set, they have to match or prefix is using *.
-		if associationEntry.AssociationValue != "" {
-			if strings.HasSuffix(associationEntry.AssociationValue, AssociationQueryWildcardSuffix) {
-				// AssociationValue uses * wildcard suffix.
-				if !strings.HasPrefix(
-					utxoAssociationEntry.AssociationValue,
-					associationEntry.AssociationValue[:len(associationEntry.AssociationValue)-1],
-				) {
-					continue
-				}
-			} else {
-				// AssociationValues must exact match.
-				if strings.Compare(associationEntry.AssociationValue, utxoAssociationEntry.AssociationValue) != 0 {
-					continue
-				}
+		// If AssociationValue is set, they have to match.
+		if associationQuery.AssociationValue != "" {
+			if strings.Compare(associationQuery.AssociationValue, utxoAssociationEntry.AssociationValue) != 0 {
+				continue
+			}
+		} else if associationQuery.AssociationValuePrefix != "" {
+			// If AssociationValuePrefix is set, they have to prefix match.
+			if !strings.HasPrefix(
+				utxoAssociationEntry.AssociationValue,
+				associationQuery.AssociationValuePrefix,
+			) {
+				continue
 			}
 		}
 		associationEntryMap[utxoAssociationEntry.AssociationID] = utxoAssociationEntry
@@ -726,27 +715,25 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(transactorPK []byte, metada
 	return associationEntries, nil
 }
 
-func (bav *UtxoView) GetPostAssociationsByAttributes(transactorPK []byte, metadata *CreatePostAssociationMetadata) ([]*PostAssociationEntry, error) {
-	// Error if no params are set.
-	if transactorPK == nil &&
-		metadata.PostHash == nil &&
-		metadata.AssociationType == "" &&
-		metadata.AssociationValue == "" {
+func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
+	// Validate query params.
+	if associationQuery.TransactorPKID == nil &&
+		associationQuery.PostHash == nil &&
+		associationQuery.AssociationType == "" &&
+		associationQuery.AssociationTypePrefix == "" &&
+		associationQuery.AssociationValue == "" &&
+		associationQuery.AssociationValuePrefix == "" {
 		return nil, errors.New("GetPostAssociationsByAttributes: invalid query params")
 	}
-
+	if (associationQuery.AssociationType != "" && associationQuery.AssociationTypePrefix != "") ||
+		(associationQuery.AssociationValue != "" && associationQuery.AssociationValuePrefix != "") {
+		return nil, errors.New("GetPostAssociationsByAttributes: invalid query params")
+	}
+	// Store matching associations in a map indexed by AssociationID to
+	// prevent duplicate associations retrieved from the db + UTXO view.
 	associationEntryMap := map[*BlockHash]*PostAssociationEntry{}
-	// Convert metadata to association entry.
-	associationEntry := &PostAssociationEntry{
-		PostHash:         metadata.PostHash,
-		AssociationType:  metadata.AssociationType,
-		AssociationValue: metadata.AssociationValue,
-	}
-	if transactorPK != nil {
-		associationEntry.TransactorPKID = bav.GetPKIDForPublicKey(transactorPK).PKID
-	}
 	// First, check the database.
-	dbAssociationEntries, err := bav.GetDbAdapter().GetPostAssociationsByAttributes(associationEntry)
+	dbAssociationEntries, err := bav.GetDbAdapter().GetPostAssociationsByAttributes(associationQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -762,50 +749,44 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(transactorPK []byte, metada
 		}
 
 		// If TransactorPKID is set, they have to match.
-		if associationEntry.TransactorPKID != nil &&
-			!associationEntry.TransactorPKID.Eq(utxoAssociationEntry.TransactorPKID) {
+		if associationQuery.TransactorPKID != nil &&
+			!associationQuery.TransactorPKID.Eq(utxoAssociationEntry.TransactorPKID) {
 			continue
 		}
 		// If PostHash is set, they have to match.
-		if associationEntry.PostHash != nil &&
-			!associationEntry.PostHash.IsEqual(utxoAssociationEntry.PostHash) {
+		if associationQuery.PostHash != nil &&
+			!associationQuery.PostHash.IsEqual(utxoAssociationEntry.PostHash) {
 			continue
 		}
-		// If AssociationType is set, they have to match or prefix if using *.
-		if associationEntry.AssociationType != "" {
-			if strings.HasSuffix(associationEntry.AssociationType, AssociationQueryWildcardSuffix) {
-				// AssociationType uses a * wildcard suffix.
-				if !strings.HasPrefix(
-					strings.ToLower(utxoAssociationEntry.AssociationType),
-					strings.ToLower(associationEntry.AssociationType[:len(associationEntry.AssociationType)-1]),
-				) {
-					continue
-				}
-			} else {
-				// AssociationTypes must exact match.
-				if strings.Compare(
-					strings.ToLower(associationEntry.AssociationType),
-					strings.ToLower(utxoAssociationEntry.AssociationType),
-				) != 0 {
-					continue
-				}
+		// If AssociationType is set, they have to match.
+		if associationQuery.AssociationType != "" {
+			if strings.Compare(
+				strings.ToLower(associationQuery.AssociationType),
+				strings.ToLower(utxoAssociationEntry.AssociationType),
+			) != 0 {
+				continue
+			}
+		} else if associationQuery.AssociationTypePrefix != "" {
+			// If AssociationTypePrefix is set, they have to prefix match.
+			if !strings.HasPrefix(
+				strings.ToLower(utxoAssociationEntry.AssociationType),
+				strings.ToLower(associationQuery.AssociationTypePrefix),
+			) {
+				continue
 			}
 		}
-		// If AssociationValue is set, they have to match or prefix is using *.
-		if associationEntry.AssociationValue != "" {
-			if strings.HasSuffix(associationEntry.AssociationValue, AssociationQueryWildcardSuffix) {
-				// AssociationValue uses * wildcard suffix.
-				if !strings.HasPrefix(
-					utxoAssociationEntry.AssociationValue,
-					associationEntry.AssociationValue[:len(associationEntry.AssociationValue)-1],
-				) {
-					continue
-				}
-			} else {
-				// AssociationValues must exact match.
-				if strings.Compare(associationEntry.AssociationValue, utxoAssociationEntry.AssociationValue) != 0 {
-					continue
-				}
+		// If AssociationValue is set, they have to match.
+		if associationQuery.AssociationValue != "" {
+			if strings.Compare(associationQuery.AssociationValue, utxoAssociationEntry.AssociationValue) != 0 {
+				continue
+			}
+		} else if associationQuery.AssociationValuePrefix != "" {
+			// If AssociationValuePrefix is set, they have to prefix match.
+			if !strings.HasPrefix(
+				utxoAssociationEntry.AssociationValue,
+				associationQuery.AssociationValuePrefix,
+			) {
+				continue
 			}
 		}
 		associationEntryMap[utxoAssociationEntry.AssociationID] = utxoAssociationEntry

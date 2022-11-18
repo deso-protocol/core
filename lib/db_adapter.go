@@ -62,18 +62,18 @@ func (adapter *DbAdapter) GetPostAssociationByAttributes(associationEntry *PostA
 	return DBGetPostAssociationByAttributes(adapter.badgerDb, adapter.snapshot, associationEntry)
 }
 
-func (adapter *DbAdapter) GetUserAssociationsByAttributes(associationEntry *UserAssociationEntry) ([]*UserAssociationEntry, error) {
+func (adapter *DbAdapter) GetUserAssociationsByAttributes(associationQuery *UserAssociationQuery) ([]*UserAssociationEntry, error) {
 	if adapter.postgresDb != nil {
-		return adapter.postgresDb.GetUserAssociationsByAttributes(associationEntry)
+		return adapter.postgresDb.GetUserAssociationsByAttributes(associationQuery)
 	}
-	return DBGetUserAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationEntry)
+	return DBGetUserAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery)
 }
 
-func (adapter *DbAdapter) GetPostAssociationsByAttributes(associationEntry *PostAssociationEntry) ([]*PostAssociationEntry, error) {
+func (adapter *DbAdapter) GetPostAssociationsByAttributes(associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
 	if adapter.postgresDb != nil {
-		return adapter.postgresDb.GetPostAssociationsByAttributes(associationEntry)
+		return adapter.postgresDb.GetPostAssociationsByAttributes(associationQuery)
 	}
-	return DBGetPostAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationEntry)
+	return DBGetPostAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery)
 }
 
 //
