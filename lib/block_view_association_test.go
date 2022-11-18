@@ -578,17 +578,17 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		)
 
 		// Query for all endorsements of m0 (none exist)
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
-			TargetUserPublicKey: NewPublicKey(m0PkBytes),
-			AssociationType:     "ENDORSEMENT",
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+			TargetUserPKID:  m0PKID,
+			AssociationType: "ENDORSEMENT",
 		})
 		require.NoError(t, err)
 		require.Empty(t, userAssociationEntries)
 
 		// Query for all endorsements of m1
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
-			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AssociationType:     "ENDORSEMENT",
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+			TargetUserPKID:  m1PKID,
+			AssociationType: "ENDORSEMENT",
 		})
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 2)
@@ -599,16 +599,18 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntries[1].AssociationValue, "SQL")
 
 		// Query for all endorsements of m1 by m2
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m2PkBytes, &CreateUserAssociationMetadata{
-			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AssociationType:     "ENDORSEMENT",
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+			TransactorPKID:  m2PKID,
+			TargetUserPKID:  m1PKID,
+			AssociationType: "ENDORSEMENT",
 		})
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 1)
 		require.Equal(t, userAssociationEntries[0].AssociationValue, "JavaScript")
 
 		// Query for all ENDORSEMENT: SQL by m0
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+			TransactorPKID:   m0PKID,
 			AssociationType:  "ENDORSEMENT",
 			AssociationValue: "SQL",
 		})
@@ -617,8 +619,9 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntries[0].TargetUserPKID, m1PKID)
 
 		// Query for all endorse* by m0
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
-			AssociationType: "endorse*",
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+			TransactorPKID:        m0PKID,
+			AssociationTypePrefix: "endorse",
 		})
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 2)
@@ -629,7 +632,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntries[1].AssociationValue, "SQL")
 
 		// Query for all Acme University Alumni members as defined by m0
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+			TransactorPKID:   m0PKID,
 			AssociationType:  "MEMBERSHIP",
 			AssociationValue: "Acme University Alumni",
 		})
@@ -638,19 +642,20 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntries[0].TargetUserPKID, m1PKID)
 
 		// Query for all Acme University * members as defined by m0
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m0PkBytes, &CreateUserAssociationMetadata{
-			AssociationType:  "MEMBERSHIP",
-			AssociationValue: "Acme University *",
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+			TransactorPKID:         m0PKID,
+			AssociationType:        "MEMBERSHIP",
+			AssociationValuePrefix: "Acme University",
 		})
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 1)
 		require.Equal(t, userAssociationEntries[0].TargetUserPKID, m1PKID)
 
 		// Query for all C* endorsements of m3
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
-			TargetUserPublicKey: NewPublicKey(m3PkBytes),
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "C*",
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+			TargetUserPKID:         m3PKID,
+			AssociationType:        "ENDORSEMENT",
+			AssociationValuePrefix: "C",
 		})
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 3)
@@ -662,13 +667,32 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntries[2].AssociationValue, "C++")
 
 		// Failed query: no params specified
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{})
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid query params")
 		require.Nil(t, userAssociationEntries)
 
+		// Failed query: AssociationType and AssociationTypePrefix specified
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+			TargetUserPKID:        m3PKID,
+			AssociationType:       "ENDORSEMENT",
+			AssociationTypePrefix: "ENDORSE",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params")
+
+		// Failed query: AssociationValue and AssociationValuePrefix specified
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+			TargetUserPKID:         m3PKID,
+			AssociationType:        "ENDORSEMENT",
+			AssociationValue:       "C#",
+			AssociationValuePrefix: "C",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params")
+
 		// Failed query if Badger: no Transactor or TargetUser specified
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(nil, &CreateUserAssociationMetadata{
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
 			AssociationType:  "ENDORSEMENT",
 			AssociationValue: "C#",
 		})
@@ -682,7 +706,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 
 		// Failed query if Badger: empty AssociationType and non-empty AssociationValue
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m4PkBytes, &CreateUserAssociationMetadata{
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+			TransactorPKID:   m4PKID,
 			AssociationValue: "C#",
 		})
 		if chain.postgres != nil {
@@ -694,10 +719,11 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Contains(t, err.Error(), "invalid query params")
 		}
 
-		// Failed query if Badger: wildcard AssociationType and non-empty AssociationValue
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(m4PkBytes, &CreateUserAssociationMetadata{
-			AssociationType:  "ENDORSE*",
-			AssociationValue: "C#",
+		// Failed query if Badger: non-empty AssociationTypePrefix and non-empty AssociationValue
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+			TransactorPKID:        m4PKID,
+			AssociationTypePrefix: "ENDORSE",
+			AssociationValue:      "C#",
 		})
 		if chain.postgres != nil {
 			require.NoError(t, err)
@@ -798,7 +824,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		)
 
 		// Query for all reactions on m1's post
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
 			PostHash:        postHash,
 			AssociationType: "REACTION",
 		})
@@ -811,9 +837,9 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[1].AssociationValue, "HEART")
 
 		// Query for all REACT* on m1's post
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
-			PostHash:        postHash,
-			AssociationType: "REACT*",
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			PostHash:              postHash,
+			AssociationTypePrefix: "REACT",
 		})
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 2)
@@ -824,7 +850,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[1].AssociationValue, "HEART")
 
 		// Query for all down votes on m1's post
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
 			PostHash:         postHash,
 			AssociationType:  "REACTION",
 			AssociationValue: "DOWN_VOTE",
@@ -834,7 +860,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[0].TransactorPKID, m2PKID)
 
 		// Query for all m0's reactions
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m0PkBytes, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			TransactorPKID:  m0PKID,
 			AssociationType: "REACTION",
 		})
 		require.NoError(t, err)
@@ -843,8 +870,9 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[0].PostHash, postHash)
 
 		// Query for all m0's REACTION*
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m0PkBytes, &CreatePostAssociationMetadata{
-			AssociationType: "reaction*",
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			TransactorPKID:        m0PKID,
+			AssociationTypePrefix: "reaction",
 		})
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 1)
@@ -852,10 +880,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[0].PostHash, postHash)
 
 		// Query for all r/* tags on m2's post
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
-			PostHash:         postHash2,
-			AssociationType:  "tag",
-			AssociationValue: "r/*",
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			PostHash:               postHash2,
+			AssociationType:        "tag",
+			AssociationValuePrefix: "r/",
 		})
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 2)
@@ -866,7 +894,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[1].AssociationValue, "r/new")
 
 		// Query for all NSFW tags on m2's post
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
 			PostHash:         postHash2,
 			AssociationType:  "tag",
 			AssociationValue: "NSFW",
@@ -876,16 +904,18 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[0].TransactorPKID, m3PKID)
 
 		// Query for all NSF* tags by m3
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m3PkBytes, &CreatePostAssociationMetadata{
-			AssociationType:  "tag",
-			AssociationValue: "NSF*",
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			TransactorPKID:         m3PKID,
+			AssociationType:        "tag",
+			AssociationValuePrefix: "NSF",
 		})
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 1)
 		require.Equal(t, postAssociationEntries[0].PostHash, postHash2)
 
 		// Query by all params
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m3PkBytes, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			TransactorPKID:   m3PKID,
 			PostHash:         postHash2,
 			AssociationType:  "TAG",
 			AssociationValue: "NSFW",
@@ -895,7 +925,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[0].TransactorPKID, m3PKID)
 
 		// Query for all tags
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
 			AssociationType: "TAG",
 		})
 		require.NoError(t, err)
@@ -909,8 +939,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[3].AssociationValue, "r/new")
 
 		// Query for all tag*s
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
-			AssociationType: "TAG*",
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			AssociationTypePrefix: "TAG",
 		})
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 4)
@@ -923,9 +953,9 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[3].AssociationValue, "r/new")
 
 		// Query for all r/* tags
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
-			AssociationType:  "tag",
-			AssociationValue: "r/*",
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			AssociationType:        "tag",
+			AssociationValuePrefix: "r/",
 		})
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 3)
@@ -937,7 +967,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[2].AssociationValue, "r/new")
 
 		// Query for all r/new tags
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
 			AssociationType:  "tag",
 			AssociationValue: "r/new",
 		})
@@ -946,15 +976,34 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntries[0].TransactorPKID, m1PKID)
 
 		// Failed query: no params specified
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{})
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid query params")
 		require.Nil(t, postAssociationEntries)
 
-		// Failed query if Badger: non-empty Transactor, wildcard AssociationType, non-empty AssociationValue
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m3PkBytes, &CreatePostAssociationMetadata{
-			AssociationType:  "TAG*",
-			AssociationValue: "NSFW",
+		// Failed query: AssociationType and AssociationTypePrefix specified
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			AssociationType:       "tag",
+			AssociationTypePrefix: "tag",
+			AssociationValue:      "r/new",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params")
+
+		// Failed query: AssociationValue and AssociationValuePrefix specified
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			AssociationType:        "tag",
+			AssociationValue:       "r/new",
+			AssociationValuePrefix: "r/",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params")
+
+		// Failed query if Badger: non-empty Transactor, non-empty AssociationTypePrefix, non-empty AssociationValue
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			TransactorPKID:        m3PKID,
+			AssociationTypePrefix: "TAG",
+			AssociationValue:      "NSFW",
 		})
 		if chain.postgres != nil {
 			require.NoError(t, err)
@@ -965,10 +1014,11 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Contains(t, err.Error(), "invalid query params")
 		}
 
-		// Failed query if Badger: non-empty Transactor, wildcard AssociationType, non-empty PostHash
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m3PkBytes, &CreatePostAssociationMetadata{
-			PostHash:        postHash2,
-			AssociationType: "TAG*",
+		// Failed query if Badger: non-empty Transactor, non-empty AssociationTypePrefix, non-empty PostHash
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			TransactorPKID:        m3PKID,
+			PostHash:              postHash2,
+			AssociationTypePrefix: "TAG",
 		})
 		if chain.postgres != nil {
 			require.NoError(t, err)
@@ -979,11 +1029,12 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Contains(t, err.Error(), "invalid query params")
 		}
 
-		// Failed query if Badger: non-empty Transactor, non-empty AssociationType, wildcard AssociationValue, non-emptyPostHash
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m3PkBytes, &CreatePostAssociationMetadata{
-			PostHash:         postHash2,
-			AssociationType:  "TAG",
-			AssociationValue: "NSF*",
+		// Failed query if Badger: non-empty Transactor, non-empty AssociationType, non-empty AssociationValuePrefix, non-emptyPostHash
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			TransactorPKID:         m3PKID,
+			PostHash:               postHash2,
+			AssociationType:        "TAG",
+			AssociationValuePrefix: "NSF",
 		})
 		if chain.postgres != nil {
 			require.NoError(t, err)
@@ -995,7 +1046,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 
 		// Failed query if Badger: non-empty Transactor, non-empty AssociationType, empty AssociationValue, non-empty PostHash
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m3PkBytes, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			TransactorPKID:  m3PKID,
 			PostHash:        postHash2,
 			AssociationType: "TAG",
 		})
@@ -1009,7 +1061,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 
 		// Failed query if Badger: non-empty Transactor, empty AssociationType, non-empty AssociationValue
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m3PkBytes, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			TransactorPKID:   m3PKID,
 			AssociationValue: "NSFW",
 		})
 		if chain.postgres != nil {
@@ -1022,8 +1075,9 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 
 		// Failed query if Badger: non-empty Transactor, empty AssociationType, non-empty PostHash
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(m3PkBytes, &CreatePostAssociationMetadata{
-			PostHash: postHash2,
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			TransactorPKID: m3PKID,
+			PostHash:       postHash2,
 		})
 		if chain.postgres != nil {
 			require.NoError(t, err)
@@ -1034,11 +1088,11 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Contains(t, err.Error(), "invalid query params")
 		}
 
-		// Failed query if Badger: empty Transactor, non-empty PostHash, wildcard AssociationType, non-empty AssociationValue
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
-			PostHash:         postHash2,
-			AssociationType:  "TAG*",
-			AssociationValue: "NSFW",
+		// Failed query if Badger: empty Transactor, non-empty PostHash, non-empty AssociationTypePrefix, non-empty AssociationValue
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			PostHash:              postHash2,
+			AssociationTypePrefix: "TAG",
+			AssociationValue:      "NSFW",
 		})
 		if chain.postgres != nil {
 			require.NoError(t, err)
@@ -1050,7 +1104,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 
 		// Failed query if Badger: empty Transactor, non-empty PostHash, empty AssociationType, non-empty AssociationValue
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
 			PostHash:         postHash2,
 			AssociationValue: "NSFW",
 		})
@@ -1064,7 +1118,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 
 		// Failed query if Badger: empty Transactor, empty PostHash, empty AssociationType, non-empty AssociationValue
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
 			AssociationValue: "NSFW",
 		})
 		if chain.postgres != nil {
@@ -1076,10 +1130,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Contains(t, err.Error(), "invalid query params")
 		}
 
-		// Failed query if Badger: empty Transactor, empty PostHash, wildcard AssociationType, non-empty AssociationValue
-		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(nil, &CreatePostAssociationMetadata{
-			AssociationType:  "TAG*",
-			AssociationValue: "NSFW",
+		// Failed query if Badger: empty Transactor, empty PostHash, non-empty AssociationTypePrefix, non-empty AssociationValue
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
+			AssociationTypePrefix: "TAG",
+			AssociationValue:      "NSFW",
 		})
 		if chain.postgres != nil {
 			require.NoError(t, err)

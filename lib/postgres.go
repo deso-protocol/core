@@ -3179,41 +3179,31 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 	return pgAssociation.ToPostAssociationEntry(), nil
 }
 
-func (postgres *Postgres) GetUserAssociationsByAttributes(associationEntry *UserAssociationEntry) ([]*UserAssociationEntry, error) {
+func (postgres *Postgres) GetUserAssociationsByAttributes(associationQuery *UserAssociationQuery) ([]*UserAssociationEntry, error) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	var pgAssociations []PGUserAssociation
 
-	// Construct query.
-	query := postgres.db.Model(&pgAssociations)
-	if associationEntry.TransactorPKID != nil {
-		query.Where("transactor_pkid = ?", associationEntry.TransactorPKID)
+	// Construct SQL query.
+	sqlQuery := postgres.db.Model(&pgAssociations)
+	if associationQuery.TransactorPKID != nil {
+		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
 	}
-	if associationEntry.TargetUserPKID != nil {
-		query.Where("target_user_pkid = ?", associationEntry.TargetUserPKID)
+	if associationQuery.TargetUserPKID != nil {
+		sqlQuery.Where("target_user_pkid = ?", associationQuery.TargetUserPKID)
 	}
-	if associationEntry.AssociationType != "" {
-		if strings.HasSuffix(associationEntry.AssociationType, AssociationQueryWildcardSuffix) {
-			query.Where(
-				"LOWER(association_type) LIKE ?",
-				strings.ToLower(associationEntry.AssociationType[:len(associationEntry.AssociationType)-1])+"%",
-			)
-		} else {
-			query.Where("LOWER(association_type) = ?", strings.ToLower(associationEntry.AssociationType))
-		}
+	if associationQuery.AssociationType != "" {
+		sqlQuery.Where("LOWER(association_type) = ?", strings.ToLower(associationQuery.AssociationType))
+	} else if associationQuery.AssociationTypePrefix != "" {
+		sqlQuery.Where("LOWER(association_type) LIKE ?", strings.ToLower(associationQuery.AssociationTypePrefix)+"%")
 	}
-	if associationEntry.AssociationValue != "" {
-		if strings.HasSuffix(associationEntry.AssociationValue, AssociationQueryWildcardSuffix) {
-			query.Where(
-				"association_value LIKE ?",
-				associationEntry.AssociationValue[:len(associationEntry.AssociationValue)-1]+"%",
-			)
-		} else {
-			query.Where("association_value = ?", associationEntry.AssociationValue)
-		}
+	if associationQuery.AssociationValue != "" {
+		sqlQuery.Where("association_value = ?", associationQuery.AssociationValue)
+	} else if associationQuery.AssociationValuePrefix != "" {
+		sqlQuery.Where("association_value LIKE ?", associationQuery.AssociationValuePrefix+"%")
 	}
 
-	// Execute query.
-	if err := query.Select(); err != nil {
+	// Execute SQL query.
+	if err := sqlQuery.Select(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
 			return nil, nil
@@ -3230,41 +3220,31 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(associationEntry *User
 	return associationEntries, nil
 }
 
-func (postgres *Postgres) GetPostAssociationsByAttributes(associationEntry *PostAssociationEntry) ([]*PostAssociationEntry, error) {
+func (postgres *Postgres) GetPostAssociationsByAttributes(associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	var pgAssociations []PGPostAssociation
 
-	// Construct query.
-	query := postgres.db.Model(&pgAssociations)
-	if associationEntry.TransactorPKID != nil {
-		query.Where("transactor_pkid = ?", associationEntry.TransactorPKID)
+	// Construct SQL query.
+	sqlQuery := postgres.db.Model(&pgAssociations)
+	if associationQuery.TransactorPKID != nil {
+		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
 	}
-	if associationEntry.PostHash != nil {
-		query.Where("post_hash = ?", associationEntry.PostHash)
+	if associationQuery.PostHash != nil {
+		sqlQuery.Where("post_hash = ?", associationQuery.PostHash)
 	}
-	if associationEntry.AssociationType != "" {
-		if strings.HasSuffix(associationEntry.AssociationType, AssociationQueryWildcardSuffix) {
-			query.Where(
-				"LOWER(association_type) LIKE ?",
-				strings.ToLower(associationEntry.AssociationType[:len(associationEntry.AssociationType)-1])+"%",
-			)
-		} else {
-			query.Where("LOWER(association_type) = ?", strings.ToLower(associationEntry.AssociationType))
-		}
+	if associationQuery.AssociationType != "" {
+		sqlQuery.Where("LOWER(association_type) = ?", strings.ToLower(associationQuery.AssociationType))
+	} else if associationQuery.AssociationTypePrefix != "" {
+		sqlQuery.Where("LOWER(association_type) LIKE ?", strings.ToLower(associationQuery.AssociationTypePrefix)+"%")
 	}
-	if associationEntry.AssociationValue != "" {
-		if strings.HasSuffix(associationEntry.AssociationValue, AssociationQueryWildcardSuffix) {
-			query.Where(
-				"association_value LIKE ?",
-				associationEntry.AssociationValue[:len(associationEntry.AssociationValue)-1]+"%",
-			)
-		} else {
-			query.Where("association_value = ?", associationEntry.AssociationValue)
-		}
+	if associationQuery.AssociationValue != "" {
+		sqlQuery.Where("association_value = ?", associationQuery.AssociationValue)
+	} else if associationQuery.AssociationValuePrefix != "" {
+		sqlQuery.Where("association_value LIKE ?", associationQuery.AssociationValuePrefix+"%")
 	}
 
-	// Execute query.
-	if err := query.Select(); err != nil {
+	// Execute SQL query.
+	if err := sqlQuery.Select(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
 			return nil, nil

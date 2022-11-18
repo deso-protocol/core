@@ -6756,3 +6756,21 @@ func (txnData *CreatePostAssociationMetadata) New() DeSoTxnMetadata {
 func (txnData *DeletePostAssociationMetadata) New() DeSoTxnMetadata {
 	return &DeletePostAssociationMetadata{}
 }
+
+type UserAssociationQuery struct {
+	TransactorPKID         *PKID
+	TargetUserPKID         *PKID
+	AssociationType        string
+	AssociationTypePrefix  string
+	AssociationValue       string
+	AssociationValuePrefix string
+}
+
+type PostAssociationQuery struct {
+	TransactorPKID         *PKID
+	PostHash               *BlockHash
+	AssociationType        string
+	AssociationTypePrefix  string
+	AssociationValue       string
+	AssociationValuePrefix string
+}
