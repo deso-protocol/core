@@ -362,7 +362,7 @@ type DBPrefixes struct {
 	//     they own). This is especially useful for Backend API to fetch all groups for a user.
 	//
 	// New <GroupMembershipIndex> :
-	// <prefix, GroupMemberPublicKey [33]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupMemberEntryt>
+	// <prefix, GroupMemberPublicKey [33]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupMemberEntry>
 	PrefixAccessGroupMembershipIndex []byte `prefix_id:"[64]" is_state:"true"`
 
 	// Prefix for Enumerating over all the members of a group:

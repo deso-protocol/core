@@ -1900,7 +1900,7 @@ func (message *MessageEntry) GetEncoderType() EncoderType {
 	return EncoderTypeMessageEntry
 }
 
-// GroupKeyName helps with handling key names in AccessGroupKey
+// GroupKeyName helps with handling key names in AccessGroups
 type GroupKeyName [MaxMessagingKeyNameCharacters]byte
 
 func (name *GroupKeyName) ToBytes() []byte {
@@ -1996,19 +1996,19 @@ func (key *MessagingGroupKey) String() string {
 		key.OwnerPublicKey, key.GroupKeyName)
 }
 
-type AccessGroupKey struct {
+type AccessGroupId struct {
 	AccessGroupOwnerPublicKey PublicKey
 	AccessGroupKeyName        GroupKeyName
 }
 
-func NewAccessGroupKey(ownerPublicKey *PublicKey, groupKeyName []byte) *AccessGroupKey {
-	return &AccessGroupKey{
+func NewAccessGroupId(ownerPublicKey *PublicKey, groupKeyName []byte) *AccessGroupId {
+	return &AccessGroupId{
 		AccessGroupOwnerPublicKey: *ownerPublicKey,
 		AccessGroupKeyName:        *NewGroupKeyName(groupKeyName),
 	}
 }
 
-func (key *AccessGroupKey) String() string {
+func (key *AccessGroupId) String() string {
 	return fmt.Sprintf("<AccessGroupOwnerPublicKey: %v, AccessGroupKeyName: %v",
 		key.AccessGroupOwnerPublicKey, key.AccessGroupKeyName)
 }

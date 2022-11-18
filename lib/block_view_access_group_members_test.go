@@ -46,65 +46,33 @@ func TestAccessGroupMembers(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-	params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
-	params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
-
-	// Mine a few blocks to give the senderPkString some money.
-	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-
-	// Setup some convenience functions for the test.
-	txnOps := [][]*UtxoOperation{}
-	txns := []*MsgDeSoTxn{}
-	expectedSenderBalances := []uint64{}
-	expectedRecipientBalances := []uint64{}
-
-	// We take the block tip to be the blockchain height rather than the
-	// header chain height.
-	savedHeight := chain.blockTip().Height + 1
-	_ = savedHeight
-	registerOrTransfer := func(username string,
-		senderPk string, recipientPk string, senderPriv string) {
-
-		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, senderPkString))
-		expectedRecipientBalances = append(expectedRecipientBalances, _getBalance(t, chain, nil, recipientPkString))
-
-		currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
-			t, chain, db, params, senderPk, recipientPk,
-			senderPriv, 7 /*amount to send*/, 11 /*feerate*/)
-
-		txnOps = append(txnOps, currentOps)
-		txns = append(txns, currentTxn)
-	}
-
-	// Fund all the keys.
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m0Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m1Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m2Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
-
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	m0PublicKey := NewPublicKey(m0PubBytes)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
-	_ = m1PubBytes
+	m1PublicKey := NewPublicKey(m1PubBytes)
 	m2PubBytes, _, _ := Base58CheckDecode(m2Pub)
-	_ = m2PubBytes
+	m2PublicKey := NewPublicKey(m2PubBytes)
+	m3PubBytes, _, _ := Base58CheckDecode(m3Pub)
+	m3PublicKey := NewPublicKey(m3PubBytes)
+
+	fundPublicKeysWithNanosMap := make(map[PublicKey]uint64)
+	fundPublicKeysWithNanosMap[*m0PublicKey] = 100
+	fundPublicKeysWithNanosMap[*m1PublicKey] = 100
+	fundPublicKeysWithNanosMap[*m2PublicKey] = 100
+	fundPublicKeysWithNanosMap[*m3PublicKey] = 100
+	initChainCallback := func(tm *transactionTestMeta) {
+		tm.params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
+		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
+	}
+	tConfig := &transactionTestConfig{
+		t:                          t,
+		testBadger:                 true,
+		testPostgres:               false,
+		testPostgresPort:           5433,
+		initialBlocksMined:         4,
+		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
+		initChainCallback:          initChainCallback,
+	}
 
 	groupPriv1, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
@@ -123,65 +91,51 @@ func TestAccessGroupMembers(t *testing.T) {
 	groupName1 := []byte("group1")
 	groupName2 := []byte("group2")
 
-	tm := transactionTestMeta{
-		t:       t,
-		chain:   chain,
-		db:      db,
-		params:  params,
-		mempool: mempool,
-		miner:   miner,
-	}
-
-	tv1 := _createAccessGroupCreateTestVector(tm, "TEST 1: (PASS) Connect access group create transaction made by "+
+	tv1 := _createAccessGroupCreateTestVector("TEST 1: (PASS) Connect access group create transaction made by "+
 		"user 0", m0Priv, m0PubBytes, groupPk1, groupName1, nil,
 		nil)
 	tv2Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
-	tv2 := _createAccessGroupMembersTestVector(tm, "TEST 2: (FAIL) Connect access group members transaction to the "+
+	tv2 := _createAccessGroupMembersTestVector("TEST 2: (FAIL) Connect access group members transaction to the "+
 		"access group made by user 0 with group name 1, adding user 0 as member with the same access group name 1", m0Priv, m0PubBytes,
 		groupName1, tv2Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessGroupMemberCantAddOwnerBySameGroup)
 	tv3Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
-	tv3 := _createAccessGroupMembersTestVector(tm, "TEST 3: (PASS) Connect access group members transaction to the "+
+	tv3 := _createAccessGroupMembersTestVector("TEST 3: (PASS) Connect access group members transaction to the "+
 		"access group made by user 0 with group name 1, adding user 0 as member with the base access group", m0Priv, m0PubBytes,
 		groupName1, tv3Members, AccessGroupMemberOperationTypeAdd, nil)
-	tv4 := _createAccessGroupCreateTestVector(tm, "TEST 4: (PASS) Connect access group create transaction made by "+
+	tv4 := _createAccessGroupCreateTestVector("TEST 4: (PASS) Connect access group create transaction made by "+
 		"user 0 with group name 2", m0Priv, m0PubBytes, groupPk2, groupName2, nil, nil)
 	tv5Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
-	tv5 := _createAccessGroupMembersTestVector(tm, "TEST 5: (FAIL) Connect access group members transaction to the "+
+	tv5 := _createAccessGroupMembersTestVector("TEST 5: (FAIL) Connect access group members transaction to the "+
 		"access group made by user 0 with group name 1, again adding user 0 by base group key", m0Priv, m0PubBytes, groupName1,
 		tv5Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessMemberAlreadyExists)
 	tv6Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName2, EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
-	tv6 := _createAccessGroupMembersTestVector(tm, "TEST 5: (PASS) Connect access group members transaction to the "+
+	tv6 := _createAccessGroupMembersTestVector("TEST 5: (PASS) Connect access group members transaction to the "+
 		"access group made by user 0 with group name 1, again adding user 0 but by group name 2", m0Priv, m0PubBytes, groupName1,
 		tv6Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessMemberAlreadyExists)
 	tv7Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
-	tv7 := _createAccessGroupMembersTestVector(tm, "TEST 7: (PASS) Connect access group members transaction to the "+
+	tv7 := _createAccessGroupMembersTestVector("TEST 7: (PASS) Connect access group members transaction to the "+
 		"access group made by user 0 with group name 2, adding user 0 by group name 1", m0Priv, m0PubBytes, groupName2,
 		tv7Members, AccessGroupMemberOperationTypeAdd, nil)
 
 	tvv := [][]*transactionTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7}}
-	tes := transactionTestSuite{
-		transactionTestMeta:   tm,
-		testVectorsByBlock:    tvv,
-		_testVectorDependency: make(map[transactionTestIdentifier][]transactionTestIdentifier),
-	}
+	tes := NewTransactionTestSuite(t, tvv, tConfig)
 	tes.Run()
 }
 
-func _createAccessGroupMembersTestVector(tm transactionTestMeta, id string, userPrivateKey string, accessGroupOwnerPublicKey []byte,
+func _createAccessGroupMembersTestVector(id string, userPrivateKey string, accessGroupOwnerPublicKey []byte,
 	accessGroupKeyName []byte, accessGroupMembersList []*AccessGroupMember, operationType AccessGroupMemberOperationType,
 	expectedConnectError error) (_tv *transactionTestVector) {
 
-	require := require.New(tm.t)
 	testData := &accessGroupMembersTestData{
 		userPrivateKey:            userPrivateKey,
 		accessGroupOwnerPublicKey: accessGroupOwnerPublicKey,
@@ -191,29 +145,30 @@ func _createAccessGroupMembersTestVector(tm transactionTestMeta, id string, user
 		expectedConnectError:      expectedConnectError,
 	}
 	return &transactionTestVector{
-		transactionTestMeta: tm,
-		id:                  transactionTestIdentifier(id),
-		inputSpace:          testData,
-		getTransaction: func(tv *transactionTestVector) (*MsgDeSoTxn, error) {
+		id:         transactionTestIdentifier(id),
+		inputSpace: testData,
+		getTransaction: func(tv *transactionTestVector, tm *transactionTestMeta) (*MsgDeSoTxn, error) {
 			dataSpace := tv.inputSpace.(*accessGroupMembersTestData)
 			txn, err := _createSignedAccessGroupMembersTransaction(
-				tv.transactionTestMeta.t, tv.transactionTestMeta.chain, tv.transactionTestMeta.mempool,
+				tm.t, tm.chain, tm.mempool,
 				dataSpace.userPrivateKey, dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupKeyName,
 				dataSpace.accessGroupMembersList, dataSpace.operationType)
-			require.NoError(err)
+			require.NoError(tm.t, err)
 			return txn, dataSpace.expectedConnectError
 		},
-		verifyMempoolEntry: func(tv *transactionTestVector, expectDeleted bool) {
+		verifyUtxoViewEntry: func(tv *transactionTestVector, tm *transactionTestMeta,
+			utxoView *UtxoView, expectDeleted bool) {
 			dataSpace := tv.inputSpace.(*accessGroupMembersTestData)
-			_verifyMempoolUtxoViewEntryForAccessGroupMembers(
-				tv.transactionTestMeta.t, tv.transactionTestMeta.mempool, expectDeleted,
+			_verifyUtxoViewEntryForAccessGroupMembers(
+				tm.t, utxoView, expectDeleted,
 				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupKeyName,
 				dataSpace.accessGroupMembersList)
 		},
-		verifyDbEntry: func(tv *transactionTestVector, expectDeleted bool) {
+		verifyDbEntry: func(tv *transactionTestVector, tm *transactionTestMeta,
+			dbAdapter *DbAdapter, expectDeleted bool) {
 			dataSpace := tv.inputSpace.(*accessGroupMembersTestData)
 			_verifyDbEntryForAccessGroupMembers(
-				tv.transactionTestMeta.t, tv.transactionTestMeta.chain, expectDeleted,
+				tm.t, dbAdapter, expectDeleted,
 				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupKeyName,
 				dataSpace.accessGroupMembersList)
 		},
@@ -237,12 +192,10 @@ func _createSignedAccessGroupMembersTransaction(t *testing.T, chain *Blockchain,
 	return txn, nil
 }
 
-func _verifyMempoolUtxoViewEntryForAccessGroupMembers(t *testing.T, mempool *DeSoMempool, expectDeleted bool,
+func _verifyUtxoViewEntryForAccessGroupMembers(t *testing.T, utxoView *UtxoView, expectDeleted bool,
 	accessGroupOwnerPublicKey []byte, accessGroupKeyName []byte, accessGroupMembersList []*AccessGroupMember) {
 
 	require := require.New(t)
-	utxoView, err := mempool.GetAugmentedUniversalView()
-	require.NoError(err)
 
 	for _, member := range accessGroupMembersList {
 		groupMembershipKey := NewGroupMembershipKey(*NewPublicKey(member.AccessGroupMemberPublicKey),
@@ -264,14 +217,15 @@ func _verifyMempoolUtxoViewEntryForAccessGroupMembers(t *testing.T, mempool *DeS
 	}
 }
 
-func _verifyDbEntryForAccessGroupMembers(t *testing.T, chain *Blockchain, expectDeleted bool,
+func _verifyDbEntryForAccessGroupMembers(t *testing.T, dbAdapter *DbAdapter, expectDeleted bool,
 	accessGroupOwnerPublicKey []byte, accessGroupKeyName []byte, accessGroupMembersList []*AccessGroupMember) {
 
 	require := require.New(t)
 
+	// TODO: replace by dbAdapter call
 	for _, member := range accessGroupMembersList {
 		// If the group has already been fetched in this utxoView, then we get it directly from there.
-		accessGroupMember, err := DBGetAccessGroupMemberEntry(chain.db, chain.snapshot,
+		accessGroupMember, err := DBGetAccessGroupMemberEntry(dbAdapter.badgerDb, dbAdapter.snapshot,
 			*NewPublicKey(member.AccessGroupMemberPublicKey), *NewPublicKey(accessGroupOwnerPublicKey), *NewGroupKeyName(accessGroupKeyName))
 		require.NoError(err)
 		if !expectDeleted {

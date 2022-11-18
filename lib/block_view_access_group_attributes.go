@@ -3,7 +3,7 @@ package lib
 // GetGroupEntryAttributeEntry returns the group entry attribute entry for the given group.
 func (bav *UtxoView) GetGroupEntryAttributeEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) (*AttributeEntry, error) {
 	//// Create accessGroupKey key.
-	//accessGroupKey := NewAccessGroupKey(groupOwnerPublicKey, groupKeyName[:])
+	//accessGroupKey := NewAccessGroupId(groupOwnerPublicKey, groupKeyName[:])
 	//// Check if attributeType exists for the accessGroupKey. Note: If accessGroupKey does not exist in the map, attributeType won't exist either.
 	//if attributeEntry, exists := bav.GroupEntryAttributes[*accessGroupKey][attributeType]; exists {
 	//	// AttributeEntry for this mapping holds IsSet bool and Value []byte.
@@ -21,7 +21,7 @@ func (bav *UtxoView) GetGroupEntryAttributeEntry(groupOwnerPublicKey *PublicKey,
 // _setGroupEntryAttributeMapping sets the attribute status of a group.
 func (bav *UtxoView) _setGroupEntryAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, isSet bool, value []byte) error {
 	//// Create accessGroupKey key.
-	//accessGroupKey := NewAccessGroupKey(groupOwnerPublicKey, groupKeyName[:])
+	//accessGroupKey := NewAccessGroupId(groupOwnerPublicKey, groupKeyName[:])
 	//// Create mapping if it doesn't exist.
 	//if _, exists := bav.GroupEntryAttributes[*accessGroupKey]; !exists {
 	//	bav.GroupEntryAttributes[*accessGroupKey] = make(map[AccessGroupEntryAttributeType]*AttributeEntry)
@@ -35,7 +35,7 @@ func (bav *UtxoView) _setGroupEntryAttributeMapping(groupOwnerPublicKey *PublicK
 // attribute status in the current block.
 func (bav *UtxoView) _deleteGroupEntryAttributeMapping(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) error {
 	// Create accessGroupKey key.
-	//accessGroupKey := NewAccessGroupKey(groupOwnerPublicKey, groupKeyName[:])
+	//accessGroupKey := NewAccessGroupId(groupOwnerPublicKey, groupKeyName[:])
 	//// Delete attribute if it exists.
 	//if _, exists := bav.GroupEntryAttributes[*accessGroupKey]; exists {
 	//	delete(bav.GroupEntryAttributes[*accessGroupKey], attributeType)

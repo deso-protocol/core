@@ -6710,7 +6710,7 @@ const (
 type AccessGroupAttributesMetadata struct {
 	// The holder of the attributes.
 	//AccessGroupAttributeHolder
-	// Could be either 1. GroupMemberEnumerationKey or 2. AccessGroupKey or 3. MessageKey: (a) GroupChatMessageKey or (b) DMMessageKey
+	// Could be either 1. GroupMemberEnumerationKey or 2. AccessGroupId or 3. MessageKey: (a) GroupChatMessageKey or (b) DMMessageKey
 	//AttributeHolderKey interface{}
 	// The operation to perform on the attribute.
 	//AccessGroupAttributeOperationType

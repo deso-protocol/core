@@ -96,6 +96,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		if err := bav._flushDerivedKeyEntryToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
+		if err := bav._flushAccessGroupEntriesToDbWithTxn(txn, blockHeight); err != nil {
+			return err
+		}
 		// Temporarily flush all DAO Coin Limit orders to badger
 		//if err := bav._flushDAOCoinLimitOrderEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		//	return err
@@ -116,9 +119,6 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		return err
 	}
 	if err := bav._flushMessagingGroupEntriesToDbWithTxn(txn, blockHeight); err != nil {
-		return err
-	}
-	if err := bav._flushAccessGroupEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
 	if err := bav._flushAccessGroupMembersToDbWithTxn(txn, blockHeight); err != nil {
@@ -1031,13 +1031,13 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 }
 
 func (bav *UtxoView) _flushAccessGroupEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	glog.V(2).Infof("_flushAccessGroupEntriesToDbWithTxn: flushing %d mappings", len(bav.AccessGroupKeyToAccessGroupEntry))
+	glog.V(2).Infof("_flushAccessGroupEntriesToDbWithTxn: flushing %d mappings", len(bav.AccessGroupIdToAccessGroupEntry))
 	numDeleted := 0
 	numPut := 0
 
-	// Go through all entries in AccessGroupKeyToAccessGroupEntry and add them to the DB.
+	// Go through all entries in AccessGroupIdToAccessGroupEntry and add them to the DB.
 	// These records are part of the DeSo V3 Messages.
-	for accessGroupKey, accessGroupEntry := range bav.AccessGroupKeyToAccessGroupEntry {
+	for accessGroupKey, accessGroupEntry := range bav.AccessGroupIdToAccessGroupEntry {
 		// Delete the existing mapping in the DB for this map key, this will be re-added
 		// later if isDeleted=false. Access entries can have a list of members, and
 		// we store these members under a separate prefix. To delete an access group

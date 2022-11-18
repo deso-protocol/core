@@ -5,6 +5,8 @@ import (
 	"github.com/deso-protocol/core/migrate"
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/go-pg/pg/v10"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
 	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
@@ -32,17 +34,20 @@ func TestParsePostgresURI(t *testing.T) {
 }
 
 func TestEmbedPg(t *testing.T) {
-	db, embpg := StartTestEmbeddedPostgresDB(t, "", 5433)
+	require := require.New(t)
+
+	_, embpg, err := StartTestEmbeddedPostgresDB("", 5433)
+	require.NoError(err)
 	fmt.Println("Started embedded postgres")
-	defer StopTestEmbeddedPostgresDB(t, db, embpg)
+	defer require.NoError(StopTestEmbeddedPostgresDB(embpg))
 }
 
 // Use this utility function to start a test DB at the beginning of your test.
 // Don't forget to queue a call to StopTestEmbeddedPostgresDB after you do this.
-func StartTestEmbeddedPostgresDB(t *testing.T, dataPath string, port uint32) (
-	*Postgres, *embeddedpostgres.EmbeddedPostgres) {
-	require := require.New(t)
+func StartTestEmbeddedPostgresDB(dataPath string, port uint32) (
+	*Postgres, *embeddedpostgres.EmbeddedPostgres, error) {
 
+	glog.Infof("StopTestEmbeddedPostgresDB: Starting embedded postgres")
 	viper.SetConfigFile("../.env")
 	viper.ReadInConfig()
 	viper.Set("ENV", "TEST")
@@ -64,7 +69,10 @@ func StartTestEmbeddedPostgresDB(t *testing.T, dataPath string, port uint32) (
 			BinariesPath("/tmp/pg_bin").
 			Version(embeddedpostgres.V14).
 			Logger(nil))
-		require.NoError(embeddedPostgres.Start())
+		err := embeddedPostgres.Start()
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "StartTestEmbeddedPostgresDB: Problem starting embedded postgres")
+		}
 	} else {
 		embeddedPostgres = nil
 	}
@@ -78,18 +86,19 @@ func StartTestEmbeddedPostgresDB(t *testing.T, dataPath string, port uint32) (
 	postgresDb := NewPostgres(db)
 
 	migrate.LoadMigrations()
-	err := migrations.Run(db, "migrate", []string{"", "migrate"})
-	require.NoError(err)
-
-	return postgresDb, embeddedPostgres
+	if err := migrations.Run(db, "migrate", []string{"", "migrate"}); err != nil {
+		return nil, nil, errors.Wrapf(err, "StartTestEmbeddedPostgresDB: Problem running migrations")
+	}
+	return postgresDb, embeddedPostgres, nil
 }
 
-func StopTestEmbeddedPostgresDB(
-	t *testing.T, db *Postgres,
-	epg *embeddedpostgres.EmbeddedPostgres) {
+func StopTestEmbeddedPostgresDB(epg *embeddedpostgres.EmbeddedPostgres) error {
 
-	require := require.New(t)
+	glog.Infof("StopTestEmbeddedPostgresDB: Stopping embedded postgres")
 	if !viper.GetBool("BUILDKITE_ENV") {
-		require.NoError(epg.Stop())
+		if err := epg.Stop(); err != nil {
+			return errors.Wrapf(err, "StopTestEmbeddedPostgresDB: Problem stopping embedded postgres")
+		}
 	}
+	return nil
 }

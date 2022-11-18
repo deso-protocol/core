@@ -48,7 +48,7 @@ type UtxoView struct {
 	MessagingGroupKeyToMessagingGroupEntry map[MessagingGroupKey]*MessagingGroupEntry
 
 	// Access group entries.
-	AccessGroupKeyToAccessGroupEntry map[AccessGroupKey]*AccessGroupEntry
+	AccessGroupIdToAccessGroupEntry map[AccessGroupId]*AccessGroupEntry
 
 	// Group Memberships
 	GroupMembershipKeyToAccessGroupMember map[GroupMembershipKey]*AccessGroupMemberEntry
@@ -60,7 +60,7 @@ type UtxoView struct {
 	//GroupMemberAttributes map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]*AttributeEntry
 
 	// GroupEntryAttributes
-	// Mapping of AccessGroupKey to a map of AccessGroupEntryAttributeType to AttributeEntry
+	// Mapping of AccessGroupId to a map of AccessGroupEntryAttributeType to AttributeEntry
 	// For example, Group_A can have attributes {IsChannel: (IsSet: true, Value: nil), GroupPicture: (IsSet: true, Value: []byte{0x01, 0x02, 0x03}, GroupDescription: (IsSet: true, Value: []byte{0x01, 0x02, 0x03})}
 	// Or if Group_A was no longer a channel and had its picture and description removed- {IsChannel: (IsSet: false, Value: nil), GroupPicture: (IsSet: false, Value: nil), GroupDescription: (IsSet: false, Value: nil)}
 	//GroupEntryAttributes map[AccessGroupKey]map[AccessGroupEntryAttributeType]*AttributeEntry
@@ -150,7 +150,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.MessagingGroupKeyToMessagingGroupEntry = make(map[MessagingGroupKey]*MessagingGroupEntry)
 
 	// Access group entries
-	bav.AccessGroupKeyToAccessGroupEntry = make(map[AccessGroupKey]*AccessGroupEntry)
+	bav.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry)
 	bav.GroupMembershipKeyToAccessGroupMember = make(map[GroupMembershipKey]*AccessGroupMemberEntry)
 	//bav.GroupMemberAttributes = make(map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]*AttributeEntry)
 	//bav.GroupEntryAttributes = make(map[AccessGroupKey]map[AccessGroupEntryAttributeType]*AttributeEntry)
@@ -271,10 +271,10 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	}
 
 	// Copy access group data
-	newView.AccessGroupKeyToAccessGroupEntry = make(map[AccessGroupKey]*AccessGroupEntry, len(bav.AccessGroupKeyToAccessGroupEntry))
-	for key, entry := range bav.AccessGroupKeyToAccessGroupEntry {
+	newView.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry, len(bav.AccessGroupIdToAccessGroupEntry))
+	for key, entry := range bav.AccessGroupIdToAccessGroupEntry {
 		newEntry := *entry
-		newView.AccessGroupKeyToAccessGroupEntry[key] = &newEntry
+		newView.AccessGroupIdToAccessGroupEntry[key] = &newEntry
 	}
 
 	newView.GroupMembershipKeyToAccessGroupMember = make(map[GroupMembershipKey]*AccessGroupMemberEntry, len(bav.GroupMembershipKeyToAccessGroupMember))

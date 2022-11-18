@@ -131,3 +131,21 @@ func (adapter *DbAdapter) GetPKIDForPublicKey(pkBytes []byte) *PKID {
 
 	return DBGetPKIDEntryForPublicKey(adapter.badgerDb, adapter.snapshot, pkBytes).PKID
 }
+
+//
+// AccessGroups
+//
+
+func (adapter *DbAdapter) GetAccessGroupEntryByAccessGroupId(accessGroupId *AccessGroupId) (*AccessGroupEntry, error) {
+
+	if adapter.postgresDb != nil {
+		pgAccessGroup := adapter.postgresDb.GetAccessGroupByAccessGroupId(accessGroupId)
+		if pgAccessGroup == nil {
+			return nil, nil
+		}
+		return pgAccessGroup.ToAccessGroupEntry(), nil
+	} else {
+		return DBGetAccessGroupEntryByAccessGroupId(adapter.badgerDb, adapter.snapshot,
+			&accessGroupId.AccessGroupOwnerPublicKey, &accessGroupId.AccessGroupKeyName)
+	}
+}
