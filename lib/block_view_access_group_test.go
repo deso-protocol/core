@@ -136,8 +136,27 @@ func TestAccessGroupCreate(t *testing.T) {
 	tv15 := _createAccessGroupCreateTestVector("TEST 15: (PASS) Try connecting group create transaction "+
 		"submitted by user 3, with ExtraData", m2Priv, m2PubBytes, m2PubBytes, groupPk2, groupName3, extraData1,
 		nil)
+	tv16 := _createAccessGroupCreateTestVector("TEST 16: (FAIL) Try connecting group create transaction "+
+		"submitted by user 4, but access group owner public key is malformed", m3Priv, m3PubBytes, m3PubBytes[:10],
+		groupPk1, groupName1, nil, RuleErrorAccessGroupOwnerPublicKeyCannotBeDifferent)
+	var groupNameTooShort []byte
+	groupNameTooShort = nil
+	groupNameTooLong := []byte{}
+	for ii := 0; ii < MaxAccessGroupKeyNameCharacters+5; ii++ {
+		groupNameTooLong = append(groupNameTooLong, 0)
+	}
+	tv17 := _createAccessGroupCreateTestVector("TEST 17: (FAIL) Try connecting group create transaction "+
+		"submitted by user 4, but access group key name is too short", m3Priv, m3PubBytes, m3PubBytes, groupPk1,
+		groupNameTooShort, nil, RuleErrorAccessGroupKeyNameTooShort)
+	tv18 := _createAccessGroupCreateTestVector("TEST 18: (FAIL) Try connecting group create transaction "+
+		"submitted by user 4, but access group key name is too long", m3Priv, m3PubBytes, m3PubBytes, groupPk1,
+		groupNameTooLong, nil, RuleErrorAccessGroupKeyNameTooLong)
+	tv19 := _createAccessGroupCreateTestVector("TEST 19: (FAIL) Try connecting group create transaction "+
+		"submitted by user 4, but access group public key is malformed", m3Priv, m3PubBytes, m3PubBytes, groupPk1[:10],
+		groupName1, nil, RuleErrorPubKeyLen)
 
-	tvv := [][]*transactionTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14, tv15}}
+	tvv := [][]*transactionTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14,
+		tv15, tv16, tv17, tv18, tv19}}
 	tes := NewTransactionTestSuite(t, tvv, tConfig)
 	tes.Run()
 }

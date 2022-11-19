@@ -2,6 +2,7 @@ package lib
 
 import (
 	"github.com/dgraph-io/badger/v3"
+	"github.com/golang/glog"
 )
 
 type DbAdapter struct {
@@ -137,6 +138,10 @@ func (adapter *DbAdapter) GetPKIDForPublicKey(pkBytes []byte) *PKID {
 //
 
 func (adapter *DbAdapter) GetAccessGroupEntryByAccessGroupId(accessGroupId *AccessGroupId) (*AccessGroupEntry, error) {
+	if accessGroupId == nil {
+		glog.Errorf("GetAccessGroupEntryByAccessGroupId: Called with nil accessGroupId, this should never happen")
+		return nil, nil
+	}
 
 	if adapter.postgresDb != nil {
 		pgAccessGroup := adapter.postgresDb.GetAccessGroupByAccessGroupId(accessGroupId)

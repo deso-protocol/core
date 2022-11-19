@@ -110,6 +110,8 @@ const (
 	RuleErrorAccessGroupAlreadyExists                   RuleError = "RuleErrorAccessGroupAlreadyExists"
 	RuleErrorAccessGroupMembersBeforeBlockHeight        RuleError = "RuleErrorAccessGroupMembersBeforeBlockHeight"
 	RuleErrorAccessGroupDoesntExist                     RuleError = "RuleErrorAccessGroupDoesntExist"
+	RuleErrorAccessGroupKeyNameTooShort                 RuleError = "RuleErrorAccessGroupKeyNameTooShort"
+	RuleErrorAccessGroupKeyNameTooLong                  RuleError = "RuleErrorAccessGroupKeyNameTooLong"
 	RuleErrorAccessMemberEncryptedKeyTooShort           RuleError = "RuleErrorAccessMemberEncryptedKeyTooShort"
 	RuleErrorAccessMemberAlreadyExists                  RuleError = "RuleErrorAccessMemberAlreadyExists"
 	RuleErrorAccessGroupMemberOperationTypeNotSupported RuleError = "RuleErrorAccessGroupMemberOperationTypeNotSupported"

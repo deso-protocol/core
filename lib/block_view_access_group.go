@@ -153,14 +153,14 @@ func ValidateAccessGroupPublicKeyAndName(accessGroupOwnerPublicKey, keyName []by
 	// If we get here, it means that we have a valid messaging public key.
 	// Sanity-check messaging key name.
 	if len(keyName) < MinMessagingKeyNameCharacters {
-		return errors.Wrapf(RuleErrorMessagingKeyNameTooShort, "ValidateAccessGroupPublicKeyAndName: "+
+		return errors.Wrapf(RuleErrorAccessGroupKeyNameTooShort, "ValidateAccessGroupPublicKeyAndName: "+
 			"Too few characters in key name: min = %v, provided = %v",
-			MinMessagingKeyNameCharacters, len(keyName))
+			MinAccessGroupKeyNameCharacters, len(keyName))
 	}
 	if len(keyName) > MaxMessagingKeyNameCharacters {
-		return errors.Wrapf(RuleErrorMessagingKeyNameTooLong, "ValidateAccessGroupPublicKeyAndName: "+
+		return errors.Wrapf(RuleErrorAccessGroupKeyNameTooLong, "ValidateAccessGroupPublicKeyAndName: "+
 			"Too many characters in key name: max = %v; provided = %v",
-			MaxMessagingKeyNameCharacters, len(keyName))
+			MaxAccessGroupKeyNameCharacters, len(keyName))
 	}
 	return nil
 }

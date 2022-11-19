@@ -2002,6 +2002,9 @@ type AccessGroupId struct {
 }
 
 func NewAccessGroupId(ownerPublicKey *PublicKey, groupKeyName []byte) *AccessGroupId {
+	if ownerPublicKey == nil {
+		return nil
+	}
 	return &AccessGroupId{
 		AccessGroupOwnerPublicKey: *ownerPublicKey,
 		AccessGroupKeyName:        *NewGroupKeyName(groupKeyName),
