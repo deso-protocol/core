@@ -92,7 +92,7 @@ func TestAccessGroupMembers(t *testing.T) {
 	groupName2 := []byte("group2")
 
 	tv1 := _createAccessGroupCreateTestVector("TEST 1: (PASS) Connect access group create transaction made by "+
-		"user 0", m0Priv, m0PubBytes, groupPk1, groupName1, nil,
+		"user 0", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1, nil,
 		nil)
 	tv2Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil,
@@ -107,7 +107,7 @@ func TestAccessGroupMembers(t *testing.T) {
 		"access group made by user 0 with group name 1, adding user 0 as member with the base access group", m0Priv, m0PubBytes,
 		groupName1, tv3Members, AccessGroupMemberOperationTypeAdd, nil)
 	tv4 := _createAccessGroupCreateTestVector("TEST 4: (PASS) Connect access group create transaction made by "+
-		"user 0 with group name 2", m0Priv, m0PubBytes, groupPk2, groupName2, nil, nil)
+		"user 0 with group name 2", m0Priv, m0PubBytes, m0PubBytes, groupPk2, groupName2, nil, nil)
 	tv5Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
