@@ -235,10 +235,13 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 						"DeSoBlockProducer._getBlockTemplate: Error re-generating UtxoView; "+
 							"this should never ever happen: ")
 				}
-				for jj := 0; jj < ii; jj++ {
-					txToRecompute := txnsOrderedByTimeAdded[jj]
+				// We need to iterate throught all the txns that have passed validation and
+				// reconnect them to this new view. We don't need to skip the block reward here.
+				for jj := 0; jj < len(blockRet.Txns); jj++ {
+					txToRecompute := blockRet.Txns[jj]
+					txBytes, _ := txToRecompute.ToBytes(false)
 					_, _, _, _, err = newUtxoView._connectTransaction(
-						txToRecompute.Tx, txToRecompute.Hash, int64(txToRecompute.TxSizeBytes), uint32(blockRet.Header.Height), false,
+						txToRecompute, txToRecompute.Hash(), int64(len(txBytes)), uint32(blockRet.Header.Height), false,
 						false /*ignoreUtxos*/)
 					if err != nil {
 						return nil, nil, nil, errors.Wrapf(err,
