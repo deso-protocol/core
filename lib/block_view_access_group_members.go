@@ -26,7 +26,8 @@ func (bav *UtxoView) GetAccessGroupMemberEntry(memberPublicKey *PublicKey, group
 	}
 
 	// If we get here, it means that the group has not been fetched in this utxoView. We fetch it from the db.
-	accessGroupMember, err := DBGetAccessGroupMemberEntry(bav.Handle, bav.Snapshot, *memberPublicKey, *groupOwnerPublicKey, *groupKeyName)
+	dbAdapter := bav.GetDbAdapter()
+	accessGroupMember, err := dbAdapter.DBGetAccessGroupMemberEntry(*memberPublicKey, *groupOwnerPublicKey, *groupKeyName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetAccessGroupMemberEntry: Problem fetching access group member entry")
 	}
@@ -143,6 +144,13 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 				"members: Access group does not exist for txnMeta (%v). Error: %v", txMeta, err)
 	}
 
+	// Make sure the access group members list is not empty.
+	if len(txMeta.AccessGroupMembersList) == 0 {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorAccessGroupMembersListCannotBeEmpty, "_connectAccessGroupMembers: Problem connecting access "+
+				"group members: Access group member list is empty for txnMeta (%v).", txMeta)
+	}
+
 	// Connect basic txn to get the total input and the total output without considering the transaction metadata.
 	// Note that it doesn't matter when we do this, because if the transaction fails later on, we will just revert the
 	// UtxoView to a previous stable state that isn't corrupted with partial block view entries.
@@ -236,7 +244,11 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 		}
 
 	case AccessGroupMemberOperationTypeRemove:
-		// TODO: Implement this later
+
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupCreate: "+
+				"Operation type %v not supported yet.", txMeta.AccessGroupMemberOperationType)
+	case AccessGroupMemberOperationTypeUpdate:
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupCreate: "+
 				"Operation type %v not supported yet.", txMeta.AccessGroupMemberOperationType)

@@ -153,6 +153,7 @@ type PGTransaction struct {
 	MetadataDAOCoinTransfer     *PGMetadataDAOCoinTransfer     `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataDAOCoinLimitOrder   *PGMetadataDAOCoinLimitOrder   `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataAccessGroupCreate   *PGMetadataAccessGroupCreate   `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAccessGroupMembers  *PGMetadataAccessGroupMembers  `pg:"rel:belongs-to,join_fk:transaction_hash"`
 }
 
 // PGTransactionOutput represents DeSoOutput, DeSoInput, and UtxoEntry
@@ -445,6 +446,16 @@ type PGMetadataAccessGroupCreate struct {
 	AccessGroupOwnerPublicKey *PublicKey    `pg:",type:bytea"`
 	AccessGroupKeyName        *GroupKeyName `pg:",type:bytea"`
 	AccessGroupPublicKey      *PublicKey    `pg:",type:bytea"`
+}
+
+type PGMetadataAccessGroupMembers struct {
+	tableName struct{} `pg:"pg_metadata_access_group_members"`
+
+	TransactionHash           *BlockHash    `pg:",pk,type:bytea"`
+	AccessGroupOwnerPublicKey *PublicKey    `pg:",type:bytea"`
+	AccessGroupKeyName        *GroupKeyName `pg:",type:bytea"`
+	AccessGroupMembersList    []byte        `pg:",type:bytea"`
+	OperationType             uint8         `pg:",type:smallint"`
 }
 
 type PGNotification struct {
@@ -774,6 +785,42 @@ func (accessGroup *PGAccessGroupEntry) ToAccessGroupEntry() *AccessGroupEntry {
 	}
 }
 
+type PGAccessGroupMemberEntry struct {
+	tableName struct{} `pg:"pg_access_group_membership_index"`
+
+	AccessGroupMemberPublicKey *PublicKey    `pg:",pk,type:bytea"`
+	AccessGroupMemberKeyName   *GroupKeyName `pg:",type:bytea"`
+	AccessGroupOwnerPublicKey  *PublicKey    `pg:",pk,type:bytea"`
+	AccessGroupKeyName         *GroupKeyName `pg:",pk,type:bytea"`
+	EncryptedKey               []byte        `pg:",type:bytea"`
+
+	ExtraData map[string][]byte
+}
+
+func (accessGroupMember *PGAccessGroupMemberEntry) FromAccessGroupMemberEntry(accessGroupOwnerPublicKey PublicKey,
+	accessGroupKeyName GroupKeyName, accessGroupMemberEntry *AccessGroupMemberEntry) {
+
+	accessGroupMember.AccessGroupOwnerPublicKey = &accessGroupOwnerPublicKey
+	accessGroupMember.AccessGroupKeyName = &accessGroupKeyName
+	accessGroupMember.AccessGroupMemberPublicKey = accessGroupMemberEntry.AccessGroupMemberPublicKey
+	accessGroupMember.AccessGroupMemberKeyName = accessGroupMemberEntry.AccessGroupMemberKeyName
+	accessGroupMember.EncryptedKey = accessGroupMemberEntry.EncryptedKey
+	accessGroupMember.ExtraData = accessGroupMemberEntry.ExtraData
+}
+
+func (accessGroupMember *PGAccessGroupMemberEntry) ToAccessGroupMemberEntry() (
+	_accessGroupOwnerPublicKey *PublicKey, _accessGroupKeyName *GroupKeyName, _accessGroupMemberEntry *AccessGroupMemberEntry) {
+
+	return accessGroupMember.AccessGroupOwnerPublicKey,
+		accessGroupMember.AccessGroupKeyName,
+		&AccessGroupMemberEntry{
+			AccessGroupMemberPublicKey: accessGroupMember.AccessGroupMemberPublicKey,
+			AccessGroupMemberKeyName:   accessGroupMember.AccessGroupMemberKeyName,
+			EncryptedKey:               accessGroupMember.EncryptedKey,
+			ExtraData:                  accessGroupMember.ExtraData,
+		}
+}
+
 func HexToUint256(input string) *uint256.Int {
 	output := uint256.NewInt()
 
@@ -1092,6 +1139,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	var metadataDAOCoinLimitOrder []*PGMetadataDAOCoinLimitOrder
 	var metadataDAOCoinLimitOrderBidderInputs []*PGMetadataDAOCoinLimitOrderBidderInputs
 	var metadataAccessGroupCreate []*PGMetadataAccessGroupCreate
+	var metadataAccessGroupMembers []*PGMetadataAccessGroupMembers
 
 	blockHash := blockNode.Hash
 
@@ -1448,6 +1496,16 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				AccessGroupKeyName:        NewGroupKeyName(txMeta.AccessGroupKeyName),
 				AccessGroupPublicKey:      NewPublicKey(txMeta.AccessGroupPublicKey),
 			})
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {
+			txMeta := txn.TxnMeta.(*AccessGroupMembersMetadata)
+
+			metadataAccessGroupMembers = append(metadataAccessGroupMembers, &PGMetadataAccessGroupMembers{
+				TransactionHash:           txnHash,
+				AccessGroupOwnerPublicKey: NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
+				AccessGroupKeyName:        NewGroupKeyName(txMeta.AccessGroupKeyName),
+				AccessGroupMembersList:    encodeAccessGroupMembersList(txMeta.AccessGroupMembersList),
+				OperationType:             uint8(txMeta.AccessGroupMemberOperationType),
+			})
 		} else {
 			return fmt.Errorf("InsertTransactionTx: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 		}
@@ -1793,6 +1851,18 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		}
 	}
 
+	if len(metadataAccessGroupMembers) > 0 {
+		if !delete {
+			if _, err := tx.Model(&metadataAccessGroupMembers).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataAccessGroupMembers).Returning("NULL").Delete(); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -1878,6 +1948,9 @@ func (postgres *Postgres) FlushView(view *UtxoView, blockHeight uint64) error {
 			return err
 		}
 		if err := postgres.flushAccessGroupEntries(tx, view); err != nil {
+			return err
+		}
+		if err := postgres.flushAccessGroupMemberEntries(tx, view); err != nil {
 			return err
 		}
 		// Temporarily write limit orders to badger
@@ -2542,18 +2615,59 @@ func (postgres *Postgres) flushAccessGroupEntries(tx *pg.Tx, view *UtxoView) err
 	if len(insertEntries) > 0 {
 		_, err := tx.Model(&insertEntries).
 			WherePK().
-			OnConflict("(access_group_owner_public_key, access_group_key_name) DO UPDATE").
 			Returning("NULL").
 			Insert()
 		if err != nil {
-			return fmt.Errorf("flushAccessGroupEntries: insert: %v", err)
+			return fmt.Errorf("Postgres.flushAccessGroupEntries: insert: %v", err)
 		}
 	}
 
 	if len(deleteEntries) > 0 {
 		_, err := tx.Model(&deleteEntries).Returning("NULL").Delete()
 		if err != nil {
-			return fmt.Errorf("flushAccessGroupEntries: delete: %v", err)
+			return fmt.Errorf("Postgres.flushAccessGroupEntries: delete: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoView) error {
+	var insertEntries []*PGAccessGroupMemberEntry
+	var deleteEntries []*PGAccessGroupMemberEntry
+
+	for id, entry := range view.GroupMembershipKeyToAccessGroupMember {
+		// copy the iterator just in case.
+		idCopy := id
+		if entry == nil {
+			glog.Errorf("Postgres.flushAccessGroupMemberEntries: Skipping nil entry for id %v. This should never happen", id)
+			continue
+		}
+
+		accessGroupMemberEntry := &PGAccessGroupMemberEntry{}
+		accessGroupMemberEntry.FromAccessGroupMemberEntry(idCopy.GroupOwnerPublicKey, idCopy.GroupKeyName, entry)
+
+		if entry.isDeleted {
+			deleteEntries = append(deleteEntries, accessGroupMemberEntry)
+		} else {
+			insertEntries = append(insertEntries, accessGroupMemberEntry)
+		}
+	}
+
+	if len(insertEntries) > 0 {
+		_, err := tx.Model(&insertEntries).
+			WherePK().
+			Returning("NULL").
+			Insert()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushAccessGroupMemberEntries: insert: %v", err)
+		}
+	}
+
+	if len(deleteEntries) > 0 {
+		_, err := tx.Model(&deleteEntries).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushAccessGroupMemberEntries: delete: %v", err)
 		}
 	}
 
@@ -3172,15 +3286,34 @@ func (postgres *Postgres) GetAllDerivedKeysForOwner(ownerPublicKey *PublicKey) [
 //
 
 func (postgres *Postgres) GetAccessGroupByAccessGroupId(accessGroupId *AccessGroupId) *PGAccessGroupEntry {
-	accessGroup := PGAccessGroupEntry{
+	accessGroup := &PGAccessGroupEntry{
 		AccessGroupOwnerPublicKey: &accessGroupId.AccessGroupOwnerPublicKey,
 		AccessGroupKeyName:        &accessGroupId.AccessGroupKeyName,
 	}
-	err := postgres.db.Model(&accessGroup).WherePK().First()
+	err := postgres.db.Model(accessGroup).WherePK().First()
 	if err != nil {
 		return nil
 	}
-	return &accessGroup
+	return accessGroup
+}
+
+//
+// AccessGroupMembers
+//
+
+func (postgres *Postgres) GetAccessGroupMemberEntry(accessGroupMemberPublicKey PublicKey,
+	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) *PGAccessGroupMemberEntry {
+
+	accessGroupMember := &PGAccessGroupMemberEntry{
+		AccessGroupMemberPublicKey: &accessGroupMemberPublicKey,
+		AccessGroupOwnerPublicKey:  &accessGroupOwnerPublicKey,
+		AccessGroupKeyName:         &accessGroupKeyName,
+	}
+	err := postgres.db.Model(accessGroupMember).WherePK().First()
+	if err != nil {
+		return nil
+	}
+	return accessGroupMember
 }
 
 //

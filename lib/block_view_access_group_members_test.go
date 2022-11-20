@@ -42,7 +42,7 @@ func (data *accessGroupMembersTestData) GetInputType() transactionTestInputType 
 	return transactionTestInputTypeAccessGroupMembers
 }
 
-func TestAccessGroupMembers(t *testing.T) {
+func TestAccessGroupMembersAdd(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
@@ -67,7 +67,7 @@ func TestAccessGroupMembers(t *testing.T) {
 	tConfig := &transactionTestConfig{
 		t:                          t,
 		testBadger:                 true,
-		testPostgres:               false,
+		testPostgres:               true,
 		testPostgresPort:           5433,
 		initialBlocksMined:         4,
 		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
@@ -222,11 +222,10 @@ func _verifyDbEntryForAccessGroupMembers(t *testing.T, dbAdapter *DbAdapter, exp
 
 	require := require.New(t)
 
-	// TODO: replace by dbAdapter call
 	for _, member := range accessGroupMembersList {
 		// If the group has already been fetched in this utxoView, then we get it directly from there.
-		accessGroupMember, err := DBGetAccessGroupMemberEntry(dbAdapter.badgerDb, dbAdapter.snapshot,
-			*NewPublicKey(member.AccessGroupMemberPublicKey), *NewPublicKey(accessGroupOwnerPublicKey), *NewGroupKeyName(accessGroupKeyName))
+		accessGroupMember, err := dbAdapter.DBGetAccessGroupMemberEntry(*NewPublicKey(member.AccessGroupMemberPublicKey),
+			*NewPublicKey(accessGroupOwnerPublicKey), *NewGroupKeyName(accessGroupKeyName))
 		require.NoError(err)
 		if !expectDeleted {
 			require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))

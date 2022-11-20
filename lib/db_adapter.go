@@ -154,3 +154,24 @@ func (adapter *DbAdapter) GetAccessGroupEntryByAccessGroupId(accessGroupId *Acce
 			&accessGroupId.AccessGroupOwnerPublicKey, &accessGroupId.AccessGroupKeyName)
 	}
 }
+
+//
+// AccessGroupMembers
+//
+
+func (adapter *DbAdapter) DBGetAccessGroupMemberEntry(accessGroupMemberPublicKey PublicKey,
+	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) (*AccessGroupMemberEntry, error) {
+
+	if adapter.postgresDb != nil {
+		pgAccessGroupMember := adapter.postgresDb.GetAccessGroupMemberEntry(accessGroupMemberPublicKey,
+			accessGroupOwnerPublicKey, accessGroupKeyName)
+		if pgAccessGroupMember == nil {
+			return nil, nil
+		}
+		_, _, accessGroupMember := pgAccessGroupMember.ToAccessGroupMemberEntry()
+		return accessGroupMember, nil
+	} else {
+		return DBGetAccessGroupMemberEntry(adapter.badgerDb, adapter.snapshot,
+			accessGroupMemberPublicKey, accessGroupOwnerPublicKey, accessGroupKeyName)
+	}
+}

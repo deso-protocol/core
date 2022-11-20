@@ -112,7 +112,7 @@ const (
 	RuleErrorAccessGroupDoesntExist                     RuleError = "RuleErrorAccessGroupDoesntExist"
 	RuleErrorAccessGroupKeyNameTooShort                 RuleError = "RuleErrorAccessGroupKeyNameTooShort"
 	RuleErrorAccessGroupKeyNameTooLong                  RuleError = "RuleErrorAccessGroupKeyNameTooLong"
-	RuleErrorAccessMemberEncryptedKeyTooShort           RuleError = "RuleErrorAccessMemberEncryptedKeyTooShort"
+	RuleErrorAccessGroupMembersListCannotBeEmpty        RuleError = "RuleErrorAccessGroupMembersListCannotBeEmpty"
 	RuleErrorAccessMemberAlreadyExists                  RuleError = "RuleErrorAccessMemberAlreadyExists"
 	RuleErrorAccessGroupMemberOperationTypeNotSupported RuleError = "RuleErrorAccessGroupMemberOperationTypeNotSupported"
 	RuleErrorAccessMemberDoesntExist                    RuleError = "RuleErrorAccessMemberDoesntExist"

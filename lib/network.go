@@ -6549,6 +6549,7 @@ type AccessGroupMemberOperationType uint8
 const (
 	AccessGroupMemberOperationTypeAdd    AccessGroupMemberOperationType = 0
 	AccessGroupMemberOperationTypeRemove AccessGroupMemberOperationType = 1
+	AccessGroupMemberOperationTypeUpdate AccessGroupMemberOperationType = 2
 )
 
 // AccessGroupMembersMetadata is the metadata for a transaction to update the members of an access group.
@@ -6585,10 +6586,7 @@ func (txnData *AccessGroupMembersMetadata) ToBytes(preSignature bool) ([]byte, e
 	// AccessGroupKeyName
 	data = append(data, EncodeByteArray(txnData.AccessGroupKeyName)...)
 	// AccessGroupMembersList
-	data = append(data, UintToBuf(uint64(len(txnData.AccessGroupMembersList)))...)
-	for _, accessGroupMember := range txnData.AccessGroupMembersList {
-		data = append(data, accessGroupMember.ToBytes()...)
-	}
+	data = append(data, encodeAccessGroupMembersList(txnData.AccessGroupMembersList)...)
 	// AccessGroupMemberOperationType
 	data = append(data, UintToBuf(uint64(txnData.AccessGroupMemberOperationType))...)
 
@@ -6615,19 +6613,10 @@ func (txnData *AccessGroupMembersMetadata) FromBytes(data []byte) error {
 	}
 
 	// AccessGroupMembersList
-	numAccessGroupMembers, err := ReadUvarint(rr)
+	ret.AccessGroupMembersList, err = decodeAccessGroupMembersList(rr)
 	if err != nil {
 		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
-			"Problem reading numAccessGroupMembers")
-	}
-	ret.AccessGroupMembersList = make([]*AccessGroupMember, numAccessGroupMembers)
-	for ii := uint64(0); ii < numAccessGroupMembers; ii++ {
-		ret.AccessGroupMembersList[ii] = &AccessGroupMember{}
-		err = ret.AccessGroupMembersList[ii].FromBytes(rr)
-		if err != nil {
-			return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
-				"Problem reading AccessGroupMembersList[%d]", ii)
-		}
+			"Problem reading AccessGroupMembersList")
 	}
 
 	// AccessGroupMemberOperationType
@@ -6685,6 +6674,37 @@ func (member *AccessGroupMember) FromBytes(rr *bytes.Reader) error {
 	member.ExtraData = extraData
 
 	return nil
+}
+
+func encodeAccessGroupMembersList(members []*AccessGroupMember) []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(uint64(len(members)))...)
+	for _, accessGroupMember := range members {
+		data = append(data, accessGroupMember.ToBytes()...)
+	}
+	return data
+}
+
+func decodeAccessGroupMembersList(rr *bytes.Reader) ([]*AccessGroupMember, error) {
+	var members []*AccessGroupMember
+
+	numAccessGroupMembers, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "decodeAccessGroupMembersList: "+
+			"Problem reading numAccessGroupMembers")
+	}
+	members = make([]*AccessGroupMember, numAccessGroupMembers)
+	for ii := uint64(0); ii < numAccessGroupMembers; ii++ {
+		members[ii] = &AccessGroupMember{}
+		err = members[ii].FromBytes(rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "decodeAccessGroupMembersList: "+
+				"Problem reading AccessGroupMembersList[%d]", ii)
+		}
+	}
+
+	return members, nil
 }
 
 // =======================================================================================
