@@ -85,8 +85,8 @@ var (
 // everything is flushed at once to the db (be it badger or postgres). There is no other way that transactions can be
 // connected. In particular, it will never be the case that transaction will be flushed without a whole block being mined;
 // however, this is what we do in our unit tests, which is counter-intuitive, and (on a side-note) has created a lot of
-// overhead when developing complex features such as hypersync. When a transaction is connected, it will create UtxoView
-// and UtxoOps mappings; which will be persisted to the db when the block is mined and the mempool is flushed. Next,
+// overhead when developing complex features such as postgres or hypersync. When a transaction is connected, it will create
+// UtxoView and UtxoOps mappings; which will be persisted to the db when the block is mined and the mempool is flushed. Next,
 // transaction can be disconnected when the block is disconnected. There is no other way for a transaction to be
 // disconnected, and the order in which transactions are disconnected is always the reverse of the order in which they were
 // connected. When a transaction is disconnected, it will either set a "isDeleted" entry in UtxoView, which will indicate
@@ -241,9 +241,10 @@ func (tes *transactionTestSuite) RunPostgresTest() {
 	require := require.New(tes.t)
 	tm := tes.InitializeChainAndGetTestMeta(false, true)
 	defer func() {
+		// Note that deferred function will be called even if the rest of the function panics.
 		glog.Infof("RunPostgresTest: Got into deferred cleanup function")
 		require.NoError(StopTestEmbeddedPostgresDB(tm.embpg))
-		glog.Infof(CLog(Yellow, "RunPostgresTest: succesfully stopped embedded postgres db"))
+		glog.Infof(CLog(Yellow, "RunPostgresTest: successfully stopped embedded postgres db"))
 	}()
 
 	for _, testVectors := range tes.testVectorsByBlock {
