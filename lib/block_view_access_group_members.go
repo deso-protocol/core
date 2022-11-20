@@ -174,6 +174,19 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 		}
 	}
 
+	// We also validate that each access group member entry in transaction metadata points to an existing, previously registered access group.
+	for _, accessMember := range txMeta.AccessGroupMembersList {
+		if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
+			accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName, blockHeight); err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: "+
+				"Problem validating access group for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+				accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+		}
+	}
+
+	// Some operations might modify existing access group members, so we need to keep track of the previous entries for UtxoOps.
+	var prevAccessGroupMemberEntries []*AccessGroupMemberEntry
+
 	// Determine the operation that we want to perform on the access group members.
 	switch txMeta.AccessGroupMemberOperationType {
 	case AccessGroupMemberOperationTypeAdd:
@@ -198,18 +211,9 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupMemberCantAddOwnerBySameGroup,
 					"_disconnectAccessGroupMembers: Can't add the owner of the group as a member of the group using the same group key name.")
 			}
-			// Now we should validate that the accessMember public key and access key name are valid, and point to
-			// an existing access group. Moreover, we should validate that the access member hasn't already been added
-			// to this group in the past. I.e. we check the following:
-			// 	- Validate that the member's access group exist
-			// 	- Validate that the member wasn't already added to the main group.
-			if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
-				accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName, blockHeight); err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: "+
-					"Problem validating access group for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
-					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
-			}
-
+			// We have previously validated that the accessMember public key and access key name are valid, and point to
+			// an existing access group. We should now validate that the access member hasn't already been added
+			// to this group in the past.
 			memberGroupEntry, err := bav.GetAccessGroupMemberEntry(NewPublicKey(accessMember.AccessGroupMemberPublicKey),
 				NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
 			if err != nil {
@@ -244,24 +248,112 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 		}
 
 	case AccessGroupMemberOperationTypeRemove:
+		// AccessGroupMemberOperationTypeRemove operation is used to remove members from an access group. The result of
+		// this operation is that all the members specified in the transaction's metadata will be purged from the DB as
+		// if they were never added to the access group in the first place. It's worth noting, that this "removal" of
+		// access group members is not theoretically correct because we will maintain the same
+		// AccessGroupPublicKey/PrivateKey for the access group, meaning that the access group member still has
+		// the knowledge of this keypair (including the secret), provided they have persisted this information off-chain.
+		// We can't force removed access group members to "unsee" the access group secret. There is a remedy to this,
+		// although it involves slightly more complexity. Essentially, to properly remove members from the access group,
+		// we would need to rotate the group's secret to a different key and treat it as the new secret. Like I mentioned,
+		// this involves a bit more complexity, especially to do efficiently. As such, we refrain from implementing this
+		// solution yet, and a new operation will be added in the future if needed.
+		for _, accessMember := range txMeta.AccessGroupMembersList {
+			// Because we're just removing members, the EncryptedKey field for each member should be left empty.
+			// If it isn't, we'll throw a RuleError.
+			if len(accessMember.EncryptedKey) != 0 {
+				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupMemberRemoveEncryptedKeyNotEmpty,
+					"_connectAccessGroupMembers: Encrypted key should be empty for OperationTypeRemove, but received (EncryptedKey=%v) for "+
+						"member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					accessMember.EncryptedKey, accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
 
-		return 0, 0, nil, errors.Wrapf(
-			RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupCreate: "+
-				"Operation type %v not supported yet.", txMeta.AccessGroupMemberOperationType)
+			// Fetch the access group member entry for each member from the transaction metadata.
+			memberGroupEntry, err := bav.GetAccessGroupMemberEntry(NewPublicKey(accessMember.AccessGroupMemberPublicKey),
+				NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: "+
+					"Problem getting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+			// We have to make sure this member entry has been added in a previous transaction, and that the member entry wasn't deleted.
+			// By inverse, it means we will error when the entry is nil or has been deleted.
+			if memberGroupEntry == nil || memberGroupEntry.isDeleted {
+				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupMemberDoesntExistOrIsDeleted,
+					"_connectAccessGroupMembers: member doesn't exist or has been or already deleted, can't delete the "+
+						"member again with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName %v)",
+					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+
+			// Add the existing access member group entry to our list of previous entries. Make copy to it so that we
+			// don't get some unexpected results if we ever modify the UtxoView entry.
+			copyAccessGroupMemberEntry := *memberGroupEntry
+			prevAccessGroupMemberEntries = append(prevAccessGroupMemberEntries, &copyAccessGroupMemberEntry)
+
+			// Now delete the existing access group member entry.
+			if err := bav._deleteAccessGroupMember(memberGroupEntry, NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
+				NewGroupKeyName(txMeta.AccessGroupKeyName)); err != nil {
+
+				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: "+
+					"Problem deleting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+		}
 	case AccessGroupMemberOperationTypeUpdate:
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupCreate: "+
+			RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupMembers: "+
 				"Operation type %v not supported yet.", txMeta.AccessGroupMemberOperationType)
 	default:
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupCreate: "+
+			RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupMembers: "+
 				"Operation type %v not supported.", txMeta.AccessGroupMemberOperationType)
+	}
+
+	// Sanity-check that the length of the prevAccessGroupMemberEntries list is the same as the member list in txn metadata, and that they match.
+	switch txMeta.AccessGroupMemberOperationType {
+	case AccessGroupMemberOperationTypeRemove, AccessGroupMemberOperationTypeUpdate:
+		if len(txMeta.AccessGroupMembersList) != len(prevAccessGroupMemberEntries) {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorAccessGroupPrevMembersListIsIncorrect, "_connectAccessGroupMembers: "+
+					"Size of PrevAccessGroupMemberEntries array (Len=%v) differs from the length of the access group "+
+					"members array in txn metadata (Len=%v). This should never happen.",
+				len(txMeta.AccessGroupMembersList), len(prevAccessGroupMemberEntries))
+		}
+		// As a sanity-check we will iterate over all members in the prevAccessGroupMembers and ensure they match txMeta members.
+		prevAccessGroupMemberPublicKeys := make(map[PublicKey]struct{})
+		for _, prevAccessMember := range prevAccessGroupMemberEntries {
+			if _, exists := prevAccessGroupMemberPublicKeys[*prevAccessMember.AccessGroupMemberPublicKey]; !exists {
+				prevAccessGroupMemberPublicKeys[*prevAccessMember.AccessGroupMemberPublicKey] = struct{}{}
+			} else {
+				return 0, 0, nil, errors.Wrapf(
+					RuleErrorAccessGroupPrevMembersListIsIncorrect, "_connectAccessGroupMembers: "+
+						"Failed sanity-check on prevAccessGroupMemberEntries, a duplicate access group member public key (%v) was found with ",
+					*prevAccessMember.AccessGroupMemberPublicKey)
+			}
+		}
+		if len(prevAccessGroupMemberPublicKeys) != len(txMeta.AccessGroupMembersList) {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorAccessGroupPrevMembersListIsIncorrect, "_connectAccessGroupMembers: Failed sanity-check "+
+					"on length of prevAccessGroupMemberPublicKeys, was expecting (len=%v) but got (len=%v)",
+				len(txMeta.AccessGroupMembersList), len(prevAccessGroupMemberPublicKeys))
+		}
+		for _, accessMember := range txMeta.AccessGroupMembersList {
+			if _, exists := prevAccessGroupMemberPublicKeys[*NewPublicKey(accessMember.AccessGroupMemberPublicKey)]; !exists {
+				return 0, 0, nil, errors.Wrapf(
+					RuleErrorAccessGroupPrevMembersListIsIncorrect, "_connectAccessGroupMembers: "+
+						"Failed sanity-check on existence of member public keys from txMeta in the prevAccessGroupMemberPublicKeys. "+
+						"Was expecting that member with AccessGroupMemberPublicKey (%v) exists, but they don't",
+					accessMember.AccessGroupMemberPublicKey)
+			}
+		}
 	}
 
 	// utxoOpsForTxn is an array of UtxoOperations. We append to it below to record the UtxoOperations
 	// associated with this transaction.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type: OperationTypeAccessGroupMembers,
+		Type:                       OperationTypeAccessGroupMembers,
+		PrevAccessGroupMembersList: prevAccessGroupMemberEntries,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -300,6 +392,18 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 			"Problem validating access public key or group key name for txnMeta (%v): error: %v", txMeta, err)
 	}
 
+	// Make sure the access group member public key and key name are valid and that they point to an existing
+	// access group.
+	for _, accessMember := range txMeta.AccessGroupMembersList {
+		if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
+			accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName, blockHeight); err != nil {
+			return errors.Wrapf(err, "_disconnectAccessGroupMembers: "+
+				"Problem validating public key or access key for member with "+
+				"(AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+				accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+		}
+	}
+
 	// Loop over members to make sure they are the same.
 	switch txMeta.AccessGroupMemberOperationType {
 	case AccessGroupMemberOperationTypeAdd:
@@ -307,16 +411,6 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 		// AccessGroupMemberOperationTypeAdd is that a new member is added to the access group, we can just delete the
 		// members from the metadata, since a member could have only been added if he hasn't existed before.
 		for _, accessMember := range txMeta.AccessGroupMembersList {
-			// Make sure the access group member public key and key name are valid and that they point to an existing
-			// access group.
-			if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
-				accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName, blockHeight); err != nil {
-				return errors.Wrapf(err, "_disconnectAccessGroupMembers: "+
-					"Problem validating public key or access key for member with "+
-					"(AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
-					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
-			}
-
 			// Now fetch the access group member entry and verify that it exists.
 			memberGroupEntry, err := bav.GetAccessGroupMemberEntry(NewPublicKey(accessMember.AccessGroupMemberPublicKey),
 				NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
@@ -343,9 +437,50 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 		}
 
 	case AccessGroupMemberOperationTypeRemove:
-		// TODO: Implement this later
-		return errors.Wrapf(RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupCreate: "+
-			"Operation type %v not supported yet.", txMeta.AccessGroupMemberOperationType)
+		// Sanity-check that all information about access group members in txMeta is correct.
+		for _, accessMember := range txMeta.AccessGroupMembersList {
+			// sanity-check that the EncryptedKey is left empty for all the removed members.
+			if len(accessMember.EncryptedKey) != 0 {
+				return errors.Wrapf(RuleErrorAccessGroupMemberRemoveEncryptedKeyNotEmpty,
+					"_disconnectAccessGroupMembers: Encrypted key should be empty for OperationTypeRemove, but received (EncryptedKey=%v) for "+
+						"member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					accessMember.EncryptedKey, accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+
+			// Fetch the access group member entry for each member from the transaction metadata.
+			memberGroupEntry, err := bav.GetAccessGroupMemberEntry(NewPublicKey(accessMember.AccessGroupMemberPublicKey),
+				NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectAccessGroupMembers: "+
+					"Problem getting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+
+			// We expect that the member entry we are trying to revert-remove has been deleted from the UtxoView.
+			// By inverse, we will error if the entry exists and isn't deleted.
+			if memberGroupEntry != nil && !memberGroupEntry.isDeleted {
+				return errors.Wrapf(RuleErrorAccessMemberAlreadyExists, "_disconnectAccessGroupMembers: "+
+					"member already exists for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName %v)",
+					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+		}
+		// Sanity-check that the size of the prevAccessGroupMembers is the same as the txMeta access group members.
+		if len(accessGroupMembersOp.PrevAccessGroupMembersList) != len(txMeta.AccessGroupMembersList) {
+			return errors.Wrapf(RuleErrorAccessGroupPrevMembersListIsIncorrect, "_disconnectAccessGroupMembers: "+
+				"Failed sanity-check on length of prevAccessGroupMemberPublicKeys, was expecting (len=%v) but got (len=%v)",
+				len(txMeta.AccessGroupMembersList), len(accessGroupMembersOp.PrevAccessGroupMembersList))
+		}
+		// Now that we've validated everything, we can revert to previous access group member entries.
+		for _, prevAccessMember := range accessGroupMembersOp.PrevAccessGroupMembersList {
+			copyPrevAccessMember := *prevAccessMember
+			if err := bav._setAccessGroupMemberEntry(&copyPrevAccessMember, NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
+				NewGroupKeyName(txMeta.AccessGroupKeyName)); err != nil {
+				return errors.Wrapf(err, "_disconnectAccessGroupMembers: Problem reverting to previous access group member "+
+					"entry for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName %v)",
+					prevAccessMember.AccessGroupMemberPublicKey, prevAccessMember.AccessGroupMemberKeyName)
+			}
+		}
+
 	default:
 		return errors.Wrapf(RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupCreate: "+
 			"Operation type %v not supported.", txMeta.AccessGroupMemberOperationType)

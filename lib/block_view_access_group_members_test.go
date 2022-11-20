@@ -42,6 +42,9 @@ func (data *accessGroupMembersTestData) GetInputType() transactionTestInputType 
 	return transactionTestInputTypeAccessGroupMembers
 }
 
+// TODO:
+// 	1) for removes, remember that verifyUtxo and verifyDB will work inversely to the adds.
+// 	2) make sure verifyDb checks both the membership index and the enumeration index.
 func TestAccessGroupMembersAdd(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -117,17 +120,27 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	tv6Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName2, EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
-	tv6 := _createAccessGroupMembersTestVector("TEST 5: (PASS) Connect access group members transaction to the "+
+	tv6 := _createAccessGroupMembersTestVector("TEST 6: (FAIL) Connect access group members transaction to the "+
 		"access group made by user 0 with group name 1, again adding user 0 but by group name 2", m0Priv, m0PubBytes, groupName1,
 		tv6Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessMemberAlreadyExists)
-	tv7Members := []*AccessGroupMember{{
-		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil,
-	}}
-	tv7 := _createAccessGroupMembersTestVector("TEST 7: (PASS) Connect access group members transaction to the "+
+	tv7 := _createAccessGroupMembersTestVector("TEST 7: (FAIL) Connect access group members transaction to the "+
+		"access group made by user 0 with group name 1, with empty members list", m0Priv, m0PubBytes, groupName1,
+		[]*AccessGroupMember{}, AccessGroupMemberOperationTypeAdd, RuleErrorAccessGroupMembersListCannotBeEmpty)
+	tv8Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName()[:], EncryptedKey: []byte{1}, ExtraData: nil},
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName()[:], EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv8 := _createAccessGroupMembersTestVector("TEST 8: (FAIL) Connect access group members transaction to the "+
+		"access group made by user 1 with group name 1, adding user 1 by base key twice within same transaction",
+		m0Priv, m0PubBytes, groupName1, tv8Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessGroupMemberListDuplicateMember)
+	tv9Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv9 := _createAccessGroupMembersTestVector("TEST 9: (PASS) Connect access group members transaction to the "+
 		"access group made by user 0 with group name 2, adding user 0 by group name 1", m0Priv, m0PubBytes, groupName2,
-		tv7Members, AccessGroupMemberOperationTypeAdd, nil)
+		tv9Members, AccessGroupMemberOperationTypeAdd, nil)
 
-	tvv := [][]*transactionTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7}}
+	tvv := [][]*transactionTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9}}
 	tes := NewTransactionTestSuite(t, tvv, tConfig)
 	tes.Run()
 }

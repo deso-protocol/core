@@ -821,6 +821,14 @@ func (accessGroupMember *PGAccessGroupMemberEntry) ToAccessGroupMemberEntry() (
 		}
 }
 
+type PGAccessGroupMemberEnumerationEntry struct {
+	tableName struct{} `pg:"pg_access_group_member_enumeration_index"`
+
+	AccessGroupMemberPublicKey *PublicKey    `pg:",pk,type:bytea"`
+	AccessGroupOwnerPublicKey  *PublicKey    `pg:",pk,type:bytea"`
+	AccessGroupKeyName         *GroupKeyName `pg:",pk,type:bytea"`
+}
+
 func HexToUint256(input string) *uint256.Int {
 	output := uint256.NewInt()
 
@@ -2635,6 +2643,8 @@ func (postgres *Postgres) flushAccessGroupEntries(tx *pg.Tx, view *UtxoView) err
 func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoView) error {
 	var insertEntries []*PGAccessGroupMemberEntry
 	var deleteEntries []*PGAccessGroupMemberEntry
+	var insertEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
+	var deleteEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
 
 	for id, entry := range view.GroupMembershipKeyToAccessGroupMember {
 		// copy the iterator just in case.
@@ -2646,11 +2656,18 @@ func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoVie
 
 		accessGroupMemberEntry := &PGAccessGroupMemberEntry{}
 		accessGroupMemberEntry.FromAccessGroupMemberEntry(idCopy.GroupOwnerPublicKey, idCopy.GroupKeyName, entry)
+		accessGroupMemberEnumerationEntry := &PGAccessGroupMemberEnumerationEntry{
+			AccessGroupMemberPublicKey: accessGroupMemberEntry.AccessGroupMemberPublicKey,
+			AccessGroupOwnerPublicKey:  accessGroupMemberEntry.AccessGroupOwnerPublicKey,
+			AccessGroupKeyName:         accessGroupMemberEntry.AccessGroupKeyName,
+		}
 
 		if entry.isDeleted {
 			deleteEntries = append(deleteEntries, accessGroupMemberEntry)
+			deleteEnumerationEntries = append(deleteEnumerationEntries, accessGroupMemberEnumerationEntry)
 		} else {
 			insertEntries = append(insertEntries, accessGroupMemberEntry)
+			insertEnumerationEntries = append(insertEnumerationEntries, accessGroupMemberEnumerationEntry)
 		}
 	}
 
@@ -2662,12 +2679,23 @@ func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoVie
 		if err != nil {
 			return fmt.Errorf("Postgres.flushAccessGroupMemberEntries: insert: %v", err)
 		}
+		_, err = tx.Model(&insertEnumerationEntries).
+			WherePK().
+			Returning("NULL").
+			Insert()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushAccessGroupMemberEntries: insertEnumerationEntries: %v", err)
+		}
 	}
 
 	if len(deleteEntries) > 0 {
 		_, err := tx.Model(&deleteEntries).Returning("NULL").Delete()
 		if err != nil {
 			return fmt.Errorf("Postgres.flushAccessGroupMemberEntries: delete: %v", err)
+		}
+		_, err = tx.Model(&deleteEnumerationEntries).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushAccessGroupMemberEntries: deleteEnumerationEntries: %v", err)
 		}
 	}
 
@@ -3153,8 +3181,8 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
-		Order("block_height ASC").                                        // Then oldest first (FIFO)
-		Order("order_id DESC").                                           // Then match BadgerDB ordering
+		Order("block_height ASC"). // Then oldest first (FIFO)
+		Order("order_id DESC"). // Then match BadgerDB ordering
 		Select()
 
 	if err != nil {

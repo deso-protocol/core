@@ -825,6 +825,11 @@ type UtxoOperation struct {
 	// that represent all orders fulfilled by the DAO Coin Limit Order transaction.
 	// These are used to construct notifications for order fulfillment.
 	FilledDAOCoinLimitOrders []*FilledDAOCoinLimitOrder
+
+	// PrevAccessGroupMembersList is a list of previous access group member entries.
+	// It is used in operations that modify existing access group members, such as
+	// AccessGroupMemberOperationTypeRemove or AccessGroupMemberOperationTypeUpdate.
+	PrevAccessGroupMembersList []*AccessGroupMemberEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1107,6 +1112,18 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 	data = append(data, UintToBuf(uint64(len(op.FilledDAOCoinLimitOrders)))...)
 	for _, entry := range op.FilledDAOCoinLimitOrders {
 		data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
+	}
+
+	//
+	// DeSoAccessGroupsMigration Encoder Migration
+	//
+
+	// PrevAccessGroupMembersList
+	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		data = append(data, UintToBuf(uint64(len(op.PrevAccessGroupMembersList)))...)
+		for _, entry := range op.PrevAccessGroupMembersList {
+			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
+		}
 	}
 
 	return data
@@ -1641,6 +1658,26 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 	} else {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FilledDAOCoinLimitOrder")
+	}
+
+	//
+	// DeSoAccessGroupsMigration Encoder Migration
+	//
+
+	// PrevAccessGroupMembersList
+	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		if lenPrevAccessGroupMembersList, err := ReadUvarint(rr); err == nil {
+			for ; lenPrevAccessGroupMembersList > 0; lenPrevAccessGroupMembersList-- {
+				accessGroupMemberEntry := &AccessGroupMemberEntry{}
+				if exist, err := DecodeFromBytes(accessGroupMemberEntry, rr); exist && err == nil {
+					op.PrevAccessGroupMembersList = append(op.PrevAccessGroupMembersList, accessGroupMemberEntry)
+				} else {
+					return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevAccessGroupMembersList")
+				}
+			}
+		} else {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevAccessGroupMembersList")
+		}
 	}
 
 	return nil
