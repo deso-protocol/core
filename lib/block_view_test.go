@@ -204,11 +204,27 @@ func NewTransactionTestSuite(t *testing.T, testVectorsByBlock [][]*transactionTe
 // Run is the main method of the transactionTestSuite. It will run the test suite and verify that all the testVectors are
 // pass a variety of tests.
 func (tes *transactionTestSuite) Run() {
+	// Make sure all test vectors have unique Ids.
+	tes.ValidateTestVectors()
+
 	if tes.config.testBadger {
 		tes.RunBadgerTest()
 	}
 	if tes.config.testPostgres {
 		tes.RunPostgresTest()
+	}
+}
+
+// Iterate over all testVectors and ensure all of them have unique Ids.
+func (tes *transactionTestSuite) ValidateTestVectors() {
+	testVectorsIds := make(map[transactionTestIdentifier]struct{})
+	for _, testVectorBlocks := range tes.testVectorsByBlock {
+		for _, testVectors := range testVectorBlocks {
+			if _, exists := testVectorsIds[testVectors.id]; exists {
+				tes.t.Fatalf("Duplicate test vector id: %v", testVectors.id)
+			}
+			testVectorsIds[testVectors.id] = struct{}{}
+		}
 	}
 }
 

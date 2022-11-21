@@ -3181,8 +3181,8 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
-		Order("block_height ASC"). // Then oldest first (FIFO)
-		Order("order_id DESC"). // Then match BadgerDB ordering
+		Order("block_height ASC").                                        // Then oldest first (FIFO)
+		Order("order_id DESC").                                           // Then match BadgerDB ordering
 		Select()
 
 	if err != nil {
@@ -3342,6 +3342,21 @@ func (postgres *Postgres) GetAccessGroupMemberEntry(accessGroupMemberPublicKey P
 		return nil
 	}
 	return accessGroupMember
+}
+
+func (postgres *Postgres) GetAccessGroupMemberEnumerationEntry(accessGroupMemberPublicKey PublicKey,
+	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) bool {
+
+	accessGroupEnumerationEntry := PGAccessGroupMemberEnumerationEntry{
+		AccessGroupMemberPublicKey: &accessGroupMemberPublicKey,
+		AccessGroupOwnerPublicKey:  &accessGroupOwnerPublicKey,
+		AccessGroupKeyName:         &accessGroupKeyName,
+	}
+	err := postgres.db.Model(&accessGroupEnumerationEntry).WherePK().First()
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 //

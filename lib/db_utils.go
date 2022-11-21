@@ -1836,7 +1836,7 @@ func DBGetAccessGroupMemberEntry(db *badger.DB, snap *Snapshot,
 		return err
 	})
 	if err != nil && err != badger.ErrKeyNotFound {
-		return nil, errors.Wrapf(err, "DBGetAccessGroupMemberEntry: Problem getting access group member entry")
+		return nil, errors.Wrapf(err, "GetAccessGroupMemberEntry: Problem getting access group member entry")
 	}
 	return ret, nil
 }

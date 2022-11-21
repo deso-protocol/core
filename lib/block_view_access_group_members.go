@@ -27,7 +27,7 @@ func (bav *UtxoView) GetAccessGroupMemberEntry(memberPublicKey *PublicKey, group
 
 	// If we get here, it means that the group has not been fetched in this utxoView. We fetch it from the db.
 	dbAdapter := bav.GetDbAdapter()
-	accessGroupMember, err := dbAdapter.DBGetAccessGroupMemberEntry(*memberPublicKey, *groupOwnerPublicKey, *groupKeyName)
+	accessGroupMember, err := dbAdapter.GetAccessGroupMemberEntry(*memberPublicKey, *groupOwnerPublicKey, *groupKeyName)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetAccessGroupMemberEntry: Problem fetching access group member entry")
 	}

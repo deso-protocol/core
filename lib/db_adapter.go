@@ -159,7 +159,7 @@ func (adapter *DbAdapter) GetAccessGroupEntryByAccessGroupId(accessGroupId *Acce
 // AccessGroupMembers
 //
 
-func (adapter *DbAdapter) DBGetAccessGroupMemberEntry(accessGroupMemberPublicKey PublicKey,
+func (adapter *DbAdapter) GetAccessGroupMemberEntry(accessGroupMemberPublicKey PublicKey,
 	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) (*AccessGroupMemberEntry, error) {
 
 	if adapter.postgresDb != nil {
@@ -173,5 +173,18 @@ func (adapter *DbAdapter) DBGetAccessGroupMemberEntry(accessGroupMemberPublicKey
 	} else {
 		return DBGetAccessGroupMemberEntry(adapter.badgerDb, adapter.snapshot,
 			accessGroupMemberPublicKey, accessGroupOwnerPublicKey, accessGroupKeyName)
+	}
+}
+
+func (adapter *DbAdapter) GetAccessGroupMemberEnumerationEntry(accessGroupMemberPublicKey PublicKey,
+	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) (_exists bool, _err error) {
+
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetAccessGroupMemberEnumerationEntry(accessGroupMemberPublicKey,
+			accessGroupOwnerPublicKey, accessGroupKeyName), nil
+	} else {
+		// TODO: Use similar function signatures.
+		return DBGetAccessGroupMemberExistenceFromEnumerationIndex(adapter.badgerDb, adapter.snapshot,
+			accessGroupMemberPublicKey, accessGroupKeyName, accessGroupOwnerPublicKey)
 	}
 }

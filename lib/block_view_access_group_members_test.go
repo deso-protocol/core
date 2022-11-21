@@ -42,9 +42,6 @@ func (data *accessGroupMembersTestData) GetInputType() transactionTestInputType 
 	return transactionTestInputTypeAccessGroupMembers
 }
 
-// TODO:
-// 	1) for removes, remember that verifyUtxo and verifyDB will work inversely to the adds.
-// 	2) make sure verifyDb checks both the membership index and the enumeration index.
 func TestAccessGroupMembersAdd(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -173,7 +170,7 @@ func _createAccessGroupMembersTestVector(id string, userPrivateKey string, acces
 			utxoView *UtxoView, expectDeleted bool) {
 			dataSpace := tv.inputSpace.(*accessGroupMembersTestData)
 			_verifyUtxoViewEntryForAccessGroupMembers(
-				tm.t, utxoView, expectDeleted,
+				tm.t, utxoView, expectDeleted, operationType,
 				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupKeyName,
 				dataSpace.accessGroupMembersList)
 		},
@@ -181,7 +178,7 @@ func _createAccessGroupMembersTestVector(id string, userPrivateKey string, acces
 			dbAdapter *DbAdapter, expectDeleted bool) {
 			dataSpace := tv.inputSpace.(*accessGroupMembersTestData)
 			_verifyDbEntryForAccessGroupMembers(
-				tm.t, dbAdapter, expectDeleted,
+				tm.t, dbAdapter, expectDeleted, operationType,
 				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupKeyName,
 				dataSpace.accessGroupMembersList)
 		},
@@ -206,7 +203,8 @@ func _createSignedAccessGroupMembersTransaction(t *testing.T, chain *Blockchain,
 }
 
 func _verifyUtxoViewEntryForAccessGroupMembers(t *testing.T, utxoView *UtxoView, expectDeleted bool,
-	accessGroupOwnerPublicKey []byte, accessGroupKeyName []byte, accessGroupMembersList []*AccessGroupMember) {
+	operationType AccessGroupMemberOperationType, accessGroupOwnerPublicKey []byte, accessGroupKeyName []byte,
+	accessGroupMembersList []*AccessGroupMember) {
 
 	require := require.New(t)
 
@@ -216,37 +214,79 @@ func _verifyUtxoViewEntryForAccessGroupMembers(t *testing.T, utxoView *UtxoView,
 
 		// If the group has already been fetched in this utxoView, then we get it directly from there.
 		accessGroupMember, exists := utxoView.GroupMembershipKeyToAccessGroupMember[*groupMembershipKey]
-		if !expectDeleted {
-			require.Equal(true, exists)
-			require.NotNil(accessGroupMember)
-			require.Equal(false, accessGroupMember.isDeleted)
-			require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
-		} else {
-			if !exists || accessGroupMember == nil || accessGroupMember.isDeleted {
-				return
+
+		switch operationType {
+		case AccessGroupMemberOperationTypeAdd, AccessGroupMemberOperationTypeUpdate:
+			if !expectDeleted {
+				require.Equal(true, exists)
+				require.NotNil(accessGroupMember)
+				require.Equal(false, accessGroupMember.isDeleted)
+				require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+			} else {
+				if !exists || accessGroupMember == nil || accessGroupMember.isDeleted {
+					return
+				}
+				// It's possible that there is another testVector' that makes overlapping utxoEntries to this testVector.
+				// If it was connected later, we just check that the current UtxoView accessGroupMember entry is different.
+				require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
 			}
-			require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+		case AccessGroupMemberOperationTypeRemove:
+			// OperationTypeRemove will have inverted validation for the UtxoView than add/updates since it deletes the entry.
+			if !expectDeleted {
+				// TODO: do we want to also OR a case where accessGroupMember == nil? This would only be the case if we flushed.
+				if !exists || accessGroupMember == nil || accessGroupMember.isDeleted {
+					return
+				}
+				require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+			} else {
+				require.Equal(true, exists)
+				require.NotNil(accessGroupMember)
+				require.Equal(false, accessGroupMember.isDeleted)
+				require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+			}
 		}
 	}
 }
 
 func _verifyDbEntryForAccessGroupMembers(t *testing.T, dbAdapter *DbAdapter, expectDeleted bool,
-	accessGroupOwnerPublicKey []byte, accessGroupKeyName []byte, accessGroupMembersList []*AccessGroupMember) {
+	operationType AccessGroupMemberOperationType, accessGroupOwnerPublicKey []byte, accessGroupKeyName []byte,
+	accessGroupMembersList []*AccessGroupMember) {
 
 	require := require.New(t)
 
 	for _, member := range accessGroupMembersList {
 		// If the group has already been fetched in this utxoView, then we get it directly from there.
-		accessGroupMember, err := dbAdapter.DBGetAccessGroupMemberEntry(*NewPublicKey(member.AccessGroupMemberPublicKey),
+		accessGroupMember, err := dbAdapter.GetAccessGroupMemberEntry(*NewPublicKey(member.AccessGroupMemberPublicKey),
 			*NewPublicKey(accessGroupOwnerPublicKey), *NewGroupKeyName(accessGroupKeyName))
 		require.NoError(err)
-		if !expectDeleted {
-			require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
-		} else {
-			if accessGroupMember == nil {
-				return
+		accessGroupEnumerationEntry, err := dbAdapter.GetAccessGroupMemberEnumerationEntry(*NewPublicKey(member.AccessGroupMemberPublicKey),
+			*NewPublicKey(accessGroupOwnerPublicKey), *NewGroupKeyName(accessGroupKeyName))
+		require.NoError(err)
+
+		switch operationType {
+		case AccessGroupMemberOperationTypeAdd, AccessGroupMemberOperationTypeUpdate:
+			if !expectDeleted {
+				require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+				require.Equal(true, accessGroupEnumerationEntry)
+			} else {
+				if accessGroupMember == nil && !accessGroupEnumerationEntry {
+					return
+				}
+				require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+				require.Equal(false, accessGroupEnumerationEntry)
+
 			}
-			require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+		case AccessGroupMemberOperationTypeRemove:
+			if !expectDeleted {
+				if accessGroupMember == nil && !accessGroupEnumerationEntry {
+					return
+				}
+				require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+				require.Equal(false, accessGroupEnumerationEntry)
+			} else {
+				require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+				require.Equal(true, accessGroupEnumerationEntry)
+			}
 		}
 	}
 }
