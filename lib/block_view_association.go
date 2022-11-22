@@ -567,7 +567,11 @@ func (bav *UtxoView) GetUserAssociationByID(associationID *BlockHash) (*UserAsso
 	// First, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
 	associationEntry, exists := bav.AssociationMapKeyToUserAssociationEntry[AssociationMapKey{AssociationID: *associationID}]
-	if exists && associationEntry != nil && !associationEntry.isDeleted {
+	if exists && associationEntry != nil {
+		if associationEntry.isDeleted {
+			// If association entry is deleted, return nil.
+			return nil, nil
+		}
 		return associationEntry, nil
 	}
 	// If not found in the UTXO view, next check the database.
@@ -578,7 +582,11 @@ func (bav *UtxoView) GetPostAssociationByID(associationID *BlockHash) (*PostAsso
 	// First, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
 	associationEntry, exists := bav.AssociationMapKeyToPostAssociationEntry[AssociationMapKey{AssociationID: *associationID}]
-	if exists && associationEntry != nil && !associationEntry.isDeleted {
+	if exists && associationEntry != nil {
+		if associationEntry.isDeleted {
+			// If association entry is deleted, return nil.
+			return nil, nil
+		}
 		return associationEntry, nil
 	}
 	// If not found in the UTXO view, next check the database.
