@@ -2646,7 +2646,7 @@ func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoVie
 	var insertEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
 	var deleteEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
 
-	for id, entry := range view.GroupMembershipKeyToAccessGroupMember {
+	for id, entry := range view.AccessGroupMembershipKeyToAccessGroupMember {
 		// copy the iterator just in case.
 		idCopy := id
 		if entry == nil {

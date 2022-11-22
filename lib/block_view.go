@@ -51,7 +51,11 @@ type UtxoView struct {
 	AccessGroupIdToAccessGroupEntry map[AccessGroupId]*AccessGroupEntry
 
 	// Group Memberships
-	GroupMembershipKeyToAccessGroupMember map[GroupMembershipKey]*AccessGroupMemberEntry
+	AccessGroupMembershipKeyToAccessGroupMember map[AccessGroupMembershipKey]*AccessGroupMemberEntry
+
+	// Group Membership Enumeration Index.
+	// The member PublicKeys are sorted lexicographically.
+	AccessGroupIdToSortedGroupMemberPublicKeys map[AccessGroupId][]*PublicKey
 
 	// GroupMemberAttributes
 	// Mapping of GroupEnumerationKey to a map of AccessGroupMemberAttributeType to AttributeEntry
@@ -151,7 +155,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Access group entries
 	bav.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry)
-	bav.GroupMembershipKeyToAccessGroupMember = make(map[GroupMembershipKey]*AccessGroupMemberEntry)
+	bav.AccessGroupMembershipKeyToAccessGroupMember = make(map[AccessGroupMembershipKey]*AccessGroupMemberEntry)
+	bav.AccessGroupIdToSortedGroupMemberPublicKeys = make(map[AccessGroupId][]*PublicKey)
 	//bav.GroupMemberAttributes = make(map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]*AttributeEntry)
 	//bav.GroupEntryAttributes = make(map[AccessGroupKey]map[AccessGroupEntryAttributeType]*AttributeEntry)
 
@@ -270,17 +275,29 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.MessageKeyToMessageEntry[msgKey] = &newMsgEntry
 	}
 
-	// Copy access group data
+	// Copy access group entries
 	newView.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry, len(bav.AccessGroupIdToAccessGroupEntry))
 	for key, entry := range bav.AccessGroupIdToAccessGroupEntry {
 		newEntry := *entry
 		newView.AccessGroupIdToAccessGroupEntry[key] = &newEntry
 	}
 
-	newView.GroupMembershipKeyToAccessGroupMember = make(map[GroupMembershipKey]*AccessGroupMemberEntry, len(bav.GroupMembershipKeyToAccessGroupMember))
-	for key, member := range bav.GroupMembershipKeyToAccessGroupMember {
+	// Copy access group membership index
+	newView.AccessGroupMembershipKeyToAccessGroupMember = make(map[AccessGroupMembershipKey]*AccessGroupMemberEntry, len(bav.AccessGroupMembershipKeyToAccessGroupMember))
+	for key, member := range bav.AccessGroupMembershipKeyToAccessGroupMember {
 		newMember := *member
-		newView.GroupMembershipKeyToAccessGroupMember[key] = &newMember
+		newView.AccessGroupMembershipKeyToAccessGroupMember[key] = &newMember
+	}
+
+	// Copy access group id to sorted member public keys
+	newView.AccessGroupIdToSortedGroupMemberPublicKeys = make(map[AccessGroupId][]*PublicKey, len(bav.AccessGroupIdToSortedGroupMemberPublicKeys))
+	for key, members := range bav.AccessGroupIdToSortedGroupMemberPublicKeys {
+		newMembers := make([]*PublicKey, len(members))
+		for ii, member := range members {
+			newMember := *member
+			newMembers[ii] = &newMember
+		}
+		newView.AccessGroupIdToSortedGroupMemberPublicKeys[key] = newMembers
 	}
 
 	//newView.GroupMemberAttributes = make(map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]*AttributeEntry, len(bav.GroupMemberAttributes))

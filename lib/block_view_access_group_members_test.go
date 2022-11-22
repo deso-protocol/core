@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -91,29 +92,44 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	groupName1 := []byte("group1")
 	groupName2 := []byte("group2")
 
+	// Access group (m0Pub, groupName1) with access public key groupPk1.
 	tv1 := _createAccessGroupCreateTestVector("TEST 1: (PASS) Connect access group create transaction made by "+
-		"user 0", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1, nil,
+		"(pk0, groupName1)", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1, nil,
 		nil)
 	tv2Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
 	tv2 := _createAccessGroupMembersTestVector("TEST 2: (FAIL) Connect access group members transaction to the "+
-		"access group made by user 0 with group name 1, adding user 0 as member with the same access group name 1", m0Priv, m0PubBytes,
+		"access group made by (pk0, groupName1), re-adding yourself as member with (pk0, groupName1)", m0Priv, m0PubBytes,
 		groupName1, tv2Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessGroupMemberCantAddOwnerBySameGroup)
 	tv3Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
 	tv3 := _createAccessGroupMembersTestVector("TEST 3: (PASS) Connect access group members transaction to the "+
-		"access group made by user 0 with group name 1, adding user 0 as member with the base access group", m0Priv, m0PubBytes,
+		"access group made by (user0, groupName1), adding as member (pk0, baseGroup)", m0Priv, m0PubBytes,
 		groupName1, tv3Members, AccessGroupMemberOperationTypeAdd, nil)
-	tv4 := _createAccessGroupCreateTestVector("TEST 4: (PASS) Connect access group create transaction made by "+
-		"user 0 with group name 2", m0Priv, m0PubBytes, m0PubBytes, groupPk2, groupName2, nil, nil)
-	tv5Members := []*AccessGroupMember{{
+	tv4Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
-	tv5 := _createAccessGroupMembersTestVector("TEST 5: (FAIL) Connect access group members transaction to the "+
-		"access group made by user 0 with group name 1, again adding user 0 by base group key", m0Priv, m0PubBytes, groupName1,
-		tv5Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessMemberAlreadyExists)
+	tv4 := _createAccessGroupMembersTestVector("TEST 5: (FAIL) Connect access group members transaction to the "+
+		"access group made by (pk0, groupName1), again adding as member (pk0, baseGroup)", m0Priv, m0PubBytes, groupName1,
+		tv4Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessMemberAlreadyExists)
+	tv4.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
+		utxoView, err := tm.mempool.GetAugmentedUniversalView()
+		require.NoError(err)
+		accessGroupMembers, err := utxoView.GetPaginatedAccessGroupMembersEnumerationEntries(
+			m0PublicKey, NewGroupKeyName(groupName1), []byte{}, 5)
+		require.NoError(err)
+		// The only member in the group should be (pk0).
+		require.Equal(1, len(accessGroupMembers))
+		require.Equal(true, bytes.Equal(accessGroupMembers[0].ToBytes(), m0PubBytes))
+		glog.Infof("Access group members: %v", accessGroupMembers)
+	}
+
+	// Access group (m0Pub, groupName2) with access public key groupPk2.
+	tv5 := _createAccessGroupCreateTestVector("TEST 4: (PASS) Connect access group create transaction made by "+
+		"(pk0, groupName2)", m0Priv, m0PubBytes, m0PubBytes, groupPk2, groupName2, nil, nil)
+	// TODO: Add an endpoint that retrieves paginated n members of an access group
 	tv6Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName2, EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
@@ -213,7 +229,7 @@ func _verifyUtxoViewEntryForAccessGroupMembers(t *testing.T, utxoView *UtxoView,
 			*NewPublicKey(accessGroupOwnerPublicKey), *NewGroupKeyName(accessGroupKeyName))
 
 		// If the group has already been fetched in this utxoView, then we get it directly from there.
-		accessGroupMember, exists := utxoView.GroupMembershipKeyToAccessGroupMember[*groupMembershipKey]
+		accessGroupMember, exists := utxoView.AccessGroupMembershipKeyToAccessGroupMember[*groupMembershipKey]
 
 		switch operationType {
 		case AccessGroupMemberOperationTypeAdd, AccessGroupMemberOperationTypeUpdate:

@@ -1159,6 +1159,28 @@ func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte) (_keysFoun
 	return keysFound, valsFound, nil
 }
 
+func _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte, startKey []byte, limit uint32) (_keysFound [][]byte) {
+	keysFound := [][]byte{}
+
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+
+	nodeIterator := txn.NewIterator(opts)
+	defer nodeIterator.Close()
+	prefix := dbPrefix
+	for nodeIterator.Seek(startKey); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+		key := nodeIterator.Item().Key()
+		keyCopy := make([]byte, len(key))
+		copy(keyCopy[:], key[:])
+
+		keysFound = append(keysFound, keyCopy)
+		if uint32(len(keysFound)) == limit {
+			break
+		}
+	}
+	return keysFound
+}
+
 // A helper function to enumerate a limited number of the values for a particular prefix.
 func _enumerateLimitedKeysReversedForPrefix(db *badger.DB, dbPrefix []byte, limit uint64) (_keysFound [][]byte, _valsFound [][]byte) {
 	keysFound := [][]byte{}
@@ -1976,51 +1998,55 @@ func DBGetGroupMemberExistenceFromEnumerationIndexWithTxn(txn *badger.Txn, snap 
 	return true, nil
 }
 
-func DBGetAllGroupMembersForAccessGroup(handle *badger.DB, snap *Snapshot,
-	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) ([]*AccessGroupMember, error) {
+func DBGetPaginatedAccessGroupMembersFromEnumerationIndex(handle *badger.DB, snap *Snapshot,
+	groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, startingAccessGroupMemberPublicKeyBytes []byte, limit uint32) (
+	_accessGroupMemberPublicKeys []*PublicKey, _err error) {
 
-	var accessGroupMembers []*AccessGroupMember
-
-	err := handle.View(func(txn *badger.Txn) error {
-		var err error
-		accessGroupMembers, err = DBGetAllGroupMembersForAccessGroupWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName)
+	var err error
+	var accessGroupMemberPublicKeys []*PublicKey
+	err = handle.View(func(txn *badger.Txn) error {
+		accessGroupMemberPublicKeys, err = DBGetPaginatedAccessGroupMembersFromEnumerationIndexWithTxn(txn, snap,
+			groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKeyBytes, limit)
 		return err
 	})
-
-	return accessGroupMembers, err
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetPaginatedAccessGroupMembersFromEnumerationIndex: "+
+			"Problem getting paginated access group members from enumeration index with "+
+			"groupOwnerPublicKey (%v) groupKeyName (%v) startGroupMemberPublicKey (%v) limit (%v)",
+			groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKeyBytes, limit)
+	}
+	return accessGroupMemberPublicKeys, nil
 }
 
-// DBGetAllGroupMembersForAccessGroupWithTxn Get all the group members for a given access group.
-func DBGetAllGroupMembersForAccessGroupWithTxn(txn *badger.Txn, snap *Snapshot,
-	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) ([]*AccessGroupMember, error) {
-	// enumerate all the group members for a given access group.
-	//var accessGroupMembers []*AccessGroupMember
-	//prefix := _dbSeekPrefixForAccessGroupMemberEnumerationIndex(groupOwnerPublicKey, groupKeyName)
-	//keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
-	//if err != nil {
-	//	return nil, errors.Wrapf(err, "DBGetAllGroupMembersForAccessGroupWithTxn: "+
-	//		"problem enumerating access key entries for prefix (%v)", prefix)
-	//}
-	//
-	//for _, keyBytes := range keysFound {
-	//	// The key is of the form <prefix, GroupOwnerPublicKey, AccessGroupKeyName, GroupMemberPublicKey>
-	//	// So we extract the GroupEnumerationKey.
-	//	enumerationKey := &GroupEnumerationKey{}
-	//	rr := bytes.NewReader(keyBytes)
-	//	if exists, err := DecodeFromBytes(enumerationKey, rr); !exists || err != nil {
-	//		return nil, errors.Wrapf(err, "DBGetAllGroupMembersForAccessGroupWithTxn: "+
-	//			"problem decoding key (%v)", keyBytes)
-	//	}
-	//	memberPublicKey := &enumerationKey.GroupMemberPublicKey
-	//	accessGroupMember := DBGetMemberFromMembershipIndexWithTxn(txn, snap, memberPublicKey, groupOwnerPublicKey, groupKeyName)
-	//	if accessGroupMember == nil {
-	//		return nil, errors.Wrapf(err, "DBGetAllGroupMembersForAccessGroupWithTxn: "+
-	//			"problem fetching access group member for public key %v", memberPublicKey)
-	//	}
-	//	accessGroupMembers = append(accessGroupMembers, accessGroupMember)
-	//}
+func DBGetPaginatedAccessGroupMembersFromEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot,
+	groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, startingAccessGroupMemberPublicKeyBytes []byte,
+	maxMembersToFetch uint32) (_accessGroupMemberPublicKeys []*PublicKey, _err error) {
 
-	return nil, nil
+	var accessGroupMembers []*PublicKey
+	prefix := _dbSeekPrefixForAccessGroupMemberEnumerationIndex(groupOwnerPublicKey, groupKeyName)
+	startKey := startingAccessGroupMemberPublicKeyBytes
+
+	keysFound := _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn, prefix, startKey, maxMembersToFetch)
+	for _, key := range keysFound {
+		memberPublicKeyBytes := key[len(prefix):]
+		accessGroupMembers = append(accessGroupMembers, NewPublicKey(memberPublicKeyBytes))
+	}
+
+	// Sanity-check that the public keys we found are actually lexicographically sorted.
+	for ii := 1; ii < len(accessGroupMembers); ii++ {
+		if bytes.Compare(accessGroupMembers[ii-1].ToBytes(), accessGroupMembers[ii].ToBytes()) >= 0 {
+			return nil, fmt.Errorf("DBGetPaginatedAccessGroupMembersFromEnumerationIndexWithTxn: "+
+				"Found unsorted access group members: %v %v", accessGroupMembers[ii-1], accessGroupMembers[ii])
+		}
+	}
+
+	// Sanity-check that we don't return the starting key.
+	if len(accessGroupMembers) > 0 && bytes.Compare(
+		startingAccessGroupMemberPublicKeyBytes, accessGroupMembers[0].ToBytes()) == 0 {
+		return accessGroupMembers[1:], nil
+	}
+
+	return accessGroupMembers, nil
 }
 
 func DBPutAccessGroupMemberEnumerationIndex(handle *badger.DB, snap *Snapshot, blockHeight uint64,

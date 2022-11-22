@@ -103,7 +103,6 @@ const (
 	EncoderTypeAccessGroupEntry
 	EncoderTypeAccessGroupMemberEntry
 	EncoderTypeGroupMembershipKey
-	EncoderTypeGroupEnumerationKey
 	//EncoderTypeGroupMemberAttributesKey
 	//EncoderTypeGroupEntryAttributesKey
 	//EncoderTypeAttributeEntry
@@ -211,9 +210,7 @@ func (encoderType EncoderType) New() DeSoEncoder {
 	case EncoderTypeAccessGroupMemberEntry:
 		return &AccessGroupMemberEntry{}
 	case EncoderTypeGroupMembershipKey:
-		return &GroupMembershipKey{}
-	case EncoderTypeGroupEnumerationKey:
-		return &GroupEnumerationKey{}
+		return &AccessGroupMembershipKey{}
 		//case EncoderTypeGroupMemberAttributesKey:
 		//	return &GroupMemberAttributesKey{}
 		//case EncoderTypeGroupEntryAttributesKey:
@@ -2053,14 +2050,14 @@ func (key *AccessGroupId) String() string {
 		key.AccessGroupOwnerPublicKey, key.AccessGroupKeyName)
 }
 
-// GroupMembershipKey is used to index group memberships for a user.
-type GroupMembershipKey struct {
+// AccessGroupMembershipKey is used to index group memberships for a user.
+type AccessGroupMembershipKey struct {
 	GroupMemberPublicKey PublicKey
 	GroupOwnerPublicKey  PublicKey
 	GroupKeyName         GroupKeyName
 }
 
-func (key *GroupMembershipKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+func (key *AccessGroupMembershipKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, key.GroupMemberPublicKey[:]...)
 	data = append(data, key.GroupOwnerPublicKey[:]...)
@@ -2068,13 +2065,13 @@ func (key *GroupMembershipKey) RawEncodeWithoutMetadata(blockHeight uint64, skip
 	return data
 }
 
-func (key *GroupMembershipKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+func (key *AccessGroupMembershipKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 
 	groupMemberPublicKey := &PublicKey{}
 	if exist, err := DecodeFromBytes(groupMemberPublicKey, rr); exist && err == nil {
 		key.GroupMemberPublicKey = *groupMemberPublicKey
 	} else if err != nil {
-		return errors.Wrapf(err, "GroupMembershipKey.Decode: Problem reading "+
+		return errors.Wrapf(err, "AccessGroupMembershipKey.Decode: Problem reading "+
 			"GroupMemberPublicKey")
 	}
 
@@ -2082,7 +2079,7 @@ func (key *GroupMembershipKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *
 	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
 		key.GroupOwnerPublicKey = *groupOwnerPublicKey
 	} else if err != nil {
-		return errors.Wrapf(err, "GroupMembershipKey.Decode: Problem reading "+
+		return errors.Wrapf(err, "AccessGroupMembershipKey.Decode: Problem reading "+
 			"GroupOwnerPublicKey")
 	}
 
@@ -2090,133 +2087,32 @@ func (key *GroupMembershipKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *
 	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
 		key.GroupKeyName = *groupKeyName
 	} else if err != nil {
-		return errors.Wrapf(err, "GroupMembershipKey.Decode: Problem reading "+
+		return errors.Wrapf(err, "AccessGroupMembershipKey.Decode: Problem reading "+
 			"AccessGroupKeyName")
 	}
 
 	return nil
 }
 
-func (key *GroupMembershipKey) GetVersionByte(blockHeight uint64) byte {
+func (key *AccessGroupMembershipKey) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
-func (key *GroupMembershipKey) GetEncoderType() EncoderType {
+func (key *AccessGroupMembershipKey) GetEncoderType() EncoderType {
 	return EncoderTypeGroupMembershipKey
 }
 
-func NewGroupMembershipKey(groupMemberPublicKey PublicKey, groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName) *GroupMembershipKey {
-	return &GroupMembershipKey{
+func NewGroupMembershipKey(groupMemberPublicKey PublicKey, groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName) *AccessGroupMembershipKey {
+	return &AccessGroupMembershipKey{
 		GroupMemberPublicKey: groupMemberPublicKey,
 		GroupOwnerPublicKey:  groupOwnerPublicKey,
 		GroupKeyName:         groupKeyName,
 	}
 }
 
-func (key *GroupMembershipKey) String() string {
+func (key *AccessGroupMembershipKey) String() string {
 	return fmt.Sprintf("<GroupMemberPublicKey: %v, GroupOwnerPublicKey: %v, AccessGroupKeyName: %v>",
 		key.GroupMemberPublicKey, key.GroupOwnerPublicKey, key.GroupKeyName)
-}
-
-// Group Enumeration Key is used to index all or subset of members for a group.
-// Contains GroupOwnerPublicKey, GroupKeyName, and GroupMemberPublicKey.
-type GroupEnumerationKey struct {
-	GroupOwnerPublicKey  PublicKey
-	GroupKeyName         GroupKeyName
-	GroupMemberPublicKey PublicKey
-}
-
-func (key *GroupEnumerationKey) ToBytes() []byte {
-	var data []byte
-	data = append(data, key.GroupOwnerPublicKey[:]...)
-	data = append(data, key.GroupKeyName[:]...)
-	data = append(data, key.GroupMemberPublicKey[:]...)
-	return data
-}
-
-func (key *GroupEnumerationKey) FromBytes(rr *bytes.Reader) error {
-	groupOwnerPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
-		key.GroupOwnerPublicKey = *groupOwnerPublicKey
-	} else if err != nil {
-		return errors.Wrapf(err, "GroupEnumerationKey.Decode: Problem reading "+
-			"GroupOwnerPublicKey")
-	}
-
-	groupKeyName := &GroupKeyName{}
-	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
-		key.GroupKeyName = *groupKeyName
-	} else if err != nil {
-		return errors.Wrapf(err, "GroupEnumerationKey.Decode: Problem reading "+
-			"AccessGroupKeyName")
-	}
-
-	groupMemberPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(groupMemberPublicKey, rr); exist && err == nil {
-		key.GroupMemberPublicKey = *groupMemberPublicKey
-	} else if err != nil {
-		return errors.Wrapf(err, "GroupEnumerationKey.Decode: Problem reading "+
-			"GroupMemberPublicKey")
-	}
-
-	return nil
-}
-
-func (key *GroupEnumerationKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	var data []byte
-	data = append(data, key.GroupOwnerPublicKey[:]...)
-	data = append(data, key.GroupKeyName[:]...)
-	data = append(data, key.GroupMemberPublicKey[:]...)
-	return data
-}
-
-func (key *GroupEnumerationKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	groupOwnerPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
-		key.GroupOwnerPublicKey = *groupOwnerPublicKey
-	} else if err != nil {
-		return errors.Wrapf(err, "GroupEnumerationKey.Decode: Problem reading "+
-			"GroupOwnerPublicKey")
-	}
-
-	groupKeyName := &GroupKeyName{}
-	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
-		key.GroupKeyName = *groupKeyName
-	} else if err != nil {
-		return errors.Wrapf(err, "GroupEnumerationKey.Decode: Problem reading "+
-			"AccessGroupKeyName")
-	}
-
-	groupMemberPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(groupMemberPublicKey, rr); exist && err == nil {
-		key.GroupMemberPublicKey = *groupMemberPublicKey
-	} else if err != nil {
-		return errors.Wrapf(err, "GroupEnumerationKey.Decode: Problem reading "+
-			"GroupMemberPublicKey")
-	}
-
-	return nil
-}
-
-func (key *GroupEnumerationKey) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
-}
-
-func (key *GroupEnumerationKey) GetEncoderType() EncoderType {
-	return EncoderTypeGroupEnumerationKey
-}
-
-func NewGroupEnumerationKey(groupOwnerPublicKey *PublicKey, groupKeyName []byte, groupMemberPublicKey *PublicKey) *GroupEnumerationKey {
-	return &GroupEnumerationKey{
-		GroupOwnerPublicKey:  *groupOwnerPublicKey,
-		GroupKeyName:         *NewGroupKeyName(groupKeyName),
-		GroupMemberPublicKey: *groupMemberPublicKey,
-	}
-}
-
-func (key *GroupEnumerationKey) String() string {
-	return fmt.Sprintf("<GroupOwnerPublicKey: %v, AccessGroupKeyName: %v, GroupMemberPublicKey: %v>",
-		key.GroupOwnerPublicKey, key.GroupKeyName, key.GroupMemberPublicKey)
 }
 
 // GroupMemberAttributesKey is used to index group member attributes for a user in PrefixGroupMemberAttributesIndex

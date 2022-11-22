@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -21,7 +22,7 @@ func (bav *UtxoView) GetAccessGroupMemberEntry(memberPublicKey *PublicKey, group
 	groupMembershipKey := NewGroupMembershipKey(*memberPublicKey, *groupOwnerPublicKey, *groupKeyName)
 
 	// If the group has already been fetched in this utxoView, then we get it directly from there.
-	if mapValue, exists := bav.GroupMembershipKeyToAccessGroupMember[*groupMembershipKey]; exists {
+	if mapValue, exists := bav.AccessGroupMembershipKeyToAccessGroupMember[*groupMembershipKey]; exists {
 		return mapValue, nil
 	}
 
@@ -38,6 +39,220 @@ func (bav *UtxoView) GetAccessGroupMemberEntry(memberPublicKey *PublicKey, group
 		}
 	}
 	return accessGroupMember, nil
+}
+
+// GetPaginatedAccessGroupMembersEnumerationEntries returns a list of public keys of members of a provided access group.
+// The member public keys will be sorted lexicographically and paginated according to the provided startingAccessGroupMemberPublicKey
+// and maxMembersToFetch. In other words, the returned _accessGroupMembers will follow these constraints:
+// 	1) len(_accessGroupMembers) <= maxMembersToFetch
+// 	2) _accessGroupMembers[0] > startingAccessGroupMemberPublicKey
+//  	TODO: VERIFY THE > vs >= (should be >)
+// 	3) \forall i, j: i < j => _accessGroupMembers[i] < _accessGroupMembers[j]
+func (bav *UtxoView) GetPaginatedAccessGroupMembersEnumerationEntries(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+	startingAccessGroupMemberPublicKey []byte, maxMembersToFetch uint32) (_accessGroupMembers []*PublicKey, _err error) {
+
+	var accessGroupMembers []*PublicKey
+	if maxMembersToFetch == 0 {
+		return accessGroupMembers, nil
+	}
+
+	// If either of the provided parameters is nil, we return.
+	if groupOwnerPublicKey == nil || groupKeyName == nil {
+		return accessGroupMembers, fmt.Errorf("GetAccessGroupMembersEnumerationEntries: Called with nil groupOwnerPublicKey or groupKeyName")
+	}
+
+	accessGroupId := NewAccessGroupId(groupOwnerPublicKey, groupKeyName.ToBytes())
+
+	// If the group membership map has already been fetched in this utxoView, then we get it directly from there.
+	membersList, exists := bav.AccessGroupIdToSortedGroupMemberPublicKeys[*accessGroupId]
+
+	// If there already is enough members in the UtxoView, we just go through them and return.
+	// The UtxoView entries are sorted by memberPublicKey, so we can just go through them in order.
+	if exists {
+		// TODO: Binary jump/search could be used here to speed up the iteration.
+		for ii := 0; ii < len(membersList) && uint32(len(accessGroupMembers)) < maxMembersToFetch; ii++ {
+			accessGroupMemberPk := membersList[ii]
+			// If the member public key is greater or equal lexicographically to the provided paginatedMemberPublicKey,
+			// then we add it to the list of members to return.
+			if bytes.Compare(accessGroupMemberPk.ToBytes(), startingAccessGroupMemberPublicKey) >= 0 {
+				accessGroupMembers = append(accessGroupMembers, accessGroupMemberPk)
+			}
+		}
+	}
+
+	paginationStartKey := startingAccessGroupMemberPublicKey
+	if len(accessGroupMembers) > 0 {
+		paginationStartKey = accessGroupMembers[len(accessGroupMembers)-1].ToBytes()
+	}
+
+	// If we get here, it means that the group has not been fetched in this utxoView. We fetch it from the db.
+	dbAdapter := bav.GetDbAdapter()
+	accessGroupMembersFromDb, err := dbAdapter.GetPaginatedAccessGroupMembersEnumerationEntries(*groupOwnerPublicKey, *groupKeyName,
+		paginationStartKey, maxMembersToFetch-uint32(len(accessGroupMembers)))
+	if err != nil {
+		return accessGroupMembersFromDb, errors.Wrapf(err, "GetAccessGroupMembersEnumerationEntries: "+
+			"Problem fetching access group members enumeration entries for single member with "+
+			"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
+			groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
+	}
+	//accessGroupMembers = append(accessGroupMembers, accessGroupMembersFromDb...)
+
+	// We will now attempt to update the AccessGroupIdToSortedGroupMemberPublicKeys map in the UtxoView.
+	// The map values have to be sorted lexicographically by memberPublicKey, so to maintain this invariant,
+	// we will only augment map's values if the member public keys fetched from the DB are properly aligned.
+	// There are two main cases to consider:
+	// 	1) There is no mapping present for this group in the UtxoView.
+	//  2) There already is a mapping present for this group in the UtxoView.
+
+	if !exists {
+		// 1)
+		// We check what's the smallest lexicographic member public key for the group in the DB.
+		firstMemberEntryFromDb, err := dbAdapter.GetPaginatedAccessGroupMembersEnumerationEntries(
+			*groupOwnerPublicKey, *groupKeyName, []byte{}, 1)
+		if err != nil {
+			return accessGroupMembersFromDb, errors.Wrapf(err, "GetAccessGroupMembersEnumerationEntries: "+
+				"Problem fetching access group members enumeration entries for single member with "+
+				"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
+				groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
+		}
+		// If the smallest lexicographic member public key is equal to the first member public key in the DB,
+		// then we can safely set the mapping in the UtxoView to the entries fetched from the DB. Otherwise, we
+		// do nothing since we fetched a section of all the members in the group that doesn't contain "the first"
+		// member public key that should be present in the mapping.
+		if len(firstMemberEntryFromDb) > 0 && len(accessGroupMembersFromDb) > 0 &&
+			bytes.Equal(firstMemberEntryFromDb[0].ToBytes(), accessGroupMembersFromDb[0].ToBytes()) {
+
+			bav._setAccessGroupIdToSortedGroupMemberPublicKeys(*groupOwnerPublicKey, *groupKeyName, accessGroupMembersFromDb)
+		}
+	} else {
+		// 2)
+		// We need to check that the db entries extend the current sorted member public keys present in the UtxoView.
+		// This would happen if the number of accessGroupMembers filtered from the UtxoView is less than the number of
+		// maxMembersToFetch. In this case, we needed more member public keys, and we resorted to fetching them from the DB,
+		// meaning these public keys naturally lexicographically extend the member public keys already present in the UtxoView.
+
+		// TODO: Can we use some bigger brain ordered structure to always add db entries to the UtxoView?
+		if len(accessGroupMembers) > 0 {
+			lastMemberPublicKey := membersList[len(membersList)-1]
+			startIndex := 0
+			// TODO: Remove this after testing.
+			if bytes.Equal(accessGroupMembersFromDb[0].ToBytes(), lastMemberPublicKey.ToBytes()) {
+				glog.Infof(CLog(Red, fmt.Sprintf("PAGINATED QUERY FETCHES THE MEMBER WITH THE START KEY FOR "+
+					"badger=%v, postgres=%v", bav.Handle != nil, bav.Postgres != nil)))
+				startIndex = 1
+			}
+			// We now extend the mapping in the UtxoView with the entries fetched from the DB.
+			newSortedGroupMemberPublicKeys := append(membersList, accessGroupMembersFromDb[startIndex:]...)
+			bav._setAccessGroupIdToSortedGroupMemberPublicKeys(*groupOwnerPublicKey, *groupKeyName, newSortedGroupMemberPublicKeys)
+
+			//nextMemberPublicKey, err := dbAdapter.GetPaginatedAccessGroupMembersEnumerationEntries(
+			//	*groupOwnerPublicKey, *groupKeyName, lastMemberPublicKey.ToBytes(), 2)
+			//if err != nil {
+			//	return accessGroupMembersFromDb, errors.Wrapf(err, "GetAccessGroupMembersEnumerationEntries: "+
+			//		"Problem fetching access group members enumeration entries for next member with "+
+			//		"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
+			//		groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
+			//}
+		}
+	}
+	accessGroupMembers = append(accessGroupMembers, accessGroupMembersFromDb...)
+	// We define a predicate that checks whether we fetched maximum number of members. We might drop some entries later
+	// when we combine the db member public keys with the ones fetched from the UtxoView.
+	isListFilled := uint32(len(accessGroupMembers)) == maxMembersToFetch
+	var lastListKey []byte
+	if len(accessGroupMembers) > 0 {
+		lastListKey = accessGroupMembers[len(accessGroupMembers)-1].ToBytes()
+	}
+
+	// Finally, there is a possibility that there have been new members added to the access group in the current block,
+	// and we need to make sure we include them in the list of members we return. We do this by iterating over all the
+	// members in the current UtxoView and inserting them into the list of members we return.
+	for membershipKey, memberEntry := range bav.AccessGroupMembershipKeyToAccessGroupMember {
+		// If member entry doesn't match our access group, we skip it.
+		isAccessGroupMember := bytes.Equal(membershipKey.GroupOwnerPublicKey.ToBytes(), groupOwnerPublicKey.ToBytes()) &&
+			bytes.Equal(membershipKey.GroupKeyName.ToBytes(), groupKeyName.ToBytes())
+		if !isAccessGroupMember {
+			continue
+		}
+
+		// TODO: > or >= ?, should be >.
+		memberPublicKey := membershipKey.GroupMemberPublicKey
+		isGreaterThanStartKey := bytes.Compare(memberPublicKey.ToBytes(), startingAccessGroupMemberPublicKey) > 0
+		if !isGreaterThanStartKey {
+			continue
+		}
+
+		var isLesserOrEqualThanEndKey bool
+		if len(accessGroupMembers) > 0 {
+			endingAccessGroupMemberPublicKey := accessGroupMembers[len(accessGroupMembers)-1].ToBytes()
+			// Note we use <= here because if the UtxoView entry is deleted, we should remove the member from our list.
+			isLesserOrEqualThanEndKey = bytes.Compare(memberPublicKey.ToBytes(), endingAccessGroupMemberPublicKey) <= 0
+		} else {
+			isLesserOrEqualThanEndKey = true
+		}
+
+		if !isLesserOrEqualThanEndKey {
+			continue
+		}
+
+		// If we get here, it means the member is within our range and we should merge it with the current accessGroupMembers.
+		if len(accessGroupMembers) > 0 {
+			// Check if the member should be the first one in the list.
+			if bytes.Compare(memberPublicKey.ToBytes(), accessGroupMembers[0].ToBytes()) < 0 {
+				accessGroupMembers = append([]*PublicKey{&memberPublicKey}, accessGroupMembers...)
+				continue
+			}
+
+			var ii int
+			shouldSkip := false
+			// TODO: We could make this O(logn) by using binary jump/search.
+			for ii = 0; ii < len(accessGroupMembers); ii++ {
+				// Check for overlapping member entries. In such case, we might need to remove the entry from our
+				// accessGroupMembers list, because the member is deleted in the current block.
+				if bytes.Equal(accessGroupMembers[ii].ToBytes(), memberPublicKey.ToBytes()) {
+					if memberEntry.isDeleted {
+						accessGroupMembers = append(accessGroupMembers[:ii], accessGroupMembers[ii+1:]...)
+					}
+					shouldSkip = true
+					break
+				}
+			}
+			if shouldSkip {
+				continue
+			}
+
+			// If we get here, it means the member is not in the list and we need to insert it in the right place.
+			// TODO: We could do O(logn) if we added the member to the end and then sorted after all the member iterations.
+			accessGroupMembers = append(accessGroupMembers[:ii], append([]*PublicKey{&memberPublicKey}, accessGroupMembers[ii:]...)...)
+		} else {
+			// Note that this case will happen at most once, so we don't need to care about non-deterministic map
+			// iteration order, because every next member public key will be inserted in the right place.
+			accessGroupMembers = append(accessGroupMembers, &memberPublicKey)
+		}
+	}
+
+	// After iterating over all the members in the current UtxoView, there is a possibility that we now have less members
+	// than the maxMembersToFetch. In this case, we need to fetch more members from the DB, which we will do with the
+	// magic of recursion.
+	if isListFilled && len(accessGroupMembers) < int(maxMembersToFetch) {
+		remainingMembers, err := bav.GetPaginatedAccessGroupMembersEnumerationEntries(
+			groupOwnerPublicKey, groupKeyName, lastListKey, maxMembersToFetch-uint32(len(accessGroupMembers)))
+		if err != nil {
+			return nil, errors.Wrapf(err, "GetPaginatedAccessGroupMembersEnumerationEntries: "+
+				"Problem fetching recursion access group members enumeration entries for next member with "+
+				"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
+				groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
+		}
+		accessGroupMembers = append(accessGroupMembers, remainingMembers...)
+	}
+
+	if len(accessGroupMembers) > int(maxMembersToFetch) {
+		accessGroupMembers = accessGroupMembers[:maxMembersToFetch]
+	}
+	return accessGroupMembers, nil
+	// TODO:
+	// 	- iterate postgres entries
+
 }
 
 // _setAccessGroupMemberEntry will set the membership mapping of AccessGroupMember.
@@ -95,8 +310,20 @@ func (bav *UtxoView) _setGroupMembershipKeyToAccessGroupMemberMapping(accessGrou
 	groupMembershipKey := *NewGroupMembershipKey(
 		*accessGroupMemberEntry.AccessGroupMemberPublicKey, *groupOwnerPublicKey, *groupKeyName)
 	// Set the mapping.
-	bav.GroupMembershipKeyToAccessGroupMember[groupMembershipKey] = accessGroupMemberEntry
+	bav.AccessGroupMembershipKeyToAccessGroupMember[groupMembershipKey] = accessGroupMemberEntry
 	return nil
+}
+
+func (bav *UtxoView) _setAccessGroupIdToSortedGroupMemberPublicKeys(groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName,
+	accessGroupMemberPublicKeys []*PublicKey) {
+
+	// Create access group id.
+	accessGroupId := AccessGroupId{
+		AccessGroupOwnerPublicKey: groupOwnerPublicKey,
+		AccessGroupKeyName:        groupKeyName,
+	}
+	// Set the mapping.
+	bav.AccessGroupIdToSortedGroupMemberPublicKeys[accessGroupId] = accessGroupMemberPublicKeys
 }
 
 // _connectAccessGroupMembers is used to connect a AccessGroupMembers transaction to the UtxoView. This transaction

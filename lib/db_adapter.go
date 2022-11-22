@@ -188,3 +188,20 @@ func (adapter *DbAdapter) GetAccessGroupMemberEnumerationEntry(accessGroupMember
 			accessGroupMemberPublicKey, accessGroupKeyName, accessGroupOwnerPublicKey)
 	}
 }
+
+func (adapter *DbAdapter) GetPaginatedAccessGroupMembersEnumerationEntries(
+	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName,
+	startingAccessGroupMemberPublicKeyBytes []byte, maxMembersToFetch uint32) (
+	_accessGroupMemberPublicKeys []*PublicKey, _err error) {
+
+	if adapter.postgresDb != nil {
+		//return adapter.postgresDb.GetPaginatedAccessGroupMembersEnumerationEntries(
+		//	accessGroupOwnerPublicKey, accessGroupKeyName,
+		//	startingAccessGroupMemberPublicKey, maxEntries)
+		return nil, nil
+	} else {
+		return DBGetPaginatedAccessGroupMembersFromEnumerationIndex(adapter.badgerDb, adapter.snapshot,
+			accessGroupOwnerPublicKey, accessGroupKeyName,
+			startingAccessGroupMemberPublicKeyBytes, maxMembersToFetch)
+	}
+}

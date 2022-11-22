@@ -1075,12 +1075,12 @@ func (bav *UtxoView) _flushAccessGroupEntriesToDbWithTxn(txn *badger.Txn, blockH
 }
 
 func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	glog.V(2).Infof("_flushAccessGroupMembersToDbWithTxn: flushing %d mappings", len(bav.GroupMembershipKeyToAccessGroupMember))
+	glog.V(2).Infof("_flushAccessGroupMembersToDbWithTxn: flushing %d mappings", len(bav.AccessGroupMembershipKeyToAccessGroupMember))
 	numDeleted := 0
 	numPut := 0
 
 	// Flush group members to db.
-	for groupMembershipKey, accessGroupMember := range bav.GroupMembershipKeyToAccessGroupMember {
+	for groupMembershipKey, accessGroupMember := range bav.AccessGroupMembershipKeyToAccessGroupMember {
 		if accessGroupMember == nil {
 			return fmt.Errorf("UtxoView._flushAccessGroupMembersToDbWithTxn:"+
 				" groupMembershipKey: %v, is nil", groupMembershipKey)
