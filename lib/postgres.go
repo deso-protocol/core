@@ -2623,6 +2623,7 @@ func (postgres *Postgres) flushAccessGroupEntries(tx *pg.Tx, view *UtxoView) err
 	if len(insertEntries) > 0 {
 		_, err := tx.Model(&insertEntries).
 			WherePK().
+			OnConflict("(access_group_owner_public_key, access_group_key_name) DO UPDATE").
 			Returning("NULL").
 			Insert()
 		if err != nil {
@@ -2674,11 +2675,14 @@ func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoVie
 	if len(insertEntries) > 0 {
 		_, err := tx.Model(&insertEntries).
 			WherePK().
+			OnConflict("(access_group_member_public_key, access_group_owner_public_key, access_group_key_name) DO UPDATE").
 			Returning("NULL").
 			Insert()
 		if err != nil {
 			return fmt.Errorf("Postgres.flushAccessGroupMemberEntries: insert: %v", err)
 		}
+		// TODO: This gives syntax error?!
+		// OnConflict("(access_group_owner_public_key, access_group_key_name, access_group_member_public_key) DO UPDATE").
 		_, err = tx.Model(&insertEnumerationEntries).
 			WherePK().
 			Returning("NULL").
@@ -3357,6 +3361,30 @@ func (postgres *Postgres) GetAccessGroupMemberEnumerationEntry(accessGroupMember
 		return false
 	}
 	return true
+}
+
+func (postgres *Postgres) GetPaginatedAccessGroupMembersFromEnumerationIndex(accessGroupOwnerPublicKey PublicKey,
+	accessGroupKeyName GroupKeyName, startingAccessGroupMemberPublicKeyBytes []byte, maxMembersToFetch uint32) (
+	_accessGroupMemberPublicKeys []*PublicKey, _err error) {
+
+	var accessGroupEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
+	var accessGroupMemberPublicKeys []*PublicKey
+
+	err := postgres.db.Model(&accessGroupEnumerationEntries).
+		Where("access_group_owner_public_key = ?", accessGroupOwnerPublicKey).
+		Where("access_group_key_name = ?", accessGroupKeyName).
+		Where("access_group_member_public_key > ?", startingAccessGroupMemberPublicKeyBytes).
+		Order("access_group_member_public_key ASC").
+		Limit(int(maxMembersToFetch)).
+		Select()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, accessGroupEnumerationEntry := range accessGroupEnumerationEntries {
+		accessGroupMemberPublicKeys = append(accessGroupMemberPublicKeys, accessGroupEnumerationEntry.AccessGroupMemberPublicKey)
+	}
+	return accessGroupMemberPublicKeys, nil
 }
 
 //

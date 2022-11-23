@@ -1963,14 +1963,14 @@ func _dbSeekPrefixForAccessGroupMemberEnumerationIndex(groupOwnerPublicKey Publi
 }
 
 func DBGetAccessGroupMemberExistenceFromEnumerationIndex(handle *badger.DB, snap *Snapshot,
-	groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, groupMemberPublicKey PublicKey) (
+	groupMemberPublicKey PublicKey, groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName) (
 	_exists bool, _err error) {
 
 	var err error
 	var exists bool
 	err = handle.View(func(txn *badger.Txn) error {
 		exists, err = DBGetGroupMemberExistenceFromEnumerationIndexWithTxn(txn, snap,
-			groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
+			groupMemberPublicKey, groupOwnerPublicKey, groupKeyName)
 		return err
 	})
 	if err != nil {
@@ -1982,7 +1982,7 @@ func DBGetAccessGroupMemberExistenceFromEnumerationIndex(handle *badger.DB, snap
 
 // DBGetGroupMemberForAccessGroupWithTxn for a given group.
 func DBGetGroupMemberExistenceFromEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot,
-	groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, groupMemberPublicKey PublicKey) (
+	groupMemberPublicKey PublicKey, groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName) (
 	_exists bool, _err error) {
 
 	prefix := _dbKeyForAccessGroupMemberEnumerationIndex(groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
@@ -2024,7 +2024,7 @@ func DBGetPaginatedAccessGroupMembersFromEnumerationIndexWithTxn(txn *badger.Txn
 
 	var accessGroupMembers []*PublicKey
 	prefix := _dbSeekPrefixForAccessGroupMemberEnumerationIndex(groupOwnerPublicKey, groupKeyName)
-	startKey := startingAccessGroupMemberPublicKeyBytes
+	startKey := append(prefix, startingAccessGroupMemberPublicKeyBytes...)
 
 	keysFound := _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn, prefix, startKey, maxMembersToFetch)
 	for _, key := range keysFound {

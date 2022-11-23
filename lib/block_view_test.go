@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/decred/dcrd/lru"
 	"github.com/dgraph-io/badger/v3"
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/golang/glog"
@@ -171,6 +172,23 @@ type transactionTestVector struct {
 	disconnectCallback  func(tv *transactionTestVector, tm *transactionTestMeta)
 }
 
+type transactionTestVectorBlock struct {
+	testVectors        []*transactionTestVector
+	connectCallback    func(tvb *transactionTestVectorBlock, tm *transactionTestMeta)
+	disconnectCallback func(tvb *transactionTestVectorBlock, tm *transactionTestMeta)
+}
+
+func NewTransactionTestVectorBlock(
+	testVectors []*transactionTestVector,
+	connectCallback func(tvb *transactionTestVectorBlock, tm *transactionTestMeta),
+	disconnectCallback func(tvb *transactionTestVectorBlock, tm *transactionTestMeta)) *transactionTestVectorBlock {
+	return &transactionTestVectorBlock{
+		testVectors:        testVectors,
+		connectCallback:    connectCallback,
+		disconnectCallback: disconnectCallback,
+	}
+}
+
 // transactionTestSuite is the main component of the transaction testing framework. It contains the test metadata
 // transactionTestMeta, and the test vectors ordered sequentially block by block in the order in which they should be
 // connected to the blockchain.
@@ -181,21 +199,21 @@ type transactionTestVector struct {
 // had a pairwise IsDependency evaluate to true. This is used to avoid checking the same utxoView or db records repeatedly:
 // once for the latest testVector, and twice, thrice, etc. for the earlier, dependent testVectors.
 type transactionTestSuite struct {
-	t                  *testing.T
-	testVectorsByBlock [][]*transactionTestVector
-	config             *transactionTestConfig
+	t                *testing.T
+	testVectorBlocks []*transactionTestVectorBlock
+	config           *transactionTestConfig
 
 	_testVectorsInDb      []*transactionTestVector
 	_testVectorsInMempool []*transactionTestVector
 	_testVectorDependency map[transactionTestIdentifier][]transactionTestIdentifier
 }
 
-func NewTransactionTestSuite(t *testing.T, testVectorsByBlock [][]*transactionTestVector,
+func NewTransactionTestSuite(t *testing.T, testVectorBlocks []*transactionTestVectorBlock,
 	config *transactionTestConfig) *transactionTestSuite {
 
 	return &transactionTestSuite{
 		t:                     t,
-		testVectorsByBlock:    testVectorsByBlock,
+		testVectorBlocks:      testVectorBlocks,
 		config:                config,
 		_testVectorDependency: make(map[transactionTestIdentifier][]transactionTestIdentifier),
 	}
@@ -218,8 +236,8 @@ func (tes *transactionTestSuite) Run() {
 // Iterate over all testVectors and ensure all of them have unique Ids.
 func (tes *transactionTestSuite) ValidateTestVectors() {
 	testVectorsIds := make(map[transactionTestIdentifier]struct{})
-	for _, testVectorBlocks := range tes.testVectorsByBlock {
-		for _, testVectors := range testVectorBlocks {
+	for _, testVectorBlocks := range tes.testVectorBlocks {
+		for _, testVectors := range testVectorBlocks.testVectors {
 			if _, exists := testVectorsIds[testVectors.id]; exists {
 				tes.t.Fatalf("Duplicate test vector id: %v", testVectors.id)
 			}
@@ -233,11 +251,15 @@ func (tes *transactionTestSuite) RunBadgerTest() {
 
 	require := require.New(tes.t)
 	tm := tes.InitializeChainAndGetTestMeta(true, false)
-	for _, testVectors := range tes.testVectorsByBlock {
+	tes._testVectorsInDb = []*transactionTestVector{}
+	tes._testVectorsInMempool = []*transactionTestVector{}
+	tes._testVectorDependency = make(map[transactionTestIdentifier][]transactionTestIdentifier)
+
+	for _, testVectorBlock := range tes.testVectorBlocks {
 		// Run all the test vectors for this block.
 		dbChecksumBeforeConnectDisconnect, err := tes.GetDbStateChecksum(tm)
 		require.NoError(err)
-		tes.testConnectDisconnectBlock(tm, testVectors)
+		tes.testConnectDisconnectBlock(tm, testVectorBlock)
 		dbChecksumAfterConnectDisconnect, err := tes.GetDbStateChecksum(tm)
 		require.NoError(err)
 		if !bytes.Equal(dbChecksumBeforeConnectDisconnect, dbChecksumAfterConnectDisconnect) {
@@ -247,7 +269,7 @@ func (tes *transactionTestSuite) RunBadgerTest() {
 				dbChecksumBeforeConnectDisconnect, dbChecksumAfterConnectDisconnect)
 		}
 		glog.Infof(CLog(Yellow, "RunBadgerTest: successfully connected/disconnected block and verified db state"))
-		tes.testConnectBlock(tm, testVectors)
+		tes.testConnectBlock(tm, testVectorBlock)
 	}
 }
 
@@ -256,6 +278,10 @@ func (tes *transactionTestSuite) RunPostgresTest() {
 
 	require := require.New(tes.t)
 	tm := tes.InitializeChainAndGetTestMeta(false, true)
+	tes._testVectorsInDb = []*transactionTestVector{}
+	tes._testVectorsInMempool = []*transactionTestVector{}
+	tes._testVectorDependency = make(map[transactionTestIdentifier][]transactionTestIdentifier)
+
 	defer func() {
 		// Note that deferred function will be called even if the rest of the function panics.
 		glog.Infof("RunPostgresTest: Got into deferred cleanup function")
@@ -263,20 +289,20 @@ func (tes *transactionTestSuite) RunPostgresTest() {
 		glog.Infof(CLog(Yellow, "RunPostgresTest: successfully stopped embedded postgres db"))
 	}()
 
-	for _, testVectors := range tes.testVectorsByBlock {
+	for _, testVectorBlock := range tes.testVectorBlocks {
 		// Run all the test vectors for this block.
-		tes.testConnectDisconnectBlock(tm, testVectors)
+		tes.testConnectDisconnectBlock(tm, testVectorBlock)
 		glog.Infof(CLog(Yellow, "RunPostgresTest: successfully connected/disconnected block"))
-		tes.testConnectBlock(tm, testVectors)
+		tes.testConnectBlock(tm, testVectorBlock)
 	}
 }
 
 func (tes *transactionTestSuite) _runPostgresTest(tm *transactionTestMeta) {
-	for _, testVectors := range tes.testVectorsByBlock {
+	for _, testVectorBlock := range tes.testVectorBlocks {
 		// Run all the test vectors for this block.
-		tes.testConnectDisconnectBlock(tm, testVectors)
+		tes.testConnectDisconnectBlock(tm, testVectorBlock)
 		glog.Infof(CLog(Yellow, "RunPostgresTest: successfully connected/disconnected block"))
-		tes.testConnectBlock(tm, testVectors)
+		tes.testConnectBlock(tm, testVectorBlock)
 	}
 }
 
@@ -369,10 +395,11 @@ func (tes *transactionTestSuite) GetDbStateChecksum(tm *transactionTestMeta) (_d
 	return verificationChecksum, nil
 }
 
-func (tes *transactionTestSuite) testConnectBlock(tm *transactionTestMeta, testVectors []*transactionTestVector) (
+func (tes *transactionTestSuite) testConnectBlock(tm *transactionTestMeta, testVectorBlock *transactionTestVectorBlock) (
 	_validTransactions []bool, _addedBlock *MsgDeSoBlock) {
 	require := require.New(tes.t)
 
+	testVectors := testVectorBlock.testVectors
 	validTransactions := make([]bool, len(testVectors))
 	for ii, tv := range testVectors {
 		glog.Infof("Running test vector: %v", tv.id)
@@ -385,31 +412,53 @@ func (tes *transactionTestSuite) testConnectBlock(tm *transactionTestMeta, testV
 			validTransactions[ii] = false
 		} else {
 			require.NoError(err)
+			glog.Infof("Verifying UtxoView entry for test vector: %v", tv.id)
 			tv.verifyUtxoViewEntry(tv, tm, utxoView, false)
 			validTransactions[ii] = true
 		}
 		if tv.connectCallback != nil {
 			tv.connectCallback(tv, tm)
 		}
+		tes.addTestVectorToMempool(tv)
 	}
 	addedBlock, err := tm.miner.MineAndProcessSingleBlock(0, tm.mempool)
 	require.NoError(err)
 	dbAdapter := tm.chain.NewDbAdapter()
 
+	// Get the map of all testVector Ids that will be overwritten by other testVectors in this block.
+	idsToSkip := make(map[transactionTestIdentifier]struct{})
+	for ii := 0; ii < len(testVectors); ii++ {
+		if dependencyList, exists := tes._testVectorDependency[testVectors[ii].id]; exists {
+			for _, dependency := range dependencyList {
+				idsToSkip[dependency] = struct{}{}
+			}
+		}
+	}
 	for ii, tv := range testVectors {
 		if !validTransactions[ii] {
 			continue
 		}
-		tv.verifyDbEntry(tv, tm, dbAdapter, false)
+		// Verify db entries for testVectors that have no later dependencies.
+		if _, exists := idsToSkip[tv.id]; !exists {
+			glog.Infof("Verifying db entries for test vector: %v", tv.id)
+			tv.verifyDbEntry(tv, tm, dbAdapter, false)
+		} else {
+			glog.Infof("Skipping verifying db entries for test vector %v because it has later dependencies", tv.id)
+		}
 	}
+	if testVectorBlock.connectCallback != nil {
+		testVectorBlock.connectCallback(testVectorBlock, tm)
+	}
+	tes.moveTestVectorsFromMempoolToDb()
 
 	return validTransactions, addedBlock
 }
 
-func (tes *transactionTestSuite) testConnectDisconnectBlock(tm *transactionTestMeta, testVectors []*transactionTestVector) {
+func (tes *transactionTestSuite) testConnectDisconnectBlock(tm *transactionTestMeta, testVectorBlock *transactionTestVectorBlock) {
 	require := require.New(tes.t)
 
-	validTransactions, addedBlock := tes.testConnectBlock(tm, testVectors)
+	testVectors := testVectorBlock.testVectors
+	validTransactions, addedBlock := tes.testConnectBlock(tm, testVectorBlock)
 	blockHeight := tm.chain.BlockTip().Height
 	utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
 	require.NoError(err)
@@ -424,19 +473,38 @@ func (tes *transactionTestSuite) testConnectDisconnectBlock(tm *transactionTestM
 		if !validTransactions[ii] {
 			continue
 		}
+		// TODO: should we use dependency map checking here too?
+		glog.Infof("Verifying deleted UtxoView entry for test vector: %v", tv.id)
 		tv.verifyUtxoViewEntry(tv, tm, utxoView, true)
 	}
 
-	err = tm.chain.DisconnectBlocksToHeight(uint64(blockHeight)-1, tm.chain.snapshot)
+	err = tm.chain.DisconnectBlocksToHeight(uint64(blockHeight)-1, nil)
+	// We don't pass the chain's snapshot to the DisconnectBlocksToHeight to prevent certain concurrency issues. As a
+	// result, we need to reset the snapshot's db cache to get rid of stale data.
+	if tm.chain.snapshot != nil {
+		tm.chain.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
+	}
+
 	require.NoError(err)
+	require.Equal(0, len(tes._testVectorsInMempool))
+	tes.moveTestVectorsFromDbToMempoolForDisconnect(testVectorBlock)
 	dbAdapter := tm.chain.NewDbAdapter()
+
 	for ii := len(testVectors) - 1; ii >= 0; ii-- {
 		tv := testVectors[ii]
-		tv.verifyDbEntry(tv, tm, dbAdapter, true)
+		if tes.shouldVerifyDeletedDbEntry(tv) {
+			// If this transaction vector has no dependencies then we should verify that the db entries were deleted.
+			glog.Infof("Verifying deleted db entries for test vector: %v", tv.id)
+			tv.verifyDbEntry(tv, tm, dbAdapter, true)
+		}
 		if tv.disconnectCallback != nil {
 			tv.disconnectCallback(tv, tm)
 		}
 	}
+	if testVectorBlock.disconnectCallback != nil {
+		testVectorBlock.disconnectCallback(testVectorBlock, tm)
+	}
+	tes.removeTestVectorsInMempool()
 }
 
 func (tes *transactionTestSuite) addTestVectorToMempool(tv *transactionTestVector) {
@@ -445,16 +513,80 @@ func (tes *transactionTestSuite) addTestVectorToMempool(tv *transactionTestVecto
 	require.Nil(tes._testVectorDependency[tv.id])
 
 	for _, tvInDb := range tes._testVectorsInDb {
+		if tvInDb.inputSpace.GetInputType() != tv.inputSpace.GetInputType() {
+			continue
+		}
 		if tvInDb.inputSpace.IsDependency(tv.inputSpace) {
 			tes._testVectorDependency[tv.id] = append(tes._testVectorDependency[tv.id], tvInDb.id)
 		}
 	}
 	for _, tvInMempool := range tes._testVectorsInMempool {
+		if tvInMempool.inputSpace.GetInputType() != tv.inputSpace.GetInputType() {
+			continue
+		}
 		if tvInMempool.inputSpace.IsDependency(tv.inputSpace) {
 			tes._testVectorDependency[tv.id] = append(tes._testVectorDependency[tv.id], tvInMempool.id)
 		}
 	}
 	tes._testVectorsInMempool = append(tes._testVectorsInMempool, tv)
+}
+
+func (tes *transactionTestSuite) moveTestVectorsFromMempoolToDb() {
+
+	for ii := 0; ii < len(tes._testVectorsInMempool); ii++ {
+		tes._testVectorsInDb = append(tes._testVectorsInDb, tes._testVectorsInMempool[ii])
+	}
+	tes._testVectorsInMempool = []*transactionTestVector{}
+}
+
+func (tes *transactionTestSuite) moveTestVectorsFromDbToMempoolForDisconnect(tvb *transactionTestVectorBlock) {
+
+	blocksTestVectors := make(map[transactionTestIdentifier]struct{})
+	for _, tv := range tvb.testVectors {
+		blocksTestVectors[tv.id] = struct{}{}
+	}
+	smallestIndex := -1
+	for ii := 0; ii < len(tes._testVectorsInDb); ii++ {
+		if _, exists := blocksTestVectors[tes._testVectorsInDb[ii].id]; exists {
+			tes._testVectorsInMempool = append(tes._testVectorsInMempool, tes._testVectorsInDb[ii])
+			if smallestIndex == -1 {
+				smallestIndex = ii
+			}
+		}
+	}
+	tes._testVectorsInDb = tes._testVectorsInDb[:smallestIndex]
+}
+
+func (tes *transactionTestSuite) shouldVerifyDeletedDbEntry(tv *transactionTestVector) bool {
+	dependencyVectors, exists := tes._testVectorDependency[tv.id]
+	if exists {
+		// If all dependencies of this test vectors are in the currently disconnected block, then we can
+		// verify if the db entries were properly deleted as there is no other test vector that would have
+		// already flushed conflicting entries to the db.
+		dependenciesOnlyInMempool := true
+		for _, dependencyVector := range dependencyVectors {
+			dependencyInMempool := false
+			for _, testVector := range tes._testVectorsInMempool {
+				if testVector.id == dependencyVector {
+					dependencyInMempool = true
+					break
+				}
+			}
+			if !dependencyInMempool {
+				dependenciesOnlyInMempool = false
+				break
+			}
+		}
+		return dependenciesOnlyInMempool
+	}
+	return true
+}
+
+func (tes *transactionTestSuite) removeTestVectorsInMempool() {
+	for _, tv := range tes._testVectorsInMempool {
+		delete(tes._testVectorDependency, tv.id)
+	}
+	tes._testVectorsInMempool = []*transactionTestVector{}
 }
 
 func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.DB,

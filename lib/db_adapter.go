@@ -185,7 +185,7 @@ func (adapter *DbAdapter) GetAccessGroupMemberEnumerationEntry(accessGroupMember
 	} else {
 		// TODO: Use similar function signatures.
 		return DBGetAccessGroupMemberExistenceFromEnumerationIndex(adapter.badgerDb, adapter.snapshot,
-			accessGroupMemberPublicKey, accessGroupKeyName, accessGroupOwnerPublicKey)
+			accessGroupMemberPublicKey, accessGroupOwnerPublicKey, accessGroupKeyName)
 	}
 }
 
@@ -195,10 +195,9 @@ func (adapter *DbAdapter) GetPaginatedAccessGroupMembersEnumerationEntries(
 	_accessGroupMemberPublicKeys []*PublicKey, _err error) {
 
 	if adapter.postgresDb != nil {
-		//return adapter.postgresDb.GetPaginatedAccessGroupMembersEnumerationEntries(
-		//	accessGroupOwnerPublicKey, accessGroupKeyName,
-		//	startingAccessGroupMemberPublicKey, maxEntries)
-		return nil, nil
+		return adapter.postgresDb.GetPaginatedAccessGroupMembersFromEnumerationIndex(
+			accessGroupOwnerPublicKey, accessGroupKeyName,
+			startingAccessGroupMemberPublicKeyBytes, maxMembersToFetch)
 	} else {
 		return DBGetPaginatedAccessGroupMembersFromEnumerationIndex(adapter.badgerDb, adapter.snapshot,
 			accessGroupOwnerPublicKey, accessGroupKeyName,

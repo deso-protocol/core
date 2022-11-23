@@ -155,9 +155,10 @@ func TestAccessGroupCreate(t *testing.T) {
 		"submitted by user 4, but access group public key is malformed", m3Priv, m3PubBytes, m3PubBytes, groupPk1[:10],
 		groupName1, nil, RuleErrorPubKeyLen)
 
-	tvv := [][]*transactionTestVector{{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14,
-		tv15, tv16, tv17, tv18, tv19}}
-	tes := NewTransactionTestSuite(t, tvv, tConfig)
+	tvv := []*transactionTestVector{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14,
+		tv15, tv16, tv17, tv18, tv19}
+	tvb := []*transactionTestVectorBlock{NewTransactionTestVectorBlock(tvv, nil, nil)}
+	tes := NewTransactionTestSuite(t, tvb, tConfig)
 	tes.Run()
 }
 

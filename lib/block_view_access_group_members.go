@@ -250,9 +250,6 @@ func (bav *UtxoView) GetPaginatedAccessGroupMembersEnumerationEntries(groupOwner
 		accessGroupMembers = accessGroupMembers[:maxMembersToFetch]
 	}
 	return accessGroupMembers, nil
-	// TODO:
-	// 	- iterate postgres entries
-
 }
 
 // _setAccessGroupMemberEntry will set the membership mapping of AccessGroupMember.
