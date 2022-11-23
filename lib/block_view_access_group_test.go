@@ -154,9 +154,12 @@ func TestAccessGroupCreate(t *testing.T) {
 	tv19 := _createAccessGroupCreateTestVector("TEST 19: (FAIL) Try connecting group create transaction "+
 		"submitted by user 4, but access group public key is malformed", m3Priv, m3PubBytes, m3PubBytes, groupPk1[:10],
 		groupName1, nil, RuleErrorPubKeyLen)
+	tv20 := _createAccessGroupCreateTestVector("TEST 20: (FAIL) Try connecting group create transaction "+
+		"submitted by user 4, but access group public key is the same as access group owner public key",
+		m3Priv, m3PubBytes, m3PubBytes, m3PubBytes, groupName1, nil, RuleErrorAccessPublicKeyCannotBeOwnerKey)
 
 	tvv := []*transactionTestVector{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14,
-		tv15, tv16, tv17, tv18, tv19}
+		tv15, tv16, tv17, tv18, tv19, tv20}
 	tvb := []*transactionTestVectorBlock{NewTransactionTestVectorBlock(tvv, nil, nil)}
 	tes := NewTransactionTestSuite(t, tvb, tConfig)
 	tes.Run()

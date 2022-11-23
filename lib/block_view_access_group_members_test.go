@@ -92,6 +92,7 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 
 	groupName1 := []byte("group1")
 	groupName2 := []byte("group2")
+	groupName3 := []byte("group3")
 
 	// Access group (m0Pub, groupName1) with access public key groupPk1.
 	tv1 := _createAccessGroupCreateTestVector("TEST 1: (PASS) Connect access group create transaction made by "+
@@ -109,15 +110,18 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	tv3 := _createAccessGroupMembersTestVector("TEST 3: (PASS) Connect access group members transaction to the "+
 		"access group made by (user0, groupName1), adding as member (pk0, baseGroup)", m0Priv, m0PubBytes,
 		groupName1, tv3Members, AccessGroupMemberOperationTypeAdd, nil)
+	tv3.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
+		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey})
+	}
+	tv3.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
+		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+	}
 	tv4Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
 	tv4 := _createAccessGroupMembersTestVector("TEST 4: (FAIL) Connect access group members transaction to the "+
 		"access group made by (pk0, groupName1), again adding as member (pk0, baseGroup)", m0Priv, m0PubBytes, groupName1,
 		tv4Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessMemberAlreadyExists)
-	tv4.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey})
-	}
 
 	// Place the above transactions into a block.
 	tvv1 := []*transactionTestVector{tv1, tv2, tv3, tv4}
@@ -154,13 +158,37 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	tv9 := _createAccessGroupMembersTestVector("TEST 9: (PASS) Connect access group members transaction to the "+
 		"access group made by (pk0, groupName1), adding as member (pk1, baseGroup)", m0Priv, m0PubBytes, groupName1,
 		tv9Members, AccessGroupMemberOperationTypeAdd, nil)
+	tv9.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
+		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
+	}
+	tv9.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
+		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey})
+	}
+	// A bunch of failing tests to try out different validation rule errors.
 	tv10Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName()[:], EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv10 := _createAccessGroupMembersTestVector("TEST 10: (FAIL) Connect access group members transaction to the "+
+		"access group made by (pk0, baseGroup), adding as member (pk1, baseGroup)", m0Priv, m0PubBytes, BaseGroupKeyName().ToBytes(),
+		tv10Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessGroupsNameCannotBeZeros)
+	tv11Members := tv10Members
+	tv11 := _createAccessGroupMembersTestVector("TEST 11: (FAIL) Connect access group members transaction to the "+
+		"non-existing access group (pk0, groupName3), adding as member (pk1, baseGroup)", m0Priv, m0PubBytes, groupName3,
+		tv11Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessGroupDoesntExist)
+	tv12Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m2PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv12 := _createAccessGroupMembersTestVector("TEST 12: (FAIL) Connect access group members transaction to the "+
+		"access group made by (pk0, groupName1), adding as member (pk2, groupName1) by non-existing group", m0Priv, m0PubBytes, groupName1,
+		tv12Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessGroupDoesntExist)
+	tv13Members := []*AccessGroupMember{
 		{AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil},
 	}
-	tv10 := _createAccessGroupMembersTestVector("TEST 10: (PASS) Connect access group members transaction to the "+
-		"access group made by user 0 with group name 2, adding user 0 by group name 1", m0Priv, m0PubBytes, groupName2,
-		tv10Members, AccessGroupMemberOperationTypeAdd, nil)
-	tvv2 := []*transactionTestVector{tv5, tv6, tv7, tv8, tv9, tv10}
+	tv13 := _createAccessGroupMembersTestVector("TEST 13: (PASS) Connect access group members transaction to the "+
+		"access group made by (pk0, groupName2), adding as member (pk0, groupName1)", m0Priv, m0PubBytes, groupName2,
+		tv13Members, AccessGroupMemberOperationTypeAdd, nil)
+	// TODO: Add a bunch of membership tests and member remove tests.
+	tvv2 := []*transactionTestVector{tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13}
 	tvb2 := NewTransactionTestVectorBlock(tvv2, nil, nil)
 
 	tvbb := []*transactionTestVectorBlock{tvb1, tvb2}

@@ -191,7 +191,10 @@ func (bav *UtxoView) GetPaginatedAccessGroupMembersEnumerationEntries(groupOwner
 			isLesserOrEqualThanEndKey = true
 		}
 
-		if !isLesserOrEqualThanEndKey {
+		// If we already fetched the maximum number of members, we will just check whether the UtxoView member is within
+		// the range of the members we fetched from the DB. If it isn't then we can discard this member for now, as
+		// we might later add them in a recursive call to fetch more paginated members.
+		if !isLesserOrEqualThanEndKey && isListFilled {
 			continue
 		}
 
@@ -402,9 +405,9 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	for _, accessMember := range txMeta.AccessGroupMembersList {
 		if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 			accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName, blockHeight); err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: "+
-				"Problem validating access group for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
-				accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupDoesntExist, "_connectAccessGroupMembers: "+
+				"Problem validating access group for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v, error: %v)",
+				accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName, err)
 		}
 	}
 
