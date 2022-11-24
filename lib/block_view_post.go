@@ -450,14 +450,14 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 	return allCorePosts, commentsByPostHash, nil
 }
 
-func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool, nftRequired bool) (_posts []*PostEntry, _err error) {
+func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool, nftRequired bool, includeComments bool) (_posts []*PostEntry, _err error) {
 	if bav.Postgres != nil {
 		var startTime uint64 = math.MaxUint64
 		if startPostHash != nil {
 			startPostEntry := bav.GetPostEntryForPostHash(startPostHash)
 			startTime = startPostEntry.TimestampNanos
 		}
-		posts := bav.Postgres.GetPostsForPublicKey(publicKey, startTime, limit)
+		posts := bav.Postgres.GetPostsForPublicKey(publicKey, startTime, limit, includeComments)
 		for _, post := range posts {
 			// TODO: Normalize this field so we get the correct number of results from the DB
 			if mediaRequired && !post.HasMedia() {
@@ -517,7 +517,7 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 				if postEntry == nil {
 					return fmt.Errorf("Missing post entry")
 				}
-				if postEntry.isDeleted || postEntry.ParentStakeID != nil || postEntry.IsHidden {
+				if postEntry.isDeleted || (postEntry.ParentStakeID != nil && !includeComments) || postEntry.IsHidden {
 					continue
 				}
 
@@ -543,8 +543,8 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 	var postEntries []*PostEntry
 	// Iterate over the view. Put all posts authored by the public key into our mempool posts slice
 	for _, postEntry := range bav.PostHashToPostEntry {
-		// Ignore deleted or hidden posts and any comments.
-		if postEntry.isDeleted || postEntry.IsHidden || len(postEntry.ParentStakeID) != 0 {
+		// Ignore deleted or hidden posts and any comments, if not requested.
+		if postEntry.isDeleted || postEntry.IsHidden || (len(postEntry.ParentStakeID) != 0 && !includeComments) {
 			continue
 		}
 
