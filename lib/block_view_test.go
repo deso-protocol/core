@@ -401,6 +401,9 @@ func (tes *transactionTestSuite) testConnectBlock(tm *transactionTestMeta, testV
 		utxoView, _err := tm.mempool.GetAugmentedUniversalView()
 		require.NoError(_err)
 		if _expectedErr != nil {
+			if err == nil {
+				require.Fail(fmt.Sprintf("Expected error (%v) but got nil", _expectedErr))
+			}
 			require.Contains(err.Error(), _expectedErr.Error())
 			validTransactions[ii] = false
 		} else {

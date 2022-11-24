@@ -228,16 +228,14 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 					break
 				} else if bytes.Compare(accessGroupMembers[ii].ToBytes(), memberPublicKey.ToBytes()) > 0 {
 					shouldSkip = true
-					// if member entry is deleted, then there is nothing to do.
-					if memberEntry.isDeleted {
-						break
-					}
 
 					// If the current accessGroupMember is lexicographically greater than the memberPublicKey, we
 					// insert the memberPublicKey at this index. We know that the last member in the accessGroupMembers
 					// is lexicographically greater or equal to the member so this either the above condition or this one
 					// will eventually evaluate to true.
-					accessGroupMembers = append(accessGroupMembers[:ii], append([]*PublicKey{&memberPublicKey}, accessGroupMembers[ii:]...)...)
+					if !memberEntry.isDeleted {
+						accessGroupMembers = append(accessGroupMembers[:ii], append([]*PublicKey{&memberPublicKey}, accessGroupMembers[ii:]...)...)
+					}
 					break
 				}
 			}
@@ -247,11 +245,15 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 			// If we get here, it means that the UtxoView memberPublic key is greater than all the public keys we have
 			// currently stored in the accessGroupMembers, but the list is not filled yet. We append the memberPublicKey
 			// to the end of the list.
-			accessGroupMembers = append(accessGroupMembers, &memberPublicKey)
+			if !memberEntry.isDeleted {
+				accessGroupMembers = append(accessGroupMembers, &memberPublicKey)
+			}
 		} else {
 			// Note that this case will happen at most once, so we don't need to care about non-deterministic map
 			// iteration order, because every next member public key will be inserted in the right place.
-			accessGroupMembers = append(accessGroupMembers, &memberPublicKey)
+			if !memberEntry.isDeleted {
+				accessGroupMembers = append(accessGroupMembers, &memberPublicKey)
+			}
 		}
 	}
 

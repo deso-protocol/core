@@ -339,6 +339,142 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	tes.Run()
 }
 
+func TestAccessGroupMembersRemove(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	// randomMemberCounter is used to generate random members for the test.
+	randomMemberCounter := 50
+	randomMemberPrivateKeys := []string{}
+	randomMemberPublicKeys := []*PublicKey{}
+	for ii := 0; ii < randomMemberCounter; ii++ {
+		privateKey, err := btcec.NewPrivateKey(btcec.S256())
+		require.NoError(err)
+		privateKeyBase58Check := Base58CheckEncode(
+			privateKey.Serialize(), true, &DeSoTestnetParams)
+		randomMemberPrivateKeys = append(randomMemberPrivateKeys, privateKeyBase58Check)
+		publicKeyBytes := privateKey.PubKey().SerializeCompressed()
+		publicKey := NewPublicKey(publicKeyBytes)
+		randomMemberPublicKeys = append(randomMemberPublicKeys, publicKey)
+	}
+
+	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	m0PublicKey := NewPublicKey(m0PubBytes)
+	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
+	m1PublicKey := NewPublicKey(m1PubBytes)
+	m2PubBytes, _, _ := Base58CheckDecode(m2Pub)
+	m2PublicKey := NewPublicKey(m2PubBytes)
+	m3PubBytes, _, _ := Base58CheckDecode(m3Pub)
+	m3PublicKey := NewPublicKey(m3PubBytes)
+
+	fundPublicKeysWithNanosMap := make(map[PublicKey]uint64)
+	fundPublicKeysWithNanosMap[*m0PublicKey] = 100
+	fundPublicKeysWithNanosMap[*m1PublicKey] = 100
+	fundPublicKeysWithNanosMap[*m2PublicKey] = 100
+	fundPublicKeysWithNanosMap[*m3PublicKey] = 100
+
+	initChainCallback := func(tm *transactionTestMeta) {
+		tm.params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
+		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
+		tm.params.EncoderMigrationHeights.DeSoUnlimitedDerivedKeys.Height = 0
+		tm.params.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
+		GlobalDeSoParams.EncoderMigrationHeights.DeSoUnlimitedDerivedKeys.Height = 0
+		GlobalDeSoParams.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
+		for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
+			tm.params.EncoderMigrationHeightsList[ii].Height = 0
+			GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 0
+		}
+	}
+	tConfig := &transactionTestConfig{
+		t:                          t,
+		testBadger:                 true,
+		testPostgres:               true,
+		testPostgresPort:           5433,
+		initialBlocksMined:         4,
+		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
+		initChainCallback:          initChainCallback,
+	}
+
+	groupPriv1, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	groupPk1 := groupPriv1.PubKey().SerializeCompressed()
+	_ = groupPk1
+
+	groupPriv2, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	groupPk2 := groupPriv2.PubKey().SerializeCompressed()
+	_ = groupPk2
+
+	groupPriv3, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	groupPk3 := groupPriv3.PubKey().SerializeCompressed()
+	_ = groupPk3
+
+	groupName1 := []byte("group1")
+	_ = groupName1
+	groupName2 := []byte("group2")
+	_ = groupName2
+	groupName3 := []byte("group3")
+	_ = groupName3
+	groupName4 := []byte("group4")
+	_ = groupName4
+
+	// Access group (m0Pub, groupName1) with access public key groupPk1.
+	tv1 := _createAccessGroupCreateTestVector("TEST 1: (PASS) Connect access group create transaction made by "+
+		"(pk0, groupName1)", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1, nil,
+		nil)
+	tv2Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv2 := _createAccessGroupMembersTestVector("TEST 2: (PASS) Connect access group members add transaction made by "+
+		"(pk0, groupName1) adding as member (pk1, baseGroup)", m0Priv, m0PubBytes, groupName1, tv2Members,
+		AccessGroupMemberOperationTypeAdd, nil)
+	tv2.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta) {
+		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m1PublicKey})
+	}
+	tv2.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta) {
+		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+	}
+
+	tv3Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv3 := _createAccessGroupMembersTestVector("TEST 3: (FAIL) Connect access group members remove transaction made by "+
+		"(pk0, groupName1) removing member (pk1, baseGroup) with non-empty encrypted key", m0Priv, m0PubBytes, groupName1, tv3Members,
+		AccessGroupMemberOperationTypeRemove, RuleErrorAccessGroupMemberRemoveEncryptedKeyNotEmpty)
+	tv4Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: nil, ExtraData: nil},
+	}
+	tv4 := _createAccessGroupMembersTestVector("TEST 4: (PASS) Connect access group members remove transaction made by "+
+		"(pk0, groupName1) removing member (pk1, baseGroup)", m0Priv, m0PubBytes, groupName1, tv4Members,
+		AccessGroupMemberOperationTypeRemove, nil)
+	tv4.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta) {
+		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+	}
+	tv4.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta) {
+		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m1PublicKey})
+	}
+
+	//randomMembers := []*AccessGroupMember{}
+	//for ii := 0; ii < 50; ii++ {
+	//	extraDataMap := make(map[string][]byte)
+	//	extraDataMap[fmt.Sprintf("randomField%v", ii)] = []byte(fmt.Sprintf("randomValue%v", ii))
+	//	randomMembers = append(randomMembers, &AccessGroupMember{
+	//		AccessGroupMemberPublicKey: randomMemberPublicKeys[ii].ToBytes(),
+	//		AccessGroupMemberKeyName:   BaseGroupKeyName().ToBytes(),
+	//		EncryptedKey:               []byte{1}, ExtraData: extraDataMap,
+	//	})
+	//}
+	//tv2 := _createAccessGroupMembersTestVector("TEST 2: (PASS) Connect access group add members transaction made by "+
+	//	"(pk0, groupName1), adding all random members", m0Priv, m0PubBytes, groupName1, randomMembers,
+	//	AccessGroupMemberOperationTypeAdd, nil)
+
+	tvv := []*transactionTestVector{tv1, tv2, tv3, tv4}
+	tvb := []*transactionTestVectorBlock{{tvv, nil, nil}}
+	tes := NewTransactionTestSuite(t, tvb, tConfig)
+	tes.Run()
+}
+
 func _createAccessGroupMembersTestVector(id string, userPrivateKey string, accessGroupOwnerPublicKey []byte,
 	accessGroupKeyName []byte, accessGroupMembersList []*AccessGroupMember, operationType AccessGroupMemberOperationType,
 	expectedConnectError error) (_tv *transactionTestVector) {
