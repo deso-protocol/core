@@ -270,6 +270,7 @@ func (tes *transactionTestSuite) RunBadgerTest() {
 		}
 		glog.Infof(CLog(Yellow, "RunBadgerTest: successfully connected/disconnected block and verified db state"))
 		tes.testConnectBlock(tm, testVectorBlock)
+		glog.Infof(CLog(Yellow, "RunBadgerTest: successfully connected block"))
 	}
 }
 
@@ -294,15 +295,7 @@ func (tes *transactionTestSuite) RunPostgresTest() {
 		tes.testConnectDisconnectBlock(tm, testVectorBlock)
 		glog.Infof(CLog(Yellow, "RunPostgresTest: successfully connected/disconnected block"))
 		tes.testConnectBlock(tm, testVectorBlock)
-	}
-}
-
-func (tes *transactionTestSuite) _runPostgresTest(tm *transactionTestMeta) {
-	for _, testVectorBlock := range tes.testVectorBlocks {
-		// Run all the test vectors for this block.
-		tes.testConnectDisconnectBlock(tm, testVectorBlock)
-		glog.Infof(CLog(Yellow, "RunPostgresTest: successfully connected/disconnected block"))
-		tes.testConnectBlock(tm, testVectorBlock)
+		glog.Infof(CLog(Yellow, "RunPostgresTest: successfully connected block"))
 	}
 }
 
@@ -496,6 +489,8 @@ func (tes *transactionTestSuite) testConnectDisconnectBlock(tm *transactionTestM
 			// If this transaction vector has no dependencies then we should verify that the db entries were deleted.
 			glog.Infof("Verifying deleted db entries for test vector: %v", tv.id)
 			tv.verifyDbEntry(tv, tm, dbAdapter, true)
+		} else {
+			glog.Infof("Skipping verifying deleted db entries due to dependencies for test vector: %v", tv.id)
 		}
 		if tv.disconnectCallback != nil {
 			tv.disconnectCallback(tv, tm)

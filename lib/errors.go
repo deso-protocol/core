@@ -121,6 +121,7 @@ const (
 	RuleErrorAccessGroupMemberDoesntExistOrIsDeleted     RuleError = "RuleErrorAccessGroupMemberDoesntExistOrIsDeleted"
 	RuleErrorAccessGroupMemberRemoveEncryptedKeyNotEmpty RuleError = "RuleErrorAccessGroupMemberRemoveEncryptedKeyNotEmpty"
 	RuleErrorAccessGroupPrevMembersListIsIncorrect       RuleError = "RuleErrorAccessGroupPrevMembersListIsIncorrect"
+	RuleErrorAccessGroupMemberEnumerationRecursionLimit  RuleError = "RuleErrorAccessGroupMemberEnumerationRecursionLimit"
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"

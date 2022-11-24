@@ -1159,6 +1159,8 @@ func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte) (_keysFoun
 	return keysFound, valsFound, nil
 }
 
+// _enumeratePaginatedLimitedKeysForPrefixWithTxn will look for keys in the db that are GREATER OR EQUAL to the startKey
+// and satisfy the dbPrefix prefix. The total number of entries fetched will be EQUAL OR SMALLER than provided limit.
 func _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte, startKey []byte, limit uint32) (_keysFound [][]byte) {
 	keysFound := [][]byte{}
 
@@ -2018,6 +2020,9 @@ func DBGetPaginatedAccessGroupMembersFromEnumerationIndex(handle *badger.DB, sna
 	return accessGroupMemberPublicKeys, nil
 }
 
+// DBGetPaginatedAccessGroupMembersFromEnumerationIndexWithTxn for a given group will return a list of group members,
+// with public keys lexicographically GREATER than startingAccessGroupMemberPublicKeyBytes. The number of returned entries
+// will be at most maxMembersToFetch.
 func DBGetPaginatedAccessGroupMembersFromEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot,
 	groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, startingAccessGroupMemberPublicKeyBytes []byte,
 	maxMembersToFetch uint32) (_accessGroupMemberPublicKeys []*PublicKey, _err error) {
@@ -2027,6 +2032,13 @@ func DBGetPaginatedAccessGroupMembersFromEnumerationIndexWithTxn(txn *badger.Txn
 	startKey := append(prefix, startingAccessGroupMemberPublicKeyBytes...)
 
 	keysFound := _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn, prefix, startKey, maxMembersToFetch)
+	// Sanity-check that we don't return the starting key.
+	if len(keysFound) > 0 && bytes.Compare(startKey, keysFound[0]) == 0 {
+		// We will fetch one more key after the last key found and append it to the list of keys found, with the first element removed.
+		additionalKey := _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn, prefix, keysFound[len(keysFound)-1], 2)
+		keysFound = append(keysFound[1:], additionalKey[1:]...)
+	}
+
 	for _, key := range keysFound {
 		memberPublicKeyBytes := key[len(prefix):]
 		accessGroupMembers = append(accessGroupMembers, NewPublicKey(memberPublicKeyBytes))
@@ -2038,12 +2050,6 @@ func DBGetPaginatedAccessGroupMembersFromEnumerationIndexWithTxn(txn *badger.Txn
 			return nil, fmt.Errorf("DBGetPaginatedAccessGroupMembersFromEnumerationIndexWithTxn: "+
 				"Found unsorted access group members: %v %v", accessGroupMembers[ii-1], accessGroupMembers[ii])
 		}
-	}
-
-	// Sanity-check that we don't return the starting key.
-	if len(accessGroupMembers) > 0 && bytes.Compare(
-		startingAccessGroupMemberPublicKeyBytes, accessGroupMembers[0].ToBytes()) == 0 {
-		return accessGroupMembers[1:], nil
 	}
 
 	return accessGroupMembers, nil

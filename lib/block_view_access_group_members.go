@@ -3,7 +3,6 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -46,14 +45,26 @@ func (bav *UtxoView) GetAccessGroupMemberEntry(memberPublicKey *PublicKey, group
 // and maxMembersToFetch. In other words, the returned _accessGroupMembers will follow these constraints:
 // 	1) len(_accessGroupMembers) <= maxMembersToFetch
 // 	2) _accessGroupMembers[0] > startingAccessGroupMemberPublicKey
-//  	TODO: VERIFY THE > vs >= (should be >)
 // 	3) \forall i, j: i < j => _accessGroupMembers[i] < _accessGroupMembers[j]
 func (bav *UtxoView) GetPaginatedAccessGroupMembersEnumerationEntries(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
 	startingAccessGroupMemberPublicKey []byte, maxMembersToFetch uint32) (_accessGroupMembers []*PublicKey, _err error) {
 
+	return bav._getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(groupOwnerPublicKey, groupKeyName,
+		startingAccessGroupMemberPublicKey, maxMembersToFetch, MaxAccessGroupMemberEnumerationRecursionDepth)
+}
+
+func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
+	startingAccessGroupMemberPublicKey []byte, maxMembersToFetch uint32, maxDepth uint32) (_accessGroupMembers []*PublicKey, _err error) {
+
 	var accessGroupMembers []*PublicKey
 	if maxMembersToFetch == 0 {
 		return accessGroupMembers, nil
+	}
+	// This function can make recursive calls to itself. We use a depth counter to prevent infinite recursion
+	// (which shouldn't happen anyway, but better safe than sorry, right?).
+	if maxDepth == 0 {
+		return nil, errors.Wrapf(RuleErrorAccessGroupMemberEnumerationRecursionLimit,
+			"_getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe: maxDepth == 0")
 	}
 
 	// If either of the provided parameters is nil, we return.
@@ -74,7 +85,7 @@ func (bav *UtxoView) GetPaginatedAccessGroupMembersEnumerationEntries(groupOwner
 			accessGroupMemberPk := membersList[ii]
 			// If the member public key is greater or equal lexicographically to the provided paginatedMemberPublicKey,
 			// then we add it to the list of members to return.
-			if bytes.Compare(accessGroupMemberPk.ToBytes(), startingAccessGroupMemberPublicKey) >= 0 {
+			if bytes.Compare(accessGroupMemberPk.ToBytes(), startingAccessGroupMemberPublicKey) > 0 {
 				accessGroupMembers = append(accessGroupMembers, accessGroupMemberPk)
 			}
 		}
@@ -132,17 +143,9 @@ func (bav *UtxoView) GetPaginatedAccessGroupMembersEnumerationEntries(groupOwner
 		// meaning these public keys naturally lexicographically extend the member public keys already present in the UtxoView.
 
 		// TODO: Can we use some bigger brain ordered structure to always add db entries to the UtxoView?
-		if len(accessGroupMembers) > 0 {
-			lastMemberPublicKey := membersList[len(membersList)-1]
-			startIndex := 0
-			// TODO: Remove this after testing.
-			if bytes.Equal(accessGroupMembersFromDb[0].ToBytes(), lastMemberPublicKey.ToBytes()) {
-				glog.Infof(CLog(Red, fmt.Sprintf("PAGINATED QUERY FETCHES THE MEMBER WITH THE START KEY FOR "+
-					"badger=%v, postgres=%v", bav.Handle != nil, bav.Postgres != nil)))
-				startIndex = 1
-			}
+		if len(accessGroupMembers) > 0 && len(accessGroupMembersFromDb) > 0 {
 			// We now extend the mapping in the UtxoView with the entries fetched from the DB.
-			newSortedGroupMemberPublicKeys := append(membersList, accessGroupMembersFromDb[startIndex:]...)
+			newSortedGroupMemberPublicKeys := append(membersList, accessGroupMembersFromDb...)
 			bav._setAccessGroupIdToSortedGroupMemberPublicKeys(*groupOwnerPublicKey, *groupKeyName, newSortedGroupMemberPublicKeys)
 
 			//nextMemberPublicKey, err := dbAdapter.GetPaginatedAccessGroupMembersEnumerationEntries(
@@ -175,13 +178,17 @@ func (bav *UtxoView) GetPaginatedAccessGroupMembersEnumerationEntries(groupOwner
 			continue
 		}
 
-		// TODO: > or >= ?, should be >.
+		// Make sure that the member public key is greater than our pagination starting key.
 		memberPublicKey := membershipKey.GroupMemberPublicKey
 		isGreaterThanStartKey := bytes.Compare(memberPublicKey.ToBytes(), startingAccessGroupMemberPublicKey) > 0
 		if !isGreaterThanStartKey {
 			continue
 		}
 
+		// In case we already fetched the maximum number of members, we just need to check whether the current member
+		// is smaller or equal to the last member we fetched from the DB. If it is, we can skip. The reason is that
+		// if we added the member with greater public key, there is a chance there might be some members with smaller
+		// public key still present in the db, which we shouldn't skip.
 		var isLesserOrEqualThanEndKey bool
 		if len(accessGroupMembers) > 0 {
 			endingAccessGroupMemberPublicKey := accessGroupMembers[len(accessGroupMembers)-1].ToBytes()
@@ -206,27 +213,41 @@ func (bav *UtxoView) GetPaginatedAccessGroupMembersEnumerationEntries(groupOwner
 				continue
 			}
 
-			var ii int
-			shouldSkip := false
 			// TODO: We could make this O(logn) by using binary jump/search.
-			for ii = 0; ii < len(accessGroupMembers); ii++ {
+			// shouldSkip is used to indicate whether we should skip the current member because we've already added him.
+			shouldSkip := false
+			for ii := 0; ii < len(accessGroupMembers); ii++ {
 				// Check for overlapping member entries. In such case, we might need to remove the entry from our
 				// accessGroupMembers list, because the member is deleted in the current block.
 				if bytes.Equal(accessGroupMembers[ii].ToBytes(), memberPublicKey.ToBytes()) {
+					shouldSkip = true
+					// If the member is deleted, we remove it from the list.
 					if memberEntry.isDeleted {
 						accessGroupMembers = append(accessGroupMembers[:ii], accessGroupMembers[ii+1:]...)
 					}
+					break
+				} else if bytes.Compare(accessGroupMembers[ii].ToBytes(), memberPublicKey.ToBytes()) > 0 {
 					shouldSkip = true
+					// if member entry is deleted, then there is nothing to do.
+					if memberEntry.isDeleted {
+						break
+					}
+
+					// If the current accessGroupMember is lexicographically greater than the memberPublicKey, we
+					// insert the memberPublicKey at this index. We know that the last member in the accessGroupMembers
+					// is lexicographically greater or equal to the member so this either the above condition or this one
+					// will eventually evaluate to true.
+					accessGroupMembers = append(accessGroupMembers[:ii], append([]*PublicKey{&memberPublicKey}, accessGroupMembers[ii:]...)...)
 					break
 				}
 			}
 			if shouldSkip {
 				continue
 			}
-
-			// If we get here, it means the member is not in the list and we need to insert it in the right place.
-			// TODO: We could do O(logn) if we added the member to the end and then sorted after all the member iterations.
-			accessGroupMembers = append(accessGroupMembers[:ii], append([]*PublicKey{&memberPublicKey}, accessGroupMembers[ii:]...)...)
+			// If we get here, it means that the UtxoView memberPublic key is greater than all the public keys we have
+			// currently stored in the accessGroupMembers, but the list is not filled yet. We append the memberPublicKey
+			// to the end of the list.
+			accessGroupMembers = append(accessGroupMembers, &memberPublicKey)
 		} else {
 			// Note that this case will happen at most once, so we don't need to care about non-deterministic map
 			// iteration order, because every next member public key will be inserted in the right place.
@@ -235,11 +256,15 @@ func (bav *UtxoView) GetPaginatedAccessGroupMembersEnumerationEntries(groupOwner
 	}
 
 	// After iterating over all the members in the current UtxoView, there is a possibility that we now have less members
-	// than the maxMembersToFetch. In this case, we need to fetch more members from the DB, which we will do with the
-	// magic of recursion.
-	if isListFilled && len(accessGroupMembers) < int(maxMembersToFetch) {
-		remainingMembers, err := bav.GetPaginatedAccessGroupMembersEnumerationEntries(
-			groupOwnerPublicKey, groupKeyName, lastListKey, maxMembersToFetch-uint32(len(accessGroupMembers)))
+	// than the maxMembersToFetch, due to deleted members. In this case, we need to fetch more members from the DB,
+	// which we will do with the magic of recursion.
+	if isListFilled && len(accessGroupMembers) < int(maxMembersToFetch) &&
+		bytes.Compare(startingAccessGroupMemberPublicKey, lastListKey) < 0 {
+		// Note this recursive call will never lead to an infinite loop because the startingAccessGroupMemberPublicKey
+		// will be growing with each recursive call, and because we are checking for isListFilled with
+		// maxMembersToFetch > 0. But just in case we add a sanity-check parameter maxDepth to break long recursive calls.
+		remainingMembers, err := bav._getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(
+			groupOwnerPublicKey, groupKeyName, lastListKey, maxMembersToFetch-uint32(len(accessGroupMembers)), maxDepth-1)
 		if err != nil {
 			return nil, errors.Wrapf(err, "GetPaginatedAccessGroupMembersEnumerationEntries: "+
 				"Problem fetching recursion access group members enumeration entries for next member with "+
