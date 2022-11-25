@@ -366,7 +366,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 // Valid transition sequence is NEVERSTARTED->RUNNING->STOPPED.
 func (node *Node) SetStatusStopped() error {
 	if err := node.setStatusWithoutLock(STOPPED); err != nil {
-		return err
+		return fmt.Errorf("failed to set status to stop: %w", err)
 	}
 	return nil
 }
@@ -374,7 +374,7 @@ func (node *Node) SetStatusStopped() error {
 // Changes node status to RUNNING.
 func (node *Node) SetStatusRunning() error {
 	if err := node.setStatusWithoutLock(RUNNING); err != nil {
-		return err
+		return fmt.Errorf("failed to set status to running: %w", err)
 	}
 	return nil
 }

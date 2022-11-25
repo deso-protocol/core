@@ -29,9 +29,7 @@ func Run(cmd *cobra.Command, args []string) {
 	node.Start(&shutdownListener)
 
 	defer func() {
-		node.statusMutex.Lock()
 		node.Stop()
-		node.statusMutex.Unlock()
 		glog.Info("Shutdown complete")
 	}()
 	<-shutdownListener
