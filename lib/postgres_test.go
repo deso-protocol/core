@@ -47,7 +47,7 @@ func TestEmbedPg(t *testing.T) {
 func StartTestEmbeddedPostgresDB(dataPath string, port uint32) (
 	*Postgres, *embeddedpostgres.EmbeddedPostgres, error) {
 
-	glog.Infof("StopTestEmbeddedPostgresDB: Starting embedded postgres")
+	glog.Infof("StartTestEmbeddedPostgresDB: Starting embedded postgres")
 	viper.SetConfigFile("../.env")
 	viper.ReadInConfig()
 	viper.Set("ENV", "TEST")

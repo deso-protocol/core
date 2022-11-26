@@ -85,11 +85,8 @@ func TestAccessGroupCreate(t *testing.T) {
 	tv1 := _createAccessGroupCreateTestVector("TEST 1: (FAIL) Try connecting access group create transaction "+
 		"before fork height", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1, nil,
 		RuleErrorAccessGroupsBeforeBlockHeight)
-	tv1.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
+	tv1.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = uint32(0)
-	}
-	tv1.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
-		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = uint32(1000)
 	}
 	tv2 := _createAccessGroupCreateTestVector("TEST 2: (PASS) Try connecting access group create transaction "+
 		"after fork height", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1, nil,
@@ -160,7 +157,12 @@ func TestAccessGroupCreate(t *testing.T) {
 
 	tvv := []*transactionTestVector{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14,
 		tv15, tv16, tv17, tv18, tv19, tv20}
-	tvb := []*transactionTestVectorBlock{NewTransactionTestVectorBlock(tvv, nil, nil)}
+
+	tvbConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
+		// Reset the ForkHeight for access groups
+		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = uint32(1000)
+	}
+	tvb := []*transactionTestVectorBlock{NewTransactionTestVectorBlock(tvv, nil, tvbConnectCallback)}
 	tes := NewTransactionTestSuite(t, tvb, tConfig)
 	tes.Run()
 }
@@ -189,21 +191,30 @@ func _createAccessGroupCreateTestVector(id string, userPrivateKey string, userPu
 			require.NoError(tm.t, err)
 			return txn, dataSpace.expectedConnectError
 		},
-		verifyUtxoViewEntry: func(tv *transactionTestVector, tm *transactionTestMeta,
-			utxoView *UtxoView, expectDeleted bool) {
+		verifyConnectUtxoViewEntry: func(tv *transactionTestVector, tm *transactionTestMeta,
+			utxoView *UtxoView) {
 
 			dataSpace := tv.inputSpace.(*accessGroupCreateTestData)
-			_verifyUtxoViewEntryForAccessGroupCreate(
-				tm.t, utxoView, expectDeleted,
+			_verifyConnectUtxoViewEntryForAccessGroupCreate(
+				tm.t, utxoView,
+				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupPublicKey,
+				dataSpace.accessGroupName, dataSpace.extraData)
+		},
+		verifyDisconnectUtxoViewEntry: func(tv *transactionTestVector, tm *transactionTestMeta,
+			utxoView *UtxoView, utxoOps []*UtxoOperation) {
+
+			dataSpace := tv.inputSpace.(*accessGroupCreateTestData)
+			_verifyDisconnectUTxoViewEntryForAccessGroupCreate(
+				tm.t, utxoView, utxoOps,
 				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupPublicKey,
 				dataSpace.accessGroupName, dataSpace.extraData)
 		},
 		verifyDbEntry: func(tv *transactionTestVector, tm *transactionTestMeta,
-			dbAdapter *DbAdapter, expectDeleted bool) {
+			dbAdapter *DbAdapter) {
 
 			dataSpace := tv.inputSpace.(*accessGroupCreateTestData)
 			_verifyDbEntryForAccessGroupCreate(
-				tm.t, dbAdapter, expectDeleted,
+				tm.t, dbAdapter,
 				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupPublicKey,
 				dataSpace.accessGroupName, dataSpace.extraData)
 		},
@@ -228,7 +239,7 @@ func _createSignedAccessGroupCreateTransaction(t *testing.T, chain *Blockchain, 
 	return txn, nil
 }
 
-func _verifyUtxoViewEntryForAccessGroupCreate(t *testing.T, utxoView *UtxoView, expectDeleted bool,
+func _verifyConnectUtxoViewEntryForAccessGroupCreate(t *testing.T, utxoView *UtxoView,
 	accessGroupOwnerPublicKey []byte, accessGroupPublicKey []byte, accessGroupKeyName []byte, extraData map[string][]byte) {
 
 	require := require.New(t)
@@ -237,23 +248,30 @@ func _verifyUtxoViewEntryForAccessGroupCreate(t *testing.T, utxoView *UtxoView, 
 
 	// If the group has already been fetched in this utxoView, then we get it directly from there.
 	accessGroupEntry, exists := utxoView.AccessGroupIdToAccessGroupEntry[*accessGroupKey]
-	if !expectDeleted {
-		require.Equal(true, exists)
-		require.NotNil(accessGroupEntry)
-		require.Equal(false, accessGroupEntry.isDeleted)
-		require.Equal(true, _verifyEqualAccessGroupCreateEntry(
-			t, accessGroupEntry, accessGroupOwnerPublicKey, accessGroupPublicKey, accessGroupKeyName, extraData))
-	} else {
-		if !exists || accessGroupEntry == nil || accessGroupEntry.isDeleted {
-			return
-		}
-		require.Equal(false, _verifyEqualAccessGroupCreateEntry(
-			t, accessGroupEntry, accessGroupOwnerPublicKey, accessGroupPublicKey, accessGroupKeyName, extraData))
-	}
-
+	require.Equal(true, exists)
+	require.NotNil(accessGroupEntry)
+	require.Equal(false, accessGroupEntry.isDeleted)
+	require.Equal(true, _verifyEqualAccessGroupCreateEntry(
+		t, accessGroupEntry, accessGroupOwnerPublicKey, accessGroupPublicKey, accessGroupKeyName, extraData))
 }
 
-func _verifyDbEntryForAccessGroupCreate(t *testing.T, dbAdapter *DbAdapter, expectDeleted bool,
+func _verifyDisconnectUTxoViewEntryForAccessGroupCreate(t *testing.T, utxoView *UtxoView, utxoOps []*UtxoOperation,
+	accessGroupOwnerPublicKey []byte, accessGroupPublicKey []byte, accessGroupKeyName []byte, extraData map[string][]byte) {
+
+	require := require.New(t)
+	// If either of the provided parameters is nil, we return.
+	accessGroupKey := NewAccessGroupId(NewPublicKey(accessGroupOwnerPublicKey), NewGroupKeyName(accessGroupKeyName)[:])
+
+	// If the group has already been fetched in this utxoView, then we get it directly from there.
+	accessGroupEntry, exists := utxoView.AccessGroupIdToAccessGroupEntry[*accessGroupKey]
+	if !exists || accessGroupEntry == nil || accessGroupEntry.isDeleted {
+		return
+	}
+	require.Equal(false, _verifyEqualAccessGroupCreateEntry(
+		t, accessGroupEntry, accessGroupOwnerPublicKey, accessGroupPublicKey, accessGroupKeyName, extraData))
+}
+
+func _verifyDbEntryForAccessGroupCreate(t *testing.T, dbAdapter *DbAdapter,
 	accessGroupOwnerPublicKey []byte, accessGroupPublicKey []byte, accessGroupKeyName []byte, extraData map[string][]byte) {
 
 	require := require.New(t)
@@ -263,14 +281,7 @@ func _verifyDbEntryForAccessGroupCreate(t *testing.T, dbAdapter *DbAdapter, expe
 	accessGroupId := NewAccessGroupId(NewPublicKey(accessGroupOwnerPublicKey), accessGroupKeyName)
 	accessGroupEntry, err := dbAdapter.GetAccessGroupEntryByAccessGroupId(accessGroupId)
 	require.NoError(err)
-	if !expectDeleted {
-		require.Equal(true, _verifyEqualAccessGroupCreateEntry(t, accessGroupEntry, accessGroupOwnerPublicKey, accessGroupPublicKey, accessGroupKeyName, extraData))
-	} else {
-		if accessGroupEntry == nil {
-			return
-		}
-		require.Equal(false, _verifyEqualAccessGroupCreateEntry(t, accessGroupEntry, accessGroupOwnerPublicKey, accessGroupPublicKey, accessGroupKeyName, extraData))
-	}
+	require.Equal(true, _verifyEqualAccessGroupCreateEntry(t, accessGroupEntry, accessGroupOwnerPublicKey, accessGroupPublicKey, accessGroupKeyName, extraData))
 }
 
 func _verifyEqualAccessGroupCreateEntry(t *testing.T, accessGroupEntry *AccessGroupEntry, accessGroupOwnerPublicKey []byte,

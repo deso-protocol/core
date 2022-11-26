@@ -77,12 +77,12 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	m3PublicKey := NewPublicKey(m3PubBytes)
 
 	fundPublicKeysWithNanosMap := make(map[PublicKey]uint64)
-	fundPublicKeysWithNanosMap[*m0PublicKey] = 100
-	fundPublicKeysWithNanosMap[*m1PublicKey] = 100
-	fundPublicKeysWithNanosMap[*m2PublicKey] = 100
-	fundPublicKeysWithNanosMap[*m3PublicKey] = 100
+	fundPublicKeysWithNanosMap[*m0PublicKey] = 200
+	fundPublicKeysWithNanosMap[*m1PublicKey] = 200
+	fundPublicKeysWithNanosMap[*m2PublicKey] = 200
+	fundPublicKeysWithNanosMap[*m3PublicKey] = 200
 	for _, publicKey := range randomMemberPublicKeys {
-		fundPublicKeysWithNanosMap[*publicKey] = 25
+		fundPublicKeysWithNanosMap[*publicKey] = 50
 	}
 	initChainCallback := func(tm *transactionTestMeta) {
 		tm.params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
@@ -136,11 +136,11 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	tv3 := _createAccessGroupMembersTestVector("TEST 3: (PASS) Connect access group members transaction to the "+
 		"access group made by (user0, groupName1), adding as member (pk0, baseGroup)", m0Priv, m0PubBytes,
 		groupName1, tv3Members, AccessGroupMemberOperationTypeAdd, nil)
-	tv3.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey})
+	tv3.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey})
 	}
-	tv3.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+	tv3.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
 	}
 	tv4Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil,
@@ -152,10 +152,14 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	// Place the above transactions into a block.
 	tvv1 := []*transactionTestVector{tv1, tv2, tv3, tv4}
 	blockConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey})
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey})
 	}
 	blockDisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
 	}
 	tvb1 := NewTransactionTestVectorBlock(tvv1, blockConnectCallback, blockDisconnectCallback)
 
@@ -194,11 +198,11 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	tv9 := _createAccessGroupMembersTestVector("TEST 9: (PASS) Connect access group members transaction to the "+
 		"access group made by (pk0, groupName1), adding as member (pk1, baseGroup)", m0Priv, m0PubBytes, groupName1,
 		tv9Members, AccessGroupMemberOperationTypeAdd, nil)
-	tv9.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
+	tv9.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
 	}
-	tv9.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey})
+	tv9.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey})
 	}
 	// A bunch of failing tests to try out different validation rule errors.
 	tv10Members := []*AccessGroupMember{
@@ -230,11 +234,11 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	tv13 := _createAccessGroupMembersTestVector("TEST 13: (PASS) Connect access group members transaction to the "+
 		"access group made by (pk0, groupName2), adding as member (pk0, groupName1)", m0Priv, m0PubBytes, groupName2,
 		tv13Members, AccessGroupMemberOperationTypeAdd, nil)
-	tv13.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey})
+	tv13.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey})
 	}
-	tv13.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
+	tv13.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
 	}
 	// Create an access group (pk1, groupName3) and (pk2, groupName4)
 	tv14 := _createAccessGroupCreateTestVector("TEST 14: (PASS) Connect access group transaction made by "+
@@ -261,28 +265,32 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	tv16 := _createAccessGroupMembersTestVector("TEST 16: (PASS) Connect access group members transaction to the "+
 		"access group made by (pk2, groupName4), adding as member (pk0, groupName1), (pk1, groupName3), and (pk2, baseGroup)",
 		m2Priv, m2PubBytes, groupName4, tv16Members, AccessGroupMemberOperationTypeAdd, nil)
-	tv16.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
-		_verifyMembersList(tm, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
+	tv16.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
+		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
 	}
-	tv16.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
-		_verifyMembersList(tm, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{})
+	tv16.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
+		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{})
 	}
 
 	// Mine all the above transactions into a new block.
 	tvv2 := []*transactionTestVector{tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14, tv15, tv16}
 	block2ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey})
-		_verifyMembersList(tm, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
-		_verifyMembersList(tm, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey})
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
+		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
 	}
 	block2DisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey})
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
-		_verifyMembersList(tm, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
-		_verifyMembersList(tm, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{})
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey})
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
+		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{})
 	}
 	tvb2 := NewTransactionTestVectorBlock(tvv2, block2ConnectCallback, block2DisconnectCallback)
 
@@ -312,25 +320,29 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 			"(m2Pub, groupName4), adding all random members", len(tvv1)+len(tvv2)+len(randomGroupsTransactionVectors)+1),
 		m2Priv, m2PubBytes, groupName4, randomMembers, AccessGroupMemberOperationTypeAdd, nil)
 	randomGroupsTransactionVectors = append(randomGroupsTransactionVectors, tvRandomMembers)
-	tvRandomMembers.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m2PublicKey, NewGroupKeyName(groupName4), totalMembers)
+	tvRandomMembers.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName4), totalMembers)
 	}
-	tvRandomMembers.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
+	tvRandomMembers.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
 	}
 
 	// Mine all the above transactions into a new block.
 	block3ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey})
-		_verifyMembersList(tm, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
-		_verifyMembersList(tm, m2PublicKey, NewGroupKeyName(groupName4), totalMembers)
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey})
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
+		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName4), totalMembers)
 	}
 	block3DisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey})
-		_verifyMembersList(tm, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
-		_verifyMembersList(tm, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey})
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
+		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
 	}
 	tvb3 := NewTransactionTestVectorBlock(randomGroupsTransactionVectors, block3ConnectCallback, block3DisconnectCallback)
 
@@ -429,11 +441,11 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	tv2 := _createAccessGroupMembersTestVector("TEST 2: (PASS) Connect access group members add transaction made by "+
 		"(pk0, groupName1) adding as member (pk1, baseGroup)", m0Priv, m0PubBytes, groupName1, tv2Members,
 		AccessGroupMemberOperationTypeAdd, nil)
-	tv2.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m1PublicKey})
+	tv2.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m1PublicKey})
 	}
-	tv2.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+	tv2.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
 	}
 
 	tv3Members := []*AccessGroupMember{
@@ -448,11 +460,11 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	tv4 := _createAccessGroupMembersTestVector("TEST 4: (PASS) Connect access group members remove transaction made by "+
 		"(pk0, groupName1) removing member (pk1, baseGroup)", m0Priv, m0PubBytes, groupName1, tv4Members,
 		AccessGroupMemberOperationTypeRemove, nil)
-	tv4.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+	tv4.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
 	}
-	tv4.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta) {
-		_verifyMembersList(tm, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m1PublicKey})
+	tv4.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m1PublicKey})
 	}
 
 	//randomMembers := []*AccessGroupMember{}
@@ -499,19 +511,27 @@ func _createAccessGroupMembersTestVector(id string, userPrivateKey string, acces
 			require.NoError(tm.t, err)
 			return txn, dataSpace.expectedConnectError
 		},
-		verifyUtxoViewEntry: func(tv *transactionTestVector, tm *transactionTestMeta,
-			utxoView *UtxoView, expectDeleted bool) {
+		verifyConnectUtxoViewEntry: func(tv *transactionTestVector, tm *transactionTestMeta,
+			utxoView *UtxoView) {
 			dataSpace := tv.inputSpace.(*accessGroupMembersTestData)
-			_verifyUtxoViewEntryForAccessGroupMembers(
-				tm.t, utxoView, expectDeleted, operationType,
+			_verifyConnectUtxoViewEntryForAccessGroupMembers(
+				tm.t, utxoView, operationType,
+				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupKeyName,
+				dataSpace.accessGroupMembersList)
+		},
+		verifyDisconnectUtxoViewEntry: func(tv *transactionTestVector, tm *transactionTestMeta,
+			utxoView *UtxoView, utxoOps []*UtxoOperation) {
+			dataSpace := tv.inputSpace.(*accessGroupMembersTestData)
+			_verifyDisconnectUtxoViewEntryForAccessGroupMembers(
+				tm.t, utxoView, utxoOps, operationType,
 				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupKeyName,
 				dataSpace.accessGroupMembersList)
 		},
 		verifyDbEntry: func(tv *transactionTestVector, tm *transactionTestMeta,
-			dbAdapter *DbAdapter, expectDeleted bool) {
+			dbAdapter *DbAdapter) {
 			dataSpace := tv.inputSpace.(*accessGroupMembersTestData)
 			_verifyDbEntryForAccessGroupMembers(
-				tm.t, dbAdapter, expectDeleted, operationType,
+				tm.t, dbAdapter, operationType,
 				dataSpace.accessGroupOwnerPublicKey, dataSpace.accessGroupKeyName,
 				dataSpace.accessGroupMembersList)
 		},
@@ -535,7 +555,7 @@ func _createSignedAccessGroupMembersTransaction(t *testing.T, chain *Blockchain,
 	return txn, nil
 }
 
-func _verifyUtxoViewEntryForAccessGroupMembers(t *testing.T, utxoView *UtxoView, expectDeleted bool,
+func _verifyConnectUtxoViewEntryForAccessGroupMembers(t *testing.T, utxoView *UtxoView,
 	operationType AccessGroupMemberOperationType, accessGroupOwnerPublicKey []byte, accessGroupKeyName []byte,
 	accessGroupMembersList []*AccessGroupMember) {
 
@@ -550,38 +570,63 @@ func _verifyUtxoViewEntryForAccessGroupMembers(t *testing.T, utxoView *UtxoView,
 
 		switch operationType {
 		case AccessGroupMemberOperationTypeAdd, AccessGroupMemberOperationTypeUpdate:
-			if !expectDeleted {
-				require.Equal(true, exists)
-				require.NotNil(accessGroupMember)
-				require.Equal(false, accessGroupMember.isDeleted)
-				require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
-			} else {
-				if !exists || accessGroupMember == nil || accessGroupMember.isDeleted {
-					return
-				}
-				// It's possible that there is another testVector' that makes overlapping utxoEntries to this testVector.
-				// If it was connected later, we just check that the current UtxoView accessGroupMember entry is different.
-				require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
-			}
+			require.Equal(true, exists)
+			require.NotNil(accessGroupMember)
+			require.Equal(false, accessGroupMember.isDeleted)
+			require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
 		case AccessGroupMemberOperationTypeRemove:
 			// OperationTypeRemove will have inverted validation for the UtxoView than add/updates since it deletes the entry.
-			if !expectDeleted {
-				// TODO: do we want to also OR a case where accessGroupMember == nil? This would only be the case if we flushed.
-				if !exists || accessGroupMember == nil || accessGroupMember.isDeleted {
-					return
-				}
-				require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
-			} else {
-				require.Equal(true, exists)
-				require.NotNil(accessGroupMember)
-				require.Equal(false, accessGroupMember.isDeleted)
-				require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+			// TODO: do we want to also OR a case where accessGroupMember == nil? This would only be the case if we flushed.
+			if !exists || accessGroupMember == nil || accessGroupMember.isDeleted {
+				return
 			}
+			require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
 		}
 	}
 }
 
-func _verifyDbEntryForAccessGroupMembers(t *testing.T, dbAdapter *DbAdapter, expectDeleted bool,
+func _verifyDisconnectUtxoViewEntryForAccessGroupMembers(t *testing.T, utxoView *UtxoView, utxoOps []*UtxoOperation,
+	operationType AccessGroupMemberOperationType, accessGroupOwnerPublicKey []byte, accessGroupKeyName []byte,
+	accessGroupMembersList []*AccessGroupMember) {
+
+	require := require.New(t)
+
+	for ii, member := range accessGroupMembersList {
+		groupMembershipKey := NewGroupMembershipKey(*NewPublicKey(member.AccessGroupMemberPublicKey),
+			*NewPublicKey(accessGroupOwnerPublicKey), *NewGroupKeyName(accessGroupKeyName))
+
+		// If the group has already been fetched in this utxoView, then we get it directly from there.
+		accessGroupMember, exists := utxoView.AccessGroupMembershipKeyToAccessGroupMember[*groupMembershipKey]
+
+		switch operationType {
+		case AccessGroupMemberOperationTypeAdd, AccessGroupMemberOperationTypeUpdate:
+			if !exists || accessGroupMember == nil || accessGroupMember.isDeleted {
+				return
+			}
+			// It's possible that there is another testVector' that makes overlapping utxoEntries to this testVector.
+			// If it was connected later, we just check that the current UtxoView accessGroupMember entry is different.
+			require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+		case AccessGroupMemberOperationTypeRemove:
+			require.Equal(true, exists)
+			require.NotNil(accessGroupMember)
+			require.Equal(false, accessGroupMember.isDeleted)
+			// Verify that the current entry in UtxoView correctly reflects the UtxoOperation.
+			currentUtxoOp := utxoOps[len(utxoOps)-1]
+			require.Equal(currentUtxoOp.Type, OperationTypeAccessGroupMembers)
+			prevAccessGroupMemberEntry := currentUtxoOp.PrevAccessGroupMembersList[ii]
+			previousAccessGroupMember := &AccessGroupMember{
+				AccessGroupMemberPublicKey: prevAccessGroupMemberEntry.AccessGroupMemberPublicKey.ToBytes(),
+				AccessGroupMemberKeyName:   prevAccessGroupMemberEntry.AccessGroupMemberKeyName.ToBytes(),
+				EncryptedKey:               prevAccessGroupMemberEntry.EncryptedKey,
+				ExtraData:                  prevAccessGroupMemberEntry.ExtraData,
+			}
+			require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember,
+				previousAccessGroupMember))
+		}
+	}
+}
+
+func _verifyDbEntryForAccessGroupMembers(t *testing.T, dbAdapter *DbAdapter,
 	operationType AccessGroupMemberOperationType, accessGroupOwnerPublicKey []byte, accessGroupKeyName []byte,
 	accessGroupMembersList []*AccessGroupMember) {
 
@@ -598,28 +643,14 @@ func _verifyDbEntryForAccessGroupMembers(t *testing.T, dbAdapter *DbAdapter, exp
 
 		switch operationType {
 		case AccessGroupMemberOperationTypeAdd, AccessGroupMemberOperationTypeUpdate:
-			if !expectDeleted {
-				require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
-				require.Equal(true, accessGroupEnumerationEntry)
-			} else {
-				if accessGroupMember == nil && !accessGroupEnumerationEntry {
-					return
-				}
-				require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
-				require.Equal(false, accessGroupEnumerationEntry)
-
-			}
+			require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+			require.Equal(true, accessGroupEnumerationEntry)
 		case AccessGroupMemberOperationTypeRemove:
-			if !expectDeleted {
-				if accessGroupMember == nil && !accessGroupEnumerationEntry {
-					return
-				}
-				require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
-				require.Equal(false, accessGroupEnumerationEntry)
-			} else {
-				require.Equal(true, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
-				require.Equal(true, accessGroupEnumerationEntry)
+			if accessGroupMember == nil && !accessGroupEnumerationEntry {
+				return
 			}
+			require.Equal(false, _verifyEqualAccessGroupMember(t, accessGroupMember, member))
+			require.Equal(false, accessGroupEnumerationEntry)
 		}
 	}
 }
@@ -649,7 +680,7 @@ func _verifyEqualAccessGroupMember(t *testing.T, accessGroupMemberEntry *AccessG
 	return true
 }
 
-func _verifyMembersList(tm *transactionTestMeta, accessGroupOwnerPublicKey *PublicKey, accessGroupKeyName *GroupKeyName,
+func _verifyMembersList(tm *transactionTestMeta, utxoView *UtxoView, accessGroupOwnerPublicKey *PublicKey, accessGroupKeyName *GroupKeyName,
 	expectedMembersList []*PublicKey) {
 
 	// First, try fetching all the members with a single paginated call.
@@ -671,8 +702,6 @@ func _verifyMembersList(tm *transactionTestMeta, accessGroupOwnerPublicKey *Publ
 	}
 
 	{
-		utxoView, err := tm.mempool.GetAugmentedUniversalView()
-		require.NoError(err)
 		accessGroupMembers, err := utxoView.GetPaginatedAccessGroupMembersEnumerationEntries(
 			accessGroupOwnerPublicKey, accessGroupKeyName, []byte{}, math.MaxUint32)
 		require.NoError(err)
@@ -683,8 +712,6 @@ func _verifyMembersList(tm *transactionTestMeta, accessGroupOwnerPublicKey *Publ
 	{
 		startKey := []byte{}
 		accessGroupMembers := []*PublicKey{}
-		utxoView, err := tm.mempool.GetAugmentedUniversalView()
-		require.NoError(err)
 		for {
 			accessGroupMembersPage, err := utxoView.GetPaginatedAccessGroupMembersEnumerationEntries(
 				accessGroupOwnerPublicKey, accessGroupKeyName, startKey, 1)
