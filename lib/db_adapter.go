@@ -194,6 +194,10 @@ func (adapter *DbAdapter) GetPaginatedAccessGroupMembersEnumerationEntries(
 	startingAccessGroupMemberPublicKeyBytes []byte, maxMembersToFetch uint32) (
 	_accessGroupMemberPublicKeys []*PublicKey, _err error) {
 
+	if maxMembersToFetch == 0 {
+		return nil, nil
+	}
+
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetPaginatedAccessGroupMembersFromEnumerationIndex(
 			accessGroupOwnerPublicKey, accessGroupKeyName,

@@ -120,6 +120,7 @@ const (
 	RuleErrorAccessGroupMemberCantAddOwnerBySameGroup    RuleError = "RuleErrorAccessGroupMemberCantAddOwnerBySameGroup"
 	RuleErrorAccessGroupMemberDoesntExistOrIsDeleted     RuleError = "RuleErrorAccessGroupMemberDoesntExistOrIsDeleted"
 	RuleErrorAccessGroupMemberRemoveEncryptedKeyNotEmpty RuleError = "RuleErrorAccessGroupMemberRemoveEncryptedKeyNotEmpty"
+	RuleErrorAccessGroupMemberRemoveExtraDataNotEmpty    RuleError = "RuleErrorAccessGroupMemberRemoveExtraDataNotEmpty"
 	RuleErrorAccessGroupPrevMembersListIsIncorrect       RuleError = "RuleErrorAccessGroupPrevMembersListIsIncorrect"
 	RuleErrorAccessGroupMemberEnumerationRecursionLimit  RuleError = "RuleErrorAccessGroupMemberEnumerationRecursionLimit"
 

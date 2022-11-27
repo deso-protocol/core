@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"math"
@@ -356,18 +357,31 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	_ = require
 
 	// randomMemberCounter is used to generate random members for the test.
-	randomMemberCounter := 50
-	randomMemberPrivateKeys := []string{}
-	randomMemberPublicKeys := []*PublicKey{}
-	for ii := 0; ii < randomMemberCounter; ii++ {
+	randomMemberCounter1 := 20
+	randomMemberCounter2 := 30
+	randomMemberPrivateKeys1 := []string{}
+	randomMemberPrivateKeys2 := []string{}
+	randomMemberPublicKeys1 := []*PublicKey{}
+	randomMemberPublicKeys2 := []*PublicKey{}
+	for ii := 0; ii < randomMemberCounter1; ii++ {
 		privateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
 		privateKeyBase58Check := Base58CheckEncode(
 			privateKey.Serialize(), true, &DeSoTestnetParams)
-		randomMemberPrivateKeys = append(randomMemberPrivateKeys, privateKeyBase58Check)
+		randomMemberPrivateKeys1 = append(randomMemberPrivateKeys1, privateKeyBase58Check)
 		publicKeyBytes := privateKey.PubKey().SerializeCompressed()
 		publicKey := NewPublicKey(publicKeyBytes)
-		randomMemberPublicKeys = append(randomMemberPublicKeys, publicKey)
+		randomMemberPublicKeys1 = append(randomMemberPublicKeys1, publicKey)
+	}
+	for ii := 0; ii < randomMemberCounter2; ii++ {
+		privateKey, err := btcec.NewPrivateKey(btcec.S256())
+		require.NoError(err)
+		privateKeyBase58Check := Base58CheckEncode(
+			privateKey.Serialize(), true, &DeSoTestnetParams)
+		randomMemberPrivateKeys2 = append(randomMemberPrivateKeys2, privateKeyBase58Check)
+		publicKeyBytes := privateKey.PubKey().SerializeCompressed()
+		publicKey := NewPublicKey(publicKeyBytes)
+		randomMemberPublicKeys2 = append(randomMemberPublicKeys2, publicKey)
 	}
 
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
@@ -380,10 +394,10 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	m3PublicKey := NewPublicKey(m3PubBytes)
 
 	fundPublicKeysWithNanosMap := make(map[PublicKey]uint64)
-	fundPublicKeysWithNanosMap[*m0PublicKey] = 100
-	fundPublicKeysWithNanosMap[*m1PublicKey] = 100
-	fundPublicKeysWithNanosMap[*m2PublicKey] = 100
-	fundPublicKeysWithNanosMap[*m3PublicKey] = 100
+	fundPublicKeysWithNanosMap[*m0PublicKey] = 200
+	fundPublicKeysWithNanosMap[*m1PublicKey] = 200
+	fundPublicKeysWithNanosMap[*m2PublicKey] = 200
+	fundPublicKeysWithNanosMap[*m3PublicKey] = 200
 
 	initChainCallback := func(tm *transactionTestMeta) {
 		tm.params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
@@ -432,9 +446,14 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	_ = groupName4
 
 	// Access group (m0Pub, groupName1) with access public key groupPk1.
+	// Membership [create]:
+	// (m0Pub, groupName1) ->
 	tv1 := _createAccessGroupCreateTestVector("TEST 1: (PASS) Connect access group create transaction made by "+
 		"(pk0, groupName1)", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1, nil,
 		nil)
+	// Membership [memberAdd]:
+	// (m0Pub, groupName1) ->
+	//		(m1Pub, BaseGroupKeyName)
 	tv2Members := []*AccessGroupMember{
 		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil},
 	}
@@ -454,6 +473,16 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	tv3 := _createAccessGroupMembersTestVector("TEST 3: (FAIL) Connect access group members remove transaction made by "+
 		"(pk0, groupName1) removing member (pk1, baseGroup) with non-empty encrypted key", m0Priv, m0PubBytes, groupName1, tv3Members,
 		AccessGroupMemberOperationTypeRemove, RuleErrorAccessGroupMemberRemoveEncryptedKeyNotEmpty)
+	randomExtraData := make(map[string][]byte)
+	randomExtraData["random"] = []byte{1}
+	tv3p5Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: nil, ExtraData: randomExtraData},
+	}
+	tv3p5 := _createAccessGroupMembersTestVector("TEST 3.5: (FAIL) Connect access group members remove transaction made by "+
+		"(pk0, groupName1) removing member (pk1, baseGroup) with non-empty extra data", m0Priv, m0PubBytes, groupName1, tv3p5Members,
+		AccessGroupMemberOperationTypeRemove, RuleErrorAccessGroupMemberRemoveExtraDataNotEmpty)
+	// Membership [memberRemove]:
+	// (m0Pub, groupName1) ->
 	tv4Members := []*AccessGroupMember{
 		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: nil, ExtraData: nil},
 	}
@@ -466,24 +495,319 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	tv4.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m1PublicKey})
 	}
+	tv5Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m1PubBytes[:10], AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: nil, ExtraData: nil},
+	}
+	tv5 := _createAccessGroupMembersTestVector("TEST 5: (FAIL) Connect access group members remove transaction made by "+
+		"(pk0, groupName1) removing member (invalid, baseGroup) with invalid public key", m0Priv, m0PubBytes, groupName1, tv5Members,
+		AccessGroupMemberOperationTypeRemove, RuleErrorPubKeyLen)
+	tv6Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m2PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: nil, ExtraData: nil},
+	}
+	tv6 := _createAccessGroupMembersTestVector("TEST 6: (FAIL) Connect access group members remove transaction made by "+
+		"(pk0, groupName1) removing non-existing member (pk2, baseKey) with invalid key name", m0Priv, m0PubBytes, groupName1, tv6Members,
+		AccessGroupMemberOperationTypeRemove, RuleErrorAccessGroupMemberDoesntExistOrIsDeleted)
+	// Membership [memberAdd]:
+	// (m0Pub, groupName1) ->
+	//		(m1Pub, BaseGroupKeyName)
+	tv7Members := tv2Members
+	tv7 := _createAccessGroupMembersTestVector("TEST 7: (PASS) Connect access group members add transaction made by "+
+		"(pk0, groupName1) adding again as member (pk1, baseGroup)", m0Priv, m0PubBytes, groupName1, tv7Members,
+		AccessGroupMemberOperationTypeAdd, nil)
+	tv7.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m1PublicKey})
+	}
+	tv7.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+	}
+	// Membership [memberRemove]:
+	// (m0Pub, groupName1) ->
+	tv8Members := tv4Members
+	tv8 := _createAccessGroupMembersTestVector("TEST 8: (PASS) Connect access group members remove transaction made by "+
+		"(pk0, groupName1) removing again member (pk1, baseGroup)", m0Priv, m0PubBytes, groupName1, tv8Members,
+		AccessGroupMemberOperationTypeRemove, nil)
+	tv8.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+	}
+	tv8.disconnectCallback = tv7.connectCallback
+	// Access group (m1Pub, groupName2) with access public key groupPk2
+	// Membership [create]:
+	// (m0Pub, groupName1) ->
+	// (m1Pub, groupName2) ->
+	tv9 := _createAccessGroupCreateTestVector("TEST 9: (PASS) Connect access group create transaction made by "+
+		"(pk1, groupName2)", m1Priv, m1PubBytes, m1PubBytes, groupPk2, groupName2, nil, nil)
+	// Membership [memberAdd]:
+	// (m0Pub, groupName1) ->
+	//		(m0Pub, baseGroup)
+	// 		(m1Pub, groupName2)
+	// (m1Pub, groupName2) ->
+	// 		(m0Pub, groupName1)
+	// 		(m1Pub, baseGroup)
+	// 		(m2Pub, baseGroup)
+	tv10Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil},
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: groupName2, EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv10 := _createAccessGroupMembersTestVector("TEST 10: (PASS) Connect access group members add transaction made by "+
+		"(pk0, groupName1) adding member (pk0, baseGroup) and (pk1, groupName2)", m0Priv, m0PubBytes, groupName1, tv10Members,
+		AccessGroupMemberOperationTypeAdd, nil)
+	tv10.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
+	}
+	tv10.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+	}
+	tv11Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil},
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil},
+		{AccessGroupMemberPublicKey: m2PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv11 := _createAccessGroupMembersTestVector("TEST 11: (PASS) Connect access group members add transaction made by "+
+		"(pk1, groupName2) adding member (pk0, groupName1), (pk1, baseGroup) and (pk2, baseGroup)", m1Priv, m1PubBytes, groupName2, tv11Members,
+		AccessGroupMemberOperationTypeAdd, nil)
+	tv11.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
+	}
+	tv11.disconnectCallback = tv10.connectCallback
 
-	//randomMembers := []*AccessGroupMember{}
-	//for ii := 0; ii < 50; ii++ {
-	//	extraDataMap := make(map[string][]byte)
-	//	extraDataMap[fmt.Sprintf("randomField%v", ii)] = []byte(fmt.Sprintf("randomValue%v", ii))
-	//	randomMembers = append(randomMembers, &AccessGroupMember{
-	//		AccessGroupMemberPublicKey: randomMemberPublicKeys[ii].ToBytes(),
-	//		AccessGroupMemberKeyName:   BaseGroupKeyName().ToBytes(),
-	//		EncryptedKey:               []byte{1}, ExtraData: extraDataMap,
-	//	})
-	//}
-	//tv2 := _createAccessGroupMembersTestVector("TEST 2: (PASS) Connect access group add members transaction made by "+
-	//	"(pk0, groupName1), adding all random members", m0Priv, m0PubBytes, groupName1, randomMembers,
-	//	AccessGroupMemberOperationTypeAdd, nil)
+	// Mine all above transactions into a block.
+	tvv1 := []*transactionTestVector{tv1, tv2, tv3, tv3p5, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11}
+	tvb1ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
+	}
+	tvb1DisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
+	}
+	tvb1 := NewTransactionTestVectorBlock(tvv1, tvb1ConnectCallback, tvb1DisconnectCallback)
 
-	tvv := []*transactionTestVector{tv1, tv2, tv3, tv4}
-	tvb := []*transactionTestVectorBlock{{tvv, nil, nil}}
-	tes := NewTransactionTestSuite(t, tvb, tConfig)
+	// Membership [memberAdd]:
+	// (m0Pub, groupName1) ->
+	//		(m0Pub, baseGroup)
+	// 		(m1Pub, groupName2)
+	//		20 x (randomPk, baseGroup)
+	// (m1Pub, groupName2) ->
+	// 		(m0Pub, groupName1)
+	// 		(m1Pub, baseGroup)
+	// 		(m2Pub, baseGroup)
+	//		30 x (randomPk, baseGroup)
+	tv12Members := []*AccessGroupMember{}
+	tempMemberMap1 := make(map[PublicKey]AccessGroupMember)
+	for ii := 0; ii < randomMemberCounter1; ii++ {
+		extraDataMap := make(map[string][]byte)
+		extraDataMap[fmt.Sprintf("randomField%v", ii)] = []byte(fmt.Sprintf("randomValue%v", ii))
+		groupMember := &AccessGroupMember{
+			AccessGroupMemberPublicKey: randomMemberPublicKeys1[ii].ToBytes(),
+			AccessGroupMemberKeyName:   BaseGroupKeyName().ToBytes(),
+			EncryptedKey:               []byte{byte(ii)},
+			ExtraData:                  extraDataMap,
+		}
+		tv12Members = append(tv12Members, groupMember)
+		tempMemberMap1[*randomMemberPublicKeys1[ii]] = *groupMember
+	}
+	tv12 := _createAccessGroupMembersTestVector(fmt.Sprintf("TEST 12: (PASS) Connect access group members add transaction made by "+
+		"(pk0, groupName1) adding member and %v x (randomPk, baseGroup)", randomMemberCounter1), m0Priv, m0PubBytes, groupName1, tv12Members,
+		AccessGroupMemberOperationTypeAdd, nil)
+	tv12.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1),
+			append([]*PublicKey{m0PublicKey, m1PublicKey}, randomMemberPublicKeys1...))
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
+	}
+	tv12.disconnectCallback = tv11.connectCallback
+
+	tv13Members := []*AccessGroupMember{}
+	tempMemberMap2 := make(map[PublicKey]AccessGroupMember)
+	for ii := 0; ii < randomMemberCounter2; ii++ {
+		extraDataMap := make(map[string][]byte)
+		extraDataMap[fmt.Sprintf("randomField%v", ii)] = []byte(fmt.Sprintf("randomValue%v", ii))
+		groupMember := &AccessGroupMember{
+			AccessGroupMemberPublicKey: randomMemberPublicKeys2[ii].ToBytes(),
+			AccessGroupMemberKeyName:   BaseGroupKeyName().ToBytes(),
+			EncryptedKey:               []byte{byte(ii)},
+			ExtraData:                  extraDataMap,
+		}
+		tv13Members = append(tv13Members, groupMember)
+		tempMemberMap2[*randomMemberPublicKeys2[ii]] = *groupMember
+	}
+	tv13 := _createAccessGroupMembersTestVector(fmt.Sprintf("TEST 13: (PASS) Connect access group members add transaction made by "+
+		"(pk1, groupName2) adding member and %v x (randomPk, baseGroup)", randomMemberCounter2), m1Priv, m1PubBytes, groupName2, tv13Members,
+		AccessGroupMemberOperationTypeAdd, nil)
+	tv13.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1),
+			append([]*PublicKey{m0PublicKey, m1PublicKey}, randomMemberPublicKeys1...))
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2),
+			append([]*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey}, randomMemberPublicKeys2...))
+	}
+	tv13.disconnectCallback = tv12.connectCallback
+	// Remove member (m0Pub, baseGroup) and half of the random members from the group (m0Pub, groupName1).
+	// Membership [memberRemove]:
+	// (m0Pub, groupName1) ->
+	// 		(m1Pub, groupName2)
+	//		10 x (randomPk, baseGroup)
+	// (m1Pub, groupName2) ->
+	// 		(m0Pub, groupName1)
+	// 		(m1Pub, baseGroup)
+	// 		(m2Pub, baseGroup)
+	//		30 x (randomPk, baseGroup)
+	tv14Members := []*AccessGroupMember{}
+	randomMembersShuffleOrder1 := []*AccessGroupMember{}
+	randomMembersShuffleOrder2 := []*AccessGroupMember{}
+	for _, member := range tempMemberMap1 {
+		memberCopy := member
+		memberCopy.ExtraData = nil
+		memberCopy.EncryptedKey = nil
+		randomMembersShuffleOrder1 = append(randomMembersShuffleOrder1, &memberCopy)
+	}
+	for _, member := range tempMemberMap2 {
+		memberCopy := member
+		memberCopy.ExtraData = nil
+		memberCopy.EncryptedKey = nil
+		randomMembersShuffleOrder2 = append(randomMembersShuffleOrder2, &memberCopy)
+	}
+	// Get half of the shuffled random members from the first group.
+	for ii := 0; ii < randomMemberCounter1/2; ii++ {
+		tv14Members = append(tv14Members, randomMembersShuffleOrder1[ii])
+	}
+	tv14Members = append(tv14Members, &AccessGroupMember{
+		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: nil, ExtraData: nil,
+	})
+	tv14 := _createAccessGroupMembersTestVector(fmt.Sprintf("TEST 14: (PASS) Connect access group members remove transaction made by "+
+		"(pk0, groupName1) removing (m0Pub, baseGroup) and %v x (randomPk, baseGroup)", randomMemberCounter1/2), m0Priv, m0PubBytes, groupName1, tv14Members,
+		AccessGroupMemberOperationTypeRemove, nil)
+	tv14.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		remainingRandomMembers1 := []*PublicKey{}
+		for _, member := range randomMembersShuffleOrder1[randomMemberCounter1/2:] {
+			remainingRandomMembers1 = append(remainingRandomMembers1, NewPublicKey(member.AccessGroupMemberPublicKey))
+		}
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1),
+			append([]*PublicKey{m1PublicKey}, remainingRandomMembers1...))
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2),
+			append([]*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey}, randomMemberPublicKeys2...))
+	}
+	tv14.disconnectCallback = tv13.connectCallback
+	// Remove members (m0Pub, groupName1), (m1Pub, baseGroup), (m2Pub, baseGroup) and
+	// half of the random members from the group (m1Pub, groupName2).
+	// Membership [memberRemove]:
+	// (m0Pub, groupName1) ->
+	// 		(m1Pub, groupName2)
+	//		10 x (randomPk, baseGroup)
+	// (m1Pub, groupName2) ->
+	//		15 x (randomPk, baseGroup)
+	tv15Members := []*AccessGroupMember{}
+	// Get half of the shuffled random members from the second group.
+	tv15Members = append(tv15Members, randomMembersShuffleOrder2[:randomMemberCounter2/2]...)
+	tv15Members = append(tv15Members, []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: NewGroupKeyName(groupName1).ToBytes(), EncryptedKey: nil, ExtraData: nil},
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: nil, ExtraData: nil},
+		{AccessGroupMemberPublicKey: m2PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: nil, ExtraData: nil},
+	}...)
+	tv15 := _createAccessGroupMembersTestVector(fmt.Sprintf("TEST 15: (PASS) Connect access group members remove "+
+		"transaction made by (pk1, groupName2) removing (m0Pub, groupName1), (m1Pub, baseGroup), (m2Pub, baseGroup) "+
+		"and %v x (randomPk, baseGroup)", randomMemberCounter2/2),
+		m1Priv, m1PubBytes, groupName2, tv15Members, AccessGroupMemberOperationTypeRemove, nil)
+	tv15.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		remainingRandomMembers1 := []*PublicKey{}
+		for _, member := range randomMembersShuffleOrder1[randomMemberCounter1/2:] {
+			remainingRandomMembers1 = append(remainingRandomMembers1, NewPublicKey(member.AccessGroupMemberPublicKey))
+		}
+		remainingRandomMembers2 := []*PublicKey{}
+		for _, member := range randomMembersShuffleOrder2[randomMemberCounter2/2:] {
+			remainingRandomMembers2 = append(remainingRandomMembers2, NewPublicKey(member.AccessGroupMemberPublicKey))
+		}
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), append([]*PublicKey{m1PublicKey}, remainingRandomMembers1...))
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), remainingRandomMembers2)
+	}
+	tv15.disconnectCallback = tv14.connectCallback
+
+	// Mine all above transactions into a block.
+	tvv2 := []*transactionTestVector{tv12, tv13, tv14, tv15}
+	tvb2ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		remainingRandomMembers1 := []*PublicKey{}
+		for _, member := range randomMembersShuffleOrder1[randomMemberCounter1/2:] {
+			remainingRandomMembers1 = append(remainingRandomMembers1, NewPublicKey(member.AccessGroupMemberPublicKey))
+		}
+		remainingRandomMembers2 := []*PublicKey{}
+		for _, member := range randomMembersShuffleOrder2[randomMemberCounter2/2:] {
+			remainingRandomMembers2 = append(remainingRandomMembers2, NewPublicKey(member.AccessGroupMemberPublicKey))
+		}
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), append([]*PublicKey{m1PublicKey}, remainingRandomMembers1...))
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), remainingRandomMembers2)
+	}
+	tvb2DisconnectCallback := tvb1ConnectCallback
+	tvb2 := NewTransactionTestVectorBlock(tvv2, tvb2ConnectCallback, tvb2DisconnectCallback)
+
+	// Remove member (m1Pub, groupName2) and remaining random members from (m0Pub, groupName1)
+	// Membership [memberRemove]:
+	// (m0Pub, groupName1) ->
+	// (m1Pub, groupName2) ->
+	//		15 x (randomPk, baseGroup)
+	tv16Members := []*AccessGroupMember{}
+	for _, member := range randomMembersShuffleOrder1[randomMemberCounter1/2:] {
+		tv16Members = append(tv16Members, &AccessGroupMember{
+			AccessGroupMemberPublicKey: member.AccessGroupMemberPublicKey,
+			AccessGroupMemberKeyName:   BaseGroupKeyName().ToBytes(),
+			EncryptedKey:               nil,
+			ExtraData:                  nil,
+		})
+	}
+	tv16Members = append(tv16Members, &AccessGroupMember{
+		AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: NewGroupKeyName(groupName2).ToBytes(), EncryptedKey: nil, ExtraData: nil,
+	})
+	tv16 := _createAccessGroupMembersTestVector(fmt.Sprintf("TEST 16: (PASS) Connect access group members remove "+
+		"transaction made by (pk0, groupName1) removing (m1Pub, groupName2) and remaining %v x (randomPk, baseGroup)",
+		randomMemberCounter1/2), m0Priv, m0PubBytes, groupName1, tv16Members, AccessGroupMemberOperationTypeRemove, nil)
+	tv16.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		remainingRandomMembers2 := []*PublicKey{}
+		for _, member := range randomMembersShuffleOrder2[randomMemberCounter2/2:] {
+			remainingRandomMembers2 = append(remainingRandomMembers2, NewPublicKey(member.AccessGroupMemberPublicKey))
+		}
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), remainingRandomMembers2)
+	}
+	tv16.disconnectCallback = tv15.connectCallback
+	// Remove remaining random members from (m1Pub, groupName2)
+	// Membership [memberRemove]:
+	// (m0Pub, groupName1) ->
+	// (m1Pub, groupName2) ->
+	tv17Members := []*AccessGroupMember{}
+	for _, member := range randomMembersShuffleOrder2[randomMemberCounter2/2:] {
+		tv17Members = append(tv17Members, &AccessGroupMember{
+			AccessGroupMemberPublicKey: member.AccessGroupMemberPublicKey,
+			AccessGroupMemberKeyName:   BaseGroupKeyName().ToBytes(),
+			EncryptedKey:               nil,
+			ExtraData:                  nil,
+		})
+	}
+	tv17 := _createAccessGroupMembersTestVector(fmt.Sprintf("TEST 17: (PASS) Connect access group members remove "+
+		"transaction made by (pk1, groupName2) removing remaining %v x (randomPk, baseGroup)", randomMemberCounter2/2),
+		m1Priv, m1PubBytes, groupName2, tv17Members, AccessGroupMemberOperationTypeRemove, nil)
+	tv17.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
+	}
+	tv17.disconnectCallback = tv16.connectCallback
+	// Mine the above transactions into a block.
+	tvv3 := []*transactionTestVector{tv16, tv17}
+	tvb3ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
+	}
+	tvb3DisconnectCallback := tvb2ConnectCallback
+	tvb3 := NewTransactionTestVectorBlock(tvv3, tvb3ConnectCallback, tvb3DisconnectCallback)
+
+	tvbb := []*transactionTestVectorBlock{tvb1, tvb2, tvb3}
+	tes := NewTransactionTestSuite(t, tvbb, tConfig)
 	tes.Run()
 }
 
@@ -701,29 +1025,41 @@ func _verifyMembersList(tm *transactionTestMeta, utxoView *UtxoView, accessGroup
 		}
 	}
 
-	{
-		accessGroupMembers, err := utxoView.GetPaginatedAccessGroupMembersEnumerationEntries(
-			accessGroupOwnerPublicKey, accessGroupKeyName, []byte{}, math.MaxUint32)
-		require.NoError(err)
-		_verify(accessGroupMembers)
-	}
-
 	// Now, try fetching all the members with multiple paginated calls, one by one.
-	{
+	loopWithPaginatedCalls := func(maxMembersToFetch int) {
 		startKey := []byte{}
 		accessGroupMembers := []*PublicKey{}
 		for {
 			accessGroupMembersPage, err := utxoView.GetPaginatedAccessGroupMembersEnumerationEntries(
-				accessGroupOwnerPublicKey, accessGroupKeyName, startKey, 1)
-			require.NoError(err)
+				accessGroupOwnerPublicKey, accessGroupKeyName, startKey, uint32(maxMembersToFetch))
+			// If the regular paginated fetch fails, try the paginated fetch with a higher recursion depth. Because
+			// we use maxMembersToFetch = 1, in worst-case scenario, the recursion depth will be equal to the number
+			// of members in the group. This isn't a bug, but rather a downside of using such small maxMembersToFetch,
+			// and in practice we should use a higher values e.g. maxMembersToFetch=25.
+			if err != nil {
+				glog.Errorf(CLog(Red, "Error fetching paginated access group members: %v. Re-trying with higher "+
+					"recursion depth."), err)
+				accessGroupMembersPage, err = utxoView._getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(
+					accessGroupOwnerPublicKey, accessGroupKeyName, startKey, uint32(maxMembersToFetch), 100)
+			}
 			if len(accessGroupMembersPage) == 0 {
 				break
 			}
-			require.Equal(1, len(accessGroupMembersPage))
-			accessGroupMembers = append(accessGroupMembers, accessGroupMembersPage[0])
-			startKey = accessGroupMembersPage[0].ToBytes()
+			require.Equal(true, len(accessGroupMembersPage) <= maxMembersToFetch)
+			accessGroupMembers = append(accessGroupMembers, accessGroupMembersPage...)
+			startKey = accessGroupMembersPage[len(accessGroupMembersPage)-1].ToBytes()
+			if len(accessGroupMembersPage) < maxMembersToFetch {
+				break
+			}
 		}
 		_verify(accessGroupMembers)
 	}
 
+	// Check a couple of different maxMembersToFetch values to fetch all members.
+	loopWithPaginatedCalls(math.MaxUint32)
+	loopWithPaginatedCalls(1)
+	loopWithPaginatedCalls(2)
+	loopWithPaginatedCalls(3)
+	loopWithPaginatedCalls(5)
+	loopWithPaginatedCalls(10)
 }

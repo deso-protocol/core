@@ -1164,6 +1164,10 @@ func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte) (_keysFoun
 func _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte, startKey []byte, limit uint32) (_keysFound [][]byte) {
 	keysFound := [][]byte{}
 
+	if limit == 0 {
+		return keysFound
+	}
+
 	opts := badger.DefaultIteratorOptions
 	opts.PrefetchValues = false
 
@@ -1176,7 +1180,7 @@ func _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []
 		copy(keyCopy[:], key[:])
 
 		keysFound = append(keysFound, keyCopy)
-		if uint32(len(keysFound)) == limit {
+		if uint32(len(keysFound)) >= limit {
 			break
 		}
 	}

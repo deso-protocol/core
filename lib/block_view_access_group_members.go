@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/pkg/errors"
+	"sort"
 )
 
 // GetAccessGroupMemberEntry will check the membership index for membership of memberPublicKey in the group
@@ -133,7 +134,12 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 		if len(firstMemberEntryFromDb) > 0 && len(accessGroupMembersFromDb) > 0 &&
 			bytes.Equal(firstMemberEntryFromDb[0].ToBytes(), accessGroupMembersFromDb[0].ToBytes()) {
 
-			bav._setAccessGroupIdToSortedGroupMemberPublicKeys(*groupOwnerPublicKey, *groupKeyName, accessGroupMembersFromDb)
+			if err := bav._setAccessGroupIdToSortedGroupMemberPublicKeys(*groupOwnerPublicKey, *groupKeyName, accessGroupMembersFromDb); err != nil {
+				return accessGroupMembersFromDb, errors.Wrapf(err, "GetAccessGroupMembersEnumerationEntries: "+
+					"Problem setting access group members enumeration entries for single member with "+
+					"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
+					groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
+			}
 		}
 	} else {
 		// 2)
@@ -146,7 +152,12 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 		if len(accessGroupMembers) > 0 && len(accessGroupMembersFromDb) > 0 {
 			// We now extend the mapping in the UtxoView with the entries fetched from the DB.
 			newSortedGroupMemberPublicKeys := append(membersList, accessGroupMembersFromDb...)
-			bav._setAccessGroupIdToSortedGroupMemberPublicKeys(*groupOwnerPublicKey, *groupKeyName, newSortedGroupMemberPublicKeys)
+			if err := bav._setAccessGroupIdToSortedGroupMemberPublicKeys(*groupOwnerPublicKey, *groupKeyName, newSortedGroupMemberPublicKeys); err != nil {
+				return accessGroupMembersFromDb, errors.Wrapf(err, "GetAccessGroupMembersEnumerationEntries: "+
+					"Problem setting access group members enumeration entries for single member with "+
+					"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
+					groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
+			}
 
 			//nextMemberPublicKey, err := dbAdapter.GetPaginatedAccessGroupMembersEnumerationEntries(
 			//	*groupOwnerPublicKey, *groupKeyName, lastMemberPublicKey.ToBytes(), 2)
@@ -162,14 +173,24 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 	// We define a predicate that checks whether we fetched maximum number of members. We might drop some entries later
 	// when we combine the db member public keys with the ones fetched from the UtxoView.
 	isListFilled := uint32(len(accessGroupMembers)) == maxMembersToFetch
-	var lastListKey []byte
+	var lastKnownDbPublicKey []byte
 	if len(accessGroupMembers) > 0 {
-		lastListKey = accessGroupMembers[len(accessGroupMembers)-1].ToBytes()
+		lastKnownDbPublicKey = accessGroupMembers[len(accessGroupMembers)-1].ToBytes()
 	}
 
 	// Finally, there is a possibility that there have been new members added to the access group in the current block,
 	// and we need to make sure we include them in the list of members we return. We do this by iterating over all the
 	// members in the current UtxoView and inserting them into the list of members we return.
+	var endingAccessGroupMemberPublicKey []byte
+	if len(accessGroupMembers) > 0 {
+		endingAccessGroupMemberPublicKey = accessGroupMembers[len(accessGroupMembers)-1].ToBytes()
+	}
+
+	existingAccessMembers := make(map[PublicKey]struct{})
+	for _, member := range accessGroupMembers {
+		existingAccessMembers[*member] = struct{}{}
+	}
+	filteredUtxoViewMembers := make(map[PublicKey]*AccessGroupMemberEntry)
 	for membershipKey, memberEntry := range bav.AccessGroupMembershipKeyToAccessGroupMember {
 		// If member entry doesn't match our access group, we skip it.
 		isAccessGroupMember := bytes.Equal(membershipKey.GroupOwnerPublicKey.ToBytes(), groupOwnerPublicKey.ToBytes()) &&
@@ -191,7 +212,6 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 		// public key still present in the db, which we shouldn't skip.
 		var isLesserOrEqualThanEndKey bool
 		if len(accessGroupMembers) > 0 {
-			endingAccessGroupMemberPublicKey := accessGroupMembers[len(accessGroupMembers)-1].ToBytes()
 			// Note we use <= here because if the UtxoView entry is deleted, we should remove the member from our list.
 			isLesserOrEqualThanEndKey = bytes.Compare(memberPublicKey.ToBytes(), endingAccessGroupMemberPublicKey) <= 0
 		} else {
@@ -205,81 +225,58 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 			continue
 		}
 
-		// If we get here, it means the member is within our range and we should merge it with the current accessGroupMembers.
-		if len(accessGroupMembers) > 0 {
-			// Check if the member should be the first one in the list.
-			if bytes.Compare(memberPublicKey.ToBytes(), accessGroupMembers[0].ToBytes()) < 0 {
-				accessGroupMembers = append([]*PublicKey{&memberPublicKey}, accessGroupMembers...)
-				continue
-			}
+		// This is a valid member that we need to add to our list of members. We add him to our filtered utxoView entry map.
+		memberEntryCopy := *memberEntry
+		filteredUtxoViewMembers[*memberEntryCopy.AccessGroupMemberPublicKey] = &memberEntryCopy
+	}
 
-			// TODO: We could make this O(logn) by using binary jump/search.
-			// shouldSkip is used to indicate whether we should skip the current member because we've already added him.
-			shouldSkip := false
-			for ii := 0; ii < len(accessGroupMembers); ii++ {
-				// Check for overlapping member entries. In such case, we might need to remove the entry from our
-				// accessGroupMembers list, because the member is deleted in the current block.
-				if bytes.Equal(accessGroupMembers[ii].ToBytes(), memberPublicKey.ToBytes()) {
-					shouldSkip = true
-					// If the member is deleted, we remove it from the list.
-					if memberEntry.isDeleted {
-						accessGroupMembers = append(accessGroupMembers[:ii], accessGroupMembers[ii+1:]...)
-					}
-					break
-				} else if bytes.Compare(accessGroupMembers[ii].ToBytes(), memberPublicKey.ToBytes()) > 0 {
-					shouldSkip = true
-
-					// If the current accessGroupMember is lexicographically greater than the memberPublicKey, we
-					// insert the memberPublicKey at this index. We know that the last member in the accessGroupMembers
-					// is lexicographically greater or equal to the member so this either the above condition or this one
-					// will eventually evaluate to true.
-					if !memberEntry.isDeleted {
-						accessGroupMembers = append(accessGroupMembers[:ii], append([]*PublicKey{&memberPublicKey}, accessGroupMembers[ii:]...)...)
-					}
-					break
-				}
-			}
-			if shouldSkip {
+	finalMemberPublicKeys := []*PublicKey{}
+	for existingMemberPk := range existingAccessMembers {
+		if utxoMember, exists := filteredUtxoViewMembers[existingMemberPk]; exists {
+			if utxoMember.isDeleted {
 				continue
-			}
-			// If we get here, it means that the UtxoView memberPublic key is greater than all the public keys we have
-			// currently stored in the accessGroupMembers, but the list is not filled yet. We append the memberPublicKey
-			// to the end of the list.
-			if !memberEntry.isDeleted {
-				accessGroupMembers = append(accessGroupMembers, &memberPublicKey)
-			}
-		} else {
-			// Note that this case will happen at most once, so we don't need to care about non-deterministic map
-			// iteration order, because every next member public key will be inserted in the right place.
-			if !memberEntry.isDeleted {
-				accessGroupMembers = append(accessGroupMembers, &memberPublicKey)
 			}
 		}
+		copyExistingMemberPk := existingMemberPk
+		finalMemberPublicKeys = append(finalMemberPublicKeys, &copyExistingMemberPk)
 	}
+	for utxoMemberPk, utxoMember := range filteredUtxoViewMembers {
+		if _, exists := existingAccessMembers[utxoMemberPk]; exists {
+			continue
+		}
+		if utxoMember.isDeleted {
+			continue
+		}
+		copyUtxoMemberPk := utxoMemberPk
+		finalMemberPublicKeys = append(finalMemberPublicKeys, &copyUtxoMemberPk)
+	}
+	sort.Slice(finalMemberPublicKeys, func(ii, jj int) bool {
+		return bytes.Compare(finalMemberPublicKeys[ii].ToBytes(), finalMemberPublicKeys[jj].ToBytes()) < 0
+	})
 
 	// After iterating over all the members in the current UtxoView, there is a possibility that we now have less members
 	// than the maxMembersToFetch, due to deleted members. In this case, we need to fetch more members from the DB,
 	// which we will do with the magic of recursion.
-	if isListFilled && len(accessGroupMembers) < int(maxMembersToFetch) &&
-		bytes.Compare(startingAccessGroupMemberPublicKey, lastListKey) < 0 {
+	if isListFilled && len(finalMemberPublicKeys) < int(maxMembersToFetch) &&
+		bytes.Compare(startingAccessGroupMemberPublicKey, lastKnownDbPublicKey) < 0 {
 		// Note this recursive call will never lead to an infinite loop because the startingAccessGroupMemberPublicKey
 		// will be growing with each recursive call, and because we are checking for isListFilled with
 		// maxMembersToFetch > 0. But just in case we add a sanity-check parameter maxDepth to break long recursive calls.
 		remainingMembers, err := bav._getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(
-			groupOwnerPublicKey, groupKeyName, lastListKey, maxMembersToFetch-uint32(len(accessGroupMembers)), maxDepth-1)
+			groupOwnerPublicKey, groupKeyName, lastKnownDbPublicKey, maxMembersToFetch-uint32(len(finalMemberPublicKeys)), maxDepth-1)
 		if err != nil {
 			return nil, errors.Wrapf(err, "GetPaginatedAccessGroupMembersEnumerationEntries: "+
 				"Problem fetching recursion access group members enumeration entries for next member with "+
 				"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
 				groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
 		}
-		accessGroupMembers = append(accessGroupMembers, remainingMembers...)
+		finalMemberPublicKeys = append(finalMemberPublicKeys, remainingMembers...)
 	}
 
-	if len(accessGroupMembers) > int(maxMembersToFetch) {
-		accessGroupMembers = accessGroupMembers[:maxMembersToFetch]
+	if len(finalMemberPublicKeys) > int(maxMembersToFetch) {
+		finalMemberPublicKeys = finalMemberPublicKeys[:maxMembersToFetch]
 	}
-	return accessGroupMembers, nil
+	return finalMemberPublicKeys, nil
 }
 
 // _setAccessGroupMemberEntry will set the membership mapping of AccessGroupMember.
@@ -342,7 +339,16 @@ func (bav *UtxoView) _setGroupMembershipKeyToAccessGroupMemberMapping(accessGrou
 }
 
 func (bav *UtxoView) _setAccessGroupIdToSortedGroupMemberPublicKeys(groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName,
-	accessGroupMemberPublicKeys []*PublicKey) {
+	accessGroupMemberPublicKeys []*PublicKey) error {
+
+	// Sanity-check that we're not setting any duplicate public keys in the accessGroupMemberPublicKeys array.
+	membersMap := make(map[PublicKey]struct{})
+	for _, accessGroupMemberPublicKey := range accessGroupMemberPublicKeys {
+		if _, exists := membersMap[*accessGroupMemberPublicKey]; exists {
+			return fmt.Errorf("_setAccessGroupIdToSortedGroupMemberPublicKeys: " +
+				"accessGroupMemberPublicKeys contains duplicate entries")
+		}
+	}
 
 	// Create access group id.
 	accessGroupId := AccessGroupId{
@@ -351,6 +357,7 @@ func (bav *UtxoView) _setAccessGroupIdToSortedGroupMemberPublicKeys(groupOwnerPu
 	}
 	// Set the mapping.
 	bav.AccessGroupIdToSortedGroupMemberPublicKeys[accessGroupId] = accessGroupMemberPublicKeys
+	return nil
 }
 
 // _connectAccessGroupMembers is used to connect a AccessGroupMembers transaction to the UtxoView. This transaction
@@ -417,6 +424,10 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	// Make sure there are no duplicate members with the same AccessGroupMemberPublicKey in the transaction's metadata.
 	accessGroupMemberPublicKeys := make(map[PublicKey]struct{})
 	for _, accessMember := range txMeta.AccessGroupMembersList {
+		if err := ValidateAccessGroupPublicKeyAndName(accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName); err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: Problem validating access group member "+
+				"public key and name for access member (%v)", accessMember)
+		}
 		memberPublicKey := *NewPublicKey(accessMember.AccessGroupMemberPublicKey)
 		if _, exists := accessGroupMemberPublicKeys[memberPublicKey]; !exists {
 			accessGroupMemberPublicKeys[memberPublicKey] = struct{}{}
@@ -521,6 +532,12 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 					"_connectAccessGroupMembers: Encrypted key should be empty for OperationTypeRemove, but received (EncryptedKey=%v) for "+
 						"member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
 					accessMember.EncryptedKey, accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+			if len(accessMember.ExtraData) != 0 {
+				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupMemberRemoveExtraDataNotEmpty,
+					"_connectAccessGroupMembers: ExtraData should be empty for OperationTypeRemove, but received (ExtraData=%v) for "+
+						"member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					accessMember.ExtraData, accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
 			}
 
 			// Fetch the access group member entry for each member from the transaction metadata.
@@ -699,6 +716,12 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 					"_disconnectAccessGroupMembers: Encrypted key should be empty for OperationTypeRemove, but received (EncryptedKey=%v) for "+
 						"member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
 					accessMember.EncryptedKey, accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+			if len(accessMember.ExtraData) != 0 {
+				return errors.Wrapf(RuleErrorAccessGroupMemberRemoveExtraDataNotEmpty,
+					"_disconnectAccessGroupMembers: ExtraData should be empty for OperationTypeRemove, but received (ExtraData=%v) for "+
+						"member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					accessMember.ExtraData, accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
 			}
 
 			// Fetch the access group member entry for each member from the transaction metadata.
