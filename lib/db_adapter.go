@@ -155,6 +155,24 @@ func (adapter *DbAdapter) GetAccessGroupEntryByAccessGroupId(accessGroupId *Acce
 	}
 }
 
+func (adapter *DbAdapter) GetAccessGroupExistenceByAccessGroupId(accessGroupId *AccessGroupId) (bool, error) {
+	if accessGroupId == nil {
+		glog.Errorf("GetAccessGroupExistenceByAccessGroupId: Called with nil accessGroupId, this should never happen")
+		return false, nil
+	}
+
+	if adapter.postgresDb != nil {
+		pgAccessGroup := adapter.postgresDb.GetAccessGroupByAccessGroupId(accessGroupId)
+		if pgAccessGroup == nil {
+			return false, nil
+		}
+		return true, nil
+	} else {
+		return DBGetAccessGroupExistenceByAccessGroupId(adapter.badgerDb, adapter.snapshot,
+			&accessGroupId.AccessGroupOwnerPublicKey, &accessGroupId.AccessGroupKeyName)
+	}
+}
+
 //
 // AccessGroupMembers
 //

@@ -718,31 +718,6 @@ func (tes *transactionTestSuite) moveTestVectorsFromDbToMempoolForDisconnect(tvb
 	tes._testVectorsInDb = tes._testVectorsInDb[:smallestIndex]
 }
 
-func (tes *transactionTestSuite) shouldVerifyDeletedDbEntry(tv *transactionTestVector) bool {
-	dependencyVectors, exists := tes._testVectorDependency[tv.id]
-	if exists {
-		// If all dependencies of this test vectors are in the currently disconnected block, then we can
-		// verify if the db entries were properly deleted as there is no other test vector that would have
-		// already flushed conflicting entries to the db.
-		dependenciesOnlyInMempool := true
-		for _, dependencyVector := range dependencyVectors {
-			dependencyInMempool := false
-			for _, testVector := range tes._testVectorsInMempool {
-				if testVector.id == dependencyVector {
-					dependencyInMempool = true
-					break
-				}
-			}
-			if !dependencyInMempool {
-				dependenciesOnlyInMempool = false
-				break
-			}
-		}
-		return dependenciesOnlyInMempool
-	}
-	return true
-}
-
 func (tes *transactionTestSuite) removeTestVectorsInMempool() {
 	for _, tv := range tes._testVectorsInMempool {
 		delete(tes._testVectorDependency, tv.id)

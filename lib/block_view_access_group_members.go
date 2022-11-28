@@ -57,9 +57,9 @@ func (bav *UtxoView) GetPaginatedAccessGroupMembersEnumerationEntries(groupOwner
 func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
 	startingAccessGroupMemberPublicKey []byte, maxMembersToFetch uint32, maxDepth uint32) (_accessGroupMembers []*PublicKey, _err error) {
 
-	var accessGroupMembers []*PublicKey
+	var cachedSortedAccessGroupMembersFromDb []*PublicKey
 	if maxMembersToFetch == 0 {
-		return accessGroupMembers, nil
+		return cachedSortedAccessGroupMembersFromDb, nil
 	}
 	// This function can make recursive calls to itself. We use a depth counter to prevent infinite recursion
 	// (which shouldn't happen anyway, but better safe than sorry, right?).
@@ -70,7 +70,7 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 
 	// If either of the provided parameters is nil, we return.
 	if groupOwnerPublicKey == nil || groupKeyName == nil {
-		return accessGroupMembers, fmt.Errorf("GetAccessGroupMembersEnumerationEntries: Called with nil groupOwnerPublicKey or groupKeyName")
+		return cachedSortedAccessGroupMembersFromDb, fmt.Errorf("GetAccessGroupMembersEnumerationEntries: Called with nil groupOwnerPublicKey or groupKeyName")
 	}
 
 	accessGroupId := NewAccessGroupId(groupOwnerPublicKey, groupKeyName.ToBytes())
@@ -81,33 +81,32 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 	// If there already is enough members in the UtxoView, we just go through them and return.
 	// The UtxoView entries are sorted by memberPublicKey, so we can just go through them in order.
 	if exists {
-		// TODO: Binary jump/search could be used here to speed up the iteration.
-		for ii := 0; ii < len(membersList) && uint32(len(accessGroupMembers)) < maxMembersToFetch; ii++ {
+		for ii := 0; ii < len(membersList) && uint32(len(cachedSortedAccessGroupMembersFromDb)) < maxMembersToFetch; ii++ {
 			accessGroupMemberPk := membersList[ii]
 			// If the member public key is greater or equal lexicographically to the provided paginatedMemberPublicKey,
 			// then we add it to the list of members to return.
 			if bytes.Compare(accessGroupMemberPk.ToBytes(), startingAccessGroupMemberPublicKey) > 0 {
-				accessGroupMembers = append(accessGroupMembers, accessGroupMemberPk)
+				cachedSortedAccessGroupMembersFromDb = append(cachedSortedAccessGroupMembersFromDb, accessGroupMemberPk)
 			}
 		}
 	}
 
 	paginationStartKey := startingAccessGroupMemberPublicKey
-	if len(accessGroupMembers) > 0 {
-		paginationStartKey = accessGroupMembers[len(accessGroupMembers)-1].ToBytes()
+	if len(cachedSortedAccessGroupMembersFromDb) > 0 {
+		paginationStartKey = cachedSortedAccessGroupMembersFromDb[len(cachedSortedAccessGroupMembersFromDb)-1].ToBytes()
 	}
 
 	// If we get here, it means that the group has not been fetched in this utxoView. We fetch it from the db.
 	dbAdapter := bav.GetDbAdapter()
 	accessGroupMembersFromDb, err := dbAdapter.GetPaginatedAccessGroupMembersEnumerationEntries(*groupOwnerPublicKey, *groupKeyName,
-		paginationStartKey, maxMembersToFetch-uint32(len(accessGroupMembers)))
+		paginationStartKey, maxMembersToFetch-uint32(len(cachedSortedAccessGroupMembersFromDb)))
 	if err != nil {
 		return accessGroupMembersFromDb, errors.Wrapf(err, "GetAccessGroupMembersEnumerationEntries: "+
 			"Problem fetching access group members enumeration entries for single member with "+
 			"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
 			groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
 	}
-	//accessGroupMembers = append(accessGroupMembers, accessGroupMembersFromDb...)
+	//cachedSortedAccessGroupMembersFromDb = append(cachedSortedAccessGroupMembersFromDb, accessGroupMembersFromDb...)
 
 	// We will now attempt to update the AccessGroupIdToSortedGroupMemberPublicKeys map in the UtxoView.
 	// The map values have to be sorted lexicographically by memberPublicKey, so to maintain this invariant,
@@ -144,12 +143,12 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 	} else {
 		// 2)
 		// We need to check that the db entries extend the current sorted member public keys present in the UtxoView.
-		// This would happen if the number of accessGroupMembers filtered from the UtxoView is less than the number of
+		// This would happen if the number of cachedSortedAccessGroupMembersFromDb filtered from the UtxoView is less than the number of
 		// maxMembersToFetch. In this case, we needed more member public keys, and we resorted to fetching them from the DB,
 		// meaning these public keys naturally lexicographically extend the member public keys already present in the UtxoView.
 
 		// TODO: Can we use some bigger brain ordered structure to always add db entries to the UtxoView?
-		if len(accessGroupMembers) > 0 && len(accessGroupMembersFromDb) > 0 {
+		if len(cachedSortedAccessGroupMembersFromDb) > 0 && len(accessGroupMembersFromDb) > 0 {
 			// We now extend the mapping in the UtxoView with the entries fetched from the DB.
 			newSortedGroupMemberPublicKeys := append(membersList, accessGroupMembersFromDb...)
 			if err := bav._setAccessGroupIdToSortedGroupMemberPublicKeys(*groupOwnerPublicKey, *groupKeyName, newSortedGroupMemberPublicKeys); err != nil {
@@ -158,36 +157,27 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 					"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
 					groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
 			}
-
-			//nextMemberPublicKey, err := dbAdapter.GetPaginatedAccessGroupMembersEnumerationEntries(
-			//	*groupOwnerPublicKey, *groupKeyName, lastMemberPublicKey.ToBytes(), 2)
-			//if err != nil {
-			//	return accessGroupMembersFromDb, errors.Wrapf(err, "GetAccessGroupMembersEnumerationEntries: "+
-			//		"Problem fetching access group members enumeration entries for next member with "+
-			//		"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
-			//		groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
-			//}
 		}
 	}
-	accessGroupMembers = append(accessGroupMembers, accessGroupMembersFromDb...)
+	cachedSortedAccessGroupMembersFromDb = append(cachedSortedAccessGroupMembersFromDb, accessGroupMembersFromDb...)
 	// We define a predicate that checks whether we fetched maximum number of members. We might drop some entries later
 	// when we combine the db member public keys with the ones fetched from the UtxoView.
-	isListFilled := uint32(len(accessGroupMembers)) == maxMembersToFetch
+	isListFilled := uint32(len(cachedSortedAccessGroupMembersFromDb)) == maxMembersToFetch
 	var lastKnownDbPublicKey []byte
-	if len(accessGroupMembers) > 0 {
-		lastKnownDbPublicKey = accessGroupMembers[len(accessGroupMembers)-1].ToBytes()
+	if len(cachedSortedAccessGroupMembersFromDb) > 0 {
+		lastKnownDbPublicKey = cachedSortedAccessGroupMembersFromDb[len(cachedSortedAccessGroupMembersFromDb)-1].ToBytes()
 	}
 
 	// Finally, there is a possibility that there have been new members added to the access group in the current block,
 	// and we need to make sure we include them in the list of members we return. We do this by iterating over all the
 	// members in the current UtxoView and inserting them into the list of members we return.
 	var endingAccessGroupMemberPublicKey []byte
-	if len(accessGroupMembers) > 0 {
-		endingAccessGroupMemberPublicKey = accessGroupMembers[len(accessGroupMembers)-1].ToBytes()
+	if len(cachedSortedAccessGroupMembersFromDb) > 0 {
+		endingAccessGroupMemberPublicKey = cachedSortedAccessGroupMembersFromDb[len(cachedSortedAccessGroupMembersFromDb)-1].ToBytes()
 	}
 
 	existingAccessMembers := make(map[PublicKey]struct{})
-	for _, member := range accessGroupMembers {
+	for _, member := range cachedSortedAccessGroupMembersFromDb {
 		existingAccessMembers[*member] = struct{}{}
 	}
 	filteredUtxoViewMembers := make(map[PublicKey]*AccessGroupMemberEntry)
@@ -211,7 +201,7 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 		// if we added the member with greater public key, there is a chance there might be some members with smaller
 		// public key still present in the db, which we shouldn't skip.
 		var isLesserOrEqualThanEndKey bool
-		if len(accessGroupMembers) > 0 {
+		if len(cachedSortedAccessGroupMembersFromDb) > 0 {
 			// Note we use <= here because if the UtxoView entry is deleted, we should remove the member from our list.
 			isLesserOrEqualThanEndKey = bytes.Compare(memberPublicKey.ToBytes(), endingAccessGroupMemberPublicKey) <= 0
 		} else {
@@ -424,6 +414,14 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	// Make sure there are no duplicate members with the same AccessGroupMemberPublicKey in the transaction's metadata.
 	accessGroupMemberPublicKeys := make(map[PublicKey]struct{})
 	for _, accessMember := range txMeta.AccessGroupMembersList {
+		// If the group owner decides to add themselves as a member, there is an edge-case where the owner would
+		// add themselves as a member by the same group -- which would create a possible recursion. We prevent this
+		// situation with the below validation check.
+		if bytes.Equal(txMeta.AccessGroupOwnerPublicKey, accessMember.AccessGroupMemberPublicKey) &&
+			bytes.Equal(NewGroupKeyName(txMeta.AccessGroupKeyName).ToBytes(), NewGroupKeyName(accessMember.AccessGroupMemberKeyName).ToBytes()) {
+			return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupMemberCantAddOwnerBySameGroup,
+				"_disconnectAccessGroupMembers: Can't add the owner of the group as a member of the group using the same group key name.")
+		}
 		if err := ValidateAccessGroupPublicKeyAndName(accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName); err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: Problem validating access group member "+
 				"public key and name for access member (%v)", accessMember)
@@ -468,17 +466,13 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 			// all the other access groups. The suggested approach is to select an access group with group key name of
 			// "default-key" (encoded as utf-8 bytes).
 			//
-			// If the group owner decides to add themselves as a member, there is an edge-case where the owner would
-			// add themselves as a member by the same group -- which would create a possible recursion. We prevent this
-			// situation with the below validation check.
-			if bytes.Equal(txMeta.AccessGroupOwnerPublicKey, accessMember.AccessGroupMemberPublicKey) &&
-				bytes.Equal(NewGroupKeyName(txMeta.AccessGroupKeyName).ToBytes(), NewGroupKeyName(accessMember.AccessGroupMemberKeyName).ToBytes()) {
-				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupMemberCantAddOwnerBySameGroup,
-					"_disconnectAccessGroupMembers: Can't add the owner of the group as a member of the group using the same group key name.")
-			}
 			// We have previously validated that the accessMember public key and access key name are valid, and point to
 			// an existing access group. We should now validate that the access member hasn't already been added
 			// to this group in the past.
+			if len(accessMember.EncryptedKey) == 0 {
+				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupMemberEncryptedKeyCannotBeEmpty,
+					"_connectAccessGroupMembers: EncryptedKey for access member (%v) cannot be empty.", accessMember)
+			}
 			memberGroupEntry, err := bav.GetAccessGroupMemberEntry(NewPublicKey(accessMember.AccessGroupMemberPublicKey),
 				NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
 			if err != nil {
@@ -572,9 +566,59 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 			}
 		}
 	case AccessGroupMemberOperationTypeUpdate:
-		return 0, 0, nil, errors.Wrapf(
-			RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupMembers: "+
-				"Operation type %v not supported yet.", txMeta.AccessGroupMemberOperationType)
+		for _, accessMember := range txMeta.AccessGroupMembersList {
+			memberGroupEntry, err := bav.GetAccessGroupMemberEntry(NewPublicKey(accessMember.AccessGroupMemberPublicKey),
+				NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: "+
+					"Problem getting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+
+			if memberGroupEntry == nil || memberGroupEntry.isDeleted {
+				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupMemberDoesntExistOrIsDeleted,
+					"_connectAccessGroupMembers: member doesn't exist or has been or already deleted, can't update the "+
+						"member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName %v)",
+					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+
+			// Sanity-check that the member entry's public key matches the public key in the transaction metadata.
+			if memberGroupEntry.AccessGroupMemberPublicKey == nil ||
+				!bytes.Equal(memberGroupEntry.AccessGroupMemberPublicKey.ToBytes(), accessMember.AccessGroupMemberPublicKey) {
+				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupMemberPublicKeyMismatch,
+					"_connectAccessGroupMembers: AccessGroupMemberPublicKey mismatch for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+
+			// We will update the existing access group member entry with the new accessMember from the transaction metadata.
+			prevAccessGroupMemberEntry := *memberGroupEntry
+			prevAccessGroupMemberEntries = append(prevAccessGroupMemberEntries, &prevAccessGroupMemberEntry)
+
+			// TODO: We could potentially merge the new ExtraData with the existing ExtraData,
+			// 	but it leads to a potential spam attack where rouge txn bloats the extra data with
+			// 	a lot of bytes, and then the attacker sends small transactions that fail on the last member
+			// 	but require fetching the bloated extra data on the previous members at low cost.
+			newExtraData := accessMember.ExtraData
+			//if memberGroupEntry.ExtraData != nil {
+			//	if newExtraData == nil {
+			//		newExtraData = memberGroupEntry.ExtraData
+			//	} else {
+			//		newExtraData = mergeExtraData(memberGroupEntry.ExtraData, newExtraData)
+			//	}
+			//}
+			accessGroupMemberEntry := &AccessGroupMemberEntry{
+				AccessGroupMemberPublicKey: memberGroupEntry.AccessGroupMemberPublicKey,
+				AccessGroupMemberKeyName:   NewGroupKeyName(accessMember.AccessGroupMemberKeyName),
+				EncryptedKey:               accessMember.EncryptedKey,
+				ExtraData:                  newExtraData,
+			}
+			if err := bav._setAccessGroupMemberEntry(accessGroupMemberEntry,
+				NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName)); err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: "+
+					"Problem updating access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+		}
 	default:
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupMembers: "+
@@ -686,14 +730,14 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 			memberGroupEntry, err := bav.GetAccessGroupMemberEntry(NewPublicKey(accessMember.AccessGroupMemberPublicKey),
 				NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
 			if err != nil {
-				return errors.Wrapf(err, "_disconnectAccessGroupMembers: "+
-					"Problem getting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+				return errors.Wrapf(err, "_disconnectAccessGroupMembers: disconnect add "+
+					"problem getting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
 					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
 			}
 			// If the access group member was already deleted, we error because something went wrong.
 			if memberGroupEntry == nil || memberGroupEntry.isDeleted {
 				return errors.Wrapf(
-					RuleErrorAccessMemberDoesntExist, "_disconnectAccessGroupMembers: member doesn't exist "+
+					RuleErrorAccessMemberDoesntExist, "_disconnectAccessGroupMembers: disconnect add member doesn't exist "+
 						"for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName %v)",
 					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
 			}
@@ -701,8 +745,8 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 			// Delete the access group member from the UtxoView.
 			if err := bav._deleteAccessGroupMember(memberGroupEntry, NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
 				NewGroupKeyName(txMeta.AccessGroupKeyName)); err != nil {
-				return errors.Wrapf(err, "_disconnectAccessGroupMembers: "+
-					"Problem deleting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+				return errors.Wrapf(err, "_disconnectAccessGroupMembers: disconnect add "+
+					"problem deleting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
 					memberGroupEntry.AccessGroupMemberPublicKey, memberGroupEntry.AccessGroupMemberKeyName)
 			}
 		}
@@ -713,14 +757,14 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 			// sanity-check that the EncryptedKey is left empty for all the removed members.
 			if len(accessMember.EncryptedKey) != 0 {
 				return errors.Wrapf(RuleErrorAccessGroupMemberRemoveEncryptedKeyNotEmpty,
-					"_disconnectAccessGroupMembers: Encrypted key should be empty for OperationTypeRemove, but received (EncryptedKey=%v) for "+
-						"member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					"_disconnectAccessGroupMembers: disconnect remove encrypted key should be empty for OperationTypeRemove, "+
+						"but received (EncryptedKey=%v) for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
 					accessMember.EncryptedKey, accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
 			}
 			if len(accessMember.ExtraData) != 0 {
 				return errors.Wrapf(RuleErrorAccessGroupMemberRemoveExtraDataNotEmpty,
-					"_disconnectAccessGroupMembers: ExtraData should be empty for OperationTypeRemove, but received (ExtraData=%v) for "+
-						"member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					"_disconnectAccessGroupMembers: disconnect remove ExtraData should be empty for OperationTypeRemove, "+
+						"but received (ExtraData=%v) for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
 					accessMember.ExtraData, accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
 			}
 
@@ -729,7 +773,7 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 				NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
 			if err != nil {
 				return errors.Wrapf(err, "_disconnectAccessGroupMembers: "+
-					"Problem getting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					"disconnect remove problem getting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
 					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
 			}
 
@@ -737,14 +781,14 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 			// By inverse, we will error if the entry exists and isn't deleted.
 			if memberGroupEntry != nil && !memberGroupEntry.isDeleted {
 				return errors.Wrapf(RuleErrorAccessMemberAlreadyExists, "_disconnectAccessGroupMembers: "+
-					"member already exists for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName %v)",
+					"disconnect remove member already exists for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName %v)",
 					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
 			}
 		}
 		// Sanity-check that the size of the prevAccessGroupMembers is the same as the txMeta access group members.
 		if len(accessGroupMembersOp.PrevAccessGroupMembersList) != len(txMeta.AccessGroupMembersList) {
 			return errors.Wrapf(RuleErrorAccessGroupPrevMembersListIsIncorrect, "_disconnectAccessGroupMembers: "+
-				"Failed sanity-check on length of prevAccessGroupMemberPublicKeys, was expecting (len=%v) but got (len=%v)",
+				"disconnect remove failed sanity-check on length of prevAccessGroupMemberPublicKeys, was expecting (len=%v) but got (len=%v)",
 				len(txMeta.AccessGroupMembersList), len(accessGroupMembersOp.PrevAccessGroupMembersList))
 		}
 		// Now that we've validated everything, we can revert to previous access group member entries.
@@ -752,12 +796,45 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 			copyPrevAccessMember := *prevAccessMember
 			if err := bav._setAccessGroupMemberEntry(&copyPrevAccessMember, NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
 				NewGroupKeyName(txMeta.AccessGroupKeyName)); err != nil {
-				return errors.Wrapf(err, "_disconnectAccessGroupMembers: Problem reverting to previous access group member "+
+				return errors.Wrapf(err, "_disconnectAccessGroupMembers: disconnect remove problem reverting to previous access group member "+
 					"entry for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName %v)",
 					prevAccessMember.AccessGroupMemberPublicKey, prevAccessMember.AccessGroupMemberKeyName)
 			}
 		}
+	case AccessGroupMemberOperationTypeUpdate:
+		// Sanity-check that all information about access group members in txMeta is correct.
+		for _, accessMember := range txMeta.AccessGroupMembersList {
+			memberGroupEntry, err := bav.GetAccessGroupMemberEntry(NewPublicKey(accessMember.AccessGroupMemberPublicKey),
+				NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectAccessGroupMembers: "+
+					"disconnect update problem getting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
+					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
 
+			// We expect that the member entry we are trying to revert-update exists in the UtxoView.
+			if memberGroupEntry == nil || memberGroupEntry.isDeleted {
+				return errors.Wrapf(RuleErrorAccessMemberDoesntExist, "_disconnectAccessGroupMembers: "+
+					"disconnect update member does not exist for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName %v)",
+					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+			}
+		}
+		// Sanity-check that the size of the prevAccessGroupMembers is the same as the txMeta access group members.
+		if len(accessGroupMembersOp.PrevAccessGroupMembersList) != len(txMeta.AccessGroupMembersList) {
+			return errors.Wrapf(RuleErrorAccessGroupPrevMembersListIsIncorrect, "_disconnectAccessGroupMembers: "+
+				"disconnect update failed sanity-check on length of prevAccessGroupMemberPublicKeys, was expecting (len=%v) but got (len=%v)",
+				len(txMeta.AccessGroupMembersList), len(accessGroupMembersOp.PrevAccessGroupMembersList))
+		}
+		// Now that we've validated everything, we can revert to previous access group member entries.
+		for _, prevAccessMember := range accessGroupMembersOp.PrevAccessGroupMembersList {
+			copyPrevAccessMember := *prevAccessMember
+			if err := bav._setAccessGroupMemberEntry(&copyPrevAccessMember, NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
+				NewGroupKeyName(txMeta.AccessGroupKeyName)); err != nil {
+				return errors.Wrapf(err, "_disconnectAccessGroupMembers: disconnect update problem reverting to previous access group member "+
+					"entry for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName %v)",
+					prevAccessMember.AccessGroupMemberPublicKey, prevAccessMember.AccessGroupMemberKeyName)
+			}
+		}
 	default:
 		return errors.Wrapf(RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupCreate: "+
 			"Operation type %v not supported.", txMeta.AccessGroupMemberOperationType)

@@ -1794,6 +1794,48 @@ func DBGetAccessGroupEntryByAccessGroupIdWithTxn(txn *badger.Txn, snap *Snapshot
 	return accessGroupEntry, nil
 }
 
+func DBGetAccessGroupExistenceByAccessGroupId(db *badger.DB, snap *Snapshot,
+	accessGroupOwnerPublicKey *PublicKey, accessGroupKeyName *GroupKeyName) (bool, error) {
+	var err error
+	var ret bool
+	err = db.View(func(txn *badger.Txn) error {
+		ret, err = DBGetAccessGroupExistenceByAccessGroupIdWithTxn(txn, snap, accessGroupOwnerPublicKey, accessGroupKeyName)
+		return err
+	})
+	if err != nil {
+		return false, errors.Wrapf(err, "DBGetAccessGroupExistenceByAccessGroupId: Problem getting access group entry")
+	}
+	return ret, nil
+}
+
+// DBGetAccessGroupExistenceByAccessGroupIdWithTxn checks whether an access group exists in the db using some
+// optimized db queries.
+func DBGetAccessGroupExistenceByAccessGroupIdWithTxn(txn *badger.Txn, snap *Snapshot,
+	accessGroupOwnerPublicKey *PublicKey, accessGroupKeyName *GroupKeyName) (bool, error) {
+
+	prefix := _dbKeyForAccessGroupEntry(*accessGroupOwnerPublicKey, *accessGroupKeyName)
+	// We only cache / update ancestral records when we're dealing with state prefix.
+	isState := snap != nil && snap.isState(prefix)
+	keyString := hex.EncodeToString(prefix)
+
+	// Lookup the snapshot cache and check if we've already stored a value there.
+	if isState {
+		if _, exists := snap.DatabaseCache.Lookup(keyString); exists {
+			return true, nil
+		}
+	}
+
+	// Otherwise, we need to check the DB.
+	_, err := txn.Get(prefix)
+	if err == badger.ErrKeyNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, errors.Wrapf(err, "DBGetAccessGroupExistenceByAccessGroupIdWithTxn: Problem getting access group entry")
+	}
+	return true, nil
+}
+
 func DBPutAccessGroupEntry(db *badger.DB, snap *Snapshot, blockHeight uint64, accessGroupEntry *AccessGroupEntry) error {
 	var err error
 	err = db.Update(func(txn *badger.Txn) error {

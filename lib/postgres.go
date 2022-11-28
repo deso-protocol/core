@@ -2681,10 +2681,11 @@ func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoVie
 		if err != nil {
 			return fmt.Errorf("Postgres.flushAccessGroupMemberEntries: insert: %v", err)
 		}
-		// TODO: This gives syntax error?!
-		// OnConflict("(access_group_owner_public_key, access_group_key_name, access_group_member_public_key) DO UPDATE").
+
+		// On conflict, we do nothing because the entry only has primary keys for fields, so there's nothing to update.
 		_, err = tx.Model(&insertEnumerationEntries).
 			WherePK().
+			OnConflict("(access_group_owner_public_key, access_group_key_name, access_group_member_public_key) DO NOTHING").
 			Returning("NULL").
 			Insert()
 		if err != nil {

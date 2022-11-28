@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/pkg/errors"
-	"reflect"
 )
 
 // GetAccessGroupEntry will check the membership index for membership of memberPublicKey in the group
@@ -27,40 +26,59 @@ func (bav *UtxoView) GetAccessGroupEntry(groupOwnerPublicKey *PublicKey, groupKe
 	}
 
 	// In case the group entry was not in utxo_view, nor was it in the membership index, we fetch the full group directly.
-	return bav.GetAccessGroupEntryWithAccessGroupKey(accessGroupKey)
+	return bav.GetAccessGroupEntryWithAccessGroupId(accessGroupKey)
 }
 
 // GetAccessGroupForAccessGroupKeyExistence will check if the group with key accessGroupKey exists, if so it will fetch
 // the simplified group entry from the membership index. If the forceFullEntry is set or if we're not past the membership
 // index block height, then we will fetch the entire group entry from the db (provided it exists).
-func (bav *UtxoView) GetAccessGroupForAccessGroupKeyExistence(accessGroupKey *AccessGroupId,
-	blockHeight uint32) (*AccessGroupEntry, error) {
+func (bav *UtxoView) GetAccessGroupForAccessGroupKeyExistence(accessGroupId *AccessGroupId) (bool, error) {
 
-	if accessGroupKey == nil {
-		return nil, fmt.Errorf("GetAccessGroupForAccessGroupKeyExistence: Called with nil accessGroupKey")
+	if accessGroupId == nil {
+		return false, fmt.Errorf("GetAccessGroupForAccessGroupKeyExistence: Called with nil accessGroupId")
 	}
 
 	// The owner is a member of their own group by default, hence they will be present in the membership index.
-	ownerPublicKey := &accessGroupKey.AccessGroupOwnerPublicKey
-	groupKeyName := &accessGroupKey.AccessGroupKeyName
-	entry, err := bav.GetAccessGroupEntry(
-		ownerPublicKey, groupKeyName, blockHeight)
+	exists, err := bav.GetAccessGroupExistenceWithAccessGroupId(accessGroupId)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetAccessGroupForAccessGroupKeyExistence: Problem getting "+
-			"access group entry for access group key %v", accessGroupKey)
+		return false, errors.Wrapf(err, "GetAccessGroupForAccessGroupKeyExistence: Problem getting "+
+			"access group entry for access group id: %v", accessGroupId)
 	}
-	// Filter out deleted entries.
-	if entry == nil || entry.isDeleted {
-		return nil, nil
-	}
-	return entry, nil
+	return exists, nil
 }
 
-func (bav *UtxoView) GetAccessGroupEntryWithAccessGroupKey(
+func (bav *UtxoView) GetAccessGroupExistenceWithAccessGroupId(
+	accessGroupId *AccessGroupId) (bool, error) {
+
+	// Base group exists for every user.
+	if EqualGroupKeyName(&accessGroupId.AccessGroupKeyName, BaseGroupKeyName()) {
+		return true, nil
+	}
+
+	// If an entry exists in the current UtxoView, we need to check whether it's deleted.
+	if mapValue, exists := bav.AccessGroupIdToAccessGroupEntry[*accessGroupId]; exists {
+		if mapValue == nil || mapValue.isDeleted {
+			return false, nil
+		}
+		return true, nil
+	}
+
+	// If we get here it means no value exists in our in-memory map. In this case,
+	// defer to the db. If a mapping exists in the db, return it. If not, return false.
+	dbAdapter := bav.GetDbAdapter()
+	existence, err := dbAdapter.GetAccessGroupExistenceByAccessGroupId(accessGroupId)
+	if err != nil {
+		return false, errors.Wrapf(err, "GetAccessGroupExistenceWithAccessGroupId: Problem getting "+
+			"access group existence for access group id %v", accessGroupId)
+	}
+	return existence, nil
+}
+
+func (bav *UtxoView) GetAccessGroupEntryWithAccessGroupId(
 	accessGroupId *AccessGroupId) (*AccessGroupEntry, error) {
-	// This function is used to get an AccessGroupEntry given an AccessGroupId. The V3 messages are
-	// backwards-compatible, and in particular each user has a built-in AccessGroupId, called the
-	// "base group key," which is simply an access key corresponding to user's main key.
+	// This function is used to get an AccessGroupEntry given an AccessGroupId.
+	// Each user has a built-in AccessGroupId, called the "base group key," which is simply an
+	// access key corresponding to user's main key.
 	if EqualGroupKeyName(&accessGroupId.AccessGroupKeyName, BaseGroupKeyName()) {
 		return &AccessGroupEntry{
 			AccessGroupOwnerPublicKey: NewPublicKey(accessGroupId.AccessGroupOwnerPublicKey[:]),
@@ -80,12 +98,12 @@ func (bav *UtxoView) GetAccessGroupEntryWithAccessGroupKey(
 	dbAdapter := bav.GetDbAdapter()
 	accessGroupEntry, err := dbAdapter.GetAccessGroupEntryByAccessGroupId(accessGroupId)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetAccessGroupEntryWithAccessGroupKey: Problem getting "+
+		return nil, errors.Wrapf(err, "GetAccessGroupEntryWithAccessGroupId: Problem getting "+
 			"access group entry for access group key %v", accessGroupId)
 	}
 	if accessGroupEntry != nil {
 		if err := bav._setAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntry); err != nil {
-			return nil, errors.Wrapf(err, "GetAccessGroupEntryWithAccessGroupKey: Problem setting "+
+			return nil, errors.Wrapf(err, "GetAccessGroupEntryWithAccessGroupId: Problem setting "+
 				"access group entry for access group key %v", accessGroupId)
 		}
 	}
@@ -165,49 +183,6 @@ func ValidateAccessGroupPublicKeyAndName(accessGroupOwnerPublicKey, keyName []by
 	return nil
 }
 
-// ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView validates public key and key name, which are used in DeSo V3 Messages protocol.
-// The function first checks that the key and name are valid and then fetches an entry from UtxoView or DB
-// to check if the key has been previously saved. This is particularly useful for connecting V3 messages.
-func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView(
-	groupOwnerPublicKey, accessPublicKey, groupKeyName []byte, blockHeight uint32) error {
-
-	// First validate the group public key and name with ValidateGroupPublicKeyAndName
-	if err := ValidateGroupPublicKeyAndName(groupOwnerPublicKey, groupKeyName); err != nil {
-		return errors.Wrapf(err, "ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: Failed validating "+
-			"groupOwnerPublicKey and groupKeyName")
-	}
-	// First validate the access public key and name with ValidateGroupPublicKeyAndName
-	if err := ValidateGroupPublicKeyAndName(accessPublicKey, groupKeyName); err != nil {
-		return errors.Wrapf(err, "ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: Failed validating "+
-			"accessPublicKey and groupKeyName")
-	}
-
-	// Fetch the access key entry from UtxoView.
-	accessGroupKey := NewAccessGroupId(NewPublicKey(groupOwnerPublicKey), groupKeyName)
-	// To validate an access group key, we try to fetch the simplified group entry from the membership index.
-	accessGroupEntry, err := bav.GetAccessGroupForAccessGroupKeyExistence(accessGroupKey, blockHeight)
-	if err != nil {
-		return errors.Wrapf(err, "ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: "+
-			"Problem fetching access group entry")
-	}
-	if accessGroupEntry == nil || accessGroupEntry.isDeleted {
-		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: non-existent access key entry "+
-			"for groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
-	}
-
-	// Compare the UtxoEntry with the provided key for more validation.
-	if !reflect.DeepEqual(accessGroupEntry.AccessGroupPublicKey[:], accessPublicKey) {
-		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: keys don't match for "+
-			"groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
-	}
-
-	if !EqualGroupKeyName(accessGroupEntry.AccessGroupKeyName, NewGroupKeyName(groupKeyName)) {
-		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: key name don't match for "+
-			"groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
-	}
-	return nil
-}
-
 func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 	groupOwnerPublicKey, groupKeyName []byte, blockHeight uint32) error {
 
@@ -221,21 +196,16 @@ func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 	// Fetch the access key entry from UtxoView.
 	accessGroupKey := NewAccessGroupId(NewPublicKey(groupOwnerPublicKey), groupKeyName)
 	// To validate an access group key, we try to fetch the simplified group entry from the membership index.
-	accessGroupEntry, err := bav.GetAccessGroupForAccessGroupKeyExistence(accessGroupKey, blockHeight)
+	groupExistence, err := bav.GetAccessGroupForAccessGroupKeyExistence(accessGroupKey)
 	if err != nil {
 		return errors.Wrapf(err, "ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: "+
 			"Problem fetching access group entry")
 	}
-	if accessGroupEntry == nil || accessGroupEntry.isDeleted {
+	if !groupExistence {
 		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: non-existent access key entry "+
 			"for groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
 	}
 
-	// Sanity-check that the key name matches.
-	if !EqualGroupKeyName(accessGroupEntry.AccessGroupKeyName, NewGroupKeyName(groupKeyName)) {
-		return fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: key name don't match for "+
-			"groupOwnerPublicKey: %s", PkToString(groupOwnerPublicKey, bav.Params))
-	}
 	return nil
 }
 
@@ -317,7 +287,7 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 	}
 
 	// Let's check if this key doesn't already exist in UtxoView or in the DB.
-	existingEntry, err := bav.GetAccessGroupEntryWithAccessGroupKey(accessGroupKey)
+	existingEntry, err := bav.GetAccessGroupEntryWithAccessGroupId(accessGroupKey)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupCreate: ")
 	}
@@ -328,12 +298,6 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 		return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupAlreadyExists,
 			"_connectAccessGroupCreate: Access group already exists for access group owner public key %v "+
 				"and access group key name %v", accessGroupKey.AccessGroupOwnerPublicKey, accessGroupKey.AccessGroupKeyName)
-	}
-
-	// merge extra data
-	var extraData map[string][]byte
-	if blockHeight >= bav.Params.ForkHeights.ExtraDataOnEntriesBlockHeight {
-		extraData = mergeExtraData(make(map[string][]byte), txn.ExtraData)
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -349,7 +313,7 @@ func (bav *UtxoView) _connectAccessGroupCreate(
 		AccessGroupOwnerPublicKey: &accessGroupKey.AccessGroupOwnerPublicKey,
 		AccessGroupKeyName:        &accessGroupKey.AccessGroupKeyName,
 		AccessGroupPublicKey:      accessPublicKey,
-		ExtraData:                 extraData,
+		ExtraData:                 txn.ExtraData,
 	}
 
 	if err := bav._setAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntry); err != nil {
@@ -406,7 +370,7 @@ func (bav *UtxoView) _disconnectAccessGroupCreate(
 
 	// Get the access key that the transaction metadata points to.
 	accessKey := NewAccessGroupId(NewPublicKey(currentTxn.PublicKey), txMeta.AccessGroupKeyName)
-	accessGroupEntry, err := bav.GetAccessGroupEntryWithAccessGroupKey(accessKey)
+	accessGroupEntry, err := bav.GetAccessGroupEntryWithAccessGroupId(accessKey)
 	if err != nil {
 		return errors.Wrapf(err, "_disconnectAccessGroupCreate: Problem getting access group entry: ")
 	}

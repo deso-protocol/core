@@ -113,6 +113,7 @@ const (
 	RuleErrorAccessGroupKeyNameTooShort                  RuleError = "RuleErrorAccessGroupKeyNameTooShort"
 	RuleErrorAccessGroupKeyNameTooLong                   RuleError = "RuleErrorAccessGroupKeyNameTooLong"
 	RuleErrorAccessGroupMembersListCannotBeEmpty         RuleError = "RuleErrorAccessGroupMembersListCannotBeEmpty"
+	RuleErrorAccessGroupMemberEncryptedKeyCannotBeEmpty  RuleError = "RuleErrorAccessGroupMemberEncryptedKeyCannotBeEmpty"
 	RuleErrorAccessMemberAlreadyExists                   RuleError = "RuleErrorAccessMemberAlreadyExists"
 	RuleErrorAccessGroupMemberOperationTypeNotSupported  RuleError = "RuleErrorAccessGroupMemberOperationTypeNotSupported"
 	RuleErrorAccessMemberDoesntExist                     RuleError = "RuleErrorAccessMemberDoesntExist"
@@ -123,6 +124,7 @@ const (
 	RuleErrorAccessGroupMemberRemoveExtraDataNotEmpty    RuleError = "RuleErrorAccessGroupMemberRemoveExtraDataNotEmpty"
 	RuleErrorAccessGroupPrevMembersListIsIncorrect       RuleError = "RuleErrorAccessGroupPrevMembersListIsIncorrect"
 	RuleErrorAccessGroupMemberEnumerationRecursionLimit  RuleError = "RuleErrorAccessGroupMemberEnumerationRecursionLimit"
+	RuleErrorAccessGroupMemberPublicKeyMismatch          RuleError = "RuleErrorAccessGroupMemberPublicKeyMismatch"
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"
