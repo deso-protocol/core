@@ -667,11 +667,6 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 	// Next, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
 	for _, utxoAssociationEntry := range bav.AssociationMapKeyToUserAssociationEntry {
-		// Skip if UTXO view association entry is deleted.
-		if utxoAssociationEntry.isDeleted {
-			continue
-		}
-
 		// If TransactorPKID is set, they have to match.
 		if associationQuery.TransactorPKID != nil &&
 			!associationQuery.TransactorPKID.Eq(utxoAssociationEntry.TransactorPKID) {
@@ -718,6 +713,10 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 	// Convert map to slice.
 	var associationEntries []*UserAssociationEntry
 	for _, matchingAssociationEntry := range associationEntryMap {
+		if matchingAssociationEntry.isDeleted {
+			// Don't include any deleted association entries.
+			continue
+		}
 		associationEntries = append(associationEntries, matchingAssociationEntry)
 	}
 	return associationEntries, nil
@@ -751,11 +750,6 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 	// Next, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
 	for _, utxoAssociationEntry := range bav.AssociationMapKeyToPostAssociationEntry {
-		// Skip if UTXO view association entry is deleted.
-		if utxoAssociationEntry.isDeleted {
-			continue
-		}
-
 		// If TransactorPKID is set, they have to match.
 		if associationQuery.TransactorPKID != nil &&
 			!associationQuery.TransactorPKID.Eq(utxoAssociationEntry.TransactorPKID) {
@@ -802,6 +796,10 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 	// Convert map to slice.
 	var associationEntries []*PostAssociationEntry
 	for _, matchingAssociationEntry := range associationEntryMap {
+		if matchingAssociationEntry.isDeleted {
+			// Don't include any deleted association entries.
+			continue
+		}
 		associationEntries = append(associationEntries, matchingAssociationEntry)
 	}
 	return associationEntries, nil
