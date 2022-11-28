@@ -103,9 +103,6 @@ const (
 	EncoderTypeAccessGroupEntry
 	EncoderTypeAccessGroupMemberEntry
 	EncoderTypeGroupMembershipKey
-	//EncoderTypeGroupMemberAttributesKey
-	//EncoderTypeGroupEntryAttributesKey
-	//EncoderTypeAttributeEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -211,12 +208,6 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMemberEntry{}
 	case EncoderTypeGroupMembershipKey:
 		return &AccessGroupMembershipKey{}
-		//case EncoderTypeGroupMemberAttributesKey:
-		//	return &GroupMemberAttributesKey{}
-		//case EncoderTypeGroupEntryAttributesKey:
-		//	return &GroupEntryAttributesKey{}
-		//case EncoderTypeAttributeEntry:
-		//	return &AttributeEntry{}
 	}
 
 	// Txindex encoder types
@@ -440,7 +431,7 @@ type UtxoEntry struct {
 }
 
 func (utxoEntry *UtxoEntry) String() string {
-	return fmt.Sprintf("< AccessGroupOwnerPublicKey: %v, BlockHeight: %d, AmountNanos: %d, UtxoType: %v, "+
+	return fmt.Sprintf("< OwnerPublicKey: %v, BlockHeight: %d, AmountNanos: %d, UtxoType: %v, "+
 		"isSpent: %v, utxoKey: %v>", PkToStringMainnet(utxoEntry.PublicKey),
 		utxoEntry.BlockHeight, utxoEntry.AmountNanos,
 		utxoEntry.UtxoType, utxoEntry.isSpent, utxoEntry.UtxoKey)
@@ -537,9 +528,8 @@ const (
 	OperationTypeDAOCoinLimitOrder            OperationType = 28
 	OperationTypeCreateAccessGroup            OperationType = 29
 	OperationTypeAccessGroupMembers           OperationType = 30
-	OperationTypeAccessGroupAttributes        OperationType = 31
 
-	// NEXT_TAG = 32
+	// NEXT_TAG = 31
 )
 
 func (op OperationType) String() string {
@@ -663,10 +653,6 @@ func (op OperationType) String() string {
 	case OperationTypeAccessGroupMembers:
 		{
 			return "OperationTypeAccessGroupMembers"
-		}
-	case OperationTypeAccessGroupAttributes:
-		{
-			return "OperationTypeAccessGroupAttributes"
 		}
 	}
 	return "OperationTypeUNKNOWN"
@@ -1935,7 +1921,7 @@ func (message *MessageEntry) GetEncoderType() EncoderType {
 }
 
 // GroupKeyName helps with handling key names in AccessGroups
-type GroupKeyName [MaxMessagingKeyNameCharacters]byte
+type GroupKeyName [MaxAccessGroupKeyNameCharacters]byte
 
 func (name *GroupKeyName) ToBytes() []byte {
 	return name[:]
@@ -2026,7 +2012,7 @@ func NewMessagingGroupKey(ownerPublicKey *PublicKey, groupKeyName []byte) *Messa
 }
 
 func (key *MessagingGroupKey) String() string {
-	return fmt.Sprintf("<AccessGroupOwnerPublicKey: %v, AccessGroupKeyName: %v",
+	return fmt.Sprintf("<OwnerPublicKey: %v, GroupKeyName: %v",
 		key.OwnerPublicKey, key.GroupKeyName)
 }
 
@@ -2113,197 +2099,6 @@ func NewGroupMembershipKey(groupMemberPublicKey PublicKey, groupOwnerPublicKey P
 func (key *AccessGroupMembershipKey) String() string {
 	return fmt.Sprintf("<GroupMemberPublicKey: %v, GroupOwnerPublicKey: %v, AccessGroupKeyName: %v>",
 		key.GroupMemberPublicKey, key.GroupOwnerPublicKey, key.GroupKeyName)
-}
-
-// GroupMemberAttributesKey is used to index group member attributes for a user in PrefixGroupMemberAttributesIndex
-type GroupMemberAttributesKey struct {
-	GroupOwnerPublicKey  PublicKey
-	GroupKeyName         GroupKeyName
-	GroupMemberPublicKey PublicKey
-	//AttributeType        AccessGroupMemberAttributeType
-}
-
-func (key *GroupMemberAttributesKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	var data []byte
-	data = append(data, key.GroupOwnerPublicKey[:]...)
-	data = append(data, key.GroupKeyName[:]...)
-	data = append(data, key.GroupMemberPublicKey[:]...)
-	//data = append(data, []byte{byte(key.AttributeType)}...)
-	return data
-}
-
-func (key *GroupMemberAttributesKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	groupOwnerPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
-		key.GroupOwnerPublicKey = *groupOwnerPublicKey
-	} else if err != nil {
-		return errors.Wrapf(err, "GroupMemberAttributesKey.Decode: Problem reading "+
-			"GroupOwnerPublicKey")
-	}
-
-	groupKeyName := &GroupKeyName{}
-	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
-		key.GroupKeyName = *groupKeyName
-	} else if err != nil {
-		return errors.Wrapf(err, "GroupMemberAttributesKey.Decode: Problem reading "+
-			"AccessGroupKeyName")
-	}
-
-	groupMemberPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(groupMemberPublicKey, rr); exist && err == nil {
-		key.GroupMemberPublicKey = *groupMemberPublicKey
-	} else if err != nil {
-		return errors.Wrapf(err, "GroupMemberAttributesKey.Decode: Problem reading "+
-			"GroupMemberPublicKey")
-	}
-
-	//attributeType, err := rr.ReadByte()
-	//if err != nil {
-	//	return errors.Wrapf(err, "GroupMemberAttributesKey.Decode: Problem reading "+
-	//		"AttributeType")
-	//}
-	//key.AttributeType = AccessGroupMemberAttributeType(attributeType)
-
-	return nil
-}
-
-func (key *GroupMemberAttributesKey) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
-}
-
-func (key *GroupMemberAttributesKey) GetEncoderType() EncoderType {
-	return 0
-	//return EncoderTypeGroupMemberAttributesKey
-}
-
-func NewGroupMemberAttributesKey(groupOwnerPublicKey *PublicKey,
-	groupKeyName []byte, groupMemberPublicKey *PublicKey) *GroupMemberAttributesKey {
-	return &GroupMemberAttributesKey{
-		GroupOwnerPublicKey:  *groupOwnerPublicKey,
-		GroupKeyName:         *NewGroupKeyName(groupKeyName),
-		GroupMemberPublicKey: *groupMemberPublicKey,
-		//AttributeType:        attributeType,
-	}
-}
-
-func (key *GroupMemberAttributesKey) String() string {
-	return fmt.Sprintf("<GroupOwnerPublicKey: %v, AccessGroupKeyName: %v, GroupMemberPublicKey: %v>",
-		key.GroupOwnerPublicKey, key.GroupKeyName, key.GroupMemberPublicKey)
-}
-
-// GroupEntryAttributesKey is used to index group entry attributes for a user in PrefixGroupEntryAttributesIndex
-type GroupEntryAttributesKey struct {
-	GroupOwnerPublicKey PublicKey
-	GroupKeyName        GroupKeyName
-	//AttributeType       AccessGroupEntryAttributeType
-}
-
-func (key *GroupEntryAttributesKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	var data []byte
-	data = append(data, key.GroupOwnerPublicKey[:]...)
-	data = append(data, key.GroupKeyName[:]...)
-	//data = append(data, []byte{byte(key.AttributeType)}...)
-	return data
-}
-
-func (key *GroupEntryAttributesKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	groupOwnerPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
-		key.GroupOwnerPublicKey = *groupOwnerPublicKey
-	} else if err != nil {
-		return errors.Wrapf(err, "GroupEntryAttributesKey.Decode: Problem reading "+
-			"GroupOwnerPublicKey")
-	}
-
-	groupKeyName := &GroupKeyName{}
-	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
-		key.GroupKeyName = *groupKeyName
-	} else if err != nil {
-		return errors.Wrapf(err, "GroupEntryAttributesKey.Decode: Problem reading "+
-			"AccessGroupKeyName")
-	}
-
-	//attributeType, err := rr.ReadByte()
-	//if err != nil {
-	//	return errors.Wrapf(err, "GroupEntryAttributesKey.Decode: Problem reading "+
-	//		"AttributeType")
-	//}
-	//key.AttributeType = AccessGroupEntryAttributeType(attributeType)
-
-	return nil
-}
-
-func (key *GroupEntryAttributesKey) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
-}
-
-func (key *GroupEntryAttributesKey) GetEncoderType() EncoderType {
-	return 0
-	//return EncoderTypeGroupEntryAttributesKey
-}
-
-func NewGroupEntryAttributesKey(groupOwnerPublicKey *PublicKey, groupKeyName []byte) *GroupEntryAttributesKey {
-	return &GroupEntryAttributesKey{
-		GroupOwnerPublicKey: *groupOwnerPublicKey,
-		GroupKeyName:        *NewGroupKeyName(groupKeyName),
-	}
-}
-
-func (key *GroupEntryAttributesKey) String() string {
-	return fmt.Sprintf("<GroupOwnerPublicKey: %v, AccessGroupKeyName: %v>",
-		key.GroupOwnerPublicKey, key.GroupKeyName)
-}
-
-// AttributeEntry is used to store the status and value of an attribute
-type AttributeEntry struct {
-	IsSet bool
-	Value []byte
-}
-
-func (entry *AttributeEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	var data []byte
-	data = append(data, BoolToByte(entry.IsSet))
-	data = append(data, entry.Value...)
-	return data
-}
-
-func (entry *AttributeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	isSet, err := ReadBoolByte(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AttributeEntry.Decode: Problem reading "+
-			"IsSet")
-	}
-	entry.IsSet = isSet
-
-	value, err := DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AttributeEntry.Decode: Problem reading "+
-			"Value")
-	}
-	entry.Value = value
-
-	return nil
-}
-
-func (entry *AttributeEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
-}
-
-func (entry *AttributeEntry) GetEncoderType() EncoderType {
-	return 0
-	//return EncoderTypeAttributeEntry
-}
-
-func NewAttributeEntry(isSet bool, value []byte) *AttributeEntry {
-	return &AttributeEntry{
-		IsSet: isSet,
-		Value: value,
-	}
-}
-
-func (entry *AttributeEntry) String() string {
-	return fmt.Sprintf("<IsSet: %v, Value: %v>",
-		entry.IsSet, entry.Value)
 }
 
 type AccessGroupEntry struct {
@@ -2421,6 +2216,7 @@ func sortMessagingGroupMembers(membersArg []*MessagingGroupMember) []*MessagingG
 	// Make a deep copy of the members to avoid messing up the slice the caller
 	// used. Not doing this could cause downstream effects, mainly in tests where
 	// the same slice is re-used in txns and in expectations later on.
+	// TODO: use safe make here? will introduce an error
 	members := make([]*MessagingGroupMember, len(membersArg))
 	copy(members, membersArg)
 	sort.Slice(members, func(ii, jj int) bool {
@@ -3030,7 +2826,10 @@ func (bundle *NFTBidEntryBundle) RawDecodeWithoutMetadata(blockHeight uint64, rr
 	if err != nil {
 		return errors.Wrapf(err, "NFTBidEntryBundle.RawDecodeWithoutMetadata: Problem decoding number of nft bids")
 	}
-	bundle.nftBidEntryBundle = make([]*NFTBidEntry, numEntries)
+	bundle.nftBidEntryBundle, err = SafeMakeSliceWithLength[*NFTBidEntry](numEntries)
+	if err != nil {
+		return errors.Wrapf(err, "NFTBidEntryBundle.RawDecodeWithoutMetadata: Problem creating slice for nftBidEntryBundle")
+	}
 	for ii := uint64(0); ii < numEntries; ii++ {
 		bidEntry := &NFTBidEntry{}
 		if exists, err := DecodeFromBytes(bidEntry, rr); !exists || err != nil {
@@ -3092,6 +2891,7 @@ func (key *DerivedKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMet
 	data = append(data, EncodeExtraData(key.ExtraData)...)
 	if key.TransactionSpendingLimitTracker != nil {
 		data = append(data, BoolToByte(true))
+		// TODO: we need to catch the error here or not raise an error in spending limits .ToBytes
 		tslBytes, _ := key.TransactionSpendingLimitTracker.ToBytes(blockHeight)
 		data = append(data, tslBytes...)
 	} else {
@@ -3105,7 +2905,7 @@ func (key *DerivedKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMet
 func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	ownerPublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "DerivedKeyEntry.Decode: Problem reading AccessGroupOwnerPublicKey")
+		return errors.Wrapf(err, "DerivedKeyEntry.Decode: Problem reading OwnerPublicKey")
 	}
 	key.OwnerPublicKey = *NewPublicKey(ownerPublicKeyBytes)
 	derivedPublicKeyBytes, err := DecodeByteArray(rr)
@@ -4022,7 +3822,7 @@ type PKIDEntry struct {
 }
 
 func (pkid *PKIDEntry) String() string {
-	return fmt.Sprintf("< PKID: %s, AccessGroupOwnerPublicKey: %s >", PkToStringMainnet(pkid.PKID[:]), PkToStringMainnet(pkid.PublicKey))
+	return fmt.Sprintf("< PKID: %s, OwnerPublicKey: %s >", PkToStringMainnet(pkid.PKID[:]), PkToStringMainnet(pkid.PublicKey))
 }
 
 func (pkid *PKIDEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -4198,7 +3998,11 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 	}
 
 	if pkLen > 0 {
-		result := make([]byte, pkLen)
+		var result []byte
+		result, err = SafeMakeSliceWithLength[byte](pkLen)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DecodeByteArray: Problem creating slice")
+		}
 
 		_, err = io.ReadFull(reader, result)
 		if err != nil {
@@ -4217,6 +4021,7 @@ func EncodePKIDuint64Map(pkidMap map[PKID]uint64) []byte {
 	mapLength := uint64(len(pkidMap))
 	data = append(data, UintToBuf(mapLength)...)
 	if mapLength > 0 {
+		// TODO: do we want to use safe make here and introduce an error?
 		keys := make([][33]byte, 0, len(pkidMap))
 		for pkid := range pkidMap {
 			pkidBytes := [33]byte{}
@@ -4253,14 +4058,20 @@ func DecodePKIDuint64Map(rr io.Reader) (map[PKID]uint64, error) {
 	}
 
 	if mapLength > 0 {
-		pkidMap := make(map[PKID]uint64, mapLength)
+		pkidMap, err := SafeMakeMapWithCapacity[PKID, uint64](mapLength)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DecodePKIDuint64Map: Problem making map for pkidMap")
+		}
 
 		for ii := uint64(0); ii < mapLength; ii++ {
 			pkidLen, err := ReadUvarint(rr)
 			if err != nil {
 				return nil, errors.Wrapf(err, "DecodePKIDuint64Map: Problem reading pkid length at ii: (%v)", ii)
 			}
-			pkidBytes := make([]byte, pkidLen)
+			pkidBytes, err := SafeMakeSliceWithLength[byte](pkidLen)
+			if err != nil {
+				return nil, errors.Wrapf(err, "DecodePKIDuint64Map: Problem making slice for pkidBytes")
+			}
 			_, err = io.ReadFull(rr, pkidBytes)
 			if err != nil {
 				return nil, errors.Wrapf(err, "DecodePKIDuint64Map: Problem reading pkid bytes at ii: (%v)", ii)
@@ -4285,6 +4096,7 @@ func EncodeExtraData(extraData map[string][]byte) []byte {
 	data = append(data, UintToBuf(extraDataLength)...)
 	if extraDataLength > 0 {
 		// Sort the keys of the map
+		// TODO: do we want to use safe make here and introduce an error?
 		keys := make([]string, 0, len(extraData))
 		for key := range extraData {
 			keys = append(keys, key)
@@ -4318,7 +4130,11 @@ func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
 
 	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
 	if extraDataLen != 0 {
-		extraData := make(map[string][]byte, extraDataLen)
+		var extraData map[string][]byte
+		extraData, err = SafeMakeMapWithCapacity[string, []byte](extraDataLen)
+		if err != nil {
+			return nil, fmt.Errorf("DecodeExtraData: Problem creating map with length %d", extraDataLen)
+		}
 
 		// Loop over each key
 		for ii := uint64(0); ii < extraDataLen; ii++ {
@@ -4330,7 +4146,11 @@ func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
 			}
 
 			// De-serialize the key
-			keyBytes := make([]byte, keyLen)
+			var keyBytes []byte
+			keyBytes, err = SafeMakeSliceWithLength[byte](keyLen)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem creating slice for key #{ii} with length #{keyLen}")
+			}
 			_, err = io.ReadFull(rr, keyBytes)
 			if err != nil {
 				return nil, fmt.Errorf("DecodeExtraData: Problem reading key #{ii}")
@@ -4351,7 +4171,11 @@ func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
 			}
 
 			// De-serialize the value
-			value := make([]byte, valueLen)
+			var value []byte
+			value, err = SafeMakeSliceWithLength[byte](valueLen)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem creating slice for value #{ii} with length #{valueLen}")
+			}
 			_, err = io.ReadFull(rr, value)
 			if err != nil {
 				return nil, fmt.Errorf("DecodeExtraData: Problem read value #{ii}")
@@ -4374,7 +4198,10 @@ func EncodeMapStringUint64(mapStruct map[string]uint64) []byte {
 	data = append(data, UintToBuf(extraDataLength)...)
 	if extraDataLength > 0 {
 		// Sort the keys of the map
-		keys := make([]string, 0, len(mapStruct))
+		keys, err := SafeMakeSliceWithLengthAndCapacity[string](0, extraDataLength)
+		if err != nil {
+			// TODO: do we really want to introduce an error here?
+		}
 		for key := range mapStruct {
 			keys = append(keys, key)
 		}
@@ -4401,7 +4228,11 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 
 	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
 	if extraDataLen != 0 {
-		extraData := make(map[string]uint64, extraDataLen)
+		var extraData map[string]uint64
+		extraData, err = SafeMakeMapWithCapacity[string, uint64](extraDataLen)
+		if err != nil {
+			return nil, fmt.Errorf("DecodeExtraData: Problem creating extra map with length #{extraDataLen}")
+		}
 
 		// Loop over each key
 		for ii := uint64(0); ii < extraDataLen; ii++ {
@@ -4413,7 +4244,11 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 			}
 
 			// De-serialize the key
-			keyBytes := make([]byte, keyLen)
+			var keyBytes []byte
+			keyBytes, err = SafeMakeSliceWithLength[byte](keyLen)
+			if err != nil {
+				return nil, fmt.Errorf("DecodeExtraData: Problem creating slice of length #{keyLen} for key #{ii}")
+			}
 			_, err = io.ReadFull(rr, keyBytes)
 			if err != nil {
 				return nil, fmt.Errorf("DecodeExtraData: Problem reading key #{ii}")
@@ -4427,7 +4262,8 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 			}
 
 			// De-serialize the length of the value
-			value, err := ReadUvarint(rr)
+			var value uint64
+			value, err = ReadUvarint(rr)
 			if err != nil {
 				return nil, fmt.Errorf("DecodeExtraData: Problem reading value")
 			}
@@ -4466,7 +4302,10 @@ func DecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
 				intLen, maxUint256BytesLen)
 		}
 
-		numberBytes := make([]byte, intLen)
+		numberBytes, err := SafeMakeSliceWithLength[byte](intLen)
+		if err != nil {
+			return nil, fmt.Errorf("DecodeUint256: Problem making slice of length %v", intLen)
+		}
 		_, err = io.ReadFull(rr, numberBytes)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DecodeUint256: Error reading uint256")

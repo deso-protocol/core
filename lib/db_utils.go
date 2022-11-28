@@ -369,18 +369,6 @@ type DBPrefixes struct {
 	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, GroupMemberPublicKey [33]byte> -> <>
 	PrefixAccessGroupMemberEnumerationIndex []byte `prefix_id:"[65]" is_state:"true"`
 
-	// Prefix for storing group member attributes:
-	// The value of this prefix is a byte slice used to store various types of encoded data like
-	// MemberStatus or MemberBadges.
-	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, GroupMemberPublicKey [33]byte, AccessGroupMemberAttributeType [1]byte> -> []byte
-	PrefixAccessGroupEntryAttribute []byte `prefix_id:"[66]" is_state:"true"`
-
-	// Prefix for storing group entry attributes:
-	// The value of this prefix is a byte slice used to store various types of encoded data like
-	// GroupDescription or GroupPictureRawBytes.
-	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, AccessGroupEntryAttributeType [1]byte> -> []byte
-	PrefixAccessGroupMemberAttribute []byte `prefix_id:"[67]" is_state:"true"`
-
 	// NEXT_TAG: 68
 }
 
@@ -546,12 +534,6 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 		return true, &AccessGroupMemberEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixAccessGroupMemberEnumerationIndex) {
 		// prefix_id:"[65]"
-		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixAccessGroupEntryAttribute) {
-		// prefix_id:"[66]"
-		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixAccessGroupMemberAttribute) {
-		// prefix_id:"[67]"
 		return false, nil
 	}
 
@@ -2158,369 +2140,6 @@ func DBDeleteAccessGroupMemberEnumerationIndexWithTxn(txn *badger.Txn, snap *Sna
 
 	return nil
 }
-
-// -------------------------------------------------------------------------------------
-// PrefixGroupMemberAttributesIndex
-// <prefix, GroupOwnerPublicKey, AccessGroupKeyName, GroupMemberPublicKey, AccessGroupMemberAttributeType> -> []byte
-// -------------------------------------------------------------------------------------
-
-//// _dbSeekPrefixForGroupMemberAttributesIndex returns prefix to enumerate over the given member's attributes.
-//func _dbSeekPrefixForGroupMemberAttributesIndex(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey) []byte {
-//	prefixCopy := append([]byte{}, Prefixes.PrefixGroupMemberAttributesIndex...)
-//	prefixCopy = append(prefixCopy, groupOwnerPublicKey[:]...)
-//	prefixCopy = append(prefixCopy, groupKeyName[:]...)
-//	prefixCopy = append(prefixCopy, groupMemberPublicKey[:]...)
-//	return prefixCopy
-//}
-//
-//// _dbKeyForGroupMemberAttributesIndex returns DB key for the PrefixGroupMemberAttributesIndex
-//func _dbKeyForGroupMemberAttributesIndex(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) []byte {
-//	key := _dbSeekPrefixForGroupMemberAttributesIndex(groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
-//	key = append(key, byte(attributeType))
-//	return key
-//}
-//
-//// DBGetAllAttributesForGroupMemberWithTxn for a given group.
-//func DBGetAllAttributesForGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey) (map[AccessGroupMemberAttributeType]*AttributeEntry, error) {
-//
-//	// enumerate all the attributes for a given group member.
-//	var groupMemberAttributes map[AccessGroupMemberAttributeType]*AttributeEntry
-//	prefix := _dbSeekPrefixForGroupMemberAttributesIndex(groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
-//	keysFound, valsFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
-//	if err != nil {
-//		return nil, errors.Wrapf(err, "DBGetAllAttributesForGroupMemberWithTxn: "+
-//			"problem enumerating group member attributes for prefix (%v)", prefix)
-//	}
-//
-//	for i, keyBytes := range keysFound {
-//		// The key is of the form:
-//		// <prefix, GroupOwnerPublicKey, AccessGroupKeyName, GroupMemberPublicKey, AccessGroupMemberAttributeType> -> []byte
-//		memberAttributesKey := &GroupMemberAttributesKey{}
-//		rr := bytes.NewReader(keyBytes)
-//		if exists, err := DecodeFromBytes(memberAttributesKey, rr); !exists || err != nil {
-//			return nil, errors.Wrapf(err, "DBGetAllAttributesForGroupMemberWithTxn: "+
-//				"problem decoding group member attributes key for prefix (%v)", prefix)
-//		}
-//		// Get corresponding value which may be nil.
-//		valBytes := valsFound[i]
-//		// Add the attributeEntry to the map.
-//		groupMemberAttributes[memberAttributesKey.AttributeType] = NewAttributeEntry(true, valBytes)
-//	}
-//
-//	return groupMemberAttributes, nil
-//}
-//
-//func DBGetAllAttributesForGroupMember(handle *badger.DB, snap *Snapshot,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey) (map[AccessGroupMemberAttributeType]*AttributeEntry, error) {
-//
-//	var groupMemberAttributes map[AccessGroupMemberAttributeType]*AttributeEntry
-//	err := handle.View(func(txn *badger.Txn) error {
-//		var err error
-//		groupMemberAttributes, err = DBGetAllAttributesForGroupMemberWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
-//		return err
-//	})
-//
-//	return groupMemberAttributes, err
-//}
-//
-//// DBPutAttributeInGroupMemberAttributesIndexWithTxn for a given group.
-//func DBPutAttributeInGroupMemberAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType, attributeValue []byte) error {
-//
-//	// Make sure group member attribute type is valid
-//	if !IsAccessGroupMemberAttributeTypeValid(attributeType) {
-//		return fmt.Errorf("DBPutAttributeInGroupMemberAttributesIndexWithTxn: "+
-//			"Invalid group member attribute type: %v", attributeType)
-//	}
-//
-//	if err := DBSetWithTxn(txn, snap, _dbKeyForGroupMemberAttributesIndex(
-//		groupOwnerPublicKey, groupKeyName, groupMemberPublicKey, attributeType), attributeValue); err != nil {
-//
-//		return errors.Wrapf(err, "DBPutAttributeInGroupMemberAttributesIndexWithTxn: "+
-//			"problem adding attribute %v for group member %v", attributeType, groupMemberPublicKey)
-//	}
-//
-//	return nil
-//}
-//
-//// DBPutAttributeInGroupMemberAttributesIndex for a given group.
-//func DBPutAttributeInGroupMemberAttributesIndex(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType, attributeValue []byte) error {
-//	return handle.Update(func(txn *badger.Txn) error {
-//		return DBPutAttributeInGroupMemberAttributesIndexWithTxn(txn, snap, blockHeight, groupOwnerPublicKey, groupKeyName, groupMemberPublicKey, attributeType, attributeValue)
-//	})
-//}
-//
-//// DBGetAttributeEntryInGroupMemberAttributesIndexWithTxn for a given group.
-//func DBGetAttributeEntryInGroupMemberAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) (*AttributeEntry, error) {
-//
-//	// Make sure group member attribute type is valid
-//	if !IsAccessGroupMemberAttributeTypeValid(attributeType) {
-//		return nil, fmt.Errorf("DBGetAttributeEntryInGroupMemberAttributesIndexWithTxn: "+
-//			"Invalid group member attribute type: %v", attributeType)
-//	}
-//
-//	// Get the key for the attribute.
-//	key := _dbKeyForGroupMemberAttributesIndex(groupOwnerPublicKey, groupKeyName, groupMemberPublicKey, attributeType)
-//
-//	// Fetch the value from the db.
-//	value, err := DBGetWithTxn(txn, snap, key)
-//
-//	if err != nil {
-//		// If the key doesn't exist then the attribute is not set.
-//		if err == badger.ErrKeyNotFound {
-//			return NewAttributeEntry(false, nil), nil
-//		}
-//		// Otherwise, return the error.
-//		return nil, errors.Wrapf(err, "DBGetAttributeEntryInGroupMemberAttributesIndexWithTxn: Problem fetching key %v from db", key)
-//	}
-//
-//	// If the key exists then the attribute is set.
-//	return NewAttributeEntry(true, value), nil
-//}
-//
-//// DBGetAttributeEntryInGroupMemberAttributesIndex for a given group.
-//func DBGetAttributeEntryInGroupMemberAttributesIndex(handle *badger.DB, snap *Snapshot,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) (*AttributeEntry, error) {
-//	var attributeEntry *AttributeEntry
-//	err := handle.View(func(txn *badger.Txn) error {
-//		var err error
-//		attributeEntry, err = DBGetAttributeEntryInGroupMemberAttributesIndexWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName, groupMemberPublicKey, attributeType)
-//		return err
-//	})
-//	return attributeEntry, err
-//}
-//
-//// DBDeleteGroupMemberInGroupMemberAttributesIndexWithTxn deletes a group member from the group member attributes index.
-//func DBDeleteGroupMemberInGroupMemberAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey) error {
-//
-//	// Get the prefix for the group member attributes index.
-//	prefix := _dbSeekPrefixForGroupMemberAttributesIndex(groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
-//
-//	// Enumerate all the keys with the given prefix.
-//	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
-//	if err != nil {
-//		return errors.Wrapf(err, "DBDeleteGroupMemberInGroupMemberAttributesIndexWithTxn: "+
-//			"problem enumerating keys for prefix (%v)", prefix)
-//	}
-//
-//	// Delete all the keys found.
-//	for _, key := range keysFound {
-//		if err := DBDeleteWithTxn(txn, snap, key); err != nil {
-//			return errors.Wrapf(err, "DBDeleteGroupMemberInGroupMemberAttributesIndexWithTxn: "+
-//				"problem deleting key (%v)", key)
-//		}
-//
-//	}
-//
-//	return nil
-//}
-//
-//// DBDeleteAttributeInGroupMemberAttributesIndexWithTxn deletes an attribute from the group member attributes index.
-//func DBDeleteAttributeInGroupMemberAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, groupMemberPublicKey *PublicKey, attributeType AccessGroupMemberAttributeType) error {
-//
-//	// Make sure group member attribute type is valid
-//	if !IsAccessGroupMemberAttributeTypeValid(attributeType) {
-//		return fmt.Errorf("DBDeleteAttributeInGroupMemberAttributesIndexWithTxn: "+
-//			"Invalid group member attribute type: %v", attributeType)
-//	}
-//
-//	// Get the key for the attribute.
-//	key := _dbKeyForGroupMemberAttributesIndex(groupOwnerPublicKey, groupKeyName, groupMemberPublicKey, attributeType)
-//
-//	// Delete the key.
-//	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
-//		return errors.Wrapf(err, "DBDeleteAttributeInGroupMemberAttributesIndexWithTxn: "+
-//			"problem deleting key (%v)", key)
-//	}
-//
-//	return nil
-//}
-//
-//// -------------------------------------------------------------------------------------
-//// PrefixGroupEntryAttributesIndex
-//// <prefix, GroupOwnerPublicKey, AccessGroupKeyName, AccessGroupEntryAttributeType> -> []byte
-//// -------------------------------------------------------------------------------------
-//
-//// _dbSeekPrefixForGroupEntryAttributesIndex for a given group.
-//func _dbSeekPrefixForGroupEntryAttributesIndex(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) []byte {
-//	prefixCopy := append([]byte{}, Prefixes.PrefixGroupEntryAttributesIndex...)
-//	prefixCopy = append(prefixCopy, groupOwnerPublicKey[:]...)
-//	prefixCopy = append(prefixCopy, groupKeyName[:]...)
-//	return prefixCopy
-//}
-//
-//// _dbKeyForGroupEntryAttributesIndex for a given group.
-//func _dbKeyForGroupEntryAttributesIndex(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, attributeType AccessGroupEntryAttributeType) []byte {
-//	key := _dbSeekPrefixForGroupEntryAttributesIndex(groupOwnerPublicKey, groupKeyName)
-//	key = append(key, byte(attributeType))
-//	return key
-//}
-//
-//// DBGetAllAttributesForGroupEntryWithTxn for a given group.
-//func DBGetAllAttributesForGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) (map[AccessGroupEntryAttributeType]*AttributeEntry, error) {
-//
-//	// enumerate all the attributes for a given group entry.
-//	var groupEntryAttributes map[AccessGroupEntryAttributeType]*AttributeEntry
-//	prefix := _dbSeekPrefixForGroupEntryAttributesIndex(groupOwnerPublicKey, groupKeyName)
-//	keysFound, valsFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
-//	if err != nil {
-//		return nil, errors.Wrapf(err, "DBGetAllAttributesForGroupEntryWithTxn: "+
-//			"problem enumerating group entry attributes for prefix (%v)", prefix)
-//	}
-//
-//	for i, keyBytes := range keysFound {
-//		// The key is of the form:
-//		// <prefix, GroupOwnerPublicKey, AccessGroupKeyName, AccessGroupEntryAttributeType> -> []byte
-//		entryAttributesKey := &GroupEntryAttributesKey{}
-//		rr := bytes.NewReader(keyBytes)
-//		if exists, err := DecodeFromBytes(entryAttributesKey, rr); !exists || err != nil {
-//			return nil, errors.Wrapf(err, "DBGetAllAttributesForGroupEntryWithTxn: "+
-//				"problem decoding group entry attributes key for prefix (%v)", prefix)
-//		}
-//		// Get corresponding value which may be nil.
-//		valBytes := valsFound[i]
-//		// Add the attributeEntry to the map.
-//		groupEntryAttributes[entryAttributesKey.AttributeType] = NewAttributeEntry(true, valBytes)
-//	}
-//
-//	return groupEntryAttributes, nil
-//}
-//
-//// DBGetAllAttributesForGroupEntry for a given group.
-//func DBGetAllAttributesForGroupEntry(handle *badger.DB, snap *Snapshot,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) (map[AccessGroupEntryAttributeType]*AttributeEntry, error) {
-//	var groupEntryAttributes map[AccessGroupEntryAttributeType]*AttributeEntry
-//	err := handle.View(func(txn *badger.Txn) error {
-//		var err error
-//		groupEntryAttributes, err = DBGetAllAttributesForGroupEntryWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName)
-//		return err
-//	})
-//	return groupEntryAttributes, err
-//}
-//
-//// DBPutAttributeInGroupEntryAttributesIndexWithTxn for a given group.
-//func DBPutAttributeInGroupEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint32,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, attributeType AccessGroupEntryAttributeType, attributeValue []byte) error {
-//
-//	// Make sure group entry attribute type is valid
-//	if !IsAccessGroupEntryAttributeTypeValid(attributeType) {
-//		return fmt.Errorf("DBPutAttributeInGroupEntryAttributesIndexWithTxn: "+
-//			"Invalid group entry attribute type: %v", attributeType)
-//	}
-//
-//	if err := DBSetWithTxn(txn, snap, _dbKeyForGroupEntryAttributesIndex(
-//		groupOwnerPublicKey, groupKeyName, attributeType), attributeValue); err != nil {
-//		return errors.Wrapf(err, "DBPutAttributeInGroupEntryAttributesIndexWithTxn: "+
-//			"Problem putting attribute %v for group entry attributes index", attributeType)
-//	}
-//
-//	return nil
-//}
-//
-//// DBPutAttributeInGroupEntryAttributesIndex for a given group.
-//func DBPutAttributeInGroupEntryAttributesIndex(handle *badger.DB, snap *Snapshot, blockHeight uint32,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, attributeType AccessGroupEntryAttributeType, attributeValue []byte) error {
-//	return handle.Update(func(txn *badger.Txn) error {
-//		return DBPutAttributeInGroupEntryAttributesIndexWithTxn(txn, snap, blockHeight,
-//			groupOwnerPublicKey, groupKeyName, attributeType, attributeValue)
-//	})
-//}
-//
-//// DBGetAttributeEntryInGroupEntryAttributesIndexWithTxn for a given group.
-//func DBGetAttributeEntryInGroupEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, attributeType AccessGroupEntryAttributeType) (*AttributeEntry, error) {
-//
-//	// Make sure group entry attribute type is valid
-//	if !IsAccessGroupEntryAttributeTypeValid(attributeType) {
-//		return nil, fmt.Errorf("DBGetAttributeEntryInGroupEntryAttributesIndexWithTxn: "+
-//			"Invalid group entry attribute type: %v", attributeType)
-//	}
-//
-//	// Get the key for the attribute.
-//	key := _dbKeyForGroupEntryAttributesIndex(groupOwnerPublicKey, groupKeyName, attributeType)
-//
-//	// Get the value for the attribute.
-//	value, err := DBGetWithTxn(txn, snap, key)
-//	if err != nil {
-//		// If the key doesn't exist then the attribute is not set.
-//		if err == badger.ErrKeyNotFound {
-//			return NewAttributeEntry(false, nil), nil
-//		}
-//		// Otherwise, return the error.
-//		return nil, errors.Wrapf(err, "DBGetAttributeEntryInGroupEntryAttributesIndexWithTxn: "+
-//			"Problem getting attribute %v for group entry attributes index", attributeType)
-//	}
-//
-//	// If the key exists then the attribute is set.
-//	return NewAttributeEntry(true, value), nil
-//}
-//
-//// DBGetAttributeEntryInGroupEntryAttributesIndex for a given group.
-//func DBGetAttributeEntryInGroupEntryAttributesIndex(handle *badger.DB, snap *Snapshot,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, attributeType AccessGroupEntryAttributeType) (*AttributeEntry, error) {
-//	var attributeEntry *AttributeEntry
-//	err := handle.View(func(txn *badger.Txn) error {
-//		var err error
-//		attributeEntry, err = DBGetAttributeEntryInGroupEntryAttributesIndexWithTxn(txn, snap,
-//			groupOwnerPublicKey, groupKeyName, attributeType)
-//		return err
-//	})
-//	return attributeEntry, err
-//}
-//
-//// DBDeleteGroupInGroupEntryAttributesIndexWithTxn for a given group.
-//func DBDeleteGroupInGroupEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) error {
-//
-//	// Get the prefix for the group entry attributes index.
-//	prefix := _dbSeekPrefixForGroupEntryAttributesIndex(groupOwnerPublicKey, groupKeyName)
-//
-//	// Enumerate all the keys with the given prefix.
-//	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
-//	if err != nil {
-//		return errors.Wrapf(err, "DBDeleteGroupInGroupEntryAttributesIndexWithTxn: "+
-//			"problem enumerating keys for prefix (%v)", prefix)
-//	}
-//
-//	// Delete all the keys found.
-//	for _, key := range keysFound {
-//		if err := DBDeleteWithTxn(txn, snap, key); err != nil {
-//			return errors.Wrapf(err, "DBDeleteGroupInGroupEntryAttributesIndexWithTxn: "+
-//				"problem deleting key (%v)", key)
-//		}
-//
-//	}
-//
-//	return nil
-//}
-//
-//// DBDeleteAttributeInGroupEntryAttributesIndexWithTxn for a given group.
-//func DBDeleteAttributeInGroupEntryAttributesIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-//	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName, attributeType AccessGroupEntryAttributeType) error {
-//
-//	// Make sure group entry attribute type is valid
-//	if !IsAccessGroupEntryAttributeTypeValid(attributeType) {
-//		return fmt.Errorf("DBDeleteAttributeInGroupEntryAttributesIndexWithTxn: "+
-//			"Invalid group entry attribute type: %v", attributeType)
-//	}
-//
-//	// Get the key for the attribute.
-//	key := _dbKeyForGroupEntryAttributesIndex(groupOwnerPublicKey, groupKeyName, attributeType)
-//
-//	// Delete the key.
-//	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
-//		return errors.Wrapf(err, "DBDeleteAttributeInGroupEntryAttributesIndexWithTxn: "+
-//			"problem deleting key (%v)", key)
-//	}
-//
-//	return nil
-//}
 
 // -------------------------------------------------------------------------------------
 // Messaging recipient
@@ -4157,7 +3776,10 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Header length")
 	}
-	headerBytes := make([]byte, payloadLen)
+	headerBytes, err := SafeMakeSliceWithLength[byte](uint64(payloadLen))
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem cretaing byte slice for header bytes")
+	}
 	_, err = io.ReadFull(rr, headerBytes[:])
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem reading Header bytes")
@@ -4523,8 +4145,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -8501,7 +8123,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -8628,7 +8250,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}

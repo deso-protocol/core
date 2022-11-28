@@ -57,18 +57,6 @@ type UtxoView struct {
 	// The member PublicKeys are sorted lexicographically.
 	AccessGroupIdToSortedGroupMemberPublicKeys map[AccessGroupId][]*PublicKey
 
-	// GroupMemberAttributes
-	// Mapping of GroupEnumerationKey to a map of AccessGroupMemberAttributeType to AttributeEntry
-	// For example, Member_A in Group_B can have attributes {IsMuted: (IsSet: true, Value: nil), IsAdmin: (IsSet: true, Value: nil)}
-	// Or if Member_A was unmuted and removed as admin- {IsMuted: (IsSet: false, Value: nil), IsAdmin: (IsSet: false, Value: nil)}
-	//GroupMemberAttributes map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]*AttributeEntry
-
-	// GroupEntryAttributes
-	// Mapping of AccessGroupId to a map of AccessGroupEntryAttributeType to AttributeEntry
-	// For example, Group_A can have attributes {IsChannel: (IsSet: true, Value: nil), GroupPicture: (IsSet: true, Value: []byte{0x01, 0x02, 0x03}, GroupDescription: (IsSet: true, Value: []byte{0x01, 0x02, 0x03})}
-	// Or if Group_A was no longer a channel and had its picture and description removed- {IsChannel: (IsSet: false, Value: nil), GroupPicture: (IsSet: false, Value: nil), GroupDescription: (IsSet: false, Value: nil)}
-	//GroupEntryAttributes map[AccessGroupKey]map[AccessGroupEntryAttributeType]*AttributeEntry
-
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
 
@@ -157,8 +145,6 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry)
 	bav.AccessGroupMembershipKeyToAccessGroupMember = make(map[AccessGroupMembershipKey]*AccessGroupMemberEntry)
 	bav.AccessGroupIdToSortedGroupMemberPublicKeys = make(map[AccessGroupId][]*PublicKey)
-	//bav.GroupMemberAttributes = make(map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]*AttributeEntry)
-	//bav.GroupEntryAttributes = make(map[AccessGroupKey]map[AccessGroupEntryAttributeType]*AttributeEntry)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -299,26 +285,6 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		}
 		newView.AccessGroupIdToSortedGroupMemberPublicKeys[key] = newMembers
 	}
-
-	//newView.GroupMemberAttributes = make(map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]*AttributeEntry, len(bav.GroupMemberAttributes))
-	//for key, attributes := range bav.GroupMemberAttributes {
-	//	newAttributes := make(map[AccessGroupMemberAttributeType]*AttributeEntry, len(attributes))
-	//	for attribute, value := range attributes {
-	//		newValue := *value
-	//		newAttributes[attribute] = &newValue
-	//	}
-	//	newView.GroupMemberAttributes[key] = newAttributes
-	//}
-	//
-	//newView.GroupEntryAttributes = make(map[AccessGroupKey]map[AccessGroupEntryAttributeType]*AttributeEntry, len(bav.GroupEntryAttributes))
-	//for key, attributes := range bav.GroupEntryAttributes {
-	//	newAttributes := make(map[AccessGroupEntryAttributeType]*AttributeEntry, len(attributes))
-	//	for attribute, value := range attributes {
-	//		newValue := *value
-	//		newAttributes[attribute] = &newValue
-	//	}
-	//	newView.GroupEntryAttributes[key] = newAttributes
-	//}
 
 	// Copy postgres message map
 	newView.MessageMap = make(map[BlockHash]*PGMessage, len(bav.MessageMap))
@@ -2472,8 +2438,6 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAccessGroupMembers(
 				txn, txHash, blockHeight, verifySignatures)
-
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupAttributes {
 
 	} else {
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())

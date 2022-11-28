@@ -957,8 +957,8 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn, blockHeig
 			}
 			numPut++
 		}
-		glog.V(2).Infof("_flushDerivedKeyEntryToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	}
+	glog.V(2).Infof("_flushDerivedKeyEntryToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	return nil
 }
@@ -1126,60 +1126,6 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 			numPut++
 		}
 	}
-	return nil
-}
-
-func (bav *UtxoView) _flushAccessGroupMemberAttributesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	// Flush group member attributes to db.
-	//for enumerationKey, attributeTypeToAttributeEntry := range bav.GroupMemberAttributes {
-	//	for attributeType, attributeEntry := range attributeTypeToAttributeEntry {
-	//		// If attributeEntry.IsSet is true, we add the attribute to the DB.
-	//		if attributeEntry != nil && attributeEntry.IsSet {
-	//			if err := DBPutAttributeInGroupMemberAttributesIndexWithTxn(txn, bav.Snapshot, blockHeight,
-	//				&enumerationKey.GroupOwnerPublicKey, &enumerationKey.GroupKeyName, &enumerationKey.GroupMemberPublicKey,
-	//				attributeType, attributeEntry.Value); err != nil {
-	//				return errors.Wrapf(err, "UtxoView._flushAccessGroupMemberAttributesToDbWithTxn: "+
-	//					"Fail while putting group member attribute. Problem putting AccessGroupMemberAttribute %v to db", *attributeEntry)
-	//			}
-	//		}
-	//		// If attributeEntry.IsSet is false, it means that the attribute needs to be deleted from DB.
-	//		if attributeEntry != nil && !attributeEntry.IsSet {
-	//			// Delete group member attribute from db.
-	//			if err := DBDeleteAttributeInGroupMemberAttributesIndexWithTxn(txn, bav.Snapshot, blockHeight,
-	//				&enumerationKey.GroupOwnerPublicKey, &enumerationKey.GroupKeyName, &enumerationKey.GroupMemberPublicKey,
-	//				attributeType); err != nil {
-	//				return errors.Wrapf(err, "UtxoView._flushAccessGroupMemberAttributesToDbWithTxn: "+
-	//					"Problem deleting group member attribute (%v) from db", attributeType)
-	//			}
-	//		}
-	//	}
-	//}
-	return nil
-}
-
-func (bav *UtxoView) _flushAccessGroupEntryAttributesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	// Flush group entry attributes to db.
-	//for groupEntryKey, attributeTypeToAttributeEntry := range bav.GroupEntryAttributes {
-	//	for attributeType, attributeEntry := range attributeTypeToAttributeEntry {
-	//		// If attributeEntry.IsSet is true, we add the attribute to the DB.
-	//		if attributeEntry != nil && attributeEntry.IsSet {
-	//			if err := DBPutAttributeInGroupEntryAttributesIndexWithTxn(txn, bav.Snapshot, uint32(blockHeight),
-	//				&groupEntryKey.AccessGroupOwnerPublicKey, &groupEntryKey.AccessGroupKeyName, attributeType, attributeEntry.Value); err != nil {
-	//				return errors.Wrapf(err, "UtxoView._flushAccessGroupEntryAttributesToDbWithTxn: "+
-	//					"Fail while putting group entry attribute. Problem putting AccessGroupEntryAttribute %v to db", *attributeEntry)
-	//			}
-	//		}
-	//		// If attributeEntry.IsSet is false, it means that the attribute needs to be deleted from DB.
-	//		if attributeEntry != nil && !attributeEntry.IsSet {
-	//			// Delete group entry attribute from db.
-	//			if err := DBDeleteAttributeInGroupEntryAttributesIndexWithTxn(txn, bav.Snapshot, blockHeight,
-	//				&groupEntryKey.AccessGroupOwnerPublicKey, &groupEntryKey.AccessGroupKeyName, attributeType); err != nil {
-	//				return errors.Wrapf(err, "UtxoView._flushAccessGroupEntryAttributesToDbWithTxn: "+
-	//					"Problem deleting group entry attribute (%v) from db", attributeType)
-	//			}
-	//		}
-	//	}
-	//}
 	return nil
 }
 

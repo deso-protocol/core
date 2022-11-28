@@ -381,7 +381,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		"" /*dataDir*/, "")
+		""     /*dataDir*/, "")
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -2101,7 +2101,10 @@ func (mp *DeSoMempool) processTransaction(
 
 	if len(missingParents) == 0 {
 		newTxs := mp.processUnconnectedTransactions(tx, rateLimit, verifySignatures)
-		acceptedTxs := make([]*MempoolTx, len(newTxs)+1)
+		acceptedTxs, err := SafeMakeSliceWithLength[*MempoolTx](uint64(len(newTxs) + 1))
+		if err != nil {
+			return nil, err
+		}
 
 		acceptedTxs[0] = mempoolTx
 		copy(acceptedTxs[1:], newTxs)

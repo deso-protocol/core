@@ -212,7 +212,7 @@ type ForkHeights struct {
 	// Triggers: 12PM PT on 9/15/2021
 	NFTTransferOrBurnAndDerivedKeysBlockHeight uint32
 
-	// DeSoV3MessagesBlockHeight defines the height at which access key and messsage party
+	// DeSoV3MessagesBlockHeight defines the height at which messaging key and messsage party
 	// entries will be accepted by consensus.
 	DeSoV3MessagesBlockHeight uint32
 
@@ -254,8 +254,7 @@ type ForkHeights struct {
 	// we introduce derived keys without a spending limit.
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
-	// DeSoAccessGroupsBlockHeight defines the height at which we introduce V3 access groups
-	// and all associate features like GroupMemberAttributes, additional DB indexes, etc.
+	// DeSoAccessGroupsBlockHeight defines the height at which we introduce access groups.
 	DeSoAccessGroupsBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
