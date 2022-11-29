@@ -47,16 +47,6 @@ type UtxoView struct {
 	// Messaging group entries.
 	MessagingGroupKeyToMessagingGroupEntry map[MessagingGroupKey]*MessagingGroupEntry
 
-	// Access group entries.
-	AccessGroupIdToAccessGroupEntry map[AccessGroupId]*AccessGroupEntry
-
-	// Group Memberships
-	AccessGroupMembershipKeyToAccessGroupMember map[AccessGroupMembershipKey]*AccessGroupMemberEntry
-
-	// Group Membership Enumeration Index.
-	// The member PublicKeys are sorted lexicographically.
-	AccessGroupIdToSortedGroupMemberPublicKeys map[AccessGroupId][]*PublicKey
-
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
 
@@ -140,11 +130,6 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Messaging group entries
 	bav.MessagingGroupKeyToMessagingGroupEntry = make(map[MessagingGroupKey]*MessagingGroupEntry)
-
-	// Access group entries
-	bav.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry)
-	bav.AccessGroupMembershipKeyToAccessGroupMember = make(map[AccessGroupMembershipKey]*AccessGroupMemberEntry)
-	bav.AccessGroupIdToSortedGroupMemberPublicKeys = make(map[AccessGroupId][]*PublicKey)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -261,32 +246,6 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.MessageKeyToMessageEntry[msgKey] = &newMsgEntry
 	}
 
-	// Copy access group entries
-	newView.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry, len(bav.AccessGroupIdToAccessGroupEntry))
-	for key, entry := range bav.AccessGroupIdToAccessGroupEntry {
-		newEntry := *entry
-		newView.AccessGroupIdToAccessGroupEntry[key] = &newEntry
-	}
-
-	// Copy access group membership index
-	newView.AccessGroupMembershipKeyToAccessGroupMember = make(map[AccessGroupMembershipKey]*AccessGroupMemberEntry, len(bav.AccessGroupMembershipKeyToAccessGroupMember))
-	for key, member := range bav.AccessGroupMembershipKeyToAccessGroupMember {
-		newMember := *member
-		newView.AccessGroupMembershipKeyToAccessGroupMember[key] = &newMember
-	}
-
-	// Copy access group id to sorted member public keys
-	newView.AccessGroupIdToSortedGroupMemberPublicKeys = make(map[AccessGroupId][]*PublicKey, len(bav.AccessGroupIdToSortedGroupMemberPublicKeys))
-	for key, members := range bav.AccessGroupIdToSortedGroupMemberPublicKeys {
-		newMembers := make([]*PublicKey, len(members))
-		for ii, member := range members {
-			newMember := *member
-			newMembers[ii] = &newMember
-		}
-		newView.AccessGroupIdToSortedGroupMemberPublicKeys[key] = newMembers
-	}
-
-	// Copy postgres message map
 	newView.MessageMap = make(map[BlockHash]*PGMessage, len(bav.MessageMap))
 	for txnHash, message := range bav.MessageMap {
 		newMessage := *message
@@ -1044,14 +1003,6 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
 		return bav._disconnectAuthorizeDerivedKey(
 			OperationTypeAuthorizeDerivedKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
-
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
-		return bav._disconnectAccessGroupCreate(
-			OperationTypeCreateAccessGroup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
-
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {
-		return bav._disconnectAccessGroupMembers(
-			OperationTypeAccessGroupMembers, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	}
 
@@ -2427,16 +2378,6 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAuthorizeDerivedKey(
-				txn, txHash, blockHeight, verifySignatures)
-
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
-		totalInput, totalOutput, utxoOpsForTxn, err =
-			bav._connectAccessGroupCreate(
-				txn, txHash, blockHeight, verifySignatures)
-
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {
-		totalInput, totalOutput, utxoOpsForTxn, err =
-			bav._connectAccessGroupMembers(
 				txn, txHash, blockHeight, verifySignatures)
 
 	} else {

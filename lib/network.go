@@ -227,10 +227,8 @@ const (
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
 	TxnTypeDAOCoinLimitOrder            TxnType = 26
-	TxnTypeAccessGroupCreate            TxnType = 27
-	TxnTypeAccessGroupMembers           TxnType = 28
 
-	// NEXT_ID = 29
+	// NEXT_ID = 27
 )
 
 type TxnString string
@@ -262,8 +260,6 @@ const (
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
 	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
-	TxnStringAccessGroupCreate            TxnString = "ACCESS_GROUP_CREATE"
-	TxnStringAccessGroupMembers           TxnString = "ACCESS_GROUP_MEMBERS"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -274,8 +270,7 @@ var (
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
-		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeAccessGroupCreate,
-		TxnTypeAccessGroupMembers,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -283,8 +278,7 @@ var (
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
-		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringAccessGroupCreate,
-		TxnStringAccessGroupMembers,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder,
 	}
 )
 
@@ -350,10 +344,6 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringDAOCoinTransfer
 	case TxnTypeDAOCoinLimitOrder:
 		return TxnStringDAOCoinLimitOrder
-	case TxnTypeAccessGroupCreate:
-		return TxnStringAccessGroupCreate
-	case TxnTypeAccessGroupMembers:
-		return TxnStringAccessGroupMembers
 	default:
 		return TxnStringUndefined
 	}
@@ -413,10 +403,6 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeDAOCoinTransfer
 	case TxnStringDAOCoinLimitOrder:
 		return TxnTypeDAOCoinLimitOrder
-	case TxnStringAccessGroupCreate:
-		return TxnTypeAccessGroupCreate
-	case TxnStringAccessGroupMembers:
-		return TxnTypeAccessGroupMembers
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -484,10 +470,6 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinTransferMetadata{}).New(), nil
 	case TxnTypeDAOCoinLimitOrder:
 		return (&DAOCoinLimitOrderMetadata{}).New(), nil
-	case TxnTypeAccessGroupCreate:
-		return (&AccessGroupCreateMetadata{}).New(), nil
-	case TxnTypeAccessGroupMembers:
-		return (&AccessGroupMembersMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -6575,226 +6557,4 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 
 func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 	return &MessagingGroupMetadata{}
-}
-
-// =======================================================================================
-// AccessGroupCreateMetadata
-// =======================================================================================
-
-type AccessGroupCreateMetadata struct {
-	AccessGroupOwnerPublicKey []byte
-	AccessGroupPublicKey      []byte
-	AccessGroupKeyName        []byte
-}
-
-func (txnData *AccessGroupCreateMetadata) GetTxnType() TxnType {
-	return TxnTypeAccessGroupCreate
-}
-
-func (txnData *AccessGroupCreateMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	var data []byte
-
-	data = append(data, EncodeByteArray(txnData.AccessGroupOwnerPublicKey)...)
-	data = append(data, EncodeByteArray(txnData.AccessGroupPublicKey)...)
-	data = append(data, EncodeByteArray(txnData.AccessGroupKeyName)...)
-
-	return data, nil
-}
-
-func (txnData *AccessGroupCreateMetadata) FromBytes(data []byte) error {
-	ret := AccessGroupCreateMetadata{}
-	rr := bytes.NewReader(data)
-
-	var err error
-	ret.AccessGroupOwnerPublicKey, err = DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AccessGroupCreateMetadata.FromBytes: "+
-			"Problem reading AccessGroupOwnerPublicKey")
-	}
-
-	ret.AccessGroupPublicKey, err = DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AccessGroupCreateMetadata.FromBytes: "+
-			"Problem reading AccessGroupPublicKey")
-	}
-
-	ret.AccessGroupKeyName, err = DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AccessGroupCreateMetadata.FromBytes: "+
-			"Problem reading AccessGroupKeyName")
-	}
-
-	*txnData = ret
-	return nil
-}
-
-func (txnData *AccessGroupCreateMetadata) New() DeSoTxnMetadata {
-	return &AccessGroupCreateMetadata{}
-}
-
-// =======================================================================================
-// AccessGroupMembersMetadata
-// =======================================================================================
-
-type AccessGroupMemberOperationType uint8
-
-const (
-	AccessGroupMemberOperationTypeAdd    AccessGroupMemberOperationType = 0
-	AccessGroupMemberOperationTypeRemove AccessGroupMemberOperationType = 1
-	AccessGroupMemberOperationTypeUpdate AccessGroupMemberOperationType = 2
-)
-
-// AccessGroupMembersMetadata is the metadata for a transaction to update the members of an access group.
-type AccessGroupMembersMetadata struct {
-	AccessGroupOwnerPublicKey []byte
-	AccessGroupKeyName        []byte
-	// The list of members to add/remove from the access group.
-	AccessGroupMembersList []*AccessGroupMember
-	// The operation to perform on the members.
-	AccessGroupMemberOperationType
-}
-
-type AccessGroupMember struct {
-	// AccessGroupMemberPublicKey is the public key of the user in the access group
-	AccessGroupMemberPublicKey []byte
-
-	// AccessGroupMemberKeyName is the name of the user in the access group
-	AccessGroupMemberKeyName []byte
-
-	EncryptedKey []byte
-
-	ExtraData map[string][]byte
-}
-
-func (txnData *AccessGroupMembersMetadata) GetTxnType() TxnType {
-	return TxnTypeAccessGroupMembers
-}
-
-func (txnData *AccessGroupMembersMetadata) ToBytes(preSignature bool) ([]byte, error) {
-	var data []byte
-
-	// AccessPublicKey
-	data = append(data, EncodeByteArray(txnData.AccessGroupOwnerPublicKey)...)
-	// AccessGroupKeyName
-	data = append(data, EncodeByteArray(txnData.AccessGroupKeyName)...)
-	// AccessGroupMembersList
-	data = append(data, encodeAccessGroupMembersList(txnData.AccessGroupMembersList)...)
-	// AccessGroupMemberOperationType
-	data = append(data, UintToBuf(uint64(txnData.AccessGroupMemberOperationType))...)
-
-	return data, nil
-}
-
-func (txnData *AccessGroupMembersMetadata) FromBytes(data []byte) error {
-	var err error
-	ret := AccessGroupMembersMetadata{}
-	rr := bytes.NewReader(data)
-
-	// AccessPublicKey
-	ret.AccessGroupOwnerPublicKey, err = DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
-			"Problem reading AccessPublicKey")
-	}
-
-	// AccessGroupKeyName
-	ret.AccessGroupKeyName, err = DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
-			"Problem reading AccessGroupKeyName")
-	}
-
-	// AccessGroupMembersList
-	ret.AccessGroupMembersList, err = decodeAccessGroupMembersList(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
-			"Problem reading AccessGroupMembersList")
-	}
-
-	// AccessGroupMemberOperationType
-	accessGroupMemberOperationType, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
-			"Problem reading AccessGroupMemberOperationType")
-	}
-	ret.AccessGroupMemberOperationType = AccessGroupMemberOperationType(accessGroupMemberOperationType)
-
-	*txnData = ret
-	return nil
-}
-
-func (txnData *AccessGroupMembersMetadata) New() DeSoTxnMetadata {
-	return &AccessGroupMembersMetadata{}
-}
-
-func (member *AccessGroupMember) ToBytes() []byte {
-	var data []byte
-
-	data = append(data, EncodeByteArray(member.AccessGroupMemberPublicKey[:])...)
-	data = append(data, EncodeByteArray(member.AccessGroupMemberKeyName[:])...)
-	data = append(data, EncodeByteArray(member.EncryptedKey)...)
-	data = append(data, EncodeExtraData(member.ExtraData)...)
-
-	return data
-}
-
-func (member *AccessGroupMember) FromBytes(rr *bytes.Reader) error {
-
-	accessGroupMemberPublicKey, err := DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AccessGroupMember.FromBytes: Problem decoding AccessGroupMemberPublicKey")
-	}
-
-	accessGroupMemberKeyName, err := DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AccessGroupMember.FromBytes: Problem decoding AccessGroupMemberKeyName")
-	}
-
-	encryptedKey, err := DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AccessGroupMember.FromBytes: Problem decoding EncryptedKey")
-	}
-
-	extraData, err := DecodeExtraData(rr)
-	if err != nil {
-		return errors.Wrapf(err, "AccessGroupMember.FromBytes: Problem decoding ExtraData")
-	}
-
-	member.AccessGroupMemberPublicKey = accessGroupMemberPublicKey
-	member.AccessGroupMemberKeyName = accessGroupMemberKeyName
-	member.EncryptedKey = encryptedKey
-	member.ExtraData = extraData
-
-	return nil
-}
-
-func encodeAccessGroupMembersList(members []*AccessGroupMember) []byte {
-	var data []byte
-
-	data = append(data, UintToBuf(uint64(len(members)))...)
-	for _, accessGroupMember := range members {
-		data = append(data, accessGroupMember.ToBytes()...)
-	}
-	return data
-}
-
-func decodeAccessGroupMembersList(rr *bytes.Reader) ([]*AccessGroupMember, error) {
-	var members []*AccessGroupMember
-
-	numAccessGroupMembers, err := ReadUvarint(rr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "decodeAccessGroupMembersList: "+
-			"Problem reading numAccessGroupMembers")
-	}
-	members = make([]*AccessGroupMember, numAccessGroupMembers)
-	for ii := uint64(0); ii < numAccessGroupMembers; ii++ {
-		members[ii] = &AccessGroupMember{}
-		err = members[ii].FromBytes(rr)
-		if err != nil {
-			return nil, errors.Wrapf(err, "decodeAccessGroupMembersList: "+
-				"Problem reading AccessGroupMembersList[%d]", ii)
-		}
-	}
-
-	return members, nil
 }

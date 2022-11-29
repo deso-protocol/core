@@ -96,12 +96,6 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		if err := bav._flushDerivedKeyEntryToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
-		if err := bav._flushAccessGroupEntriesToDbWithTxn(txn, blockHeight); err != nil {
-			return err
-		}
-		if err := bav._flushAccessGroupMembersToDbWithTxn(txn, blockHeight); err != nil {
-			return err
-		}
 		// Temporarily flush all DAO Coin Limit orders to badger
 		//if err := bav._flushDAOCoinLimitOrderEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		//	return err
@@ -930,8 +924,6 @@ func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn, blo
 
 func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushDerivedKeyEntryToDbWithTxn: flushing %d mappings", len(bav.DerivedKeyToDerivedEntry))
-	numDeleted := 0
-	numPut := 0
 
 	// Go through all entries in the DerivedKeyToDerivedEntry map and add them to the DB.
 	for derivedKeyMapKey, derivedKeyEntry := range bav.DerivedKeyToDerivedEntry {
@@ -944,6 +936,8 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn, blockHeig
 				"Problem deleting DerivedKeyEntry %v from db", *derivedKeyEntry)
 		}
 
+		numDeleted := 0
+		numPut := 0
 		if derivedKeyEntry.isDeleted {
 			// Since entry is deleted, there's nothing to do.
 			numDeleted++
@@ -957,8 +951,8 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn, blockHeig
 			}
 			numPut++
 		}
+		glog.V(2).Infof("_flushDerivedKeyEntryToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	}
-	glog.V(2).Infof("_flushDerivedKeyEntryToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	return nil
 }
@@ -1027,105 +1021,6 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 	}
 
 	glog.V(2).Infof("_flushMessagingGroupEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
-	return nil
-}
-
-func (bav *UtxoView) _flushAccessGroupEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	glog.V(2).Infof("_flushAccessGroupEntriesToDbWithTxn: flushing %d mappings", len(bav.AccessGroupIdToAccessGroupEntry))
-	numDeleted := 0
-	numPut := 0
-
-	// Go through all entries in AccessGroupIdToAccessGroupEntry and add them to the DB.
-	// These records are part of the DeSo V3 Messages.
-	for accessGroupKey, accessGroupEntry := range bav.AccessGroupIdToAccessGroupEntry {
-		// Delete the existing mapping in the DB for this map key, this will be re-added
-		// later if isDeleted=false. Access entries can have a list of members, and
-		// we store these members under a separate prefix. To delete an access group
-		// we also have to go delete all of the recipients.
-		//
-		// TODO: We should have a single DeleteMappings function in db_utils.go that we push this
-		// complexity into.
-		if accessGroupEntry == nil {
-			return fmt.Errorf("UtxoView._flushAccessGroupEntriesToDbWithTxn: accessGroupEntry is nil")
-		}
-		copyAccessGroupEntry := *accessGroupEntry
-
-		if err := DBDeleteAccessGroupEntryWithTxn(txn, bav.Snapshot,
-			accessGroupKey.AccessGroupOwnerPublicKey, accessGroupKey.AccessGroupKeyName); err != nil {
-
-			return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
-				"Problem deleting accessGroupKey %v and accessGroupEntry %v from db",
-				accessGroupKey, copyAccessGroupEntry)
-		}
-
-		if copyAccessGroupEntry.isDeleted {
-			numDeleted++
-		} else {
-			if err := DBPutAccessGroupEntryWithTxn(txn, bav.Snapshot, blockHeight, &copyAccessGroupEntry); err != nil {
-
-				return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
-					"Problem putting accessGroupKey %v and accessGroupEntry %v to db",
-					accessGroupKey, copyAccessGroupEntry)
-			}
-			numPut++
-		}
-	}
-	glog.V(2).Infof("_flushAccessGroupEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
-	return nil
-}
-
-func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	glog.V(2).Infof("_flushAccessGroupMembersToDbWithTxn: flushing %d mappings", len(bav.AccessGroupMembershipKeyToAccessGroupMember))
-	numDeleted := 0
-	numPut := 0
-
-	// Flush group members to db.
-	for groupMembershipKey, accessGroupMember := range bav.AccessGroupMembershipKeyToAccessGroupMember {
-		if accessGroupMember == nil {
-			return fmt.Errorf("UtxoView._flushAccessGroupMembersToDbWithTxn:"+
-				" groupMembershipKey: %v, is nil", groupMembershipKey)
-		}
-		copyAccessGroupMember := *accessGroupMember
-
-		// add group member to membership index
-		if err := DBDeleteAccessGroupMemberEntryWithTxn(txn, bav.Snapshot,
-			groupMembershipKey.GroupMemberPublicKey, groupMembershipKey.GroupOwnerPublicKey, groupMembershipKey.GroupKeyName); err != nil {
-			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
-				"Fail while putting new membership index. Problem putting access group member entry with "+
-				"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
-				groupMembershipKey, copyAccessGroupMember)
-		}
-		if err := DBDeleteAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot,
-			groupMembershipKey.GroupOwnerPublicKey, groupMembershipKey.GroupKeyName, groupMembershipKey.GroupMemberPublicKey); err != nil {
-
-			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
-				"Fail while putting new membership index. Problem putting access group member entry with "+
-				"AccessGroupMembershipKey %v and AccessGroupMember %v to db",
-				groupMembershipKey, copyAccessGroupMember)
-		}
-
-		// add group member to enumeration index
-		if copyAccessGroupMember.isDeleted {
-			numDeleted++
-		} else {
-			if err := DBPutAccessGroupMemberEntryWithTxn(txn, bav.Snapshot, blockHeight,
-				&copyAccessGroupMember, groupMembershipKey.GroupOwnerPublicKey, groupMembershipKey.GroupKeyName); err != nil {
-
-				return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
-					"Fail while putting new membership index. Problem putting access group member entry with "+
-					"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
-					groupMembershipKey, copyAccessGroupMember)
-			}
-			if err := DBPutAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot, blockHeight,
-				groupMembershipKey.GroupOwnerPublicKey, groupMembershipKey.GroupKeyName, groupMembershipKey.GroupMemberPublicKey); err != nil {
-				return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
-					"Fail while putting new enumeration index. Problem putting access group member entry with "+
-					"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
-					groupMembershipKey, copyAccessGroupMember)
-			}
-			numPut++
-		}
-	}
 	return nil
 }
 

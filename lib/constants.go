@@ -3,9 +3,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/pkg/errors"
 	"log"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -254,14 +252,11 @@ type ForkHeights struct {
 	// we introduce derived keys without a spending limit.
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
-	// DeSoAccessGroupsBlockHeight defines the height at which we introduce access groups.
-	DeSoAccessGroupsBlockHeight uint32
-
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
 
-// MigrationName is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
+// EncoderMigrationHeights is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
 // you should:
 //  0. Typically, encoder migrations should align with hard fork heights. So the first
 //     step is to define a new value in ForkHeights, and set the value accordingly for
@@ -319,7 +314,6 @@ type MigrationHeight struct {
 const (
 	DefaultMigration              MigrationName = "DefaultMigration"
 	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
-	DeSoAccessGroupsMigration     MigrationName = "DeSoAccessGroupsMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -327,9 +321,6 @@ type EncoderMigrationHeights struct {
 
 	// DeSoUnlimitedDerivedKeys coincides with the DeSoUnlimitedDerivedKeysBlockHeight block
 	DeSoUnlimitedDerivedKeys MigrationHeight
-
-	// DeSoAccessGroups coincides with the DeSoAccessGroupsBlockHeight block
-	DeSoAccessGroups MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -343,11 +334,6 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 1,
 			Height:  uint64(forkHeights.DeSoUnlimitedDerivedKeysBlockHeight),
 			Name:    UnlimitedDerivedKeysMigration,
-		},
-		DeSoAccessGroups: MigrationHeight{
-			Version: 2,
-			Height:  uint64(forkHeights.DeSoAccessGroupsBlockHeight),
-			Name:    DeSoAccessGroupsMigration,
 		},
 	}
 }
@@ -588,7 +574,6 @@ var RegtestForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
-	DeSoAccessGroupsBlockHeight:                          uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -731,9 +716,6 @@ var MainnetForkHeights = ForkHeights{
 
 	// Mon Sept 19 @ 12pm PST
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
-
-	// TODO: ADD FINAL DATE & TIME HERE
-	DeSoAccessGroupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -922,7 +904,7 @@ var DeSoMainnetParams = DeSoParams{
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
 	hash, err := chainhash.NewHashFromStr(ss)
 	if err != nil {
-		panic(any(errors.Wrapf(err, "mustDecodeHexBlockHashBitcoin: Problem decoding block hash: %v", ss)))
+		panic(err)
 	}
 	return (*BlockHash)(hash)
 }
@@ -984,9 +966,6 @@ var TestnetForkHeights = ForkHeights{
 
 	// Tues Sept 13 @ 10am PT
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
-
-	// TODO: ADD FINAL DATE & TIME HERE
-	DeSoAccessGroupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1264,9 +1243,4 @@ const (
 	// Messaging key constants
 	MinMessagingKeyNameCharacters = 1
 	MaxMessagingKeyNameCharacters = 32
-	// Access group key constants
-	MinAccessGroupKeyNameCharacters = 1
-	MaxAccessGroupKeyNameCharacters = 32
-	// Access group enumeration max recursion depth.
-	MaxAccessGroupMemberEnumerationRecursionDepth = 10
 )
