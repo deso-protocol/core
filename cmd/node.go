@@ -416,7 +416,7 @@ func (node *Node) GetStatus() (NodeStatus, error) {
 // Used while changing the status of the node
 // Modifying getStatusWithoutLock() and the validateStatus() functions and their tests are hard requirements
 // to add new status codes for the node.
-func validateNodeStatus(status NodeStatus) error {
+func ValidateNodeStatus(status NodeStatus) error {
 	switch status {
 	// Instance of the *Node is created, but not yet initialized using *Node.Start()
 	case NEVERSTARTED:
@@ -437,7 +437,7 @@ func validateNodeStatus(status NodeStatus) error {
 // changes the running status of the node
 // Always use this function to change the status of the node.
 func (node *Node) setStatusWithoutLock(newStatus NodeStatus) error {
-	if err := validateNodeStatus(newStatus); err != nil {
+	if err := ValidateNodeStatus(newStatus); err != nil {
 		return err
 	}
 
