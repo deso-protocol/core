@@ -14,10 +14,10 @@ func TestRegtestMiner(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getTestDirectory(t, "test_regtest_miner")
+	dbDir1 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
 
-	config1 := cmd.GenerateTestConfig(t, 18000, dbDir1, 10)
+	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
 	config1.Params = &lib.DeSoTestnetParams
 	config1.MaxSyncBlockHeight = 0
@@ -25,7 +25,7 @@ func TestRegtestMiner(t *testing.T) {
 
 	config1.Regtest = true
 
-	node1 := cmd.NewNode(&config1)
+	node1 := cmd.NewNode(config1)
 	node1 = startNode(t, node1)
 
 	// wait for node1 to sync blocks
