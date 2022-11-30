@@ -2,11 +2,12 @@ package integration_testing
 
 import (
 	"fmt"
-	"github.com/deso-protocol/core/cmd"
 	"os"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/deso-protocol/core/cmd"
 
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +36,7 @@ func TestNodeIsRunning(t *testing.T) {
 
 }
 
-func TestNodeStatusRunning(t *testing.T) {
+func TestNodeStatusRunningWithoutLock(t *testing.T) {
 	testDir := getDirectory(t)
 	defer os.RemoveAll(testDir)
 
@@ -46,31 +47,31 @@ func TestNodeStatusRunning(t *testing.T) {
 	testNode := cmd.NewNode(testConfig)
 
 	// Can change the status to RUNNING from the state NEVERSTARTED
-	actualErr := testNode.SetStatusRunning()
+	actualErr := testNode.SetStatusRunningWithoutLock()
 	require.NoError(t, actualErr)
 
 	// Change status from RUNNING to STOPPED
-	actualErr = testNode.SetStatusStopped()
+	actualErr = testNode.SetStatusStoppedWithoutLock()
 	require.NoError(t, actualErr)
 
 	// start the server
 	// Cannot change status to RUNNING while the node is already RUNNING!
 	testNode.Start()
 	expErr := cmd.ErrAlreadyStarted
-	actualErr = testNode.SetStatusRunning()
+	actualErr = testNode.SetStatusRunningWithoutLock()
 	require.ErrorIs(t, actualErr, expErr)
 
 	// Stop the node
 	testNode.Stop()
 	// Should be able to change status to RUNNING from STOP.
-	actualErr = testNode.SetStatusRunning()
+	actualErr = testNode.SetStatusRunningWithoutLock()
 	require.NoError(t, actualErr)
 	// Once the running flag is changed, the isRunning function should return true
 	require.True(t, testNode.IsRunning())
 
 }
 
-func TestNodeSetStatusStopped(t *testing.T) {
+func TestNodeSetStatusStoppedWithoutLock(t *testing.T) {
 	testDir := getDirectory(t)
 	defer os.RemoveAll(testDir)
 
@@ -83,7 +84,7 @@ func TestNodeSetStatusStopped(t *testing.T) {
 	// Need to call node.start() to atleast once to be able to change node status
 	// Cannot change status of node which never got initialized in the first place
 	expErr := cmd.ErrNodeNeverStarted
-	actualErr := testNode.SetStatusStopped()
+	actualErr := testNode.SetStatusStoppedWithoutLock()
 	require.ErrorIs(t, actualErr, expErr)
 
 	// start the node
@@ -91,14 +92,14 @@ func TestNodeSetStatusStopped(t *testing.T) {
 	// Once the server is started
 	testNode.Start()
 
-	actualErr = testNode.SetStatusStopped()
+	actualErr = testNode.SetStatusStoppedWithoutLock()
 	require.NoError(t, actualErr)
 
 	// stop the node
 	testNode.Stop()
 
 	expErr = cmd.ErrAlreadyStopped
-	actualErr = testNode.SetStatusStopped()
+	actualErr = testNode.SetStatusStoppedWithoutLock()
 	require.ErrorIs(t, actualErr, expErr)
 }
 
