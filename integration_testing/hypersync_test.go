@@ -20,8 +20,8 @@ func TestSimpleHyperSync(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getTestDirectory(t)
-	dbDir2 := getTestDirectory(t)
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
@@ -69,9 +69,9 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getTestDirectory(t)
-	dbDir2 := getTestDirectory(t)
-	dbDir3 := getTestDirectory(t)
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
+	dbDir3 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 	defer os.RemoveAll(dbDir3)
@@ -139,8 +139,8 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getTestDirectory(t)
-	dbDir2 := getTestDirectory(t)
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
@@ -194,9 +194,9 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getTestDirectory(t)
-	dbDir2 := getTestDirectory(t)
-	dbDir3 := getTestDirectory(t)
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
+	dbDir3 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 	defer os.RemoveAll(dbDir3)
@@ -266,8 +266,8 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 //	require := require.New(t)
 //	_ = require
 //
-//	dbDir1 := getTestDirectory(t)
-//	dbDir2 := getTestDirectory(t)
+//	dbDir1 := getDirectory(t)
+//	dbDir2 := getDirectory(t)
 //	defer os.RemoveAll(dbDir1)
 //	defer os.RemoveAll(dbDir2)
 //
@@ -315,8 +315,8 @@ func TestArchivalMode(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getTestDirectory(t)
-	dbDir2 := getTestDirectory(t)
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 
@@ -358,9 +358,9 @@ func TestBlockSyncFromArchivalModeHyperSync(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getTestDirectory(t)
-	dbDir2 := getTestDirectory(t)
-	dbDir3 := getTestDirectory(t)
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
+	dbDir3 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 	defer os.RemoveAll(dbDir3)

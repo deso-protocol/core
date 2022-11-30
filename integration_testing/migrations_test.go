@@ -16,8 +16,8 @@ func TestEncoderMigrations(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getTestDirectory(t)
-	dbDir2 := getTestDirectory(t)
+	dbDir1 := getDirectory(t)
+	dbDir2 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
 	defer os.RemoveAll(dbDir2)
 

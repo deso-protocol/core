@@ -12,7 +12,7 @@ import (
 )
 
 func TestNodeIsRunning(t *testing.T) {
-	testDir := getTestDirectory(t)
+	testDir := getDirectory(t)
 	defer os.RemoveAll(testDir)
 
 	testConfig := generateConfig(t, 18000, testDir, 10)
@@ -36,7 +36,7 @@ func TestNodeIsRunning(t *testing.T) {
 }
 
 func TestNodeStatusRunning(t *testing.T) {
-	testDir := getTestDirectory(t)
+	testDir := getDirectory(t)
 	defer os.RemoveAll(testDir)
 
 	testConfig := generateConfig(t, 18000, testDir, 10)
@@ -71,7 +71,7 @@ func TestNodeStatusRunning(t *testing.T) {
 }
 
 func TestNodeSetStatusStopped(t *testing.T) {
-	testDir := getTestDirectory(t)
+	testDir := getDirectory(t)
 	defer os.RemoveAll(testDir)
 
 	testConfig := generateConfig(t, 18000, testDir, 10)
@@ -106,7 +106,7 @@ func TestNodeSetStatusStopped(t *testing.T) {
 // NEVERSTARTED -> RUNNING -> STOP -> RUNNING
 // In each state change it's tested for valid change in status.
 func TestNodeSetStatus(t *testing.T) {
-	testDir := getTestDirectory(t)
+	testDir := getDirectory(t)
 	defer os.RemoveAll(testDir)
 
 	testConfig := generateConfig(t, 18000, testDir, 10)
@@ -199,7 +199,7 @@ func TestNodeSetStatus(t *testing.T) {
 // Tests for *Node.GetStatus()
 // Loads the status of node after node operations and tests its correctness.
 func TestGetStatus(t *testing.T) {
-	testDir := getTestDirectory(t)
+	testDir := getDirectory(t)
 	defer os.RemoveAll(testDir)
 
 	testConfig := generateConfig(t, 18000, testDir, 10)
@@ -260,7 +260,7 @@ func TestValidateNodeStatus(t *testing.T) {
 
 // Stop the node and test whether the internalExitChan fires as expected.
 func TestNodeStop(t *testing.T) {
-	testDir := getTestDirectory(t)
+	testDir := getDirectory(t)
 	defer os.RemoveAll(testDir)
 
 	testConfig := generateConfig(t, 18000, testDir, 10)

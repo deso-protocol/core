@@ -14,7 +14,7 @@ func TestRegtestMiner(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	dbDir1 := getTestDirectory(t)
+	dbDir1 := getDirectory(t)
 	defer os.RemoveAll(dbDir1)
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)

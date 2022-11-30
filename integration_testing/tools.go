@@ -42,7 +42,7 @@ const MaxSyncBlockHeight = 1500
 const HyperSyncSnapshotPeriod = 1000
 
 // get a random temporary directory.
-func getTestDirectory(t *testing.T) string {
+func getDirectory(t *testing.T) string {
 	require := require.New(t)
 	dbDir, err := ioutil.TempDir("", t.Name())
 	if err != nil {
