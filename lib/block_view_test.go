@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	_ "net/http/pprof"
+	"reflect"
+	"sort"
+	"testing"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/decred/dcrd/lru"
 	"github.com/dgraph-io/badger/v3"
@@ -11,10 +16,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "net/http/pprof"
-	"reflect"
-	"sort"
-	"testing"
 )
 
 func _strToPk(t *testing.T, pkStr string) []byte {
@@ -1174,7 +1175,7 @@ func TestBasicTransfer(t *testing.T) {
 
 	// A basic transfer whose input public keys differ from the
 	// transaction-level public key should fail.
-	{
+	t.Run("txn_public_txb_keys_differ", func(t *testing.T) {
 		txn := &MsgDeSoTxn{
 			// The inputs will be set below.
 			TxInputs: []*DeSoInput{},
@@ -1208,10 +1209,10 @@ func TestBasicTransfer(t *testing.T) {
 				true /*verifySignatures*/, false /*ignoreUtxos*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
-	}
+	})
 
 	// Just a basic transfer with a bad signature.
-	{
+	t.Run("txn_basic_bad_signature", func(t *testing.T) {
 		txn := &MsgDeSoTxn{
 			// The inputs will be set below.
 			TxInputs: []*DeSoInput{},
@@ -1242,10 +1243,10 @@ func TestBasicTransfer(t *testing.T) {
 				true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
-	}
+	})
 
 	// A block reward with a bad signature should fail.
-	{
+	t.Run("txn_block_reward_bad_sign", func(t *testing.T) {
 		txn := &MsgDeSoTxn{
 			// The inputs will be set below.
 			TxInputs: []*DeSoInput{},
@@ -1269,11 +1270,11 @@ func TestBasicTransfer(t *testing.T) {
 				true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveSignature)
-	}
+	})
 
 	// A block reward with an input, even if it's signed legitimately,
 	// should fail.
-	{
+	t.Run("txn_reward_with_input", func(t *testing.T) {
 		txn := &MsgDeSoTxn{
 			// The inputs will be set below.
 			TxInputs: []*DeSoInput{},
@@ -1304,14 +1305,16 @@ func TestBasicTransfer(t *testing.T) {
 				true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveInputs)
-	}
+	})
 
-	// A block with too much block reward should fail.
 	allowedBlockReward := CalcBlockRewardNanos(chain.blockTip().Height)
 	assert.Equal(int64(allowedBlockReward), int64(1*NanosPerUnit))
 	blockToMine, _, _, err := miner._getBlockToMine(0 /*threadIndex*/)
 	require.NoError(err)
-	{
+
+	// A block with too much block reward should fail.
+
+	t.Run("txn_block_too_much_reward", func(t *testing.T) {
 		blockToMine.Txns[0].TxOutputs[0].AmountNanos = allowedBlockReward + 1
 		// One iteration should be sufficient to find us a good block.
 		_, bestNonce, err := FindLowestHash(blockToMine.Header, 10000)
@@ -1324,10 +1327,10 @@ func TestBasicTransfer(t *testing.T) {
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil, 0)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardExceedsMaxAllowed)
-	}
+	})
 
 	// A block with less than the max block reward should be OK.
-	{
+	t.Run("txn_block_less_max_reward", func(t *testing.T) {
 		blockToMine.Txns[0].TxOutputs[0].AmountNanos = allowedBlockReward - 1
 		// One iteration should be sufficient to find us a good block.
 		_, bestNonce, err := FindLowestHash(blockToMine.Header, 10000)
@@ -1339,19 +1342,21 @@ func TestBasicTransfer(t *testing.T) {
 		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil, 0)
 		require.NoError(err)
-	}
+	})
 }
 
 // TestBasicTransferSignatures thoroughly tests all possible ways to sign a DeSo transaction.
 // There are three available signature schemas that are accepted by the DeSo blockchain:
+//
 //	(1) Transaction signed by user's main public key
 //	(2) Transaction signed by user's derived key with "DerivedPublicKey" passed in ExtraData
-// 	(3) Transaction signed by user's derived key using DESO-DER signature standard.
+//	(3) Transaction signed by user's derived key using DESO-DER signature standard.
 //
 // We will try all these schemas while running three main tests scenarios:
-// 	- try signing and processing a basicTransfer
-// 	- try signing and processing a authorizeDerivedKey
-// 	- try signing and processing a authorizeDerivedKey followed by a basicTransfer
+//   - try signing and processing a basicTransfer
+//   - try signing and processing a authorizeDerivedKey
+//   - try signing and processing a authorizeDerivedKey followed by a basicTransfer
+//
 // We use basicTransfer as a placeholder for a normal DeSo transaction (alternatively, we could have used a post,
 // follow, nft, etc transaction). For each scenario we try signing the transaction with either user's main public
 // key, a derived key, or a random key. Basically, we try every possible context in which a transaction can be signed.
@@ -1559,7 +1564,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 	}
 
 	// First scenario, just signing a basic transfer.
-	{
+	t.Run("sign_basic_transfer", func(t *testing.T) {
 		var allTxns []*MsgDeSoTxn
 		// Try signing the basic transfer with the owner's private key.
 		testSenderVector := [3]RuleError{
@@ -1590,10 +1595,11 @@ func TestBasicTransferSignatures(t *testing.T) {
 		)...)
 
 		mineBlockAndVerifySignatures(allTxns)
-	}
+	})
 
 	// Second scenario, authorize derived key transaction.
-	{
+
+	t.Run("sign_autorize_derive_key_txn", func(t *testing.T) {
 		var allTxns []*MsgDeSoTxn
 		transactionSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit:              100,
@@ -1644,10 +1650,10 @@ func TestBasicTransferSignatures(t *testing.T) {
 		)...)
 
 		mineBlockAndVerifySignatures(allTxns)
-	}
+	})
 
 	// Third scenario, there exists an authorize derived key entry and we're signing a basic transfer.
-	{
+	t.Run("sign_derived_key_basic_transfer", func(t *testing.T) {
 		var allTxns []*MsgDeSoTxn
 		transactionSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit:              100,
@@ -1708,5 +1714,5 @@ func TestBasicTransferSignatures(t *testing.T) {
 		)...)
 
 		mineBlockAndVerifySignatures(allTxns)
-	}
+	})
 }
