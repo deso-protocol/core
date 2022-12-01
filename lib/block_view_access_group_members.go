@@ -183,14 +183,14 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 	filteredUtxoViewMembers := make(map[PublicKey]*AccessGroupMemberEntry)
 	for membershipKey, memberEntry := range bav.AccessGroupMembershipKeyToAccessGroupMember {
 		// If member entry doesn't match our access group, we skip it.
-		isAccessGroupMember := bytes.Equal(membershipKey.GroupOwnerPublicKey.ToBytes(), groupOwnerPublicKey.ToBytes()) &&
-			bytes.Equal(membershipKey.GroupKeyName.ToBytes(), groupKeyName.ToBytes())
+		isAccessGroupMember := bytes.Equal(membershipKey.AccessGroupOwnerPublicKey.ToBytes(), groupOwnerPublicKey.ToBytes()) &&
+			bytes.Equal(membershipKey.AccessGroupKeyName.ToBytes(), groupKeyName.ToBytes())
 		if !isAccessGroupMember {
 			continue
 		}
 
 		// Make sure that the member public key is greater than our pagination starting key.
-		memberPublicKey := membershipKey.GroupMemberPublicKey
+		memberPublicKey := membershipKey.AccessGroupMemberPublicKey
 		isGreaterThanStartKey := bytes.Compare(memberPublicKey.ToBytes(), startingAccessGroupMemberPublicKey) > 0
 		if !isGreaterThanStartKey {
 			continue

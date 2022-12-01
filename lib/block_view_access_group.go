@@ -149,14 +149,98 @@ func (bav *UtxoView) _deleteAccessGroupKeyToAccessGroupEntryMapping(accessGroupE
 	return nil
 }
 
-func (bav *UtxoView) GetAccessGroupEntriesForUser(ownerPublicKey []byte, blockHeight uint32) (
-	_accessGroupEntries []*AccessGroupEntry, _err error) {
+func (bav *UtxoView) GetAllAccessGroupIdsForUser(ownerPublicKey []byte, blockHeight uint32) (
+	_accessGroupIdsOwned []*AccessGroupEntry, _accessGroupIdsMember []*AccessGroupId, _err error) {
 	// This function will return all groups a user is associated with,
 	// including the base key group, groups the user has created, and groups where
 	// the user is a recipient.
 
 	// This is our helper map to keep track of all user access keys.
 	return nil, nil
+}
+
+func (bav *UtxoView) GetAccessGroupIdsForOwner(ownerPublicKey []byte) (_accessGroupIdsOwned []*AccessGroupId, _err error) {
+	// This function will return all access groups owned by the provided ownerPublicKey.
+	if err := IsByteArrayValidPublicKey(ownerPublicKey); err != nil {
+		return nil, errors.Wrapf(err, "GetAccessGroupIdsForOwner: Invalid owner public key: %v", ownerPublicKey)
+	}
+	ownerPk := NewPublicKey(ownerPublicKey)
+
+	dbAdapter := bav.GetDbAdapter()
+	accessGroupIdsDb, err := dbAdapter.GetAccessGroupIdsForOwner(ownerPk)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetAccessGroupIdsForOwner: Problem getting access groups for owner %v", ownerPublicKey)
+	}
+
+	// Add the db access group entries to a map.
+	accessGroupIdsMap := make(map[AccessGroupId]struct{})
+	for _, accessGroupId := range accessGroupIdsDb {
+		groupId := NewAccessGroupId(ownerPk, accessGroupId.AccessGroupKeyName.ToBytes())
+		accessGroupIdsMap[*groupId] = struct{}{}
+	}
+	// Add the base access group to the map.
+	baseGroupId := NewAccessGroupId(ownerPk, BaseGroupKeyName().ToBytes())
+	accessGroupIdsMap[*baseGroupId] = struct{}{}
+
+	// Iterate over UtxoView mappings and merge the results with our map.
+	for accessGroupId, accessGroupEntry := range bav.AccessGroupIdToAccessGroupEntry {
+		if !bytes.Equal(accessGroupId.AccessGroupOwnerPublicKey.ToBytes(), ownerPk.ToBytes()) {
+			continue
+		}
+		if accessGroupEntry.isDeleted {
+			delete(accessGroupIdsMap, accessGroupId)
+		}
+		copyGroupId := accessGroupId
+		accessGroupIdsMap[copyGroupId] = struct{}{}
+	}
+
+	// Convert the map to a slice.
+	accessGroupIds := []*AccessGroupId{}
+	for _, accessGroupId := range accessGroupIds {
+		accessGroupIds = append(accessGroupIds, accessGroupId)
+	}
+
+	return accessGroupIds, nil
+}
+
+func (bav *UtxoView) GetAccessGroupIdsForMember(memberPublicKey []byte) (_accessGroupIds []*AccessGroupId, _err error) {
+	// This function will return all access groups where the provided memberPublicKey is a member.
+	if err := IsByteArrayValidPublicKey(memberPublicKey); err != nil {
+		return nil, errors.Wrapf(err, "GetAccessGroupIdsForMember: Invalid member public key: %v", memberPublicKey)
+	}
+	memberPk := NewPublicKey(memberPublicKey)
+
+	dbAdapter := bav.GetDbAdapter()
+	accessGroupIdsForMemberDb, err := dbAdapter.GetAccessGroupIdsForMember(memberPk)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetAccessGroupIdsForMember: Problem getting access groups for member %v", memberPublicKey)
+	}
+
+	// Add the db access group entries to a map.
+	accessGroupIdsForMemberMap := make(map[AccessGroupId]struct{})
+	for _, accessGroupId := range accessGroupIdsForMemberDb {
+		accessGroupIdsForMemberMap[*accessGroupId] = struct{}{}
+	}
+
+	// Iterate over UtxoView mappings and merge the results with our map.
+	for accessGroupMembershipKey, accessGroupMemberEntry := range bav.AccessGroupMembershipKeyToAccessGroupMember {
+		if !bytes.Equal(accessGroupMembershipKey.AccessGroupMemberPublicKey.ToBytes(), memberPk.ToBytes()) {
+			continue
+		}
+		copyAccessGroupMembershipKey := accessGroupMembershipKey
+		accessGroupId := NewAccessGroupId(
+			&copyAccessGroupMembershipKey.AccessGroupOwnerPublicKey, copyAccessGroupMembershipKey.AccessGroupKeyName.ToBytes())
+		if accessGroupMemberEntry.isDeleted {
+			delete(accessGroupIdsForMemberMap, *accessGroupId)
+		}
+		accessGroupIdsForMemberMap[*accessGroupId] = struct{}{}
+	}
+
+	accessGroupIds := []*AccessGroupId{}
+	for accessGroupId := range accessGroupIdsForMemberMap {
+		accessGroupIds = append(accessGroupIds, &accessGroupId)
+	}
+	return accessGroupIds, nil
 }
 
 func ValidateAccessGroupPublicKeyAndName(accessGroupOwnerPublicKey, keyName []byte) error {

@@ -2038,16 +2038,16 @@ func (key *AccessGroupId) String() string {
 
 // AccessGroupMembershipKey is used to index group memberships for a user.
 type AccessGroupMembershipKey struct {
-	GroupMemberPublicKey PublicKey
-	GroupOwnerPublicKey  PublicKey
-	GroupKeyName         GroupKeyName
+	AccessGroupMemberPublicKey PublicKey
+	AccessGroupOwnerPublicKey  PublicKey
+	AccessGroupKeyName         GroupKeyName
 }
 
 func (key *AccessGroupMembershipKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
-	data = append(data, key.GroupMemberPublicKey[:]...)
-	data = append(data, key.GroupOwnerPublicKey[:]...)
-	data = append(data, key.GroupKeyName[:]...)
+	data = append(data, key.AccessGroupMemberPublicKey[:]...)
+	data = append(data, key.AccessGroupOwnerPublicKey[:]...)
+	data = append(data, key.AccessGroupKeyName[:]...)
 	return data
 }
 
@@ -2055,23 +2055,23 @@ func (key *AccessGroupMembershipKey) RawDecodeWithoutMetadata(blockHeight uint64
 
 	groupMemberPublicKey := &PublicKey{}
 	if exist, err := DecodeFromBytes(groupMemberPublicKey, rr); exist && err == nil {
-		key.GroupMemberPublicKey = *groupMemberPublicKey
+		key.AccessGroupMemberPublicKey = *groupMemberPublicKey
 	} else if err != nil {
 		return errors.Wrapf(err, "AccessGroupMembershipKey.Decode: Problem reading "+
-			"GroupMemberPublicKey")
+			"AccessGroupMemberPublicKey")
 	}
 
 	groupOwnerPublicKey := &PublicKey{}
 	if exist, err := DecodeFromBytes(groupOwnerPublicKey, rr); exist && err == nil {
-		key.GroupOwnerPublicKey = *groupOwnerPublicKey
+		key.AccessGroupOwnerPublicKey = *groupOwnerPublicKey
 	} else if err != nil {
 		return errors.Wrapf(err, "AccessGroupMembershipKey.Decode: Problem reading "+
-			"GroupOwnerPublicKey")
+			"AccessGroupOwnerPublicKey")
 	}
 
 	groupKeyName := &GroupKeyName{}
 	if exist, err := DecodeFromBytes(groupKeyName, rr); exist && err == nil {
-		key.GroupKeyName = *groupKeyName
+		key.AccessGroupKeyName = *groupKeyName
 	} else if err != nil {
 		return errors.Wrapf(err, "AccessGroupMembershipKey.Decode: Problem reading "+
 			"AccessGroupKeyName")
@@ -2090,15 +2090,15 @@ func (key *AccessGroupMembershipKey) GetEncoderType() EncoderType {
 
 func NewGroupMembershipKey(groupMemberPublicKey PublicKey, groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName) *AccessGroupMembershipKey {
 	return &AccessGroupMembershipKey{
-		GroupMemberPublicKey: groupMemberPublicKey,
-		GroupOwnerPublicKey:  groupOwnerPublicKey,
-		GroupKeyName:         groupKeyName,
+		AccessGroupMemberPublicKey: groupMemberPublicKey,
+		AccessGroupOwnerPublicKey:  groupOwnerPublicKey,
+		AccessGroupKeyName:         groupKeyName,
 	}
 }
 
 func (key *AccessGroupMembershipKey) String() string {
-	return fmt.Sprintf("<GroupMemberPublicKey: %v, GroupOwnerPublicKey: %v, AccessGroupKeyName: %v>",
-		key.GroupMemberPublicKey, key.GroupOwnerPublicKey, key.GroupKeyName)
+	return fmt.Sprintf("<AccessGroupMemberPublicKey: %v, AccessGroupOwnerPublicKey: %v, AccessGroupKeyName: %v>",
+		key.AccessGroupMemberPublicKey, key.AccessGroupOwnerPublicKey, key.AccessGroupKeyName)
 }
 
 type AccessGroupEntry struct {

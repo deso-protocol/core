@@ -1089,14 +1089,14 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 
 		// add group member to membership index
 		if err := DBDeleteAccessGroupMemberEntryWithTxn(txn, bav.Snapshot,
-			groupMembershipKey.GroupMemberPublicKey, groupMembershipKey.GroupOwnerPublicKey, groupMembershipKey.GroupKeyName); err != nil {
+			groupMembershipKey.AccessGroupMemberPublicKey, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 				"Fail while putting new membership index. Problem putting access group member entry with "+
 				"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
 				groupMembershipKey, copyAccessGroupMember)
 		}
 		if err := DBDeleteAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot,
-			groupMembershipKey.GroupOwnerPublicKey, groupMembershipKey.GroupKeyName, groupMembershipKey.GroupMemberPublicKey); err != nil {
+			groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName, groupMembershipKey.AccessGroupMemberPublicKey); err != nil {
 
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 				"Fail while putting new membership index. Problem putting access group member entry with "+
@@ -1109,7 +1109,7 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 			numDeleted++
 		} else {
 			if err := DBPutAccessGroupMemberEntryWithTxn(txn, bav.Snapshot, blockHeight,
-				&copyAccessGroupMember, groupMembershipKey.GroupOwnerPublicKey, groupMembershipKey.GroupKeyName); err != nil {
+				&copyAccessGroupMember, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
 
 				return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 					"Fail while putting new membership index. Problem putting access group member entry with "+
@@ -1117,7 +1117,7 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 					groupMembershipKey, copyAccessGroupMember)
 			}
 			if err := DBPutAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot, blockHeight,
-				groupMembershipKey.GroupOwnerPublicKey, groupMembershipKey.GroupKeyName, groupMembershipKey.GroupMemberPublicKey); err != nil {
+				groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName, groupMembershipKey.AccessGroupMemberPublicKey); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 					"Fail while putting new enumeration index. Problem putting access group member entry with "+
 					"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",

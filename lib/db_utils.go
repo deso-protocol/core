@@ -342,7 +342,7 @@ type DBPrefixes struct {
 	//   way is required to make it so that messages can be decrypted on mobile devices, where apps do not have
 	//   easy access to the owner key for decrypting messages.
 	//
-	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupEntry>
+	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupEntry>
 	PrefixAccessGroupEntriesByAccessGroupId []byte `prefix_id:"[63]" is_state:"true"`
 
 	// This prefix is used to store all mappings for access group members. The group owner has a mapping
@@ -351,7 +351,7 @@ type DBPrefixes struct {
 	// we can just iterate over the members in the group membership index here. This saves us a lot of space
 	// and makes it easier to add and remove members from groups.
 	//
-	// * Note that as mentioned above, there is a special case where GroupMemberPublicKey == GroupOwnerPublicKey.
+	// * Note that as mentioned above, there is a special case where AccessGroupMemberPublicKey == AccessGroupOwnerPublicKey.
 	//   For this index it was convenient for various reasons to automatically save an entry
 	//   with such key in the db whenever user registers a group. This becomes clear if
 	//   you read all the fetching code around this index. Particularly functions containing
@@ -362,11 +362,11 @@ type DBPrefixes struct {
 	//     they own). This is especially useful for Backend API to fetch all groups for a user.
 	//
 	// New <GroupMembershipIndex> :
-	// <prefix, GroupMemberPublicKey [33]byte, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupMemberEntry>
+	// <prefix, AccessGroupMemberPublicKey [33]byte, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupMemberEntry>
 	PrefixAccessGroupMembershipIndex []byte `prefix_id:"[64]" is_state:"true"`
 
 	// Prefix for Enumerating over all the members of a group:
-	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, GroupMemberPublicKey [33]byte> -> <>
+	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, AccessGroupMemberPublicKey [33]byte> -> <>
 	PrefixAccessGroupMemberEnumerationIndex []byte `prefix_id:"[65]" is_state:"true"`
 
 	// NEXT_TAG: 68
@@ -1141,6 +1141,10 @@ func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte) (_keysFoun
 	return keysFound, valsFound, nil
 }
 
+func _enumerateKeysOnlyForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte) (_keysFound [][]byte) {
+	return _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn, dbPrefix, dbPrefix, math.MaxUint32)
+}
+
 // _enumeratePaginatedLimitedKeysForPrefixWithTxn will look for keys in the db that are GREATER OR EQUAL to the startKey
 // and satisfy the dbPrefix prefix. The total number of entries fetched will be EQUAL OR SMALLER than provided limit.
 func _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte, startKey []byte, limit uint32) (_keysFound [][]byte) {
@@ -1740,6 +1744,26 @@ func _dbKeyForAccessGroupEntry(accessGroupOwnerPublicKey PublicKey, accessGroupK
 	return prefixCopy
 }
 
+func _dbSeekPrefixForAccessGroupEntry(accessGroupOwnerPublicKey PublicKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixAccessGroupEntriesByAccessGroupId...)
+	prefixCopy = append(prefixCopy, accessGroupOwnerPublicKey.ToBytes()...)
+	return prefixCopy
+}
+
+func _dbDecodeKeyForAccessGroupEntry(key []byte) (PublicKey, GroupKeyName, error) {
+	// The key should be of the form:
+	// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName>
+	expectedKeyLenght := len(Prefixes.PrefixAccessGroupEntriesByAccessGroupId) + PublicKeyLenCompressed + MaxAccessGroupKeyNameCharacters
+	if len(key) != expectedKeyLenght {
+		return PublicKey{}, GroupKeyName{}, fmt.Errorf("_dbDecodeKeyForAccessGroupEntry: "+
+			"key length is invalid: %v, should be: %v", len(key), expectedKeyLenght)
+	}
+	keyWithoutPrefix := key[len(Prefixes.PrefixAccessGroupEntriesByAccessGroupId):]
+	accessGroupOwnerPublicKey := *NewPublicKey(keyWithoutPrefix[:PublicKeyLenCompressed])
+	accessGroupKeyName := *NewGroupKeyName(keyWithoutPrefix[PublicKeyLenCompressed:])
+	return accessGroupOwnerPublicKey, accessGroupKeyName, nil
+}
+
 func DBGetAccessGroupEntryByAccessGroupId(db *badger.DB, snap *Snapshot,
 	accessGroupOwnerPublicKey *PublicKey, accessGroupKeyName *GroupKeyName) (*AccessGroupEntry, error) {
 	var err error
@@ -1818,6 +1842,43 @@ func DBGetAccessGroupExistenceByAccessGroupIdWithTxn(txn *badger.Txn, snap *Snap
 	return true, nil
 }
 
+func DBGetAccessGroupIdsForOwner(db *badger.DB, snap *Snapshot, accessGroupOwnerPublicKey PublicKey) ([]*AccessGroupId, error) {
+	var err error
+	var ret []*AccessGroupId
+	err = db.View(func(txn *badger.Txn) error {
+		ret, err = DBGetAccessGroupIdsForOwnerWithTxn(txn, snap, accessGroupOwnerPublicKey)
+		return err
+	})
+	if err != nil && err != badger.ErrKeyNotFound {
+		return nil, errors.Wrapf(err, "DBGetAccessGroupIdsForOwner: Problem getting access group entries for owner")
+	}
+	return ret, nil
+}
+
+func DBGetAccessGroupIdsForOwnerWithTxn(txn *badger.Txn, snap *Snapshot, accessGroupOwnerPublicKey PublicKey) ([]*AccessGroupId, error) {
+	prefix := _dbSeekPrefixForAccessGroupEntry(accessGroupOwnerPublicKey)
+
+	keysFound := _enumerateKeysOnlyForPrefixWithTxn(txn, prefix)
+
+	// Decode found keys.
+	accessGroupIds := []*AccessGroupId{}
+	for _, keys := range keysFound {
+		accessGroupOwnerPublicKeyFromKey, accessGroupKeyName, err := _dbDecodeKeyForAccessGroupEntry(keys)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAccessGroupIdsForOwnerWithTxn: Problem decoding access group id")
+		}
+		if !bytes.Equal(accessGroupOwnerPublicKey.ToBytes(), accessGroupOwnerPublicKeyFromKey.ToBytes()) {
+			return nil, fmt.Errorf("DBGetAccessGroupIdsForOwnerWithTxn: "+
+				"Access group owner public key from key (%v) does not match expected access group owner public key (%v)",
+				accessGroupOwnerPublicKeyFromKey, accessGroupOwnerPublicKey)
+		}
+
+		accessGroupId := NewAccessGroupId(&accessGroupOwnerPublicKey, accessGroupKeyName.ToBytes())
+		accessGroupIds = append(accessGroupIds, accessGroupId)
+	}
+	return accessGroupIds, nil
+}
+
 func DBPutAccessGroupEntry(db *badger.DB, snap *Snapshot, blockHeight uint64, accessGroupEntry *AccessGroupEntry) error {
 	var err error
 	err = db.Update(func(txn *badger.Txn) error {
@@ -1865,7 +1926,7 @@ func DBDeleteAccessGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot, accessGrou
 // -------------------------------------------------------------------------------------
 // Access group member entry db functionality
 // PrefixAccessGroupMembershipIndex
-// <prefix, AccessGroupMemberPublicKey, AccessGroupOwnerPublicKey, GroupKeyName> -> <AccessGroupEntry>
+// <prefix, AccessGroupMemberPublicKey, AccessGroupOwnerPublicKey, AccessGroupKeyName> -> <AccessGroupMemberEntry>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForAccessGroupMemberEntry(
@@ -1876,6 +1937,35 @@ func _dbKeyForAccessGroupMemberEntry(
 	prefixCopy = append(prefixCopy, accessGroupOwnerPublicKey.ToBytes()...)
 	prefixCopy = append(prefixCopy, accessGroupKeyName.ToBytes()...)
 	return prefixCopy
+}
+
+func _dbSeekPrefixForAccessGroupMemberEntry(accessGroupMemberPublicKey PublicKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixAccessGroupMembershipIndex...)
+	prefixCopy = append(prefixCopy, accessGroupMemberPublicKey.ToBytes()...)
+	return prefixCopy
+}
+
+func _dbDecodeKeyForAccessGroupMemberEntry(key []byte) (PublicKey, PublicKey, GroupKeyName, error) {
+	// The key should be of the form:
+	// <prefix, AccessGroupMemberPublicKey, AccessGroupOwnerPublicKey, AccessGroupKeyName>
+	if len(key) != 1+2*PublicKeyLenCompressed+MaxAccessGroupKeyNameCharacters {
+		return PublicKey{}, PublicKey{}, GroupKeyName{}, fmt.Errorf("_dbDecodeKeyForAccessGroupMemberEntry: "+
+			"Key length (%d) is not the expected length (%d)",
+			len(key), 1+2*PublicKeyLenCompressed+MaxAccessGroupKeyNameCharacters)
+	}
+
+	// Slice off the prefix.
+	keySlice := key[len(Prefixes.PrefixAccessGroupMembershipIndex):]
+	// Get the access group member public key.
+	accessGroupMemberPublicKey := *NewPublicKey(keySlice[:PublicKeyLenCompressed])
+	keySlice = keySlice[PublicKeyLenCompressed:]
+	// Get the access group owner public key.
+	accessGroupOwnerPublicKey := *NewPublicKey(keySlice[:PublicKeyLenCompressed])
+	keySlice = keySlice[PublicKeyLenCompressed:]
+	// Get the access group key name.
+	accessGroupKeyName := *NewGroupKeyName(keySlice)
+
+	return accessGroupMemberPublicKey, accessGroupOwnerPublicKey, accessGroupKeyName, nil
 }
 
 func DBGetAccessGroupMemberEntry(db *badger.DB, snap *Snapshot,
@@ -1911,6 +2001,46 @@ func DBGetAccessGroupMemberEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	return accessGroupMember, nil
+}
+
+func DBGetAccessGroupIdsForMember(db *badger.DB, snap *Snapshot,
+	accessGroupMemberPublicKey PublicKey) (_accessGroupIdsMember []*AccessGroupId, _err error) {
+
+	var ret []*AccessGroupId
+	var err error
+	err = db.View(func(txn *badger.Txn) error {
+		ret, err = DBGetAccessGroupIdsForMemberWithTxn(txn, snap, accessGroupMemberPublicKey)
+		return err
+	})
+	if err != nil && err != badger.ErrKeyNotFound {
+		return nil, errors.Wrapf(err, "DBGetAccessGroupIdsForMember: Problem getting access group ids for member")
+	}
+	return ret, nil
+}
+
+func DBGetAccessGroupIdsForMemberWithTxn(txn *badger.Txn, snap *Snapshot,
+	accessGroupMemberPublicKey PublicKey) (_accessGroupIdsMember []*AccessGroupId, _err error) {
+
+	prefix := _dbSeekPrefixForAccessGroupMemberEntry(accessGroupMemberPublicKey)
+	keysFound := _enumerateKeysOnlyForPrefixWithTxn(txn, prefix)
+
+	// Decode found keys.
+	accessGroupIds := []*AccessGroupId{}
+	for _, keys := range keysFound {
+		accessGroupMemberPublicKeyFromKey, accessGroupOwnerPublicKey, accessGroupKeyName, err := _dbDecodeKeyForAccessGroupMemberEntry(keys)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAccessGroupIdsForMemberWithTxn: Problem decoding access group id")
+		}
+		if !bytes.Equal(accessGroupMemberPublicKey.ToBytes(), accessGroupMemberPublicKeyFromKey.ToBytes()) {
+			return nil, fmt.Errorf("DBGetAccessGroupIdsForMemberWithTxn: "+
+				"Access group member public key from key (%v) does not match expected access group member public key (%v)",
+				accessGroupMemberPublicKey, accessGroupMemberPublicKeyFromKey)
+		}
+
+		accessGroupId := NewAccessGroupId(&accessGroupOwnerPublicKey, accessGroupKeyName.ToBytes())
+		accessGroupIds = append(accessGroupIds, accessGroupId)
+	}
+	return accessGroupIds, nil
 }
 
 func DBPutAccessGroupMemberEntry(db *badger.DB, snap *Snapshot, blockHeight uint64,
@@ -1972,7 +2102,7 @@ func DBDeleteAccessGroupMemberEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 // -------------------------------------------------------------------------------------
 // Enumerate over group members of an access group
 // PrefixGroupMemberEnumerationIndex
-// <prefix, GroupOwnerPublicKey, AccessGroupKeyName, GroupMemberPublicKey> -> <>
+// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, AccessGroupMemberPublicKey> -> <>
 // -------------------------------------------------------------------------------------
 
 // _dbKeyForAccessGroupMemberEnumerationIndex returns the key for a group enumeration index.
@@ -4145,8 +4275,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -8123,7 +8253,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -8250,7 +8380,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}

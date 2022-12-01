@@ -2656,7 +2656,7 @@ func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoVie
 		}
 
 		accessGroupMemberEntry := &PGAccessGroupMemberEntry{}
-		accessGroupMemberEntry.FromAccessGroupMemberEntry(idCopy.GroupOwnerPublicKey, idCopy.GroupKeyName, entry)
+		accessGroupMemberEntry.FromAccessGroupMemberEntry(idCopy.AccessGroupOwnerPublicKey, idCopy.AccessGroupKeyName, entry)
 		accessGroupMemberEnumerationEntry := &PGAccessGroupMemberEnumerationEntry{
 			AccessGroupMemberPublicKey: accessGroupMemberEntry.AccessGroupMemberPublicKey,
 			AccessGroupOwnerPublicKey:  accessGroupMemberEntry.AccessGroupOwnerPublicKey,
@@ -3186,8 +3186,8 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
-		Order("block_height ASC").                                        // Then oldest first (FIFO)
-		Order("order_id DESC").                                           // Then match BadgerDB ordering
+		Order("block_height ASC"). // Then oldest first (FIFO)
+		Order("order_id DESC"). // Then match BadgerDB ordering
 		Select()
 
 	if err != nil {
@@ -3330,6 +3330,15 @@ func (postgres *Postgres) GetAccessGroupByAccessGroupId(accessGroupId *AccessGro
 	return accessGroup
 }
 
+func (postgres *Postgres) GetAccessGroupEntriesForOwner(ownerPublicKey PublicKey) []*PGAccessGroupEntry {
+	var accessGroups []*PGAccessGroupEntry
+	err := postgres.db.Model(&accessGroups).Where("access_group_owner_public_key = ?", ownerPublicKey).Select()
+	if err != nil {
+		return nil
+	}
+	return accessGroups
+}
+
 //
 // AccessGroupMembers
 //
@@ -3386,6 +3395,21 @@ func (postgres *Postgres) GetPaginatedAccessGroupMembersFromEnumerationIndex(acc
 		accessGroupMemberPublicKeys = append(accessGroupMemberPublicKeys, accessGroupEnumerationEntry.AccessGroupMemberPublicKey)
 	}
 	return accessGroupMemberPublicKeys, nil
+}
+
+func (postgres *Postgres) GetAccessGroupEnumerationEntriesForMember(memberPublicKey PublicKey) (
+	_accessGroupIdsMember []*PGAccessGroupMemberEnumerationEntry, _err error) {
+
+	var accessGroupMemberEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
+
+	err := postgres.db.Model(&accessGroupMemberEnumerationEntries).
+		Where("access_group_member_public_key = ?", memberPublicKey).
+		Select()
+	if err != nil {
+		return nil, err
+	}
+
+	return accessGroupMemberEnumerationEntries, nil
 }
 
 //

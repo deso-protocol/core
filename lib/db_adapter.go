@@ -173,6 +173,62 @@ func (adapter *DbAdapter) GetAccessGroupExistenceByAccessGroupId(accessGroupId *
 	}
 }
 
+func (adapter *DbAdapter) GetAccessGroupIdsForOwner(ownerPublicKey *PublicKey) (_accessGroupIdsOwned []*AccessGroupId, _err error) {
+	var accessGroupIds []*AccessGroupId
+	var err error
+	if ownerPublicKey == nil {
+		glog.Errorf("GetAccessGroupEntriesForOwner: Called with nil ownerPublicKey, this should never happen")
+		return nil, nil
+	}
+
+	if adapter.postgresDb != nil {
+		pgAccessGroupEntries := adapter.postgresDb.GetAccessGroupEntriesForOwner(*ownerPublicKey)
+		if pgAccessGroupEntries == nil {
+			return nil, nil
+		}
+		for _, pgAccessGroupEntry := range pgAccessGroupEntries {
+			accessGroupEntry := pgAccessGroupEntry.ToAccessGroupEntry()
+			accessGroupId := NewAccessGroupId(ownerPublicKey, accessGroupEntry.AccessGroupKeyName.ToBytes())
+			accessGroupIds = append(accessGroupIds, accessGroupId)
+		}
+	} else {
+		accessGroupIds, err = DBGetAccessGroupIdsForOwner(adapter.badgerDb, adapter.snapshot, *ownerPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return accessGroupIds, nil
+}
+
+func (adapter *DbAdapter) GetAccessGroupIdsForMember(memberPublicKey *PublicKey) (_accessGroupIdsMember []*AccessGroupId, _err error) {
+	var accessGroupIds []*AccessGroupId
+	var err error
+
+	if memberPublicKey == nil {
+		glog.Errorf("GetAccessGroupEntriesForMember: Called with nil memberPublicKey, this should never happen")
+		return nil, nil
+	}
+
+	if adapter.postgresDb != nil {
+		pgAccessGroupEnumerationEntries, err := adapter.postgresDb.GetAccessGroupEnumerationEntriesForMember(*memberPublicKey)
+		if err != nil {
+			return nil, err
+		}
+		for _, pgAccessEnumerationEntry := range pgAccessGroupEnumerationEntries {
+			accessGroupId := NewAccessGroupId(
+				pgAccessEnumerationEntry.AccessGroupOwnerPublicKey, pgAccessEnumerationEntry.AccessGroupKeyName.ToBytes())
+			accessGroupIds = append(accessGroupIds, accessGroupId)
+		}
+	} else {
+		accessGroupIds, err = DBGetAccessGroupIdsForMember(adapter.badgerDb, adapter.snapshot, *memberPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return accessGroupIds, nil
+}
+
 //
 // AccessGroupMembers
 //
