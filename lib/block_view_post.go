@@ -457,6 +457,9 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 			startPostEntry := bav.GetPostEntryForPostHash(startPostHash)
 			startTime = startPostEntry.TimestampNanos
 		}
+		if onlyNFTs && onlyPosts {
+			return nil, fmt.Errorf("GetPostsPaginatedForPublicKeyOrderedByTimestamp: onlyNFTs and onlyPosts can not be enabled both")
+		}
 		posts := bav.Postgres.GetPostsForPublicKey(publicKey, startTime, limit)
 		for _, post := range posts {
 			// TODO: Normalize this field so we get the correct number of results from the DB
