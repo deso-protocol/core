@@ -86,8 +86,7 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 		fundPublicKeysWithNanosMap[*publicKey] = 50
 	}
 	initChainCallback := func(tm *transactionTestMeta) {
-		tm.params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
-		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
+		_setAccessGroupParams(tm)
 	}
 	tConfig := &transactionTestConfig{
 		t:                          t,
@@ -119,8 +118,8 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	groupName4 := []byte("group4")
 
 	// Access group (m0Pub, groupName1) with access public key groupPk1.
-	tv1 := _createAccessGroupCreateTestVector("TEST 1: (PASS) Connect access group create transaction made by "+
-		"(pk0, groupName1)", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1, nil,
+	tv1 := _createAccessGroupTestVector("TEST 1: (PASS) Connect access group create transaction made by "+
+		"(pk0, groupName1)", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1, AccessGroupOperationTypeCreate, nil,
 		nil)
 	tv2Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil,
@@ -175,8 +174,9 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	// (m0Pub, groupName1) ->
 	//		(m0Pub, BaseGroupKeyName)
 	// (m0Pub, groupName2) ->
-	tv5 := _createAccessGroupCreateTestVector("TEST 5: (PASS) Connect access group create transaction made by "+
-		"(pk0, groupName2)", m0Priv, m0PubBytes, m0PubBytes, groupPk2, groupName2, nil, nil)
+	tv5 := _createAccessGroupTestVector("TEST 5: (PASS) Connect access group create transaction made by "+
+		"(pk0, groupName2)", m0Priv, m0PubBytes, m0PubBytes, groupPk2, groupName2, AccessGroupOperationTypeCreate,
+		nil, nil)
 	tv6Members := []*AccessGroupMember{{
 		AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName2, EncryptedKey: []byte{1}, ExtraData: nil,
 	}}
@@ -248,10 +248,12 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
 	}
 	// Create an access group (pk1, groupName3) and (pk2, groupName4)
-	tv14 := _createAccessGroupCreateTestVector("TEST 14: (PASS) Connect access group transaction made by "+
-		"(pk1, groupName3)", m1Priv, m1PubBytes, m1PubBytes, groupPk2, groupName3, nil, nil)
-	tv15 := _createAccessGroupCreateTestVector("TEST 15: (PASS) Connect access group transaction made by "+
-		"(pk2, groupName4)", m2Priv, m2PubBytes, m2PubBytes, groupPk2, groupName4, nil, nil)
+	tv14 := _createAccessGroupTestVector("TEST 14: (PASS) Connect access group transaction made by "+
+		"(pk1, groupName3)", m1Priv, m1PubBytes, m1PubBytes, groupPk2, groupName3,
+		AccessGroupOperationTypeCreate, nil, nil)
+	tv15 := _createAccessGroupTestVector("TEST 15: (PASS) Connect access group transaction made by "+
+		"(pk2, groupName4)", m2Priv, m2PubBytes, m2PubBytes, groupPk2, groupName4,
+		AccessGroupOperationTypeCreate, nil, nil)
 	// Add (m0Pub, groupName1), (m1Pub, groupName3), and (m2Pub, BaseGroup) to the group (m2pub, groupName4)
 	// Membership:
 	// (m0Pub, groupName1) ->
@@ -304,11 +306,11 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	// Add a bunch of random members to the access group (m2Pub, groupName4)
 	randomGroupsTransactionVectors := []*transactionTestVector{}
 	for ii := 0; ii < 50; ii++ {
-		randomGroupsTransactionVectors = append(randomGroupsTransactionVectors, _createAccessGroupCreateTestVector(
+		randomGroupsTransactionVectors = append(randomGroupsTransactionVectors, _createAccessGroupTestVector(
 			fmt.Sprintf("TEST %d: (PASS) Connect access group transaction made by (randomPk%d, groupName%d)",
 				len(tvv1)+len(tvv2)+1+ii, ii, ii), randomMemberPrivateKeys[ii], randomMemberPublicKeys[ii].ToBytes(),
 			randomMemberPublicKeys[ii].ToBytes(), groupPk1, randomMemberGroupKeys[ii].ToBytes(),
-			nil, nil))
+			AccessGroupOperationTypeCreate, nil, nil))
 	}
 	randomMembers := []*AccessGroupMember{}
 	totalMembers := []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey}
@@ -406,16 +408,7 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	fundPublicKeysWithNanosMap[*m3PublicKey] = 200
 
 	initChainCallback := func(tm *transactionTestMeta) {
-		tm.params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
-		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
-		tm.params.EncoderMigrationHeights.DeSoUnlimitedDerivedKeys.Height = 0
-		tm.params.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
-		GlobalDeSoParams.EncoderMigrationHeights.DeSoUnlimitedDerivedKeys.Height = 0
-		GlobalDeSoParams.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
-		for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
-			tm.params.EncoderMigrationHeightsList[ii].Height = 0
-			GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 0
-		}
+		_setAccessGroupParams(tm)
 	}
 	tConfig := &transactionTestConfig{
 		t:                          t,
@@ -454,9 +447,11 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	// Access group (m0Pub, groupName1) with access public key groupPk1.
 	// Membership [create]:
 	// (m0Pub, groupName1) ->
-	tv1 := _createAccessGroupCreateTestVector("TEST 1: (PASS) Connect access group create transaction made by "+
-		"(pk0, groupName1)", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1, nil,
-		nil)
+	tv1 := _createAccessGroupTestVector("TEST 1: (PASS) Connect access group create transaction made by "+
+		"(pk0, groupName1)", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1,
+		AccessGroupOperationTypeCreate, nil, nil)
+	groupM0N1 := &AccessGroupId{*m0PublicKey, *NewGroupKeyName(groupName1)}
+	groupM0B := &AccessGroupId{*m0PublicKey, *BaseGroupKeyName()}
 	// Membership [memberAdd]:
 	// (m0Pub, groupName1) ->
 	//		(m1Pub, BaseGroupKeyName)
@@ -466,11 +461,17 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	tv2 := _createAccessGroupMembersTestVector("TEST 2: (PASS) Connect access group members add transaction made by "+
 		"(pk0, groupName1) adding as member (pk1, baseGroup)", m0Priv, m0PubBytes, groupName1, tv2Members,
 		AccessGroupMemberOperationTypeAdd, nil)
+	memberM1GroupM0N1 := &AccessGroupId{*m0PublicKey, *NewGroupKeyName(groupName1)}
+	groupM1B := &AccessGroupId{*m1PublicKey, *BaseGroupKeyName()}
 	tv2.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m1PublicKey})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N1, groupM0B}, []*AccessGroupId{})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1B}, []*AccessGroupId{memberM1GroupM0N1})
 	}
 	tv2.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N1, groupM0B}, []*AccessGroupId{})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1B}, []*AccessGroupId{})
 	}
 
 	tv3Members := []*AccessGroupMember{
@@ -497,9 +498,13 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 		AccessGroupMemberOperationTypeRemove, nil)
 	tv4.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N1, groupM0B}, []*AccessGroupId{})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1B}, []*AccessGroupId{})
 	}
 	tv4.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m1PublicKey})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N1, groupM0B}, []*AccessGroupId{})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1B}, []*AccessGroupId{memberM1GroupM0N1})
 	}
 	tv5Members := []*AccessGroupMember{
 		{AccessGroupMemberPublicKey: m1PubBytes[:10], AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: nil, ExtraData: nil},
@@ -522,9 +527,13 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 		AccessGroupMemberOperationTypeAdd, nil)
 	tv7.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m1PublicKey})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N1, groupM0B}, []*AccessGroupId{})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1B}, []*AccessGroupId{memberM1GroupM0N1})
 	}
 	tv7.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N1, groupM0B}, []*AccessGroupId{})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1B}, []*AccessGroupId{})
 	}
 	// Membership [memberRemove]:
 	// (m0Pub, groupName1) ->
@@ -534,14 +543,41 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 		AccessGroupMemberOperationTypeRemove, nil)
 	tv8.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N1, groupM0B}, []*AccessGroupId{})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1B}, []*AccessGroupId{})
 	}
 	tv8.disconnectCallback = tv7.connectCallback
 	// Access group (m1Pub, groupName2) with access public key groupPk2
 	// Membership [create]:
 	// (m0Pub, groupName1) ->
 	// (m1Pub, groupName2) ->
-	tv9 := _createAccessGroupCreateTestVector("TEST 9: (PASS) Connect access group create transaction made by "+
-		"(pk1, groupName2)", m1Priv, m1PubBytes, m1PubBytes, groupPk2, groupName2, nil, nil)
+	tv9 := _createAccessGroupTestVector("TEST 9: (PASS) Connect access group create transaction made by "+
+		"(pk1, groupName2)", m1Priv, m1PubBytes, m1PubBytes, groupPk2, groupName2,
+		AccessGroupOperationTypeCreate, nil, nil)
+	groupM1N2 := &AccessGroupId{*m1PublicKey, *NewGroupKeyName(groupName2)}
+	// Membership [memberAdd]:
+	// (m0Pub, groupName1) ->
+	//		(m0Pub, baseGroup)
+	// 		(m1Pub, groupName2)
+	// (m1Pub, groupName2) ->
+	tv10Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil},
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: groupName2, EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv10 := _createAccessGroupMembersTestVector("TEST 10: (PASS) Connect access group members add transaction made by "+
+		"(pk0, groupName1) adding member (pk0, baseGroup) and (pk1, groupName2)", m0Priv, m0PubBytes, groupName1, tv10Members,
+		AccessGroupMemberOperationTypeAdd, nil)
+
+	memberM0GroupM0N1 := &AccessGroupId{*m0PublicKey, *NewGroupKeyName(groupName1)}
+	tv10.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
+		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N1, groupM0B}, []*AccessGroupId{memberM0GroupM0N1})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1N2, groupM1B}, []*AccessGroupId{memberM1GroupM0N1})
+	}
+	tv10.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
+	}
 	// Membership [memberAdd]:
 	// (m0Pub, groupName1) ->
 	//		(m0Pub, baseGroup)
@@ -550,20 +586,6 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	// 		(m0Pub, groupName1)
 	// 		(m1Pub, baseGroup)
 	// 		(m2Pub, baseGroup)
-	tv10Members := []*AccessGroupMember{
-		{AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil},
-		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: groupName2, EncryptedKey: []byte{1}, ExtraData: nil},
-	}
-	tv10 := _createAccessGroupMembersTestVector("TEST 10: (PASS) Connect access group members add transaction made by "+
-		"(pk0, groupName1) adding member (pk0, baseGroup) and (pk1, groupName2)", m0Priv, m0PubBytes, groupName1, tv10Members,
-		AccessGroupMemberOperationTypeAdd, nil)
-	tv10.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
-		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
-		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
-	}
-	tv10.disconnectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
-		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
-	}
 	tv11Members := []*AccessGroupMember{
 		{AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil},
 		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil},
@@ -572,9 +594,16 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	tv11 := _createAccessGroupMembersTestVector("TEST 11: (PASS) Connect access group members add transaction made by "+
 		"(pk1, groupName2) adding member (pk0, groupName1), (pk1, baseGroup) and (pk2, baseGroup)", m1Priv, m1PubBytes, groupName2, tv11Members,
 		AccessGroupMemberOperationTypeAdd, nil)
+	memberM0GroupM1N2 := &AccessGroupId{*m1PublicKey, *NewGroupKeyName(groupName2)}
+	memberM1GroupM1N2 := &AccessGroupId{*m1PublicKey, *NewGroupKeyName(groupName2)}
+	memberM2GroupM1N2 := &AccessGroupId{*m1PublicKey, *NewGroupKeyName(groupName2)}
+	groupM2B := &AccessGroupId{*m2PublicKey, *BaseGroupKeyName()}
 	tv11.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey})
 		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N1, groupM0B}, []*AccessGroupId{memberM0GroupM0N1, memberM0GroupM1N2})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1N2, groupM1B}, []*AccessGroupId{memberM1GroupM0N1, memberM1GroupM1N2})
+		_verifyGroupIdsForUser(t, m2PubBytes, utxoView, []*AccessGroupId{groupM2B}, []*AccessGroupId{memberM2GroupM1N2})
 	}
 	tv11.disconnectCallback = tv10.connectCallback
 
@@ -826,16 +855,7 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 	fundPublicKeysWithNanosMap[*m3PublicKey] = 200
 
 	initChainCallback := func(tm *transactionTestMeta) {
-		tm.params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
-		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
-		tm.params.EncoderMigrationHeights.DeSoUnlimitedDerivedKeys.Height = 0
-		tm.params.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
-		GlobalDeSoParams.EncoderMigrationHeights.DeSoUnlimitedDerivedKeys.Height = 0
-		GlobalDeSoParams.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
-		for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
-			tm.params.EncoderMigrationHeightsList[ii].Height = 0
-			GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 0
-		}
+		_setAccessGroupParams(tm)
 	}
 	tConfig := &transactionTestConfig{
 		t:                          t,
@@ -875,10 +895,16 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 	// Membership [create]:
 	// (m2Pub, groupName1) ->
 	// (m3Pub, groupName1) ->
-	tv1 := _createAccessGroupCreateTestVector("TEST 1: (PASS) Connect access group create transaction made by (pk2, groupName1)",
-		m2Priv, m2PubBytes, m2PubBytes, groupPk1, groupName1, nil, nil)
-	tv2 := _createAccessGroupCreateTestVector("TEST 2: (PASS) Connect access group members add transaction made by (pk3, groupName1)",
-		m3Priv, m3PubBytes, m3PubBytes, groupPk2, groupName1, nil, nil)
+	tv1 := _createAccessGroupTestVector("TEST 1: (PASS) Connect access group create transaction made by (pk2, groupName1)",
+		m2Priv, m2PubBytes, m2PubBytes, groupPk1, groupName1,
+		AccessGroupOperationTypeCreate, nil, nil)
+	tv2 := _createAccessGroupTestVector("TEST 2: (PASS) Connect access group members add transaction made by (pk3, groupName1)",
+		m3Priv, m3PubBytes, m3PubBytes, groupPk2, groupName1,
+		AccessGroupOperationTypeCreate, nil, nil)
+	groupM2N1 := &AccessGroupId{*m2PublicKey, *NewGroupKeyName(groupName1)}
+	groupM2B := &AccessGroupId{*m2PublicKey, *BaseGroupKeyName()}
+	groupM3N1 := &AccessGroupId{*m3PublicKey, *NewGroupKeyName(groupName1)}
+	groupM3B := &AccessGroupId{*m3PublicKey, *BaseGroupKeyName()}
 	// Add member (m0Pub, BaseGroup) to access group (m0Pub, groupName1).
 	// Membership [add]:
 	// (m2Pub, groupName1) ->
@@ -890,11 +916,16 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 	tv3 := _createAccessGroupMembersTestVector("TEST 3: (PASS) Connect access group members add transaction "+
 		"made by (pk2, groupName1) with (pk0, BaseGroup) as member",
 		m2Priv, m2PubBytes, groupName1, tv3Members, AccessGroupMemberOperationTypeAdd, nil)
+	groupM0B := &AccessGroupId{*m0PublicKey, *BaseGroupKeyName()}
+	memberM0GroupM2N1 := &AccessGroupId{*m2PublicKey, *NewGroupKeyName(groupName1)}
 	tv3.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey})
 		groupMemberEntry, err := utxoView.GetAccessGroupMemberEntry(m0PublicKey, m2PublicKey, NewGroupKeyName(groupName1))
 		require.NoError(err)
 		require.Equal(true, _verifyEqualAccessGroupMember(tm.t, groupMemberEntry, tv3Members[0]))
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0B}, []*AccessGroupId{memberM0GroupM2N1})
+		_verifyGroupIdsForUser(t, m2PubBytes, utxoView, []*AccessGroupId{groupM2N1, groupM2B}, []*AccessGroupId{})
+		_verifyGroupIdsForUser(t, m3PubBytes, utxoView, []*AccessGroupId{groupM3N1, groupM3B}, []*AccessGroupId{})
 	}
 	tv3.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
@@ -914,6 +945,7 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 		groupMemberEntry, err := utxoView.GetAccessGroupMemberEntry(m0PublicKey, m2PublicKey, NewGroupKeyName(groupName1))
 		require.NoError(err)
 		require.Equal(true, _verifyEqualAccessGroupMember(tm.t, groupMemberEntry, tv4Members[0]))
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0B}, []*AccessGroupId{memberM0GroupM2N1})
 	}
 	tv4.disconnectCallback = tv3.connectCallback
 	// Revert to the same member as in tv3.
@@ -935,8 +967,10 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 		m2Priv, m2PubBytes, groupName1, tv6Members, AccessGroupMemberOperationTypeUpdate,
 		RuleErrorAccessGroupMemberDoesntExistOrIsDeleted)
 	// Create group (m0Pub, groupName4)
-	tv7 := _createAccessGroupCreateTestVector("TEST 7: (PASS) Connect access group create transaction "+
-		"made by (pk0, groupName4)", m0Priv, m0PubBytes, m0PubBytes, groupPk3, groupName4, nil, nil)
+	tv7 := _createAccessGroupTestVector("TEST 7: (PASS) Connect access group create transaction "+
+		"made by (pk0, groupName4)", m0Priv, m0PubBytes, m0PubBytes, groupPk3, groupName4,
+		AccessGroupOperationTypeCreate, nil, nil)
+	groupM0N4 := &AccessGroupId{*m0PublicKey, *NewGroupKeyName(groupName4)}
 	// Change the member (m0Pub, BaseGroup) to (m0Pub, groupName4).
 	// Membership [update]:
 	// (m0Pub, groupName4) ->
@@ -957,6 +991,7 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 		groupMemberEntry, err := utxoView.GetAccessGroupMemberEntry(m0PublicKey, m2PublicKey, NewGroupKeyName(groupName1))
 		require.NoError(err)
 		require.Equal(true, _verifyEqualAccessGroupMember(tm.t, groupMemberEntry, tv8Members[0]))
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N4, groupM0B}, []*AccessGroupId{memberM0GroupM2N1})
 	}
 	tv7.disconnectCallback = tv5.connectCallback
 
@@ -991,11 +1026,20 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 	tv9 := _createAccessGroupMembersTestVector("TEST 9: (PASS) Connect access group members add transaction "+
 		"made by (m2Pub, groupName1) adding (pk1, BaseGroup), (pk2, BaseGroup), (pk3, BaseGroup)",
 		m2Priv, m2PubBytes, groupName1, tv9Members, AccessGroupMemberOperationTypeAdd, nil)
+	memberM1GroupM2N1 := &AccessGroupId{*m2PublicKey, *NewGroupKeyName(groupName1)}
+	groupM1B := &AccessGroupId{*m1PublicKey, *BaseGroupKeyName()}
+	memberM2GroupM2N1 := &AccessGroupId{*m2PublicKey, *NewGroupKeyName(groupName1)}
+	memberM3GroupM2N1 := &AccessGroupId{*m2PublicKey, *NewGroupKeyName(groupName1)}
+
 	tv9.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey, m3PublicKey})
 		groupMember, err := utxoView.GetAccessGroupMemberEntry(m0PublicKey, m2PublicKey, NewGroupKeyName(groupName1))
 		require.NoError(err)
 		require.Equal(true, _verifyEqualAccessGroupMember(tm.t, groupMember, tv8Members[0]))
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N4, groupM0B}, []*AccessGroupId{memberM0GroupM2N1})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1B}, []*AccessGroupId{memberM1GroupM2N1})
+		_verifyGroupIdsForUser(t, m2PubBytes, utxoView, []*AccessGroupId{groupM2N1, groupM2B}, []*AccessGroupId{memberM2GroupM2N1})
+		_verifyGroupIdsForUser(t, m3PubBytes, utxoView, []*AccessGroupId{groupM3N1, groupM3B}, []*AccessGroupId{memberM3GroupM2N1})
 	}
 	tv9.disconnectCallback = tv8.connectCallback
 	// Add a few more members to the access group (m3Pub, groupName1)
@@ -1017,17 +1061,27 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 		{AccessGroupMemberPublicKey: m2PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{2, 2, 2}, ExtraData: nil},
 		{AccessGroupMemberPublicKey: m3PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{3, 3, 3}, ExtraData: nil},
 	}
+	memberM0GroupM3N1 := &AccessGroupId{*m3PublicKey, *NewGroupKeyName(groupName1)}
+	memberM1GroupM3N1 := &AccessGroupId{*m3PublicKey, *NewGroupKeyName(groupName1)}
+	memberM2GroupM3N1 := &AccessGroupId{*m3PublicKey, *NewGroupKeyName(groupName1)}
+	memberM3GroupM3N1 := &AccessGroupId{*m3PublicKey, *NewGroupKeyName(groupName1)}
 	tv10 := _createAccessGroupMembersTestVector("TEST 10: (PASS) Connect access group members add transaction "+
 		"made by (m3Pub, groupName1) adding (pk0, BaseGroup), (pk1, BaseGroup), (pk2, BaseGroup), (pk3, BaseGroup)",
 		m3Priv, m3PubBytes, groupName1, tv10Members, AccessGroupMemberOperationTypeAdd, nil)
 	tv10.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey, m3PublicKey})
 		_verifyMembersList(tm, utxoView, m3PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey, m3PublicKey})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N4, groupM0B}, []*AccessGroupId{memberM0GroupM2N1, memberM0GroupM3N1})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1B}, []*AccessGroupId{memberM1GroupM2N1, memberM1GroupM3N1})
+		_verifyGroupIdsForUser(t, m2PubBytes, utxoView, []*AccessGroupId{groupM2N1, groupM2B}, []*AccessGroupId{memberM2GroupM2N1, memberM2GroupM3N1})
+		_verifyGroupIdsForUser(t, m3PubBytes, utxoView, []*AccessGroupId{groupM3N1, groupM3B}, []*AccessGroupId{memberM3GroupM2N1, memberM3GroupM3N1})
 	}
 	tv10.disconnectCallback = tv9.connectCallback
 	// Create a group (m1Pub, groupName3).
-	tv11 := _createAccessGroupCreateTestVector("TEST 11: (PASS) Connect access group create transaction "+
-		"creating (m1Pub, groupName3)", m1Priv, m1PubBytes, m1PubBytes, groupPk2, groupName3, nil, nil)
+	tv11 := _createAccessGroupTestVector("TEST 11: (PASS) Connect access group create transaction "+
+		"creating (m1Pub, groupName3)", m1Priv, m1PubBytes, m1PubBytes, groupPk2, groupName3,
+		AccessGroupOperationTypeCreate, nil, nil)
+	groupM1N3 := &AccessGroupId{*m1PublicKey, *NewGroupKeyName(groupName3)}
 	// Update members of group (m2Pub, groupName1).
 	// Membership [update]:
 	// (m0Pub, groupName4) ->
@@ -1063,6 +1117,10 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 	tv12.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey, m3PublicKey})
 		_verifyMembersList(tm, utxoView, m3PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey, m3PublicKey})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N4, groupM0B}, []*AccessGroupId{memberM0GroupM2N1, memberM0GroupM3N1})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1N3, groupM1B}, []*AccessGroupId{memberM1GroupM2N1, memberM1GroupM3N1})
+		_verifyGroupIdsForUser(t, m2PubBytes, utxoView, []*AccessGroupId{groupM2N1, groupM2B}, []*AccessGroupId{memberM2GroupM2N1, memberM2GroupM3N1})
+		_verifyGroupIdsForUser(t, m3PubBytes, utxoView, []*AccessGroupId{groupM3N1, groupM3B}, []*AccessGroupId{memberM3GroupM2N1, memberM3GroupM3N1})
 	}
 	// Now delete half members of group (m2Pub, groupName1).
 	// Membership [delete]:
@@ -1086,6 +1144,10 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 	tv13.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m2PublicKey, m3PublicKey})
 		_verifyMembersList(tm, utxoView, m3PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey, m3PublicKey})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N4, groupM0B}, []*AccessGroupId{memberM0GroupM3N1})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1N3, groupM1B}, []*AccessGroupId{memberM1GroupM3N1})
+		_verifyGroupIdsForUser(t, m2PubBytes, utxoView, []*AccessGroupId{groupM2N1, groupM2B}, []*AccessGroupId{memberM2GroupM2N1, memberM2GroupM3N1})
+		_verifyGroupIdsForUser(t, m3PubBytes, utxoView, []*AccessGroupId{groupM3N1, groupM3B}, []*AccessGroupId{memberM3GroupM2N1, memberM3GroupM3N1})
 	}
 	tv13.disconnectCallback = tv12.connectCallback
 	// Try updating one of the removed members as a sanity-check, should fail.
@@ -1116,6 +1178,10 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 	tv15.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m2PublicKey, m3PublicKey})
 		_verifyMembersList(tm, utxoView, m3PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m3PublicKey})
+		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0N4, groupM0B}, []*AccessGroupId{})
+		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1N3, groupM1B}, []*AccessGroupId{})
+		_verifyGroupIdsForUser(t, m2PubBytes, utxoView, []*AccessGroupId{groupM2N1, groupM2B}, []*AccessGroupId{memberM2GroupM2N1})
+		_verifyGroupIdsForUser(t, m3PubBytes, utxoView, []*AccessGroupId{groupM3N1, groupM3B}, []*AccessGroupId{memberM3GroupM2N1, memberM3GroupM3N1})
 	}
 	tv15.disconnectCallback = tv13.connectCallback
 	// Update both of the members of (m2Pub, groupName1).
@@ -1138,10 +1204,7 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 	tv16 := _createAccessGroupMembersTestVector("TEST 16: (PASS) Connect access group members update transaction "+
 		"made by (m2Pub, groupName1) updating (pk2, baseGroup) and (pk3, baseGroup)",
 		m2Priv, m2PubBytes, groupName1, tv16Members, AccessGroupMemberOperationTypeUpdate, nil)
-	tv16.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
-		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m2PublicKey, m3PublicKey})
-		_verifyMembersList(tm, utxoView, m3PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m3PublicKey})
-	}
+	tv16.connectCallback = tv15.connectCallback
 	tv16.disconnectCallback = tv15.connectCallback
 	// Update the member of (m3Pub, groupName1).
 	tv17Members := []*AccessGroupMember{
@@ -1151,10 +1214,7 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 	tv17 := _createAccessGroupMembersTestVector("TEST 17: (PASS) Connect access group members update transaction "+
 		"made by (m3Pub, groupName1) updating (pk3, baseGroup)",
 		m3Priv, m3PubBytes, groupName1, tv17Members, AccessGroupMemberOperationTypeUpdate, nil)
-	tv17.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
-		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m2PublicKey, m3PublicKey})
-		_verifyMembersList(tm, utxoView, m3PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m3PublicKey})
-	}
+	tv17.connectCallback = tv16.connectCallback
 	tv17.disconnectCallback = tv16.connectCallback
 	tvv2 := []*transactionTestVector{tv9, tv10, tv11, tv12, tv13, tv14, tv15, tv16, tv17}
 	tvb2ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
@@ -1432,4 +1492,17 @@ func _verifyMembersList(tm *transactionTestMeta, utxoView *UtxoView, accessGroup
 	loopWithPaginatedCalls(5)
 	loopWithPaginatedCalls(10)
 	loopWithPaginatedCalls(math.MaxUint32)
+}
+
+func _setAccessGroupParams(tm *transactionTestMeta) {
+	tm.params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
+	tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
+	tm.params.EncoderMigrationHeights.DeSoUnlimitedDerivedKeys.Height = 0
+	tm.params.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
+	GlobalDeSoParams.EncoderMigrationHeights.DeSoUnlimitedDerivedKeys.Height = 0
+	GlobalDeSoParams.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
+	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
+		tm.params.EncoderMigrationHeightsList[ii].Height = 0
+		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 0
+	}
 }

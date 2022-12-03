@@ -108,7 +108,7 @@ var (
 type transactionTestInputType byte
 
 const (
-	transactionTestInputTypeAccessGroupCreate transactionTestInputType = iota
+	transactionTestInputTypeAccessGroup transactionTestInputType = iota
 	transactionTestInputTypeAccessGroupMembers
 )
 

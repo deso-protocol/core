@@ -351,7 +351,7 @@ func (bav *UtxoView) _setAccessGroupIdToSortedGroupMemberPublicKeys(groupOwnerPu
 }
 
 // _connectAccessGroupMembers is used to connect a AccessGroupMembers transaction to the UtxoView. This transaction
-// is used to update members of an existing access group that was previously created via AccessGroupCreate transaction.
+// is used to update members of an existing access group that was previously created via AccessGroup transaction.
 // Member updates comprise operations such as adding a new member, removing an existing member, or modifying an existing
 // member's entry.
 //
@@ -483,7 +483,7 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 			// If the access group member already exists, and wasn't deleted, we error because we can't add the same member twice.
 			if memberGroupEntry != nil && !memberGroupEntry.isDeleted {
 				return 0, 0, nil, errors.Wrapf(
-					RuleErrorAccessMemberAlreadyExists, "_connectAccessGroupCreate: member already exists "+
+					RuleErrorAccessMemberAlreadyExists, "_connectAccessGroup: member already exists "+
 						"for member with (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName %v)",
 					accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
 			}
@@ -836,7 +836,7 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 			}
 		}
 	default:
-		return errors.Wrapf(RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroupCreate: "+
+		return errors.Wrapf(RuleErrorAccessGroupMemberOperationTypeNotSupported, "_connectAccessGroup: "+
 			"Operation type %v not supported.", txMeta.AccessGroupMemberOperationType)
 	}
 

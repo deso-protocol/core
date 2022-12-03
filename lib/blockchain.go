@@ -4194,20 +4194,22 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
-func (bc *Blockchain) CreateAccessGroupCreateTxn(
+func (bc *Blockchain) CreateAccessGroupTxn(
 	userPublicKey []byte,
 	accessGroupPublicKey []byte,
 	accessGroupKeyName []byte,
+	operationType AccessGroupOperationType,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	txn := &MsgDeSoTxn{
 		PublicKey: userPublicKey,
-		TxnMeta: &AccessGroupCreateMetadata{
+		TxnMeta: &AccessGroupMetadata{
 			AccessGroupOwnerPublicKey: userPublicKey,
 			AccessGroupPublicKey:      accessGroupPublicKey,
 			AccessGroupKeyName:        accessGroupKeyName,
+			AccessGroupOperationType:  operationType,
 		},
 		ExtraData: extraData,
 		TxOutputs: additionalOutputs,
@@ -4217,12 +4219,12 @@ func (bc *Blockchain) CreateAccessGroupCreateTxn(
 	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAccessGroupCreateTxn: Problem adding inputs: ")
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAccessGroupTxn: Problem adding inputs: ")
 	}
 
 	// Sanity-check that the spend amount is non-zero.
 	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateAccessGroupCreateTxn: Spend amount is zero")
+		return nil, 0, 0, 0, fmt.Errorf("CreateAccessGroupTxn: Spend amount is zero")
 	}
 
 	return txn, totalInput, changeAmount, fees, nil

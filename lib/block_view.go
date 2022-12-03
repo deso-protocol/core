@@ -1045,9 +1045,9 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		return bav._disconnectAuthorizeDerivedKey(
 			OperationTypeAuthorizeDerivedKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
-		return bav._disconnectAccessGroupCreate(
-			OperationTypeCreateAccessGroup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAccessGroup {
+		return bav._disconnectAccessGroup(
+			OperationTypeAccessGroup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {
 		return bav._disconnectAccessGroupMembers(
@@ -2429,9 +2429,9 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			bav._connectAuthorizeDerivedKey(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroup {
 		totalInput, totalOutput, utxoOpsForTxn, err =
-			bav._connectAccessGroupCreate(
+			bav._connectAccessGroup(
 				txn, txHash, blockHeight, verifySignatures)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {

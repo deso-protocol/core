@@ -152,7 +152,7 @@ type PGTransaction struct {
 	MetadataDAOCoin             *PGMetadataDAOCoin             `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataDAOCoinTransfer     *PGMetadataDAOCoinTransfer     `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataDAOCoinLimitOrder   *PGMetadataDAOCoinLimitOrder   `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataAccessGroupCreate   *PGMetadataAccessGroupCreate   `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAccessGroup         *PGMetadataAccessGroup         `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataAccessGroupMembers  *PGMetadataAccessGroupMembers  `pg:"rel:belongs-to,join_fk:transaction_hash"`
 }
 
@@ -439,7 +439,7 @@ type PGMetadataDAOCoinLimitOrderBidderInputs struct {
 	InputIndex      uint32     `pg:",pk,use_zero"`
 }
 
-type PGMetadataAccessGroupCreate struct {
+type PGMetadataAccessGroup struct {
 	tableName struct{} `pg:"pg_metadata_access_group_create"`
 
 	TransactionHash           *BlockHash    `pg:",pk,type:bytea"`
@@ -1146,7 +1146,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	var metadataDAOCoinTransfer []*PGMetadataDAOCoinTransfer
 	var metadataDAOCoinLimitOrder []*PGMetadataDAOCoinLimitOrder
 	var metadataDAOCoinLimitOrderBidderInputs []*PGMetadataDAOCoinLimitOrderBidderInputs
-	var metadataAccessGroupCreate []*PGMetadataAccessGroupCreate
+	var metadataAccessGroup []*PGMetadataAccessGroup
 	var metadataAccessGroupMembers []*PGMetadataAccessGroupMembers
 
 	blockHash := blockNode.Hash
@@ -1495,10 +1495,10 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 
 			// FIXME: Skip PGMetadataMessagingGroup for now since it's not used downstream
 
-		} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
-			txMeta := txn.TxnMeta.(*AccessGroupCreateMetadata)
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroup {
+			txMeta := txn.TxnMeta.(*AccessGroupMetadata)
 
-			metadataAccessGroupCreate = append(metadataAccessGroupCreate, &PGMetadataAccessGroupCreate{
+			metadataAccessGroup = append(metadataAccessGroup, &PGMetadataAccessGroup{
 				TransactionHash:           txnHash,
 				AccessGroupOwnerPublicKey: NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
 				AccessGroupKeyName:        NewGroupKeyName(txMeta.AccessGroupKeyName),
@@ -1847,13 +1847,13 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		}
 	}
 
-	if len(metadataAccessGroupCreate) > 0 {
+	if len(metadataAccessGroup) > 0 {
 		if !delete {
-			if _, err := tx.Model(&metadataAccessGroupCreate).Returning("NULL").Insert(); err != nil {
+			if _, err := tx.Model(&metadataAccessGroup).Returning("NULL").Insert(); err != nil {
 				return err
 			}
 		} else {
-			if _, err := tx.Model(&metadataAccessGroupCreate).Returning("NULL").Delete(); err != nil {
+			if _, err := tx.Model(&metadataAccessGroup).Returning("NULL").Delete(); err != nil {
 				return err
 			}
 		}
@@ -3186,8 +3186,8 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
-		Order("block_height ASC"). // Then oldest first (FIFO)
-		Order("order_id DESC"). // Then match BadgerDB ordering
+		Order("block_height ASC").                                        // Then oldest first (FIFO)
+		Order("order_id DESC").                                           // Then match BadgerDB ordering
 		Select()
 
 	if err != nil {

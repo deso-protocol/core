@@ -108,6 +108,8 @@ const (
 	RuleErrorAccessPublicKeyCannotBeOwnerKey             RuleError = "RuleErrorAccessPublicKeyCannotBeOwnerKey"
 	RuleErrorAccessGroupOwnerPublicKeyCannotBeDifferent  RuleError = "RuleErrorAccessGroupOwnerPublicKeyCannotBeDifferent"
 	RuleErrorAccessGroupAlreadyExists                    RuleError = "RuleErrorAccessGroupAlreadyExists"
+	RuleErrorAccessGroupDoesNotExist                     RuleError = "RuleErrorAccessGroupDoesNotExist"
+	RuleErrorAccessGroupOperationTypeNotSupported        RuleError = "RuleErrorAccessGroupOperationTypeNotSupported"
 	RuleErrorAccessGroupMembersBeforeBlockHeight         RuleError = "RuleErrorAccessGroupMembersBeforeBlockHeight"
 	RuleErrorAccessGroupDoesntExist                      RuleError = "RuleErrorAccessGroupDoesntExist"
 	RuleErrorAccessGroupKeyNameTooShort                  RuleError = "RuleErrorAccessGroupKeyNameTooShort"

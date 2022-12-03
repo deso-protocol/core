@@ -526,7 +526,7 @@ const (
 	OperationTypeDAOCoinTransfer              OperationType = 26
 	OperationTypeSpendingLimitAccounting      OperationType = 27
 	OperationTypeDAOCoinLimitOrder            OperationType = 28
-	OperationTypeCreateAccessGroup            OperationType = 29
+	OperationTypeAccessGroup                  OperationType = 29
 	OperationTypeAccessGroupMembers           OperationType = 30
 
 	// NEXT_TAG = 31
@@ -646,9 +646,9 @@ func (op OperationType) String() string {
 		{
 			return "OperationTypeDAOCoinLimitOrder"
 		}
-	case OperationTypeCreateAccessGroup:
+	case OperationTypeAccessGroup:
 		{
-			return "OperationTypeCreateAccessGroup"
+			return "OperationTypeAccessGroup"
 		}
 	case OperationTypeAccessGroupMembers:
 		{
@@ -808,6 +808,10 @@ type UtxoOperation struct {
 	// that represent all orders fulfilled by the DAO Coin Limit Order transaction.
 	// These are used to construct notifications for order fulfillment.
 	FilledDAOCoinLimitOrders []*FilledDAOCoinLimitOrder
+
+	// PrevAccessGroupEntry is the previous access group entry. It is used in
+	// access group transactions to revert the access group after an update operation.
+	PrevAccessGroupEntry *AccessGroupEntry
 
 	// PrevAccessGroupMembersList is a list of previous access group member entries.
 	// It is used in operations that modify existing access group members, such as
@@ -1101,8 +1105,11 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 	// DeSoAccessGroupsMigration Encoder Migration
 	//
 
-	// PrevAccessGroupMembersList
 	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		// PrevAccessGroupEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevAccessGroupEntry, skipMetadata...)...)
+
+		// PrevAccessGroupMembersList
 		data = append(data, UintToBuf(uint64(len(op.PrevAccessGroupMembersList)))...)
 		for _, entry := range op.PrevAccessGroupMembersList {
 			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
@@ -1647,8 +1654,16 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	// DeSoAccessGroupsMigration Encoder Migration
 	//
 
-	// PrevAccessGroupMembersList
 	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		// PrevAccessGroupEntry
+		accessGroupEntry := &AccessGroupEntry{}
+		if exist, err := DecodeFromBytes(accessGroupEntry, rr); exist && err == nil {
+			op.PrevAccessGroupEntry = accessGroupEntry
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevAccessGroupEntry")
+		}
+
+		// PrevAccessGroupMembersList
 		if lenPrevAccessGroupMembersList, err := ReadUvarint(rr); err == nil {
 			for ; lenPrevAccessGroupMembersList > 0; lenPrevAccessGroupMembersList-- {
 				accessGroupMemberEntry := &AccessGroupMemberEntry{}

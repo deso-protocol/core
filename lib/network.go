@@ -227,7 +227,7 @@ const (
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
 	TxnTypeDAOCoinLimitOrder            TxnType = 26
-	TxnTypeAccessGroupCreate            TxnType = 27
+	TxnTypeAccessGroup                  TxnType = 27
 	TxnTypeAccessGroupMembers           TxnType = 28
 
 	// NEXT_ID = 29
@@ -262,7 +262,7 @@ const (
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
 	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
-	TxnStringAccessGroupCreate            TxnString = "ACCESS_GROUP_CREATE"
+	TxnStringAccessGroup                  TxnString = "ACCESS_GROUP_CREATE"
 	TxnStringAccessGroupMembers           TxnString = "ACCESS_GROUP_MEMBERS"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
@@ -274,7 +274,7 @@ var (
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
-		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeAccessGroupCreate,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeAccessGroup,
 		TxnTypeAccessGroupMembers,
 	}
 	AllTxnString = []TxnString{
@@ -283,7 +283,7 @@ var (
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
-		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringAccessGroupCreate,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringAccessGroup,
 		TxnStringAccessGroupMembers,
 	}
 )
@@ -350,8 +350,8 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringDAOCoinTransfer
 	case TxnTypeDAOCoinLimitOrder:
 		return TxnStringDAOCoinLimitOrder
-	case TxnTypeAccessGroupCreate:
-		return TxnStringAccessGroupCreate
+	case TxnTypeAccessGroup:
+		return TxnStringAccessGroup
 	case TxnTypeAccessGroupMembers:
 		return TxnStringAccessGroupMembers
 	default:
@@ -413,8 +413,8 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeDAOCoinTransfer
 	case TxnStringDAOCoinLimitOrder:
 		return TxnTypeDAOCoinLimitOrder
-	case TxnStringAccessGroupCreate:
-		return TxnTypeAccessGroupCreate
+	case TxnStringAccessGroup:
+		return TxnTypeAccessGroup
 	case TxnStringAccessGroupMembers:
 		return TxnTypeAccessGroupMembers
 	default:
@@ -484,8 +484,8 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinTransferMetadata{}).New(), nil
 	case TxnTypeDAOCoinLimitOrder:
 		return (&DAOCoinLimitOrderMetadata{}).New(), nil
-	case TxnTypeAccessGroupCreate:
-		return (&AccessGroupCreateMetadata{}).New(), nil
+	case TxnTypeAccessGroup:
+		return (&AccessGroupMetadata{}).New(), nil
 	case TxnTypeAccessGroupMembers:
 		return (&AccessGroupMembersMetadata{}).New(), nil
 	default:
@@ -6578,58 +6578,73 @@ func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 }
 
 // =======================================================================================
-// AccessGroupCreateMetadata
+// AccessGroupMetadata
 // =======================================================================================
 
-type AccessGroupCreateMetadata struct {
+type AccessGroupOperationType uint8
+
+const (
+	AccessGroupOperationTypeCreate AccessGroupOperationType = 0
+	AccessGroupOperationTypeUpdate AccessGroupOperationType = 1
+)
+
+type AccessGroupMetadata struct {
 	AccessGroupOwnerPublicKey []byte
 	AccessGroupPublicKey      []byte
 	AccessGroupKeyName        []byte
+	AccessGroupOperationType
 }
 
-func (txnData *AccessGroupCreateMetadata) GetTxnType() TxnType {
-	return TxnTypeAccessGroupCreate
+func (txnData *AccessGroupMetadata) GetTxnType() TxnType {
+	return TxnTypeAccessGroup
 }
 
-func (txnData *AccessGroupCreateMetadata) ToBytes(preSignature bool) ([]byte, error) {
+func (txnData *AccessGroupMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 
 	data = append(data, EncodeByteArray(txnData.AccessGroupOwnerPublicKey)...)
 	data = append(data, EncodeByteArray(txnData.AccessGroupPublicKey)...)
 	data = append(data, EncodeByteArray(txnData.AccessGroupKeyName)...)
-
+	data = append(data, UintToBuf(uint64(txnData.AccessGroupOperationType))...)
 	return data, nil
 }
 
-func (txnData *AccessGroupCreateMetadata) FromBytes(data []byte) error {
-	ret := AccessGroupCreateMetadata{}
+func (txnData *AccessGroupMetadata) FromBytes(data []byte) error {
+	ret := AccessGroupMetadata{}
 	rr := bytes.NewReader(data)
 
 	var err error
 	ret.AccessGroupOwnerPublicKey, err = DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "AccessGroupCreateMetadata.FromBytes: "+
+		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
 			"Problem reading AccessGroupOwnerPublicKey")
 	}
 
 	ret.AccessGroupPublicKey, err = DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "AccessGroupCreateMetadata.FromBytes: "+
+		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
 			"Problem reading AccessGroupPublicKey")
 	}
 
 	ret.AccessGroupKeyName, err = DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "AccessGroupCreateMetadata.FromBytes: "+
+		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
 			"Problem reading AccessGroupKeyName")
 	}
+
+	accessGroupOperationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
+			"Problem reading AccessGroupOperationType")
+	}
+	ret.AccessGroupOperationType = AccessGroupOperationType(accessGroupOperationType)
 
 	*txnData = ret
 	return nil
 }
 
-func (txnData *AccessGroupCreateMetadata) New() DeSoTxnMetadata {
-	return &AccessGroupCreateMetadata{}
+func (txnData *AccessGroupMetadata) New() DeSoTxnMetadata {
+	return &AccessGroupMetadata{}
 }
 
 // =======================================================================================
