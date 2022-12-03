@@ -1173,6 +1173,32 @@ func TestBasicTransfer(t *testing.T) {
 	recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
 	require.NoError(err)
 
+	// A basic transfer with input value set should fail during AddInputsAndChangeToTransaction
+	t.Run("txn_with_inputs_should_fail", func(t *testing.T) {
+		txn := &MsgDeSoTxn{
+			// The inputs will be set below.
+			TxInputs: []*DeSoInput{&DeSoInput{
+				TxID: BlockHash{},
+			}},
+			TxOutputs: []*DeSoOutput{
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 1,
+				},
+			},
+			PublicKey: senderPkBytes,
+			TxnMeta:   &BasicTransferMetadata{},
+		}
+
+		_, _, _, _, err :=
+			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+		require.Error(err)
+
+		require.Contains(err.Error(), fmt.Sprintf("_computeInputsForTxn: Transaction passed in "+
+			"txArg should not have any inputs set but found the found %d inputs",
+			len(txn.TxInputs)))
+	})
+
 	// A basic transfer whose input public keys differ from the
 	// transaction-level public key should fail.
 	t.Run("txn_public_txb_keys_differ", func(t *testing.T) {
