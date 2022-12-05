@@ -324,24 +324,24 @@ type DBPrefixes struct {
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
 
 	// User Association prefixes
-	// PrefixUserAssociationByID:             AssociationID
-	// PrefixUserAssociationByTransactorPKID: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
-	// PrefixUserAssociationByTargetUserPKID: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
-	// PrefixUserAssociationByUserPKIDs:      TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
-	PrefixUserAssociationByID             []byte `prefix_id:"[63]" is_state:"true"`
-	PrefixUserAssociationByTransactorPKID []byte `prefix_id:"[64]" is_state:"true"`
-	PrefixUserAssociationByTargetUserPKID []byte `prefix_id:"[65]" is_state:"true"`
-	PrefixUserAssociationByUserPKIDs      []byte `prefix_id:"[66]" is_state:"true"`
+	// PrefixUserAssociationByID:         AssociationID
+	// PrefixUserAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
+	// PrefixUserAssociationByTargetUser: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
+	// PrefixUserAssociationByUsers:      TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
+	PrefixUserAssociationByID         []byte `prefix_id:"[63]" is_state:"true"`
+	PrefixUserAssociationByTransactor []byte `prefix_id:"[64]" is_state:"true"`
+	PrefixUserAssociationByTargetUser []byte `prefix_id:"[65]" is_state:"true"`
+	PrefixUserAssociationByUsers      []byte `prefix_id:"[66]" is_state:"true"`
 
 	// Post Association prefixes
-	// PrefixPostAssociationByID:              AssociationID
-	// PrefixPostAssociationByTransactorPKID:  TransactorPKID, AssociationType, AssociationValue, PostHash
-	// PrefixPostAssociationByPostHash:        PostHash, AssociationType, AssociationValue, TransactorPKID
-	// PrefixPostAssociationByAssociationType: AssociationType, AssociationValue, PostHash, TransactorPKID
-	PrefixPostAssociationByID              []byte `prefix_id:"[67]" is_state:"true"`
-	PrefixPostAssociationByTransactorPKID  []byte `prefix_id:"[68]" is_state:"true"`
-	PrefixPostAssociationByPostHash        []byte `prefix_id:"[69]" is_state:"true"`
-	PrefixPostAssociationByAssociationType []byte `prefix_id:"[70]" is_state:"true"`
+	// PrefixPostAssociationByID:         AssociationID
+	// PrefixPostAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, PostHash
+	// PrefixPostAssociationByPost:       PostHash, AssociationType, AssociationValue, TransactorPKID
+	// PrefixPostAssociationByType:       AssociationType, AssociationValue, PostHash, TransactorPKID
+	PrefixPostAssociationByID         []byte `prefix_id:"[67]" is_state:"true"`
+	PrefixPostAssociationByTransactor []byte `prefix_id:"[68]" is_state:"true"`
+	PrefixPostAssociationByPost       []byte `prefix_id:"[69]" is_state:"true"`
+	PrefixPostAssociationByType       []byte `prefix_id:"[70]" is_state:"true"`
 
 	// NEXT_TAG: 71
 }
@@ -503,25 +503,25 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByID) {
 		// prefix_id:"[63]"
 		return true, &UserAssociationEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByTransactorPKID) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByTransactor) {
 		// prefix_id:"[64]"
 		return true, &BlockHash{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByTargetUserPKID) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByTargetUser) {
 		// prefix_id:"[65]"
 		return true, &BlockHash{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByUserPKIDs) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByUsers) {
 		// prefix_id:"[66]"
 		return true, &BlockHash{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByID) {
 		// prefix_id:"[67]"
 		return true, &PostAssociationEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByTransactorPKID) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByTransactor) {
 		// prefix_id:"[68]"
 		return true, &BlockHash{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByPostHash) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByPost) {
 		// prefix_id:"[69]"
 		return true, &BlockHash{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByAssociationType) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByType) {
 		// prefix_id:"[70]"
 		return true, &BlockHash{}
 	}
@@ -8353,10 +8353,10 @@ func DBKeyForUserAssociationByID(associationEntry *UserAssociationEntry) []byte 
 	return key
 }
 
-func DBKeyForUserAssociationByTransactorPKID(associationEntry *UserAssociationEntry) []byte {
+func DBKeyForUserAssociationByTransactor(associationEntry *UserAssociationEntry) []byte {
 	// TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
 	var key []byte
-	key = append(key, Prefixes.PrefixUserAssociationByTransactorPKID...)
+	key = append(key, Prefixes.PrefixUserAssociationByTransactor...)
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
 	key = append(key, []byte(strings.ToLower(associationEntry.AssociationType))...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
@@ -8366,10 +8366,10 @@ func DBKeyForUserAssociationByTransactorPKID(associationEntry *UserAssociationEn
 	return key
 }
 
-func DBKeyForUserAssociationByTargetUserPKID(associationEntry *UserAssociationEntry) []byte {
+func DBKeyForUserAssociationByTargetUser(associationEntry *UserAssociationEntry) []byte {
 	// TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
 	var key []byte
-	key = append(key, Prefixes.PrefixUserAssociationByTargetUserPKID...)
+	key = append(key, Prefixes.PrefixUserAssociationByTargetUser...)
 	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
 	key = append(key, []byte(strings.ToLower(associationEntry.AssociationType))...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
@@ -8379,10 +8379,10 @@ func DBKeyForUserAssociationByTargetUserPKID(associationEntry *UserAssociationEn
 	return key
 }
 
-func DBKeyForUserAssociationByUserPKIDs(associationEntry *UserAssociationEntry) []byte {
+func DBKeyForUserAssociationByUsers(associationEntry *UserAssociationEntry) []byte {
 	// TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
 	var key []byte
-	key = append(key, Prefixes.PrefixUserAssociationByUserPKIDs...)
+	key = append(key, Prefixes.PrefixUserAssociationByUsers...)
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
 	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
 	key = append(key, []byte(strings.ToLower(associationEntry.AssociationType))...)
@@ -8400,10 +8400,10 @@ func DBKeyForPostAssociationByID(associationEntry *PostAssociationEntry) []byte 
 	return key
 }
 
-func DBKeyForPostAssociationByTransactorPKID(associationEntry *PostAssociationEntry) []byte {
+func DBKeyForPostAssociationByTransactor(associationEntry *PostAssociationEntry) []byte {
 	// TransactorPKID, AssociationType, AssociationValue, PostHash
 	var key []byte
-	key = append(key, Prefixes.PrefixPostAssociationByTransactorPKID...)
+	key = append(key, Prefixes.PrefixPostAssociationByTransactor...)
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
 	key = append(key, []byte(strings.ToLower(associationEntry.AssociationType))...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
@@ -8413,10 +8413,10 @@ func DBKeyForPostAssociationByTransactorPKID(associationEntry *PostAssociationEn
 	return key
 }
 
-func DBKeyForPostAssociationByPostHash(associationEntry *PostAssociationEntry) []byte {
+func DBKeyForPostAssociationByPost(associationEntry *PostAssociationEntry) []byte {
 	// PostHash, AssociationType, AssociationValue, TransactorPKID
 	var key []byte
-	key = append(key, Prefixes.PrefixPostAssociationByPostHash...)
+	key = append(key, Prefixes.PrefixPostAssociationByPost...)
 	key = append(key, associationEntry.PostHash.ToBytes()...)
 	key = append(key, []byte(strings.ToLower(associationEntry.AssociationType))...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
@@ -8426,10 +8426,10 @@ func DBKeyForPostAssociationByPostHash(associationEntry *PostAssociationEntry) [
 	return key
 }
 
-func DBKeyForPostAssociationByAssociationType(associationEntry *PostAssociationEntry) []byte {
+func DBKeyForPostAssociationByType(associationEntry *PostAssociationEntry) []byte {
 	// AssociationType, AssociationValue, PostHash, TransactorPKID
 	var key []byte
-	key = append(key, Prefixes.PrefixPostAssociationByAssociationType...)
+	key = append(key, Prefixes.PrefixPostAssociationByType...)
 	key = append(key, []byte(strings.ToLower(associationEntry.AssociationType))...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	key = append(key, []byte(associationEntry.AssociationValue)...)
@@ -8513,7 +8513,7 @@ func DBGetUserAssociationByAttributes(handle *badger.DB, snap *Snapshot, queryEn
 
 func DBGetUserAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, queryEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
 	// Retrieve association ID from db.
-	key := DBKeyForUserAssociationByTransactorPKID(queryEntry)
+	key := DBKeyForUserAssociationByTransactor(queryEntry)
 	associationBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		// We don't want to error if the key isn't found. Instead, return nil.
@@ -8546,7 +8546,7 @@ func DBGetPostAssociationByAttributes(handle *badger.DB, snap *Snapshot, queryEn
 
 func DBGetPostAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, queryEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
 	// Retrieve association ID from db.
-	key := DBKeyForPostAssociationByTransactorPKID(queryEntry)
+	key := DBKeyForPostAssociationByTransactor(queryEntry)
 	associationBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		// We don't want to error if the key isn't found. Instead, return nil.
@@ -8574,18 +8574,18 @@ func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 	// TransactorPKID + TargetUserPKID
 	if associationQuery.TransactorPKID != nil {
 		if associationQuery.TargetUserPKID != nil {
-			// PrefixUserAssociationByUserPKIDs: TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
-			keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByUserPKIDs...)
+			// PrefixUserAssociationByUsers: TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
+			keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByUsers...)
 			keyPrefix = append(keyPrefix, associationQuery.TransactorPKID.ToBytes()...)
 			keyPrefix = append(keyPrefix, associationQuery.TargetUserPKID.ToBytes()...)
 		} else {
-			// PrefixUserAssociationByTransactorPKID: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
-			keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByTransactorPKID...)
+			// PrefixUserAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
+			keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByTransactor...)
 			keyPrefix = append(keyPrefix, associationQuery.TransactorPKID.ToBytes()...)
 		}
 	} else if associationQuery.TargetUserPKID != nil {
-		// PrefixUserAssociationByTargetUserPKID: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
-		keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByTargetUserPKID...)
+		// PrefixUserAssociationByTargetUser: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
+		keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByTargetUser...)
 		keyPrefix = append(keyPrefix, associationQuery.TargetUserPKID.ToBytes()...)
 	} else {
 		// TransactorPKID == nil, TargetUserPKID == nil
@@ -8645,11 +8645,11 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 	var keyPrefix []byte
 
 	if associationQuery.TransactorPKID != nil {
-		// PrefixPostAssociationByTransactorPKID: TransactorPKID, AssociationType, AssociationValue, PostHash
+		// PrefixPostAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, PostHash
 		// TransactorPKID != nil
 
 		// TransactorPKID
-		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByTransactorPKID...)
+		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByTransactor...)
 		keyPrefix = append(keyPrefix, associationQuery.TransactorPKID.ToBytes()...)
 
 		// AssociationType
@@ -8682,11 +8682,11 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 		}
 
 	} else if associationQuery.PostHash != nil {
-		// PrefixPostAssociationByPostHash: PostHash, AssociationType, AssociationValue, TransactorPKID
+		// PrefixPostAssociationByPost: PostHash, AssociationType, AssociationValue, TransactorPKID
 		// TransactorPKID == nil, PostHash != nil
 
 		// PostHash
-		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByPostHash...)
+		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByPost...)
 		keyPrefix = append(keyPrefix, associationQuery.PostHash.ToBytes()...)
 
 		// AssociationType
@@ -8709,9 +8709,9 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 		}
 
 	} else {
-		// PrefixPostAssociationByAssociationType: AssociationType, AssociationValue, PostHash, TransactorPKID
+		// PrefixPostAssociationByType: AssociationType, AssociationValue, PostHash, TransactorPKID
 		// TransactorPKID == nil, PostHash == nil
-		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByAssociationType...)
+		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByType...)
 
 		// AssociationType
 		if associationQuery.AssociationType != "" {
@@ -8782,27 +8782,27 @@ func DBPutUserAssociationWithTxn(
 		)
 	}
 
-	// Store ID in index: PrefixUserAssociationByTransactorPKID.
-	key = DBKeyForUserAssociationByTransactorPKID(associationEntry)
+	// Store ID in index: PrefixUserAssociationByTransactor.
+	key = DBKeyForUserAssociationByTransactor(associationEntry)
 	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
 		return errors.Wrapf(
-			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTransactorPKID",
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTransactor",
 		)
 	}
 
-	// Store ID in index: PrefixUserAssociationByTargetUserPKID.
-	key = DBKeyForUserAssociationByTargetUserPKID(associationEntry)
+	// Store ID in index: PrefixUserAssociationByTargetUser.
+	key = DBKeyForUserAssociationByTargetUser(associationEntry)
 	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
 		return errors.Wrapf(
-			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTargetUserPKID",
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTargetUser",
 		)
 	}
 
-	// Store ID in index: PrefixUserAssociationByUserPKIDs.
-	key = DBKeyForUserAssociationByUserPKIDs(associationEntry)
+	// Store ID in index: PrefixUserAssociationByUsers.
+	key = DBKeyForUserAssociationByUsers(associationEntry)
 	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
 		return errors.Wrapf(
-			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByUserPKIDs")
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByUsers")
 	}
 	return nil
 }
@@ -8824,27 +8824,27 @@ func DBDeleteUserAssociationWithTxn(
 		)
 	}
 
-	// Delete from index: PrefixUserAssociationByTransactorPKID.
-	key = DBKeyForUserAssociationByTransactorPKID(associationEntry)
+	// Delete from index: PrefixUserAssociationByTransactor.
+	key = DBKeyForUserAssociationByTransactor(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTransactorPKID",
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTransactor",
 		)
 	}
 
-	// Delete from index: PrefixUserAssociationByTargetUserPKID.
-	key = DBKeyForUserAssociationByTargetUserPKID(associationEntry)
+	// Delete from index: PrefixUserAssociationByTargetUser.
+	key = DBKeyForUserAssociationByTargetUser(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTargetUserPKID",
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTargetUser",
 		)
 	}
 
-	// Delete from index: PrefixUserAssociationByUserPKIDs.
-	key = DBKeyForUserAssociationByUserPKIDs(associationEntry)
+	// Delete from index: PrefixUserAssociationByUsers.
+	key = DBKeyForUserAssociationByUsers(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByUserPKIDs",
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByUsers",
 		)
 	}
 	return nil
@@ -8870,27 +8870,27 @@ func DBPutPostAssociationWithTxn(
 		)
 	}
 
-	// Store ID in index: PrefixPostAssociationByTransactorPKID.
-	key = DBKeyForPostAssociationByTransactorPKID(associationEntry)
+	// Store ID in index: PrefixPostAssociationByTransactor.
+	key = DBKeyForPostAssociationByTransactor(associationEntry)
 	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
 		return errors.Wrapf(
-			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByTransactorPKID",
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByTransactor",
 		)
 	}
 
-	// Store ID in index: PrefixPostAssociationByPostHash.
-	key = DBKeyForPostAssociationByPostHash(associationEntry)
+	// Store ID in index: PrefixPostAssociationByPost.
+	key = DBKeyForPostAssociationByPost(associationEntry)
 	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
 		return errors.Wrapf(
-			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByPostHash",
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByPost",
 		)
 	}
 
-	// Store ID in index: PrefixPostAssociationByAssociationType.
-	key = DBKeyForPostAssociationByAssociationType(associationEntry)
+	// Store ID in index: PrefixPostAssociationByType.
+	key = DBKeyForPostAssociationByType(associationEntry)
 	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
 		return errors.Wrapf(
-			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByAssociationType",
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByType",
 		)
 	}
 	return nil
@@ -8913,27 +8913,27 @@ func DBDeletePostAssociationWithTxn(
 		)
 	}
 
-	// Delete from index: PrefixPostAssociationByTransactorPKID.
-	key = DBKeyForPostAssociationByTransactorPKID(associationEntry)
+	// Delete from index: PrefixPostAssociationByTransactor.
+	key = DBKeyForPostAssociationByTransactor(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByTransactorPKID",
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByTransactor",
 		)
 	}
 
-	// Delete from index: PrefixPostAssociationByPostHash.
-	key = DBKeyForPostAssociationByPostHash(associationEntry)
+	// Delete from index: PrefixPostAssociationByPost.
+	key = DBKeyForPostAssociationByPost(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByPostHash",
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByPost",
 		)
 	}
 
-	// Delete from index: PrefixPostAssociationByAssociationType.
-	key = DBKeyForPostAssociationByAssociationType(associationEntry)
+	// Delete from index: PrefixPostAssociationByType.
+	key = DBKeyForPostAssociationByType(associationEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByAssociationType",
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByType",
 		)
 	}
 	return nil
