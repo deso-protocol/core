@@ -3132,7 +3132,6 @@ func (postgres *Postgres) GetUserAssociationByID(associationID *BlockHash) (*Use
 		if err.Error() == "pg: no rows in result set" {
 			return nil, nil
 		}
-
 		return nil, err
 	}
 	return pgAssociation.ToUserAssociationEntry(), nil
@@ -3145,7 +3144,6 @@ func (postgres *Postgres) GetPostAssociationByID(associationID *BlockHash) (*Pos
 		if err.Error() == "pg: no rows in result set" {
 			return nil, nil
 		}
-
 		return nil, err
 	}
 	return pgAssociation.ToPostAssociationEntry(), nil
@@ -3165,7 +3163,6 @@ func (postgres *Postgres) GetUserAssociationByAttributes(associationEntry *UserA
 		if err.Error() == "pg: no rows in result set" {
 			return nil, nil
 		}
-
 		return nil, err
 	}
 	return pgAssociation.ToUserAssociationEntry(), nil
@@ -3185,7 +3182,6 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 		if err.Error() == "pg: no rows in result set" {
 			return nil, nil
 		}
-
 		return nil, err
 	}
 	return pgAssociation.ToPostAssociationEntry(), nil
@@ -3223,7 +3219,6 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(associationQuery *User
 		if err.Error() == "pg: no rows in result set" {
 			return nil, nil
 		}
-
 		return nil, err
 	}
 
@@ -3267,7 +3262,6 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(associationQuery *Post
 		if err.Error() == "pg: no rows in result set" {
 			return nil, nil
 		}
-
 		return nil, err
 	}
 
