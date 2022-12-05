@@ -75,6 +75,7 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 		AssociationID:    txHash,
 		TransactorPKID:   bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
 		TargetUserPKID:   bav.GetPKIDForPublicKey(txMeta.TargetUserPublicKey.ToBytes()).PKID,
+		AppUserPKID:      bav._associationAppUserPublicKeyToPKID(txMeta.AppUserPublicKey),
 		AssociationType:  txMeta.AssociationType,
 		AssociationValue: txMeta.AssociationValue,
 		BlockHeight:      blockHeight,
@@ -219,6 +220,7 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 		AssociationID:    txHash,
 		TransactorPKID:   bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
 		PostHash:         txMeta.PostHash,
+		AppUserPKID:      bav._associationAppUserPublicKeyToPKID(txMeta.AppUserPublicKey),
 		AssociationType:  txMeta.AssociationType,
 		AssociationValue: txMeta.AssociationValue,
 		BlockHeight:      blockHeight,
@@ -449,15 +451,32 @@ func (bav *UtxoView) IsValidCreateUserAssociationMetadata(transactorPK []byte, m
 	// Returns an error if the input metadata is invalid. Otherwise, returns nil.
 
 	// Validate TransactorPKID.
+	if transactorPK == nil {
+		return RuleErrorAssociationInvalidTransactor // This should never happen.
+	}
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPK)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
 		return RuleErrorAssociationInvalidTransactor
 	}
 
 	// Validate TargetUserPKID.
+	if metadata.TargetUserPublicKey == nil {
+		return RuleErrorUserAssociationInvalidTargetUser
+	}
 	targetUserPKIDEntry := bav.GetPKIDForPublicKey(metadata.TargetUserPublicKey.ToBytes())
 	if targetUserPKIDEntry == nil || targetUserPKIDEntry.isDeleted {
 		return RuleErrorUserAssociationInvalidTargetUser
+	}
+
+	// Validate AppUserPKID.
+	if metadata.AppUserPublicKey == nil {
+		return RuleErrorAssociationInvalidAppUser
+	}
+	if !metadata.AppUserPublicKey.IsZeroPublicKey() {
+		appUserPKIDEntry := bav.GetPKIDForPublicKey(metadata.AppUserPublicKey.ToBytes())
+		if appUserPKIDEntry == nil || appUserPKIDEntry.isDeleted {
+			return RuleErrorAssociationInvalidAppUser
+		}
 	}
 
 	// Validate AssociationType.
@@ -506,15 +525,32 @@ func (bav *UtxoView) IsValidCreatePostAssociationMetadata(transactorPK []byte, m
 	// Returns an error if the input metadata is invalid. Otherwise, returns nil.
 
 	// Validate TransactorPKID.
+	if transactorPK == nil {
+		return RuleErrorAssociationInvalidTransactor // This should never happen.
+	}
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPK)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
 		return RuleErrorAssociationInvalidTransactor
 	}
 
 	// Validate PostHash.
+	if metadata.PostHash == nil {
+		return RuleErrorPostAssociationInvalidPost
+	}
 	postEntry := bav.GetPostEntryForPostHash(metadata.PostHash)
 	if postEntry == nil || postEntry.isDeleted {
 		return RuleErrorPostAssociationInvalidPost
+	}
+
+	// Validate AppUserPKID.
+	if metadata.AppUserPublicKey == nil {
+		return RuleErrorAssociationInvalidAppUser
+	}
+	if !metadata.AppUserPublicKey.IsZeroPublicKey() {
+		appUserPKIDEntry := bav.GetPKIDForPublicKey(metadata.AppUserPublicKey.ToBytes())
+		if appUserPKIDEntry == nil || appUserPKIDEntry.isDeleted {
+			return RuleErrorAssociationInvalidAppUser
+		}
 	}
 
 	// Validate AssociationType.
@@ -599,6 +635,7 @@ func (bav *UtxoView) GetUserAssociationByAttributes(transactorPK []byte, metadat
 	associationEntry := &UserAssociationEntry{
 		TransactorPKID:   bav.GetPKIDForPublicKey(transactorPK).PKID,
 		TargetUserPKID:   bav.GetPKIDForPublicKey(metadata.TargetUserPublicKey.ToBytes()).PKID,
+		AppUserPKID:      bav._associationAppUserPublicKeyToPKID(metadata.AppUserPublicKey),
 		AssociationType:  metadata.AssociationType,
 		AssociationValue: metadata.AssociationValue,
 	}
@@ -622,6 +659,7 @@ func (bav *UtxoView) GetPostAssociationByAttributes(transactorPK []byte, metadat
 	associationEntry := &PostAssociationEntry{
 		TransactorPKID:   bav.GetPKIDForPublicKey(transactorPK).PKID,
 		PostHash:         metadata.PostHash,
+		AppUserPKID:      bav._associationAppUserPublicKeyToPKID(metadata.AppUserPublicKey),
 		AssociationType:  metadata.AssociationType,
 		AssociationValue: metadata.AssociationValue,
 	}
@@ -643,6 +681,7 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 	// Validate query params.
 	if associationQuery.TransactorPKID == nil &&
 		associationQuery.TargetUserPKID == nil &&
+		associationQuery.AppUserPKID == nil &&
 		associationQuery.AssociationType == "" &&
 		associationQuery.AssociationTypePrefix == "" &&
 		associationQuery.AssociationValue == "" &&
@@ -675,6 +714,11 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 		// If TargetUserPKID is set, they have to match.
 		if associationQuery.TargetUserPKID != nil &&
 			!associationQuery.TargetUserPKID.Eq(utxoAssociationEntry.TargetUserPKID) {
+			continue
+		}
+		// If AppUserPKID is set, they have to match.
+		if associationQuery.AppUserPKID != nil &&
+			!associationQuery.AppUserPKID.Eq(utxoAssociationEntry.AppUserPKID) {
 			continue
 		}
 		// If AssociationType is set, they have to match.
@@ -726,6 +770,7 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 	// Validate query params.
 	if associationQuery.TransactorPKID == nil &&
 		associationQuery.PostHash == nil &&
+		associationQuery.AppUserPKID == nil &&
 		associationQuery.AssociationType == "" &&
 		associationQuery.AssociationTypePrefix == "" &&
 		associationQuery.AssociationValue == "" &&
@@ -758,6 +803,11 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 		// If PostHash is set, they have to match.
 		if associationQuery.PostHash != nil &&
 			!associationQuery.PostHash.IsEqual(utxoAssociationEntry.PostHash) {
+			continue
+		}
+		// If AppUserPKID is set, they have to match.
+		if associationQuery.AppUserPKID != nil &&
+			!associationQuery.AppUserPKID.Eq(utxoAssociationEntry.AppUserPKID) {
 			continue
 		}
 		// If AssociationType is set, they have to match.
@@ -857,4 +907,15 @@ func (bav *UtxoView) _deletePostAssociationEntryMappings(entry *PostAssociationE
 
 	// Set the mappings to point to the tombstone entry.
 	bav._setPostAssociationEntryMappings(&tombstoneEntry)
+}
+
+// ###########################
+// ## HELPERS
+// ###########################
+
+func (bav *UtxoView) _associationAppUserPublicKeyToPKID(publicKey *PublicKey) *PKID {
+	if publicKey.IsZeroPublicKey() {
+		return &ZeroPKID
+	}
+	return bav.GetPKIDForPublicKey(publicKey.ToBytes()).PKID
 }
