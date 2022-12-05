@@ -3,12 +3,13 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
-	"github.com/brianvoe/gofakeit"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/brianvoe/gofakeit"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Initialize empty DeSoEncoders and check if they are encoded properly.
@@ -267,7 +268,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 	burnTxn2 := bitcoinExchangeTxns[1]
 
 	// Applying the full transaction with its merkle proof should work.
-	{
+	t.Run("utxo_entry_full_txn", func(t *testing.T) {
 		mempoolTxs, err := mempool.processTransaction(
 			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
 		require.NoError(err)
@@ -277,7 +278,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 		require.Equal(
 			mempoolTxRet.Tx.TxnMeta.(*BitcoinExchangeMetadata),
 			burnTxn1.TxnMeta.(*BitcoinExchangeMetadata))
-	}
+	})
 
 	// According to the mempool, the balance of the user whose public key created
 	// the Bitcoin burn transaction should now have some DeSo.
@@ -285,7 +286,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 	pkBytes3, _ := hex.DecodeString(BitcoinTestnetPub3)
 
 	// The mempool should be able to process a burn transaction directly.
-	{
+	t.Run("utxo_entry_burn_txn", func(t *testing.T) {
 		mempoolTxsAdded, err := mempool.processTransaction(
 			burnTxn2, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
 			true /*verifySignatures*/)
@@ -296,23 +297,23 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 		require.Equal(
 			mempoolTxRet.Tx.TxnMeta.(*BitcoinExchangeMetadata),
 			burnTxn2.TxnMeta.(*BitcoinExchangeMetadata))
-	}
+	})
 
 	// According to the mempool, the balances should have updated.
-	{
+	t.Run("utxo_entry_update_mempool_bal", func(t *testing.T) {
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes3, mempool, nil)
 		require.NoError(err)
 
 		require.Equal(1, len(utxoEntries))
 		assert.Equal(int64(3372255472), int64(utxoEntries[0].AmountNanos))
-	}
+	})
 
 	// If the mempool is not consulted, the balances should be zero.
-	{
+	t.Run("utxo_entry_mempool_bal_zero", func(t *testing.T) {
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes3, nil, nil)
 		require.NoError(err)
 		require.Equal(0, len(utxoEntries))
-	}
+	})
 
 	// Make the moneyPkString the paramUpdater so they can update the exchange rate.
 	rateUpdateIndex := 4
@@ -322,7 +323,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 	// Applying all the txns to the UtxoView should work. Include a rate update
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
-	{
+	t.Run("utxo_entry_update_txn", func(t *testing.T) {
 		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot)
 		require.NoError(err)
 
@@ -382,5 +383,5 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 
 		// Flushing the UtxoView should work.
 		require.NoError(utxoView.FlushToDb(0))
-	}
+	})
 }
