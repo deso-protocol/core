@@ -1177,7 +1177,7 @@ func TestBasicTransfer(t *testing.T) {
 	t.Run("txn_with_inputs_should_fail", func(t *testing.T) {
 		txn := &MsgDeSoTxn{
 			// The inputs will be set below.
-			TxInputs: []*DeSoInput{&DeSoInput{
+			TxInputs: []*DeSoInput{{
 				TxID: BlockHash{},
 			}},
 			TxOutputs: []*DeSoOutput{
