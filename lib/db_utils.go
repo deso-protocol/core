@@ -325,9 +325,9 @@ type DBPrefixes struct {
 
 	// User Association prefixes
 	// PrefixUserAssociationByID:         AssociationID
-	// PrefixUserAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
-	// PrefixUserAssociationByTargetUser: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
-	// PrefixUserAssociationByUsers:      TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
+	// PrefixUserAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID, AppUserPKID
+	// PrefixUserAssociationByTargetUser: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID, AppUserPKID
+	// PrefixUserAssociationByUsers:      TransactorPKID, TargetUserPKID, AssociationType, AssociationValue, AppUserPKID
 	PrefixUserAssociationByID         []byte `prefix_id:"[63]" is_state:"true"`
 	PrefixUserAssociationByTransactor []byte `prefix_id:"[64]" is_state:"true"`
 	PrefixUserAssociationByTargetUser []byte `prefix_id:"[65]" is_state:"true"`
@@ -335,9 +335,9 @@ type DBPrefixes struct {
 
 	// Post Association prefixes
 	// PrefixPostAssociationByID:         AssociationID
-	// PrefixPostAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, PostHash
-	// PrefixPostAssociationByPost:       PostHash, AssociationType, AssociationValue, TransactorPKID
-	// PrefixPostAssociationByType:       AssociationType, AssociationValue, PostHash, TransactorPKID
+	// PrefixPostAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, PostHash, AppUserPKID
+	// PrefixPostAssociationByPost:       PostHash, AssociationType, AssociationValue, TransactorPKID, AppUserPKID
+	// PrefixPostAssociationByType:       AssociationType, AssociationValue, PostHash, TransactorPKID, AppUserPKID
 	PrefixPostAssociationByID         []byte `prefix_id:"[67]" is_state:"true"`
 	PrefixPostAssociationByTransactor []byte `prefix_id:"[68]" is_state:"true"`
 	PrefixPostAssociationByPost       []byte `prefix_id:"[69]" is_state:"true"`
@@ -3692,8 +3692,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -7710,7 +7710,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -7837,7 +7837,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -8363,6 +8363,7 @@ func DBKeyForUserAssociationByTransactor(associationEntry *UserAssociationEntry)
 	key = append(key, []byte(associationEntry.AssociationValue)...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
+	key = append(key, associationEntry.AppUserPKID.ToBytes()...)
 	return key
 }
 
@@ -8376,6 +8377,7 @@ func DBKeyForUserAssociationByTargetUser(associationEntry *UserAssociationEntry)
 	key = append(key, []byte(associationEntry.AssociationValue)...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, associationEntry.AppUserPKID.ToBytes()...)
 	return key
 }
 
@@ -8389,6 +8391,7 @@ func DBKeyForUserAssociationByUsers(associationEntry *UserAssociationEntry) []by
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	key = append(key, []byte(associationEntry.AssociationValue)...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.AppUserPKID.ToBytes()...)
 	return key
 }
 
@@ -8410,6 +8413,7 @@ func DBKeyForPostAssociationByTransactor(associationEntry *PostAssociationEntry)
 	key = append(key, []byte(associationEntry.AssociationValue)...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.PostHash.ToBytes()...)
+	key = append(key, associationEntry.AppUserPKID.ToBytes()...)
 	return key
 }
 
@@ -8423,6 +8427,7 @@ func DBKeyForPostAssociationByPost(associationEntry *PostAssociationEntry) []byt
 	key = append(key, []byte(associationEntry.AssociationValue)...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, associationEntry.AppUserPKID.ToBytes()...)
 	return key
 }
 
@@ -8436,6 +8441,7 @@ func DBKeyForPostAssociationByType(associationEntry *PostAssociationEntry) []byt
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.PostHash.ToBytes()...)
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, associationEntry.AppUserPKID.ToBytes()...)
 	return key
 }
 
@@ -8611,6 +8617,17 @@ func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 		keyPrefix = append(keyPrefix, []byte(associationQuery.AssociationValuePrefix)...)
 	}
 
+	// AppUserPKID
+	if associationQuery.AppUserPKID != nil {
+		if associationQuery.TransactorPKID == nil ||
+			associationQuery.TargetUserPKID == nil ||
+			associationQuery.AssociationType == "" ||
+			associationQuery.AssociationValue == "" {
+			return nil, errors.New("DBGetUserAssociationsByAttributes: invalid query params")
+		}
+		keyPrefix = append(keyPrefix, associationQuery.AppUserPKID.ToBytes()...)
+	}
+
 	// Scan for all entries with the given key prefix.
 	_, valsFound := _enumerateKeysForPrefix(handle, keyPrefix)
 	var associationIDs []*BlockHash
@@ -8731,6 +8748,17 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 		} else if associationQuery.AssociationValuePrefix != "" {
 			keyPrefix = append(keyPrefix, []byte(associationQuery.AssociationValuePrefix)...)
 		}
+	}
+
+	// AppUserPKID
+	if associationQuery.AppUserPKID != nil {
+		if associationQuery.TransactorPKID == nil ||
+			associationQuery.PostHash == nil ||
+			associationQuery.AssociationType == "" ||
+			associationQuery.AssociationValue == "" {
+			return nil, errors.New("DBGetPostAssociationsByAttributes: invalid query params")
+		}
+		keyPrefix = append(keyPrefix, associationQuery.AppUserPKID.ToBytes()...)
 	}
 
 	// Scan for all entries with the given key prefix.

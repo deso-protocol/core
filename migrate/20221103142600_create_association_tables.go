@@ -12,6 +12,7 @@ func init() {
 			CREATE TABLE pg_metadata_create_user_association (
 				transaction_hash       BYTEA PRIMARY KEY,
 				target_user_public_key BYTEA NOT NULL,
+				app_user_public_key    BYTEA NOT NULL,
 				association_type       TEXT NOT NULL,
 				association_value      TEXT NOT NULL
 			);
@@ -34,10 +35,11 @@ func init() {
 		// Create pg_metadata_create_post_association table.
 		_, err = db.Exec(`
 			CREATE TABLE pg_metadata_create_post_association (
-				transaction_hash  BYTEA PRIMARY KEY,
-				post_hash         BYTEA NOT NULL,
-				association_type  TEXT NOT NULL,
-				association_value TEXT NOT NULL
+				transaction_hash    BYTEA PRIMARY KEY,
+				post_hash           BYTEA NOT NULL,
+				app_user_public_key BYTEA NOT NULL,
+				association_type    TEXT NOT NULL,
+				association_value   TEXT NOT NULL
 			);
 		`)
 		if err != nil {
@@ -61,6 +63,7 @@ func init() {
 				association_id    BYTEA PRIMARY KEY,
 				transactor_pkid   BYTEA NOT NULL,
 				target_user_pkid  BYTEA NOT NULL,
+				app_user_pkid     BYTEA NOT NULL,
 				association_type  TEXT NOT NULL,
 				association_value TEXT NOT NULL,
 				block_height      BIGINT NOT NULL
@@ -76,6 +79,7 @@ func init() {
 				association_id    BYTEA PRIMARY KEY,
 				transactor_pkid   BYTEA NOT NULL,
 				post_hash         BYTEA NOT NULL,
+				app_user_pkid     BYTEA NOT NULL,
 				association_type  TEXT NOT NULL,
 				association_value TEXT NOT NULL,
 				block_height      BIGINT NOT NULL
