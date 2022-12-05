@@ -446,6 +446,7 @@ type PGMetadataAccessGroup struct {
 	AccessGroupOwnerPublicKey *PublicKey    `pg:",type:bytea"`
 	AccessGroupKeyName        *GroupKeyName `pg:",type:bytea"`
 	AccessGroupPublicKey      *PublicKey    `pg:",type:bytea"`
+	OperationType             uint8         `pg:",type:smallint"`
 }
 
 type PGMetadataAccessGroupMembers struct {
@@ -1503,6 +1504,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				AccessGroupOwnerPublicKey: NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
 				AccessGroupKeyName:        NewGroupKeyName(txMeta.AccessGroupKeyName),
 				AccessGroupPublicKey:      NewPublicKey(txMeta.AccessGroupPublicKey),
+				OperationType:             uint8(txMeta.AccessGroupOperationType),
 			})
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {
 			txMeta := txn.TxnMeta.(*AccessGroupMembersMetadata)
@@ -3186,8 +3188,8 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
-		Order("block_height ASC").                                        // Then oldest first (FIFO)
-		Order("order_id DESC").                                           // Then match BadgerDB ordering
+		Order("block_height ASC"). // Then oldest first (FIFO)
+		Order("order_id DESC"). // Then match BadgerDB ordering
 		Select()
 
 	if err != nil {

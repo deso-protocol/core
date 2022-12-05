@@ -61,7 +61,8 @@ func init() {
 				transaction_hash              BYTEA PRIMARY KEY,
 				access_group_owner_public_key BYTEA NOT NULL,
 				access_group_key_name         BYTEA NOT NULL,
-				access_group_public_key       BYTEA NOT NULL
+				access_group_public_key       BYTEA NOT NULL,
+				operation_type                SMALLINT
 			);
 		`)
 		if err != nil {
