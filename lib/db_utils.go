@@ -325,9 +325,9 @@ type DBPrefixes struct {
 
 	// User Association prefixes
 	// PrefixUserAssociationByID:         AssociationID
-	// PrefixUserAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID, AppUserPKID
-	// PrefixUserAssociationByTargetUser: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID, AppUserPKID
-	// PrefixUserAssociationByUsers:      TransactorPKID, TargetUserPKID, AssociationType, AssociationValue, AppUserPKID
+	// PrefixUserAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID, AppPKID
+	// PrefixUserAssociationByTargetUser: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID, AppPKID
+	// PrefixUserAssociationByUsers:      TransactorPKID, TargetUserPKID, AssociationType, AssociationValue, AppPKID
 	PrefixUserAssociationByID         []byte `prefix_id:"[63]" is_state:"true"`
 	PrefixUserAssociationByTransactor []byte `prefix_id:"[64]" is_state:"true"`
 	PrefixUserAssociationByTargetUser []byte `prefix_id:"[65]" is_state:"true"`
@@ -335,9 +335,9 @@ type DBPrefixes struct {
 
 	// Post Association prefixes
 	// PrefixPostAssociationByID:         AssociationID
-	// PrefixPostAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, PostHash, AppUserPKID
-	// PrefixPostAssociationByPost:       PostHash, AssociationType, AssociationValue, TransactorPKID, AppUserPKID
-	// PrefixPostAssociationByType:       AssociationType, AssociationValue, PostHash, TransactorPKID, AppUserPKID
+	// PrefixPostAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, PostHash, AppPKID
+	// PrefixPostAssociationByPost:       PostHash, AssociationType, AssociationValue, TransactorPKID, AppPKID
+	// PrefixPostAssociationByType:       AssociationType, AssociationValue, PostHash, TransactorPKID, AppPKID
 	PrefixPostAssociationByID         []byte `prefix_id:"[67]" is_state:"true"`
 	PrefixPostAssociationByTransactor []byte `prefix_id:"[68]" is_state:"true"`
 	PrefixPostAssociationByPost       []byte `prefix_id:"[69]" is_state:"true"`
@@ -8363,7 +8363,7 @@ func DBKeyForUserAssociationByTransactor(associationEntry *UserAssociationEntry)
 	key = append(key, []byte(associationEntry.AssociationValue)...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
-	key = append(key, associationEntry.AppUserPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
 	return key
 }
 
@@ -8377,7 +8377,7 @@ func DBKeyForUserAssociationByTargetUser(associationEntry *UserAssociationEntry)
 	key = append(key, []byte(associationEntry.AssociationValue)...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
-	key = append(key, associationEntry.AppUserPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
 	return key
 }
 
@@ -8391,7 +8391,7 @@ func DBKeyForUserAssociationByUsers(associationEntry *UserAssociationEntry) []by
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	key = append(key, []byte(associationEntry.AssociationValue)...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
-	key = append(key, associationEntry.AppUserPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
 	return key
 }
 
@@ -8413,7 +8413,7 @@ func DBKeyForPostAssociationByTransactor(associationEntry *PostAssociationEntry)
 	key = append(key, []byte(associationEntry.AssociationValue)...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.PostHash.ToBytes()...)
-	key = append(key, associationEntry.AppUserPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
 	return key
 }
 
@@ -8427,7 +8427,7 @@ func DBKeyForPostAssociationByPost(associationEntry *PostAssociationEntry) []byt
 	key = append(key, []byte(associationEntry.AssociationValue)...)
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
-	key = append(key, associationEntry.AppUserPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
 	return key
 }
 
@@ -8441,7 +8441,7 @@ func DBKeyForPostAssociationByType(associationEntry *PostAssociationEntry) []byt
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.PostHash.ToBytes()...)
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
-	key = append(key, associationEntry.AppUserPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
 	return key
 }
 
@@ -8617,15 +8617,15 @@ func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 		keyPrefix = append(keyPrefix, []byte(associationQuery.AssociationValuePrefix)...)
 	}
 
-	// AppUserPKID
-	if associationQuery.AppUserPKID != nil {
+	// AppPKID
+	if associationQuery.AppPKID != nil {
 		if associationQuery.TransactorPKID == nil ||
 			associationQuery.TargetUserPKID == nil ||
 			associationQuery.AssociationType == "" ||
 			associationQuery.AssociationValue == "" {
 			return nil, errors.New("DBGetUserAssociationsByAttributes: invalid query params")
 		}
-		keyPrefix = append(keyPrefix, associationQuery.AppUserPKID.ToBytes()...)
+		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
 	}
 
 	// Scan for all entries with the given key prefix.
@@ -8750,15 +8750,15 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 		}
 	}
 
-	// AppUserPKID
-	if associationQuery.AppUserPKID != nil {
+	// AppPKID
+	if associationQuery.AppPKID != nil {
 		if associationQuery.TransactorPKID == nil ||
 			associationQuery.PostHash == nil ||
 			associationQuery.AssociationType == "" ||
 			associationQuery.AssociationValue == "" {
 			return nil, errors.New("DBGetPostAssociationsByAttributes: invalid query params")
 		}
-		keyPrefix = append(keyPrefix, associationQuery.AppUserPKID.ToBytes()...)
+		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
 	}
 
 	// Scan for all entries with the given key prefix.

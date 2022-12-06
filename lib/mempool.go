@@ -1789,11 +1789,11 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 	case TxnTypeCreateUserAssociation:
 		realTxMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
 		targetUserPublicKeyBase58Check := PkToString(realTxMeta.TargetUserPublicKey.ToBytes(), utxoView.Params)
-		appUserPublicKeyBase58Check := PkToString(realTxMeta.AppUserPublicKey.ToBytes(), utxoView.Params)
+		appPublicKeyBase58Check := PkToString(realTxMeta.AppPublicKey.ToBytes(), utxoView.Params)
 
 		txnMeta.CreateUserAssociationTxindexMetadata = &CreateUserAssociationTxindexMetadata{
 			TargetUserPublicKeyBase58Check: targetUserPublicKeyBase58Check,
-			AppUserPublicKeyBase58Check:    appUserPublicKeyBase58Check,
+			AppPublicKeyBase58Check:        appPublicKeyBase58Check,
 			AssociationType:                realTxMeta.AssociationType,
 			AssociationValue:               realTxMeta.AssociationValue,
 		}
@@ -1811,13 +1811,13 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 
 	case TxnTypeCreatePostAssociation:
 		realTxMeta := txn.TxnMeta.(*CreatePostAssociationMetadata)
-		appUserPublicKeyBase58Check := PkToString(realTxMeta.AppUserPublicKey.ToBytes(), utxoView.Params)
+		appPublicKeyBase58Check := PkToString(realTxMeta.AppPublicKey.ToBytes(), utxoView.Params)
 
 		txnMeta.CreatePostAssociationTxindexMetadata = &CreatePostAssociationTxindexMetadata{
-			PostHashHex:                 hex.EncodeToString(realTxMeta.PostHash.ToBytes()),
-			AppUserPublicKeyBase58Check: appUserPublicKeyBase58Check,
-			AssociationType:             realTxMeta.AssociationType,
-			AssociationValue:            realTxMeta.AssociationValue,
+			PostHashHex:             hex.EncodeToString(realTxMeta.PostHash.ToBytes()),
+			AppPublicKeyBase58Check: appPublicKeyBase58Check,
+			AssociationType:         realTxMeta.AssociationType,
+			AssociationValue:        realTxMeta.AssociationValue,
 		}
 
 		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.PostHash)

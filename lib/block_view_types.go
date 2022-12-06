@@ -4592,7 +4592,7 @@ type UserAssociationEntry struct {
 	AssociationID    *BlockHash
 	TransactorPKID   *PKID
 	TargetUserPKID   *PKID
-	AppUserPKID      *PKID
+	AppPKID          *PKID
 	AssociationType  string
 	AssociationValue string
 	ExtraData        map[string][]byte
@@ -4604,7 +4604,7 @@ type PostAssociationEntry struct {
 	AssociationID    *BlockHash
 	TransactorPKID   *PKID
 	PostHash         *BlockHash
-	AppUserPKID      *PKID
+	AppPKID          *PKID
 	AssociationType  string
 	AssociationValue string
 	ExtraData        map[string][]byte
@@ -4624,7 +4624,7 @@ func (associationEntry *UserAssociationEntry) Copy() *UserAssociationEntry {
 		AssociationID:    associationEntry.AssociationID.NewBlockHash(),
 		TransactorPKID:   associationEntry.TransactorPKID.NewPKID(),
 		TargetUserPKID:   associationEntry.TargetUserPKID.NewPKID(),
-		AppUserPKID:      associationEntry.AppUserPKID.NewPKID(),
+		AppPKID:          associationEntry.AppPKID.NewPKID(),
 		AssociationType:  strings.Clone(associationEntry.AssociationType),
 		AssociationValue: strings.Clone(associationEntry.AssociationValue),
 		ExtraData:        extraDataCopy,
@@ -4645,7 +4645,7 @@ func (associationEntry *PostAssociationEntry) Copy() *PostAssociationEntry {
 		AssociationID:    associationEntry.AssociationID.NewBlockHash(),
 		TransactorPKID:   associationEntry.TransactorPKID.NewPKID(),
 		PostHash:         associationEntry.PostHash.NewBlockHash(),
-		AppUserPKID:      associationEntry.AppUserPKID.NewPKID(),
+		AppPKID:          associationEntry.AppPKID.NewPKID(),
 		AssociationType:  strings.Clone(associationEntry.AssociationType),
 		AssociationValue: strings.Clone(associationEntry.AssociationValue),
 		ExtraData:        extraDataCopy,
@@ -4659,7 +4659,7 @@ func (associationEntry *UserAssociationEntry) RawEncodeWithoutMetadata(blockHeig
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.AssociationID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.TransactorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.TargetUserPKID, skipMetadata...)...)
-	data = append(data, EncodeToBytes(blockHeight, associationEntry.AppUserPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.AppPKID, skipMetadata...)...)
 	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationType))...)
 	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationValue))...)
 	data = append(data, EncodeExtraData(associationEntry.ExtraData)...)
@@ -4672,7 +4672,7 @@ func (associationEntry *PostAssociationEntry) RawEncodeWithoutMetadata(blockHeig
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.AssociationID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.TransactorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.PostHash, skipMetadata...)...)
-	data = append(data, EncodeToBytes(blockHeight, associationEntry.AppUserPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.AppPKID, skipMetadata...)...)
 	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationType))...)
 	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationValue))...)
 	data = append(data, EncodeExtraData(associationEntry.ExtraData)...)
@@ -4707,12 +4707,12 @@ func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading TargetUserPKID: ")
 	}
 
-	// AppUserPKID
-	appUserPKID := &PKID{}
-	if exist, err := DecodeFromBytes(appUserPKID, rr); exist && err == nil {
-		associationEntry.AppUserPKID = appUserPKID
+	// AppPKID
+	appPKID := &PKID{}
+	if exist, err := DecodeFromBytes(appPKID, rr); exist && err == nil {
+		associationEntry.AppPKID = appPKID
 	} else if err != nil {
-		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AppUserPKID: ")
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AppPKID: ")
 	}
 
 	// AssociationType
@@ -4776,12 +4776,12 @@ func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading PostHash: ")
 	}
 
-	// AppUserPKID
-	appUserPKID := &PKID{}
-	if exist, err := DecodeFromBytes(appUserPKID, rr); exist && err == nil {
-		associationEntry.AppUserPKID = appUserPKID
+	// AppPKID
+	appPKID := &PKID{}
+	if exist, err := DecodeFromBytes(appPKID, rr); exist && err == nil {
+		associationEntry.AppPKID = appPKID
 	} else if err != nil {
-		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AppUserPKID: ")
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AppPKID: ")
 	}
 
 	// AssociationType
@@ -4844,7 +4844,7 @@ func (associationEntry *UserAssociationEntry) Eq(other *UserAssociationEntry) bo
 	// AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
 		associationEntry.TargetUserPKID.Eq(other.TargetUserPKID) &&
-		associationEntry.AppUserPKID.Eq(other.AppUserPKID) &&
+		associationEntry.AppPKID.Eq(other.AppPKID) &&
 		strings.Compare(strings.ToLower(associationEntry.AssociationType), strings.ToLower(other.AssociationType)) == 0 &&
 		strings.Compare(associationEntry.AssociationValue, other.AssociationValue) == 0
 }
@@ -4855,14 +4855,14 @@ func (associationEntry *PostAssociationEntry) Eq(other *PostAssociationEntry) bo
 	// AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
 		associationEntry.PostHash.IsEqual(other.PostHash) &&
-		associationEntry.AppUserPKID.Eq(other.AppUserPKID) &&
+		associationEntry.AppPKID.Eq(other.AppPKID) &&
 		strings.Compare(strings.ToLower(associationEntry.AssociationType), strings.ToLower(other.AssociationType)) == 0 &&
 		strings.Compare(associationEntry.AssociationValue, other.AssociationValue) == 0
 }
 
 type CreateUserAssociationTxindexMetadata struct {
 	TargetUserPublicKeyBase58Check string
-	AppUserPublicKeyBase58Check    string
+	AppPublicKeyBase58Check        string
 	AssociationType                string
 	AssociationValue               string
 }
@@ -4872,10 +4872,10 @@ type DeleteUserAssociationTxindexMetadata struct {
 }
 
 type CreatePostAssociationTxindexMetadata struct {
-	PostHashHex                 string
-	AppUserPublicKeyBase58Check string
-	AssociationType             string
-	AssociationValue            string
+	PostHashHex             string
+	AppPublicKeyBase58Check string
+	AssociationType         string
+	AssociationValue        string
 }
 
 type DeletePostAssociationTxindexMetadata struct {
@@ -4885,7 +4885,7 @@ type DeletePostAssociationTxindexMetadata struct {
 func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.TargetUserPublicKeyBase58Check))...)
-	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AppUserPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AppPublicKeyBase58Check))...)
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
 	return data
@@ -4900,7 +4900,7 @@ func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) RawEncodeWit
 func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.PostHashHex))...)
-	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AppUserPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AppPublicKeyBase58Check))...)
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
 	return data
@@ -4920,12 +4920,12 @@ func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawDecodeWit
 	}
 	associationTxindexMeta.TargetUserPublicKeyBase58Check = string(targetUserPublicKeyBase58CheckBytes)
 
-	// AppUserPublicKeyBase58Check
-	appUserPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	// AppPublicKeyBase58Check
+	appPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AppUserPublicKeyBase58Check: ")
+		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AppPublicKeyBase58Check: ")
 	}
-	associationTxindexMeta.AppUserPublicKeyBase58Check = string(appUserPublicKeyBase58CheckBytes)
+	associationTxindexMeta.AppPublicKeyBase58Check = string(appPublicKeyBase58CheckBytes)
 
 	// AssociationType
 	associationTypeBytes, err := DecodeByteArray(rr)
@@ -4963,12 +4963,12 @@ func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawDecodeWit
 	}
 	associationTxindexMeta.PostHashHex = string(postHashHexBytes)
 
-	// AppUserPublicKeyBase58Check
-	appUserPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	// AppPublicKeyBase58Check
+	appPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AppUserPublicKeyBase58Check: ")
+		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AppPublicKeyBase58Check: ")
 	}
-	associationTxindexMeta.AppUserPublicKeyBase58Check = string(appUserPublicKeyBase58CheckBytes)
+	associationTxindexMeta.AppPublicKeyBase58Check = string(appPublicKeyBase58CheckBytes)
 
 	// AssociationType
 	associationTypeBytes, err := DecodeByteArray(rr)
