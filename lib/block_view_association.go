@@ -70,6 +70,12 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 		bav._deleteUserAssociationEntryMappings(prevAssociationEntry)
 	}
 
+	// Retrieve existing ExtraData to merge with any new ExtraData.
+	prevExtraData := make(map[string][]byte)
+	if prevAssociationEntry != nil {
+		prevExtraData = prevAssociationEntry.ExtraData
+	}
+
 	// Construct new association entry from metadata.
 	currentAssociationEntry := &UserAssociationEntry{
 		AssociationID:    txHash,
@@ -78,6 +84,7 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 		AppUserPKID:      bav._associationAppUserPublicKeyToPKID(txMeta.AppUserPublicKey),
 		AssociationType:  txMeta.AssociationType,
 		AssociationValue: txMeta.AssociationValue,
+		ExtraData:        mergeExtraData(prevExtraData, txn.ExtraData),
 		BlockHeight:      blockHeight,
 	}
 	// Create the association.
@@ -215,6 +222,12 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 		bav._deletePostAssociationEntryMappings(prevAssociationEntry)
 	}
 
+	// Retrieve existing ExtraData to merge with any new ExtraData.
+	prevExtraData := make(map[string][]byte)
+	if prevAssociationEntry != nil {
+		prevExtraData = prevAssociationEntry.ExtraData
+	}
+
 	// Construct new association entry from metadata.
 	currentAssociationEntry := &PostAssociationEntry{
 		AssociationID:    txHash,
@@ -223,6 +236,7 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 		AppUserPKID:      bav._associationAppUserPublicKeyToPKID(txMeta.AppUserPublicKey),
 		AssociationType:  txMeta.AssociationType,
 		AssociationValue: txMeta.AssociationValue,
+		ExtraData:        mergeExtraData(prevExtraData, txn.ExtraData),
 		BlockHeight:      blockHeight,
 	}
 	// Create the association.

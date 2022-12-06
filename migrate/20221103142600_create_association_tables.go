@@ -66,6 +66,7 @@ func init() {
 				app_user_pkid     BYTEA NOT NULL,
 				association_type  TEXT NOT NULL,
 				association_value TEXT NOT NULL,
+				extra_data        JSONB NOT NULL,
 				block_height      BIGINT NOT NULL
 			)
 		`)
@@ -82,6 +83,7 @@ func init() {
 				app_user_pkid     BYTEA NOT NULL,
 				association_type  TEXT NOT NULL,
 				association_value TEXT NOT NULL,
+				extra_data        JSONB NOT NULL,
 				block_height      BIGINT NOT NULL
 			)
 		`)

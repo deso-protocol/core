@@ -3063,7 +3063,8 @@ type PGUserAssociation struct {
 	AppUserPKID      *PKID      `pg:",type:bytea"`
 	AssociationType  string     `pg:",use_zero"`
 	AssociationValue string     `pg:",use_zero"`
-	BlockHeight      uint32     `pg:",use_zero"`
+	ExtraData        map[string][]byte
+	BlockHeight      uint32 `pg:",use_zero"`
 }
 
 // PGPostAssociation represents PostAssociationEntry
@@ -3076,7 +3077,8 @@ type PGPostAssociation struct {
 	AppUserPKID      *PKID      `pg:",type:bytea"`
 	AssociationType  string     `pg:",use_zero"`
 	AssociationValue string     `pg:",use_zero"`
-	BlockHeight      uint32     `pg:",use_zero"`
+	ExtraData        map[string][]byte
+	BlockHeight      uint32 `pg:",use_zero"`
 }
 
 func (userAssociation *PGUserAssociation) FromUserAssociationEntry(associationEntry *UserAssociationEntry) *PGUserAssociation {
@@ -3086,6 +3088,7 @@ func (userAssociation *PGUserAssociation) FromUserAssociationEntry(associationEn
 	userAssociation.AppUserPKID = associationEntry.AppUserPKID
 	userAssociation.AssociationType = associationEntry.AssociationType
 	userAssociation.AssociationValue = associationEntry.AssociationValue
+	userAssociation.ExtraData = associationEntry.ExtraData
 	userAssociation.BlockHeight = associationEntry.BlockHeight
 	return userAssociation
 }
@@ -3097,6 +3100,7 @@ func (postAssociation *PGPostAssociation) FromPostAssociationEntry(associationEn
 	postAssociation.AppUserPKID = associationEntry.AppUserPKID
 	postAssociation.AssociationType = associationEntry.AssociationType
 	postAssociation.AssociationValue = associationEntry.AssociationValue
+	postAssociation.ExtraData = associationEntry.ExtraData
 	postAssociation.BlockHeight = associationEntry.BlockHeight
 	return postAssociation
 }
@@ -3109,6 +3113,7 @@ func (userAssociation *PGUserAssociation) ToUserAssociationEntry() *UserAssociat
 		AppUserPKID:      userAssociation.AppUserPKID,
 		AssociationType:  userAssociation.AssociationType,
 		AssociationValue: userAssociation.AssociationValue,
+		ExtraData:        userAssociation.ExtraData,
 		BlockHeight:      userAssociation.BlockHeight,
 	}
 }
@@ -3121,6 +3126,7 @@ func (postAssociation *PGPostAssociation) ToPostAssociationEntry() *PostAssociat
 		AppUserPKID:      postAssociation.AppUserPKID,
 		AssociationType:  postAssociation.AssociationType,
 		AssociationValue: postAssociation.AssociationValue,
+		ExtraData:        postAssociation.ExtraData,
 		BlockHeight:      postAssociation.BlockHeight,
 	}
 }
