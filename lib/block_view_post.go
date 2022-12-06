@@ -451,6 +451,9 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 }
 
 func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool, onlyNFTs bool, onlyPosts bool) (_posts []*PostEntry, _err error) {
+	if onlyNFTs && onlyPosts {
+		return nil, fmt.Errorf("GetPostsPaginatedForPublicKeyOrderedByTimestamp: onlyNFTs and onlyPosts can not be enabled both")
+	}
 	if bav.Postgres != nil {
 		var startTime uint64 = math.MaxUint64
 		if startPostHash != nil {
