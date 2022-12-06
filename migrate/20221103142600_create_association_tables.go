@@ -12,7 +12,7 @@ func init() {
 			CREATE TABLE pg_metadata_create_user_association (
 				transaction_hash       BYTEA PRIMARY KEY,
 				target_user_public_key BYTEA NOT NULL,
-				app_user_public_key    BYTEA NOT NULL,
+				app_public_key         BYTEA NOT NULL,
 				association_type       TEXT NOT NULL,
 				association_value      TEXT NOT NULL
 			);
@@ -37,7 +37,7 @@ func init() {
 			CREATE TABLE pg_metadata_create_post_association (
 				transaction_hash    BYTEA PRIMARY KEY,
 				post_hash           BYTEA NOT NULL,
-				app_user_public_key BYTEA NOT NULL,
+				app_public_key      BYTEA NOT NULL,
 				association_type    TEXT NOT NULL,
 				association_value   TEXT NOT NULL
 			);
@@ -63,7 +63,7 @@ func init() {
 				association_id    BYTEA PRIMARY KEY,
 				transactor_pkid   BYTEA NOT NULL,
 				target_user_pkid  BYTEA NOT NULL,
-				app_user_pkid     BYTEA NOT NULL,
+				app_pkid          BYTEA NOT NULL,
 				association_type  TEXT NOT NULL,
 				association_value TEXT NOT NULL,
 				extra_data        JSONB NOT NULL,
@@ -80,7 +80,7 @@ func init() {
 				association_id    BYTEA PRIMARY KEY,
 				transactor_pkid   BYTEA NOT NULL,
 				post_hash         BYTEA NOT NULL,
-				app_user_pkid     BYTEA NOT NULL,
+				app_pkid          BYTEA NOT NULL,
 				association_type  TEXT NOT NULL,
 				association_value TEXT NOT NULL,
 				extra_data        JSONB NOT NULL,

@@ -6599,7 +6599,7 @@ func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 
 type CreateUserAssociationMetadata struct {
 	TargetUserPublicKey *PublicKey
-	AppUserPublicKey    *PublicKey
+	AppPublicKey        *PublicKey
 	AssociationType     string
 	AssociationValue    string
 }
@@ -6610,7 +6610,7 @@ type DeleteUserAssociationMetadata struct {
 
 type CreatePostAssociationMetadata struct {
 	PostHash         *BlockHash
-	AppUserPublicKey *PublicKey
+	AppPublicKey     *PublicKey
 	AssociationType  string
 	AssociationValue string
 }
@@ -6638,7 +6638,7 @@ func (txnData *DeletePostAssociationMetadata) GetTxnType() TxnType {
 func (txnData *CreateUserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.TargetUserPublicKey.ToBytes())...)
-	data = append(data, EncodeByteArray(txnData.AppUserPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AppPublicKey.ToBytes())...)
 	data = append(data, EncodeByteArray([]byte(txnData.AssociationType))...)
 	data = append(data, EncodeByteArray([]byte(txnData.AssociationValue))...)
 	return data, nil
@@ -6653,7 +6653,7 @@ func (txnData *DeleteUserAssociationMetadata) ToBytes(preSignature bool) ([]byte
 func (txnData *CreatePostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.PostHash.ToBytes())...)
-	data = append(data, EncodeByteArray(txnData.AppUserPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AppPublicKey.ToBytes())...)
 	data = append(data, EncodeByteArray([]byte(txnData.AssociationType))...)
 	data = append(data, EncodeByteArray([]byte(txnData.AssociationValue))...)
 	return data, nil
@@ -6675,12 +6675,12 @@ func (txnData *CreateUserAssociationMetadata) FromBytes(data []byte) error {
 	}
 	txnData.TargetUserPublicKey = NewPublicKey(targetUserPublicKeyBytes)
 
-	// AppUserPublicKey
-	appUserPublicKeyBytes, err := DecodeByteArray(rr)
+	// AppPublicKey
+	appPublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AppUserPublicKey: ")
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AppPublicKey: ")
 	}
-	txnData.AppUserPublicKey = NewPublicKey(appUserPublicKeyBytes)
+	txnData.AppPublicKey = NewPublicKey(appPublicKeyBytes)
 
 	// AssociationType
 	associationTypeBytes, err := DecodeByteArray(rr)
@@ -6722,12 +6722,12 @@ func (txnData *CreatePostAssociationMetadata) FromBytes(data []byte) error {
 	}
 	txnData.PostHash = NewBlockHash(postHashBytes)
 
-	// AppUserPublicKey
-	appUserPublicKeyBytes, err := DecodeByteArray(rr)
+	// AppPublicKey
+	appPublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AppUserPublicKey: ")
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AppPublicKey: ")
 	}
-	txnData.AppUserPublicKey = NewPublicKey(appUserPublicKeyBytes)
+	txnData.AppPublicKey = NewPublicKey(appPublicKeyBytes)
 
 	// AssociationType
 	associationTypeBytes, err := DecodeByteArray(rr)
@@ -6778,7 +6778,7 @@ func (txnData *DeletePostAssociationMetadata) New() DeSoTxnMetadata {
 type UserAssociationQuery struct {
 	TransactorPKID         *PKID
 	TargetUserPKID         *PKID
-	AppUserPKID            *PKID
+	AppPKID                *PKID
 	AssociationType        string
 	AssociationTypePrefix  string
 	AssociationValue       string
@@ -6788,7 +6788,7 @@ type UserAssociationQuery struct {
 type PostAssociationQuery struct {
 	TransactorPKID         *PKID
 	PostHash               *BlockHash
-	AppUserPKID            *PKID
+	AppPKID                *PKID
 	AssociationType        string
 	AssociationTypePrefix  string
 	AssociationValue       string

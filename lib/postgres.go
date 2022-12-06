@@ -1365,7 +1365,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 			metadataCreateUserAssociations = append(metadataCreateUserAssociations, &PGMetadataCreateUserAssociation{
 				TransactionHash:     txnHash,
 				TargetUserPublicKey: txMeta.TargetUserPublicKey,
-				AppUserPublicKey:    txMeta.AppUserPublicKey,
+				AppPublicKey:        txMeta.AppPublicKey,
 				AssociationType:     txMeta.AssociationType,
 				AssociationValue:    txMeta.AssociationValue,
 			})
@@ -1382,7 +1382,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 			metadataCreatePostAssociations = append(metadataCreatePostAssociations, &PGMetadataCreatePostAssociation{
 				TransactionHash:  txnHash,
 				PostHash:         txMeta.PostHash,
-				AppUserPublicKey: txMeta.AppUserPublicKey,
+				AppPublicKey:     txMeta.AppPublicKey,
 				AssociationType:  txMeta.AssociationType,
 				AssociationValue: txMeta.AssociationValue,
 			})
@@ -3021,7 +3021,7 @@ type PGMetadataCreateUserAssociation struct {
 
 	TransactionHash     *BlockHash `pg:",pk,type:bytea"`
 	TargetUserPublicKey *PublicKey `pg:"target_user_public_key,type:bytea"`
-	AppUserPublicKey    *PublicKey `pg:"app_user_public_key,type:bytea"`
+	AppPublicKey        *PublicKey `pg:"app_public_key,type:bytea"`
 	AssociationType     string     `pg:",use_zero"`
 	AssociationValue    string     `pg:",use_zero"`
 }
@@ -3040,7 +3040,7 @@ type PGMetadataCreatePostAssociation struct {
 
 	TransactionHash  *BlockHash `pg:",pk,type:bytea"`
 	PostHash         *BlockHash `pg:",type:bytea"`
-	AppUserPublicKey *PublicKey `pg:"app_user_public_key,type:bytea"`
+	AppPublicKey     *PublicKey `pg:"app_public_key,type:bytea"`
 	AssociationType  string     `pg:",use_zero"`
 	AssociationValue string     `pg:",use_zero"`
 }
@@ -3060,7 +3060,7 @@ type PGUserAssociation struct {
 	AssociationID    *BlockHash `pg:",pk,type:bytea"`
 	TransactorPKID   *PKID      `pg:",type:bytea"`
 	TargetUserPKID   *PKID      `pg:",type:bytea"`
-	AppUserPKID      *PKID      `pg:",type:bytea"`
+	AppPKID          *PKID      `pg:",type:bytea"`
 	AssociationType  string     `pg:",use_zero"`
 	AssociationValue string     `pg:",use_zero"`
 	ExtraData        map[string][]byte
@@ -3074,7 +3074,7 @@ type PGPostAssociation struct {
 	AssociationID    *BlockHash `pg:",pk,type:bytea"`
 	TransactorPKID   *PKID      `pg:",type:bytea"`
 	PostHash         *BlockHash `pg:",type:bytea"`
-	AppUserPKID      *PKID      `pg:",type:bytea"`
+	AppPKID          *PKID      `pg:",type:bytea"`
 	AssociationType  string     `pg:",use_zero"`
 	AssociationValue string     `pg:",use_zero"`
 	ExtraData        map[string][]byte
@@ -3085,7 +3085,7 @@ func (userAssociation *PGUserAssociation) FromUserAssociationEntry(associationEn
 	userAssociation.AssociationID = associationEntry.AssociationID
 	userAssociation.TransactorPKID = associationEntry.TransactorPKID
 	userAssociation.TargetUserPKID = associationEntry.TargetUserPKID
-	userAssociation.AppUserPKID = associationEntry.AppUserPKID
+	userAssociation.AppPKID = associationEntry.AppPKID
 	userAssociation.AssociationType = associationEntry.AssociationType
 	userAssociation.AssociationValue = associationEntry.AssociationValue
 	userAssociation.ExtraData = associationEntry.ExtraData
@@ -3097,7 +3097,7 @@ func (postAssociation *PGPostAssociation) FromPostAssociationEntry(associationEn
 	postAssociation.AssociationID = associationEntry.AssociationID
 	postAssociation.TransactorPKID = associationEntry.TransactorPKID
 	postAssociation.PostHash = associationEntry.PostHash
-	postAssociation.AppUserPKID = associationEntry.AppUserPKID
+	postAssociation.AppPKID = associationEntry.AppPKID
 	postAssociation.AssociationType = associationEntry.AssociationType
 	postAssociation.AssociationValue = associationEntry.AssociationValue
 	postAssociation.ExtraData = associationEntry.ExtraData
@@ -3110,7 +3110,7 @@ func (userAssociation *PGUserAssociation) ToUserAssociationEntry() *UserAssociat
 		AssociationID:    userAssociation.AssociationID,
 		TransactorPKID:   userAssociation.TransactorPKID,
 		TargetUserPKID:   userAssociation.TargetUserPKID,
-		AppUserPKID:      userAssociation.AppUserPKID,
+		AppPKID:          userAssociation.AppPKID,
 		AssociationType:  userAssociation.AssociationType,
 		AssociationValue: userAssociation.AssociationValue,
 		ExtraData:        userAssociation.ExtraData,
@@ -3123,7 +3123,7 @@ func (postAssociation *PGPostAssociation) ToPostAssociationEntry() *PostAssociat
 		AssociationID:    postAssociation.AssociationID,
 		TransactorPKID:   postAssociation.TransactorPKID,
 		PostHash:         postAssociation.PostHash,
-		AppUserPKID:      postAssociation.AppUserPKID,
+		AppPKID:          postAssociation.AppPKID,
 		AssociationType:  postAssociation.AssociationType,
 		AssociationValue: postAssociation.AssociationValue,
 		ExtraData:        postAssociation.ExtraData,
@@ -3161,7 +3161,7 @@ func (postgres *Postgres) GetUserAssociationByAttributes(associationEntry *UserA
 	if err := postgres.db.Model(&pgAssociation).
 		Where("transactor_pkid = ?", associationEntry.TransactorPKID).
 		Where("target_user_pkid = ?", associationEntry.TargetUserPKID).
-		Where("app_user_pkid = ?", associationEntry.AppUserPKID).
+		Where("app_pkid = ?", associationEntry.AppPKID).
 		Where("LOWER(association_type) = ?", strings.ToLower(associationEntry.AssociationType)).
 		Where("association_value = ?", associationEntry.AssociationValue).
 		First(); err != nil {
@@ -3180,7 +3180,7 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 	if err := postgres.db.Model(&pgAssociation).
 		Where("transactor_pkid = ?", associationEntry.TransactorPKID).
 		Where("post_hash = ?", associationEntry.PostHash).
-		Where("app_user_pkid = ?", associationEntry.AppUserPKID).
+		Where("app_pkid = ?", associationEntry.AppPKID).
 		Where("LOWER(association_type) = ?", strings.ToLower(associationEntry.AssociationType)).
 		Where("association_value = ?", associationEntry.AssociationValue).
 		First(); err != nil {
@@ -3205,8 +3205,8 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(associationQuery *User
 	if associationQuery.TargetUserPKID != nil {
 		sqlQuery.Where("target_user_pkid = ?", associationQuery.TargetUserPKID)
 	}
-	if associationQuery.AppUserPKID != nil {
-		sqlQuery.Where("app_user_pkid = ?", associationQuery.AppUserPKID)
+	if associationQuery.AppPKID != nil {
+		sqlQuery.Where("app_pkid = ?", associationQuery.AppPKID)
 	}
 	if associationQuery.AssociationType != "" {
 		sqlQuery.Where("LOWER(association_type) = ?", strings.ToLower(associationQuery.AssociationType))
@@ -3248,8 +3248,8 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(associationQuery *Post
 	if associationQuery.PostHash != nil {
 		sqlQuery.Where("post_hash = ?", associationQuery.PostHash)
 	}
-	if associationQuery.AppUserPKID != nil {
-		sqlQuery.Where("app_user_pkid = ?", associationQuery.AppUserPKID)
+	if associationQuery.AppPKID != nil {
+		sqlQuery.Where("app_pkid = ?", associationQuery.AppPKID)
 	}
 	if associationQuery.AssociationType != "" {
 		sqlQuery.Where("LOWER(association_type) = ?", strings.ToLower(associationQuery.AssociationType))

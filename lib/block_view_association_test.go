@@ -99,7 +99,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		params.ForkHeights.AssociationsBlockHeight = math.MaxUint32
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
@@ -113,7 +113,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	{
 		// RuleErrorUserAssociationInvalidTargetUser
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "ENDORSEMENT",
 			AssociationValue: "SQL",
 		}
@@ -124,7 +124,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorUserAssociationInvalidTargetUser)
 	}
 	{
-		// RuleErrorAssociationInvalidAppUser
+		// RuleErrorAssociationInvalidApp
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AssociationType:     "ENDORSEMENT",
@@ -134,13 +134,13 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), RuleErrorAssociationInvalidAppUser)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidApp)
 	}
 	{
 		// RuleErrorAssociationInvalidType: AssociationType is empty
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "",
 			AssociationValue:    "SQL",
 		}
@@ -160,7 +160,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     string(associationType),
 			AssociationValue:    "SQL",
 		}
@@ -174,7 +174,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// RuleErrorAssociationInvalidType: AssociationType uses reserved prefix
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     AssociationTypeReservedPrefix + "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
@@ -188,7 +188,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// RuleErrorAssociationTypeInvalidValue: AssociationValue is empty
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "",
 		}
@@ -208,7 +208,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    string(associationValue),
 		}
@@ -247,7 +247,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// CreateUserAssociation
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
@@ -290,7 +290,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Test overwriting UserAssociation: new ExtraData field
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
@@ -319,7 +319,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Test overwriting UserAssociation: updated ExtraData field
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
@@ -380,7 +380,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		params.ForkHeights.AssociationsBlockHeight = math.MaxUint32
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		}
@@ -395,7 +395,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// RuleErrorPostAssociationInvalidPost
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         NewBlockHash(RandomBytes(HashSizeBytes)),
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		}
@@ -406,7 +406,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorPostAssociationInvalidPost)
 	}
 	{
-		// RuleErrorAssociationInvalidAppUser
+		// RuleErrorAssociationInvalidApp
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AssociationType:  "REACTION",
@@ -416,13 +416,13 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), RuleErrorAssociationInvalidAppUser)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidApp)
 	}
 	{
 		// RuleErrorAssociationInvalidType: AssociationType is empty
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "",
 			AssociationValue: "HEART",
 		}
@@ -442,7 +442,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  string(associationType),
 			AssociationValue: "HEART",
 		}
@@ -456,7 +456,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// RuleErrorAssociationInvalidType: AssociationType uses reserved prefix
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  AssociationTypeReservedPrefix + "REACTION",
 			AssociationValue: "HEART",
 		}
@@ -470,7 +470,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// RuleErrorAssociationTypeInvalidValue: AssociationValue is empty
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "REACTION",
 			AssociationValue: "",
 		}
@@ -490,7 +490,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "REACTION",
 			AssociationValue: string(associationValue),
 		}
@@ -529,7 +529,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// CreatePostAssociation
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		}
@@ -572,7 +572,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Test overwriting PostAssociation: new ExtraData field
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		}
@@ -601,7 +601,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Test overwriting PostAssociation: updated ExtraData field
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		}
@@ -648,7 +648,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m0 -> m1, ENDORSEMENT: SQL scoped to m4's app
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AppUserPublicKey:    NewPublicKey(m4PkBytes),
+			AppPublicKey:        NewPublicKey(m4PkBytes),
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
@@ -659,7 +659,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m2 -> m1, ENDORSEMENT: JavaScript
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "JavaScript",
 		}
@@ -670,7 +670,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m1 -> m2, ENDORSEMENT: SQL
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m2PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "endorsement",
 			AssociationValue:    "SQL",
 		}
@@ -681,7 +681,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m0 -> m3, ENDORSEMENT: JAVA
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m3PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "JAVA",
 		}
@@ -692,7 +692,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m1 -> m3, ENDORSEMENT: C
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m3PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "C",
 		}
@@ -703,7 +703,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m2 -> m3, ENDORSEMENT: C++
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m3PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "C++",
 		}
@@ -714,7 +714,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m4 -> m3, ENDORSEMENT: C#
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m3PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "C#",
 		}
@@ -725,7 +725,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m0 -> m1, MEMBERSHIP: Acme University Alumni
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AppUserPublicKey:    &ZeroPublicKey,
+			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     "MEMBERSHIP",
 			AssociationValue:    "Acme University Alumni",
 		}
@@ -758,7 +758,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
 			TransactorPKID:   m0PKID,
 			TargetUserPKID:   m1PKID,
-			AppUserPKID:      &ZeroPKID,
+			AppPKID:          &ZeroPKID,
 			AssociationType:  "ENDORSEMENT",
 			AssociationValue: "SQL",
 		})
@@ -769,7 +769,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
 			TransactorPKID:   m0PKID,
 			TargetUserPKID:   m1PKID,
-			AppUserPKID:      m4PKID,
+			AppPKID:          m4PKID,
 			AssociationType:  "ENDORSEMENT",
 			AssociationValue: "SQL",
 		})
@@ -912,11 +912,11 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Contains(t, err.Error(), "invalid query params")
 		}
 
-		// Failed query if Badger: empty AssociationValue and non-empty AppUserPKID
+		// Failed query if Badger: empty AssociationValue and non-empty AppPKID
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
 			TransactorPKID:  m0PKID,
 			TargetUserPKID:  m1PKID,
-			AppUserPKID:     m4PKID,
+			AppPKID:         m4PKID,
 			AssociationType: "ENDORSEMENT",
 		})
 		if chain.postgres != nil {
@@ -960,7 +960,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m0 -> m1's post, REACTION: HEART scoped to m3's app
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AppUserPublicKey: NewPublicKey(m3PkBytes),
+			AppPublicKey:     NewPublicKey(m3PkBytes),
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		}
@@ -971,7 +971,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m2 -> m1's post, REACTION: DOWN_VOTE
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "REACTION",
 			AssociationValue: "DOWN_VOTE",
 		}
@@ -982,7 +982,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m0 -> m1's post, TAG: r/funny
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "TAG",
 			AssociationValue: "r/funny",
 		}
@@ -993,7 +993,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m0 -> m2's post, TAG: r/funny
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash2,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "TAG",
 			AssociationValue: "r/funny",
 		}
@@ -1004,7 +1004,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m1 -> m2's post, TAG: r/new
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash2,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "TAG",
 			AssociationValue: "r/new",
 		}
@@ -1015,7 +1015,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// m3 -> m2's post, TAG: NSFW
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash2,
-			AppUserPublicKey: &ZeroPublicKey,
+			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  "TAG",
 			AssociationValue: "NSFW",
 		}
@@ -1083,7 +1083,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
 			TransactorPKID:   m0PKID,
 			PostHash:         postHash,
-			AppUserPKID:      &ZeroPKID,
+			AppPKID:          &ZeroPKID,
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		})
@@ -1094,7 +1094,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
 			TransactorPKID:   m0PKID,
 			PostHash:         postHash,
-			AppUserPKID:      m3PKID,
+			AppPKID:          m3PKID,
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		})
@@ -1366,10 +1366,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Contains(t, err.Error(), "invalid query params")
 		}
 
-		// Failed query if Badger: empty TransactorPKID and non-empty AppUserPKID
+		// Failed query if Badger: empty TransactorPKID and non-empty AppPKID
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(&PostAssociationQuery{
 			PostHash:         postHash,
-			AppUserPKID:      m3PKID,
+			AppPKID:          m3PKID,
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		})

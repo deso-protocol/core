@@ -416,7 +416,7 @@ const (
 	RuleErrorAssociationInvalidID             RuleError = "RuleErrorAssociationInvalidID"
 	RuleErrorAssociationNotFound              RuleError = "RuleErrorAssociationNotFound"
 	RuleErrorAssociationInvalidTransactor     RuleError = "RuleErrorAssociationInvalidTransactor"
-	RuleErrorAssociationInvalidAppUser        RuleError = "RuleErrorAssociationInvalidAppUser"
+	RuleErrorAssociationInvalidApp            RuleError = "RuleErrorAssociationInvalidApp"
 	RuleErrorAssociationInvalidType           RuleError = "RuleErrorAssociationInvalidType"
 	RuleErrorAssociationInvalidValue          RuleError = "RuleErrorAssociationInvalidValue"
 	RuleErrorUserAssociationInvalidTargetUser RuleError = "RuleErrorUserAssociationInvalidTargetUser"
