@@ -1787,6 +1787,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		}
 
 	}
+	// TODO: Do we need something for access groups and new dm/group chats here?
 	return txnMeta
 }
 
@@ -2100,7 +2101,10 @@ func (mp *DeSoMempool) processTransaction(
 
 	if len(missingParents) == 0 {
 		newTxs := mp.processUnconnectedTransactions(tx, rateLimit, verifySignatures)
-		acceptedTxs := make([]*MempoolTx, len(newTxs)+1)
+		acceptedTxs, err := SafeMakeSliceWithLength[*MempoolTx](uint64(len(newTxs) + 1))
+		if err != nil {
+			return nil, err
+		}
 
 		acceptedTxs[0] = mempoolTx
 		copy(acceptedTxs[1:], newTxs)

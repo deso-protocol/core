@@ -44,21 +44,18 @@ type UtxoView struct {
 	// Messages data
 	MessageKeyToMessageEntry map[MessageKey]*MessageEntry
 
-	GroupChatMessagesIndex map[GroupChatMessageKey]*MessageEntry
-	DmThreadIndex          map[DmThreadKey]*MessageEntry
-	DmMessagesIndex        map[DmMessageKey]*MessageEntry
+	// Messaging group entries.
+	MessagingGroupKeyToMessagingGroupEntry map[MessagingGroupKey]*MessagingGroupEntry
 
 	// Access group entries.
-	AccessGroupKeyToAccessGroupEntry map[AccessGroupKey]*AccessGroupEntry
+	AccessGroupIdToAccessGroupEntry map[AccessGroupId]*AccessGroupEntry
 
 	// Group Memberships
-	GroupMembershipKeyToAccessGroupMember map[GroupMembershipKey]*AccessGroupMember
+	AccessGroupMembershipKeyToAccessGroupMember map[AccessGroupMembershipKey]*AccessGroupMemberEntry
 
-	// GroupMemberAttributes
-	// Mapping of GroupEnumerationKey to a map of attributes to bool.
-	// For example, Member_A in Group_B can have attributes {IsMuted: true, AcceptedMembership: true, IsAdmin: true}
-	// Or if Member_A was unmuted and removed as admin- {IsMuted: false, IsAdmin: false}
-	GroupMemberAttributes map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]bool
+	// Group Membership Enumeration Index.
+	// The member PublicKeys are sorted lexicographically.
+	AccessGroupIdToSortedGroupMemberPublicKeys map[AccessGroupId][]*PublicKey
 
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
@@ -139,16 +136,15 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Messages data
 	bav.MessageKeyToMessageEntry = make(map[MessageKey]*MessageEntry)
-	bav.GroupMembershipKeyToAccessGroupMember = make(map[GroupMembershipKey]*AccessGroupMember)
-	bav.GroupMemberAttributes = make(map[GroupEnumerationKey]map[AccessGroupMemberAttributeType]bool)
 	bav.MessageMap = make(map[BlockHash]*PGMessage)
 
-	bav.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*MessageEntry)
-	bav.DmThreadIndex = make(map[DmThreadKey]*MessageEntry)
-	bav.DmMessagesIndex = make(map[DmMessageKey]*MessageEntry)
-
 	// Messaging group entries
-	bav.AccessGroupKeyToAccessGroupEntry = make(map[AccessGroupKey]*AccessGroupEntry)
+	bav.MessagingGroupKeyToMessagingGroupEntry = make(map[MessagingGroupKey]*MessagingGroupEntry)
+
+	// Access group entries
+	bav.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry)
+	bav.AccessGroupMembershipKeyToAccessGroupMember = make(map[AccessGroupMembershipKey]*AccessGroupMemberEntry)
+	bav.AccessGroupIdToSortedGroupMemberPublicKeys = make(map[AccessGroupId][]*PublicKey)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -265,32 +261,29 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.MessageKeyToMessageEntry[msgKey] = &newMsgEntry
 	}
 
-	// Copy group chat message index
-	newView.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*MessageEntry)
-	for gcMsgKey, messageEntry := range bav.GroupChatMessagesIndex {
-		newMessage := *messageEntry
-		newView.GroupChatMessagesIndex[gcMsgKey] = &newMessage
-	}
-
-	// Copy dm thread index
-	newView.DmThreadIndex = make(map[DmThreadKey]*MessageEntry)
-	for dmThreadKey, messageEntry := range bav.DmThreadIndex {
-		newMessage := *messageEntry
-		newView.DmThreadIndex[dmThreadKey] = &newMessage
-	}
-
-	// Copy dm messages index
-	newView.DmMessagesIndex = make(map[DmMessageKey]*MessageEntry)
-	for dmMessageKey, messageEntry := range bav.DmMessagesIndex {
-		newMessage := *messageEntry
-		newView.DmMessagesIndex[dmMessageKey] = &newMessage
-	}
-
-	// Copy messaging group data
-	newView.AccessGroupKeyToAccessGroupEntry = make(map[AccessGroupKey]*AccessGroupEntry, len(bav.AccessGroupKeyToAccessGroupEntry))
-	for pkid, entry := range bav.AccessGroupKeyToAccessGroupEntry {
+	// Copy access group entries
+	newView.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry, len(bav.AccessGroupIdToAccessGroupEntry))
+	for key, entry := range bav.AccessGroupIdToAccessGroupEntry {
 		newEntry := *entry
-		newView.AccessGroupKeyToAccessGroupEntry[pkid] = &newEntry
+		newView.AccessGroupIdToAccessGroupEntry[key] = &newEntry
+	}
+
+	// Copy access group membership index
+	newView.AccessGroupMembershipKeyToAccessGroupMember = make(map[AccessGroupMembershipKey]*AccessGroupMemberEntry, len(bav.AccessGroupMembershipKeyToAccessGroupMember))
+	for key, member := range bav.AccessGroupMembershipKeyToAccessGroupMember {
+		newMember := *member
+		newView.AccessGroupMembershipKeyToAccessGroupMember[key] = &newMember
+	}
+
+	// Copy access group id to sorted member public keys
+	newView.AccessGroupIdToSortedGroupMemberPublicKeys = make(map[AccessGroupId][]*PublicKey, len(bav.AccessGroupIdToSortedGroupMemberPublicKeys))
+	for key, members := range bav.AccessGroupIdToSortedGroupMemberPublicKeys {
+		newMembers := make([]*PublicKey, len(members))
+		for ii, member := range members {
+			newMember := *member
+			newMembers[ii] = &newMember
+		}
+		newView.AccessGroupIdToSortedGroupMemberPublicKeys[key] = newMembers
 	}
 
 	// Copy postgres message map
@@ -298,6 +291,13 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for txnHash, message := range bav.MessageMap {
 		newMessage := *message
 		newView.MessageMap[txnHash] = &newMessage
+	}
+
+	// Copy messaging group data
+	newView.MessagingGroupKeyToMessagingGroupEntry = make(map[MessagingGroupKey]*MessagingGroupEntry, len(bav.MessagingGroupKeyToMessagingGroupEntry))
+	for pkid, entry := range bav.MessagingGroupKeyToMessagingGroupEntry {
+		newEntry := *entry
+		newView.MessagingGroupKeyToMessagingGroupEntry[pkid] = &newEntry
 	}
 
 	// Copy the follow data
@@ -1045,9 +1045,14 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		return bav._disconnectAuthorizeDerivedKey(
 			OperationTypeAuthorizeDerivedKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeNewMessage {
-		return bav._disconnectNewMessage(
-			OperationTypeNewMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
+		return bav._disconnectAccessGroupCreate(
+			OperationTypeCreateAccessGroup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {
+		return bav._disconnectAccessGroupMembers(
+			OperationTypeAccessGroupMembers, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -2424,10 +2429,16 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			bav._connectAuthorizeDerivedKey(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeNewMessage {
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
 		totalInput, totalOutput, utxoOpsForTxn, err =
-			bav._connectNewMessage(
+			bav._connectAccessGroupCreate(
 				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectAccessGroupMembers(
+				txn, txHash, blockHeight, verifySignatures)
+
 	} else {
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}

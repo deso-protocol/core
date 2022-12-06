@@ -695,11 +695,11 @@ func fastLog2Floor(n uint32) uint8 {
 //
 // In addition, there are two special cases:
 //
-//   - When no locators are provided, the stop hash is treated as a request for
-//     that block, so it will either return the node associated with the stop hash
-//     if it is known, or nil if it is unknown
-//   - When locators are provided, but none of them are known, nodes starting
-//     after the genesis block will be returned
+// - When no locators are provided, the stop hash is treated as a request for
+//   that block, so it will either return the node associated with the stop hash
+//   if it is known, or nil if it is unknown
+// - When locators are provided, but none of them are known, nodes starting
+//   after the genesis block will be returned
 //
 // This is primarily a helper function for the locateBlocks and locateHeaders
 // functions.
@@ -780,7 +780,10 @@ func locateHeaders(locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32,
 	}
 
 	// Populate and return the found headers.
-	headers := make([]*MsgDeSoHeader, 0, total)
+	headers, err := SafeMakeSliceWithLengthAndCapacity[*MsgDeSoHeader](0, uint64(total))
+	if err != nil {
+		// TODO: do we really want to introduce an error here?
+	}
 	for ii := uint32(0); ii < total; ii++ {
 		headers = append(headers, node.Header)
 		if uint32(len(headers)) == total {
@@ -801,11 +804,11 @@ func locateHeaders(locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32,
 //
 // In addition, there are two special cases:
 //
-//   - When no locators are provided, the stop hash is treated as a request for
-//     that header, so it will either return the header for the stop hash itself
-//     if it is known, or nil if it is unknown
-//   - When locators are provided, but none of them are known, headers starting
-//     after the genesis block will be returned
+// - When no locators are provided, the stop hash is treated as a request for
+//   that header, so it will either return the header for the stop hash itself
+//   if it is known, or nil if it is unknown
+// - When locators are provided, but none of them are known, headers starting
+//   after the genesis block will be returned
 //
 // This function is safe for concurrent access.
 func (bc *Blockchain) LocateBestBlockChainHeaders(locator []*BlockHash, stopHash *BlockHash) []*MsgDeSoHeader {
@@ -831,9 +834,8 @@ func (bc *Blockchain) LocateBestBlockChainHeaders(locator []*BlockHash, stopHash
 // from the block being located.
 //
 // For example, assume a block chain with a side chain as depicted below:
-//
-//	genesis -> 1 -> 2 -> ... -> 15 -> 16  -> 17  -> 18
-//	                              \-> 16a -> 17a
+// 	genesis -> 1 -> 2 -> ... -> 15 -> 16  -> 17  -> 18
+// 	                              \-> 16a -> 17a
 //
 // The block locator for block 17a would be the hashes of blocks:
 // [17a 16a 15 14 13 12 11 10 9 8 7 6 4 genesis]
@@ -1116,8 +1118,8 @@ func (ss SyncState) String() string {
 	}
 }
 
-//   - Latest block height is after the latest checkpoint (if enabled)
-//   - Latest block has a timestamp newer than 24 hours ago
+//  - Latest block height is after the latest checkpoint (if enabled)
+//  - Latest block has a timestamp newer than 24 hours ago
 //
 // This function MUST be called with the ChainLock held (for reads).
 func (bc *Blockchain) chainState() SyncState {
@@ -2018,6 +2020,17 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		if err = bc.postgres.UpsertBlock(nodeToValidate); err != nil {
 			err = errors.Wrapf(err, "ProcessBlock: Problem saving block with StatusBlockStored")
 		}
+
+		// We're not storing blocks in postgres, so we should store the actual blocks in the badgerdb.
+		// This is needed for disconnects, otherwise GetBlock() will fail (e.g. when we reorg).
+		if err == nil {
+			err = bc.db.Update(func(txn *badger.Txn) error {
+				if err := PutBlockWithTxn(txn, nil, desoBlock); err != nil {
+					return errors.Wrapf(err, "ProcessBlock: Problem putting block with txns")
+				}
+				return nil
+			})
+		}
 	} else {
 		err = bc.db.Update(func(txn *badger.Txn) error {
 			if bc.snapshot != nil {
@@ -2256,6 +2269,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// to the database.
 
 		// Find the common ancestor of this block and the main chain.
+		// TODO: Reorgs with postgres?
 		commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(currentTip, nodeToValidate)
 		// Log a warning if the reorg is going to be a big one.
 		numBlocks := currentTip.Height - commonAncestor.Height
@@ -2540,7 +2554,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 // DisconnectBlocksToHeight will rollback blocks from the db and blockchain structs until block tip reaches the provided
 // blockHeight parameter.
-func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
+func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapshot) error {
 	// Roll back the block and make sure we don't hit any errors.
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
@@ -2562,13 +2576,13 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 		if node.Height > blockTipHeight {
 			glog.V(1).Info(CLog(Yellow, fmt.Sprintf("DisconnectBlocksToHeight: Found node in blockIndex with "+
 				"larger height than the current block tip. Deleting the corresponding block reward. Node: (%v)", node)))
-			blockToDetach, err := GetBlock(hash, bc.db, nil)
+			blockToDetach, err := GetBlock(hash, bc.db, snap)
 			if err != nil && err != badger.ErrKeyNotFound {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem getting block with hash: (%v) and "+
 					"at height: (%v)", hash, node.Height)
 			}
 			if blockToDetach != nil {
-				if err = DeleteBlockReward(bc.db, nil, blockToDetach); err != nil {
+				if err = DeleteBlockReward(bc.db, snap, blockToDetach); err != nil {
 					return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward with hash: "+
 						"(%v) and at height: (%v)", hash, node.Height)
 				}
@@ -2582,7 +2596,8 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 		hash := *bc.bestChain[ii].Hash
 		height := uint64(bc.bestChain[ii].Height)
 		err := bc.db.Update(func(txn *badger.Txn) error {
-			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, nil)
+
+			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, snap)
 			if err != nil {
 				return err
 			}
@@ -2592,13 +2607,13 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 			}
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
-			utxoOps, err := GetUtxoOperationsForBlock(bc.db, nil, &hash)
+			utxoOps, err := GetUtxoOperationsForBlock(bc.db, snap, &hash)
 			if err != nil {
 				return err
 			}
 
 			// Compute the hashes for all the transactions.
-			blockToDetach, err := GetBlock(&hash, bc.db, nil)
+			blockToDetach, err := GetBlock(&hash, bc.db, snap)
 			if err != nil {
 				return err
 			}
@@ -2618,23 +2633,39 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 			}
 
 			// Set the best node hash to the new tip.
-			if err := PutBestHashWithTxn(txn, nil, &prevHash, ChainTypeDeSoBlock); err != nil {
-				return err
+			if bc.postgres != nil {
+				if err := bc.postgres.UpsertChain(MAIN_CHAIN, &prevHash); err != nil {
+					return err
+				}
+			} else {
+				if err := PutBestHashWithTxn(txn, snap, &prevHash, ChainTypeDeSoBlock); err != nil {
+					return err
+				}
 			}
 
 			// Delete the utxo operations for the blocks we're detaching since we don't need
 			// them anymore.
-			if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, &hash); err != nil {
+			if err := DeleteUtxoOperationsForBlockWithTxn(txn, snap, &hash); err != nil {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting utxo operations for block")
 			}
 
-			if err := DeleteBlockRewardWithTxn(txn, nil, blockToDetach); err != nil {
+			if err := DeleteBlockRewardWithTxn(txn, snap, blockToDetach); err != nil {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward")
 			}
 
+			// Revert the detached block's status to StatusHeaderValidated and save the blockNode to the db.
 			node.Status = StatusHeaderValidated
-			if err := PutHeightHashToNodeInfoWithTxn(txn, nil, node, false); err != nil {
-				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting height hash to node info")
+			if bc.postgres != nil {
+				if err := bc.postgres.DeleteTransactionsForBlock(blockToDetach, node); err != nil {
+					return err
+				}
+				if err := bc.postgres.UpsertBlock(node); err != nil {
+					return err
+				}
+			} else {
+				if err := PutHeightHashToNodeInfoWithTxn(txn, snap, node, false); err != nil {
+					return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting height hash to node info")
+				}
 			}
 
 			// If we have a Server object then call its function
@@ -2720,14 +2751,12 @@ var (
 
 // The number of hashing attempts in expectation it would take to produce the
 // hash passed in. This is computed as:
-//
-//	E(min(X_i, ..., X_n)) where:
-//	- n = (number of attempted hashes) and
-//	- the X_i are all U(0, MAX_HASH)
-//
+//    E(min(X_i, ..., X_n)) where:
+//    - n = (number of attempted hashes) and
+//    - the X_i are all U(0, MAX_HASH)
 // -> E(min(X_i, ..., X_n)) = MAX_HASH / (n + 1)
 // -> E(n) ~= MAX_HASH / min_hash - 1
-//   - where min_hash is the block hash
+//    - where min_hash is the block hash
 //
 // We approximate this as MAX_HASH / (min_hash + 1), adding 1 to min_hash in
 // order to mitigate the possibility of a divide-by-zero error.
@@ -2744,8 +2773,10 @@ func ExpectedWorkForBlockHash(hash *BlockHash) *BlockHash {
 }
 
 func ComputeTransactionHashes(txns []*MsgDeSoTxn) ([]*BlockHash, error) {
-	txHashes := make([]*BlockHash, len(txns))
-
+	txHashes, err := SafeMakeSliceWithLength[*BlockHash](uint64(len(txns)))
+	if err != nil {
+		return nil, err
+	}
 	for ii, currentTxn := range txns {
 		txHashes[ii] = currentTxn.Hash()
 	}
@@ -4155,9 +4186,77 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
 	if len(txn.TxInputs) == 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateNFTTxn: AcceptNFTBid txn " +
+		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateNFTTxn: CreateUpdateNFT txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateAccessGroupCreateTxn(
+	userPublicKey []byte,
+	accessGroupPublicKey []byte,
+	accessGroupKeyName []byte,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	txn := &MsgDeSoTxn{
+		PublicKey: userPublicKey,
+		TxnMeta: &AccessGroupCreateMetadata{
+			AccessGroupOwnerPublicKey: userPublicKey,
+			AccessGroupPublicKey:      accessGroupPublicKey,
+			AccessGroupKeyName:        accessGroupKeyName,
+		},
+		ExtraData: extraData,
+		TxOutputs: additionalOutputs,
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAccessGroupCreateTxn: Problem adding inputs: ")
+	}
+
+	// Sanity-check that the spend amount is non-zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateAccessGroupCreateTxn: Spend amount is zero")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateAccessGroupMembersTxn(
+	userPublicKey []byte,
+	accessGroupKeyName []byte,
+	accessGroupMemberList []*AccessGroupMember,
+	operationType AccessGroupMemberOperationType,
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	txn := &MsgDeSoTxn{
+		PublicKey: userPublicKey,
+		TxnMeta: &AccessGroupMembersMetadata{
+			AccessGroupOwnerPublicKey:      userPublicKey,
+			AccessGroupKeyName:             accessGroupKeyName,
+			AccessGroupMembersList:         accessGroupMemberList,
+			AccessGroupMemberOperationType: operationType,
+		},
+		TxOutputs: additionalOutputs,
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAccessGroupMembersTxn: Problem adding inputs: ")
+	}
+
+	// Sanity-check that the spend amount is non-zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateAccessGroupMembersTxn: Spend amount is zero")
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4411,7 +4510,7 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 	messagingPublicKey []byte,
 	messagingGroupKeyName []byte,
 	messagingOwnerKeySignature []byte,
-	members []*AccessGroupMember,
+	members []*MessagingGroupMember,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -4419,11 +4518,11 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 	// We don't need to validate info here, so just construct the transaction instead.
 	txn := &MsgDeSoTxn{
 		PublicKey: senderPublicKey,
-		TxnMeta: &AccessGroupMetadata{
-			AccessPublicKey:     messagingPublicKey,
-			AccessGroupKeyName:  messagingGroupKeyName,
-			GroupOwnerSignature: messagingOwnerKeySignature,
-			AccessGroupMembers:  members,
+		TxnMeta: &MessagingGroupMetadata{
+			MessagingPublicKey:    messagingPublicKey,
+			MessagingGroupKeyName: messagingGroupKeyName,
+			GroupOwnerSignature:   messagingOwnerKeySignature,
+			MessagingGroupMembers: members,
 		},
 		ExtraData: extraData,
 		TxOutputs: additionalOutputs,

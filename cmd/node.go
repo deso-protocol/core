@@ -493,7 +493,11 @@ func addIPsForHost(desoAddrMgr *addrmgr.AddrManager, host string, params *lib.De
 	glog.V(1).Infof("_addSeedAddrs: Adding seed IPs from seed %s: %v\n", host, ipAddrs)
 
 	// Convert addresses to NetAddress'es.
-	netAddrs := make([]*wire.NetAddress, len(ipAddrs))
+	netAddrs, err := lib.SafeMakeSliceWithLength[*wire.NetAddress](uint64(len(ipAddrs)))
+	if err != nil {
+		glog.V(2).Infof("_addSeedAddrs: Problem creating netAddrs slice with length %d", len(ipAddrs))
+		return
+	}
 	for ii, ip := range ipAddrs {
 		netAddrs[ii] = wire.NewNetAddressTimestamp(
 			// We initialize addresses with a

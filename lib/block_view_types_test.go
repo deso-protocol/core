@@ -151,16 +151,15 @@ func TestMessagingGroupEntryDecoding(t *testing.T) {
 	// In this test, we check for backwards-compatibility with extra-data.
 	// The way this test is structured won't work with the newly added mute list
 	// so we set the fork height to something high so that the mute list doesn't exist.
-	fh := RegtestForkHeights
-	fh.DeSoAccessGroupsBlockHeight = 10
-	GlobalDeSoParams.ForkHeights = fh
-	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&fh)
-	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&fh)
-	// Create a messaging group entry
-	messagingGroupEntry := &AccessGroupEntry{
-		GroupOwnerPublicKey: NewPublicKey(m0PkBytes),
-		AccessPublicKey:     NewPublicKey(m0PkBytes),
-		AccessGroupKeyName:  BaseGroupKeyName(),
+	GlobalDeSoParams.ForkHeights = RegtestForkHeights
+	GlobalDeSoParams.ForkHeights.DeSoAccessGroupsBlockHeight = 10
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&GlobalDeSoParams.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&GlobalDeSoParams.ForkHeights)
+	// Create an access group entry
+	messagingGroupEntry := &MessagingGroupEntry{
+		GroupOwnerPublicKey:   NewPublicKey(m0PkBytes),
+		MessagingPublicKey:    NewPublicKey(m0PkBytes),
+		MessagingGroupKeyName: BaseGroupKeyName(),
 	}
 
 	encodedWithExtraData := EncodeToBytes(0, messagingGroupEntry)
@@ -168,13 +167,13 @@ func TestMessagingGroupEntryDecoding(t *testing.T) {
 	// We know the last byte is a 0 representing the length of the extra data, so chop that off
 	missingExtraDataEncoding := encodedWithExtraData[:len(encodedWithExtraData)-1]
 
-	decodedMessagingGroupEntryMissingExtraData := &AccessGroupEntry{}
+	decodedMessagingGroupEntryMissingExtraData := &MessagingGroupEntry{}
 	rr := bytes.NewReader(missingExtraDataEncoding)
 	exists, err := DecodeFromBytes(decodedMessagingGroupEntryMissingExtraData, rr)
 	require.Equal(t, true, exists)
 	require.NoError(t, err)
 
-	decodedMessagingGroupEntryWithExtraData := &AccessGroupEntry{}
+	decodedMessagingGroupEntryWithExtraData := &MessagingGroupEntry{}
 	rr = bytes.NewReader(encodedWithExtraData)
 	exists, err = DecodeFromBytes(decodedMessagingGroupEntryWithExtraData, rr)
 	require.Equal(t, true, exists)
@@ -198,7 +197,7 @@ func TestMessagingGroupEntryDecoding(t *testing.T) {
 
 	extraDataBytesRemoved := encodedIncludingExtraData[:len(encodedIncludingExtraData)-len(encodedExtraData)]
 
-	messagingGroupEntryWithExtraDataRemoved := &AccessGroupEntry{}
+	messagingGroupEntryWithExtraDataRemoved := &MessagingGroupEntry{}
 	rr = bytes.NewReader(extraDataBytesRemoved)
 	exists, err = DecodeFromBytes(messagingGroupEntryWithExtraDataRemoved, rr)
 	require.Equal(t, true, exists)

@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/pkg/errors"
 	"log"
 	"math"
 	"math/big"
@@ -253,40 +254,39 @@ type ForkHeights struct {
 	// we introduce derived keys without a spending limit.
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
-	// DeSoAccessGroupsBlockHeight defines the height at which we introduce V3 access groups 
-	// and all associate features like GroupMemberAttributes, additional DB indexes, etc.
+	// DeSoAccessGroupsBlockHeight defines the height at which we introduce access groups.
 	DeSoAccessGroupsBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
 
-// MigrationName EncoderMigrationHeights is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
+// MigrationName is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
 // you should:
 //  0. Typically, encoder migrations should align with hard fork heights. So the first
 //     step is to define a new value in ForkHeights, and set the value accordingly for
 //     mainnet, testnet, and regtest param structs. Add a name for your migration so that
 //     it can be accessed robustly.
-//  1. Define a new block height in the EncoderMigrationHeights struct. This should map
+//	1. Define a new block height in the EncoderMigrationHeights struct. This should map
 //     1:1 with the fork height defined prior.
-//  2. Add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods that
+//	2. Add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods that
 //     trigger at the defined height.
-//  3. Add a condition to GetVersionByte to return version associated with the migration height.
+//	3. Add a condition to GetVersionByte to return version associated with the migration height.
 //
 // So for example, let's say you want to add a migration for UtxoEntry at height 1200.
 //
-//  0. Add a field to ForkHeight that marks the point at which this entry will come
-//     into play:
+// 0. Add a field to ForkHeight that marks the point at which this entry will come
+//    into play:
 //     - Add the following to the ForkHeight struct:
-//     UtxoEntryTestHeight uint64
+//         UtxoEntryTestHeight uint64
 //     - Add the following to the individual param structs (MainnetForkHeights, TestnetForkHeights,
-//     and RegtestForkHeights):
-//     UtxoEntryTestHeight: 1200 (may differ for mainnet vs testnet & regtest)
+//       and RegtestForkHeights):
+//         UtxoEntryTestHeight: 1200 (may differ for mainnet vs testnet & regtest)
 //     - Add the migration name below DefaultMigration
-//     UtxoEntryTestHeight MigrationName = "UtxoEntryTestHeight"
+//     		UtxoEntryTestHeight MigrationName = "UtxoEntryTestHeight"
 //
-//  1. Add a field to the EncoderMigrationHeights that looks like this:
-//     UtxoEntryTestHeight MigrationHeight
+// 1. Add a field to the EncoderMigrationHeights that looks like this:
+//		UtxoEntryTestHeight MigrationHeight
 //
 // 2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
 //	end of RawEncodeWithoutMetadata (note the usage of the MigrationName UtxoEntryTestHeight):
@@ -922,7 +922,7 @@ var DeSoMainnetParams = DeSoParams{
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
 	hash, err := chainhash.NewHashFromStr(ss)
 	if err != nil {
-		panic(err)
+		panic(any(errors.Wrapf(err, "mustDecodeHexBlockHashBitcoin: Problem decoding block hash: %v", ss)))
 	}
 	return (*BlockHash)(hash)
 }
@@ -1178,11 +1178,11 @@ const (
 	DerivedPublicKey = "DerivedPublicKey"
 
 	// Messaging keys
-	MessagingPublicKey             = "AccessPublicKey"
+	MessagingPublicKey             = "MessagingPublicKey"
 	SenderMessagingPublicKey       = "SenderMessagingPublicKey"
-	SenderMessagingGroupKeyName    = "SenderAccessGroupKeyName"
+	SenderMessagingGroupKeyName    = "SenderMessagingGroupKeyName"
 	RecipientMessagingPublicKey    = "RecipientMessagingPublicKey"
-	RecipientMessagingGroupKeyName = "RecipientAccessGroupKeyName"
+	RecipientMessagingGroupKeyName = "RecipientMessagingGroupKeyName"
 
 	// Key in transaction's extra data map. If it is there, the NFT is a "Buy Now" NFT and this is the Buy Now Price
 	BuyNowPriceKey = "BuyNowPriceNanos"
@@ -1201,9 +1201,6 @@ const (
 	MessagesVersion2      = 2
 	MessagesVersion3      = 3
 
-	// Key in MessageEntry's ExtraData map.
-	//
-
 	// Key in transaction's extra data map. If present, this value represents the Node ID of the running node. This maps
 	// to the map of nodes in ./lib/nodes.go
 	NodeSourceMapKey = "NodeSource"
@@ -1213,8 +1210,7 @@ const (
 	DerivedKeyMemoKey           = "DerivedKeyMemo"
 
 	// V3 Group Chat Messages ExtraData Key
-	AccessGroupOperationType = "AccessGroupOperationType"
-	MessageRotatingVersion   = "MessageRotatingVersion"
+	MessagingGroupOperationType = "MessagingGroupOperationType"
 )
 
 // Defines values that may exist in a transaction's ExtraData map
@@ -1268,4 +1264,9 @@ const (
 	// Messaging key constants
 	MinMessagingKeyNameCharacters = 1
 	MaxMessagingKeyNameCharacters = 32
+	// Access group key constants
+	MinAccessGroupKeyNameCharacters = 1
+	MaxAccessGroupKeyNameCharacters = 32
+	// Access group enumeration max recursion depth.
+	MaxAccessGroupMemberEnumerationRecursionDepth = 10
 )

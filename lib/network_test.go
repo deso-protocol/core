@@ -1213,11 +1213,11 @@ func TestMessagingKey(t *testing.T) {
 		0x00, 0x01,
 	}
 
-	txMeta := AccessGroupMetadata{
-		AccessPublicKey:     m0PkBytes,
-		AccessGroupKeyName:  keyName,
-		GroupOwnerSignature: signature.Serialize(),
-		AccessGroupMembers:  []*AccessGroupMember{},
+	txMeta := MessagingGroupMetadata{
+		MessagingPublicKey:    m0PkBytes,
+		MessagingGroupKeyName: keyName,
+		GroupOwnerSignature:   signature.Serialize(),
+		MessagingGroupMembers: []*MessagingGroupMember{},
 	}
 
 	data, err := txMeta.ToBytes(false)
@@ -1231,12 +1231,12 @@ func TestMessagingKey(t *testing.T) {
 	require.NoError(err)
 	require.Equal(data, testData)
 
-	txMeta.AccessGroupMembers = append(txMeta.AccessGroupMembers, &AccessGroupMember{
+	txMeta.MessagingGroupMembers = append(txMeta.MessagingGroupMembers, &MessagingGroupMember{
 		GroupMemberPublicKey: NewPublicKey(m1PkBytes),
 		GroupMemberKeyName:   NewGroupKeyName(keyName),
 		EncryptedKey:         encrypted,
 	})
-	txMeta.AccessGroupMembers = append(txMeta.AccessGroupMembers, &AccessGroupMember{
+	txMeta.MessagingGroupMembers = append(txMeta.MessagingGroupMembers, &MessagingGroupMember{
 		GroupMemberPublicKey: NewPublicKey(m2PkBytes),
 		GroupMemberKeyName:   NewGroupKeyName(keyName),
 		EncryptedKey:         encrypted,

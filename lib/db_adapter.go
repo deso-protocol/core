@@ -2,6 +2,7 @@ package lib
 
 import (
 	"github.com/dgraph-io/badger/v3"
+	"github.com/golang/glog"
 )
 
 type DbAdapter struct {
@@ -130,4 +131,154 @@ func (adapter *DbAdapter) GetPKIDForPublicKey(pkBytes []byte) *PKID {
 	}
 
 	return DBGetPKIDEntryForPublicKey(adapter.badgerDb, adapter.snapshot, pkBytes).PKID
+}
+
+//
+// AccessGroups
+//
+
+func (adapter *DbAdapter) GetAccessGroupEntryByAccessGroupId(accessGroupId *AccessGroupId) (*AccessGroupEntry, error) {
+	if accessGroupId == nil {
+		glog.Errorf("GetAccessGroupEntryByAccessGroupId: Called with nil accessGroupId, this should never happen")
+		return nil, nil
+	}
+
+	if adapter.postgresDb != nil {
+		pgAccessGroup := adapter.postgresDb.GetAccessGroupByAccessGroupId(accessGroupId)
+		if pgAccessGroup == nil {
+			return nil, nil
+		}
+		return pgAccessGroup.ToAccessGroupEntry(), nil
+	} else {
+		return DBGetAccessGroupEntryByAccessGroupId(adapter.badgerDb, adapter.snapshot,
+			&accessGroupId.AccessGroupOwnerPublicKey, &accessGroupId.AccessGroupKeyName)
+	}
+}
+
+func (adapter *DbAdapter) GetAccessGroupExistenceByAccessGroupId(accessGroupId *AccessGroupId) (bool, error) {
+	if accessGroupId == nil {
+		glog.Errorf("GetAccessGroupExistenceByAccessGroupId: Called with nil accessGroupId, this should never happen")
+		return false, nil
+	}
+
+	if adapter.postgresDb != nil {
+		pgAccessGroup := adapter.postgresDb.GetAccessGroupByAccessGroupId(accessGroupId)
+		if pgAccessGroup == nil {
+			return false, nil
+		}
+		return true, nil
+	} else {
+		return DBGetAccessGroupExistenceByAccessGroupId(adapter.badgerDb, adapter.snapshot,
+			&accessGroupId.AccessGroupOwnerPublicKey, &accessGroupId.AccessGroupKeyName)
+	}
+}
+
+func (adapter *DbAdapter) GetAccessGroupIdsForOwner(ownerPublicKey *PublicKey) (_accessGroupIdsOwned []*AccessGroupId, _err error) {
+	var accessGroupIds []*AccessGroupId
+	var err error
+	if ownerPublicKey == nil {
+		glog.Errorf("GetAccessGroupEntriesForOwner: Called with nil ownerPublicKey, this should never happen")
+		return nil, nil
+	}
+
+	if adapter.postgresDb != nil {
+		pgAccessGroupEntries := adapter.postgresDb.GetAccessGroupEntriesForOwner(*ownerPublicKey)
+		if pgAccessGroupEntries == nil {
+			return nil, nil
+		}
+		for _, pgAccessGroupEntry := range pgAccessGroupEntries {
+			accessGroupEntry := pgAccessGroupEntry.ToAccessGroupEntry()
+			accessGroupId := NewAccessGroupId(ownerPublicKey, accessGroupEntry.AccessGroupKeyName.ToBytes())
+			accessGroupIds = append(accessGroupIds, accessGroupId)
+		}
+	} else {
+		accessGroupIds, err = DBGetAccessGroupIdsForOwner(adapter.badgerDb, adapter.snapshot, *ownerPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return accessGroupIds, nil
+}
+
+func (adapter *DbAdapter) GetAccessGroupIdsForMember(memberPublicKey *PublicKey) (_accessGroupIdsMember []*AccessGroupId, _err error) {
+	var accessGroupIds []*AccessGroupId
+	var err error
+
+	if memberPublicKey == nil {
+		glog.Errorf("GetAccessGroupEntriesForMember: Called with nil memberPublicKey, this should never happen")
+		return nil, nil
+	}
+
+	if adapter.postgresDb != nil {
+		pgAccessGroupEnumerationEntries, err := adapter.postgresDb.GetAccessGroupEnumerationEntriesForMember(*memberPublicKey)
+		if err != nil {
+			return nil, err
+		}
+		for _, pgAccessEnumerationEntry := range pgAccessGroupEnumerationEntries {
+			accessGroupId := NewAccessGroupId(
+				pgAccessEnumerationEntry.AccessGroupOwnerPublicKey, pgAccessEnumerationEntry.AccessGroupKeyName.ToBytes())
+			accessGroupIds = append(accessGroupIds, accessGroupId)
+		}
+	} else {
+		accessGroupIds, err = DBGetAccessGroupIdsForMember(adapter.badgerDb, adapter.snapshot, *memberPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return accessGroupIds, nil
+}
+
+//
+// AccessGroupMembers
+//
+
+func (adapter *DbAdapter) GetAccessGroupMemberEntry(accessGroupMemberPublicKey PublicKey,
+	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) (*AccessGroupMemberEntry, error) {
+
+	if adapter.postgresDb != nil {
+		pgAccessGroupMember := adapter.postgresDb.GetAccessGroupMemberEntry(accessGroupMemberPublicKey,
+			accessGroupOwnerPublicKey, accessGroupKeyName)
+		if pgAccessGroupMember == nil {
+			return nil, nil
+		}
+		_, _, accessGroupMember := pgAccessGroupMember.ToAccessGroupMemberEntry()
+		return accessGroupMember, nil
+	} else {
+		return DBGetAccessGroupMemberEntry(adapter.badgerDb, adapter.snapshot,
+			accessGroupMemberPublicKey, accessGroupOwnerPublicKey, accessGroupKeyName)
+	}
+}
+
+func (adapter *DbAdapter) GetAccessGroupMemberEnumerationEntry(accessGroupMemberPublicKey PublicKey,
+	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) (_exists bool, _err error) {
+
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetAccessGroupMemberEnumerationEntry(accessGroupMemberPublicKey,
+			accessGroupOwnerPublicKey, accessGroupKeyName), nil
+	} else {
+		// TODO: Use similar function signatures.
+		return DBGetAccessGroupMemberExistenceFromEnumerationIndex(adapter.badgerDb, adapter.snapshot,
+			accessGroupMemberPublicKey, accessGroupOwnerPublicKey, accessGroupKeyName)
+	}
+}
+
+func (adapter *DbAdapter) GetPaginatedAccessGroupMembersEnumerationEntries(
+	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName,
+	startingAccessGroupMemberPublicKeyBytes []byte, maxMembersToFetch uint32) (
+	_accessGroupMemberPublicKeys []*PublicKey, _err error) {
+
+	if maxMembersToFetch == 0 {
+		return nil, nil
+	}
+
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetPaginatedAccessGroupMembersFromEnumerationIndex(
+			accessGroupOwnerPublicKey, accessGroupKeyName,
+			startingAccessGroupMemberPublicKeyBytes, maxMembersToFetch)
+	} else {
+		return DBGetPaginatedAccessGroupMembersFromEnumerationIndex(adapter.badgerDb, adapter.snapshot,
+			accessGroupOwnerPublicKey, accessGroupKeyName,
+			startingAccessGroupMemberPublicKeyBytes, maxMembersToFetch)
+	}
 }

@@ -152,6 +152,8 @@ type PGTransaction struct {
 	MetadataDAOCoin             *PGMetadataDAOCoin             `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataDAOCoinTransfer     *PGMetadataDAOCoinTransfer     `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataDAOCoinLimitOrder   *PGMetadataDAOCoinLimitOrder   `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAccessGroupCreate   *PGMetadataAccessGroupCreate   `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAccessGroupMembers  *PGMetadataAccessGroupMembers  `pg:"rel:belongs-to,join_fk:transaction_hash"`
 }
 
 // PGTransactionOutput represents DeSoOutput, DeSoInput, and UtxoEntry
@@ -435,6 +437,25 @@ type PGMetadataDAOCoinLimitOrderBidderInputs struct {
 	TransactionHash *BlockHash `pg:",pk,type:bytea"`
 	InputHash       *BlockHash `pg:",pk,type:bytea"`
 	InputIndex      uint32     `pg:",pk,use_zero"`
+}
+
+type PGMetadataAccessGroupCreate struct {
+	tableName struct{} `pg:"pg_metadata_access_group_create"`
+
+	TransactionHash           *BlockHash    `pg:",pk,type:bytea"`
+	AccessGroupOwnerPublicKey *PublicKey    `pg:",type:bytea"`
+	AccessGroupKeyName        *GroupKeyName `pg:",type:bytea"`
+	AccessGroupPublicKey      *PublicKey    `pg:",type:bytea"`
+}
+
+type PGMetadataAccessGroupMembers struct {
+	tableName struct{} `pg:"pg_metadata_access_group_members"`
+
+	TransactionHash           *BlockHash    `pg:",pk,type:bytea"`
+	AccessGroupOwnerPublicKey *PublicKey    `pg:",type:bytea"`
+	AccessGroupKeyName        *GroupKeyName `pg:",type:bytea"`
+	AccessGroupMembersList    []byte        `pg:",type:bytea"`
+	OperationType             uint8         `pg:",type:smallint"`
 }
 
 type PGNotification struct {
@@ -738,6 +759,76 @@ func (order *PGDAOCoinLimitOrder) ToDAOCoinLimitOrderEntry() *DAOCoinLimitOrderE
 	}
 }
 
+type PGAccessGroupEntry struct {
+	tableName struct{} `pg:"pg_access_group_entries_by_access_group_id"`
+
+	AccessGroupOwnerPublicKey *PublicKey    `pg:",pk,type:bytea"`
+	AccessGroupKeyName        *GroupKeyName `pg:",pk,type:bytea"`
+	AccessGroupPublicKey      *PublicKey    `pg:",type:bytea"`
+
+	ExtraData map[string][]byte
+}
+
+func (accessGroup *PGAccessGroupEntry) FromAccessGroupEntry(accessGroupEntry *AccessGroupEntry) {
+	accessGroup.AccessGroupOwnerPublicKey = accessGroupEntry.AccessGroupOwnerPublicKey
+	accessGroup.AccessGroupKeyName = accessGroupEntry.AccessGroupKeyName
+	accessGroup.AccessGroupPublicKey = accessGroupEntry.AccessGroupPublicKey
+	accessGroup.ExtraData = accessGroupEntry.ExtraData
+}
+
+func (accessGroup *PGAccessGroupEntry) ToAccessGroupEntry() *AccessGroupEntry {
+	return &AccessGroupEntry{
+		AccessGroupOwnerPublicKey: accessGroup.AccessGroupOwnerPublicKey,
+		AccessGroupKeyName:        accessGroup.AccessGroupKeyName,
+		AccessGroupPublicKey:      accessGroup.AccessGroupPublicKey,
+		ExtraData:                 accessGroup.ExtraData,
+	}
+}
+
+type PGAccessGroupMemberEntry struct {
+	tableName struct{} `pg:"pg_access_group_membership_index"`
+
+	AccessGroupMemberPublicKey *PublicKey    `pg:",pk,type:bytea"`
+	AccessGroupMemberKeyName   *GroupKeyName `pg:",type:bytea"`
+	AccessGroupOwnerPublicKey  *PublicKey    `pg:",pk,type:bytea"`
+	AccessGroupKeyName         *GroupKeyName `pg:",pk,type:bytea"`
+	EncryptedKey               []byte        `pg:",type:bytea"`
+
+	ExtraData map[string][]byte
+}
+
+func (accessGroupMember *PGAccessGroupMemberEntry) FromAccessGroupMemberEntry(accessGroupOwnerPublicKey PublicKey,
+	accessGroupKeyName GroupKeyName, accessGroupMemberEntry *AccessGroupMemberEntry) {
+
+	accessGroupMember.AccessGroupOwnerPublicKey = &accessGroupOwnerPublicKey
+	accessGroupMember.AccessGroupKeyName = &accessGroupKeyName
+	accessGroupMember.AccessGroupMemberPublicKey = accessGroupMemberEntry.AccessGroupMemberPublicKey
+	accessGroupMember.AccessGroupMemberKeyName = accessGroupMemberEntry.AccessGroupMemberKeyName
+	accessGroupMember.EncryptedKey = accessGroupMemberEntry.EncryptedKey
+	accessGroupMember.ExtraData = accessGroupMemberEntry.ExtraData
+}
+
+func (accessGroupMember *PGAccessGroupMemberEntry) ToAccessGroupMemberEntry() (
+	_accessGroupOwnerPublicKey *PublicKey, _accessGroupKeyName *GroupKeyName, _accessGroupMemberEntry *AccessGroupMemberEntry) {
+
+	return accessGroupMember.AccessGroupOwnerPublicKey,
+		accessGroupMember.AccessGroupKeyName,
+		&AccessGroupMemberEntry{
+			AccessGroupMemberPublicKey: accessGroupMember.AccessGroupMemberPublicKey,
+			AccessGroupMemberKeyName:   accessGroupMember.AccessGroupMemberKeyName,
+			EncryptedKey:               accessGroupMember.EncryptedKey,
+			ExtraData:                  accessGroupMember.ExtraData,
+		}
+}
+
+type PGAccessGroupMemberEnumerationEntry struct {
+	tableName struct{} `pg:"pg_access_group_member_enumeration_index"`
+
+	AccessGroupMemberPublicKey *PublicKey    `pg:",pk,type:bytea"`
+	AccessGroupOwnerPublicKey  *PublicKey    `pg:",pk,type:bytea"`
+	AccessGroupKeyName         *GroupKeyName `pg:",pk,type:bytea"`
+}
+
 func HexToUint256(input string) *uint256.Int {
 	output := uint256.NewInt()
 
@@ -1019,8 +1110,14 @@ func (postgres *Postgres) UpsertChainTx(tx *pg.Tx, name string, tipHash *BlockHa
 	return err
 }
 
+func (postgres *Postgres) DeleteTransactionsForBlock(block *MsgDeSoBlock, blockNode *BlockNode) error {
+	return postgres.db.RunInTransaction(postgres.db.Context(), func(tx *pg.Tx) error {
+		return postgres.InsertTransactionsTx(tx, block.Txns, blockNode, true)
+	})
+}
+
 // InsertTransactionsTx inserts all the transactions from a block in a bulk query
-func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn, blockNode *BlockNode) error {
+func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn, blockNode *BlockNode, delete bool) error {
 	var transactions []*PGTransaction
 	var transactionOutputs []*PGTransactionOutput
 	var transactionInputs []*PGTransactionOutput
@@ -1049,6 +1146,8 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	var metadataDAOCoinTransfer []*PGMetadataDAOCoinTransfer
 	var metadataDAOCoinLimitOrder []*PGMetadataDAOCoinLimitOrder
 	var metadataDAOCoinLimitOrderBidderInputs []*PGMetadataDAOCoinLimitOrderBidderInputs
+	var metadataAccessGroupCreate []*PGMetadataAccessGroupCreate
+	var metadataAccessGroupMembers []*PGMetadataAccessGroupMembers
 
 	blockHash := blockNode.Hash
 
@@ -1073,24 +1172,64 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		transactions = append(transactions, transaction)
 
 		for ii, input := range txn.TxInputs {
-			transactionInputs = append(transactionInputs, &PGTransactionOutput{
-				OutputHash:  &input.TxID,
-				OutputIndex: input.Index,
-				Height:      blockNode.Height,
-				InputHash:   txnHash,
-				InputIndex:  uint32(ii),
-				Spent:       true,
-			})
+			if !delete {
+				transactionInputs = append(transactionInputs, &PGTransactionOutput{
+					OutputHash:  &input.TxID,
+					OutputIndex: input.Index,
+					Height:      blockNode.Height,
+					InputHash:   txnHash,
+					InputIndex:  uint32(ii),
+					Spent:       true,
+				})
+			} else {
+				// This is dirty and sad but we need to turn all of the current inputs into outputs. The only way to do
+				// this is "hack" the input into what will look like an output with the additional info from the currently
+				// stored UtxoEntry. I think the only field that will be broken is the "height" field, though idt it matters.
+				utxoKey := &UtxoKey{
+					TxID:  input.TxID,
+					Index: input.Index,
+				}
+				utxoEntry := postgres.GetUtxoEntryForUtxoKey(utxoKey)
+				// Do some sanity-checks to make sure the UTXO entry is valid.
+				if utxoEntry == nil {
+					return fmt.Errorf("InsertTransactionsTx: Trying to revert UtxoEntry for UtxoKey %v, but not found", utxoKey)
+				}
+				if !bytes.Equal(utxoEntry.PublicKey, txn.PublicKey) {
+					return fmt.Errorf("InsertTransactionsTx: Trying to revert UtxoEntry for UtxoKey %v, but public key doesn't match", utxoKey)
+				}
+				transactionOutputs = append(transactionOutputs, &PGTransactionOutput{
+					OutputHash:  &input.TxID,
+					OutputIndex: input.Index,
+					OutputType:  utxoEntry.UtxoType,
+					InputHash:   nil,
+					InputIndex:  0,
+					Spent:       false,
+					PublicKey:   txn.PublicKey,
+					AmountNanos: utxoEntry.AmountNanos,
+					Height:      utxoEntry.BlockHeight,
+				})
+			}
 		}
 
 		for ii, output := range txn.TxOutputs {
-			transactionOutputs = append(transactionOutputs, &PGTransactionOutput{
-				OutputHash:  txnHash,
-				OutputIndex: uint32(ii),
-				OutputType:  0, // TODO
-				PublicKey:   output.PublicKey,
-				AmountNanos: output.AmountNanos,
-			})
+			if !delete {
+				transactionOutputs = append(transactionOutputs, &PGTransactionOutput{
+					OutputHash:  txnHash,
+					OutputIndex: uint32(ii),
+					OutputType:  0, // TODO
+					PublicKey:   output.PublicKey,
+					AmountNanos: output.AmountNanos,
+				})
+			} else {
+				// Again, dirty and sad, but we need to get rid of all the outputs from the connected transactions.
+				// Since we reserved transactionOutputs for "hacked" reverted outputs, we use transactionInputs for
+				// the output UtxoEntries that we want to delete.
+				transactionInputs = append(transactionInputs, &PGTransactionOutput{
+					OutputHash:  txnHash,
+					OutputIndex: uint32(ii),
+					PublicKey:   output.PublicKey,
+				})
+			}
 		}
 
 		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
@@ -1356,6 +1495,25 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 
 			// FIXME: Skip PGMetadataMessagingGroup for now since it's not used downstream
 
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupCreate {
+			txMeta := txn.TxnMeta.(*AccessGroupCreateMetadata)
+
+			metadataAccessGroupCreate = append(metadataAccessGroupCreate, &PGMetadataAccessGroupCreate{
+				TransactionHash:           txnHash,
+				AccessGroupOwnerPublicKey: NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
+				AccessGroupKeyName:        NewGroupKeyName(txMeta.AccessGroupKeyName),
+				AccessGroupPublicKey:      NewPublicKey(txMeta.AccessGroupPublicKey),
+			})
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {
+			txMeta := txn.TxnMeta.(*AccessGroupMembersMetadata)
+
+			metadataAccessGroupMembers = append(metadataAccessGroupMembers, &PGMetadataAccessGroupMembers{
+				TransactionHash:           txnHash,
+				AccessGroupOwnerPublicKey: NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
+				AccessGroupKeyName:        NewGroupKeyName(txMeta.AccessGroupKeyName),
+				AccessGroupMembersList:    encodeAccessGroupMembersList(txMeta.AccessGroupMembersList),
+				OperationType:             uint8(txMeta.AccessGroupMemberOperationType),
+			})
 		} else {
 			return fmt.Errorf("InsertTransactionTx: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 		}
@@ -1364,164 +1522,352 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	// Insert the block and all of its data in bulk
 
 	if len(transactions) > 0 {
-		if _, err := tx.Model(&transactions).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			// For deletes, alternatively, we could add "OnConflict" everywhere; however, this way if there is a bug
+			// in the disconnect logic, we would not be able to catch it. If we instead explicitly delete records,
+			// then postgres will throw an error whenever there is a stale record. The alternative is shown below:
+			// tx.Model(&transactions).Returning("NULL").OnConflict("(hash) DO UPDATE").Insert()
+			if _, err := tx.Model(&transactions).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&transactions).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(transactionOutputs) > 0 {
+		// When we delete, we revert existing UtxoEntries to the "hacked" unspent utxos, so we just overwrite instead of deleting,
+		// as transactionOutputs stores these hacked UtxoEntries.
 		if _, err := tx.Model(&transactionOutputs).Returning("NULL").OnConflict("(output_hash, output_index) DO UPDATE").Insert(); err != nil {
 			return err
 		}
 	}
 
 	if len(transactionInputs) > 0 {
-		if _, err := tx.Model(&transactionInputs).WherePK().Column("input_hash", "input_index", "spent").Update(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&transactionInputs).WherePK().Column("input_hash", "input_index", "spent").Update(); err != nil {
+				return err
+			}
+		} else {
+			// In this case the transactionInputs store the transaction outputs that we should delete, as the transactions
+			// are being reverted.
+			if _, err := tx.Model(&transactionInputs).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataBlockRewards) > 0 {
-		if _, err := tx.Model(&metadataBlockRewards).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataBlockRewards).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataBlockRewards).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataBitcoinExchanges) > 0 {
-		if _, err := tx.Model(&metadataBitcoinExchanges).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataBitcoinExchanges).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataBitcoinExchanges).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataPrivateMessages) > 0 {
-		if _, err := tx.Model(&metadataPrivateMessages).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataPrivateMessages).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataPrivateMessages).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataSubmitPosts) > 0 {
-		if _, err := tx.Model(&metadataSubmitPosts).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataSubmitPosts).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataSubmitPosts).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataUpdateProfiles) > 0 {
-		if _, err := tx.Model(&metadataUpdateProfiles).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataUpdateProfiles).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataUpdateProfiles).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataExchangeRates) > 0 {
-		if _, err := tx.Model(&metadataExchangeRates).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataExchangeRates).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataExchangeRates).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataFollows) > 0 {
-		if _, err := tx.Model(&metadataFollows).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataFollows).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataFollows).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataLikes) > 0 {
-		if _, err := tx.Model(&metadataLikes).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataLikes).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataLikes).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataCreatorCoins) > 0 {
-		if _, err := tx.Model(&metadataCreatorCoins).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataCreatorCoins).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataCreatorCoins).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataSwapIdentities) > 0 {
-		if _, err := tx.Model(&metadataSwapIdentities).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataSwapIdentities).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataSwapIdentities).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataCreatorCoinTransfers) > 0 {
-		if _, err := tx.Model(&metadataCreatorCoinTransfers).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataCreatorCoinTransfers).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataCreatorCoinTransfers).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataCreateNFTs) > 0 {
-		if _, err := tx.Model(&metadataCreateNFTs).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataCreateNFTs).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataCreateNFTs).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataUpdateNFTs) > 0 {
-		if _, err := tx.Model(&metadataUpdateNFTs).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataUpdateNFTs).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataUpdateNFTs).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataAcceptNFTBids) > 0 {
-		if _, err := tx.Model(&metadataAcceptNFTBids).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataAcceptNFTBids).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataAcceptNFTBids).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataBidInputs) > 0 {
-		if _, err := tx.Model(&metadataBidInputs).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataBidInputs).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataBidInputs).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataNFTBids) > 0 {
-		if _, err := tx.Model(&metadataNFTBids).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataNFTBids).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataNFTBids).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataNFTTransfer) > 0 {
-		if _, err := tx.Model(&metadataNFTTransfer).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataNFTTransfer).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataNFTTransfer).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataAcceptNFTTransfer) > 0 {
-		if _, err := tx.Model(&metadataAcceptNFTTransfer).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataAcceptNFTTransfer).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataAcceptNFTTransfer).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataBurnNFT) > 0 {
-		if _, err := tx.Model(&metadataBurnNFT).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataBurnNFT).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataBurnNFT).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataDerivedKey) > 0 {
-		if _, err := tx.Model(&metadataDerivedKey).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataDerivedKey).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataDerivedKey).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataDAOCoin) > 0 {
-		if _, err := tx.Model(&metadataDAOCoin).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataDAOCoin).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataDAOCoin).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataDAOCoinTransfer) > 0 {
-		if _, err := tx.Model(&metadataDAOCoinTransfer).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataDAOCoinTransfer).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataDAOCoinTransfer).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataDAOCoinLimitOrder) > 0 {
-		if _, err := tx.Model(&metadataDAOCoinLimitOrder).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataDAOCoinLimitOrder).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataDAOCoinLimitOrder).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataDAOCoinLimitOrderBidderInputs) > 0 {
-		if _, err := tx.Model(&metadataDAOCoinLimitOrderBidderInputs).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataDAOCoinLimitOrderBidderInputs).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataDAOCoinLimitOrderBidderInputs).Returning("NULL").Delete(); err != nil {
+				return err
+			}
+		}
+	}
+
+	if len(metadataAccessGroupCreate) > 0 {
+		if !delete {
+			if _, err := tx.Model(&metadataAccessGroupCreate).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataAccessGroupCreate).Returning("NULL").Delete(); err != nil {
+				return err
+			}
+		}
+	}
+
+	if len(metadataAccessGroupMembers) > 0 {
+		if !delete {
+			if _, err := tx.Model(&metadataAccessGroupMembers).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataAccessGroupMembers).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -1541,7 +1887,7 @@ func (postgres *Postgres) UpsertBlockAndTransactions(blockNode *BlockNode, desoB
 			return err
 		}
 
-		err = postgres.InsertTransactionsTx(tx, desoBlock.Txns, blockNode)
+		err = postgres.InsertTransactionsTx(tx, desoBlock.Txns, blockNode, false)
 		if err != nil {
 			return err
 		}
@@ -1607,6 +1953,12 @@ func (postgres *Postgres) FlushView(view *UtxoView, blockHeight uint64) error {
 			return err
 		}
 		if err := postgres.flushDerivedKeys(tx, view, blockHeight); err != nil {
+			return err
+		}
+		if err := postgres.flushAccessGroupEntries(tx, view); err != nil {
+			return err
+		}
+		if err := postgres.flushAccessGroupMemberEntries(tx, view); err != nil {
 			return err
 		}
 		// Temporarily write limit orders to badger
@@ -1911,15 +2263,15 @@ func (postgres *Postgres) flushMessages(tx *pg.Tx, view *UtxoView) error {
 func (postgres *Postgres) flushMessagingGroups(tx *pg.Tx, view *UtxoView) error {
 	var insertMessages []*PGMessagingGroup
 	var deleteMessages []*PGMessagingGroup
-	for _, groupEntry := range view.AccessGroupKeyToAccessGroupEntry {
+	for _, groupEntry := range view.MessagingGroupKeyToMessagingGroupEntry {
 		messagingGroupMembersBytes := bytes.NewBuffer([]byte{})
-		if err := gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.AccessGroupMembers); err != nil {
+		if err := gob.NewEncoder(messagingGroupMembersBytes).Encode(groupEntry.MessagingGroupMembers); err != nil {
 			return err
 		}
 		pgGroupEntry := &PGMessagingGroup{
 			GroupOwnerPublicKey:   groupEntry.GroupOwnerPublicKey,
-			MessagingPublicKey:    groupEntry.AccessPublicKey,
-			MessagingGroupKeyName: groupEntry.AccessGroupKeyName,
+			MessagingPublicKey:    groupEntry.MessagingPublicKey,
+			MessagingGroupKeyName: groupEntry.MessagingGroupKeyName,
 			MessagingGroupMembers: messagingGroupMembersBytes.Bytes(),
 			ExtraData:             groupEntry.ExtraData,
 		}
@@ -2242,6 +2594,113 @@ func (postgres *Postgres) flushDAOCoinLimitOrders(tx *pg.Tx, view *UtxoView) err
 		_, err := tx.Model(&deleteOrders).Returning("NULL").Delete()
 		if err != nil {
 			return fmt.Errorf("flushDAOCoinLimitOrders: delete: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (postgres *Postgres) flushAccessGroupEntries(tx *pg.Tx, view *UtxoView) error {
+	var insertEntries []*PGAccessGroupEntry
+	var deleteEntries []*PGAccessGroupEntry
+
+	for id, entry := range view.AccessGroupIdToAccessGroupEntry {
+		if entry == nil {
+			glog.Errorf("Postgres.flushAccessGroupEntries: Skipping nil entry for id %v. This should never happen", id)
+			continue
+		}
+
+		accessGroupEntry := &PGAccessGroupEntry{}
+		accessGroupEntry.FromAccessGroupEntry(entry)
+
+		if entry.isDeleted {
+			deleteEntries = append(deleteEntries, accessGroupEntry)
+		} else {
+			insertEntries = append(insertEntries, accessGroupEntry)
+		}
+	}
+
+	if len(insertEntries) > 0 {
+		_, err := tx.Model(&insertEntries).
+			WherePK().
+			OnConflict("(access_group_owner_public_key, access_group_key_name) DO UPDATE").
+			Returning("NULL").
+			Insert()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushAccessGroupEntries: insert: %v", err)
+		}
+	}
+
+	if len(deleteEntries) > 0 {
+		_, err := tx.Model(&deleteEntries).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushAccessGroupEntries: delete: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoView) error {
+	var insertEntries []*PGAccessGroupMemberEntry
+	var deleteEntries []*PGAccessGroupMemberEntry
+	var insertEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
+	var deleteEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
+
+	for id, entry := range view.AccessGroupMembershipKeyToAccessGroupMember {
+		// copy the iterator just in case.
+		idCopy := id
+		if entry == nil {
+			glog.Errorf("Postgres.flushAccessGroupMemberEntries: Skipping nil entry for id %v. This should never happen", id)
+			continue
+		}
+
+		accessGroupMemberEntry := &PGAccessGroupMemberEntry{}
+		accessGroupMemberEntry.FromAccessGroupMemberEntry(idCopy.AccessGroupOwnerPublicKey, idCopy.AccessGroupKeyName, entry)
+		accessGroupMemberEnumerationEntry := &PGAccessGroupMemberEnumerationEntry{
+			AccessGroupMemberPublicKey: accessGroupMemberEntry.AccessGroupMemberPublicKey,
+			AccessGroupOwnerPublicKey:  accessGroupMemberEntry.AccessGroupOwnerPublicKey,
+			AccessGroupKeyName:         accessGroupMemberEntry.AccessGroupKeyName,
+		}
+
+		if entry.isDeleted {
+			deleteEntries = append(deleteEntries, accessGroupMemberEntry)
+			deleteEnumerationEntries = append(deleteEnumerationEntries, accessGroupMemberEnumerationEntry)
+		} else {
+			insertEntries = append(insertEntries, accessGroupMemberEntry)
+			insertEnumerationEntries = append(insertEnumerationEntries, accessGroupMemberEnumerationEntry)
+		}
+	}
+
+	if len(insertEntries) > 0 {
+		_, err := tx.Model(&insertEntries).
+			WherePK().
+			OnConflict("(access_group_member_public_key, access_group_owner_public_key, access_group_key_name) DO UPDATE").
+			Returning("NULL").
+			Insert()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushAccessGroupMemberEntries: insert: %v", err)
+		}
+
+		// On conflict, we do nothing because the entry only has primary keys for fields, so there's nothing to update.
+		_, err = tx.Model(&insertEnumerationEntries).
+			WherePK().
+			OnConflict("(access_group_owner_public_key, access_group_key_name, access_group_member_public_key) DO NOTHING").
+			Returning("NULL").
+			Insert()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushAccessGroupMemberEntries: insertEnumerationEntries: %v", err)
+		}
+	}
+
+	if len(deleteEntries) > 0 {
+		_, err := tx.Model(&deleteEntries).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushAccessGroupMemberEntries: delete: %v", err)
+		}
+		_, err = tx.Model(&deleteEnumerationEntries).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushAccessGroupMemberEntries: deleteEnumerationEntries: %v", err)
 		}
 	}
 
@@ -2853,6 +3312,104 @@ func (postgres *Postgres) GetAllDerivedKeysForOwner(ownerPublicKey *PublicKey) [
 		return nil
 	}
 	return keys
+}
+
+//
+// Access Groups
+//
+
+func (postgres *Postgres) GetAccessGroupByAccessGroupId(accessGroupId *AccessGroupId) *PGAccessGroupEntry {
+	accessGroup := &PGAccessGroupEntry{
+		AccessGroupOwnerPublicKey: &accessGroupId.AccessGroupOwnerPublicKey,
+		AccessGroupKeyName:        &accessGroupId.AccessGroupKeyName,
+	}
+	err := postgres.db.Model(accessGroup).WherePK().First()
+	if err != nil {
+		return nil
+	}
+	return accessGroup
+}
+
+func (postgres *Postgres) GetAccessGroupEntriesForOwner(ownerPublicKey PublicKey) []*PGAccessGroupEntry {
+	var accessGroups []*PGAccessGroupEntry
+	err := postgres.db.Model(&accessGroups).Where("access_group_owner_public_key = ?", ownerPublicKey).Select()
+	if err != nil {
+		return nil
+	}
+	return accessGroups
+}
+
+//
+// AccessGroupMembers
+//
+
+func (postgres *Postgres) GetAccessGroupMemberEntry(accessGroupMemberPublicKey PublicKey,
+	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) *PGAccessGroupMemberEntry {
+
+	accessGroupMember := &PGAccessGroupMemberEntry{
+		AccessGroupMemberPublicKey: &accessGroupMemberPublicKey,
+		AccessGroupOwnerPublicKey:  &accessGroupOwnerPublicKey,
+		AccessGroupKeyName:         &accessGroupKeyName,
+	}
+	err := postgres.db.Model(accessGroupMember).WherePK().First()
+	if err != nil {
+		return nil
+	}
+	return accessGroupMember
+}
+
+func (postgres *Postgres) GetAccessGroupMemberEnumerationEntry(accessGroupMemberPublicKey PublicKey,
+	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) bool {
+
+	accessGroupEnumerationEntry := PGAccessGroupMemberEnumerationEntry{
+		AccessGroupMemberPublicKey: &accessGroupMemberPublicKey,
+		AccessGroupOwnerPublicKey:  &accessGroupOwnerPublicKey,
+		AccessGroupKeyName:         &accessGroupKeyName,
+	}
+	err := postgres.db.Model(&accessGroupEnumerationEntry).WherePK().First()
+	if err != nil {
+		return false
+	}
+	return true
+}
+
+func (postgres *Postgres) GetPaginatedAccessGroupMembersFromEnumerationIndex(accessGroupOwnerPublicKey PublicKey,
+	accessGroupKeyName GroupKeyName, startingAccessGroupMemberPublicKeyBytes []byte, maxMembersToFetch uint32) (
+	_accessGroupMemberPublicKeys []*PublicKey, _err error) {
+
+	var accessGroupEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
+	var accessGroupMemberPublicKeys []*PublicKey
+
+	err := postgres.db.Model(&accessGroupEnumerationEntries).
+		Where("access_group_owner_public_key = ?", accessGroupOwnerPublicKey).
+		Where("access_group_key_name = ?", accessGroupKeyName).
+		Where("access_group_member_public_key > ?", startingAccessGroupMemberPublicKeyBytes).
+		Order("access_group_member_public_key ASC").
+		Limit(int(maxMembersToFetch)).
+		Select()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, accessGroupEnumerationEntry := range accessGroupEnumerationEntries {
+		accessGroupMemberPublicKeys = append(accessGroupMemberPublicKeys, accessGroupEnumerationEntry.AccessGroupMemberPublicKey)
+	}
+	return accessGroupMemberPublicKeys, nil
+}
+
+func (postgres *Postgres) GetAccessGroupEnumerationEntriesForMember(memberPublicKey PublicKey) (
+	_accessGroupIdsMember []*PGAccessGroupMemberEnumerationEntry, _err error) {
+
+	var accessGroupMemberEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
+
+	err := postgres.db.Model(&accessGroupMemberEnumerationEntries).
+		Where("access_group_member_public_key = ?", memberPublicKey).
+		Select()
+	if err != nil {
+		return nil, err
+	}
+
+	return accessGroupMemberEnumerationEntries, nil
 }
 
 //
