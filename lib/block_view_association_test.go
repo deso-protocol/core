@@ -251,9 +251,13 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
-		_submitAssociationTxnHappyPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
-		)
+		txnMsg := MsgDeSoTxn{
+			TxnMeta: createUserAssociationMetadata,
+			ExtraData: map[string][]byte{
+				"UserAssociationKey1": []byte("UserAssociationValue1"),
+			},
+		}
+		_submitAssociationTxnHappyPath(testMeta, m0Pub, m0Priv, txnMsg, flushToDB)
 
 		userAssociationEntry, err = utxoView().GetUserAssociationByAttributes(
 			m0PkBytes, createUserAssociationMetadata,
@@ -265,6 +269,9 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntry.TargetUserPKID, m1PKID)
 		require.Equal(t, userAssociationEntry.AssociationType, "ENDORSEMENT")
 		require.Equal(t, userAssociationEntry.AssociationValue, "SQL")
+		require.Equal(
+			t, string(userAssociationEntry.ExtraData["UserAssociationKey1"]), "UserAssociationValue1",
+		)
 		require.NotNil(t, userAssociationEntry.BlockHeight)
 		associationID = userAssociationEntry.AssociationID
 	}
@@ -280,16 +287,20 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidTransactor)
 	}
 	{
-		// Test overwriting UserAssociation
+		// Test overwriting UserAssociation: new ExtraData field
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppUserPublicKey:    &ZeroPublicKey,
 			AssociationType:     "ENDORSEMENT",
 			AssociationValue:    "SQL",
 		}
-		_submitAssociationTxnHappyPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
-		)
+		txnMsg := MsgDeSoTxn{
+			TxnMeta: createUserAssociationMetadata,
+			ExtraData: map[string][]byte{
+				"UserAssociationKey2": []byte("UserAssociationValue2"),
+			},
+		}
+		_submitAssociationTxnHappyPath(testMeta, m0Pub, m0Priv, txnMsg, flushToDB)
 
 		userAssociationEntry, err = utxoView().GetUserAssociationByAttributes(
 			m0PkBytes, createUserAssociationMetadata,
@@ -297,6 +308,41 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.NotNil(t, userAssociationEntry)
 		require.NotEqual(t, userAssociationEntry.AssociationID, associationID)
+		require.Equal(
+			t, string(userAssociationEntry.ExtraData["UserAssociationKey1"]), "UserAssociationValue1",
+		)
+		require.Equal(
+			t, string(userAssociationEntry.ExtraData["UserAssociationKey2"]), "UserAssociationValue2",
+		)
+	}
+	{
+		// Test overwriting UserAssociation: updated ExtraData field
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AppUserPublicKey:    &ZeroPublicKey,
+			AssociationType:     "ENDORSEMENT",
+			AssociationValue:    "SQL",
+		}
+		txnMsg := MsgDeSoTxn{
+			TxnMeta: createUserAssociationMetadata,
+			ExtraData: map[string][]byte{
+				"UserAssociationKey2": []byte("UserAssociationValue2-Updated"),
+			},
+		}
+		_submitAssociationTxnHappyPath(testMeta, m0Pub, m0Priv, txnMsg, flushToDB)
+
+		userAssociationEntry, err = utxoView().GetUserAssociationByAttributes(
+			m0PkBytes, createUserAssociationMetadata,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, userAssociationEntry)
+		require.NotEqual(t, userAssociationEntry.AssociationID, associationID)
+		require.Equal(
+			t, string(userAssociationEntry.ExtraData["UserAssociationKey1"]), "UserAssociationValue1",
+		)
+		require.Equal(
+			t, string(userAssociationEntry.ExtraData["UserAssociationKey2"]), "UserAssociationValue2-Updated",
+		)
 	}
 	{
 		// DeleteUserAssociation
@@ -487,9 +533,13 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		}
-		_submitAssociationTxnHappyPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
-		)
+		txnMsg := MsgDeSoTxn{
+			TxnMeta: createPostAssociationMetadata,
+			ExtraData: map[string][]byte{
+				"PostAssociationKey1": []byte("PostAssociationValue1"),
+			},
+		}
+		_submitAssociationTxnHappyPath(testMeta, m0Pub, m0Priv, txnMsg, flushToDB)
 
 		postAssociationEntry, err = utxoView().GetPostAssociationByAttributes(
 			m0PkBytes, createPostAssociationMetadata,
@@ -501,6 +551,9 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, postAssociationEntry.PostHash, postHash)
 		require.Equal(t, postAssociationEntry.AssociationType, "REACTION")
 		require.Equal(t, postAssociationEntry.AssociationValue, "HEART")
+		require.Equal(
+			t, string(postAssociationEntry.ExtraData["PostAssociationKey1"]), "PostAssociationValue1",
+		)
 		require.NotNil(t, postAssociationEntry.BlockHeight)
 		associationID = postAssociationEntry.AssociationID
 	}
@@ -516,16 +569,20 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidTransactor)
 	}
 	{
-		// Test overwriting PostAssociation
+		// Test overwriting PostAssociation: new ExtraData field
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppUserPublicKey: &ZeroPublicKey,
 			AssociationType:  "REACTION",
 			AssociationValue: "HEART",
 		}
-		_submitAssociationTxnHappyPath(
-			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
-		)
+		txnMsg := MsgDeSoTxn{
+			TxnMeta: createPostAssociationMetadata,
+			ExtraData: map[string][]byte{
+				"PostAssociationKey2": []byte("PostAssociationValue2"),
+			},
+		}
+		_submitAssociationTxnHappyPath(testMeta, m0Pub, m0Priv, txnMsg, flushToDB)
 
 		postAssociationEntry, err = utxoView().GetPostAssociationByAttributes(
 			m0PkBytes, createPostAssociationMetadata,
@@ -533,6 +590,41 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.NotNil(t, postAssociationEntry)
 		require.NotEqual(t, postAssociationEntry.AssociationID, associationID)
+		require.Equal(
+			t, string(postAssociationEntry.ExtraData["PostAssociationKey1"]), "PostAssociationValue1",
+		)
+		require.Equal(
+			t, string(postAssociationEntry.ExtraData["PostAssociationKey2"]), "PostAssociationValue2",
+		)
+	}
+	{
+		// Test overwriting PostAssociation: updated ExtraData field
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AppUserPublicKey: &ZeroPublicKey,
+			AssociationType:  "REACTION",
+			AssociationValue: "HEART",
+		}
+		txnMsg := MsgDeSoTxn{
+			TxnMeta: createPostAssociationMetadata,
+			ExtraData: map[string][]byte{
+				"PostAssociationKey2": []byte("PostAssociationValue2-Updated"),
+			},
+		}
+		_submitAssociationTxnHappyPath(testMeta, m0Pub, m0Priv, txnMsg, flushToDB)
+
+		postAssociationEntry, err = utxoView().GetPostAssociationByAttributes(
+			m0PkBytes, createPostAssociationMetadata,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, postAssociationEntry)
+		require.NotEqual(t, postAssociationEntry.AssociationID, associationID)
+		require.Equal(
+			t, string(postAssociationEntry.ExtraData["PostAssociationKey1"]), "PostAssociationValue1",
+		)
+		require.Equal(
+			t, string(postAssociationEntry.ExtraData["PostAssociationKey2"]), "PostAssociationValue2-Updated",
+		)
 	}
 	{
 		// DeletePostAssociation
@@ -1340,6 +1432,7 @@ func _submitAssociationTxnSadPath(
 		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateCreateUserAssociationTxn(
 			updaterPkBytes,
 			inputTxn.TxnMeta.(*CreateUserAssociationMetadata),
+			inputTxn.ExtraData,
 			testMeta.feeRateNanosPerKb,
 			testMeta.mempool,
 			[]*DeSoOutput{},
@@ -1348,6 +1441,7 @@ func _submitAssociationTxnSadPath(
 		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateDeleteUserAssociationTxn(
 			updaterPkBytes,
 			inputTxn.TxnMeta.(*DeleteUserAssociationMetadata),
+			inputTxn.ExtraData,
 			testMeta.feeRateNanosPerKb,
 			testMeta.mempool,
 			[]*DeSoOutput{},
@@ -1356,6 +1450,7 @@ func _submitAssociationTxnSadPath(
 		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateCreatePostAssociationTxn(
 			updaterPkBytes,
 			inputTxn.TxnMeta.(*CreatePostAssociationMetadata),
+			inputTxn.ExtraData,
 			testMeta.feeRateNanosPerKb,
 			testMeta.mempool,
 			[]*DeSoOutput{},
@@ -1364,6 +1459,7 @@ func _submitAssociationTxnSadPath(
 		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateDeletePostAssociationTxn(
 			updaterPkBytes,
 			inputTxn.TxnMeta.(*DeletePostAssociationMetadata),
+			inputTxn.ExtraData,
 			testMeta.feeRateNanosPerKb,
 			testMeta.mempool,
 			[]*DeSoOutput{},

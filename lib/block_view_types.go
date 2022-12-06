@@ -4595,6 +4595,7 @@ type UserAssociationEntry struct {
 	AppUserPKID      *PKID
 	AssociationType  string
 	AssociationValue string
+	ExtraData        map[string][]byte
 	BlockHeight      uint32
 	isDeleted        bool
 }
@@ -4606,11 +4607,19 @@ type PostAssociationEntry struct {
 	AppUserPKID      *PKID
 	AssociationType  string
 	AssociationValue string
+	ExtraData        map[string][]byte
 	BlockHeight      uint32
 	isDeleted        bool
 }
 
 func (associationEntry *UserAssociationEntry) Copy() *UserAssociationEntry {
+	// Copy ExtraData.
+	extraDataCopy := make(map[string][]byte)
+	for key, value := range associationEntry.ExtraData {
+		extraDataCopy[key] = value
+	}
+
+	// Return new AssociationEntry.
 	return &UserAssociationEntry{
 		AssociationID:    associationEntry.AssociationID.NewBlockHash(),
 		TransactorPKID:   associationEntry.TransactorPKID.NewPKID(),
@@ -4618,12 +4627,20 @@ func (associationEntry *UserAssociationEntry) Copy() *UserAssociationEntry {
 		AppUserPKID:      associationEntry.AppUserPKID.NewPKID(),
 		AssociationType:  strings.Clone(associationEntry.AssociationType),
 		AssociationValue: strings.Clone(associationEntry.AssociationValue),
+		ExtraData:        extraDataCopy,
 		BlockHeight:      associationEntry.BlockHeight,
 		isDeleted:        associationEntry.isDeleted,
 	}
 }
 
 func (associationEntry *PostAssociationEntry) Copy() *PostAssociationEntry {
+	// Copy ExtraData.
+	extraDataCopy := make(map[string][]byte)
+	for key, value := range associationEntry.ExtraData {
+		extraDataCopy[key] = value
+	}
+
+	// Return new AssociationEntry.
 	return &PostAssociationEntry{
 		AssociationID:    associationEntry.AssociationID.NewBlockHash(),
 		TransactorPKID:   associationEntry.TransactorPKID.NewPKID(),
@@ -4631,6 +4648,7 @@ func (associationEntry *PostAssociationEntry) Copy() *PostAssociationEntry {
 		AppUserPKID:      associationEntry.AppUserPKID.NewPKID(),
 		AssociationType:  strings.Clone(associationEntry.AssociationType),
 		AssociationValue: strings.Clone(associationEntry.AssociationValue),
+		ExtraData:        extraDataCopy,
 		BlockHeight:      associationEntry.BlockHeight,
 		isDeleted:        associationEntry.isDeleted,
 	}
@@ -4644,6 +4662,7 @@ func (associationEntry *UserAssociationEntry) RawEncodeWithoutMetadata(blockHeig
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.AppUserPKID, skipMetadata...)...)
 	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationType))...)
 	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationValue))...)
+	data = append(data, EncodeExtraData(associationEntry.ExtraData)...)
 	data = append(data, UintToBuf(uint64(associationEntry.BlockHeight))...)
 	return data
 }
@@ -4656,6 +4675,7 @@ func (associationEntry *PostAssociationEntry) RawEncodeWithoutMetadata(blockHeig
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.AppUserPKID, skipMetadata...)...)
 	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationType))...)
 	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationValue))...)
+	data = append(data, EncodeExtraData(associationEntry.ExtraData)...)
 	data = append(data, UintToBuf(uint64(associationEntry.BlockHeight))...)
 	return data
 }
@@ -4708,6 +4728,13 @@ func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AssociationValue: ")
 	}
 	associationEntry.AssociationValue = string(associationValueBytes)
+
+	// ExtraData
+	extraData, err := DecodeExtraData(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading ExtraData: ")
+	}
+	associationEntry.ExtraData = extraData
 
 	// BlockHeight
 	entryBlockHeight, err := ReadUvarint(rr)
@@ -4771,6 +4798,13 @@ func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	}
 	associationEntry.AssociationValue = string(associationValueBytes)
 
+	// ExtraData
+	extraData, err := DecodeExtraData(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading ExtraData: ")
+	}
+	associationEntry.ExtraData = extraData
+
 	// BlockHeight
 	entryBlockHeight, err := ReadUvarint(rr)
 	if err != nil {
@@ -4805,10 +4839,9 @@ type AssociationMapKey struct {
 }
 
 func (associationEntry *UserAssociationEntry) Eq(other *UserAssociationEntry) bool {
-	// Compare if two user association entries are equal. Note that their
-	// BlockHeights can differ, and we would still consider them equal.
-	// Note: AssociationType is case-insensitive while AssociationValue
-	// is case-sensitive.
+	// Compare if two user association entries are equal. Note that their ExtraData and
+	// BlockHeights can differ, and we would still consider them equal. Also note that
+	// AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
 		associationEntry.TargetUserPKID.Eq(other.TargetUserPKID) &&
 		associationEntry.AppUserPKID.Eq(other.AppUserPKID) &&
@@ -4817,10 +4850,9 @@ func (associationEntry *UserAssociationEntry) Eq(other *UserAssociationEntry) bo
 }
 
 func (associationEntry *PostAssociationEntry) Eq(other *PostAssociationEntry) bool {
-	// Compare if two post association entries are equal. Note that their
-	// BlockHeights can differ, and we would still consider them equal.
-	// Note: AssociationType is case-insensitive while AssociationValue
-	// is case-sensitive.
+	// Compare if two post association entries are equal. Note that their ExtraData and
+	// BlockHeights can differ, and we would still consider them equal. Also note that
+	// AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
 		associationEntry.PostHash.IsEqual(other.PostHash) &&
 		associationEntry.AppUserPKID.Eq(other.AppUserPKID) &&

@@ -4901,6 +4901,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 func (bc *Blockchain) CreateCreateUserAssociationTxn(
 	transactorPublicKey []byte,
 	metadata *CreateUserAssociationMetadata,
+	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
 	mempool *DeSoMempool,
 	additionalOutputs []*DeSoOutput,
@@ -4916,6 +4917,7 @@ func (bc *Blockchain) CreateCreateUserAssociationTxn(
 		PublicKey: transactorPublicKey,
 		TxnMeta:   metadata,
 		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
 		// We wait to compute the signature until
 		// we've added all the inputs and change.
 	}
@@ -4927,6 +4929,7 @@ func (bc *Blockchain) CreateCreateUserAssociationTxn(
 func (bc *Blockchain) CreateDeleteUserAssociationTxn(
 	transactorPublicKey []byte,
 	metadata *DeleteUserAssociationMetadata,
+	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
 	mempool *DeSoMempool,
 	additionalOutputs []*DeSoOutput,
@@ -4942,6 +4945,7 @@ func (bc *Blockchain) CreateDeleteUserAssociationTxn(
 		PublicKey: transactorPublicKey,
 		TxnMeta:   metadata,
 		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
 		// We wait to compute the signature until
 		// we've added all the inputs and change.
 	}
@@ -4953,6 +4957,7 @@ func (bc *Blockchain) CreateDeleteUserAssociationTxn(
 func (bc *Blockchain) CreateCreatePostAssociationTxn(
 	transactorPublicKey []byte,
 	metadata *CreatePostAssociationMetadata,
+	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
 	mempool *DeSoMempool,
 	additionalOutputs []*DeSoOutput,
@@ -4968,6 +4973,7 @@ func (bc *Blockchain) CreateCreatePostAssociationTxn(
 		PublicKey: transactorPublicKey,
 		TxnMeta:   metadata,
 		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
 		// We wait to compute the signature until
 		// we've added all the inputs and change.
 	}
@@ -4979,6 +4985,7 @@ func (bc *Blockchain) CreateCreatePostAssociationTxn(
 func (bc *Blockchain) CreateDeletePostAssociationTxn(
 	transactorPublicKey []byte,
 	metadata *DeletePostAssociationMetadata,
+	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
 	mempool *DeSoMempool,
 	additionalOutputs []*DeSoOutput,
@@ -4994,6 +5001,7 @@ func (bc *Blockchain) CreateDeletePostAssociationTxn(
 		PublicKey: transactorPublicKey,
 		TxnMeta:   metadata,
 		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
 		// We wait to compute the signature until
 		// we've added all the inputs and change.
 	}
