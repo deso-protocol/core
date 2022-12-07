@@ -8851,7 +8851,7 @@ func DBPutUserAssociationWithTxn(
 	return nil
 }
 
-func DBDeleteUserAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *UserAssociationEntry, ) error {
+func DBDeleteUserAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *UserAssociationEntry) error {
 	if associationEntry == nil {
 		return nil
 	}
