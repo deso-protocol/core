@@ -30,6 +30,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	var postAssociationEntries []*PostAssociationEntry
 	var submitPostMetadata *SubmitPostMetadata
 	var postHash *BlockHash
+	var userAssociationQuery *UserAssociationQuery
+	var count uint64
 	var err error
 
 	// Initialize test chain and miner.
@@ -734,18 +736,24 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		)
 
 		// Query for all endorsements of m0 (none exist)
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:  m0PKID,
 			AssociationType: "ENDORSEMENT",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Empty(t, userAssociationEntries)
 
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Zero(t, count)
+
 		// Query for all endorsements of m1
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:  m1PKID,
 			AssociationType: "ENDORSEMENT",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 2)
 		sort.Slice(userAssociationEntries, func(ii, jj int) bool {
@@ -754,53 +762,78 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntries[0].AssociationValue, "JavaScript")
 		require.Equal(t, userAssociationEntries[1].AssociationValue, "SQL")
 
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Equal(t, count, uint64(2))
+
 		// Query for m0's global SQL endorsements of m1 (none exist)
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:   m0PKID,
 			TargetUserPKID:   m1PKID,
 			AppPKID:          &ZeroPKID,
 			AssociationType:  "ENDORSEMENT",
 			AssociationValue: "SQL",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Empty(t, userAssociationEntries)
 
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Zero(t, count)
+
 		// Query for m0's SQL endorsements of m1 scoped to m4's app
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:   m0PKID,
 			TargetUserPKID:   m1PKID,
 			AppPKID:          m4PKID,
 			AssociationType:  "ENDORSEMENT",
 			AssociationValue: "SQL",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 1)
 
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Equal(t, count, uint64(1))
+
 		// Query for all endorsements of m1 by m2
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:  m2PKID,
 			TargetUserPKID:  m1PKID,
 			AssociationType: "ENDORSEMENT",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 1)
 		require.Equal(t, userAssociationEntries[0].AssociationValue, "JavaScript")
 
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Equal(t, count, uint64(1))
+
 		// Query for all ENDORSEMENT: SQL by m0
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:   m0PKID,
 			AssociationType:  "ENDORSEMENT",
 			AssociationValue: "SQL",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 1)
 		require.Equal(t, userAssociationEntries[0].TargetUserPKID, m1PKID)
 
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Equal(t, count, uint64(1))
+
 		// Query for all endorse* by m0
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:        m0PKID,
 			AssociationTypePrefix: "endorse",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 2)
 		sort.Slice(userAssociationEntries, func(ii, jj int) bool {
@@ -809,32 +842,47 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntries[0].AssociationValue, "JAVA")
 		require.Equal(t, userAssociationEntries[1].AssociationValue, "SQL")
 
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Equal(t, count, uint64(2))
+
 		// Query for all Acme University Alumni members as defined by m0
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:   m0PKID,
 			AssociationType:  "MEMBERSHIP",
 			AssociationValue: "Acme University Alumni",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 1)
 		require.Equal(t, userAssociationEntries[0].TargetUserPKID, m1PKID)
 
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Equal(t, count, uint64(1))
+
 		// Query for all Acme University * members as defined by m0
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:         m0PKID,
 			AssociationType:        "MEMBERSHIP",
 			AssociationValuePrefix: "Acme University",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 1)
 		require.Equal(t, userAssociationEntries[0].TargetUserPKID, m1PKID)
 
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Equal(t, count, uint64(1))
+
 		// Query for all C* endorsements of m3
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:         m3PKID,
 			AssociationType:        "ENDORSEMENT",
 			AssociationValuePrefix: "C",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 3)
 		sort.Slice(userAssociationEntries, func(ii, jj int) bool {
@@ -844,36 +892,61 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntries[1].AssociationValue, "C#")
 		require.Equal(t, userAssociationEntries[2].AssociationValue, "C++")
 
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Equal(t, count, uint64(3))
+
 		// Failed query: no params specified
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{})
+		userAssociationQuery = &UserAssociationQuery{}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid query params")
 		require.Nil(t, userAssociationEntries)
 
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params")
+		require.Zero(t, count)
+
 		// Failed query: AssociationType and AssociationTypePrefix specified
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:        m3PKID,
 			AssociationType:       "ENDORSEMENT",
 			AssociationTypePrefix: "ENDORSE",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid query params")
+		require.Nil(t, userAssociationEntries)
+
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params")
+		require.Zero(t, count)
 
 		// Failed query: AssociationValue and AssociationValuePrefix specified
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:         m3PKID,
 			AssociationType:        "ENDORSEMENT",
 			AssociationValue:       "C#",
 			AssociationValuePrefix: "C",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid query params")
+		require.Nil(t, userAssociationEntries)
+
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params")
+		require.Zero(t, count)
 
 		// Failed query if Badger: no Transactor or TargetUser specified
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			AssociationType:  "ENDORSEMENT",
 			AssociationValue: "C#",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		if chain.postgres != nil {
 			require.NoError(t, err)
 			require.Len(t, userAssociationEntries, 1)
@@ -881,13 +954,24 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		} else {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid query params")
+			require.Nil(t, userAssociationEntries)
+		}
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		if chain.postgres != nil {
+			require.NoError(t, err)
+			require.Equal(t, count, uint64(1))
+		} else {
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid query params")
+			require.Zero(t, count)
 		}
 
 		// Failed query if Badger: empty AssociationType and non-empty AssociationValue
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:   m4PKID,
 			AssociationValue: "C#",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		if chain.postgres != nil {
 			require.NoError(t, err)
 			require.Len(t, userAssociationEntries, 1)
@@ -895,14 +979,25 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		} else {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid query params")
+			require.Nil(t, userAssociationEntries)
+		}
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		if chain.postgres != nil {
+			require.NoError(t, err)
+			require.Equal(t, count, uint64(1))
+		} else {
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid query params")
+			require.Zero(t, count)
 		}
 
 		// Failed query if Badger: non-empty AssociationTypePrefix and non-empty AssociationValue
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:        m4PKID,
 			AssociationTypePrefix: "ENDORSE",
 			AssociationValue:      "C#",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		if chain.postgres != nil {
 			require.NoError(t, err)
 			require.Len(t, userAssociationEntries, 1)
@@ -910,15 +1005,26 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		} else {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid query params")
+			require.Nil(t, userAssociationEntries)
+		}
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		if chain.postgres != nil {
+			require.NoError(t, err)
+			require.Equal(t, count, uint64(1))
+		} else {
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid query params")
+			require.Zero(t, count)
 		}
 
 		// Failed query if Badger: empty AssociationValue and non-empty AppPKID
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(&UserAssociationQuery{
+		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:  m0PKID,
 			TargetUserPKID:  m1PKID,
 			AppPKID:         m4PKID,
 			AssociationType: "ENDORSEMENT",
-		})
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		if chain.postgres != nil {
 			require.NoError(t, err)
 			require.Len(t, userAssociationEntries, 1)
@@ -926,6 +1032,16 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		} else {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid query params")
+			require.Nil(t, userAssociationEntries)
+		}
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		if chain.postgres != nil {
+			require.NoError(t, err)
+			require.Equal(t, count, uint64(1))
+		} else {
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid query params")
+			require.Zero(t, count)
 		}
 	}
 	// ---------------------------------
