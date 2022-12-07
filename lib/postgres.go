@@ -3194,11 +3194,47 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 }
 
 func (postgres *Postgres) GetUserAssociationsByAttributes(associationQuery *UserAssociationQuery) ([]*UserAssociationEntry, error) {
-	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
-	var pgAssociations []PGUserAssociation
-
 	// Construct SQL query.
+	var pgAssociations []PGUserAssociation
 	sqlQuery := postgres.db.Model(&pgAssociations)
+	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery)
+
+	// Execute SQL query.
+	if err := sqlQuery.Select(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	// Map from PGAssociation to AssociationEntry.
+	var associationEntries []*UserAssociationEntry
+	for _, pgAssociation := range pgAssociations {
+		associationEntries = append(associationEntries, pgAssociation.ToUserAssociationEntry())
+	}
+	return associationEntries, nil
+}
+
+func (postgres *Postgres) GetUserAssociationIdsByAttributes(associationQuery *UserAssociationQuery) ([]*BlockHash, error) {
+	// Construct SQL query.
+	sqlQuery := postgres.db.Model(&[]PGUserAssociation{}).Column("association_id")
+	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery)
+
+	// Execute SQL query.
+	var associationIds []*BlockHash
+	if err := sqlQuery.Select(&associationIds); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return associationIds, nil
+}
+
+func _constructFilterUserAssociationsByAttributesQuery(sqlQuery *pg.Query, associationQuery *UserAssociationQuery) {
+	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	if associationQuery.TransactorPKID != nil {
 		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
 	}
@@ -3218,6 +3254,13 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(associationQuery *User
 	} else if associationQuery.AssociationValuePrefix != "" {
 		sqlQuery.Where("association_value LIKE ?", associationQuery.AssociationValuePrefix+"%")
 	}
+}
+
+func (postgres *Postgres) GetPostAssociationsByAttributes(associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
+	// Construct SQL query.
+	var pgAssociations []PGPostAssociation
+	sqlQuery := postgres.db.Model(&pgAssociations)
+	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery)
 
 	// Execute SQL query.
 	if err := sqlQuery.Select(); err != nil {
@@ -3229,19 +3272,32 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(associationQuery *User
 	}
 
 	// Map from PGAssociation to AssociationEntry.
-	associationEntries := []*UserAssociationEntry{}
+	associationEntries := []*PostAssociationEntry{}
 	for _, pgAssociation := range pgAssociations {
-		associationEntries = append(associationEntries, pgAssociation.ToUserAssociationEntry())
+		associationEntries = append(associationEntries, pgAssociation.ToPostAssociationEntry())
 	}
 	return associationEntries, nil
 }
 
-func (postgres *Postgres) GetPostAssociationsByAttributes(associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
-	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
-	var pgAssociations []PGPostAssociation
-
+func (postgres *Postgres) GetPostAssociationIdsByAttributes(associationQuery *PostAssociationQuery) ([]*BlockHash, error) {
 	// Construct SQL query.
-	sqlQuery := postgres.db.Model(&pgAssociations)
+	sqlQuery := postgres.db.Model(&[]PGPostAssociation{}).Column("association_id")
+	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery)
+
+	// Execute SQL query.
+	var associationIds []*BlockHash
+	if err := sqlQuery.Select(&associationIds); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return associationIds, nil
+}
+
+func _constructFilterPostAssociationsByAttributesQuery(sqlQuery *pg.Query, associationQuery *PostAssociationQuery) {
+	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	if associationQuery.TransactorPKID != nil {
 		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
 	}
@@ -3261,22 +3317,6 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(associationQuery *Post
 	} else if associationQuery.AssociationValuePrefix != "" {
 		sqlQuery.Where("association_value LIKE ?", associationQuery.AssociationValuePrefix+"%")
 	}
-
-	// Execute SQL query.
-	if err := sqlQuery.Select(); err != nil {
-		// If we don't find anything, don't error. Just return nil.
-		if err.Error() == "pg: no rows in result set" {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	// Map from PGAssociation to AssociationEntry.
-	associationEntries := []*PostAssociationEntry{}
-	for _, pgAssociation := range pgAssociations {
-		associationEntries = append(associationEntries, pgAssociation.ToPostAssociationEntry())
-	}
-	return associationEntries, nil
 }
 
 func (postgres *Postgres) flushUserAssociations(tx *pg.Tx, view *UtxoView, blockHeight uint64) error {
