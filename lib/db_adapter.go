@@ -76,6 +76,20 @@ func (adapter *DbAdapter) GetPostAssociationsByAttributes(associationQuery *Post
 	return DBGetPostAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery)
 }
 
+func (adapter *DbAdapter) GetUserAssociationIdsByAttributes(associationQuery *UserAssociationQuery) ([]*BlockHash, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetUserAssociationIdsByAttributes(associationQuery)
+	}
+	return DBGetUserAssociationIdsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery)
+}
+
+func (adapter *DbAdapter) GetPostAssociationIdsByAttributes(associationQuery *PostAssociationQuery) ([]*BlockHash, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetPostAssociationIdsByAttributes(associationQuery)
+	}
+	return DBGetPostAssociationIdsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery)
+}
+
 //
 // Balance entry
 //

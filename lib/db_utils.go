@@ -8574,6 +8574,27 @@ func DBGetPostAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, qu
 }
 
 func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associationQuery *UserAssociationQuery) ([]*UserAssociationEntry, error) {
+	// Query for association IDs by input query params.
+	associationIDs, err := DBGetUserAssociationIdsByAttributes(handle, snap, associationQuery)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: ")
+	}
+
+	// Map from association IDs to association entries.
+	var associationEntries []*UserAssociationEntry
+
+	for _, associationID := range associationIDs {
+		// Retrieve association entry from db by ID.
+		associationEntry, err := DBGetUserAssociationByID(handle, snap, associationID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
+		}
+		associationEntries = append(associationEntries, associationEntry)
+	}
+	return associationEntries, nil
+}
+
+func DBGetUserAssociationIdsByAttributes(handle *badger.DB, snap *Snapshot, associationQuery *UserAssociationQuery) ([]*BlockHash, error) {
 	// Construct key based on input query params.
 	var keyPrefix []byte
 
@@ -8595,7 +8616,7 @@ func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 		keyPrefix = append(keyPrefix, associationQuery.TargetUserPKID.ToBytes()...)
 	} else {
 		// TransactorPKID == nil, TargetUserPKID == nil
-		return nil, errors.New("DBGetUserAssociationsByAttributes: invalid query params")
+		return nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params")
 	}
 
 	// AssociationType
@@ -8604,7 +8625,7 @@ func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 		keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	} else if associationQuery.AssociationValue != "" || associationQuery.AssociationValuePrefix != "" {
 		// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
-		return nil, errors.New("DBGetUserAssociationsByAttributes: invalid query params")
+		return nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params")
 	} else if associationQuery.AssociationTypePrefix != "" {
 		keyPrefix = append(keyPrefix, []byte(strings.ToLower(associationQuery.AssociationTypePrefix))...)
 	}
@@ -8623,13 +8644,13 @@ func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 			associationQuery.TargetUserPKID == nil ||
 			associationQuery.AssociationType == "" ||
 			associationQuery.AssociationValue == "" {
-			return nil, errors.New("DBGetUserAssociationsByAttributes: invalid query params")
+			return nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params")
 		}
 		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
 	}
 
-	// Scan for all entries with the given key prefix.
-	_, valsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	// Scan for all association IDs with the given key prefix.
+	_, valsFound := EnumerateKeysForPrefix(handle, keyPrefix)
 	var associationIDs []*BlockHash
 
 	// Cast resulting values from bytes to association IDs.
@@ -8637,18 +8658,26 @@ func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 		associationID := &BlockHash{}
 		rr := bytes.NewReader(valBytes)
 		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
-			return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem decoding association id: ")
+			return nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: problem decoding association id: ")
 		}
-
 		associationIDs = append(associationIDs, associationID)
+	}
+	return associationIDs, nil
+}
+
+func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
+	// Query for association IDs by input query params.
+	associationIDs, err := DBGetPostAssociationIdsByAttributes(handle, snap, associationQuery)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetPostAssociationsByAttributes: ")
 	}
 
 	// Map from association IDs to association entries.
-	var associationEntries []*UserAssociationEntry
+	var associationEntries []*PostAssociationEntry
 
 	for _, associationID := range associationIDs {
 		// Retrieve association entry from db by ID.
-		associationEntry, err := DBGetUserAssociationByID(handle, snap, associationID)
+		associationEntry, err := DBGetPostAssociationByID(handle, snap, associationID)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
 		}
@@ -8657,7 +8686,7 @@ func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 	return associationEntries, nil
 }
 
-func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
+func DBGetPostAssociationIdsByAttributes(handle *badger.DB, snap *Snapshot, associationQuery *PostAssociationQuery) ([]*BlockHash, error) {
 	// Construct key based on input query params.
 	var keyPrefix []byte
 
@@ -8677,7 +8706,7 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 			associationQuery.AssociationValuePrefix != "" ||
 			associationQuery.PostHash != nil {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "" || PostHash != nil)
-			return nil, errors.New("DBGetPostAssociationsByAttributes: invalid query params")
+			return nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		} else if associationQuery.AssociationTypePrefix != "" {
 			keyPrefix = append(keyPrefix, []byte(strings.ToLower(associationQuery.AssociationTypePrefix))...)
 		}
@@ -8688,7 +8717,7 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 		} else if associationQuery.PostHash != nil {
 			// AssociationValue == "", PostHash != nil
-			return nil, errors.New("DBGetPostAssociationsByAttributes: invalid query params")
+			return nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		} else if associationQuery.AssociationValuePrefix != "" {
 			keyPrefix = append(keyPrefix, []byte(associationQuery.AssociationValuePrefix)...)
 		}
@@ -8712,7 +8741,7 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 		} else if associationQuery.AssociationValue != "" || associationQuery.AssociationValuePrefix != "" {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
-			return nil, errors.New("DBGetPostAssociationsByAttributes: invalid query params")
+			return nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		} else if associationQuery.AssociationTypePrefix != "" {
 			keyPrefix = append(keyPrefix, []byte(strings.ToLower(associationQuery.AssociationTypePrefix))...)
 		}
@@ -8736,7 +8765,7 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 		} else if associationQuery.AssociationValue != "" || associationQuery.AssociationValuePrefix != "" {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
-			return nil, errors.New("DBGetPostAssociationsByAttributes: invalid query params")
+			return nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		} else if associationQuery.AssociationTypePrefix != "" {
 			keyPrefix = append(keyPrefix, []byte(strings.ToLower(associationQuery.AssociationTypePrefix))...)
 		}
@@ -8756,13 +8785,13 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 			associationQuery.PostHash == nil ||
 			associationQuery.AssociationType == "" ||
 			associationQuery.AssociationValue == "" {
-			return nil, errors.New("DBGetPostAssociationsByAttributes: invalid query params")
+			return nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		}
 		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
 	}
 
-	// Scan for all entries with the given key prefix.
-	_, valsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	// Scan for all association IDs with the given key prefix.
+	_, valsFound := EnumerateKeysForPrefix(handle, keyPrefix)
 	var associationIDs []*BlockHash
 
 	// Cast resulting values from bytes to association IDs.
@@ -8770,24 +8799,11 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 		associationID := &BlockHash{}
 		rr := bytes.NewReader(valBytes)
 		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
-			return nil, errors.Wrapf(err, "DBGetPostAssociationsByAttributes: problem decoding association id: ")
+			return nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: problem decoding association id: ")
 		}
-
 		associationIDs = append(associationIDs, associationID)
 	}
-
-	// Map from association IDs to association entries.
-	var associationEntries []*PostAssociationEntry
-
-	for _, associationID := range associationIDs {
-		// Retrieve association entry from db by ID.
-		associationEntry, err := DBGetPostAssociationByID(handle, snap, associationID)
-		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
-		}
-		associationEntries = append(associationEntries, associationEntry)
-	}
-	return associationEntries, nil
+	return associationIDs, nil
 }
 
 func DBPutUserAssociationWithTxn(
@@ -8835,11 +8851,7 @@ func DBPutUserAssociationWithTxn(
 	return nil
 }
 
-func DBDeleteUserAssociationWithTxn(
-	txn *badger.Txn,
-	snap *Snapshot,
-	associationEntry *UserAssociationEntry,
-) error {
+func DBDeleteUserAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *UserAssociationEntry, ) error {
 	if associationEntry == nil {
 		return nil
 	}
@@ -8924,11 +8936,7 @@ func DBPutPostAssociationWithTxn(
 	return nil
 }
 
-func DBDeletePostAssociationWithTxn(
-	txn *badger.Txn,
-	snap *Snapshot,
-	associationEntry *PostAssociationEntry,
-) error {
+func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *PostAssociationEntry) error {
 	if associationEntry == nil {
 		return nil
 	}
