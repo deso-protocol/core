@@ -609,6 +609,40 @@ func (bav *UtxoView) IsValidDeletePostAssociationMetadata(transactorPK []byte, m
 	return nil
 }
 
+func _isValidUserAssociationQuery(associationQuery *UserAssociationQuery) error {
+	if associationQuery.TransactorPKID == nil &&
+		associationQuery.TargetUserPKID == nil &&
+		associationQuery.AppPKID == nil &&
+		associationQuery.AssociationType == "" &&
+		associationQuery.AssociationTypePrefix == "" &&
+		associationQuery.AssociationValue == "" &&
+		associationQuery.AssociationValuePrefix == "" {
+		return errors.New("invalid query params")
+	}
+	if (associationQuery.AssociationType != "" && associationQuery.AssociationTypePrefix != "") ||
+		(associationQuery.AssociationValue != "" && associationQuery.AssociationValuePrefix != "") {
+		return errors.New("invalid query params")
+	}
+	return nil
+}
+
+func _isValidPostAssociationQuery(associationQuery *PostAssociationQuery) error {
+	if associationQuery.TransactorPKID == nil &&
+		associationQuery.PostHash == nil &&
+		associationQuery.AppPKID == nil &&
+		associationQuery.AssociationType == "" &&
+		associationQuery.AssociationTypePrefix == "" &&
+		associationQuery.AssociationValue == "" &&
+		associationQuery.AssociationValuePrefix == "" {
+		return errors.New("invalid query params")
+	}
+	if (associationQuery.AssociationType != "" && associationQuery.AssociationTypePrefix != "") ||
+		(associationQuery.AssociationValue != "" && associationQuery.AssociationValuePrefix != "") {
+		return errors.New("invalid query params")
+	}
+	return nil
+}
+
 // ###########################
 // ## GETTERS
 // ###########################
@@ -693,18 +727,9 @@ func (bav *UtxoView) GetPostAssociationByAttributes(transactorPK []byte, metadat
 
 func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssociationQuery) ([]*UserAssociationEntry, error) {
 	// Validate query params.
-	if associationQuery.TransactorPKID == nil &&
-		associationQuery.TargetUserPKID == nil &&
-		associationQuery.AppPKID == nil &&
-		associationQuery.AssociationType == "" &&
-		associationQuery.AssociationTypePrefix == "" &&
-		associationQuery.AssociationValue == "" &&
-		associationQuery.AssociationValuePrefix == "" {
-		return nil, errors.New("GetUserAssociationsByAttributes: invalid query params")
-	}
-	if (associationQuery.AssociationType != "" && associationQuery.AssociationTypePrefix != "") ||
-		(associationQuery.AssociationValue != "" && associationQuery.AssociationValuePrefix != "") {
-		return nil, errors.New("GetUserAssociationsByAttributes: invalid query params")
+	err := _isValidUserAssociationQuery(associationQuery)
+	if err != nil {
+		return nil, errors.Wrap(err, "GetUserAssociationsByAttributes: ")
 	}
 	// Store matching associations in a map indexed by AssociationID to
 	// prevent duplicate associations retrieved from the db + UTXO view.
@@ -736,13 +761,18 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 }
 
 func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAssociationQuery) (uint64, error) {
+	// Validate query params.
+	err := _isValidUserAssociationQuery(associationQuery)
+	if err != nil {
+		return 0, errors.Wrap(err, "CountUserAssociationsByAttributes: ")
+	}
 	// Pull matching association IDs from the db.
 	associationIDs, err := bav.GetDbAdapter().GetUserAssociationIdsByAttributes(associationQuery)
 	if err != nil {
 		return 0, errors.Wrapf(err, "CountUserAssociationsByAttributes: ")
 	}
 	// Convert association IDs slice to map.
-	var associationIdMap map[*BlockHash]bool
+	associationIdMap := make(map[*BlockHash]bool)
 	for _, associationID := range associationIDs {
 		associationIdMap[associationID] = true
 	}
@@ -815,18 +845,9 @@ func (bav *UtxoView) _getUtxoUserAssociationEntriesByAttributes(associationQuery
 
 func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
 	// Validate query params.
-	if associationQuery.TransactorPKID == nil &&
-		associationQuery.PostHash == nil &&
-		associationQuery.AppPKID == nil &&
-		associationQuery.AssociationType == "" &&
-		associationQuery.AssociationTypePrefix == "" &&
-		associationQuery.AssociationValue == "" &&
-		associationQuery.AssociationValuePrefix == "" {
-		return nil, errors.New("GetPostAssociationsByAttributes: invalid query params")
-	}
-	if (associationQuery.AssociationType != "" && associationQuery.AssociationTypePrefix != "") ||
-		(associationQuery.AssociationValue != "" && associationQuery.AssociationValuePrefix != "") {
-		return nil, errors.New("GetPostAssociationsByAttributes: invalid query params")
+	err := _isValidPostAssociationQuery(associationQuery)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetPostAssociationsByAttributes: ")
 	}
 	// Store matching associations in a map indexed by AssociationID to
 	// prevent duplicate associations retrieved from the db + UTXO view.
@@ -858,13 +879,18 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 }
 
 func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAssociationQuery) (uint64, error) {
+	// Validate query params.
+	err := _isValidPostAssociationQuery(associationQuery)
+	if err != nil {
+		return 0, errors.Wrapf(err, "GetPostAssociationsByAttributes: ")
+	}
 	// Pull matching association IDs from the db.
 	associationIDs, err := bav.GetDbAdapter().GetPostAssociationIdsByAttributes(associationQuery)
 	if err != nil {
 		return 0, errors.Wrapf(err, "CountPostAssociationsByAttributes: ")
 	}
 	// Convert association IDs slice to map.
-	var associationIdMap map[*BlockHash]bool
+	associationIdMap := make(map[*BlockHash]bool)
 	for _, associationID := range associationIDs {
 		associationIdMap[associationID] = true
 	}
