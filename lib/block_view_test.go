@@ -1153,6 +1153,231 @@ func TestUpdateGlobalParams(t *testing.T) {
 	}
 }
 
+// Returns a test blockchain (block with testing parameters), with two blocks mined.
+func NewTestBlockChainWithProcessedBlocks(t *testing.T) *Blockchain {
+	t.Helper()
+	require := require.New(t)
+
+	chain, params, _ := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	// Mine two blocks to give the sender some DeSo.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	return chain
+}
+
+// Processes the key string into byte array.
+func ProcessKeyBytes(t *testing.T, keyString string) []byte {
+	t.Helper()
+	require := require.New(t)
+	keyBytes, _, err := Base58CheckDecode(keyString)
+	require.NoError(err)
+	return keyBytes
+}
+
+// validates totalInput, spendAmount, changeAmount, fees and error result
+// from chain.AddInputsAndChangeToTransaction
+func TestVerifyInputFeeSpendValues(t *testing.T) {
+
+	require := require.New(t)
+
+	chain := NewTestBlockChainWithProcessedBlocks(t)
+	senderPkBytes := ProcessKeyBytes(t, senderPkString)
+	recipientPkBytes := ProcessKeyBytes(t, recipientPkString)
+
+	testCases := []struct {
+		// description of the test case
+		description string
+		// Deso transaction data, to be used as a parameter for AddInputsAndChangeToTransaction
+		txnSpend []*DeSoOutput
+		// flag indicating whether the test case is expected to fail
+		expectedToFail bool
+		// expected error if the test is expected to fail.
+		// set to nil if the test is expected to pass.
+		expectedErr error
+		// expected totalInput as calcualated by AddInputsAndChangeToTransaction
+		// InputComputation is an important part of the transaction.
+		// Blockchains compose the inputs containing sufficient balance
+		// when a transaction is proposef.
+		// It verifies whether sufficient balance (a.k.a input) to complete the transaction exists.
+		expectedTotalInput uint64
+		// Total intended spend amount as specified by the user + transaction fee.
+		// The input computed should be greater than or equal to the expected spend amount.
+		// if not it indicates insufficient balance.
+		expectedSpendAmount uint64
+		// Change is returned if there's more balance in the inputs than the specified spend amount.
+		expectedChangeAmount uint64
+		// expected transaction fees.
+		expectedFees uint64
+	}{
+		// test case 1
+		// simple test case in only one value in the transaction spend array.
+		{
+			"Case 1: Simple spend and fee test case",
+			[]*DeSoOutput{
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 1,
+				},
+			},
+			// test is expected to pass
+			false,
+			nil,
+			// expected total input, spend amount, change amount, fee
+			1000000000,
+			1,
+			999999998,
+			1,
+		},
+		// test case 2
+		// adding two values to txnSpend array.
+		// verifying whether the sum of the values in the DesoOutput array
+		// is taken into account for
+		{
+			"Case 2: Case with two spend requests",
+			[]*DeSoOutput{
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 1,
+				},
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 3,
+				},
+			},
+			// test is expected to pass
+			false,
+			nil,
+			// expected total input, spend amount, change amount, fee
+			1000000000,
+			4,
+			999999994,
+			2,
+		},
+		// test case 3
+		{
+			"Case 3: Testing with four spend requests.",
+			[]*DeSoOutput{
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 1,
+				},
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 3,
+				},
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 11,
+				},
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 20,
+				},
+			},
+			// test is expected to pass.
+			false,
+			nil,
+			// expected total input, spend amount, change amount, fee
+			1000000000,
+			35,
+			999999963,
+			2,
+		},
+		// test case 4
+		{
+			"case 4: Testing case with spend equal to the available balance.",
+			[]*DeSoOutput{
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 1000000000,
+				},
+			},
+			// test is expected to fail
+			true,
+			fmt.Errorf("Total input 1000000000 is not sufficient to cover the spend amount (=1000000000) plus the fee (=1, feerate=10, txsize=185), total=1000000001"),
+			0,
+			0,
+			0,
+			0,
+		},
+		// test case 5
+		{
+			"Case 5: Case where single entry of the DeSoOutput for the spend is greater than the avaialble input balance.",
+			[]*DeSoOutput{
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 2000000000,
+				},
+			},
+			// test is expected to fail
+			true,
+			fmt.Errorf("Total input 1000000000 is not sufficient to cover the spend amount (=2000000000) plus the fee (=1, feerate=10, txsize=185), total=2000000001"),
+			0,
+			0,
+			0,
+			0,
+		},
+		// test case 6
+		{
+			"Case 6: Testing sum of four test cases.",
+			[]*DeSoOutput{
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 500000000,
+				},
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 400000000,
+				},
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 300000000,
+				},
+			},
+			// test is expected to fail
+			true,
+			fmt.Errorf("Total input 1000000000 is not sufficient to cover the spend amount (=1200000000) plus the fee (=2, feerate=10, txsize=261), total=1200000002"),
+			0,
+			0,
+			0,
+			0,
+		},
+	}
+
+	for i := 0; i < len(testCases); i++ {
+		txn := &MsgDeSoTxn{
+			// The inputs will be set below.
+			TxInputs:  []*DeSoInput{},
+			TxOutputs: testCases[i].txnSpend,
+			PublicKey: senderPkBytes,
+			TxnMeta:   &BasicTransferMetadata{},
+		}
+
+		totalInput, spendAmount, changeAmount, fees, err :=
+			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+
+		// validate error message and continue if the test is expected to fail
+		if testCases[i].expectedToFail {
+			require.Error(err)
+			require.Contains(err.Error(), testCases[i].expectedErr.Error())
+			continue
+		}
+
+		require.NoError(err)
+		require.Equal(totalInput, spendAmount+changeAmount+fees)
+		require.Greater(totalInput, uint64(0))
+
+		require.Equal(testCases[i].expectedTotalInput, totalInput)
+		require.Equal(testCases[i].expectedSpendAmount, spendAmount)
+		require.Equal(testCases[i].expectedChangeAmount, changeAmount)
+		require.Equal(testCases[i].expectedFees, fees)
+	}
+}
+
 func TestBasicTransfer(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1220,7 +1445,6 @@ func TestBasicTransfer(t *testing.T) {
 		require.NoError(err)
 		require.Equal(totalInput, spendAmount+changeAmount+fees)
 		require.Greater(totalInput, uint64(0))
-
 		// At this point the txn has inputs for senderPkString. Change
 		// the public key to recipientPkString and sign it with the
 		// recipientPrivString.
