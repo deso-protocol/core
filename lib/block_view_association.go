@@ -749,7 +749,7 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 		// Add new association entries found in the UTXO view.
 		associationEntryMap[utxoAssociationEntry.AssociationID] = utxoAssociationEntry
 	}
-	for utxoAssociationEntryID, _ := range deletedUtxoAssociationEntryIDs {
+	for utxoAssociationEntryID := range deletedUtxoAssociationEntryIDs {
 		// Remove deleted association entries found in the UTXO view.
 		delete(associationEntryMap, utxoAssociationEntryID)
 	}
@@ -784,7 +784,7 @@ func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAss
 		// Add new association entries found in the UTXO view.
 		associationIdMap[utxoAssociationEntry.AssociationID] = true
 	}
-	for utxoAssociationEntryID, _ := range deletedUtxoAssociationEntryIDs {
+	for utxoAssociationEntryID := range deletedUtxoAssociationEntryIDs {
 		// Remove deleted association entries found in the UTXO view.
 		delete(associationIdMap, utxoAssociationEntryID)
 	}
@@ -877,7 +877,7 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 		// Add new association entries found in the UTXO view.
 		associationEntryMap[utxoAssociationEntry.AssociationID] = utxoAssociationEntry
 	}
-	for utxoAssociationEntryID, _ := range deletedUtxoAssociationEntryIDs {
+	for utxoAssociationEntryID := range deletedUtxoAssociationEntryIDs {
 		// Remove deleted association entries found in the UTXO view.
 		delete(associationEntryMap, utxoAssociationEntryID)
 	}
@@ -912,7 +912,7 @@ func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAss
 		// Add new association entries found in the UTXO view.
 		associationIdMap[utxoAssociationEntry.AssociationID] = true
 	}
-	for deletedUtxoAssociationEntryID, _ := range deletedUtxoAssociationEntryIDs {
+	for deletedUtxoAssociationEntryID := range deletedUtxoAssociationEntryIDs {
 		// Remove deleted association entries found in the UTXO view.
 		delete(associationIdMap, deletedUtxoAssociationEntryID)
 	}
