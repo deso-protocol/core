@@ -528,8 +528,9 @@ const (
 	OperationTypeDAOCoinLimitOrder            OperationType = 28
 	OperationTypeAccessGroup                  OperationType = 29
 	OperationTypeAccessGroupMembers           OperationType = 30
+	OperationTypeNewMessage                   OperationType = 31
 
-	// NEXT_TAG = 31
+	// NEXT_TAG = 32
 )
 
 func (op OperationType) String() string {
@@ -654,6 +655,10 @@ func (op OperationType) String() string {
 		{
 			return "OperationTypeAccessGroupMembers"
 		}
+	case OperationTypeNewMessage:
+		{
+			return "OperationTypeNewMessage"
+		}
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -723,6 +728,13 @@ type UtxoOperation struct {
 
 	// For disconnecting MessagingGroupKey transactions.
 	PrevMessagingKeyEntry *MessagingGroupEntry
+
+	// For disconnecting NewMessage transactions.
+	GroupChatMessagesKey GroupChatMessageKey
+	PrevDmThreadIndex    *MessageEntry
+	DmThreadKey          DmThreadKey
+	DmMessageIndexKey    DmMessageKey
+	MessageType          MessageType
 
 	// Save the previous repost entry and repost count when making an update.
 	PrevRepostEntry *RepostEntry
@@ -1933,6 +1945,117 @@ func (message *MessageEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (message *MessageEntry) GetEncoderType() EncoderType {
 	return EncoderTypeMessageEntry
+}
+
+//
+// New Message
+//
+
+type GroupChatMessageKey struct {
+	GroupOwnerPublicKey PublicKey
+	GroupKeyName        GroupKeyName
+	TstampNanos         uint64
+}
+
+func MakeGroupChatMessageKey(groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, tstampNanos uint64) GroupChatMessageKey {
+	return GroupChatMessageKey{
+		GroupOwnerPublicKey: groupOwnerPublicKey,
+		GroupKeyName:        groupKeyName,
+		TstampNanos:         tstampNanos,
+	}
+}
+
+func MakeGroupChatMessageKeyFromMessageEntry(messageEntry *MessageEntry) (GroupChatMessageKey, error) {
+	if messageEntry == nil {
+		return GroupChatMessageKey{}, fmt.Errorf("MakeGroupChatMessageKeyFromMessageEntry: messageEntry is nil")
+	}
+	if messageEntry.RecipientPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil {
+		return GroupChatMessageKey{}, fmt.Errorf("MakeGroupChatMessageKeyFromMessageEntry: messageEntry is missing fields")
+	}
+	return MakeGroupChatMessageKey(
+		*messageEntry.RecipientPublicKey, *messageEntry.RecipientAccessGroupKeyName, messageEntry.TstampNanos), nil
+}
+
+type DmThreadKey struct {
+	XGroupOwnerPublicKey PublicKey
+	XGroupKeyName        GroupKeyName
+	YGroupOwnerPublicKey PublicKey
+	YGroupKeyName        GroupKeyName
+}
+
+func MakeDmThreadKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName,
+	yGroupOwnerPublicKey PublicKey, yGroupKeyName GroupKeyName) DmThreadKey {
+	return DmThreadKey{
+		XGroupOwnerPublicKey: xGroupOwnerPublicKey,
+		XGroupKeyName:        xGroupKeyName,
+		YGroupOwnerPublicKey: yGroupOwnerPublicKey,
+		YGroupKeyName:        yGroupKeyName,
+	}
+}
+
+func MakeDmThreadKeyFromMessageEntry(messageEntry *MessageEntry, shouldReverse bool) (DmThreadKey, error) {
+	if messageEntry == nil {
+		return DmThreadKey{}, fmt.Errorf("MakeDmThreadKeyFromMessageEntry: messageEntry is nil")
+	}
+	if messageEntry.RecipientPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil ||
+		messageEntry.SenderPublicKey == nil || messageEntry.SenderAccessGroupKeyName == nil {
+		return DmThreadKey{}, fmt.Errorf("MakeDmThreadKeyFromMessageEntry: messageEntry is missing fields")
+	}
+	if shouldReverse {
+		return MakeDmThreadKey(
+			*messageEntry.RecipientPublicKey, *messageEntry.RecipientAccessGroupKeyName,
+			*messageEntry.SenderPublicKey, *messageEntry.SenderAccessGroupKeyName), nil
+	} else {
+		return MakeDmThreadKey(
+			*messageEntry.SenderPublicKey, *messageEntry.SenderAccessGroupKeyName,
+			*messageEntry.RecipientPublicKey, *messageEntry.RecipientAccessGroupKeyName), nil
+	}
+}
+
+type DmMessageKey struct {
+	MinorGroupOwnerPublicKey PublicKey
+	MinorGroupKeyName        GroupKeyName
+	MajorGroupOwnerPublicKey PublicKey
+	MajorGroupKeyName        GroupKeyName
+	TstampNanos              uint64
+}
+
+func MakeDmMessageKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName,
+	yGroupOwnerPublicKey PublicKey, yGroupKeyName GroupKeyName, tstampNanos uint64) DmMessageKey {
+
+	minorGroupOwnerPublicKey := xGroupOwnerPublicKey
+	minorGroupKeyName := xGroupKeyName
+	majorGroupOwnerPublicKey := yGroupOwnerPublicKey
+	majorGroupKeyName := yGroupKeyName
+	if bytes.Compare(xGroupOwnerPublicKey.ToBytes(), yGroupOwnerPublicKey.ToBytes()) == 1 {
+		minorGroupOwnerPublicKey = yGroupOwnerPublicKey
+		minorGroupKeyName = yGroupKeyName
+		majorGroupOwnerPublicKey = xGroupOwnerPublicKey
+		majorGroupKeyName = xGroupKeyName
+	}
+
+	return DmMessageKey{
+		MinorGroupOwnerPublicKey: minorGroupOwnerPublicKey,
+		MinorGroupKeyName:        minorGroupKeyName,
+		MajorGroupOwnerPublicKey: majorGroupOwnerPublicKey,
+		MajorGroupKeyName:        majorGroupKeyName,
+		TstampNanos:              tstampNanos,
+	}
+}
+
+func MakeDmMessageKeyFromMessageEntry(messageEntry *MessageEntry) (DmMessageKey, error) {
+	if messageEntry == nil {
+		return DmMessageKey{}, fmt.Errorf("MakeDmMessageKeyFromMessageEntry: messageEntry is nil")
+	}
+	if messageEntry.RecipientPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil ||
+		messageEntry.SenderPublicKey == nil || messageEntry.SenderAccessGroupKeyName == nil {
+		return DmMessageKey{}, fmt.Errorf("MakeDmMessageKeyFromMessageEntry: messageEntry is missing fields")
+	}
+
+	return MakeDmMessageKey(
+		*messageEntry.SenderPublicKey, *messageEntry.SenderAccessGroupKeyName,
+		*messageEntry.RecipientPublicKey, *messageEntry.RecipientAccessGroupKeyName,
+		messageEntry.TstampNanos), nil
 }
 
 // GroupKeyName helps with handling key names in AccessGroups

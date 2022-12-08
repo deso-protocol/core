@@ -128,6 +128,13 @@ const (
 	RuleErrorAccessGroupMemberEnumerationRecursionLimit  RuleError = "RuleErrorAccessGroupMemberEnumerationRecursionLimit"
 	RuleErrorAccessGroupMemberPublicKeyMismatch          RuleError = "RuleErrorAccessGroupMemberPublicKeyMismatch"
 
+	RuleErrorNewMessageEncryptedTextLengthExceedsMax         RuleError = "RuleErrorNewMessageEncryptedTextLengthExceedsMax"
+	RuleErrorNewMessageTimestampNanosCannotBeZero            RuleError = "RuleErrorNewMessageTimestampNanosCannotBeZero"
+	RuleErrorNewMessageDmMessageAlreadyExists                RuleError = "RuleErrorNewMessageDmMessageAlreadyExists"
+	RuleErrorNewMessageMessageSenderDoesNotMatchTxnPublicKey RuleError = "RuleErrorNewMessageMessageSenderDoesNotMatchTxnPublicKey"
+	RuleErrorNewMessageBeforeDeSoAccessGroups                RuleError = "RuleErrorNewMessageBeforeDeSoAccessGroups"
+	RuleErrorNewMessageGroupChatMessageAlreadyExists         RuleError = "RuleErrorNewMessageGroupChatMessageAlreadyExists"
+
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"
 	RuleErrorFollowEntryAlreadyExists                RuleError = "RuleErrorFollowEntryAlreadyExists"
