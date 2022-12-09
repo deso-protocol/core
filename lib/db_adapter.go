@@ -1,7 +1,10 @@
 package lib
 
 import (
+	"bytes"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/pkg/errors"
+	"sort"
 )
 
 type DbAdapter struct {
@@ -65,7 +68,7 @@ func (adapter *DbAdapter) GetPostAssociationByAttributes(associationEntry *PostA
 func (adapter *DbAdapter) GetUserAssociationsByAttributes(
 	associationQuery *UserAssociationQuery,
 	deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*UserAssociationEntry, error) {
+) ([]*UserAssociationEntry, []byte, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetUserAssociationsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
 	}
@@ -84,7 +87,7 @@ func (adapter *DbAdapter) GetPostAssociationsByAttributes(
 
 func (adapter *DbAdapter) GetUserAssociationIdsByAttributes(
 	associationQuery *UserAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*BlockHash, error) {
+) ([]*BlockHash, []byte, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetUserAssociationIdsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
 	}
@@ -98,6 +101,51 @@ func (adapter *DbAdapter) GetPostAssociationIdsByAttributes(
 		return adapter.postgresDb.GetPostAssociationIdsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
 	}
 	return DBGetPostAssociationIdsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, deletedUtxoAssociationIdMap)
+}
+
+func (adapter *DbAdapter) SortUserAssociationEntriesByPrefix(
+	associationEntries []*UserAssociationEntry,
+	prefixType []byte,
+	sortDescending bool,
+) ([]*UserAssociationEntry, error) {
+	// Postgres sorts results by AssociationID.
+	if adapter.postgresDb != nil {
+		sort.Slice(associationEntries, func(ii int, jj int) bool {
+			byteComparison := bytes.Compare(
+				associationEntries[ii].AssociationID.ToBytes(),
+				associationEntries[jj].AssociationID.ToBytes(),
+			)
+			if sortDescending {
+				return byteComparison > 0
+			}
+			return byteComparison <= 0
+		})
+		return associationEntries, nil
+	}
+
+	// Badger sorts results by the key prefix.
+	var innerErr error
+	sort.Slice(associationEntries, func(ii int, jj int) bool {
+		keyII, err := DBKeyForUserAssociationByPrefix(associationEntries[ii], prefixType)
+		if err != nil {
+			innerErr = err
+			return false
+		}
+		keyJJ, err := DBKeyForUserAssociationByPrefix(associationEntries[jj], prefixType)
+		if err != nil {
+			innerErr = err
+			return false
+		}
+		byteComparison := bytes.Compare(keyII, keyJJ)
+		if sortDescending {
+			return byteComparison > 0
+		}
+		return byteComparison <= 0
+	})
+	if innerErr != nil {
+		return nil, errors.Wrapf(innerErr, "SortUserAssociationEntriesByPrefix: ")
+	}
+	return associationEntries, nil
 }
 
 //

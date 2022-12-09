@@ -1044,6 +1044,69 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Contains(t, err.Error(), "invalid query params")
 			require.Zero(t, count)
 		}
+
+		// Query for all endorsements of m3
+		userAssociationQuery = &UserAssociationQuery{
+			TargetUserPKID:  m3PKID,
+			AssociationType: "endorsement",
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Equal(t, len(userAssociationEntries), 4)
+		sort.Slice(userAssociationEntries, func(ii, jj int) bool {
+			return userAssociationEntries[ii].AssociationValue < userAssociationEntries[jj].AssociationValue
+		})
+		require.Equal(t, userAssociationEntries[0].AssociationValue, "C")
+		require.Equal(t, userAssociationEntries[1].AssociationValue, "C#")
+		require.Equal(t, userAssociationEntries[2].AssociationValue, "C++")
+		require.Equal(t, userAssociationEntries[3].AssociationValue, "JAVA")
+
+		var cachedUserAssociationEntries []*UserAssociationEntry
+		for _, cachedUserAssociationEntry := range userAssociationEntries {
+			cachedUserAssociationEntries = append(cachedUserAssociationEntries, cachedUserAssociationEntry)
+		}
+		sortedUserAssociationEntries, err := utxoView().GetDbAdapter().SortUserAssociationEntriesByPrefix(
+			cachedUserAssociationEntries, Prefixes.PrefixUserAssociationByTargetUser, false,
+		)
+		require.NoError(t, err)
+
+		// Query using Limit
+		userAssociationQuery = &UserAssociationQuery{
+			TargetUserPKID:  m3PKID,
+			AssociationType: "endorsement",
+			Limit:           uint64(2),
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Equal(t, len(userAssociationEntries), 2)
+		require.True(t, userAssociationEntries[0].AssociationID.IsEqual(sortedUserAssociationEntries[0].AssociationID))
+		require.True(t, userAssociationEntries[1].AssociationID.IsEqual(sortedUserAssociationEntries[1].AssociationID))
+
+		// Query using LastSeenAssociationID
+		userAssociationQuery = &UserAssociationQuery{
+			TargetUserPKID:        m3PKID,
+			AssociationType:       "endorsement",
+			Limit:                 uint64(2),
+			LastSeenAssociationID: userAssociationEntries[1].AssociationID,
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Equal(t, len(userAssociationEntries), 2)
+		require.True(t, userAssociationEntries[0].AssociationID.IsEqual(sortedUserAssociationEntries[2].AssociationID))
+		require.True(t, userAssociationEntries[1].AssociationID.IsEqual(sortedUserAssociationEntries[3].AssociationID))
+
+		// Query using SortDescending
+		userAssociationQuery = &UserAssociationQuery{
+			TargetUserPKID:        m3PKID,
+			AssociationType:       "endorsement",
+			Limit:                 uint64(2),
+			LastSeenAssociationID: userAssociationEntries[1].AssociationID,
+			SortDescending: true,
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.True(t, userAssociationEntries[0].AssociationID.IsEqual(sortedUserAssociationEntries[2].AssociationID))
+		require.True(t, userAssociationEntries[1].AssociationID.IsEqual(sortedUserAssociationEntries[1].AssociationID))
 	}
 	// ---------------------------------
 	// PostAssociation: query API

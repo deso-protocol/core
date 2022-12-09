@@ -3195,7 +3195,7 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 
 func (postgres *Postgres) GetUserAssociationsByAttributes(
 	associationQuery *UserAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*UserAssociationEntry, error) {
+) ([]*UserAssociationEntry, []byte, error) {
 	// Construct SQL query.
 	var pgAssociations []PGUserAssociation
 	sqlQuery := postgres.db.Model(&pgAssociations)
@@ -3205,9 +3205,9 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(
 	if err := sqlQuery.Select(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Map from PGAssociation to AssociationEntry.
@@ -3215,12 +3215,12 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(
 	for _, pgAssociation := range pgAssociations {
 		associationEntries = append(associationEntries, pgAssociation.ToUserAssociationEntry())
 	}
-	return associationEntries, nil
+	return associationEntries, nil, nil
 }
 
 func (postgres *Postgres) GetUserAssociationIdsByAttributes(
 	associationQuery *UserAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*BlockHash, error) {
+) ([]*BlockHash, []byte, error) {
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGUserAssociation{}).Column("association_id")
 	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIdMap)
@@ -3230,11 +3230,11 @@ func (postgres *Postgres) GetUserAssociationIdsByAttributes(
 	if err := sqlQuery.Select(&associationIds); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
-	return associationIds, nil
+	return associationIds, nil, nil
 }
 
 func _constructFilterUserAssociationsByAttributesQuery(
