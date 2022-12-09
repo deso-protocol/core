@@ -3288,7 +3288,7 @@ func _constructFilterUserAssociationsByAttributesQuery(
 
 func (postgres *Postgres) GetPostAssociationsByAttributes(
 	associationQuery *PostAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*PostAssociationEntry, error) {
+) ([]*PostAssociationEntry, []byte, error) {
 	// Construct SQL query.
 	var pgAssociations []PGPostAssociation
 	sqlQuery := postgres.db.Model(&pgAssociations)
@@ -3298,9 +3298,9 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(
 	if err := sqlQuery.Select(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Map from PGAssociation to AssociationEntry.
@@ -3308,12 +3308,12 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(
 	for _, pgAssociation := range pgAssociations {
 		associationEntries = append(associationEntries, pgAssociation.ToPostAssociationEntry())
 	}
-	return associationEntries, nil
+	return associationEntries, nil, nil
 }
 
 func (postgres *Postgres) GetPostAssociationIdsByAttributes(
 	associationQuery *PostAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*BlockHash, error) {
+) ([]*BlockHash, []byte, error) {
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGPostAssociation{}).Column("association_id")
 	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIdMap)
@@ -3323,11 +3323,11 @@ func (postgres *Postgres) GetPostAssociationIdsByAttributes(
 	if err := sqlQuery.Select(&associationIds); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
-	return associationIds, nil
+	return associationIds, nil, nil
 }
 
 func _constructFilterPostAssociationsByAttributesQuery(

@@ -1052,7 +1052,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
-		require.Equal(t, len(userAssociationEntries), 4)
+		require.Len(t, userAssociationEntries, 4)
 		sort.Slice(userAssociationEntries, func(ii, jj int) bool {
 			return userAssociationEntries[ii].AssociationValue < userAssociationEntries[jj].AssociationValue
 		})
@@ -1061,14 +1061,11 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntries[2].AssociationValue, "C++")
 		require.Equal(t, userAssociationEntries[3].AssociationValue, "JAVA")
 
-		var cachedUserAssociationEntries []*UserAssociationEntry
-		for _, cachedUserAssociationEntry := range userAssociationEntries {
-			cachedUserAssociationEntries = append(cachedUserAssociationEntries, cachedUserAssociationEntry)
-		}
 		sortedUserAssociationEntries, err := utxoView().GetDbAdapter().SortUserAssociationEntriesByPrefix(
-			cachedUserAssociationEntries, Prefixes.PrefixUserAssociationByTargetUser, false,
+			userAssociationEntries, Prefixes.PrefixUserAssociationByTargetUser, false,
 		)
 		require.NoError(t, err)
+		require.Len(t, sortedUserAssociationEntries, 4)
 
 		// Query using Limit
 		userAssociationQuery = &UserAssociationQuery{
@@ -1078,7 +1075,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
-		require.Equal(t, len(userAssociationEntries), 2)
+		require.Len(t, userAssociationEntries, 2)
 		require.True(t, userAssociationEntries[0].AssociationID.IsEqual(sortedUserAssociationEntries[0].AssociationID))
 		require.True(t, userAssociationEntries[1].AssociationID.IsEqual(sortedUserAssociationEntries[1].AssociationID))
 
@@ -1091,11 +1088,23 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
-		require.Equal(t, len(userAssociationEntries), 2)
+		require.Len(t, userAssociationEntries, 2)
 		require.True(t, userAssociationEntries[0].AssociationID.IsEqual(sortedUserAssociationEntries[2].AssociationID))
 		require.True(t, userAssociationEntries[1].AssociationID.IsEqual(sortedUserAssociationEntries[3].AssociationID))
 
 		// Query using SortDescending
+		userAssociationQuery = &UserAssociationQuery{
+			TargetUserPKID:  m3PKID,
+			AssociationType: "endorsement",
+			Limit:           uint64(1),
+			SortDescending:  true,
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Len(t, userAssociationEntries, 1)
+		require.True(t, userAssociationEntries[0].AssociationID.IsEqual(sortedUserAssociationEntries[3].AssociationID))
+
+		// Query using Limit, LastSeenAssociationID, SortDescending
 		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:        m3PKID,
 			AssociationType:       "endorsement",
@@ -1105,6 +1114,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
+		require.Len(t, userAssociationEntries, 2)
 		require.True(t, userAssociationEntries[0].AssociationID.IsEqual(sortedUserAssociationEntries[2].AssociationID))
 		require.True(t, userAssociationEntries[1].AssociationID.IsEqual(sortedUserAssociationEntries[1].AssociationID))
 	}
@@ -1777,6 +1787,62 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Contains(t, err.Error(), "invalid query params")
 			require.Zero(t, count)
 		}
+
+		// Query for all tags
+		postAssociationQuery = &PostAssociationQuery{
+			AssociationType: "TAG",
+		}
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
+		require.NoError(t, err)
+		require.Len(t, postAssociationEntries, 4)
+		sort.Slice(postAssociationEntries, func(ii, jj int) bool {
+			return postAssociationEntries[ii].AssociationValue < postAssociationEntries[jj].AssociationValue
+		})
+		require.Equal(t, postAssociationEntries[0].AssociationValue, "NSFW")
+		require.Equal(t, postAssociationEntries[1].AssociationValue, "r/funny")
+		require.Equal(t, postAssociationEntries[2].AssociationValue, "r/funny")
+		require.Equal(t, postAssociationEntries[3].AssociationValue, "r/new")
+
+		sortedPostAssociationEntries, err := utxoView().GetDbAdapter().SortPostAssociationEntriesByPrefix(
+			postAssociationEntries, Prefixes.PrefixPostAssociationByType, false,
+		)
+		require.NoError(t, err)
+		require.Len(t, sortedPostAssociationEntries, 4)
+
+		// Query using Limit
+		postAssociationQuery = &PostAssociationQuery{
+			AssociationType: "TAG",
+			Limit:           uint64(3),
+		}
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
+		require.NoError(t, err)
+		require.Len(t, postAssociationEntries, 3)
+		require.True(t, postAssociationEntries[0].AssociationID.IsEqual(sortedPostAssociationEntries[0].AssociationID))
+		require.True(t, postAssociationEntries[1].AssociationID.IsEqual(sortedPostAssociationEntries[1].AssociationID))
+		require.True(t, postAssociationEntries[2].AssociationID.IsEqual(sortedPostAssociationEntries[2].AssociationID))
+
+		// Query using LastSeenAssociationID
+		postAssociationQuery = &PostAssociationQuery{
+			AssociationType:       "TAG",
+			Limit:                 uint64(1),
+			LastSeenAssociationID: postAssociationEntries[2].AssociationID,
+		}
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
+		require.NoError(t, err)
+		require.Len(t, postAssociationEntries, 1)
+		require.True(t, postAssociationEntries[0].AssociationID.IsEqual(sortedPostAssociationEntries[3].AssociationID))
+
+		// Query using SortDescending
+		postAssociationQuery = &PostAssociationQuery{
+			AssociationType: "TAG",
+			Limit:           uint64(2),
+			SortDescending:  true,
+		}
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
+		require.NoError(t, err)
+		require.Len(t, postAssociationEntries, 2)
+		require.True(t, postAssociationEntries[0].AssociationID.IsEqual(sortedPostAssociationEntries[3].AssociationID))
+		require.True(t, postAssociationEntries[1].AssociationID.IsEqual(sortedPostAssociationEntries[2].AssociationID))
 	}
 
 	// Flush mempool to the db and test rollbacks.

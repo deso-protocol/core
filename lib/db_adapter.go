@@ -78,7 +78,7 @@ func (adapter *DbAdapter) GetUserAssociationsByAttributes(
 func (adapter *DbAdapter) GetPostAssociationsByAttributes(
 	associationQuery *PostAssociationQuery,
 	deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*PostAssociationEntry, error) {
+) ([]*PostAssociationEntry, []byte, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetPostAssociationsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
 	}
@@ -96,7 +96,7 @@ func (adapter *DbAdapter) GetUserAssociationIdsByAttributes(
 
 func (adapter *DbAdapter) GetPostAssociationIdsByAttributes(
 	associationQuery *PostAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*BlockHash, error) {
+) ([]*BlockHash, []byte, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetPostAssociationIdsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
 	}
@@ -144,6 +144,51 @@ func (adapter *DbAdapter) SortUserAssociationEntriesByPrefix(
 	})
 	if innerErr != nil {
 		return nil, errors.Wrapf(innerErr, "SortUserAssociationEntriesByPrefix: ")
+	}
+	return associationEntries, nil
+}
+
+func (adapter *DbAdapter) SortPostAssociationEntriesByPrefix(
+	associationEntries []*PostAssociationEntry,
+	prefixType []byte,
+	sortDescending bool,
+) ([]*PostAssociationEntry, error) {
+	// Postgres sorts results by AssociationID.
+	if adapter.postgresDb != nil {
+		sort.Slice(associationEntries, func(ii int, jj int) bool {
+			byteComparison := bytes.Compare(
+				associationEntries[ii].AssociationID.ToBytes(),
+				associationEntries[jj].AssociationID.ToBytes(),
+			)
+			if sortDescending {
+				return byteComparison > 0
+			}
+			return byteComparison <= 0
+		})
+		return associationEntries, nil
+	}
+
+	// Badger sorts results by the key prefix.
+	var innerErr error
+	sort.Slice(associationEntries, func(ii int, jj int) bool {
+		keyII, err := DBKeyForPostAssociationByPrefix(associationEntries[ii], prefixType)
+		if err != nil {
+			innerErr = err
+			return false
+		}
+		keyJJ, err := DBKeyForPostAssociationByPrefix(associationEntries[jj], prefixType)
+		if err != nil {
+			innerErr = err
+			return false
+		}
+		byteComparison := bytes.Compare(keyII, keyJJ)
+		if sortDescending {
+			return byteComparison > 0
+		}
+		return byteComparison <= 0
+	})
+	if innerErr != nil {
+		return nil, errors.Wrapf(innerErr, "SortPostAssociationEntriesByPrefix: ")
 	}
 	return associationEntries, nil
 }

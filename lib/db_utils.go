@@ -8621,7 +8621,6 @@ func DBGetUserAssociationsByAttributes(
 
 	// Map from association IDs to association entries.
 	var associationEntries []*UserAssociationEntry
-
 	for _, associationID := range associationIDs {
 		// Retrieve association entry from db by ID.
 		associationEntry, err := DBGetUserAssociationByID(handle, snap, associationID)
@@ -8747,27 +8746,26 @@ func DBGetPostAssociationsByAttributes(
 	snap *Snapshot,
 	associationQuery *PostAssociationQuery,
 	deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*PostAssociationEntry, error) {
+) ([]*PostAssociationEntry, []byte, error) {
 	// Query for association IDs by input query params.
-	associationIDs, err := DBGetPostAssociationIdsByAttributes(
+	associationIDs, prefixType, err := DBGetPostAssociationIdsByAttributes(
 		handle, snap, associationQuery, deletedUtxoAssociationIdMap,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetPostAssociationsByAttributes: ")
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationsByAttributes: ")
 	}
 
 	// Map from association IDs to association entries.
 	var associationEntries []*PostAssociationEntry
-
 	for _, associationID := range associationIDs {
 		// Retrieve association entry from db by ID.
 		associationEntry, err := DBGetPostAssociationByID(handle, snap, associationID)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
+			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
 		}
 		associationEntries = append(associationEntries, associationEntry)
 	}
-	return associationEntries, nil
+	return associationEntries, prefixType, nil
 }
 
 func DBGetPostAssociationIdsByAttributes(
@@ -8775,7 +8773,7 @@ func DBGetPostAssociationIdsByAttributes(
 	snap *Snapshot,
 	associationQuery *PostAssociationQuery,
 	deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*BlockHash, error) {
+) ([]*BlockHash, []byte, error) {
 	// Construct key based on input query params.
 	var prefixType []byte
 	var keyPrefix []byte
@@ -8798,7 +8796,7 @@ func DBGetPostAssociationIdsByAttributes(
 			associationQuery.AssociationValuePrefix != "" ||
 			associationQuery.PostHash != nil {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "" || PostHash != nil)
-			return nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		} else if associationQuery.AssociationTypePrefix != "" {
 			keyPrefix = append(keyPrefix, []byte(strings.ToLower(associationQuery.AssociationTypePrefix))...)
 		}
@@ -8809,7 +8807,7 @@ func DBGetPostAssociationIdsByAttributes(
 			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 		} else if associationQuery.PostHash != nil {
 			// AssociationValue == "", PostHash != nil
-			return nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		} else if associationQuery.AssociationValuePrefix != "" {
 			keyPrefix = append(keyPrefix, []byte(associationQuery.AssociationValuePrefix)...)
 		}
@@ -8834,7 +8832,7 @@ func DBGetPostAssociationIdsByAttributes(
 			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 		} else if associationQuery.AssociationValue != "" || associationQuery.AssociationValuePrefix != "" {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
-			return nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		} else if associationQuery.AssociationTypePrefix != "" {
 			keyPrefix = append(keyPrefix, []byte(strings.ToLower(associationQuery.AssociationTypePrefix))...)
 		}
@@ -8859,7 +8857,7 @@ func DBGetPostAssociationIdsByAttributes(
 			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 		} else if associationQuery.AssociationValue != "" || associationQuery.AssociationValuePrefix != "" {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
-			return nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		} else if associationQuery.AssociationTypePrefix != "" {
 			keyPrefix = append(keyPrefix, []byte(strings.ToLower(associationQuery.AssociationTypePrefix))...)
 		}
@@ -8879,7 +8877,7 @@ func DBGetPostAssociationIdsByAttributes(
 			associationQuery.PostHash == nil ||
 			associationQuery.AssociationType == "" ||
 			associationQuery.AssociationValue == "" {
-			return nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		}
 		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
 	}
@@ -8889,7 +8887,7 @@ func DBGetPostAssociationIdsByAttributes(
 	if associationQuery.LastSeenAssociationID != nil {
 		lastSeenKey, err = _dbPostAssociationIdToKey(handle, snap, associationQuery.LastSeenAssociationID, prefixType)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
+			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
 		}
 	}
 
@@ -8898,7 +8896,7 @@ func DBGetPostAssociationIdsByAttributes(
 	for deletedUtxoAssociationId := range deletedUtxoAssociationIdMap {
 		deletedUtxoKey, err := _dbPostAssociationIdToKey(handle, snap, deletedUtxoAssociationId, prefixType)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
+			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
 		}
 		if deletedUtxoKey != nil {
 			deletedUtxoKeyMap[string(deletedUtxoKey)] = true
@@ -8915,7 +8913,7 @@ func DBGetPostAssociationIdsByAttributes(
 		deletedUtxoKeyMap,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetPostAssociationsIdsByAttributes: ")
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationsIdsByAttributes: ")
 	}
 
 	// Cast resulting values from bytes to association IDs.
@@ -8924,11 +8922,11 @@ func DBGetPostAssociationIdsByAttributes(
 		associationID := &BlockHash{}
 		rr := bytes.NewReader(valBytes)
 		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
-			return nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: problem decoding association id: ")
+			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: problem decoding association id: ")
 		}
 		associationIDs = append(associationIDs, associationID)
 	}
-	return associationIDs, nil
+	return associationIDs, prefixType, nil
 }
 
 func _dbUserAssociationIdToKey(
