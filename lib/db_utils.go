@@ -8610,7 +8610,7 @@ func DBGetUserAssociationsByAttributes(
 	snap *Snapshot,
 	associationQuery *UserAssociationQuery,
 	deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*UserAssociationEntry,[]byte,  error) {
+) ([]*UserAssociationEntry, []byte, error) {
 	// Query for association IDs by input query params.
 	associationIDs, prefixType, err := DBGetUserAssociationIdsByAttributes(
 		handle, snap, associationQuery, deletedUtxoAssociationIdMap,

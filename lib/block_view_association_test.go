@@ -1101,7 +1101,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			AssociationType:       "endorsement",
 			Limit:                 uint64(2),
 			LastSeenAssociationID: userAssociationEntries[1].AssociationID,
-			SortDescending: true,
+			SortDescending:        true,
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
