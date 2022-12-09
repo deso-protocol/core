@@ -734,24 +734,27 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 	// Store matching associations in a map indexed by AssociationID to
 	// prevent duplicate associations retrieved from the db + UTXO view.
 	associationEntryMap := map[*BlockHash]*UserAssociationEntry{}
-	// First, check the database.
-	dbAssociationEntries, err := bav.GetDbAdapter().GetUserAssociationsByAttributes(associationQuery)
+	// First, pull matching association entries from the UTXO view so that
+	// we can track deleted association entries and can properly limit the
+	// number of entries retrieved from the database.
+	newUtxoAssociationEntries, deletedUtxoAssociationIdMap := bav._getUtxoUserAssociationEntriesByAttributes(associationQuery)
+	// Next, check the database.
+	dbAssociationEntries, err := bav.GetDbAdapter().GetUserAssociationsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
 	if err != nil {
 		return nil, err
 	}
 	for _, dbAssociationEntry := range dbAssociationEntries {
 		associationEntryMap[dbAssociationEntry.AssociationID] = dbAssociationEntry
 	}
-	// Next, check the UTXO view for most recent association entries which
-	// take priority over any with the same AssociationID from the database.
-	newUtxoAssociationEntries, deletedUtxoAssociationEntryIDs := bav._getUtxoUserAssociationEntriesByAttributes(associationQuery)
+	// Next, update the association entries from the database with the new entries from the
+	// UTXO view which take priority over any with the same AssociationID from the database.
+	// TODO: Sort newUtxoAssociationEntries by AssociationID + SortDescending.
 	for _, utxoAssociationEntry := range newUtxoAssociationEntries {
+		if associationQuery.Limit > uint64(0) && uint64(len(associationEntryMap)) >= associationQuery.Limit {
+			break
+		}
 		// Add new association entries found in the UTXO view.
 		associationEntryMap[utxoAssociationEntry.AssociationID] = utxoAssociationEntry
-	}
-	for utxoAssociationEntryID := range deletedUtxoAssociationEntryIDs {
-		// Remove deleted association entries found in the UTXO view.
-		delete(associationEntryMap, utxoAssociationEntryID)
 	}
 	// Convert map to slice.
 	var associationEntries []*UserAssociationEntry
@@ -767,8 +770,12 @@ func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAss
 	if err != nil {
 		return 0, errors.Wrap(err, "CountUserAssociationsByAttributes: ")
 	}
+	// First pull matching association entries from the UTXO view so that
+	// we can track deleted association entries and can properly limit
+	// the number of entries retrieved from the database.
+	newUtxoAssociationEntries, deletedUtxoAssociationIdMap := bav._getUtxoUserAssociationEntriesByAttributes(associationQuery)
 	// Pull matching association IDs from the db.
-	associationIDs, err := bav.GetDbAdapter().GetUserAssociationIdsByAttributes(associationQuery)
+	associationIDs, err := bav.GetDbAdapter().GetUserAssociationIdsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
 	if err != nil {
 		return 0, errors.Wrapf(err, "CountUserAssociationsByAttributes: ")
 	}
@@ -777,16 +784,15 @@ func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAss
 	for _, associationID := range associationIDs {
 		associationIdMap[associationID] = true
 	}
-	// Loop through UTXO view association entries. Add non-deleted association entries.
-	// Note that the map prevents duplicates. And remove deleted association entries.
-	newUtxoAssociationEntries, deletedUtxoAssociationEntryIDs := bav._getUtxoUserAssociationEntriesByAttributes(associationQuery)
+	// Loop through UTXO view association entries adding non-deleted
+	// association entries. Note that the map prevents duplicates.
+	// TODO: Sort newUtxoAssociationEntries by AssociationID + SortDescending.
 	for _, utxoAssociationEntry := range newUtxoAssociationEntries {
+		if associationQuery.Limit > uint64(0) && uint64(len(associationIdMap)) >= associationQuery.Limit {
+			break
+		}
 		// Add new association entries found in the UTXO view.
 		associationIdMap[utxoAssociationEntry.AssociationID] = true
-	}
-	for utxoAssociationEntryID := range deletedUtxoAssociationEntryIDs {
-		// Remove deleted association entries found in the UTXO view.
-		delete(associationIdMap, utxoAssociationEntryID)
 	}
 	return uint64(len(associationIdMap)), nil
 }
@@ -796,7 +802,7 @@ func (bav *UtxoView) _getUtxoUserAssociationEntriesByAttributes(
 ) ([]*UserAssociationEntry, map[*BlockHash]bool) {
 	// Returns a slice of new association entries in the UTXO view as well as a map of deleted entry IDs.
 	var newUtxoAssociationEntries []*UserAssociationEntry
-	deletedUtxoAssociationEntryIDs := make(map[*BlockHash]bool)
+	deletedUtxoAssociationIdMap := make(map[*BlockHash]bool)
 	for _, utxoAssociationEntry := range bav.AssociationMapKeyToUserAssociationEntry {
 		// If TransactorPKID is set, they have to match.
 		if associationQuery.TransactorPKID != nil &&
@@ -845,12 +851,12 @@ func (bav *UtxoView) _getUtxoUserAssociationEntriesByAttributes(
 			}
 		}
 		if utxoAssociationEntry.isDeleted {
-			deletedUtxoAssociationEntryIDs[utxoAssociationEntry.AssociationID] = true
+			deletedUtxoAssociationIdMap[utxoAssociationEntry.AssociationID] = true
 		} else {
 			newUtxoAssociationEntries = append(newUtxoAssociationEntries, utxoAssociationEntry)
 		}
 	}
-	return newUtxoAssociationEntries, deletedUtxoAssociationEntryIDs
+	return newUtxoAssociationEntries, deletedUtxoAssociationIdMap
 }
 
 func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
@@ -862,24 +868,27 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 	// Store matching associations in a map indexed by AssociationID to
 	// prevent duplicate associations retrieved from the db + UTXO view.
 	associationEntryMap := map[*BlockHash]*PostAssociationEntry{}
-	// First, check the database.
-	dbAssociationEntries, err := bav.GetDbAdapter().GetPostAssociationsByAttributes(associationQuery)
+	// First, pull matching association entries from the UTXO view so that
+	// we can track deleted association entries and can properly limit the
+	// number of entries retrieved from the database.
+	newUtxoAssociationEntries, deletedUtxoAssociationIdMap := bav._getUtxoPostAssociationEntriesByAttributes(associationQuery)
+	// Next, check the database.
+	dbAssociationEntries, err := bav.GetDbAdapter().GetPostAssociationsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
 	if err != nil {
 		return nil, err
 	}
 	for _, dbAssociationEntry := range dbAssociationEntries {
 		associationEntryMap[dbAssociationEntry.AssociationID] = dbAssociationEntry
 	}
-	// Next, check the UTXO view for most recent association entries which
-	// take priority over any with the same AssociationID from the database.
-	newUtxoAssociationEntries, deletedUtxoAssociationEntryIDs := bav._getUtxoPostAssociationEntriesByAttributes(associationQuery)
+	// Next, update the association entries from the database with the new entries from the
+	// UTXO view which take priority over any with the same AssociationID from the database.
+	// TODO: Sort newUtxoAssociationEntries by AssociationID + SortDescending.
 	for _, utxoAssociationEntry := range newUtxoAssociationEntries {
+		if associationQuery.Limit > uint64(0) && uint64(len(associationEntryMap)) >= associationQuery.Limit {
+			break
+		}
 		// Add new association entries found in the UTXO view.
 		associationEntryMap[utxoAssociationEntry.AssociationID] = utxoAssociationEntry
-	}
-	for utxoAssociationEntryID := range deletedUtxoAssociationEntryIDs {
-		// Remove deleted association entries found in the UTXO view.
-		delete(associationEntryMap, utxoAssociationEntryID)
 	}
 	// Convert map to slice.
 	var associationEntries []*PostAssociationEntry
@@ -895,8 +904,12 @@ func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAss
 	if err != nil {
 		return 0, errors.Wrapf(err, "GetPostAssociationsByAttributes: ")
 	}
+	// First pull matching association entries from the UTXO view so that
+	// we can track deleted association entries and can properly limit
+	// the number of entries retrieved from the database.
+	newUtxoAssociationEntries, deletedUtxoAssociationIdMap := bav._getUtxoPostAssociationEntriesByAttributes(associationQuery)
 	// Pull matching association IDs from the db.
-	associationIDs, err := bav.GetDbAdapter().GetPostAssociationIdsByAttributes(associationQuery)
+	associationIDs, err := bav.GetDbAdapter().GetPostAssociationIdsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
 	if err != nil {
 		return 0, errors.Wrapf(err, "CountPostAssociationsByAttributes: ")
 	}
@@ -905,16 +918,15 @@ func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAss
 	for _, associationID := range associationIDs {
 		associationIdMap[associationID] = true
 	}
-	// Loop through UTXO view association entries. Add non-deleted association entries.
-	// Note that the map prevents duplicates. And remove deleted association entries.
-	newUtxoAssociationEntries, deletedUtxoAssociationEntryIDs := bav._getUtxoPostAssociationEntriesByAttributes(associationQuery)
+	// Loop through UTXO view association entries adding non-deleted
+	// association entries. Note that the map prevents duplicates.
+	// TODO: Sort newUtxoAssociationEntries by AssociationID + SortDescending.
 	for _, utxoAssociationEntry := range newUtxoAssociationEntries {
+		if associationQuery.Limit > uint64(0) && uint64(len(associationIdMap)) >= associationQuery.Limit {
+			break
+		}
 		// Add new association entries found in the UTXO view.
 		associationIdMap[utxoAssociationEntry.AssociationID] = true
-	}
-	for deletedUtxoAssociationEntryID := range deletedUtxoAssociationEntryIDs {
-		// Remove deleted association entries found in the UTXO view.
-		delete(associationIdMap, deletedUtxoAssociationEntryID)
 	}
 	return uint64(len(associationIdMap)), nil
 }
@@ -924,7 +936,7 @@ func (bav *UtxoView) _getUtxoPostAssociationEntriesByAttributes(
 ) ([]*PostAssociationEntry, map[*BlockHash]bool) {
 	// Returns a slice of new association entries in the UTXO view as well as a map of deleted entry IDs.
 	var newUtxoAssociationEntries []*PostAssociationEntry
-	deletedUtxoAssociationEntryIDs := make(map[*BlockHash]bool)
+	deletedUtxoAssociationIdMap := make(map[*BlockHash]bool)
 	for _, utxoAssociationEntry := range bav.AssociationMapKeyToPostAssociationEntry {
 		// If TransactorPKID is set, they have to match.
 		if associationQuery.TransactorPKID != nil &&
@@ -973,12 +985,12 @@ func (bav *UtxoView) _getUtxoPostAssociationEntriesByAttributes(
 			}
 		}
 		if utxoAssociationEntry.isDeleted {
-			deletedUtxoAssociationEntryIDs[utxoAssociationEntry.AssociationID] = true
+			deletedUtxoAssociationIdMap[utxoAssociationEntry.AssociationID] = true
 		} else {
 			newUtxoAssociationEntries = append(newUtxoAssociationEntries, utxoAssociationEntry)
 		}
 	}
-	return newUtxoAssociationEntries, deletedUtxoAssociationEntryIDs
+	return newUtxoAssociationEntries, deletedUtxoAssociationIdMap
 }
 
 // ###########################

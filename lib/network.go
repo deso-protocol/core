@@ -6783,6 +6783,9 @@ type UserAssociationQuery struct {
 	AssociationTypePrefix  string
 	AssociationValue       string
 	AssociationValuePrefix string
+	Limit                  uint64
+	LastSeenAssociationID  *BlockHash
+	SortDescending         bool
 }
 
 type PostAssociationQuery struct {
@@ -6793,4 +6796,7 @@ type PostAssociationQuery struct {
 	AssociationTypePrefix  string
 	AssociationValue       string
 	AssociationValuePrefix string
+	Limit                  uint64
+	LastSeenAssociationID  *BlockHash
+	SortDescending         bool
 }

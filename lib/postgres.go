@@ -3193,11 +3193,13 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 	return pgAssociation.ToPostAssociationEntry(), nil
 }
 
-func (postgres *Postgres) GetUserAssociationsByAttributes(associationQuery *UserAssociationQuery) ([]*UserAssociationEntry, error) {
+func (postgres *Postgres) GetUserAssociationsByAttributes(
+	associationQuery *UserAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
+) ([]*UserAssociationEntry, error) {
 	// Construct SQL query.
 	var pgAssociations []PGUserAssociation
 	sqlQuery := postgres.db.Model(&pgAssociations)
-	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery)
+	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIdMap)
 
 	// Execute SQL query.
 	if err := sqlQuery.Select(); err != nil {
@@ -3216,10 +3218,12 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(associationQuery *User
 	return associationEntries, nil
 }
 
-func (postgres *Postgres) GetUserAssociationIdsByAttributes(associationQuery *UserAssociationQuery) ([]*BlockHash, error) {
+func (postgres *Postgres) GetUserAssociationIdsByAttributes(
+	associationQuery *UserAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
+) ([]*BlockHash, error) {
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGUserAssociation{}).Column("association_id")
-	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery)
+	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIdMap)
 
 	// Execute SQL query.
 	var associationIds []*BlockHash
@@ -3233,8 +3237,19 @@ func (postgres *Postgres) GetUserAssociationIdsByAttributes(associationQuery *Us
 	return associationIds, nil
 }
 
-func _constructFilterUserAssociationsByAttributesQuery(sqlQuery *pg.Query, associationQuery *UserAssociationQuery) {
+func _constructFilterUserAssociationsByAttributesQuery(
+	sqlQuery *pg.Query,
+	associationQuery *UserAssociationQuery,
+	deletedUtxoAssociationIdMap map[*BlockHash]bool,
+) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
+	if len(deletedUtxoAssociationIdMap) > 0 {
+		var deletedUtxoAssociationEntryIDs []*BlockHash
+		for deletedUtxoAssociationEntryID := range deletedUtxoAssociationIdMap {
+			deletedUtxoAssociationEntryIDs = append(deletedUtxoAssociationEntryIDs, deletedUtxoAssociationEntryID)
+		}
+		sqlQuery.Where("association_id NOT IN (?)", deletedUtxoAssociationEntryIDs)
+	}
 	if associationQuery.TransactorPKID != nil {
 		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
 	}
@@ -3254,13 +3269,30 @@ func _constructFilterUserAssociationsByAttributesQuery(sqlQuery *pg.Query, assoc
 	} else if associationQuery.AssociationValuePrefix != "" {
 		sqlQuery.Where("association_value LIKE ?", associationQuery.AssociationValuePrefix+"%")
 	}
+	if associationQuery.Limit > uint64(0) {
+		sqlQuery.Limit(int(associationQuery.Limit))
+	}
+	if associationQuery.LastSeenAssociationID != nil {
+		if associationQuery.SortDescending {
+			sqlQuery.Where("association_id < ?", associationQuery.LastSeenAssociationID)
+		} else {
+			sqlQuery.Where("association_id > ?", associationQuery.LastSeenAssociationID)
+		}
+	}
+	if associationQuery.SortDescending {
+		sqlQuery.Order("association_id DESC")
+	} else {
+		sqlQuery.Order("association_id ASC")
+	}
 }
 
-func (postgres *Postgres) GetPostAssociationsByAttributes(associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
+func (postgres *Postgres) GetPostAssociationsByAttributes(
+	associationQuery *PostAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
+) ([]*PostAssociationEntry, error) {
 	// Construct SQL query.
 	var pgAssociations []PGPostAssociation
 	sqlQuery := postgres.db.Model(&pgAssociations)
-	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery)
+	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIdMap)
 
 	// Execute SQL query.
 	if err := sqlQuery.Select(); err != nil {
@@ -3279,10 +3311,12 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(associationQuery *Post
 	return associationEntries, nil
 }
 
-func (postgres *Postgres) GetPostAssociationIdsByAttributes(associationQuery *PostAssociationQuery) ([]*BlockHash, error) {
+func (postgres *Postgres) GetPostAssociationIdsByAttributes(
+	associationQuery *PostAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
+) ([]*BlockHash, error) {
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGPostAssociation{}).Column("association_id")
-	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery)
+	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIdMap)
 
 	// Execute SQL query.
 	var associationIds []*BlockHash
@@ -3296,8 +3330,19 @@ func (postgres *Postgres) GetPostAssociationIdsByAttributes(associationQuery *Po
 	return associationIds, nil
 }
 
-func _constructFilterPostAssociationsByAttributesQuery(sqlQuery *pg.Query, associationQuery *PostAssociationQuery) {
+func _constructFilterPostAssociationsByAttributesQuery(
+	sqlQuery *pg.Query,
+	associationQuery *PostAssociationQuery,
+	deletedUtxoAssociationIdMap map[*BlockHash]bool,
+) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
+	if len(deletedUtxoAssociationIdMap) > 0 {
+		var deletedUtxoAssociationEntryIDs []*BlockHash
+		for deletedUtxoAssociationEntryID := range deletedUtxoAssociationIdMap {
+			deletedUtxoAssociationEntryIDs = append(deletedUtxoAssociationEntryIDs, deletedUtxoAssociationEntryID)
+		}
+		sqlQuery.Where("association_id NOT IN (?)", deletedUtxoAssociationEntryIDs)
+	}
 	if associationQuery.TransactorPKID != nil {
 		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
 	}
@@ -3316,6 +3361,21 @@ func _constructFilterPostAssociationsByAttributesQuery(sqlQuery *pg.Query, assoc
 		sqlQuery.Where("association_value = ?", associationQuery.AssociationValue)
 	} else if associationQuery.AssociationValuePrefix != "" {
 		sqlQuery.Where("association_value LIKE ?", associationQuery.AssociationValuePrefix+"%")
+	}
+	if associationQuery.Limit > uint64(0) {
+		sqlQuery.Limit(int(associationQuery.Limit))
+	}
+	if associationQuery.LastSeenAssociationID != nil {
+		if associationQuery.SortDescending {
+			sqlQuery.Where("association_id < ?", associationQuery.LastSeenAssociationID)
+		} else {
+			sqlQuery.Where("association_id > ?", associationQuery.LastSeenAssociationID)
+		}
+	}
+	if associationQuery.SortDescending {
+		sqlQuery.Order("association_id DESC")
+	} else {
+		sqlQuery.Order("association_id ASC")
 	}
 }
 

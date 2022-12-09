@@ -8345,6 +8345,22 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 // Associations
 // ---------------------------------------------
 
+func DBKeyForUserAssociationByPrefix(associationEntry *UserAssociationEntry, prefixType []byte) ([]byte, error) {
+	if bytes.Equal(prefixType, Prefixes.PrefixUserAssociationByID) {
+		return DBKeyForUserAssociationByID(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixUserAssociationByTransactor) {
+		return DBKeyForUserAssociationByTransactor(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixUserAssociationByTargetUser) {
+		return DBKeyForUserAssociationByTargetUser(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixUserAssociationByUsers) {
+		return DBKeyForUserAssociationByUsers(associationEntry), nil
+	}
+	return nil, errors.New("invalid user association prefix type")
+}
+
 func DBKeyForUserAssociationByID(associationEntry *UserAssociationEntry) []byte {
 	// AssociationID
 	var key []byte
@@ -8393,6 +8409,22 @@ func DBKeyForUserAssociationByUsers(associationEntry *UserAssociationEntry) []by
 	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.AppPKID.ToBytes()...)
 	return key
+}
+
+func DBKeyForPostAssociationByPrefix(associationEntry *PostAssociationEntry, prefixType []byte) ([]byte, error) {
+	if bytes.Equal(prefixType, Prefixes.PrefixPostAssociationByID) {
+		return DBKeyForPostAssociationByID(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixPostAssociationByTransactor) {
+		return DBKeyForPostAssociationByTransactor(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixPostAssociationByPost) {
+		return DBKeyForPostAssociationByPost(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixPostAssociationByType) {
+		return DBKeyForPostAssociationByType(associationEntry), nil
+	}
+	return nil, errors.New("invalid post association prefix type")
 }
 
 func DBKeyForPostAssociationByID(associationEntry *PostAssociationEntry) []byte {
@@ -8573,9 +8605,16 @@ func DBGetPostAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, qu
 	return DBGetPostAssociationByIDWithTxn(txn, snap, associationID)
 }
 
-func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associationQuery *UserAssociationQuery) ([]*UserAssociationEntry, error) {
+func DBGetUserAssociationsByAttributes(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationQuery *UserAssociationQuery,
+	deletedUtxoAssociationIdMap map[*BlockHash]bool,
+) ([]*UserAssociationEntry, error) {
 	// Query for association IDs by input query params.
-	associationIDs, err := DBGetUserAssociationIdsByAttributes(handle, snap, associationQuery)
+	associationIDs, err := DBGetUserAssociationIdsByAttributes(
+		handle, snap, associationQuery, deletedUtxoAssociationIdMap,
+	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: ")
 	}
@@ -8594,24 +8633,34 @@ func DBGetUserAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 	return associationEntries, nil
 }
 
-func DBGetUserAssociationIdsByAttributes(handle *badger.DB, snap *Snapshot, associationQuery *UserAssociationQuery) ([]*BlockHash, error) {
+func DBGetUserAssociationIdsByAttributes(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationQuery *UserAssociationQuery,
+	deletedUtxoAssociationIdMap map[*BlockHash]bool,
+) ([]*BlockHash, error) {
 	// Construct key based on input query params.
+	var prefixType []byte
 	var keyPrefix []byte
+	var err error
 
 	// TransactorPKID + TargetUserPKID
 	if associationQuery.TransactorPKID != nil {
 		if associationQuery.TargetUserPKID != nil {
 			// PrefixUserAssociationByUsers: TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
+			prefixType = Prefixes.PrefixUserAssociationByUsers
 			keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByUsers...)
 			keyPrefix = append(keyPrefix, associationQuery.TransactorPKID.ToBytes()...)
 			keyPrefix = append(keyPrefix, associationQuery.TargetUserPKID.ToBytes()...)
 		} else {
 			// PrefixUserAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
+			prefixType = Prefixes.PrefixUserAssociationByTransactor
 			keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByTransactor...)
 			keyPrefix = append(keyPrefix, associationQuery.TransactorPKID.ToBytes()...)
 		}
 	} else if associationQuery.TargetUserPKID != nil {
 		// PrefixUserAssociationByTargetUser: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
+		prefixType = Prefixes.PrefixUserAssociationByTargetUser
 		keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByTargetUser...)
 		keyPrefix = append(keyPrefix, associationQuery.TargetUserPKID.ToBytes()...)
 	} else {
@@ -8649,11 +8698,39 @@ func DBGetUserAssociationIdsByAttributes(handle *badger.DB, snap *Snapshot, asso
 		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
 	}
 
+	// Convert LastSeenAssociationID to LastSeenKey.
+	var lastSeenKey []byte
+	if associationQuery.LastSeenAssociationID != nil {
+		lastSeenKey, err = _dbUserAssociationIdToKey(handle, snap, associationQuery.LastSeenAssociationID, prefixType)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
+		}
+	}
+
+	// Map deleted UTXO AssociationIDs to keys.
+	deletedUtxoKeyMap := make(map[string]bool)
+	for deletedUtxoAssociationId := range deletedUtxoAssociationIdMap {
+		deletedUtxoKey, err := _dbUserAssociationIdToKey(handle, snap, deletedUtxoAssociationId, prefixType)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
+		}
+		if deletedUtxoKey != nil {
+			deletedUtxoKeyMap[string(deletedUtxoKey)] = true
+		}
+	}
+
 	// Scan for all association IDs with the given key prefix.
-	_, valsFound := EnumerateKeysForPrefix(handle, keyPrefix)
-	var associationIDs []*BlockHash
+	_, valsFound, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+		handle,
+		keyPrefix,
+		associationQuery.Limit,
+		lastSeenKey,
+		associationQuery.SortDescending,
+		deletedUtxoKeyMap,
+	)
 
 	// Cast resulting values from bytes to association IDs.
+	var associationIDs []*BlockHash
 	for _, valBytes := range valsFound {
 		associationID := &BlockHash{}
 		rr := bytes.NewReader(valBytes)
@@ -8665,9 +8742,16 @@ func DBGetUserAssociationIdsByAttributes(handle *badger.DB, snap *Snapshot, asso
 	return associationIDs, nil
 }
 
-func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
+func DBGetPostAssociationsByAttributes(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationQuery *PostAssociationQuery,
+	deletedUtxoAssociationIdMap map[*BlockHash]bool,
+) ([]*PostAssociationEntry, error) {
 	// Query for association IDs by input query params.
-	associationIDs, err := DBGetPostAssociationIdsByAttributes(handle, snap, associationQuery)
+	associationIDs, err := DBGetPostAssociationIdsByAttributes(
+		handle, snap, associationQuery, deletedUtxoAssociationIdMap,
+	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetPostAssociationsByAttributes: ")
 	}
@@ -8686,13 +8770,21 @@ func DBGetPostAssociationsByAttributes(handle *badger.DB, snap *Snapshot, associ
 	return associationEntries, nil
 }
 
-func DBGetPostAssociationIdsByAttributes(handle *badger.DB, snap *Snapshot, associationQuery *PostAssociationQuery) ([]*BlockHash, error) {
+func DBGetPostAssociationIdsByAttributes(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationQuery *PostAssociationQuery,
+	deletedUtxoAssociationIdMap map[*BlockHash]bool,
+) ([]*BlockHash, error) {
 	// Construct key based on input query params.
+	var prefixType []byte
 	var keyPrefix []byte
+	var err error
 
 	if associationQuery.TransactorPKID != nil {
 		// PrefixPostAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, PostHash
 		// TransactorPKID != nil
+		prefixType = Prefixes.PrefixPostAssociationByTransactor
 
 		// TransactorPKID
 		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByTransactor...)
@@ -8730,6 +8822,7 @@ func DBGetPostAssociationIdsByAttributes(handle *badger.DB, snap *Snapshot, asso
 	} else if associationQuery.PostHash != nil {
 		// PrefixPostAssociationByPost: PostHash, AssociationType, AssociationValue, TransactorPKID
 		// TransactorPKID == nil, PostHash != nil
+		prefixType = Prefixes.PrefixPostAssociationByPost
 
 		// PostHash
 		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByPost...)
@@ -8757,6 +8850,7 @@ func DBGetPostAssociationIdsByAttributes(handle *badger.DB, snap *Snapshot, asso
 	} else {
 		// PrefixPostAssociationByType: AssociationType, AssociationValue, PostHash, TransactorPKID
 		// TransactorPKID == nil, PostHash == nil
+		prefixType = Prefixes.PrefixPostAssociationByType
 		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByType...)
 
 		// AssociationType
@@ -8790,11 +8884,42 @@ func DBGetPostAssociationIdsByAttributes(handle *badger.DB, snap *Snapshot, asso
 		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
 	}
 
+	// Convert LastSeenAssociationID to LastSeenKey.
+	var lastSeenKey []byte
+	if associationQuery.LastSeenAssociationID != nil {
+		lastSeenKey, err = _dbPostAssociationIdToKey(handle, snap, associationQuery.LastSeenAssociationID, prefixType)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
+		}
+	}
+
+	// Map deleted UTXO AssociationIDs to keys.
+	deletedUtxoKeyMap := make(map[string]bool)
+	for deletedUtxoAssociationId := range deletedUtxoAssociationIdMap {
+		deletedUtxoKey, err := _dbPostAssociationIdToKey(handle, snap, deletedUtxoAssociationId, prefixType)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
+		}
+		if deletedUtxoKey != nil {
+			deletedUtxoKeyMap[string(deletedUtxoKey)] = true
+		}
+	}
+
 	// Scan for all association IDs with the given key prefix.
-	_, valsFound := EnumerateKeysForPrefix(handle, keyPrefix)
-	var associationIDs []*BlockHash
+	_, valsFound, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+		handle,
+		keyPrefix,
+		associationQuery.Limit,
+		lastSeenKey,
+		associationQuery.SortDescending,
+		deletedUtxoKeyMap,
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetPostAssociationsIdsByAttributes: ")
+	}
 
 	// Cast resulting values from bytes to association IDs.
+	var associationIDs []*BlockHash
 	for _, valBytes := range valsFound {
 		associationID := &BlockHash{}
 		rr := bytes.NewReader(valBytes)
@@ -8804,6 +8929,48 @@ func DBGetPostAssociationIdsByAttributes(handle *badger.DB, snap *Snapshot, asso
 		associationIDs = append(associationIDs, associationID)
 	}
 	return associationIDs, nil
+}
+
+func _dbUserAssociationIdToKey(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationID *BlockHash,
+	prefixType []byte,
+) ([]byte, error) {
+	// Converts a UserAssociationID to a db key.
+	associationEntry, err := DBGetUserAssociationByID(handle, snap, associationID)
+	if err != nil {
+		return nil, err
+	}
+	if associationEntry == nil {
+		return nil, nil
+	}
+	key, err := DBKeyForUserAssociationByPrefix(associationEntry, prefixType)
+	if err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+func _dbPostAssociationIdToKey(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationID *BlockHash,
+	prefixType []byte,
+) ([]byte, error) {
+	// Converts a PostAssociationID to a db key.
+	associationEntry, err := DBGetPostAssociationByID(handle, snap, associationID)
+	if err != nil {
+		return nil, err
+	}
+	if associationEntry == nil {
+		return nil, nil
+	}
+	key, err := DBKeyForPostAssociationByPrefix(associationEntry, prefixType)
+	if err != nil {
+		return nil, err
+	}
+	return key, nil
 }
 
 func DBPutUserAssociationWithTxn(
@@ -8973,4 +9140,90 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 		)
 	}
 	return nil
+}
+
+func EnumerateKeysForPrefixWithLimitOffsetOrder(
+	db *badger.DB,
+	prefix []byte,
+	limit uint64,
+	lastSeenKey []byte,
+	sortDescending bool,
+	deletedUtxoKeyMap map[string]bool,
+) ([][]byte, [][]byte, error) {
+	keysFound := [][]byte{}
+	valsFound := [][]byte{}
+
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		keysFound, valsFound, err = _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
+			txn, prefix, limit, lastSeenKey, sortDescending, deletedUtxoKeyMap,
+		)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if dbErr != nil {
+		return nil, nil, errors.Wrapf(
+			dbErr,
+			"EnumerateKeysForPrefixWithLimitOffsetOrder: problem fetching keys and values from db: ",
+		)
+	}
+
+	return keysFound, valsFound, nil
+}
+
+func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
+	txn *badger.Txn,
+	prefix []byte,
+	limit uint64,
+	lastSeenKey []byte,
+	sortDescending bool,
+	deletedUtxoKeyMap map[string]bool,
+) ([][]byte, [][]byte, error) {
+	numEntriesFound := uint64(0)
+	keysFound := [][]byte{}
+	valsFound := [][]byte{}
+
+	opts := badger.DefaultIteratorOptions
+	// Search keys in reverse order if sort DESC.
+	if sortDescending {
+		opts.Reverse = true
+	}
+	nodeIterator := txn.NewIterator(opts)
+	defer nodeIterator.Close()
+	// If provided, start at the last seen key.
+	startingKey := prefix
+	if lastSeenKey != nil {
+		startingKey = lastSeenKey
+	}
+
+	for nodeIterator.Seek(startingKey); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+		// Break if at or beyond limit.
+		if limit > uint64(0) && numEntriesFound >= limit {
+			break
+		}
+		// Copy key.
+		key := nodeIterator.Item().Key()
+		keyCopy := make([]byte, len(key))
+		copy(keyCopy[:], key[:])
+		// Skip if key is the last seen key.
+		if bytes.Equal(keyCopy, lastSeenKey) {
+			continue
+		}
+		// Skip if key was deleted in the UTXO.
+		if _, exists := deletedUtxoKeyMap[string(keyCopy)]; exists {
+			continue
+		}
+		// Copy value.
+		valCopy, err := nodeIterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		// Add new entry to return values.
+		numEntriesFound += 1
+		keysFound = append(keysFound, keyCopy)
+		valsFound = append(valsFound, valCopy)
+	}
+	return keysFound, valsFound, nil
 }
