@@ -502,8 +502,6 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&AccessGroupMembersMetadata{}).New(), nil
 	case TxnTypeNewMessage:
 		return (&NewMessageMetadata{}).New(), nil
-	case TxnTypeUpdateMessage:
-		return (&UpdateMessageMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -6834,23 +6832,31 @@ func decodeAccessGroupMembersList(rr *bytes.Reader) ([]*AccessGroupMember, error
 // NewMessageMetadata
 // =======================================================================================
 
-type MessageType byte
+type NewMessageType byte
+type NewMessageOperation byte
 
 const (
-	MessageTypeDm        MessageType = 0
-	MessageTypeGroupChat MessageType = 1
+	// Message Types
+	NewMessageTypeDm        NewMessageType = 0
+	NewMessageTypeGroupChat NewMessageType = 1
+
+	// Message Operations
+	NewMessageOperationCreate NewMessageOperation = 0
+	NewMessageOperationUpdate NewMessageOperation = 1
 )
 
 type NewMessageMetadata struct {
 	SenderAccessGroupOwnerPublicKey    PublicKey
 	SenderAccessGroupKeyName           GroupKeyName
-	SenderAccessPublicKey              PublicKey
+	SenderAccessGroupPublicKey         PublicKey
 	RecipientAccessGroupOwnerPublicKey PublicKey
 	RecipientAccessGroupKeyName        GroupKeyName
-	RecipientAccessPublicKey           PublicKey
+	RecipientAccessGroupPublicKey      PublicKey
 	EncryptedText                      []byte
 	TimestampNanos                     uint64
-	MessageType
+	// TODO: Add operation type create/update
+	NewMessageType
+	NewMessageOperation
 }
 
 func (txnData *NewMessageMetadata) GetTxnType() TxnType {
@@ -6862,11 +6868,14 @@ func (txnData *NewMessageMetadata) ToBytes(preSignature bool) ([]byte, error) {
 
 	data = append(data, EncodeByteArray(txnData.SenderAccessGroupOwnerPublicKey.ToBytes())...)
 	data = append(data, EncodeByteArray(txnData.SenderAccessGroupKeyName.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.SenderAccessGroupPublicKey.ToBytes())...)
 	data = append(data, EncodeByteArray(txnData.RecipientAccessGroupOwnerPublicKey.ToBytes())...)
 	data = append(data, EncodeByteArray(txnData.RecipientAccessGroupKeyName.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.RecipientAccessGroupPublicKey.ToBytes())...)
 	data = append(data, EncodeByteArray(txnData.EncryptedText)...)
 	data = append(data, UintToBuf(txnData.TimestampNanos)...)
-	data = append(data, UintToBuf(uint64(txnData.MessageType))...)
+	data = append(data, UintToBuf(uint64(txnData.NewMessageType))...)
+	data = append(data, UintToBuf(uint64(txnData.NewMessageOperation))...)
 
 	return data, nil
 }
@@ -6876,7 +6885,7 @@ func (txnData *NewMessageMetadata) FromBytes(data []byte) error {
 	ret := NewMessageMetadata{}
 	rr := bytes.NewReader(data)
 
-	// SenderAccessGroupOwnerPublicKey
+	// MinorAccessGroupOwnerPublicKey
 	senderAccessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
@@ -6888,12 +6897,24 @@ func (txnData *NewMessageMetadata) FromBytes(data []byte) error {
 		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
 			"Problem reading SenderAccessGroupKeyName")
 	}
-	if err = ValidateGroupPublicKeyAndName(senderAccessGroupOwnerPublicKeyBytes, senderAccessGroupKeyName); err != nil {
+	if err = ValidateAccessGroupPublicKeyAndName(senderAccessGroupOwnerPublicKeyBytes, senderAccessGroupKeyName); err != nil {
 		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
 			"Invalid sender access group public key and name")
 	}
 	ret.SenderAccessGroupOwnerPublicKey = *NewPublicKey(senderAccessGroupOwnerPublicKeyBytes)
 	ret.SenderAccessGroupKeyName = *NewGroupKeyName(senderAccessGroupKeyName)
+
+	// SenderAccessGroupPublicKey
+	senderAccessPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading SenderAccessGroupPublicKey")
+	}
+	if err = IsByteArrayValidPublicKey(senderAccessPublicKeyBytes); err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Invalid sender access public key")
+	}
+	ret.SenderAccessGroupPublicKey = *NewPublicKey(senderAccessPublicKeyBytes)
 
 	// RecipientAccessGroupOwnerPublicKey
 	recipientAccessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
@@ -6907,12 +6928,24 @@ func (txnData *NewMessageMetadata) FromBytes(data []byte) error {
 		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
 			"Problem reading RecipientAccessGroupKeyName")
 	}
-	if err = ValidateGroupPublicKeyAndName(recipientAccessGroupOwnerPublicKeyBytes, recipientAccessGroupKeyName); err != nil {
+	if err = ValidateAccessGroupPublicKeyAndName(recipientAccessGroupOwnerPublicKeyBytes, recipientAccessGroupKeyName); err != nil {
 		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
 			"Invalid recipient access group public key and name")
 	}
 	ret.RecipientAccessGroupOwnerPublicKey = *NewPublicKey(recipientAccessGroupOwnerPublicKeyBytes)
 	ret.RecipientAccessGroupKeyName = *NewGroupKeyName(recipientAccessGroupKeyName)
+
+	// RecipientAccessGroupPublicKey
+	recipientAccessPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading RecipientAccessGroupPublicKey")
+	}
+	if err = IsByteArrayValidPublicKey(recipientAccessPublicKeyBytes); err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Invalid recipient access public key")
+	}
+	ret.RecipientAccessGroupPublicKey = *NewPublicKey(recipientAccessPublicKeyBytes)
 
 	// EncryptedText
 	ret.EncryptedText, err = DecodeByteArray(rr)
@@ -6928,13 +6961,22 @@ func (txnData *NewMessageMetadata) FromBytes(data []byte) error {
 			"Problem reading TimestampNanos")
 	}
 
-	// MessageType
+	// NewMessageType
 	messageType, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
-			"Problem reading MessageType")
+			"Problem reading NewMessageType")
 	}
-	ret.MessageType = MessageType(messageType)
+	ret.NewMessageType = NewMessageType(messageType)
+
+	// NewMessageOperation
+	messageOperation, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading NewMessageOperation")
+	}
+	ret.NewMessageOperation = NewMessageOperation(messageOperation)
+	*txnData = ret
 
 	return nil
 }

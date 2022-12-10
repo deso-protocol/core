@@ -131,9 +131,13 @@ const (
 	RuleErrorNewMessageEncryptedTextLengthExceedsMax         RuleError = "RuleErrorNewMessageEncryptedTextLengthExceedsMax"
 	RuleErrorNewMessageTimestampNanosCannotBeZero            RuleError = "RuleErrorNewMessageTimestampNanosCannotBeZero"
 	RuleErrorNewMessageDmMessageAlreadyExists                RuleError = "RuleErrorNewMessageDmMessageAlreadyExists"
+	RuleErrorNewMessageDmMessageDoesNotExist                 RuleError = "RuleErrorNewMessageDmMessageDoesNotExist"
+	RuleErrorNewMessageDmMessageTimestampMismatch            RuleError = "RuleErrorNewMessageDmMessageTimestampMismatch"
 	RuleErrorNewMessageMessageSenderDoesNotMatchTxnPublicKey RuleError = "RuleErrorNewMessageMessageSenderDoesNotMatchTxnPublicKey"
 	RuleErrorNewMessageBeforeDeSoAccessGroups                RuleError = "RuleErrorNewMessageBeforeDeSoAccessGroups"
 	RuleErrorNewMessageGroupChatMessageAlreadyExists         RuleError = "RuleErrorNewMessageGroupChatMessageAlreadyExists"
+	RuleErrorNewMessageGroupChatMessageDoesNotExist          RuleError = "RuleErrorNewMessageGroupChatMessageDoesNotExist"
+	RuleErrorNewMessageGroupMessageTimestampMismatch         RuleError = "RuleErrorNewMessageGroupMessageTimestampMismatch"
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"

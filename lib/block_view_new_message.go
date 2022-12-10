@@ -3,39 +3,48 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"reflect"
 )
 
 // ==================================================================
 // GroupChatMessagesIndex
 // ==================================================================
 
-func (bav *UtxoView) getGroupChatMessagesIndex(groupChatMessageKey GroupChatMessageKey) *MessageEntry {
+func (bav *UtxoView) getGroupChatMessagesIndex(groupChatMessageKey GroupChatMessageKey) (*NewMessageEntry, error) {
 	mapValue, existsMapValue := bav.GroupChatMessagesIndex[groupChatMessageKey]
 	if existsMapValue {
-		return mapValue
+		return mapValue, nil
 	}
 
-	dbMessageEntry := DBGetGroupChatMessagesIndex(bav.Handle, bav.Snapshot, groupChatMessageKey)
-	if dbMessageEntry != nil {
-		bav.setGroupChatMessagesIndex(dbMessageEntry)
-	}
-	return dbMessageEntry
-}
-
-func (bav *UtxoView) setGroupChatMessagesIndex(messageEntry *MessageEntry) {
-	groupChatMessageKey, err := MakeGroupChatMessageKeyFromMessageEntry(messageEntry)
+	dbAdapter := bav.GetDbAdapter()
+	dbMessageEntry, err := dbAdapter.GetGroupChatMessageEntry(groupChatMessageKey)
 	if err != nil {
-		glog.Errorf("setGroupChatMessagesIndex: Error making group chat message key: %v", err)
-		return
+		return nil, errors.Wrapf(err, "getGroupChatMessagesIndex: ")
 	}
-
-	bav.GroupChatMessagesIndex[groupChatMessageKey] = messageEntry
+	if dbMessageEntry != nil {
+		if err := bav.setGroupChatMessagesIndex(dbMessageEntry); err != nil {
+			return nil, errors.Wrapf(err, "getGroupChatMessagesIndex: ")
+		}
+	}
+	return dbMessageEntry, nil
 }
 
-func (bav *UtxoView) deleteGroupChatMessagesIndex(messageEntry *MessageEntry) {
+func (bav *UtxoView) setGroupChatMessagesIndex(messageEntry *NewMessageEntry) error {
+	if messageEntry == nil {
+		return fmt.Errorf("setGroupChatMessagesIndex: called with nil messageEntry")
+	}
+
+	if messageEntry.RecipientAccessGroupOwnerPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil {
+		return fmt.Errorf("setGroupChatMessagesIndex: called with nil recipient data")
+	}
+
+	groupChatMessageKey := MakeGroupChatMessageKey(
+		*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName, messageEntry.TimestampNanos)
+	bav.GroupChatMessagesIndex[groupChatMessageKey] = messageEntry
+	return nil
+}
+
+func (bav *UtxoView) deleteGroupChatMessagesIndex(messageEntry *NewMessageEntry) error {
 
 	// Create a tombstone entry.
 	tombstoneMessageEntry := *messageEntry
@@ -44,83 +53,66 @@ func (bav *UtxoView) deleteGroupChatMessagesIndex(messageEntry *MessageEntry) {
 	// Set the mappings to point to the tombstone entry.
 	// As opposed to the setGroupChatMessagesIndex, we only need to do *the delete* once.
 	// This is because set will delete both entries at once.
-	bav.setGroupChatMessagesIndex(&tombstoneMessageEntry)
-}
-
-// ==================================================================
-// DmThreadIndex
-// ==================================================================
-
-func (bav *UtxoView) getDmThreadIndex(dmThreadKey DmThreadKey) *MessageEntry {
-	mapValue, existsMapValue := bav.DmThreadIndex[dmThreadKey]
-	if existsMapValue {
-		return mapValue
+	if err := bav.setGroupChatMessagesIndex(&tombstoneMessageEntry); err != nil {
+		return errors.Wrapf(err, "deleteGroupChatMessagesIndex: ")
 	}
-
-	dbMessageEntry := DBGetDmThreadEntry(bav.Handle, bav.Snapshot, dmThreadKey)
-	if dbMessageEntry != nil {
-		bav.setDmThreadIndex(dbMessageEntry, false)
-	}
-	return dbMessageEntry
-}
-
-func (bav *UtxoView) setDmThreadIndex(messageEntry *MessageEntry, shouldReverse bool) {
-	dmThreadKey, err := MakeDmThreadKeyFromMessageEntry(messageEntry, shouldReverse)
-	if err != nil {
-		glog.Errorf("setDmThreadIndex: Error making dm thread key: %v", err)
-		return
-	}
-	bav.DmThreadIndex[dmThreadKey] = messageEntry
-}
-
-func (bav *UtxoView) deleteDmThreadIndex(messageEntry *MessageEntry) {
-
-	// Create a tombstone entry.
-	tombstoneMessageEntry := *messageEntry
-	tombstoneMessageEntry.isDeleted = true
-
-	// Set the mappings to point to the tombstone entry.
-	// We delete both entries at once.
-	bav.setDmThreadIndex(&tombstoneMessageEntry, false)
-	bav.setDmThreadIndex(&tombstoneMessageEntry, true)
+	return nil
 }
 
 // ==================================================================
 // DmMessagesIndex
 // ==================================================================
 
-func (bav *UtxoView) getDmMessagesIndex(dmMessageKey DmMessageKey) *MessageEntry {
+func (bav *UtxoView) getDmMessagesIndex(dmMessageKey DmMessageKey) (*NewMessageEntry, error) {
 	mapValue, existsMapValue := bav.DmMessagesIndex[dmMessageKey]
 	if existsMapValue {
-		return mapValue
+		return mapValue, nil
 	}
 
-	dbMessageEntry := DBGetDmMessageEntry(bav.Handle, bav.Snapshot, dmMessageKey)
-	if dbMessageEntry != nil {
-		bav.setDmMessageIndex(dbMessageEntry)
-	}
-	return dbMessageEntry
-}
-
-func (bav *UtxoView) setDmMessageIndex(messageEntry *MessageEntry) {
-	dmMessageKey, err := MakeDmMessageKeyFromMessageEntry(messageEntry)
+	dbAdapter := bav.GetDbAdapter()
+	dbMessageEntry, err := dbAdapter.GetDmMessageEntry(dmMessageKey)
 	if err != nil {
-		glog.Errorf("setDmMessageIndex: Error making dm message key: %v", err)
-		return
+		return nil, errors.Wrapf(err, "getDmMessagesIndex: ")
 	}
-	bav.DmMessagesIndex[dmMessageKey] = messageEntry
+	if dbMessageEntry != nil {
+		if err := bav.setDmMessagesIndex(dbMessageEntry); err != nil {
+			return nil, errors.Wrapf(err, "getDmMessagesIndex: ")
+		}
+	}
+	return dbMessageEntry, nil
 }
 
-func (bav *UtxoView) deleteDmMessageIndex(messageEntry *MessageEntry) {
+func (bav *UtxoView) setDmMessagesIndex(messageEntry *NewMessageEntry) error {
+	if messageEntry == nil {
+		return fmt.Errorf("setDmMessagesIndex: called with nil messageEntry")
+	}
+
+	if messageEntry.SenderAccessGroupOwnerPublicKey == nil || messageEntry.SenderAccessGroupKeyName == nil ||
+		messageEntry.RecipientAccessGroupOwnerPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil {
+
+		return fmt.Errorf("setDmMessagesIndex: called with nil sender or recipient data")
+	}
+
+	dmMessageKey := MakeDmMessageKeyForSenderRecipient(*messageEntry.SenderAccessGroupOwnerPublicKey, *messageEntry.SenderAccessGroupKeyName,
+		*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName, messageEntry.TimestampNanos)
+
+	bav.DmMessagesIndex[dmMessageKey] = messageEntry
+	return nil
+}
+
+func (bav *UtxoView) deleteDmMessagesIndex(messageEntry *NewMessageEntry) error {
 
 	// Create a tombstone entry.
 	tombstoneMessageEntry := *messageEntry
 	tombstoneMessageEntry.isDeleted = true
 
 	// Set the mappings to point to the tombstone entry.
-	// As opposed to the setDmMessageIndex, we only need to do *the delete* once.
+	// As opposed to the setDmMessagesIndex, we only need to do *the delete* once.
 	// This is because set will delete both entries at once.
-	bav.setDmMessageIndex(&tombstoneMessageEntry)
+	if err := bav.setDmMessagesIndex(&tombstoneMessageEntry); err != nil {
+		return errors.Wrapf(err, "deleteDmMessagesIndex: ")
+	}
+	return nil
 }
 
 func (bav *UtxoView) _connectNewMessage(
@@ -138,7 +130,7 @@ func (bav *UtxoView) _connectNewMessage(
 		return 0, 0, nil, RuleErrorNewMessageBeforeDeSoAccessGroups
 	}
 
-	// Check the lenght of the EncryptedText
+	// Check the length of the EncryptedText
 	if uint64(len(txMeta.EncryptedText)) > bav.Params.MaxPrivateMessageLengthBytes {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorNewMessageEncryptedTextLengthExceedsMax, "_connectNewMessage: "+
@@ -146,9 +138,10 @@ func (bav *UtxoView) _connectNewMessage(
 			len(txMeta.EncryptedText), bav.Params.MaxPrivateMessageLengthBytes)
 	}
 
+	// Validate sender's access group.
 	if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 		txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txMeta.SenderAccessGroupKeyName.ToBytes(), blockHeight); err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: ",
+		return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: "+
 			"SenderAccessGroupOwnerPublicKey and SenderAccessGroupKeyName are invalid")
 	}
 
@@ -160,9 +153,10 @@ func (bav *UtxoView) _connectNewMessage(
 			PkToString(txn.PublicKey, bav.Params))
 	}
 
+	// Validate recipient's access group.
 	if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
-		txMeta.RecipientAccessGroupKeyName.ToBytes(), txMeta.RecipientAccessGroupKeyName.ToBytes(), blockHeight); err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: ",
+		txMeta.RecipientAccessGroupOwnerPublicKey.ToBytes(), txMeta.RecipientAccessGroupKeyName.ToBytes(), blockHeight); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: "+
 			"RecipientAccessGroupOwnerPublicKey and RecipientAccessGroupKeyName are invalid")
 	}
 
@@ -178,88 +172,132 @@ func (bav *UtxoView) _connectNewMessage(
 		return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: ")
 	}
 
-	messageEntry := &MessageEntry{
-		SenderPublicKey:             &txMeta.SenderAccessGroupOwnerPublicKey,
-		RecipientPublicKey:          &txMeta.RecipientAccessGroupOwnerPublicKey,
-		EncryptedText:               txMeta.EncryptedText,
-		TstampNanos:                 txMeta.TimestampNanos,
-		Version:                     MessagesVersion3,
-		SenderMessagingPublicKey:    &txMeta.SenderAccessPublicKey,
-		SenderAccessGroupKeyName:    &txMeta.SenderAccessGroupKeyName,
-		RecipientMessagingPublicKey: &txMeta.RecipientAccessPublicKey,
-		RecipientAccessGroupKeyName: &txMeta.RecipientAccessGroupKeyName,
-		ExtraData:                   mergeExtraData(nil, txn.ExtraData),
+	messageEntry := &NewMessageEntry{
+		SenderAccessGroupOwnerPublicKey:    &txMeta.SenderAccessGroupOwnerPublicKey,
+		SenderAccessGroupKeyName:           &txMeta.SenderAccessGroupKeyName,
+		SenderAccessGroupPublicKey:         &txMeta.SenderAccessGroupPublicKey,
+		RecipientAccessGroupOwnerPublicKey: &txMeta.RecipientAccessGroupOwnerPublicKey,
+		RecipientAccessGroupKeyName:        &txMeta.RecipientAccessGroupKeyName,
+		RecipientAccessGroupPublicKey:      &txMeta.RecipientAccessGroupPublicKey,
+		EncryptedText:                      txMeta.EncryptedText,
+		TimestampNanos:                     txMeta.TimestampNanos,
+		ExtraData:                          txn.ExtraData,
 	}
 
-	switch txMeta.MessageType {
-	case MessageTypeDm:
-		// TODO: Once access group utxo_view logic is finalized, verify that the message fulfills DM criteria.
-		var dmThreadMessageEntry, dmThreadReverse, copyDmThreadMessageEntry *MessageEntry
-		dmThreadKey, err := MakeDmThreadKeyFromMessageEntry(messageEntry, false)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: ")
-		}
-		dmThreadMessageEntry = bav.getDmThreadIndex(dmThreadKey)
-		if dmThreadMessageEntry != nil && !dmThreadMessageEntry.isDeleted {
-			tempDmThread := *dmThreadMessageEntry
-			copyDmThreadMessageEntry = &tempDmThread
-		}
-		dmThreadKeyReverse, err := MakeDmThreadKeyFromMessageEntry(messageEntry, true)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: ")
-		}
-		dmThreadReverse = bav.getDmThreadIndex(dmThreadKey)
-		if dmThreadMessageEntry != nil && !dmThreadMessageEntry.isDeleted {
-			blockHeightUint64 := uint64(blockHeight)
-			if !reflect.DeepEqual(EncodeToBytes(blockHeightUint64, dmThreadMessageEntry), EncodeToBytes(blockHeightUint64, dmThreadReverse)) {
-				glog.Errorf("_connectNewMessage: DM thread and DM thread reverse are not equal: "+
-					"dmThreadKey: %v, dmThreadKeyReverse: %v, dmThreadMessageEntry: %v, dmThreadReverse: %v",
-					dmThreadKey, dmThreadKeyReverse, dmThreadMessageEntry, dmThreadReverse)
+	var prevNewMessageEntry *NewMessageEntry
+
+	switch txMeta.NewMessageOperation {
+	case NewMessageOperationCreate:
+		switch txMeta.NewMessageType {
+		case NewMessageTypeDm:
+			dmMessageKey := MakeDmMessageKeyForSenderRecipient(txMeta.SenderAccessGroupOwnerPublicKey, txMeta.SenderAccessGroupKeyName,
+				txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName, txMeta.TimestampNanos)
+
+			dmMessage, err := bav.getDmMessagesIndex(dmMessageKey)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+					"getting dm message from index with dm message key %v: ", dmMessageKey)
+			}
+			if dmMessage != nil && !dmMessage.isDeleted {
+				return 0, 0, nil, errors.Wrapf(RuleErrorNewMessageDmMessageAlreadyExists,
+					"_connectNewMessage: DM thread already exists for sender (%v) and recipient (%v)",
+					txMeta.SenderAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupOwnerPublicKey)
+			}
+			err = bav.setDmMessagesIndex(messageEntry)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+					"setting dm message in index with dm message key %v: ", dmMessageKey)
+			}
+		case NewMessageTypeGroupChat:
+			// Fetch the group chat entry, which is indexed by the recipient's access group.
+			groupChatMessageKey := MakeGroupChatMessageKey(
+				txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName, txMeta.TimestampNanos)
+			groupChatMessage, err := bav.getGroupChatMessagesIndex(groupChatMessageKey)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+					"getting group chat message from index with group chat message key %v: ", groupChatMessageKey)
+			}
+			if groupChatMessage != nil && !groupChatMessage.isDeleted {
+				return 0, 0, nil, errors.Wrapf(RuleErrorNewMessageGroupChatMessageAlreadyExists,
+					"_connectNewMessage: Group chat thread already exists for recipient (%v)",
+					txMeta.RecipientAccessGroupOwnerPublicKey)
+			}
+			err = bav.setGroupChatMessagesIndex(messageEntry)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+					"setting group chat message in index with group chat message key %v: ", groupChatMessageKey)
 			}
 		}
-		dmMessageKey, err := MakeDmMessageKeyFromMessageEntry(messageEntry)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: ")
-		}
-		dmMessage := bav.getDmMessagesIndex(dmMessageKey)
-		if dmMessage != nil || !dmMessage.isDeleted {
-			return 0, 0, nil, errors.Wrapf(RuleErrorNewMessageDmMessageAlreadyExists,
-				"_connectNewMessage: DM thread already exists for sender (%v) and recipient (%v)",
-				txMeta.SenderAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupOwnerPublicKey)
-		}
+	case NewMessageOperationUpdate:
+		switch txMeta.NewMessageType {
+		case NewMessageTypeDm:
+			dmMessageKey := MakeDmMessageKeyForSenderRecipient(txMeta.SenderAccessGroupOwnerPublicKey, txMeta.SenderAccessGroupKeyName,
+				txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName, txMeta.TimestampNanos)
 
-		bav.setDmThreadIndex(messageEntry, false)
-		bav.setDmThreadIndex(messageEntry, true)
-		bav.setDmMessageIndex(messageEntry)
-		utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-			Type:              OperationTypeNewMessage,
-			PrevDmThreadIndex: copyDmThreadMessageEntry,
-			DmThreadKey:       dmThreadKey,
-			DmMessageIndexKey: dmMessageKey,
-			MessageType:       MessageTypeDm,
-		})
+			dmMessage, err := bav.getDmMessagesIndex(dmMessageKey)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+					"getting dm message from index with dm message key %v: ", dmMessageKey)
+			}
+			if dmMessage == nil || dmMessage.isDeleted {
+				return 0, 0, nil, errors.Wrapf(RuleErrorNewMessageDmMessageDoesNotExist,
+					"_connectNewMessage: DM thread does not exist for sender (%v) and recipient (%v)",
+					txMeta.SenderAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupOwnerPublicKey)
+			}
+			// Sanity-check that timestamps match.
+			if dmMessage.TimestampNanos != txMeta.TimestampNanos {
+				return 0, 0, nil, errors.Wrapf(RuleErrorNewMessageDmMessageTimestampMismatch,
+					"_connectNewMessage: DM thread timestamp (%v) does not match update timestamp (%v)",
+					dmMessage.TimestampNanos, txMeta.TimestampNanos)
+			}
+			// Set the previous utxoView entry.
+			copyDmMessage := *dmMessage
+			prevNewMessageEntry = &copyDmMessage
 
-	case MessageTypeGroupChat:
-		// TODO: Once access group utxo_view logic is finalized, verify that the message fulfills Group Chat criteria.
-		var groupChatMessage *MessageEntry
-		groupChatMessageKey, err := MakeGroupChatMessageKeyFromMessageEntry(messageEntry)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: ")
-		}
-		groupChatMessage = bav.getGroupChatMessagesIndex(groupChatMessageKey)
-		if groupChatMessage != nil || !groupChatMessage.isDeleted {
-			return 0, 0, nil, errors.Wrapf(RuleErrorNewMessageGroupChatMessageAlreadyExists,
-				"_connectNewMessage: Group chat thread already exists for recipient (%v)",
-				txMeta.RecipientAccessGroupOwnerPublicKey)
-		}
-		bav.setGroupChatMessagesIndex(messageEntry)
+			// Update the DM message entry.
+			err = bav.setDmMessagesIndex(messageEntry)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+					"setting dm message in index with dm message key %v: ", dmMessageKey)
+			}
+		case NewMessageTypeGroupChat:
+			// Fetch the group chat entry, which is indexed by the recipient's access group.
+			groupChatMessageKey := MakeGroupChatMessageKey(
+				txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName, txMeta.TimestampNanos)
 
-		utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-			Type:                 OperationTypeNewMessage,
-			GroupChatMessagesKey: groupChatMessageKey,
-			MessageType:          MessageTypeGroupChat,
-		})
+			groupChatMessage, err := bav.getGroupChatMessagesIndex(groupChatMessageKey)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+					"getting group chat message from index with group chat message key %v: ", groupChatMessageKey)
+			}
+			if groupChatMessage == nil || groupChatMessage.isDeleted {
+				return 0, 0, nil, errors.Wrapf(RuleErrorNewMessageGroupChatMessageDoesNotExist,
+					"_connectNewMessage: Group chat thread does not exist for recipient (%v)",
+					txMeta.RecipientAccessGroupOwnerPublicKey)
+			}
+			// Sanity-check that timestamps match.
+			if groupChatMessage.TimestampNanos != txMeta.TimestampNanos {
+				return 0, 0, nil, errors.Wrapf(RuleErrorNewMessageGroupMessageTimestampMismatch,
+					"_connectNewMessage: Group chat thread timestamp (%v) does not match update timestamp (%v)",
+					groupChatMessage.TimestampNanos, txMeta.TimestampNanos)
+			}
+			// Set the previous utxoView entry.
+			copyGroupChatMessage := *groupChatMessage
+			prevNewMessageEntry = &copyGroupChatMessage
+
+			// Update the group chat message entry.
+			err = bav.setGroupChatMessagesIndex(messageEntry)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+					"setting group chat message in index with group chat message key %v: ", groupChatMessageKey)
+			}
+		}
 	}
+
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                OperationTypeNewMessage,
+		PrevNewMessageEntry: prevNewMessageEntry,
+	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -283,39 +321,100 @@ func (bav *UtxoView) _disconnectNewMessage(
 
 	// TODO: Add some sanity-check validation
 	txMeta := currentTxn.TxnMeta.(*NewMessageMetadata)
-	_ = txMeta
-	messageType := prevUtxoOp.MessageType
 
-	switch messageType {
-	case MessageTypeDm:
-		if prevUtxoOp.PrevDmThreadIndex == nil {
-			currentDmThreadIndex := bav.getDmThreadIndex(prevUtxoOp.DmThreadKey)
-			if currentDmThreadIndex != nil && !currentDmThreadIndex.isDeleted {
-				return fmt.Errorf("_disconnectNewMessage: DM thread is already deleted or does not exist "+
-					"dmThreadKey: %v", prevUtxoOp.DmThreadKey)
+	switch txMeta.NewMessageOperation {
+	case NewMessageOperationCreate:
+		switch txMeta.NewMessageType {
+		case NewMessageTypeDm:
+			dmMessageKey := MakeDmMessageKeyForSenderRecipient(
+				txMeta.SenderAccessGroupOwnerPublicKey, txMeta.SenderAccessGroupKeyName,
+				txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName, txMeta.TimestampNanos)
+
+			dmMessage, err := bav.getDmMessagesIndex(dmMessageKey)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectNewMessage: Problem "+
+					"getting dm message from index with dm message key %v: ", dmMessageKey)
 			}
-			if currentDmThreadIndex != nil && !currentDmThreadIndex.isDeleted {
-				bav.deleteDmThreadIndex(currentDmThreadIndex)
+			// Sanity-check that the dm message we're reverting exists.
+			if dmMessage == nil || dmMessage.isDeleted {
+				return fmt.Errorf("_disconnectNewMessage: DM thread does not exist for sender (%v) and recipient (%v)",
+					txMeta.SenderAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupOwnerPublicKey)
 			}
-		} else {
-			currentDmThreadIndex := bav.getDmThreadIndex(prevUtxoOp.DmThreadKey)
-			bav.deleteDmThreadIndex(currentDmThreadIndex)
-			// Set the previous DM thread index.
-			bav.setDmThreadIndex(prevUtxoOp.PrevDmThreadIndex, false)
-			bav.setDmThreadIndex(prevUtxoOp.PrevDmThreadIndex, true)
+
+			err = bav.deleteDmMessagesIndex(dmMessage)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectNewMessage: Problem deleting dm message index: ")
+			}
+		case NewMessageTypeGroupChat:
+			groupChatMessageKey := MakeGroupChatMessageKey(
+				txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName, txMeta.TimestampNanos)
+			groupChatMessage, err := bav.getGroupChatMessagesIndex(groupChatMessageKey)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectNewMessage: Problem "+
+					"getting group chat message from index with group chat message key %v: ", groupChatMessageKey)
+			}
+			// Sanity-check that the group chat message we're reverting exists.
+			if groupChatMessage == nil || groupChatMessage.isDeleted {
+				return fmt.Errorf("_disconnectNewMessage: Group chat thread does not exist for group chat key (%v)",
+					groupChatMessageKey)
+			}
+
+			err = bav.deleteGroupChatMessagesIndex(groupChatMessage)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectNewMessage: Problem deleting group chat message index: ")
+			}
+		}
+	case NewMessageOperationUpdate:
+		// Make sure the utxoOp previous message is not empty.
+		if prevUtxoOp.PrevNewMessageEntry == nil {
+			return fmt.Errorf("_disconnectNewMessage: Previous DM message entry is nil")
 		}
 
-		// Delete the DM message, there is no prev entry for messages so we don't need to re-set it.
-		currentDmMessage := bav.getDmMessagesIndex(prevUtxoOp.DmMessageIndexKey)
-		if currentDmMessage == nil || currentDmMessage.isDeleted {
-			return fmt.Errorf("_disconnectNewMessage: DM message is already deleted or does not exist "+
-				"dmMessageKey: %v", prevUtxoOp.DmMessageIndexKey)
+		switch txMeta.NewMessageType {
+		case NewMessageTypeDm:
+			dmMessageKey := MakeDmMessageKeyForSenderRecipient(
+				txMeta.SenderAccessGroupOwnerPublicKey, txMeta.SenderAccessGroupKeyName,
+				txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName, txMeta.TimestampNanos)
+			dmMessage, err := bav.getDmMessagesIndex(dmMessageKey)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectNewMessage: Problem "+
+					"getting dm message from index with dm message key %v: ", dmMessageKey)
+			}
+
+			// Sanity-check that the dm message we're reverting exists.
+			if dmMessage == nil || dmMessage.isDeleted {
+				return fmt.Errorf("_disconnectNewMessage: DM thread does not exist for dm message key (%v)",
+					dmMessageKey)
+			}
+
+			// Revert the dm message entry.
+			err = bav.setDmMessagesIndex(prevUtxoOp.PrevNewMessageEntry)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectNewMessage: Problem "+
+					"setting dm message in index with dm message key %v: ", dmMessageKey)
+			}
+		case NewMessageTypeGroupChat:
+			groupChatMessageKey := MakeGroupChatMessageKey(
+				txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName, txMeta.TimestampNanos)
+			groupChatMessage, err := bav.getGroupChatMessagesIndex(groupChatMessageKey)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectNewMessage: Problem "+
+					"getting group chat message from index with group chat message key %v: ", groupChatMessageKey)
+			}
+
+			// Sanity-check that the group chat message we're reverting exists.
+			if groupChatMessage == nil || groupChatMessage.isDeleted {
+				return fmt.Errorf("_disconnectNewMessage: Group chat thread does not exist for group chat key (%v)",
+					groupChatMessageKey)
+			}
+
+			// Revert the group chat message entry.
+			err = bav.setGroupChatMessagesIndex(prevUtxoOp.PrevNewMessageEntry)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectNewMessage: Problem "+
+					"setting group chat message in index with group chat message key %v: ", groupChatMessageKey)
+			}
 		}
-		bav.deleteDmMessageIndex(currentDmMessage)
-	case MessageTypeGroupChat:
-		// Delete the group chat message, there is no prev entry for messages so we don't need to re-set it.
-		currentGroupChatMessage := bav.getGroupChatMessagesIndex(prevUtxoOp.GroupChatMessagesKey)
-		bav.deleteGroupChatMessagesIndex(currentGroupChatMessage)
 	}
 
 	// Now disconnect the basic transfer.

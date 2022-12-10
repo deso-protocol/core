@@ -7,6 +7,10 @@ import (
 
 func init() {
 	up := func(db orm.DB) error {
+
+		//
+		// Access Groups
+		//
 		_, err := db.Exec(`
 			CREATE TABLE IF NOT EXISTS pg_access_group_entries_by_access_group_id (
 				access_group_owner_public_key BYTEA NOT NULL,
@@ -82,6 +86,65 @@ func init() {
 			return err
 		}
 
+		//
+		// Dms & Group Chats
+		//
+		_, err = db.Exec(`
+			CREATE TABLE IF NOT EXISTS pg_new_message_dm_entries (
+				minor_access_group_owner_public_key BYTEA NOT NULL,
+				minor_access_group_key_name         BYTEA,
+				sender_access_group_public_key      BYTEA NOT NULL,
+				major_access_group_owner_public_key BYTEA NOT NULL,
+				major_access_group_key_name         BYTEA,
+				recipient_access_group_public_key   BYTEA NOT NULL,
+				encrypted_text                      BYTEA,
+				timestamp_nanos                     BIGINT NOT NULL,
+				is_sender_minor                     BOOL,
+				extra_data                          JSONB,
+
+				PRIMARY KEY (minor_access_group_owner_public_key, minor_access_group_key_name, 
+					major_access_group_owner_public_key, major_access_group_key_name, timestamp_nanos)
+			);
+		`)
+		if err != nil {
+			return err
+		}
+
+		_, err = db.Exec(`
+			CREATE TABLE IF NOT EXISTS pg_new_message_group_chat_entries (
+				access_group_owner_public_key        BYTEA NOT NULL,
+				access_group_key_name                BYTEA,
+				access_group_public_key              BYTEA NOT NULL,
+				sender_access_group_owner_public_key BYTEA NOT NULL,
+				sender_access_group_key_name         BYTEA,
+				sender_access_group_public_key       BYTEA NOT NULL,
+				encrypted_text                       BYTEA,
+				timestamp_nanos                      BIGINT NOT NULL,
+				extra_data                           JSONB,
+
+				PRIMARY KEY (access_group_owner_public_key, access_group_key_name, timestamp_nanos)
+			);
+		`)
+		if err != nil {
+			return err
+		}
+
+		_, err = db.Exec(`
+			CREATE TABLE IF NOT EXISTS pg_metadata_new_message (
+				transaction_hash                        BYTEA PRIMARY KEY,
+				sender_access_group_owner_public_key    BYTEA NOT NULL,
+				sender_access_group_key_name            BYTEA,
+				sender_access_group_public_key          BYTEA NOT NULL,
+				recipient_access_group_owner_public_key BYTEA NOT NULL,
+				recipient_access_group_key_name         BYTEA,
+				recipient_access_group_public_key       BYTEA NOT NULL,
+				encrypted_text                          BYTEA,
+				timestamp_nanos                         BIGINT NOT NULL,
+				new_message_type                        SMALLINT,
+				new_message_operation                   SMALLINT
+			);
+		`)
+
 		return nil
 	}
 
@@ -92,6 +155,9 @@ func init() {
 			DROP TABLE IF EXISTS pg_access_group_member_enumeration_index;
 			DROP TABLE IF EXISTS pg_metadata_access_group_create;
 			DROP TABLE IF EXISTS pg_metadata_access_group_members;
+			DROP TABLE IF EXISTS pg_new_message_dm_entries;
+			DROP TABLE IF EXISTS pg_new_message_group_chat_entries;
+			DROP TABLE IF EXISTS pg_metadata_new_message;
 		`)
 		return err
 	}

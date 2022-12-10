@@ -1300,7 +1300,7 @@ func _createSignedAccessGroupMembersTransaction(t *testing.T, chain *Blockchain,
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateAccessGroupMembersTxn(
 		accessGroupOwnerPublicKey, accessGroupKeyName, accessGroupMembersList, operationType,
-		10, mempool, []*DeSoOutput{})
+		nil, 10, mempool, []*DeSoOutput{})
 	if err != nil {
 		return nil, errors.Wrapf(err, "_createSignedAccessGroupMembersTransaction: ")
 	}
@@ -1351,6 +1351,8 @@ func _verifyDisconnectUtxoViewEntryForAccessGroupMembers(t *testing.T, utxoView 
 
 		// If the group has already been fetched in this utxoView, then we get it directly from there.
 		accessGroupMember, exists := utxoView.AccessGroupMembershipKeyToAccessGroupMember[*groupMembershipKey]
+		currentUtxoOp := utxoOps[len(utxoOps)-1]
+		require.Equal(currentUtxoOp.Type, OperationTypeAccessGroupMembers)
 
 		switch operationType {
 		case AccessGroupMemberOperationTypeAdd, AccessGroupMemberOperationTypeUpdate:
@@ -1365,8 +1367,6 @@ func _verifyDisconnectUtxoViewEntryForAccessGroupMembers(t *testing.T, utxoView 
 			require.NotNil(accessGroupMember)
 			require.Equal(false, accessGroupMember.isDeleted)
 			// Verify that the current entry in UtxoView correctly reflects the UtxoOperation.
-			currentUtxoOp := utxoOps[len(utxoOps)-1]
-			require.Equal(currentUtxoOp.Type, OperationTypeAccessGroupMembers)
 			prevAccessGroupMemberEntry := currentUtxoOp.PrevAccessGroupMembersList[ii]
 			previousAccessGroupMember := &AccessGroupMember{
 				AccessGroupMemberPublicKey: prevAccessGroupMemberEntry.AccessGroupMemberPublicKey.ToBytes(),

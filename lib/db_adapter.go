@@ -282,3 +282,35 @@ func (adapter *DbAdapter) GetPaginatedAccessGroupMembersEnumerationEntries(
 			startingAccessGroupMemberPublicKeyBytes, maxMembersToFetch)
 	}
 }
+
+//
+// NewMessage
+//
+
+func (adapter *DbAdapter) GetDmMessageEntry(dmMessageKey DmMessageKey) (*NewMessageEntry, error) {
+
+	if adapter.postgresDb != nil {
+		pgDmMessage := adapter.postgresDb.GetNewMessageDmEntry(dmMessageKey)
+		if pgDmMessage == nil {
+			return nil, nil
+		}
+		dmMessage := pgDmMessage.ToNewMessageEntry()
+		return dmMessage, nil
+	} else {
+		return DBGetDmMessageEntry(adapter.badgerDb, adapter.snapshot, dmMessageKey)
+	}
+}
+
+func (adapter *DbAdapter) GetGroupChatMessageEntry(groupChatMessageKey GroupChatMessageKey) (*NewMessageEntry, error) {
+
+	if adapter.postgresDb != nil {
+		pgGroupChatMessage := adapter.postgresDb.GetNewMessageGroupChatEntry(groupChatMessageKey)
+		if pgGroupChatMessage == nil {
+			return nil, nil
+		}
+		groupChatMessage := pgGroupChatMessage.ToNewMessageEntry()
+		return groupChatMessage, nil
+	} else {
+		return DBGetGroupChatMessageEntry(adapter.badgerDb, adapter.snapshot, groupChatMessageKey)
+	}
+}

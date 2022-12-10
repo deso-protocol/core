@@ -154,6 +154,7 @@ type PGTransaction struct {
 	MetadataDAOCoinLimitOrder   *PGMetadataDAOCoinLimitOrder   `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataAccessGroup         *PGMetadataAccessGroup         `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataAccessGroupMembers  *PGMetadataAccessGroupMembers  `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataNewMessage          *PGMetadataNewMessage          `pg:"rel:belongs-to,join_fk:transaction_hash"`
 }
 
 // PGTransactionOutput represents DeSoOutput, DeSoInput, and UtxoEntry
@@ -457,6 +458,22 @@ type PGMetadataAccessGroupMembers struct {
 	AccessGroupKeyName        *GroupKeyName `pg:",type:bytea"`
 	AccessGroupMembersList    []byte        `pg:",type:bytea"`
 	OperationType             uint8         `pg:",type:smallint"`
+}
+
+type PGMetadataNewMessage struct {
+	tableName struct{} `pg:"pg_metadata_new_message"`
+
+	TransactionHash                    *BlockHash   `pg:",pk,type:bytea"`
+	SenderAccessGroupOwnerPublicKey    PublicKey    `pg:",type:bytea"`
+	SenderAccessGroupKeyName           GroupKeyName `pg:",type:bytea"`
+	SenderAccessGroupPublicKey         PublicKey    `pg:",type:bytea"`
+	RecipientAccessGroupOwnerPublicKey PublicKey    `pg:",type:bytea"`
+	RecipientAccessGroupKeyName        GroupKeyName `pg:",type:bytea"`
+	RecipientAccessGroupPublicKey      PublicKey    `pg:",type:bytea"`
+	EncryptedText                      []byte       `pg:",type:bytea"`
+	TimestampNanos                     uint64       `pg:",use_zero"`
+	NewMessageType                     uint8        `pg:",type:smallint"`
+	NewMessageOperation                uint8        `pg:",type:smallint"`
 }
 
 type PGNotification struct {
@@ -830,6 +847,118 @@ type PGAccessGroupMemberEnumerationEntry struct {
 	AccessGroupKeyName         *GroupKeyName `pg:",pk,type:bytea"`
 }
 
+type PGNewMessageDmEntry struct {
+	tableName struct{} `pg:"pg_new_message_dm_entries"`
+
+	MinorAccessGroupOwnerPublicKey *PublicKey    `pg:",pk,type:bytea"`
+	MinorAccessGroupKeyName        *GroupKeyName `pg:",pk,type:bytea"`
+	SenderAccessGroupPublicKey     *PublicKey    `pg:",type:bytea"`
+	MajorAccessGroupOwnerPublicKey *PublicKey    `pg:",pk,type:bytea"`
+	MajorAccessGroupKeyName        *GroupKeyName `pg:",pk,type:bytea"`
+	RecipientAccessGroupPublicKey  *PublicKey    `pg:",type:bytea"`
+	EncryptedText                  []byte        `pg:",type:bytea"`
+	TimestampNanos                 uint64        `pg:",pk"`
+
+	IsSenderMinor bool
+	ExtraData     map[string][]byte
+}
+
+func (messageEntry *PGNewMessageDmEntry) FromNewMessageEntry(newMessageEntry *NewMessageEntry) {
+
+	dmMessageKey := MakeDmMessageKeyForSenderRecipient(
+		*newMessageEntry.SenderAccessGroupOwnerPublicKey, *newMessageEntry.SenderAccessGroupKeyName,
+		*newMessageEntry.RecipientAccessGroupOwnerPublicKey, *newMessageEntry.RecipientAccessGroupKeyName,
+		newMessageEntry.TimestampNanos)
+
+	messageEntry.MinorAccessGroupOwnerPublicKey = &dmMessageKey.MinorGroupOwnerPublicKey
+	messageEntry.MinorAccessGroupKeyName = &dmMessageKey.MinorGroupKeyName
+	messageEntry.SenderAccessGroupPublicKey = newMessageEntry.SenderAccessGroupPublicKey
+	messageEntry.MajorAccessGroupOwnerPublicKey = &dmMessageKey.MajorGroupOwnerPublicKey
+	messageEntry.MajorAccessGroupKeyName = &dmMessageKey.MajorGroupKeyName
+	messageEntry.RecipientAccessGroupPublicKey = newMessageEntry.RecipientAccessGroupPublicKey
+	messageEntry.EncryptedText = newMessageEntry.EncryptedText
+	messageEntry.TimestampNanos = newMessageEntry.TimestampNanos
+	messageEntry.ExtraData = newMessageEntry.ExtraData
+
+	if bytes.Equal(dmMessageKey.MinorGroupOwnerPublicKey.ToBytes(), newMessageEntry.SenderAccessGroupOwnerPublicKey.ToBytes()) &&
+		bytes.Equal(dmMessageKey.MinorGroupKeyName.ToBytes(), newMessageEntry.SenderAccessGroupKeyName.ToBytes()) {
+
+		messageEntry.IsSenderMinor = true
+	} else {
+		messageEntry.IsSenderMinor = false
+	}
+}
+
+func (messageEntry *PGNewMessageDmEntry) ToNewMessageEntry() *NewMessageEntry {
+
+	senderAccessGroupOwnerPublicKey := messageEntry.MinorAccessGroupOwnerPublicKey
+	senderAccessGroupKeyName := messageEntry.MinorAccessGroupKeyName
+	recipientAccessGroupOwnerPublicKey := messageEntry.MajorAccessGroupOwnerPublicKey
+	recipientAccessGroupKeyName := messageEntry.MajorAccessGroupKeyName
+	if !messageEntry.IsSenderMinor {
+		senderAccessGroupOwnerPublicKey = messageEntry.MajorAccessGroupOwnerPublicKey
+		senderAccessGroupKeyName = messageEntry.MajorAccessGroupKeyName
+		recipientAccessGroupOwnerPublicKey = messageEntry.MinorAccessGroupOwnerPublicKey
+		recipientAccessGroupKeyName = messageEntry.MinorAccessGroupKeyName
+	}
+
+	return &NewMessageEntry{
+		SenderAccessGroupOwnerPublicKey:    senderAccessGroupOwnerPublicKey,
+		SenderAccessGroupKeyName:           senderAccessGroupKeyName,
+		SenderAccessGroupPublicKey:         messageEntry.SenderAccessGroupPublicKey,
+		RecipientAccessGroupOwnerPublicKey: recipientAccessGroupOwnerPublicKey,
+		RecipientAccessGroupKeyName:        recipientAccessGroupKeyName,
+		RecipientAccessGroupPublicKey:      messageEntry.RecipientAccessGroupPublicKey,
+		EncryptedText:                      messageEntry.EncryptedText,
+		TimestampNanos:                     messageEntry.TimestampNanos,
+		ExtraData:                          messageEntry.ExtraData,
+	}
+}
+
+type PGNewMessageGroupChatEntry struct {
+	tableName struct{} `pg:"pg_new_message_group_chat_entries"`
+
+	AccessGroupOwnerPublicKey *PublicKey    `pg:",pk,type:bytea"`
+	AccessGroupKeyName        *GroupKeyName `pg:",pk,type:bytea"`
+	AccessGroupPublicKey      *PublicKey    `pg:",type:bytea"`
+
+	SenderAccessGroupOwnerPublicKey *PublicKey    `pg:",type:bytea"`
+	SenderAccessGroupKeyName        *GroupKeyName `pg:",type:bytea"`
+	SenderAccessGroupPublicKey      *PublicKey    `pg:",type:bytea"`
+	EncryptedText                   []byte        `pg:",type:bytea"`
+	TimestampNanos                  uint64        `pg:",pk"`
+
+	ExtraData map[string][]byte
+}
+
+func (messageEntry *PGNewMessageGroupChatEntry) FromNewMessageEntry(newMessageEntry *NewMessageEntry) {
+	messageEntry.AccessGroupOwnerPublicKey = newMessageEntry.RecipientAccessGroupOwnerPublicKey
+	messageEntry.AccessGroupKeyName = newMessageEntry.RecipientAccessGroupKeyName
+	messageEntry.AccessGroupPublicKey = newMessageEntry.RecipientAccessGroupPublicKey
+
+	messageEntry.SenderAccessGroupOwnerPublicKey = newMessageEntry.SenderAccessGroupOwnerPublicKey
+	messageEntry.SenderAccessGroupKeyName = newMessageEntry.SenderAccessGroupKeyName
+	messageEntry.SenderAccessGroupPublicKey = newMessageEntry.SenderAccessGroupPublicKey
+
+	messageEntry.EncryptedText = newMessageEntry.EncryptedText
+	messageEntry.TimestampNanos = newMessageEntry.TimestampNanos
+	messageEntry.ExtraData = newMessageEntry.ExtraData
+}
+
+func (messageEntry *PGNewMessageGroupChatEntry) ToNewMessageEntry() *NewMessageEntry {
+	return &NewMessageEntry{
+		SenderAccessGroupOwnerPublicKey:    messageEntry.SenderAccessGroupOwnerPublicKey,
+		SenderAccessGroupKeyName:           messageEntry.SenderAccessGroupKeyName,
+		SenderAccessGroupPublicKey:         messageEntry.SenderAccessGroupPublicKey,
+		RecipientAccessGroupOwnerPublicKey: messageEntry.AccessGroupOwnerPublicKey,
+		RecipientAccessGroupKeyName:        messageEntry.AccessGroupKeyName,
+		RecipientAccessGroupPublicKey:      messageEntry.AccessGroupPublicKey,
+		EncryptedText:                      messageEntry.EncryptedText,
+		TimestampNanos:                     messageEntry.TimestampNanos,
+		ExtraData:                          messageEntry.ExtraData,
+	}
+}
+
 func HexToUint256(input string) *uint256.Int {
 	output := uint256.NewInt()
 
@@ -1149,6 +1278,7 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	var metadataDAOCoinLimitOrderBidderInputs []*PGMetadataDAOCoinLimitOrderBidderInputs
 	var metadataAccessGroup []*PGMetadataAccessGroup
 	var metadataAccessGroupMembers []*PGMetadataAccessGroupMembers
+	var metadataNewMessage []*PGMetadataNewMessage
 
 	blockHash := blockNode.Hash
 
@@ -1516,6 +1646,22 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				AccessGroupMembersList:    encodeAccessGroupMembersList(txMeta.AccessGroupMembersList),
 				OperationType:             uint8(txMeta.AccessGroupMemberOperationType),
 			})
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeNewMessage {
+			txMeta := txn.TxnMeta.(*NewMessageMetadata)
+
+			metadataNewMessage = append(metadataNewMessage, &PGMetadataNewMessage{
+				TransactionHash:                    txnHash,
+				SenderAccessGroupOwnerPublicKey:    txMeta.SenderAccessGroupOwnerPublicKey,
+				SenderAccessGroupKeyName:           txMeta.SenderAccessGroupKeyName,
+				SenderAccessGroupPublicKey:         txMeta.SenderAccessGroupPublicKey,
+				RecipientAccessGroupOwnerPublicKey: txMeta.RecipientAccessGroupOwnerPublicKey,
+				RecipientAccessGroupKeyName:        txMeta.RecipientAccessGroupKeyName,
+				RecipientAccessGroupPublicKey:      txMeta.RecipientAccessGroupPublicKey,
+				EncryptedText:                      txMeta.EncryptedText,
+				TimestampNanos:                     txMeta.TimestampNanos,
+				NewMessageType:                     uint8(txMeta.NewMessageType),
+				NewMessageOperation:                uint8(txMeta.NewMessageOperation),
+			})
 		} else {
 			return fmt.Errorf("InsertTransactionTx: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 		}
@@ -1873,6 +2019,18 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		}
 	}
 
+	if len(metadataNewMessage) > 0 {
+		if !delete {
+			if _, err := tx.Model(&metadataNewMessage).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataNewMessage).Returning("NULL").Delete(); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -1961,6 +2119,9 @@ func (postgres *Postgres) FlushView(view *UtxoView, blockHeight uint64) error {
 			return err
 		}
 		if err := postgres.flushAccessGroupMemberEntries(tx, view); err != nil {
+			return err
+		}
+		if err := postgres.flushNewMessageEntries(tx, view); err != nil {
 			return err
 		}
 		// Temporarily write limit orders to badger
@@ -2709,6 +2870,79 @@ func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoVie
 	return nil
 }
 
+func (postgres *Postgres) flushNewMessageEntries(tx *pg.Tx, view *UtxoView) error {
+	var insertNewMessageDmEntries []*PGNewMessageDmEntry
+	var deleteNewMessageDmEntries []*PGNewMessageDmEntry
+	var insertNewMessageGroupEntries []*PGNewMessageGroupChatEntry
+	var deleteNewMessageGroupEntries []*PGNewMessageGroupChatEntry
+
+	for id, entry := range view.DmMessagesIndex {
+		if entry == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for id %v. This should never happen", id)
+			continue
+		}
+
+		newMessageDmEntry := &PGNewMessageDmEntry{}
+		newMessageDmEntry.FromNewMessageEntry(entry)
+		if entry.isDeleted {
+			deleteNewMessageDmEntries = append(deleteNewMessageDmEntries, newMessageDmEntry)
+		} else {
+			insertNewMessageDmEntries = append(insertNewMessageDmEntries, newMessageDmEntry)
+		}
+	}
+	for id, entry := range view.GroupChatMessagesIndex {
+		if entry == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for id %v. This should never happen", id)
+			continue
+		}
+
+		newMessageGroupEntry := &PGNewMessageGroupChatEntry{}
+		newMessageGroupEntry.FromNewMessageEntry(entry)
+		if entry.isDeleted {
+			deleteNewMessageGroupEntries = append(deleteNewMessageGroupEntries, newMessageGroupEntry)
+		} else {
+			insertNewMessageGroupEntries = append(insertNewMessageGroupEntries, newMessageGroupEntry)
+		}
+	}
+
+	if len(insertNewMessageDmEntries) > 0 {
+		_, err := tx.Model(&insertNewMessageDmEntries).
+			WherePK().
+			OnConflict("(minor_access_group_owner_public_key, minor_access_group_key_name, " +
+				"major_access_group_owner_public_key, major_access_group_key_name, timestamp_nanos) DO UPDATE").
+			Returning("NULL").
+			Insert()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushNewMessageEntries: insertNewMessageDmEntries: %v", err)
+		}
+	}
+	if len(deleteNewMessageDmEntries) > 0 {
+		_, err := tx.Model(&deleteNewMessageDmEntries).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushNewMessageEntries: deleteNewMessageDmEntries: %v", err)
+		}
+	}
+
+	if len(insertNewMessageGroupEntries) > 0 {
+		_, err := tx.Model(&insertNewMessageGroupEntries).
+			WherePK().
+			OnConflict("(access_group_owner_public_key, access_group_key_name, timestamp_nanos) DO UPDATE").
+			Returning("NULL").
+			Insert()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushNewMessageEntries: insertNewMessageGroupEntries: %v", err)
+		}
+	}
+	if len(deleteNewMessageGroupEntries) > 0 {
+		_, err := tx.Model(&deleteNewMessageGroupEntries).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushNewMessageEntries: deleteNewMessageGroupEntries: %v", err)
+		}
+	}
+
+	return nil
+}
+
 //
 // UTXOS
 //
@@ -3412,6 +3646,39 @@ func (postgres *Postgres) GetAccessGroupEnumerationEntriesForMember(memberPublic
 	}
 
 	return accessGroupMemberEnumerationEntries, nil
+}
+
+//
+// NewMessages
+//
+
+func (postgres *Postgres) GetNewMessageDmEntry(dmMessageKey DmMessageKey) *PGNewMessageDmEntry {
+	newMessageDmEntry := &PGNewMessageDmEntry{
+		MinorAccessGroupOwnerPublicKey: &dmMessageKey.MinorGroupOwnerPublicKey,
+		MinorAccessGroupKeyName:        &dmMessageKey.MinorGroupKeyName,
+		MajorAccessGroupOwnerPublicKey: &dmMessageKey.MajorGroupOwnerPublicKey,
+		MajorAccessGroupKeyName:        &dmMessageKey.MajorGroupKeyName,
+		TimestampNanos:                 dmMessageKey.TimestampNanos,
+	}
+	err := postgres.db.Model(newMessageDmEntry).WherePK().First()
+	if err != nil {
+		return nil
+	}
+	return newMessageDmEntry
+}
+
+func (postgres *Postgres) GetNewMessageGroupChatEntry(groupChatMessageKey GroupChatMessageKey) *PGNewMessageGroupChatEntry {
+
+	newMessageGroupChatEntry := &PGNewMessageGroupChatEntry{
+		AccessGroupOwnerPublicKey: &groupChatMessageKey.GroupOwnerPublicKey,
+		AccessGroupKeyName:        &groupChatMessageKey.GroupKeyName,
+		TimestampNanos:            groupChatMessageKey.TimestampNanos,
+	}
+	err := postgres.db.Model(newMessageGroupChatEntry).WherePK().First()
+	if err != nil {
+		return nil
+	}
+	return newMessageGroupChatEntry
 }
 
 //

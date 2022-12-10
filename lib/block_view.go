@@ -61,9 +61,8 @@ type UtxoView struct {
 	MessageMap map[BlockHash]*PGMessage
 
 	// DMs and Group Chats
-	GroupChatMessagesIndex map[GroupChatMessageKey]*MessageEntry
-	DmThreadIndex          map[DmThreadKey]*MessageEntry
-	DmMessagesIndex        map[DmMessageKey]*MessageEntry
+	GroupChatMessagesIndex map[GroupChatMessageKey]*NewMessageEntry
+	DmMessagesIndex        map[DmMessageKey]*NewMessageEntry
 
 	// Follow data
 	FollowKeyToFollowEntry map[FollowKey]*FollowEntry
@@ -152,9 +151,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.AccessGroupIdToSortedGroupMemberPublicKeys = make(map[AccessGroupId][]*PublicKey)
 
 	// DM and Group chats
-	bav.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*MessageEntry)
-	bav.DmThreadIndex = make(map[DmThreadKey]*MessageEntry)
-	bav.DmMessagesIndex = make(map[DmMessageKey]*MessageEntry)
+	bav.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*NewMessageEntry)
+	bav.DmMessagesIndex = make(map[DmMessageKey]*NewMessageEntry)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -312,21 +310,14 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 
 	// DM and Group chats
 	// Copy group chat message index
-	newView.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*MessageEntry)
+	newView.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*NewMessageEntry)
 	for gcMsgKey, messageEntry := range bav.GroupChatMessagesIndex {
 		newMessage := *messageEntry
 		newView.GroupChatMessagesIndex[gcMsgKey] = &newMessage
 	}
 
-	// Copy dm thread index
-	newView.DmThreadIndex = make(map[DmThreadKey]*MessageEntry)
-	for dmThreadKey, messageEntry := range bav.DmThreadIndex {
-		newMessage := *messageEntry
-		newView.DmThreadIndex[dmThreadKey] = &newMessage
-	}
-
 	// Copy dm messages index
-	newView.DmMessagesIndex = make(map[DmMessageKey]*MessageEntry)
+	newView.DmMessagesIndex = make(map[DmMessageKey]*NewMessageEntry)
 	for dmMessageKey, messageEntry := range bav.DmMessagesIndex {
 		newMessage := *messageEntry
 		newView.DmMessagesIndex[dmMessageKey] = &newMessage

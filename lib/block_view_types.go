@@ -103,6 +103,7 @@ const (
 	EncoderTypeAccessGroupEntry
 	EncoderTypeAccessGroupMemberEntry
 	EncoderTypeGroupMembershipKey
+	EncoderTypeNewMessageEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -208,6 +209,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMemberEntry{}
 	case EncoderTypeGroupMembershipKey:
 		return &AccessGroupMembershipKey{}
+	case EncoderTypeNewMessageEntry:
+		return &NewMessageEntry{}
 	}
 
 	// Txindex encoder types
@@ -729,13 +732,6 @@ type UtxoOperation struct {
 	// For disconnecting MessagingGroupKey transactions.
 	PrevMessagingKeyEntry *MessagingGroupEntry
 
-	// For disconnecting NewMessage transactions.
-	GroupChatMessagesKey GroupChatMessageKey
-	PrevDmThreadIndex    *MessageEntry
-	DmThreadKey          DmThreadKey
-	DmMessageIndexKey    DmMessageKey
-	MessageType          MessageType
-
 	// Save the previous repost entry and repost count when making an update.
 	PrevRepostEntry *RepostEntry
 	PrevRepostCount uint64
@@ -821,6 +817,10 @@ type UtxoOperation struct {
 	// These are used to construct notifications for order fulfillment.
 	FilledDAOCoinLimitOrders []*FilledDAOCoinLimitOrder
 
+	//
+	// Access Group Soft-Fork fields
+	//
+
 	// PrevAccessGroupEntry is the previous access group entry. It is used in
 	// access group transactions to revert the access group after an update operation.
 	PrevAccessGroupEntry *AccessGroupEntry
@@ -829,6 +829,9 @@ type UtxoOperation struct {
 	// It is used in operations that modify existing access group members, such as
 	// AccessGroupMemberOperationTypeRemove or AccessGroupMemberOperationTypeUpdate.
 	PrevAccessGroupMembersList []*AccessGroupMemberEntry
+
+	// PrevNewMessageEntry is the previous message entry, used for disconnecting NewMessage transactions.
+	PrevNewMessageEntry *NewMessageEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1126,6 +1129,9 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		for _, entry := range op.PrevAccessGroupMembersList {
 			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
 		}
+
+		// PrevNewMessageEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevNewMessageEntry, skipMetadata...)...)
 	}
 
 	return data
@@ -1688,6 +1694,14 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		} else {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevAccessGroupMembersList")
 		}
+
+		// PrevNewMessageEntry
+		newMessageEntry := &NewMessageEntry{}
+		if exist, err := DecodeFromBytes(newMessageEntry, rr); exist && err == nil {
+			op.PrevNewMessageEntry = newMessageEntry
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNewMessageEntry")
+		}
 	}
 
 	return nil
@@ -1951,29 +1965,145 @@ func (message *MessageEntry) GetEncoderType() EncoderType {
 // New Message
 //
 
+// NewMessageEntry stores the essential content of a message transaction.
+type NewMessageEntry struct {
+
+	// Sender
+	// SenderAccessGroupOwnerPublicKey is the owner public key of the sender's access group.
+	// Messages are sent between two access groups: the sender, and the recipient.
+	SenderAccessGroupOwnerPublicKey *PublicKey
+
+	// SenderAccessGroupKeyName is the sender's access group key name
+	SenderAccessGroupKeyName *GroupKeyName
+
+	// SenderAccessGroupPublicKey is the sender's access public key that was used
+	// to encrypt the corresponding message.
+	SenderAccessGroupPublicKey *PublicKey
+
+	// Recipient
+	// RecipientAccessGroupOwnerPublicKey is the owner public key of the recipient's access group.
+	RecipientAccessGroupOwnerPublicKey *PublicKey
+
+	// RecipientAccessGroupKeyName is the recipient's access group key name
+	RecipientAccessGroupKeyName *GroupKeyName
+
+	// RecipientAccessGroupPublicKey is the recipient's access public key that was
+	// used to encrypt the corresponding message.
+	RecipientAccessGroupPublicKey *PublicKey
+
+	EncryptedText []byte
+
+	// Right now a sender can fake the timestamp and make it appear to
+	// the recipient that she sent messages much earlier than she actually did.
+	// This isn't a big deal because there is generally not much to gain from
+	// faking a timestamp. Messaging apps can just display messages with timestamps
+	// smaller than the current time.
+	TimestampNanos uint64
+
+	// Extra data
+	ExtraData map[string][]byte
+
+	isDeleted bool
+}
+
+func (message *NewMessageEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+
+	data = append(data, EncodeToBytes(blockHeight, message.SenderAccessGroupOwnerPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, message.SenderAccessGroupKeyName, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, message.SenderAccessGroupPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, message.RecipientAccessGroupOwnerPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, message.RecipientAccessGroupKeyName, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, message.RecipientAccessGroupPublicKey, skipMetadata...)...)
+	data = append(data, EncodeByteArray(message.EncryptedText)...)
+	data = append(data, UintToBuf(message.TimestampNanos)...)
+	data = append(data, EncodeExtraData(message.ExtraData)...)
+	return data
+}
+
+func (message *NewMessageEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	senderAccessGroupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(senderAccessGroupOwnerPublicKey, rr); exist && err == nil {
+		message.SenderAccessGroupOwnerPublicKey = senderAccessGroupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: Problem reading SenderAccessGroupOwnerPublicKey")
+	}
+
+	senderAccessGroupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(senderAccessGroupKeyName, rr); exist && err == nil {
+		message.SenderAccessGroupKeyName = senderAccessGroupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding SenderAccessGroupKeyName")
+	}
+
+	senderAccessPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(senderAccessPublicKey, rr); exist && err == nil {
+		message.SenderAccessGroupPublicKey = senderAccessPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding SenderAccessGroupPublicKey")
+	}
+
+	recipientAccessGroupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(recipientAccessGroupOwnerPublicKey, rr); exist && err == nil {
+		message.RecipientAccessGroupOwnerPublicKey = recipientAccessGroupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding RecipientAccessGroupOwnerPublicKey")
+	}
+
+	recipientAccessGroupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(recipientAccessGroupKeyName, rr); exist && err == nil {
+		message.RecipientAccessGroupKeyName = recipientAccessGroupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding RecipientAccessGroupKeyName")
+	}
+
+	recipientAccessPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(recipientAccessPublicKey, rr); exist && err == nil {
+		message.RecipientAccessGroupPublicKey = recipientAccessPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding RecipientAccessGroupPublicKey")
+	}
+
+	message.EncryptedText, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding encrypted bytes")
+	}
+
+	message.TimestampNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding timestamp")
+	}
+
+	message.ExtraData, err = DecodeExtraData(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding extra data")
+	}
+
+	return nil
+}
+
+func (message *NewMessageEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (message *NewMessageEntry) GetEncoderType() EncoderType {
+	return EncoderTypeNewMessageEntry
+}
+
 type GroupChatMessageKey struct {
 	GroupOwnerPublicKey PublicKey
 	GroupKeyName        GroupKeyName
-	TstampNanos         uint64
+	TimestampNanos      uint64
 }
 
 func MakeGroupChatMessageKey(groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, tstampNanos uint64) GroupChatMessageKey {
 	return GroupChatMessageKey{
 		GroupOwnerPublicKey: groupOwnerPublicKey,
 		GroupKeyName:        groupKeyName,
-		TstampNanos:         tstampNanos,
+		TimestampNanos:      tstampNanos,
 	}
-}
-
-func MakeGroupChatMessageKeyFromMessageEntry(messageEntry *MessageEntry) (GroupChatMessageKey, error) {
-	if messageEntry == nil {
-		return GroupChatMessageKey{}, fmt.Errorf("MakeGroupChatMessageKeyFromMessageEntry: messageEntry is nil")
-	}
-	if messageEntry.RecipientPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil {
-		return GroupChatMessageKey{}, fmt.Errorf("MakeGroupChatMessageKeyFromMessageEntry: messageEntry is missing fields")
-	}
-	return MakeGroupChatMessageKey(
-		*messageEntry.RecipientPublicKey, *messageEntry.RecipientAccessGroupKeyName, messageEntry.TstampNanos), nil
 }
 
 type DmThreadKey struct {
@@ -1993,22 +2123,22 @@ func MakeDmThreadKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName,
 	}
 }
 
-func MakeDmThreadKeyFromMessageEntry(messageEntry *MessageEntry, shouldReverse bool) (DmThreadKey, error) {
+func MakeDmThreadKeyFromMessageEntry(messageEntry *NewMessageEntry, shouldReverse bool) (DmThreadKey, error) {
 	if messageEntry == nil {
 		return DmThreadKey{}, fmt.Errorf("MakeDmThreadKeyFromMessageEntry: messageEntry is nil")
 	}
-	if messageEntry.RecipientPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil ||
-		messageEntry.SenderPublicKey == nil || messageEntry.SenderAccessGroupKeyName == nil {
+	if messageEntry.RecipientAccessGroupOwnerPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil ||
+		messageEntry.SenderAccessGroupOwnerPublicKey == nil || messageEntry.SenderAccessGroupKeyName == nil {
 		return DmThreadKey{}, fmt.Errorf("MakeDmThreadKeyFromMessageEntry: messageEntry is missing fields")
 	}
 	if shouldReverse {
 		return MakeDmThreadKey(
-			*messageEntry.RecipientPublicKey, *messageEntry.RecipientAccessGroupKeyName,
-			*messageEntry.SenderPublicKey, *messageEntry.SenderAccessGroupKeyName), nil
+			*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName,
+			*messageEntry.SenderAccessGroupOwnerPublicKey, *messageEntry.SenderAccessGroupKeyName), nil
 	} else {
 		return MakeDmThreadKey(
-			*messageEntry.SenderPublicKey, *messageEntry.SenderAccessGroupKeyName,
-			*messageEntry.RecipientPublicKey, *messageEntry.RecipientAccessGroupKeyName), nil
+			*messageEntry.SenderAccessGroupOwnerPublicKey, *messageEntry.SenderAccessGroupKeyName,
+			*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName), nil
 	}
 }
 
@@ -2017,7 +2147,7 @@ type DmMessageKey struct {
 	MinorGroupKeyName        GroupKeyName
 	MajorGroupOwnerPublicKey PublicKey
 	MajorGroupKeyName        GroupKeyName
-	TstampNanos              uint64
+	TimestampNanos           uint64
 }
 
 func MakeDmMessageKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName,
@@ -2039,23 +2169,17 @@ func MakeDmMessageKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName
 		MinorGroupKeyName:        minorGroupKeyName,
 		MajorGroupOwnerPublicKey: majorGroupOwnerPublicKey,
 		MajorGroupKeyName:        majorGroupKeyName,
-		TstampNanos:              tstampNanos,
+		TimestampNanos:           tstampNanos,
 	}
 }
 
-func MakeDmMessageKeyFromMessageEntry(messageEntry *MessageEntry) (DmMessageKey, error) {
-	if messageEntry == nil {
-		return DmMessageKey{}, fmt.Errorf("MakeDmMessageKeyFromMessageEntry: messageEntry is nil")
-	}
-	if messageEntry.RecipientPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil ||
-		messageEntry.SenderPublicKey == nil || messageEntry.SenderAccessGroupKeyName == nil {
-		return DmMessageKey{}, fmt.Errorf("MakeDmMessageKeyFromMessageEntry: messageEntry is missing fields")
-	}
+func MakeDmMessageKeyForSenderRecipient(senderAccessGroupOwnerPublicKey PublicKey, senderAccessGroupKeyName GroupKeyName,
+	recipientAccessGroupOwnerPublicKey PublicKey, recipientAccessGroupKeyName GroupKeyName, tstampNanos uint64) DmMessageKey {
 
 	return MakeDmMessageKey(
-		*messageEntry.SenderPublicKey, *messageEntry.SenderAccessGroupKeyName,
-		*messageEntry.RecipientPublicKey, *messageEntry.RecipientAccessGroupKeyName,
-		messageEntry.TstampNanos), nil
+		senderAccessGroupOwnerPublicKey, senderAccessGroupKeyName,
+		recipientAccessGroupOwnerPublicKey, recipientAccessGroupKeyName,
+		tstampNanos)
 }
 
 // GroupKeyName helps with handling key names in AccessGroups

@@ -110,6 +110,7 @@ type transactionTestInputType byte
 const (
 	transactionTestInputTypeAccessGroup transactionTestInputType = iota
 	transactionTestInputTypeAccessGroupMembers
+	transactionTestInputTypeNewMessage
 )
 
 type transactionTestInputSpace interface {
