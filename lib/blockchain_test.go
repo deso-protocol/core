@@ -4,14 +4,15 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
-	"github.com/go-pg/pg/v10"
 	"log"
 	"math/big"
 	"math/rand"
 	"os"
 	"testing"
 	"time"
+
+	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
+	"github.com/go-pg/pg/v10"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/Workiva/go-datastructures/threadsafe/err"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/decred/dcrd/lru"
 	"github.com/dgraph-io/badger/v3"
@@ -767,11 +768,12 @@ func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.D
 func _registerOrTransferWithTestMeta(testMeta *TestMeta, username string,
 	senderPk string, recipientPk string, senderPriv string, amountToSend uint64) {
 
+	testBlockChain := testMeta.testChain
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, senderPk))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testBlockChain.chain, nil, senderPk))
 
 	currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, senderPk, recipientPk,
+		testMeta.t, testBlockChain.chain, testBlockChain.db, testMeta.params, senderPk, recipientPk,
 		senderPriv, amountToSend, 11 /*feerate*/)
 
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
@@ -858,10 +860,10 @@ func _updateGlobalParamsEntryWithTestMeta(
 
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances,
-		_getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+		_getBalance(testMeta.t, testMeta.testChain.chain, nil, updaterPkBase58Check))
 
 	currentOps, currentTxn, _, err := _updateGlobalParamsEntry(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.t, testMeta.testChain.chain, testMeta.testChain.db, testMeta.params,
 		feeRateNanosPerKB,
 		updaterPkBase58Check,
 		updaterPrivBase58Check,
@@ -876,13 +878,65 @@ func _updateGlobalParamsEntryWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
+type TestBlockChain struct {
+	t        *testing.T
+	chain    *Blockchain
+	db       *badger.DB
+	mempool  *DeSoMempool
+	miner    *DeSoMiner
+	params   *DeSoParams
+	postgres *Postgres
+}
+
+func generateTxnSign(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) *btcec.Signature {
+	t.Helper()
+	require := require.New(t)
+
+	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
+	require.NoError(err)
+	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+	txnSignature, err := txn.Sign(privKey)
+	require.NoError(err)
+	return txnSignature
+
+}
+
+func (tb *TestBlockChain) connectTransaction(txn *MsgDeSoTxn) error {
+	tb.t.Helper()
+	utxoView, _ := NewUtxoView(tb.chain.db, tb.chain.params, tb.chain.postgres, tb.chain.snapshot)
+	txHash := txn.Hash()
+	blockHeight := tb.chain.blockTip().Height + 1
+	_, _, _, _, err :=
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
+			true /*verifySignatures*/, false /*ignoreUtxos*/)
+	return err
+}
+
+func (tb *TestBlockChain) buildTransaction(txn *MsgDeSoTxn, keyToSignTxn string) {
+	require := require.New(tb.t)
+	// testChain.buildTransaction(txn, recipientPrivString)
+	totalInput, spendAmount, changeAmount, fees, err :=
+		tb.chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+	require.NoError(err)
+	require.Equal(totalInput, spendAmount+changeAmount+fees)
+	require.Greater(totalInput, uint64(0))
+
+	// Sign the transaction with the recipient's key rather than the
+	// sender's key.
+	txn.Signature.SetSignature(generateTxnSign(tb.t, txn, keyToSignTxn))
+}
+
+func (tb *TestBlockChain) mineBlock() {
+	tb.t.Helper()
+	require := require.New(tb.t)
+	// Mine blocks to give the sender some DeSo.
+	_, err := tb.miner.MineAndProcessSingleBlock(0 /*threadIndex*/, tb.mempool)
+	require.NoError(err)
+}
+
 type TestMeta struct {
 	t                      *testing.T
-	chain                  *Blockchain
-	db                     *badger.DB
-	params                 *DeSoParams
-	mempool                *DeSoMempool
-	miner                  *DeSoMiner
+	testChain              *TestBlockChain
 	txnOps                 [][]*UtxoOperation
 	txns                   []*MsgDeSoTxn
 	expectedSenderBalances []uint64
@@ -907,14 +961,16 @@ func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 			"Disconnecting transaction with type %v index %d (going backwards)\n",
 			currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		testBlockChain := testMeta.testChain
+		utxoView, err := NewUtxoView(testBlockChain.db, testBlockChain.params,
+			testBlockChain.chain.postgres, testBlockChain.chain.snapshot)
 		require.NoError(testMeta.t, err)
 
 		currentHash := currentTxn.Hash()
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
 		require.NoError(testMeta.t, err)
 
-		blockHeight := uint64(testMeta.chain.BlockTip().Height)
+		blockHeight := uint64(testBlockChain.chain.BlockTip().Height)
 		require.NoError(testMeta.t, utxoView.FlushToDb(blockHeight+1))
 
 		// After disconnecting, the balances should be restored to what they
@@ -922,7 +978,7 @@ func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 		require.Equal(
 			testMeta.t,
 			testMeta.expectedSenderBalances[backwardIter],
-			_getBalance(testMeta.t, testMeta.chain, nil, PkToStringTestnet(currentTxn.PublicKey)),
+			_getBalance(testMeta.t, testBlockChain.chain, nil, PkToStringTestnet(currentTxn.PublicKey)),
 		)
 	}
 }
@@ -934,18 +990,19 @@ func _applyTestMetaTxnsToMempool(testMeta *TestMeta) {
 		require.Equal(
 			testMeta.t,
 			testMeta.expectedSenderBalances[ii],
-			_getBalance(testMeta.t, testMeta.chain, testMeta.mempool, PkToStringTestnet(tx.PublicKey)))
+			_getBalance(testMeta.t, testMeta.testChain.chain, testMeta.testChain.mempool, PkToStringTestnet(tx.PublicKey)))
 
 		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
 
-		_, err := testMeta.mempool.ProcessTransaction(tx, false, false, 0, true)
+		_, err := testMeta.testChain.mempool.ProcessTransaction(tx, false, false, 0, true)
 		require.NoError(testMeta.t, err, "Problem adding transaction %d to mempool: %v", ii, tx)
 	}
 }
 
 func _applyTestMetaTxnsToViewAndFlush(testMeta *TestMeta) {
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	testBlockChain := testMeta.testChain
+	utxoView, err := NewUtxoView(testBlockChain.db, testMeta.params, testBlockChain.chain.postgres, testBlockChain.chain.snapshot)
 	require.NoError(testMeta.t, err)
 	for ii, txn := range testMeta.txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -953,20 +1010,21 @@ func _applyTestMetaTxnsToViewAndFlush(testMeta *TestMeta) {
 		// Always use height+1 for validation since it's assumed the transaction will
 		// get mined into the next block.
 		txHash := txn.Hash()
-		blockHeight := testMeta.chain.blockTip().Height + 1
+		blockHeight := testBlockChain.chain.blockTip().Height + 1
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.NoError(testMeta.t, err)
 	}
 	// Flush the utxoView after having added all the transactions.
-	blockHeight := uint64(testMeta.chain.BlockTip().Height)
+	blockHeight := uint64(testBlockChain.chain.BlockTip().Height)
 	require.NoError(testMeta.t, utxoView.FlushToDb(blockHeight+1))
 }
 
 func _disconnectTestMetaTxnsFromViewAndFlush(testMeta *TestMeta) {
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	testBlockChain := testMeta.testChain
+	utxoView, err := NewUtxoView(testBlockChain.db, testMeta.params, testBlockChain.chain.postgres, testBlockChain.chain.snapshot)
 	require.NoError(testMeta.t, err)
 	for ii := 0; ii < len(testMeta.txnOps); ii++ {
 		backwardIter := len(testMeta.txnOps) - 1 - ii
@@ -978,33 +1036,34 @@ func _disconnectTestMetaTxnsFromViewAndFlush(testMeta *TestMeta) {
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
 		require.NoError(testMeta.t, err)
 	}
-	blockHeight := uint64(testMeta.chain.BlockTip().Height)
+	blockHeight := uint64(testBlockChain.chain.BlockTip().Height)
 	require.NoError(testMeta.t, utxoView.FlushToDb(blockHeight))
 }
 
 func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
+	testBlockChain := testMeta.testChain
 	// all those transactions in it.
-	block, err := testMeta.miner.MineAndProcessSingleBlock(0 /*threadIndex*/, testMeta.mempool)
+	block, err := testBlockChain.miner.MineAndProcessSingleBlock(0 /*threadIndex*/, testBlockChain.mempool)
 	require.NoError(testMeta.t, err)
 	// Add one for the block reward. Now we have a meaty block.
 	require.Equal(testMeta.t, len(testMeta.txnOps)+1, len(block.Txns))
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(testBlockChain.db, testMeta.params, testBlockChain.chain.postgres, testBlockChain.chain.snapshot)
 		require.NoError(testMeta.t, err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(testMeta.t, err)
-		utxoOps, err := GetUtxoOperationsForBlock(testMeta.db, testMeta.chain.snapshot, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(testBlockChain.db, testBlockChain.chain.snapshot, hash)
 		require.NoError(testMeta.t, err)
 
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(block.Txns)
 		require.NoError(testMeta.t, err)
-		blockHeight := uint64(testMeta.chain.BlockTip().Height)
+		blockHeight := uint64(testBlockChain.chain.BlockTip().Height)
 		require.NoError(testMeta.t, utxoView.DisconnectBlock(block, txHashes, utxoOps, blockHeight))
 
 		// Flushing the view after applying and rolling back should work.
@@ -1154,19 +1213,21 @@ func TestUpdateGlobalParams(t *testing.T) {
 }
 
 // Returns a test blockchain (block with testing parameters), with two blocks mined.
-func NewTestBlockChainWithProcessedBlocks(t *testing.T) *Blockchain {
+func NewTestBlockChain(t *testing.T) *TestBlockChain {
 	t.Helper()
 	require := require.New(t)
 
-	chain, params, _ := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-	// Mine two blocks to give the sender some DeSo.
-	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
 
-	return chain
+	return &TestBlockChain{
+		chain:    chain,
+		db:       db,
+		mempool:  mempool,
+		miner:    miner,
+		params:   params,
+		postgres: chain.postgres,
+	}
 }
 
 // Processes the key string into byte array.
@@ -1184,7 +1245,10 @@ func TestVerifyInputFeeSpendValues(t *testing.T) {
 
 	require := require.New(t)
 
-	chain := NewTestBlockChainWithProcessedBlocks(t)
+	tb := NewTestBlockChain(t)
+	tb.mineBlock()
+	tb.mineBlock()
+
 	senderPkBytes := ProcessKeyBytes(t, senderPkString)
 	recipientPkBytes := ProcessKeyBytes(t, recipientPkString)
 
@@ -1358,7 +1422,7 @@ func TestVerifyInputFeeSpendValues(t *testing.T) {
 		}
 
 		totalInput, spendAmount, changeAmount, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+			tb.chain.AddInputsAndChangeToTransaction(txn, 10, nil)
 
 		// validate error message and continue if the test is expected to fail
 		if testCases[i].expectedToFail {
@@ -1381,22 +1445,15 @@ func TestVerifyInputFeeSpendValues(t *testing.T) {
 func TestBasicTransfer(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	postgres := chain.postgres
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-	// Mine two blocks to give the sender some DeSo.
-	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
+	tb := NewTestBlockChain(t)
+	// mine two blocks for the sender to have some balance.
+	// mines blocks on the test block chain
+	tb.mineBlock()
+	tb.mineBlock()
 
-	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
-	require.NoError(err)
-	recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
-	require.NoError(err)
+	senderPkBytes := ProcessKeyBytes(t, senderPkString)
+	recipientPkBytes := ProcessKeyBytes(t, recipientPkString)
 
 	// A basic transfer with input value set should fail during AddInputsAndChangeToTransaction
 	t.Run("txn_with_inputs_should_fail", func(t *testing.T) {
@@ -1416,7 +1473,7 @@ func TestBasicTransfer(t *testing.T) {
 		}
 
 		_, _, _, _, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+			tb.chain.AddInputsAndChangeToTransaction(txn, 10, nil)
 		require.Error(err)
 
 		require.Contains(err.Error(), fmt.Sprintf("_computeInputsForTxn: Transaction passed in "+
@@ -1440,23 +1497,15 @@ func TestBasicTransfer(t *testing.T) {
 			TxnMeta:   &BasicTransferMetadata{},
 		}
 
-		totalInput, spendAmount, changeAmount, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
-		require.NoError(err)
-		require.Equal(totalInput, spendAmount+changeAmount+fees)
-		require.Greater(totalInput, uint64(0))
 		// At this point the txn has inputs for senderPkString. Change
 		// the public key to recipientPkString and sign it with the
 		// recipientPrivString.
 		txn.PublicKey = recipientPkBytes
-
-		_signTxn(t, txn, recipientPrivString)
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
-		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignatures*/, false /*ignoreUtxos*/)
+		// build transaction with inputs ans sign the transaction using the recipient string
+		tb.buildTransaction(txn, recipientPrivString)
+		// Connect the transaction
+		err := tb.connectTransaction(txn)
+		// Expected error
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
 	})
@@ -1476,21 +1525,11 @@ func TestBasicTransfer(t *testing.T) {
 			TxnMeta:   &BasicTransferMetadata{},
 		}
 
-		totalInput, spendAmount, changeAmount, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
-		require.NoError(err)
-		require.Equal(totalInput, spendAmount+changeAmount+fees)
-		require.Greater(totalInput, uint64(0))
-
 		// Sign the transaction with the recipient's key rather than the
 		// sender's key.
-		_signTxn(t, txn, recipientPrivString)
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
-		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignature*/, false /*ignoreUtxos*/)
+		tb.buildTransaction(txn, recipientPrivString)
+		// Connect the transaction
+		err := tb.connectTransaction(txn)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
 	})
@@ -1511,13 +1550,11 @@ func TestBasicTransfer(t *testing.T) {
 				ExtraData: []byte{0x00, 0x01},
 			},
 		}
-		_signTxn(t, txn, senderPrivString)
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
-		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignature*/, false /*ignoreUtxos*/)
+		// Sign the transaction with the recipient's key rather than the
+		// sender's key.
+		tb.buildTransaction(txn, senderPrivString)
+		// Connect the transaction
+		err := tb.connectTransaction(txn)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveSignature)
 	})
@@ -1540,26 +1577,20 @@ func TestBasicTransfer(t *testing.T) {
 			},
 		}
 
-		totalInput, spendAmount, changeAmount, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
-		require.NoError(err)
-		require.Equal(totalInput, spendAmount+changeAmount+fees)
-		require.Greater(totalInput, uint64(0))
-
-		_signTxn(t, txn, senderPrivString)
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
-		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
-		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignature*/, false /*ignoreUtxos*/)
+		// Sign the transaction with the recipient's key rather than the
+		// sender's key.
+		tb.buildTransaction(txn, senderPrivString)
+		// Connect the transaction
+		err := tb.connectTransaction(txn)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveSignature)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveInputs)
 	})
 
-	allowedBlockReward := CalcBlockRewardNanos(chain.blockTip().Height)
+	allowedBlockReward := CalcBlockRewardNanos(tb.chain.blockTip().Height)
 	assert.Equal(int64(allowedBlockReward), int64(1*NanosPerUnit))
-	blockToMine, _, _, err := miner._getBlockToMine(0 /*threadIndex*/)
+	blockToMine, _, _, err := tb.miner._getBlockToMine(0 /*threadIndex*/)
 	require.NoError(err)
 
 	// A block with too much block reward should fail.
@@ -1573,7 +1604,7 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
+		utxoView, _ := NewUtxoView(tb.db, tb.params, tb.postgres, tb.chain.snapshot)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil, 0)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardExceedsMaxAllowed)
@@ -1589,7 +1620,7 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
+		utxoView, _ := NewUtxoView(tb.db, tb.params, tb.postgres, tb.chain.snapshot)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil, 0)
 		require.NoError(err)
 	})
@@ -1612,15 +1643,14 @@ func TestBasicTransfer(t *testing.T) {
 // key, a derived key, or a random key. Basically, we try every possible context in which a transaction can be signed.
 func TestBasicTransferSignatures(t *testing.T) {
 	require := require.New(t)
-	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
-	postgres := chain.postgres
-	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
+	tb := NewTestBlockChain(t)
+
+	tb.params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	tb.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
+	tb.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
 	// Make sure encoder migrations are not triggered yet.
-	GlobalDeSoParams = *params
+	GlobalDeSoParams = *tb.params
 	GlobalDeSoParams.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(100)
 	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
 		if GlobalDeSoParams.EncoderMigrationHeightsList[ii].Version == 0 {
@@ -1629,22 +1659,17 @@ func TestBasicTransferSignatures(t *testing.T) {
 		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 100
 	}
 
-	_ = db
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-	// Mine two blocks to give the sender some DeSo.
-	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
+	_ = tb.db
 
-	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
-	require.NoError(err)
-	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
-	require.NoError(err)
+	senderPkBytes := ProcessKeyBytes(t, senderPkString)
+	senderPrivBytes := ProcessKeyBytes(t, senderPrivString)
+
 	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
-	recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
-	require.NoError(err)
 
+	recipientPkBytes := ProcessKeyBytes(t, recipientPkString)
+
+	tb.mineBlock()
+	tb.mineBlock()
 	// Construct an unsigned basic transfer transaction.
 	createTransaction := func() *MsgDeSoTxn {
 		txn := &MsgDeSoTxn{
