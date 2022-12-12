@@ -216,7 +216,15 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 			}
 
 			// Try to apply the transaction to the view with the strictest possible checks.
-			_, _, _, _, err := utxoView._connectTransaction(
+			// Make a copy of the view in order to test applying the txn without compromising the
+			// integrity of the view.
+			// TODO: This is inefficient but we're doing it short-term to fix a bug. Also PoS is
+			// coming soon anyway.
+			utxoViewCopy, err := utxoView.CopyUtxoView()
+			if err != nil {
+				return nil, nil, nil, errors.Wrapf(err, "Error copying UtxoView: ")
+			}
+			_, _, _, _, err = utxoViewCopy._connectTransaction(
 				mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), uint32(blockRet.Header.Height), true,
 				false /*ignoreUtxos*/)
 			if err != nil {
@@ -225,34 +233,25 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 					"DeSoBlockProducer._getBlockTemplate: Skipping txn %v because it had an error: %v", ii, err)
 				glog.Error(txnErrorString)
 				glog.Infof("DeSoBlockProducer._getBlockTemplate: Recomputing UtxoView without broken txn...")
-
-				// When a txn encounters an error, the view is tainted and we
-				// need to recompute it from scratch before continuing.
-				newUtxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
-					desoBlockProducer.postgres, desoBlockProducer.chain.snapshot)
-				if err != nil {
-					return nil, nil, nil, errors.Wrapf(err,
-						"DeSoBlockProducer._getBlockTemplate: Error re-generating UtxoView; "+
-							"this should never ever happen: ")
-				}
-				for jj := 0; jj < ii; jj++ {
-					txToRecompute := txnsOrderedByTimeAdded[jj]
-					_, _, _, _, err = newUtxoView._connectTransaction(
-						txToRecompute.Tx, txToRecompute.Hash, int64(txToRecompute.TxSizeBytes), uint32(blockRet.Header.Height), false,
-						false /*ignoreUtxos*/)
-					if err != nil {
-						return nil, nil, nil, errors.Wrapf(err,
-							"DeSoBlockProducer._getBlockTemplate: Error RE-connecting previous txn to "+
-								"UtxoView; this should never ever happen: ")
-					}
-				}
-				// By the time we get here, the view should have been fully
-				// recomputed so we continue with the new view
-				utxoView = newUtxoView
-				glog.Infof("DeSoBlockProducer._getBlockTemplate: UtxoView recomputed-- skipping txn now...")
-				// continue WITHOUT adding this txn to the block
 				continue
-			} else if desoBlockProducer.latestBlockTemplateStats != nil {
+			}
+			// At this point, we know the transaction isn't going to break our view so attach it.
+			_, _, _, _, err = utxoView._connectTransaction(
+				mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), uint32(blockRet.Header.Height), true,
+				false /*ignoreUtxos*/)
+			if err != nil {
+				// We should never get an error here since we just attached a txn to an indentical
+				// view.
+				return nil, nil, nil, errors.Wrapf(err,
+					"DeSoBlockProducer._getBlockTemplate: Error attaching txn to main utxoView; "+
+						"this should never happen: ")
+			}
+
+			// Log some stats
+			// TODO: I don't think these are needed anymore. They were useful when we had the Bitcoin->DESO
+			// converter baked directly into the chain, whereby the mempool could get stuck on Bitcoin merkle
+			// txns.
+			if desoBlockProducer.latestBlockTemplateStats != nil {
 				desoBlockProducer.latestBlockTemplateStats.FailingTxnError = "You good"
 				desoBlockProducer.latestBlockTemplateStats.FailingTxnHash = "Nada"
 				desoBlockProducer.latestBlockTemplateStats.FailingTxnMinutesSinceAdded = 0
