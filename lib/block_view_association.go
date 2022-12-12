@@ -787,7 +787,7 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 	} else {
 		// Track which association entries we've already added from
 		// the UTXO view so as not to duplicate returned results.
-		addedAssociationEntryIdMap := make(map[*BlockHash]bool)
+		addedAssociationEntryIDs := NewSet[*BlockHash]([]*BlockHash{})
 
 		// Sort ascending, so add database association entries first.
 		for _, associationEntry := range dbAssociationEntries {
@@ -795,10 +795,10 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 				break
 			}
 			if utxoAssociationEntry, exists := utxoAssociationEntryMap[associationEntry.AssociationID]; exists {
-				addedAssociationEntryIdMap[utxoAssociationEntry.AssociationID] = true
+				addedAssociationEntryIDs.Add(utxoAssociationEntry.AssociationID)
 				associationEntries = append(associationEntries, utxoAssociationEntry)
 			} else {
-				addedAssociationEntryIdMap[associationEntry.AssociationID] = true
+				addedAssociationEntryIDs.Add(associationEntry.AssociationID)
 				associationEntries = append(associationEntries, associationEntry)
 			}
 		}
@@ -807,7 +807,7 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 			if associationQuery.Limit > 0 && len(associationEntries) >= associationQuery.Limit {
 				break
 			}
-			if _, exists := addedAssociationEntryIdMap[associationEntry.AssociationID]; !exists {
+			if !addedAssociationEntryIDs.Includes(associationEntry.AssociationID) {
 				associationEntries = append(associationEntries, associationEntry)
 			}
 		}
@@ -972,7 +972,7 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 	} else {
 		// Track which association entries we've already added from
 		// the UTXO view so as not to duplicate returned results.
-		addedAssociationEntryIdMap := make(map[*BlockHash]bool)
+		addedAssociationEntryIDs := NewSet[*BlockHash]([]*BlockHash{})
 
 		// Sort ascending, so add database association entries first.
 		for _, associationEntry := range dbAssociationEntries {
@@ -980,10 +980,10 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 				break
 			}
 			if utxoAssociationEntry, exists := utxoAssociationEntryMap[associationEntry.AssociationID]; exists {
-				addedAssociationEntryIdMap[utxoAssociationEntry.AssociationID] = true
+				addedAssociationEntryIDs.Add(utxoAssociationEntry.AssociationID)
 				associationEntries = append(associationEntries, utxoAssociationEntry)
 			} else {
-				addedAssociationEntryIdMap[associationEntry.AssociationID] = true
+				addedAssociationEntryIDs.Add(associationEntry.AssociationID)
 				associationEntries = append(associationEntries, associationEntry)
 			}
 		}
@@ -992,7 +992,7 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 			if associationQuery.Limit > 0 && len(associationEntries) >= associationQuery.Limit {
 				break
 			}
-			if _, exists := addedAssociationEntryIdMap[associationEntry.AssociationID]; !exists {
+			if !addedAssociationEntryIDs.Includes(associationEntry.AssociationID) {
 				associationEntries = append(associationEntries, associationEntry)
 			}
 		}
