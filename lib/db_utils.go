@@ -9182,18 +9182,20 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
 
-	opts := badger.DefaultIteratorOptions
-	// Search keys in reverse order if sort DESC.
-	if sortDescending {
-		opts.Reverse = true
-	}
-	nodeIterator := txn.NewIterator(opts)
-	defer nodeIterator.Close()
 	// If provided, start at the last seen key.
 	startingKey := prefix
 	if lastSeenKey != nil {
 		startingKey = lastSeenKey
 	}
+
+	opts := badger.DefaultIteratorOptions
+	// Search keys in reverse order if sort DESC.
+	if sortDescending {
+		opts.Reverse = true
+		startingKey = append(startingKey, 0xff)
+	}
+	nodeIterator := txn.NewIterator(opts)
+	defer nodeIterator.Close()
 
 	for nodeIterator.Seek(startingKey); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
 		// Break if at or beyond limit.

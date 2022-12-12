@@ -1092,18 +1092,6 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.True(t, userAssociationEntries[0].AssociationID.IsEqual(sortedUserAssociationEntries[2].AssociationID))
 		require.True(t, userAssociationEntries[1].AssociationID.IsEqual(sortedUserAssociationEntries[3].AssociationID))
 
-		// Query using SortDescending
-		userAssociationQuery = &UserAssociationQuery{
-			TargetUserPKID:  m3PKID,
-			AssociationType: "endorsement",
-			Limit:           uint64(1),
-			SortDescending:  true,
-		}
-		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
-		require.NoError(t, err)
-		require.Len(t, userAssociationEntries, 1)
-		require.True(t, userAssociationEntries[0].AssociationID.IsEqual(sortedUserAssociationEntries[3].AssociationID))
-
 		// Query using Limit, LastSeenAssociationID, SortDescending
 		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:        m3PKID,
@@ -1117,6 +1105,18 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Len(t, userAssociationEntries, 2)
 		require.True(t, userAssociationEntries[0].AssociationID.IsEqual(sortedUserAssociationEntries[2].AssociationID))
 		require.True(t, userAssociationEntries[1].AssociationID.IsEqual(sortedUserAssociationEntries[1].AssociationID))
+
+		// Query using SortDescending
+		userAssociationQuery = &UserAssociationQuery{
+			TargetUserPKID:  m3PKID,
+			AssociationType: "endorsement",
+			Limit:           uint64(1),
+			SortDescending:  true,
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Len(t, userAssociationEntries, 1)
+		require.True(t, userAssociationEntries[0].AssociationID.IsEqual(sortedUserAssociationEntries[3].AssociationID))
 	}
 	// ---------------------------------
 	// PostAssociation: query API
@@ -1771,8 +1771,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		if chain.postgres != nil {
 			require.NoError(t, err)
-			require.Len(t, userAssociationEntries, 1)
-			require.Equal(t, userAssociationEntries[0].TransactorPKID, m0PKID)
+			require.Len(t, postAssociationEntries, 1)
+			require.Equal(t, postAssociationEntries[0].TransactorPKID, m0PKID)
 		} else {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid query params")
