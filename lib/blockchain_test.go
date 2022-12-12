@@ -36,6 +36,21 @@ const (
 	blockSignerPk   = "BC1YLiQ86kwXUy3nfK391xht7N72UmbFY6bGrUsds1A7QKZrs4jJsxo"
 )
 
+type signatureType int
+
+// Enums for the representing signature type
+// Status should be retrieved using the helper functions *Node.GetStatus()
+const (
+	// Default signature type.
+	ECDSA signatureType = iota // 0
+	// Signature type with STANDARD DER algorithm with extra data
+	STANDARD_DER // 1
+	// sign type for DESO-DER encoding
+	DESO_DER // 2
+	// Randomly picks either the STANDARD_DER or the DESO_DER sign
+	RANDOM_DERIVED_SIGN
+)
+
 func TestProcessBlock(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

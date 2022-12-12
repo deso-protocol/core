@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math/rand"
 	_ "net/http/pprof"
 	"reflect"
 	"sort"
@@ -888,17 +889,84 @@ type TestBlockChain struct {
 	postgres *Postgres
 }
 
-func generateTxnSign(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) *btcec.Signature {
+// Sign the transaciton based on the signature type.
+func signTransaction(t *testing.T, txn *MsgDeSoTxn, signType signatureType, privKeyStrArg string) *MsgDeSoTxn {
 	t.Helper()
 	require := require.New(t)
 
-	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
-	require.NoError(err)
-	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
-	txnSignature, err := txn.Sign(privKey)
-	require.NoError(err)
-	return txnSignature
+	// Standard ECDSA signature, used by default for signing transactions
+	signECDSA := func(txn *MsgDeSoTxn) {
+		privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
+		require.NoError(err)
+		privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+		txnSignature, err := txn.Sign(privKey)
+		require.NoError(err)
+		txn.Signature.SetSignature(txnSignature)
+	}
 
+	// DER Signature for transactions
+	signStandardDER := func(txn *MsgDeSoTxn) {
+		privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
+		require.NoError(err)
+		privateKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+		if txn.ExtraData == nil {
+			txn.ExtraData = make(map[string][]byte)
+		}
+		txn.ExtraData[DerivedPublicKey] = publicKey.SerializeCompressed()
+		txnSignature, err := txn.Sign(privateKey)
+		require.NoError(err)
+		txn.Signature.SetSignature(txnSignature)
+	}
+
+	// DeSoDER signature for signing transactions
+	signDeSoDER := func(txn *MsgDeSoTxn) {
+		privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
+		require.NoError(err)
+		privateKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+
+		txBytes, err := txn.ToBytes(true /*preSignature*/)
+		require.NoError(err)
+		txHash := Sha256DoubleHash(txBytes)[:]
+
+		desoSignature, err := SignRecoverable(txHash, privateKey)
+		require.NoError(err)
+		txn.Signature = *desoSignature
+	}
+
+	switch signType {
+	case ECDSA:
+		signECDSA(txn)
+
+	case STANDARD_DER:
+		signStandardDER(txn)
+
+	case DESO_DER:
+		signDeSoDER(txn)
+	// randomly choose between Standard DER and Deso DER
+	case RANDOM_DERIVED_SIGN:
+		pickSign := rand.Int() % 2
+		if pickSign == 1 {
+			signStandardDER(txn)
+		} else {
+			signDeSoDER(txn)
+		}
+	// Invalid signature type.
+	default:
+		t.Fail()
+	}
+	return txn
+
+}
+
+func (tb *TestBlockChain) mempoolProcessTransaction(txn *MsgDeSoTxn) (_mempoolTxs []*MempoolTx, _err error) {
+	require := require.New(tb.t)
+	tb.t.Helper()
+	mempoolTxs, err := tb.mempool.processTransaction(txn, true, true, 0, true)
+	if err != nil {
+		return nil, err
+	}
+	require.Equal(1, len(mempoolTxs))
+	return mempoolTxs, err
 }
 
 func (tb *TestBlockChain) connectTransaction(txn *MsgDeSoTxn) error {
@@ -912,7 +980,8 @@ func (tb *TestBlockChain) connectTransaction(txn *MsgDeSoTxn) error {
 	return err
 }
 
-func (tb *TestBlockChain) buildTransaction(txn *MsgDeSoTxn, keyToSignTxn string) {
+func (tb *TestBlockChain) buildTransaction(txn *MsgDeSoTxn) {
+	tb.t.Helper()
 	require := require.New(tb.t)
 	// testChain.buildTransaction(txn, recipientPrivString)
 	totalInput, spendAmount, changeAmount, fees, err :=
@@ -923,7 +992,54 @@ func (tb *TestBlockChain) buildTransaction(txn *MsgDeSoTxn, keyToSignTxn string)
 
 	// Sign the transaction with the recipient's key rather than the
 	// sender's key.
-	txn.Signature.SetSignature(generateTxnSign(tb.t, txn, keyToSignTxn))
+	//txn.Signature.SetSignature(generateTxnSign(tb.t, txn, keyToSignTxn))
+}
+func (tb *TestBlockChain) newBasicTransaction() *MsgDeSoTxn {
+	tb.t.Helper()
+	basicTxn := &MsgDeSoTxn{
+		// The inputs will be set below.
+		TxInputs: []*DeSoInput{},
+		TxOutputs: []*DeSoOutput{
+			{
+				PublicKey:   recipientPkBytes,
+				AmountNanos: 1,
+			},
+		},
+		PublicKey: senderPkBytes,
+		TxnMeta:   &BasicTransferMetadata{},
+	}
+	tb.buildTransaction(basicTxn)
+	return basicTxn
+}
+
+func (tb *TestBlockChain) newBasicTransactionWithSign(signType signatureType, keyToSignTxn string) *MsgDeSoTxn {
+	tb.t.Helper()
+
+	senderPkBytes := ProcessKeyBytes(tb.t, senderPkString)
+	recipientPkBytes := ProcessKeyBytes(tb.t, recipientPkString)
+
+	basicTxn := &MsgDeSoTxn{
+		// The inputs will be set below.
+		TxInputs: []*DeSoInput{},
+		TxOutputs: []*DeSoOutput{
+			{
+				PublicKey:   recipientPkBytes,
+				AmountNanos: 1,
+			},
+		},
+		PublicKey: senderPkBytes,
+		TxnMeta:   &BasicTransferMetadata{},
+	}
+
+	tb.buildTransactionWithSign(basicTxn, signType, keyToSignTxn)
+	return basicTxn
+}
+
+func (tb *TestBlockChain) buildTransactionWithSign(txn *MsgDeSoTxn, signType signatureType, keyToSignTxn string) *MsgDeSoTxn {
+	tb.t.Helper()
+	tb.buildTransaction(txn)
+	return signTransaction(tb.t, txn, signType, keyToSignTxn)
+
 }
 
 func (tb *TestBlockChain) mineBlock() {
@@ -1502,7 +1618,7 @@ func TestBasicTransfer(t *testing.T) {
 		// recipientPrivString.
 		txn.PublicKey = recipientPkBytes
 		// build transaction with inputs ans sign the transaction using the recipient string
-		tb.buildTransaction(txn, recipientPrivString)
+		c
 		// Connect the transaction
 		err := tb.connectTransaction(txn)
 		// Expected error
@@ -1527,7 +1643,7 @@ func TestBasicTransfer(t *testing.T) {
 
 		// Sign the transaction with the recipient's key rather than the
 		// sender's key.
-		tb.buildTransaction(txn, recipientPrivString)
+		tb.buildTransactionWithSign(txn, ECDSA, recipientPrivString)
 		// Connect the transaction
 		err := tb.connectTransaction(txn)
 		require.Error(err)
@@ -1552,7 +1668,7 @@ func TestBasicTransfer(t *testing.T) {
 		}
 		// Sign the transaction with the recipient's key rather than the
 		// sender's key.
-		tb.buildTransaction(txn, senderPrivString)
+		tb.buildTransactionWithSign(txn, ECDSA, senderPrivString)
 		// Connect the transaction
 		err := tb.connectTransaction(txn)
 		require.Error(err)
@@ -1579,7 +1695,7 @@ func TestBasicTransfer(t *testing.T) {
 
 		// Sign the transaction with the recipient's key rather than the
 		// sender's key.
-		tb.buildTransaction(txn, senderPrivString)
+		tb.buildTransactionWithSign(txn, ECDSA, senderPrivString)
 		// Connect the transaction
 		err := tb.connectTransaction(txn)
 		require.Error(err)
@@ -1624,6 +1740,74 @@ func TestBasicTransfer(t *testing.T) {
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil, 0)
 		require.NoError(err)
 	})
+}
+
+// Tests and validates the error values returned Mempool Transaction process.
+
+func TestMempoolProcessError(t *testing.T) {
+	require := require.New(tb.t)
+	senderPkBytes := ProcessKeyBytes(t, senderPkString)
+	senderPrivBytes := ProcessKeyBytes(t, senderPrivString)
+
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	recipientPkBytes := ProcessKeyBytes(t, recipientPkString)
+
+	// generating a random pricate key to be used for the tests.
+	randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
+
+	testCases := []struct {
+		signType                  signatureType
+		signaturePrivateKeyBase58 string
+		expectedError             RuleError
+	}{
+		// Try signing the basic transfer with the owner's private key.
+		// Test case 1
+		{
+
+			signType:                  STANDARD_DER,
+			expectedError:             RuleErrorDerivedKeyNotAuthorized,
+			signaturePrivateKeyBase58: senderPrivString,
+		},
+		// Test case 2
+		{
+
+			signType:                  DESO_DER,
+			expectedError:             RuleErrorDerivedKeyNotAuthorized,
+			signaturePrivateKeyBase58: senderPrivString,
+		},
+		// Test case 3
+		// Try signing the basic transfer with a random private key.
+		{
+
+			signType:                  ECDSA,
+			expectedError:             RuleErrorInvalidTransactionSignature,
+			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+		},
+		// Test case 4
+		{
+
+			signType:                  STANDARD_DER,
+			expectedError:             RuleErrorDerivedKeyNotAuthorized,
+			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+		},
+		// Test case 5
+		{
+			signType:                  DESO_DER,
+			expectedError:             RuleErrorDerivedKeyNotAuthorized,
+			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+		},
+	}
+
+	tb := NewTestBlockChain(t)
+
+	for i := 0; i < len(testCases); i++ {
+		txn := tb.newBasicTransactionWithSign(testCases[i].signType, testCases[i].signaturePrivateKeyBase58)
+		_, err := tb.mempool.processTransaction(txn, true, true, 0, true)
+		require.Error(err)
+		require.Contains(err.Error(), testCases[i].Error())
+	}
 }
 
 // TestBasicTransferSignatures thoroughly tests all possible ways to sign a DeSo transaction.
@@ -1705,7 +1889,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 
 	// Mine block with the latest mempool. Validate that the persisted transaction signatures match original transactions.
 	mineBlockAndVerifySignatures := func(allTxns []*MsgDeSoTxn) {
-		block, err := miner.MineAndProcessSingleBlock(0, mempool)
+		block, err := tb.miner.MineAndProcessSingleBlock(0, mempool)
 		blockHash, err := block.Hash()
 		require.NoError(err)
 		require.NoError(err)
@@ -1743,13 +1927,13 @@ func TestBasicTransferSignatures(t *testing.T) {
 
 		extraData := make(map[string]interface{})
 		extraData[TransactionSpendingLimitKey] = transactionSpendingLimit
-		blockHeight, err := GetBlockTipHeight(db, false)
+		blockHeight, err := GetBlockTipHeight(rb.db, false)
 		require.NoError(err)
 		authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
 			t, senderPrivKey, 10, transactionSpendingLimit, false, blockHeight+1)
 		transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes(blockHeight + 1)
 		require.NoError(err)
-		derivedKeyTxn, totalInput, changeAmount, fees, err := chain.CreateAuthorizeDerivedKeyTxn(
+		derivedKeyTxn, totalInput, changeAmount, fees, err := tb.chain.CreateAuthorizeDerivedKeyTxn(
 			senderPkBytes,
 			authTxnMeta.DerivedPublicKey,
 			authTxnMeta.ExpirationBlock,
