@@ -67,40 +67,40 @@ func (adapter *DbAdapter) GetPostAssociationByAttributes(associationEntry *PostA
 
 func (adapter *DbAdapter) GetUserAssociationsByAttributes(
 	associationQuery *UserAssociationQuery,
-	deletedUtxoAssociationIdMap map[*BlockHash]bool,
+	deletedUtxoAssociationIDs *Set[*BlockHash],
 ) ([]*UserAssociationEntry, []byte, error) {
 	if adapter.postgresDb != nil {
-		return adapter.postgresDb.GetUserAssociationsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
+		return adapter.postgresDb.GetUserAssociationsByAttributes(associationQuery, deletedUtxoAssociationIDs)
 	}
-	return DBGetUserAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, deletedUtxoAssociationIdMap)
+	return DBGetUserAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, deletedUtxoAssociationIDs)
 }
 
 func (adapter *DbAdapter) GetPostAssociationsByAttributes(
 	associationQuery *PostAssociationQuery,
-	deletedUtxoAssociationIdMap map[*BlockHash]bool,
+	deletedUtxoAssociationIDs *Set[*BlockHash],
 ) ([]*PostAssociationEntry, []byte, error) {
 	if adapter.postgresDb != nil {
-		return adapter.postgresDb.GetPostAssociationsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
+		return adapter.postgresDb.GetPostAssociationsByAttributes(associationQuery, deletedUtxoAssociationIDs)
 	}
-	return DBGetPostAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, deletedUtxoAssociationIdMap)
+	return DBGetPostAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, deletedUtxoAssociationIDs)
 }
 
 func (adapter *DbAdapter) GetUserAssociationIdsByAttributes(
-	associationQuery *UserAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*BlockHash, []byte, error) {
+	associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
+) (*Set[*BlockHash], []byte, error) {
 	if adapter.postgresDb != nil {
-		return adapter.postgresDb.GetUserAssociationIdsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
+		return adapter.postgresDb.GetUserAssociationIdsByAttributes(associationQuery, deletedUtxoAssociationIDs)
 	}
-	return DBGetUserAssociationIdsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, deletedUtxoAssociationIdMap)
+	return DBGetUserAssociationIdsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, deletedUtxoAssociationIDs)
 }
 
 func (adapter *DbAdapter) GetPostAssociationIdsByAttributes(
-	associationQuery *PostAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*BlockHash, []byte, error) {
+	associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
+) (*Set[*BlockHash], []byte, error) {
 	if adapter.postgresDb != nil {
-		return adapter.postgresDb.GetPostAssociationIdsByAttributes(associationQuery, deletedUtxoAssociationIdMap)
+		return adapter.postgresDb.GetPostAssociationIdsByAttributes(associationQuery, deletedUtxoAssociationIDs)
 	}
-	return DBGetPostAssociationIdsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, deletedUtxoAssociationIdMap)
+	return DBGetPostAssociationIdsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, deletedUtxoAssociationIDs)
 }
 
 func (adapter *DbAdapter) SortUserAssociationEntriesByPrefix(

@@ -3194,12 +3194,12 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 }
 
 func (postgres *Postgres) GetUserAssociationsByAttributes(
-	associationQuery *UserAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
+	associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
 ) ([]*UserAssociationEntry, []byte, error) {
 	// Construct SQL query.
 	var pgAssociations []PGUserAssociation
 	sqlQuery := postgres.db.Model(&pgAssociations)
-	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIdMap)
+	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIDs)
 
 	// Execute SQL query.
 	if err := sqlQuery.Select(); err != nil {
@@ -3219,11 +3219,11 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(
 }
 
 func (postgres *Postgres) GetUserAssociationIdsByAttributes(
-	associationQuery *UserAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*BlockHash, []byte, error) {
+	associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
+) (*Set[*BlockHash], []byte, error) {
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGUserAssociation{}).Column("association_id")
-	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIdMap)
+	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIDs)
 
 	// Execute SQL query.
 	var associationIds []*BlockHash
@@ -3234,21 +3234,15 @@ func (postgres *Postgres) GetUserAssociationIdsByAttributes(
 		}
 		return nil, nil, err
 	}
-	return associationIds, nil, nil
+	return NewSet(associationIds), nil, nil
 }
 
 func _constructFilterUserAssociationsByAttributesQuery(
-	sqlQuery *pg.Query,
-	associationQuery *UserAssociationQuery,
-	deletedUtxoAssociationIdMap map[*BlockHash]bool,
+	sqlQuery *pg.Query, associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
 ) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
-	if len(deletedUtxoAssociationIdMap) > 0 {
-		var deletedUtxoAssociationEntryIDs []*BlockHash
-		for deletedUtxoAssociationEntryID := range deletedUtxoAssociationIdMap {
-			deletedUtxoAssociationEntryIDs = append(deletedUtxoAssociationEntryIDs, deletedUtxoAssociationEntryID)
-		}
-		sqlQuery.Where("association_id NOT IN (?)", deletedUtxoAssociationEntryIDs)
+	if deletedUtxoAssociationIDs.Size() > 0 {
+		sqlQuery.Where("association_id NOT IN (?)", deletedUtxoAssociationIDs.ToSlice())
 	}
 	if associationQuery.TransactorPKID != nil {
 		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
@@ -3287,12 +3281,12 @@ func _constructFilterUserAssociationsByAttributesQuery(
 }
 
 func (postgres *Postgres) GetPostAssociationsByAttributes(
-	associationQuery *PostAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
+	associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
 ) ([]*PostAssociationEntry, []byte, error) {
 	// Construct SQL query.
 	var pgAssociations []PGPostAssociation
 	sqlQuery := postgres.db.Model(&pgAssociations)
-	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIdMap)
+	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIDs)
 
 	// Execute SQL query.
 	if err := sqlQuery.Select(); err != nil {
@@ -3312,11 +3306,11 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(
 }
 
 func (postgres *Postgres) GetPostAssociationIdsByAttributes(
-	associationQuery *PostAssociationQuery, deletedUtxoAssociationIdMap map[*BlockHash]bool,
-) ([]*BlockHash, []byte, error) {
+	associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
+) (*Set[*BlockHash], []byte, error) {
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGPostAssociation{}).Column("association_id")
-	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIdMap)
+	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIDs)
 
 	// Execute SQL query.
 	var associationIds []*BlockHash
@@ -3327,21 +3321,15 @@ func (postgres *Postgres) GetPostAssociationIdsByAttributes(
 		}
 		return nil, nil, err
 	}
-	return associationIds, nil, nil
+	return NewSet(associationIds), nil, nil
 }
 
 func _constructFilterPostAssociationsByAttributesQuery(
-	sqlQuery *pg.Query,
-	associationQuery *PostAssociationQuery,
-	deletedUtxoAssociationIdMap map[*BlockHash]bool,
+	sqlQuery *pg.Query, associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
 ) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
-	if len(deletedUtxoAssociationIdMap) > 0 {
-		var deletedUtxoAssociationEntryIDs []*BlockHash
-		for deletedUtxoAssociationEntryID := range deletedUtxoAssociationIdMap {
-			deletedUtxoAssociationEntryIDs = append(deletedUtxoAssociationEntryIDs, deletedUtxoAssociationEntryID)
-		}
-		sqlQuery.Where("association_id NOT IN (?)", deletedUtxoAssociationEntryIDs)
+	if deletedUtxoAssociationIDs.Size() > 0 {
+		sqlQuery.Where("association_id NOT IN (?)", deletedUtxoAssociationIDs.ToSlice())
 	}
 	if associationQuery.TransactorPKID != nil {
 		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
