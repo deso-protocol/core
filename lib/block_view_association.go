@@ -770,14 +770,14 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 	if associationQuery.SortDescending {
 		// Sort descending, so add UTXO view association entries first.
 		for _, associationEntry := range utxoAssociationEntries {
-			if associationQuery.Limit > uint64(0) && uint64(len(associationEntries)) >= associationQuery.Limit {
+			if associationQuery.Limit > 0 && len(associationEntries) >= associationQuery.Limit {
 				break
 			}
 			associationEntries = append(associationEntries, associationEntry)
 		}
 		// Then add database association entries.
 		for _, associationEntry := range dbAssociationEntries {
-			if associationQuery.Limit > uint64(0) && uint64(len(associationEntries)) >= associationQuery.Limit {
+			if associationQuery.Limit > 0 && len(associationEntries) >= associationQuery.Limit {
 				break
 			}
 			if _, exists := utxoAssociationEntryMap[associationEntry.AssociationID]; !exists {
@@ -791,7 +791,7 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 
 		// Sort ascending, so add database association entries first.
 		for _, associationEntry := range dbAssociationEntries {
-			if associationQuery.Limit > uint64(0) && uint64(len(associationEntries)) >= associationQuery.Limit {
+			if associationQuery.Limit > 0 && len(associationEntries) >= associationQuery.Limit {
 				break
 			}
 			if utxoAssociationEntry, exists := utxoAssociationEntryMap[associationEntry.AssociationID]; exists {
@@ -804,7 +804,7 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 		}
 		// Then add UTXO view association entries.
 		for _, associationEntry := range utxoAssociationEntries {
-			if associationQuery.Limit > uint64(0) && uint64(len(associationEntries)) >= associationQuery.Limit {
+			if associationQuery.Limit > 0 && len(associationEntries) >= associationQuery.Limit {
 				break
 			}
 			if _, exists := addedAssociationEntryIdMap[associationEntry.AssociationID]; !exists {
@@ -821,7 +821,7 @@ func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAss
 	if err != nil {
 		return 0, errors.Wrap(err, "CountUserAssociationsByAttributes: ")
 	}
-	if associationQuery.Limit > uint64(0) ||
+	if associationQuery.Limit > 0 ||
 		associationQuery.LastSeenAssociationID != nil ||
 		associationQuery.SortDescending {
 		// These params are only used in fetching, not in counting.
@@ -839,7 +839,7 @@ func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAss
 	// Loop through UTXO view association entries adding non-deleted
 	// association entries. Note that the Set prevents duplicates.
 	for _, utxoAssociationEntry := range newUtxoAssociationEntries {
-		if associationQuery.Limit > uint64(0) && uint64(associationIDs.Size()) >= associationQuery.Limit {
+		if associationQuery.Limit > 0 && associationIDs.Size() >= associationQuery.Limit {
 			break
 		}
 		// Add new association entries found in the UTXO view.
@@ -955,14 +955,14 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 	if associationQuery.SortDescending {
 		// Sort descending, so add UTXO view association entries first.
 		for _, associationEntry := range utxoAssociationEntries {
-			if associationQuery.Limit > uint64(0) && uint64(len(associationEntries)) >= associationQuery.Limit {
+			if associationQuery.Limit > 0 && len(associationEntries) >= associationQuery.Limit {
 				break
 			}
 			associationEntries = append(associationEntries, associationEntry)
 		}
 		// Then add database association entries.
 		for _, associationEntry := range dbAssociationEntries {
-			if associationQuery.Limit > uint64(0) && uint64(len(associationEntries)) >= associationQuery.Limit {
+			if associationQuery.Limit > 0 && len(associationEntries) >= associationQuery.Limit {
 				break
 			}
 			if _, exists := utxoAssociationEntryMap[associationEntry.AssociationID]; !exists {
@@ -976,7 +976,7 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 
 		// Sort ascending, so add database association entries first.
 		for _, associationEntry := range dbAssociationEntries {
-			if associationQuery.Limit > uint64(0) && uint64(len(associationEntries)) >= associationQuery.Limit {
+			if associationQuery.Limit > 0 && len(associationEntries) >= associationQuery.Limit {
 				break
 			}
 			if utxoAssociationEntry, exists := utxoAssociationEntryMap[associationEntry.AssociationID]; exists {
@@ -989,7 +989,7 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 		}
 		// Then add UTXO view association entries.
 		for _, associationEntry := range utxoAssociationEntries {
-			if associationQuery.Limit > uint64(0) && uint64(len(associationEntries)) >= associationQuery.Limit {
+			if associationQuery.Limit > 0 && len(associationEntries) >= associationQuery.Limit {
 				break
 			}
 			if _, exists := addedAssociationEntryIdMap[associationEntry.AssociationID]; !exists {
@@ -1006,7 +1006,7 @@ func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAss
 	if err != nil {
 		return 0, errors.Wrapf(err, "GetPostAssociationsByAttributes: ")
 	}
-	if associationQuery.Limit > uint64(0) ||
+	if associationQuery.Limit > 0 ||
 		associationQuery.LastSeenAssociationID != nil ||
 		associationQuery.SortDescending {
 		// These params are only used in fetching, not in counting.
@@ -1024,7 +1024,7 @@ func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAss
 	// Loop through UTXO view association entries adding non-deleted
 	// association entries. Note that the Set prevents duplicates.
 	for _, utxoAssociationEntry := range newUtxoAssociationEntries {
-		if associationQuery.Limit > uint64(0) && uint64(associationIDs.Size()) >= associationQuery.Limit {
+		if associationQuery.Limit > 0 && associationIDs.Size() >= associationQuery.Limit {
 			break
 		}
 		// Add new association entries found in the UTXO view.

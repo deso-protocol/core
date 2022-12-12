@@ -9143,7 +9143,7 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 func EnumerateKeysForPrefixWithLimitOffsetOrder(
 	db *badger.DB,
 	prefix []byte,
-	limit uint64,
+	limit int,
 	lastSeenKey []byte,
 	sortDescending bool,
 	deletedUtxoKeys *Set[string],
@@ -9174,7 +9174,7 @@ func EnumerateKeysForPrefixWithLimitOffsetOrder(
 func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 	txn *badger.Txn,
 	prefix []byte,
-	limit uint64,
+	limit int,
 	lastSeenKey []byte,
 	sortDescending bool,
 	deletedUtxoKeys *Set[string],
@@ -9199,7 +9199,7 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 
 	for nodeIterator.Seek(startingKey); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
 		// Break if at or beyond limit.
-		if limit > uint64(0) && uint64(len(keysFound)) >= limit {
+		if limit > 0 && len(keysFound) >= limit {
 			break
 		}
 		// Copy key.

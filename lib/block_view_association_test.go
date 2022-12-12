@@ -1071,7 +1071,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:  m3PKID,
 			AssociationType: "endorsement",
-			Limit:           uint64(2),
+			Limit:           2,
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
@@ -1083,7 +1083,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:        m3PKID,
 			AssociationType:       "endorsement",
-			Limit:                 uint64(2),
+			Limit:                 2,
 			LastSeenAssociationID: userAssociationEntries[1].AssociationID,
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
@@ -1096,7 +1096,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:        m3PKID,
 			AssociationType:       "endorsement",
-			Limit:                 uint64(2),
+			Limit:                 2,
 			LastSeenAssociationID: userAssociationEntries[1].AssociationID,
 			SortDescending:        true,
 		}
@@ -1110,7 +1110,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:  m3PKID,
 			AssociationType: "endorsement",
-			Limit:           uint64(1),
+			Limit:           1,
 			SortDescending:  true,
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
@@ -1812,7 +1812,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query using Limit
 		postAssociationQuery = &PostAssociationQuery{
 			AssociationType: "TAG",
-			Limit:           uint64(3),
+			Limit:           3,
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1824,7 +1824,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query using LastSeenAssociationID
 		postAssociationQuery = &PostAssociationQuery{
 			AssociationType:       "TAG",
-			Limit:                 uint64(1),
+			Limit:                 1,
 			LastSeenAssociationID: postAssociationEntries[2].AssociationID,
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
@@ -1835,7 +1835,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query using SortDescending
 		postAssociationQuery = &PostAssociationQuery{
 			AssociationType: "TAG",
-			Limit:           uint64(2),
+			Limit:           2,
 			SortDescending:  true,
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)

@@ -3263,7 +3263,7 @@ func _constructFilterUserAssociationsByAttributesQuery(
 	} else if associationQuery.AssociationValuePrefix != "" {
 		sqlQuery.Where("association_value LIKE ?", associationQuery.AssociationValuePrefix+"%")
 	}
-	if associationQuery.Limit > uint64(0) {
+	if associationQuery.Limit > 0 {
 		sqlQuery.Limit(int(associationQuery.Limit))
 	}
 	if associationQuery.LastSeenAssociationID != nil {
@@ -3350,7 +3350,7 @@ func _constructFilterPostAssociationsByAttributesQuery(
 	} else if associationQuery.AssociationValuePrefix != "" {
 		sqlQuery.Where("association_value LIKE ?", associationQuery.AssociationValuePrefix+"%")
 	}
-	if associationQuery.Limit > uint64(0) {
+	if associationQuery.Limit > 0 {
 		sqlQuery.Limit(int(associationQuery.Limit))
 	}
 	if associationQuery.LastSeenAssociationID != nil {
