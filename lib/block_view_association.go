@@ -821,6 +821,12 @@ func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAss
 	if err != nil {
 		return 0, errors.Wrap(err, "CountUserAssociationsByAttributes: ")
 	}
+	if associationQuery.Limit > uint64(0) ||
+		associationQuery.LastSeenAssociationID != nil ||
+		associationQuery.SortDescending {
+		// These params are only used in fetching, not in counting.
+		return 0, errors.New("CountUserAssociationsByAttributes: invalid query params")
+	}
 	// First pull matching association entries from the UTXO view so that
 	// we can track deleted association entries and can properly limit
 	// the number of entries retrieved from the database.
@@ -1004,6 +1010,12 @@ func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAss
 	err := _isValidPostAssociationQuery(associationQuery)
 	if err != nil {
 		return 0, errors.Wrapf(err, "GetPostAssociationsByAttributes: ")
+	}
+	if associationQuery.Limit > uint64(0) ||
+		associationQuery.LastSeenAssociationID != nil ||
+		associationQuery.SortDescending {
+		// These params are only used in fetching, not in counting.
+		return 0, errors.New("CountPostAssociationsByAttributes: invalid query params")
 	}
 	// First pull matching association entries from the UTXO view so that
 	// we can track deleted association entries and can properly limit
