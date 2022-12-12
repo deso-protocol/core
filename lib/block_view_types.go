@@ -4868,7 +4868,11 @@ type CreateUserAssociationTxindexMetadata struct {
 }
 
 type DeleteUserAssociationTxindexMetadata struct {
-	AssociationIDHex string
+	AssociationIDHex               string
+	TargetUserPublicKeyBase58Check string
+	AppPublicKeyBase58Check        string
+	AssociationType                string
+	AssociationValue               string
 }
 
 type CreatePostAssociationTxindexMetadata struct {
@@ -4879,7 +4883,11 @@ type CreatePostAssociationTxindexMetadata struct {
 }
 
 type DeletePostAssociationTxindexMetadata struct {
-	AssociationIDHex string
+	AssociationIDHex        string
+	PostHashHex             string
+	AppPublicKeyBase58Check string
+	AssociationType         string
+	AssociationValue        string
 }
 
 func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -4894,6 +4902,10 @@ func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawEncodeWit
 func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationIDHex))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.TargetUserPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AppPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
 	return data
 }
 
@@ -4909,6 +4921,10 @@ func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawEncodeWit
 func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationIDHex))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.PostHashHex))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AppPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
 	return data
 }
 
@@ -4952,6 +4968,34 @@ func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) RawDecodeWit
 	}
 	associationTxindexMeta.AssociationIDHex = string(associationIDHexBytes)
 
+	// TargetUserPublicKeyBase58Check
+	targetUserPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationTxindexMetadata.Decode: Problem reading TargetUserPublicKeyBase58Check: ")
+	}
+	associationTxindexMeta.TargetUserPublicKeyBase58Check = string(targetUserPublicKeyBase58CheckBytes)
+
+	// AppPublicKeyBase58Check
+	appPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationTxindexMetadata.Decode: Problem reading AppPublicKeyBase58Check: ")
+	}
+	associationTxindexMeta.AppPublicKeyBase58Check = string(appPublicKeyBase58CheckBytes)
+
+	// AssociationType
+	associationTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationTxindexMetadata.Decode: Problem reading AssociationType: ")
+	}
+	associationTxindexMeta.AssociationType = string(associationTypeBytes)
+
+	// AssociationValue
+	associationValueBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationTxindexMetadata.Decode: Problem reading AssociationValue: ")
+	}
+	associationTxindexMeta.AssociationValue = string(associationValueBytes)
+
 	return nil
 }
 
@@ -4994,6 +5038,34 @@ func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) RawDecodeWit
 		return errors.Wrapf(err, "DeletePostAssociationTxindexMetadata.Decode: Problem reading AssociationIDHex: ")
 	}
 	associationTxindexMeta.AssociationIDHex = string(associationIDHexBytes)
+
+	// PostHashHex
+	postHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationTxindexMetadata.Decode: Problem reading PostHashHex: ")
+	}
+	associationTxindexMeta.PostHashHex = string(postHashHexBytes)
+
+	// AppPublicKeyBase58Check
+	appPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationTxindexMetadata.Decode: Problem reading AppPublicKeyBase58Check: ")
+	}
+	associationTxindexMeta.AppPublicKeyBase58Check = string(appPublicKeyBase58CheckBytes)
+
+	// AssociationType
+	associationTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationTxindexMetadata.Decode: Problem reading AssociationType: ")
+	}
+	associationTxindexMeta.AssociationType = string(associationTypeBytes)
+
+	// AssociationValue
+	associationValueBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationTxindexMetadata.Decode: Problem reading AssociationValue: ")
+	}
+	associationTxindexMeta.AssociationValue = string(associationValueBytes)
 
 	return nil
 }
