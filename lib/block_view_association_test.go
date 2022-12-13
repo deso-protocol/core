@@ -1497,7 +1497,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		if chain.postgres != nil {
 			require.NoError(t, err)
 			require.Len(t, postAssociationEntries, 1)
-			require.Equal(t, postAssociationEntries[0].AssociationValue, "NSFW")
+			require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("NSFW"))
 		} else {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid query params")
@@ -1523,7 +1523,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		if chain.postgres != nil {
 			require.NoError(t, err)
 			require.Len(t, postAssociationEntries, 1)
-			require.Equal(t, postAssociationEntries[0].AssociationValue, "NSFW")
+			require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("NSFW"))
 		} else {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid query params")
