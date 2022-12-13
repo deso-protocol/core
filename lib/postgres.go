@@ -3163,7 +3163,7 @@ func (postgres *Postgres) GetUserAssociationByAttributes(associationEntry *UserA
 		Where("target_user_pkid = ?", associationEntry.TargetUserPKID).
 		Where("app_pkid = ?", associationEntry.AppPKID).
 		Where("LOWER(association_type) = ?", string(bytes.ToLower(associationEntry.AssociationType))).
-		Where("association_value = ?", associationEntry.AssociationValue).
+		Where("association_value = ?", string(associationEntry.AssociationValue)).
 		First(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
@@ -3182,7 +3182,7 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 		Where("post_hash = ?", associationEntry.PostHash).
 		Where("app_pkid = ?", associationEntry.AppPKID).
 		Where("LOWER(association_type) = ?", string(bytes.ToLower(associationEntry.AssociationType))).
-		Where("association_value = ?", associationEntry.AssociationValue).
+		Where("association_value = ?", string(associationEntry.AssociationValue)).
 		First(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
@@ -3250,7 +3250,7 @@ func _constructFilterUserAssociationsByAttributesQuery(sqlQuery *pg.Query, assoc
 		sqlQuery.Where("LOWER(association_type) LIKE ?", string(bytes.ToLower(associationQuery.AssociationTypePrefix))+"%")
 	}
 	if len(associationQuery.AssociationValue) > 0 {
-		sqlQuery.Where("association_value = ?", associationQuery.AssociationValue)
+		sqlQuery.Where("association_value = ?", string(associationQuery.AssociationValue))
 	} else if len(associationQuery.AssociationValuePrefix) > 0 {
 		sqlQuery.Where("association_value LIKE ?", string(associationQuery.AssociationValuePrefix)+"%")
 	}
