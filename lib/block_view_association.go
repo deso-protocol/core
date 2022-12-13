@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-const MaxAssociationTypeCharLength int = 64
-const MaxAssociationValueCharLength int = 256
-const AssociationTypeReservedPrefix = "DESO"
-
 func (bav *UtxoView) _connectCreateUserAssociation(
 	txn *MsgDeSoTxn,
 	txHash *BlockHash,
@@ -71,7 +67,7 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 	}
 
 	// Retrieve existing ExtraData to merge with any new ExtraData.
-	prevExtraData := make(map[string][]byte)
+	var prevExtraData map[string][]byte
 	if prevAssociationEntry != nil {
 		prevExtraData = prevAssociationEntry.ExtraData
 	}
@@ -153,6 +149,11 @@ func (bav *UtxoView) _connectDeleteUserAssociation(
 			"_connectDeleteUserAssociation: error fetching association %s", txMeta.AssociationID.String(),
 		)
 	}
+	if prevAssociationEntry == nil {
+		// This should never happen as we validate the association
+		// exists when we validate the txn metadata.
+		return 0, 0, nil, errors.New("_connectDeleteUserAssociation: no existing association entry found")
+	}
 	bav._deleteUserAssociationEntryMappings(prevAssociationEntry)
 
 	// Add a UTXO operation.
@@ -223,7 +224,7 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 	}
 
 	// Retrieve existing ExtraData to merge with any new ExtraData.
-	prevExtraData := make(map[string][]byte)
+	var prevExtraData map[string][]byte
 	if prevAssociationEntry != nil {
 		prevExtraData = prevAssociationEntry.ExtraData
 	}
@@ -305,6 +306,11 @@ func (bav *UtxoView) _connectDeletePostAssociation(
 			"_connectDeletePostAssociation: error fetching association %s", txMeta.AssociationID.String(),
 		)
 	}
+	if prevAssociationEntry == nil {
+		// This should never happen as we validate the association
+		// exists when we validate the txn metadata.
+		return 0, 0, nil, errors.New("_connectDeletePostAssociation: no existing association entry found")
+	}
 	bav._deletePostAssociationEntryMappings(prevAssociationEntry)
 
 	// Add a UTXO operation.
@@ -340,6 +346,9 @@ func (bav *UtxoView) _disconnectCreateUserAssociation(
 	currentAssociationEntry, err := bav.GetUserAssociationByAttributes(currentTxn.PublicKey, txMeta)
 	if err != nil {
 		return errors.Wrapf(err, "_disconnectCreateUserAssociation: ")
+	}
+	if currentAssociationEntry == nil {
+		return errors.New("_disconnectCreateUserAssociation: no created association entry found")
 	}
 	bav._deleteUserAssociationEntryMappings(currentAssociationEntry)
 
@@ -411,6 +420,9 @@ func (bav *UtxoView) _disconnectCreatePostAssociation(
 	currentAssociationEntry, err := bav.GetPostAssociationByAttributes(currentTxn.PublicKey, txMeta)
 	if err != nil {
 		return errors.Wrapf(err, "_disconnectCreatePostAssociation: ")
+	}
+	if currentAssociationEntry == nil {
+		return errors.New("_disconnectCreatePostAssociation: no created association entry found")
 	}
 	bav._deletePostAssociationEntryMappings(currentAssociationEntry)
 
@@ -511,6 +523,11 @@ func (bav *UtxoView) IsValidCreateUserAssociationMetadata(transactorPK []byte, m
 func (bav *UtxoView) IsValidDeleteUserAssociationMetadata(transactorPK []byte, metadata *DeleteUserAssociationMetadata) error {
 	// Returns an error if the input metadata is invalid. Otherwise, returns nil.
 
+	// Validate transactor public key is non-null.
+	if transactorPK == nil {
+		return RuleErrorAssociationInvalidTransactor
+	}
+
 	// Validate association ID is non-null.
 	if metadata.AssociationID == nil {
 		return RuleErrorAssociationInvalidID
@@ -584,6 +601,11 @@ func (bav *UtxoView) IsValidCreatePostAssociationMetadata(transactorPK []byte, m
 
 func (bav *UtxoView) IsValidDeletePostAssociationMetadata(transactorPK []byte, metadata *DeletePostAssociationMetadata) error {
 	// Returns an error if the input metadata is invalid. Otherwise, returns nil.
+
+	// Validate transactor public key is non-null.
+	if transactorPK == nil {
+		return RuleErrorAssociationInvalidTransactor
+	}
 
 	// Validate association ID is non-null.
 	if metadata.AssociationID == nil {
