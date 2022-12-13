@@ -3020,8 +3020,8 @@ type PGMetadataCreateUserAssociation struct {
 	tableName struct{} `pg:"pg_metadata_create_user_association"`
 
 	TransactionHash     *BlockHash `pg:",pk,type:bytea"`
-	TargetUserPublicKey *PublicKey `pg:"target_user_public_key,type:bytea"`
-	AppPublicKey        *PublicKey `pg:"app_public_key,type:bytea"`
+	TargetUserPublicKey *PublicKey `pg:",type:bytea"`
+	AppPublicKey        *PublicKey `pg:",type:bytea"`
 	AssociationType     string     `pg:",use_zero"`
 	AssociationValue    string     `pg:",use_zero"`
 }
@@ -3040,7 +3040,7 @@ type PGMetadataCreatePostAssociation struct {
 
 	TransactionHash  *BlockHash `pg:",pk,type:bytea"`
 	PostHash         *BlockHash `pg:",type:bytea"`
-	AppPublicKey     *PublicKey `pg:"app_public_key,type:bytea"`
+	AppPublicKey     *PublicKey `pg:",type:bytea"`
 	AssociationType  string     `pg:",use_zero"`
 	AssociationValue string     `pg:",use_zero"`
 }

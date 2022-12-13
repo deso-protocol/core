@@ -1256,3 +1256,8 @@ const (
 	MinMessagingKeyNameCharacters = 1
 	MaxMessagingKeyNameCharacters = 32
 )
+
+// Constants for UserAssociation and PostAssociation txn types.
+const MaxAssociationTypeCharLength int = 64
+const MaxAssociationValueCharLength int = 256
+const AssociationTypeReservedPrefix = "DESO"
