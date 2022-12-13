@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"errors"
 	"github.com/stretchr/testify/require"
 	"math"
@@ -103,10 +104,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "SQL",
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("SQL"),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -117,10 +118,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// RuleErrorUserAssociationInvalidTargetUser
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "ENDORSEMENT",
-			AssociationValue: "SQL",
+			AssociationType:  []byte("ENDORSEMENT"),
+			AssociationValue: []byte("SQL"),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -130,10 +131,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// RuleErrorAssociationInvalidApp
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "SQL",
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("SQL"),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -144,10 +145,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "",
-			AssociationValue:    "SQL",
+			AssociationType:     []byte{},
+			AssociationValue:    []byte("SQL"),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -156,18 +157,18 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	{
 		// RuleErrorAssociationInvalidType: AssociationType is too long
 		var associationType []byte
-		for ii := 0; ii < MaxAssociationTypeCharLength+1; ii++ {
+		for ii := 0; ii < MaxAssociationTypeByteLength+1; ii++ {
 			associationType = append(associationType, []byte(" ")...)
 		}
-		require.Equal(t, len(associationType), MaxAssociationTypeCharLength+1)
+		require.Equal(t, len(associationType), MaxAssociationTypeByteLength+1)
 
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     string(associationType),
-			AssociationValue:    "SQL",
+			AssociationType:     associationType,
+			AssociationValue:    []byte("SQL"),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -178,10 +179,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     AssociationTypeReservedPrefix + "ENDORSEMENT",
-			AssociationValue:    "SQL",
+			AssociationType:     []byte(AssociationTypeReservedPrefix + "ENDORSEMENT"),
+			AssociationValue:    []byte("SQL"),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -192,10 +193,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "",
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte{},
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -204,18 +205,18 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	{
 		// RuleErrorAssociationInvalidValue: AssociationValue is too long
 		var associationValue []byte
-		for ii := 0; ii < MaxAssociationValueCharLength+1; ii++ {
+		for ii := 0; ii < MaxAssociationValueByteLength+1; ii++ {
 			associationValue = append(associationValue, []byte(" ")...)
 		}
-		require.Equal(t, len(associationValue), MaxAssociationValueCharLength+1)
+		require.Equal(t, len(associationValue), MaxAssociationValueByteLength+1)
 
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    string(associationValue),
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    associationValue,
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -226,7 +227,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		deleteUserAssociationMetadata = &DeleteUserAssociationMetadata{
 			AssociationID: nil,
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -237,7 +238,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		deleteUserAssociationMetadata = &DeleteUserAssociationMetadata{
 			AssociationID: NewBlockHash(RandomBytes(HashSizeBytes)),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -251,8 +252,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "SQL",
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("SQL"),
 		}
 		txnMsg := MsgDeSoTxn{
 			TxnMeta: createUserAssociationMetadata,
@@ -270,8 +271,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.NotNil(t, userAssociationEntry.AssociationID)
 		require.Equal(t, userAssociationEntry.TransactorPKID, m0PKID)
 		require.Equal(t, userAssociationEntry.TargetUserPKID, m1PKID)
-		require.Equal(t, userAssociationEntry.AssociationType, "ENDORSEMENT")
-		require.Equal(t, userAssociationEntry.AssociationValue, "SQL")
+		require.Equal(t, userAssociationEntry.AssociationType, []byte("ENDORSEMENT"))
+		require.Equal(t, userAssociationEntry.AssociationValue, []byte("SQL"))
 		require.Equal(
 			t, string(userAssociationEntry.ExtraData["UserAssociationKey1"]), "UserAssociationValue1",
 		)
@@ -283,7 +284,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		deleteUserAssociationMetadata = &DeleteUserAssociationMetadata{
 			AssociationID: associationID,
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -294,8 +295,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "SQL",
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("SQL"),
 		}
 		txnMsg := MsgDeSoTxn{
 			TxnMeta: createUserAssociationMetadata,
@@ -323,8 +324,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "SQL",
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("SQL"),
 		}
 		txnMsg := MsgDeSoTxn{
 			TxnMeta: createUserAssociationMetadata,
@@ -384,10 +385,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "REACTION",
-			AssociationValue: "HEART",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte("HEART"),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -399,10 +400,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         NewBlockHash(RandomBytes(HashSizeBytes)),
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "REACTION",
-			AssociationValue: "HEART",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte("HEART"),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -412,10 +413,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// RuleErrorAssociationInvalidApp
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
-			AssociationType:  "REACTION",
-			AssociationValue: "HEART",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte("HEART"),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -426,10 +427,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "",
-			AssociationValue: "HEART",
+			AssociationType:  []byte{},
+			AssociationValue: []byte("HEART"),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -438,18 +439,18 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	{
 		// RuleErrorAssociationInvalidType: AssociationType is too long
 		var associationType []byte
-		for ii := 0; ii < MaxAssociationTypeCharLength+1; ii++ {
+		for ii := 0; ii < MaxAssociationTypeByteLength+1; ii++ {
 			associationType = append(associationType, []byte(" ")...)
 		}
-		require.Equal(t, len(associationType), MaxAssociationTypeCharLength+1)
+		require.Equal(t, len(associationType), MaxAssociationTypeByteLength+1)
 
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  string(associationType),
-			AssociationValue: "HEART",
+			AssociationType:  associationType,
+			AssociationValue: []byte("HEART"),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -460,10 +461,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  AssociationTypeReservedPrefix + "REACTION",
-			AssociationValue: "HEART",
+			AssociationType:  []byte(AssociationTypeReservedPrefix + "REACTION"),
+			AssociationValue: []byte("HEART"),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -474,10 +475,10 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "REACTION",
-			AssociationValue: "",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte{},
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -486,18 +487,18 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	{
 		// RuleErrorAssociationInvalidValue: AssociationValue is too long
 		var associationValue []byte
-		for ii := 0; ii < MaxAssociationValueCharLength+1; ii++ {
+		for ii := 0; ii < MaxAssociationValueByteLength+1; ii++ {
 			associationValue = append(associationValue, []byte(" ")...)
 		}
-		require.Equal(t, len(associationValue), MaxAssociationValueCharLength+1)
+		require.Equal(t, len(associationValue), MaxAssociationValueByteLength+1)
 
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "REACTION",
-			AssociationValue: string(associationValue),
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: associationValue,
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -508,7 +509,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		deletePostAssociationMetadata = &DeletePostAssociationMetadata{
 			AssociationID: nil,
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -519,7 +520,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		deletePostAssociationMetadata = &DeletePostAssociationMetadata{
 			AssociationID: NewBlockHash(RandomBytes(HashSizeBytes)),
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -533,8 +534,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "REACTION",
-			AssociationValue: "HEART",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte("HEART"),
 		}
 		txnMsg := MsgDeSoTxn{
 			TxnMeta: createPostAssociationMetadata,
@@ -552,8 +553,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.NotNil(t, postAssociationEntry.AssociationID)
 		require.Equal(t, postAssociationEntry.TransactorPKID, m0PKID)
 		require.Equal(t, postAssociationEntry.PostHash, postHash)
-		require.Equal(t, postAssociationEntry.AssociationType, "REACTION")
-		require.Equal(t, postAssociationEntry.AssociationValue, "HEART")
+		require.Equal(t, postAssociationEntry.AssociationType, []byte("REACTION"))
+		require.Equal(t, postAssociationEntry.AssociationValue, []byte("HEART"))
 		require.Equal(
 			t, string(postAssociationEntry.ExtraData["PostAssociationKey1"]), "PostAssociationValue1",
 		)
@@ -565,7 +566,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		deletePostAssociationMetadata = &DeletePostAssociationMetadata{
 			AssociationID: associationID,
 		}
-		_, _, _, err = _submitAssociationTxnSadPath(
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: deletePostAssociationMetadata}, flushToDB,
 		)
 		require.Error(t, err)
@@ -576,8 +577,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "REACTION",
-			AssociationValue: "HEART",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte("HEART"),
 		}
 		txnMsg := MsgDeSoTxn{
 			TxnMeta: createPostAssociationMetadata,
@@ -605,8 +606,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "REACTION",
-			AssociationValue: "HEART",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte("HEART"),
 		}
 		txnMsg := MsgDeSoTxn{
 			TxnMeta: createPostAssociationMetadata,
@@ -652,8 +653,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        NewPublicKey(m4PkBytes),
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "SQL",
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("SQL"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
@@ -663,8 +664,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "JavaScript",
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("JavaScript"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
@@ -674,8 +675,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m2PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "endorsement",
-			AssociationValue:    "SQL",
+			AssociationType:     []byte("endorsement"),
+			AssociationValue:    []byte("SQL"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
@@ -685,8 +686,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m3PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "JAVA",
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("JAVA"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
@@ -696,8 +697,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m3PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "C",
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("C"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
@@ -707,8 +708,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m3PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "C++",
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("C++"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
@@ -718,8 +719,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m3PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "ENDORSEMENT",
-			AssociationValue:    "C#",
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("C#"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m4Pub, m4Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
@@ -729,8 +730,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
-			AssociationType:     "MEMBERSHIP",
-			AssociationValue:    "Acme University Alumni",
+			AssociationType:     []byte("MEMBERSHIP"),
+			AssociationValue:    []byte("Acme University Alumni"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
@@ -739,7 +740,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all endorsements of m0 (none exist)
 		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:  m0PKID,
-			AssociationType: "ENDORSEMENT",
+			AssociationType: []byte("ENDORSEMENT"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
@@ -752,16 +753,16 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all endorsements of m1
 		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:  m1PKID,
-			AssociationType: "ENDORSEMENT",
+			AssociationType: []byte("ENDORSEMENT"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 2)
 		sort.Slice(userAssociationEntries, func(ii, jj int) bool {
-			return userAssociationEntries[ii].AssociationValue < userAssociationEntries[jj].AssociationValue
+			return bytes.Compare(userAssociationEntries[ii].AssociationValue, userAssociationEntries[jj].AssociationValue) < 0
 		})
-		require.Equal(t, userAssociationEntries[0].AssociationValue, "JavaScript")
-		require.Equal(t, userAssociationEntries[1].AssociationValue, "SQL")
+		require.Equal(t, userAssociationEntries[0].AssociationValue, []byte("JavaScript"))
+		require.Equal(t, userAssociationEntries[1].AssociationValue, []byte("SQL"))
 
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
@@ -772,8 +773,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			TransactorPKID:   m0PKID,
 			TargetUserPKID:   m1PKID,
 			AppPKID:          &ZeroPKID,
-			AssociationType:  "ENDORSEMENT",
-			AssociationValue: "SQL",
+			AssociationType:  []byte("ENDORSEMENT"),
+			AssociationValue: []byte("SQL"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
@@ -788,8 +789,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			TransactorPKID:   m0PKID,
 			TargetUserPKID:   m1PKID,
 			AppPKID:          m4PKID,
-			AssociationType:  "ENDORSEMENT",
-			AssociationValue: "SQL",
+			AssociationType:  []byte("ENDORSEMENT"),
+			AssociationValue: []byte("SQL"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
@@ -803,12 +804,12 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:  m2PKID,
 			TargetUserPKID:  m1PKID,
-			AssociationType: "ENDORSEMENT",
+			AssociationType: []byte("ENDORSEMENT"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 1)
-		require.Equal(t, userAssociationEntries[0].AssociationValue, "JavaScript")
+		require.Equal(t, userAssociationEntries[0].AssociationValue, []byte("JavaScript"))
 
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
@@ -817,8 +818,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all ENDORSEMENT: SQL by m0
 		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:   m0PKID,
-			AssociationType:  "ENDORSEMENT",
-			AssociationValue: "SQL",
+			AssociationType:  []byte("ENDORSEMENT"),
+			AssociationValue: []byte("SQL"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
@@ -832,16 +833,16 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all endorse* by m0
 		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:        m0PKID,
-			AssociationTypePrefix: "endorse",
+			AssociationTypePrefix: []byte("endorse"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 2)
 		sort.Slice(userAssociationEntries, func(ii, jj int) bool {
-			return userAssociationEntries[ii].AssociationValue < userAssociationEntries[jj].AssociationValue
+			return bytes.Compare(userAssociationEntries[ii].AssociationValue, userAssociationEntries[jj].AssociationValue) < 0
 		})
-		require.Equal(t, userAssociationEntries[0].AssociationValue, "JAVA")
-		require.Equal(t, userAssociationEntries[1].AssociationValue, "SQL")
+		require.Equal(t, userAssociationEntries[0].AssociationValue, []byte("JAVA"))
+		require.Equal(t, userAssociationEntries[1].AssociationValue, []byte("SQL"))
 
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
@@ -850,8 +851,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all Acme University Alumni members as defined by m0
 		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:   m0PKID,
-			AssociationType:  "MEMBERSHIP",
-			AssociationValue: "Acme University Alumni",
+			AssociationType:  []byte("MEMBERSHIP"),
+			AssociationValue: []byte("Acme University Alumni"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
@@ -865,8 +866,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all Acme University * members as defined by m0
 		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:         m0PKID,
-			AssociationType:        "MEMBERSHIP",
-			AssociationValuePrefix: "Acme University",
+			AssociationType:        []byte("MEMBERSHIP"),
+			AssociationValuePrefix: []byte("Acme University"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
@@ -880,18 +881,18 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all C* endorsements of m3
 		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:         m3PKID,
-			AssociationType:        "ENDORSEMENT",
-			AssociationValuePrefix: "C",
+			AssociationType:        []byte("ENDORSEMENT"),
+			AssociationValuePrefix: []byte("C"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 3)
 		sort.Slice(userAssociationEntries, func(ii, jj int) bool {
-			return userAssociationEntries[ii].AssociationValue < userAssociationEntries[jj].AssociationValue
+			return bytes.Compare(userAssociationEntries[ii].AssociationValue, userAssociationEntries[jj].AssociationValue) < 0
 		})
-		require.Equal(t, userAssociationEntries[0].AssociationValue, "C")
-		require.Equal(t, userAssociationEntries[1].AssociationValue, "C#")
-		require.Equal(t, userAssociationEntries[2].AssociationValue, "C++")
+		require.Equal(t, userAssociationEntries[0].AssociationValue, []byte("C"))
+		require.Equal(t, userAssociationEntries[1].AssociationValue, []byte("C#"))
+		require.Equal(t, userAssociationEntries[2].AssociationValue, []byte("C++"))
 
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
@@ -912,8 +913,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Failed query: AssociationType and AssociationTypePrefix specified
 		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:        m3PKID,
-			AssociationType:       "ENDORSEMENT",
-			AssociationTypePrefix: "ENDORSE",
+			AssociationType:       []byte("ENDORSEMENT"),
+			AssociationTypePrefix: []byte("ENDORSE"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.Error(t, err)
@@ -928,9 +929,9 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Failed query: AssociationValue and AssociationValuePrefix specified
 		userAssociationQuery = &UserAssociationQuery{
 			TargetUserPKID:         m3PKID,
-			AssociationType:        "ENDORSEMENT",
-			AssociationValue:       "C#",
-			AssociationValuePrefix: "C",
+			AssociationType:        []byte("ENDORSEMENT"),
+			AssociationValue:       []byte("C#"),
+			AssociationValuePrefix: []byte("C"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.Error(t, err)
@@ -944,8 +945,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		// Failed query if Badger: no Transactor or TargetUser specified
 		userAssociationQuery = &UserAssociationQuery{
-			AssociationType:  "ENDORSEMENT",
-			AssociationValue: "C#",
+			AssociationType:  []byte("ENDORSEMENT"),
+			AssociationValue: []byte("C#"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		if chain.postgres != nil {
@@ -970,7 +971,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Failed query if Badger: empty AssociationType and non-empty AssociationValue
 		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:   m4PKID,
-			AssociationValue: "C#",
+			AssociationValue: []byte("C#"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		if chain.postgres != nil {
@@ -995,8 +996,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Failed query if Badger: non-empty AssociationTypePrefix and non-empty AssociationValue
 		userAssociationQuery = &UserAssociationQuery{
 			TransactorPKID:        m4PKID,
-			AssociationTypePrefix: "ENDORSE",
-			AssociationValue:      "C#",
+			AssociationTypePrefix: []byte("ENDORSE"),
+			AssociationValue:      []byte("C#"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		if chain.postgres != nil {
@@ -1023,13 +1024,13 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			TransactorPKID:  m0PKID,
 			TargetUserPKID:  m1PKID,
 			AppPKID:         m4PKID,
-			AssociationType: "ENDORSEMENT",
+			AssociationType: []byte("ENDORSEMENT"),
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		if chain.postgres != nil {
 			require.NoError(t, err)
 			require.Len(t, userAssociationEntries, 1)
-			require.Equal(t, userAssociationEntries[0].AssociationValue, "SQL")
+			require.Equal(t, userAssociationEntries[0].AssociationValue, []byte("SQL"))
 		} else {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid query params")
@@ -1078,8 +1079,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     NewPublicKey(m3PkBytes),
-			AssociationType:  "REACTION",
-			AssociationValue: "HEART",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte("HEART"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
@@ -1089,8 +1090,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "REACTION",
-			AssociationValue: "DOWN_VOTE",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte("DOWN_VOTE"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m2Pub, m2Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
@@ -1100,8 +1101,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "TAG",
-			AssociationValue: "r/funny",
+			AssociationType:  []byte("TAG"),
+			AssociationValue: []byte("r/funny"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
@@ -1111,8 +1112,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash2,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "TAG",
-			AssociationValue: "r/funny",
+			AssociationType:  []byte("TAG"),
+			AssociationValue: []byte("r/funny"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
@@ -1122,8 +1123,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash2,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "TAG",
-			AssociationValue: "r/new",
+			AssociationType:  []byte("TAG"),
+			AssociationValue: []byte("r/new"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m1Pub, m1Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
@@ -1133,8 +1134,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash2,
 			AppPublicKey:     &ZeroPublicKey,
-			AssociationType:  "TAG",
-			AssociationValue: "NSFW",
+			AssociationType:  []byte("TAG"),
+			AssociationValue: []byte("NSFW"),
 		}
 		_submitAssociationTxnHappyPath(
 			testMeta, m3Pub, m3Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
@@ -1143,16 +1144,16 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all reactions on m1's post
 		postAssociationQuery = &PostAssociationQuery{
 			PostHash:        postHash,
-			AssociationType: "REACTION",
+			AssociationType: []byte("REACTION"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 2)
 		sort.Slice(postAssociationEntries, func(ii, jj int) bool {
-			return postAssociationEntries[ii].AssociationValue < postAssociationEntries[jj].AssociationValue
+			return bytes.Compare(postAssociationEntries[ii].AssociationValue, postAssociationEntries[jj].AssociationValue) < 0
 		})
-		require.Equal(t, postAssociationEntries[0].AssociationValue, "DOWN_VOTE")
-		require.Equal(t, postAssociationEntries[1].AssociationValue, "HEART")
+		require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("DOWN_VOTE"))
+		require.Equal(t, postAssociationEntries[1].AssociationValue, []byte("HEART"))
 
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1161,16 +1162,16 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all REACT* on m1's post
 		postAssociationQuery = &PostAssociationQuery{
 			PostHash:              postHash,
-			AssociationTypePrefix: "REACT",
+			AssociationTypePrefix: []byte("REACT"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 2)
 		sort.Slice(postAssociationEntries, func(ii, jj int) bool {
-			return postAssociationEntries[ii].AssociationValue < postAssociationEntries[jj].AssociationValue
+			return bytes.Compare(postAssociationEntries[ii].AssociationValue, postAssociationEntries[jj].AssociationValue) < 0
 		})
-		require.Equal(t, postAssociationEntries[0].AssociationValue, "DOWN_VOTE")
-		require.Equal(t, postAssociationEntries[1].AssociationValue, "HEART")
+		require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("DOWN_VOTE"))
+		require.Equal(t, postAssociationEntries[1].AssociationValue, []byte("HEART"))
 
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1179,8 +1180,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all down votes on m1's post
 		postAssociationQuery = &PostAssociationQuery{
 			PostHash:         postHash,
-			AssociationType:  "REACTION",
-			AssociationValue: "DOWN_VOTE",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte("DOWN_VOTE"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1194,12 +1195,12 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all m0's reactions
 		postAssociationQuery = &PostAssociationQuery{
 			TransactorPKID:  m0PKID,
-			AssociationType: "REACTION",
+			AssociationType: []byte("REACTION"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 1)
-		require.Equal(t, postAssociationEntries[0].AssociationValue, "HEART")
+		require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("HEART"))
 		require.Equal(t, postAssociationEntries[0].PostHash, postHash)
 
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1209,12 +1210,12 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all m0's REACTION*
 		postAssociationQuery = &PostAssociationQuery{
 			TransactorPKID:        m0PKID,
-			AssociationTypePrefix: "reaction",
+			AssociationTypePrefix: []byte("reaction"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 1)
-		require.Equal(t, postAssociationEntries[0].AssociationValue, "HEART")
+		require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("HEART"))
 		require.Equal(t, postAssociationEntries[0].PostHash, postHash)
 
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1226,8 +1227,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			TransactorPKID:   m0PKID,
 			PostHash:         postHash,
 			AppPKID:          &ZeroPKID,
-			AssociationType:  "REACTION",
-			AssociationValue: "HEART",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte("HEART"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1242,8 +1243,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			TransactorPKID:   m0PKID,
 			PostHash:         postHash,
 			AppPKID:          m3PKID,
-			AssociationType:  "REACTION",
-			AssociationValue: "HEART",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte("HEART"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1256,17 +1257,17 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all r/* tags on m2's post
 		postAssociationQuery = &PostAssociationQuery{
 			PostHash:               postHash2,
-			AssociationType:        "tag",
-			AssociationValuePrefix: "r/",
+			AssociationType:        []byte("tag"),
+			AssociationValuePrefix: []byte("r/"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 2)
 		sort.Slice(postAssociationEntries, func(ii, jj int) bool {
-			return postAssociationEntries[ii].AssociationValue < postAssociationEntries[jj].AssociationValue
+			return bytes.Compare(postAssociationEntries[ii].AssociationValue, postAssociationEntries[jj].AssociationValue) < 0
 		})
-		require.Equal(t, postAssociationEntries[0].AssociationValue, "r/funny")
-		require.Equal(t, postAssociationEntries[1].AssociationValue, "r/new")
+		require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("r/funny"))
+		require.Equal(t, postAssociationEntries[1].AssociationValue, []byte("r/new"))
 
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1275,8 +1276,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all NSFW tags on m2's post
 		postAssociationQuery = &PostAssociationQuery{
 			PostHash:         postHash2,
-			AssociationType:  "tag",
-			AssociationValue: "NSFW",
+			AssociationType:  []byte("tag"),
+			AssociationValue: []byte("NSFW"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1290,8 +1291,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Query for all NSF* tags by m3
 		postAssociationQuery = &PostAssociationQuery{
 			TransactorPKID:         m3PKID,
-			AssociationType:        "tag",
-			AssociationValuePrefix: "NSF",
+			AssociationType:        []byte("tag"),
+			AssociationValuePrefix: []byte("NSF"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1306,8 +1307,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		postAssociationQuery = &PostAssociationQuery{
 			TransactorPKID:   m3PKID,
 			PostHash:         postHash2,
-			AssociationType:  "TAG",
-			AssociationValue: "NSFW",
+			AssociationType:  []byte("TAG"),
+			AssociationValue: []byte("NSFW"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1320,18 +1321,18 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		// Query for all tags
 		postAssociationQuery = &PostAssociationQuery{
-			AssociationType: "TAG",
+			AssociationType: []byte("TAG"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 4)
 		sort.Slice(postAssociationEntries, func(ii, jj int) bool {
-			return postAssociationEntries[ii].AssociationValue < postAssociationEntries[jj].AssociationValue
+			return bytes.Compare(postAssociationEntries[ii].AssociationValue, postAssociationEntries[jj].AssociationValue) < 0
 		})
-		require.Equal(t, postAssociationEntries[0].AssociationValue, "NSFW")
-		require.Equal(t, postAssociationEntries[1].AssociationValue, "r/funny")
-		require.Equal(t, postAssociationEntries[2].AssociationValue, "r/funny")
-		require.Equal(t, postAssociationEntries[3].AssociationValue, "r/new")
+		require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("NSFW"))
+		require.Equal(t, postAssociationEntries[1].AssociationValue, []byte("r/funny"))
+		require.Equal(t, postAssociationEntries[2].AssociationValue, []byte("r/funny"))
+		require.Equal(t, postAssociationEntries[3].AssociationValue, []byte("r/new"))
 
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1339,18 +1340,18 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		// Query for all tag*s
 		postAssociationQuery = &PostAssociationQuery{
-			AssociationTypePrefix: "TAG",
+			AssociationTypePrefix: []byte("TAG"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 4)
 		sort.Slice(postAssociationEntries, func(ii, jj int) bool {
-			return postAssociationEntries[ii].AssociationValue < postAssociationEntries[jj].AssociationValue
+			return bytes.Compare(postAssociationEntries[ii].AssociationValue, postAssociationEntries[jj].AssociationValue) < 0
 		})
-		require.Equal(t, postAssociationEntries[0].AssociationValue, "NSFW")
-		require.Equal(t, postAssociationEntries[1].AssociationValue, "r/funny")
-		require.Equal(t, postAssociationEntries[2].AssociationValue, "r/funny")
-		require.Equal(t, postAssociationEntries[3].AssociationValue, "r/new")
+		require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("NSFW"))
+		require.Equal(t, postAssociationEntries[1].AssociationValue, []byte("r/funny"))
+		require.Equal(t, postAssociationEntries[2].AssociationValue, []byte("r/funny"))
+		require.Equal(t, postAssociationEntries[3].AssociationValue, []byte("r/new"))
 
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1358,18 +1359,18 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		// Query for all r/* tags
 		postAssociationQuery = &PostAssociationQuery{
-			AssociationType:        "tag",
-			AssociationValuePrefix: "r/",
+			AssociationType:        []byte("tag"),
+			AssociationValuePrefix: []byte("r/"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 3)
 		sort.Slice(postAssociationEntries, func(ii, jj int) bool {
-			return postAssociationEntries[ii].AssociationValue < postAssociationEntries[jj].AssociationValue
+			return bytes.Compare(postAssociationEntries[ii].AssociationValue, postAssociationEntries[jj].AssociationValue) < 0
 		})
-		require.Equal(t, postAssociationEntries[0].AssociationValue, "r/funny")
-		require.Equal(t, postAssociationEntries[1].AssociationValue, "r/funny")
-		require.Equal(t, postAssociationEntries[2].AssociationValue, "r/new")
+		require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("r/funny"))
+		require.Equal(t, postAssociationEntries[1].AssociationValue, []byte("r/funny"))
+		require.Equal(t, postAssociationEntries[2].AssociationValue, []byte("r/new"))
 
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1377,8 +1378,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		// Query for all r/new tags
 		postAssociationQuery = &PostAssociationQuery{
-			AssociationType:  "tag",
-			AssociationValue: "r/new",
+			AssociationType:  []byte("tag"),
+			AssociationValue: []byte("r/new"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1403,9 +1404,9 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		// Failed query: AssociationType and AssociationTypePrefix specified
 		postAssociationQuery = &PostAssociationQuery{
-			AssociationType:       "tag",
-			AssociationTypePrefix: "tag",
-			AssociationValue:      "r/new",
+			AssociationType:       []byte("tag"),
+			AssociationTypePrefix: []byte("tag"),
+			AssociationValue:      []byte("r/new"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.Error(t, err)
@@ -1419,9 +1420,9 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		// Failed query: AssociationValue and AssociationValuePrefix specified
 		postAssociationQuery = &PostAssociationQuery{
-			AssociationType:        "tag",
-			AssociationValue:       "r/new",
-			AssociationValuePrefix: "r/",
+			AssociationType:        []byte("tag"),
+			AssociationValue:       []byte("r/new"),
+			AssociationValuePrefix: []byte("r/"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.Error(t, err)
@@ -1436,8 +1437,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Failed query if Badger: non-empty Transactor, non-empty AssociationTypePrefix, non-empty AssociationValue
 		postAssociationQuery = &PostAssociationQuery{
 			TransactorPKID:        m3PKID,
-			AssociationTypePrefix: "TAG",
-			AssociationValue:      "NSFW",
+			AssociationTypePrefix: []byte("TAG"),
+			AssociationValue:      []byte("NSFW"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		if chain.postgres != nil {
@@ -1463,13 +1464,13 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		postAssociationQuery = &PostAssociationQuery{
 			TransactorPKID:        m3PKID,
 			PostHash:              postHash2,
-			AssociationTypePrefix: "TAG",
+			AssociationTypePrefix: []byte("TAG"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		if chain.postgres != nil {
 			require.NoError(t, err)
 			require.Len(t, postAssociationEntries, 1)
-			require.Equal(t, postAssociationEntries[0].AssociationValue, "NSFW")
+			require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("NSFW"))
 		} else {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid query params")
@@ -1489,8 +1490,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		postAssociationQuery = &PostAssociationQuery{
 			TransactorPKID:         m3PKID,
 			PostHash:               postHash2,
-			AssociationType:        "TAG",
-			AssociationValuePrefix: "NSF",
+			AssociationType:        []byte("TAG"),
+			AssociationValuePrefix: []byte("NSF"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		if chain.postgres != nil {
@@ -1516,7 +1517,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		postAssociationQuery = &PostAssociationQuery{
 			TransactorPKID:  m3PKID,
 			PostHash:        postHash2,
-			AssociationType: "TAG",
+			AssociationType: []byte("TAG"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		if chain.postgres != nil {
@@ -1541,7 +1542,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Failed query if Badger: non-empty Transactor, empty AssociationType, non-empty AssociationValue
 		postAssociationQuery = &PostAssociationQuery{
 			TransactorPKID:   m3PKID,
-			AssociationValue: "NSFW",
+			AssociationValue: []byte("NSFW"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		if chain.postgres != nil {
@@ -1572,7 +1573,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		if chain.postgres != nil {
 			require.NoError(t, err)
 			require.Len(t, postAssociationEntries, 1)
-			require.Equal(t, postAssociationEntries[0].AssociationValue, "NSFW")
+			require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("NSFW"))
 		} else {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid query params")
@@ -1591,8 +1592,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Failed query if Badger: empty Transactor, non-empty PostHash, non-empty AssociationTypePrefix, non-empty AssociationValue
 		postAssociationQuery = &PostAssociationQuery{
 			PostHash:              postHash2,
-			AssociationTypePrefix: "TAG",
-			AssociationValue:      "NSFW",
+			AssociationTypePrefix: []byte("TAG"),
+			AssociationValue:      []byte("NSFW"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		if chain.postgres != nil {
@@ -1617,7 +1618,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		// Failed query if Badger: empty Transactor, non-empty PostHash, empty AssociationType, non-empty AssociationValue
 		postAssociationQuery = &PostAssociationQuery{
 			PostHash:         postHash2,
-			AssociationValue: "NSFW",
+			AssociationValue: []byte("NSFW"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		if chain.postgres != nil {
@@ -1641,7 +1642,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		// Failed query if Badger: empty Transactor, empty PostHash, empty AssociationType, non-empty AssociationValue
 		postAssociationQuery = &PostAssociationQuery{
-			AssociationValue: "NSFW",
+			AssociationValue: []byte("NSFW"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		if chain.postgres != nil {
@@ -1665,8 +1666,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 		// Failed query if Badger: empty Transactor, empty PostHash, non-empty AssociationTypePrefix, non-empty AssociationValue
 		postAssociationQuery = &PostAssociationQuery{
-			AssociationTypePrefix: "TAG",
-			AssociationValue:      "NSFW",
+			AssociationTypePrefix: []byte("TAG"),
+			AssociationValue:      []byte("NSFW"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		if chain.postgres != nil {
@@ -1692,8 +1693,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		postAssociationQuery = &PostAssociationQuery{
 			PostHash:         postHash,
 			AppPKID:          m3PKID,
-			AssociationType:  "REACTION",
-			AssociationValue: "HEART",
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: []byte("HEART"),
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		if chain.postgres != nil {
@@ -1733,7 +1734,7 @@ func _submitAssociationTxnHappyPath(
 		_getBalance(testMeta.t, testMeta.chain, testMeta.mempool, TransactorPublicKeyBase58Check),
 	)
 
-	currentOps, currentTxn, _, err := _submitAssociationTxnSadPath(
+	currentOps, currentTxn, _, err := _submitAssociationTxn(
 		testMeta,
 		TransactorPublicKeyBase58Check,
 		TransactorPrivateKeyBase58Check,
@@ -1746,7 +1747,7 @@ func _submitAssociationTxnHappyPath(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _submitAssociationTxnSadPath(
+func _submitAssociationTxn(
 	testMeta *TestMeta,
 	TransactorPublicKeyBase58Check string,
 	TransactorPrivateKeyBase58Check string,

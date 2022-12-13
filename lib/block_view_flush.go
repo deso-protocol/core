@@ -1091,7 +1091,7 @@ func (bav *UtxoView) _flushUserAssociationEntriesToDbWithTxn(txn *badger.Txn, bl
 
 		// Sanity-check that the AssociationMapKey computed from the AssociationEntry
 		// is equal to the AssociationMapKey that maps to that entry.
-		mapKeyInEntry := AssociationMapKey{AssociationID: *associationEntry.AssociationID}
+		mapKeyInEntry := associationEntry.ToMapKey()
 		if mapKeyInEntry != associationMapKeyCopy {
 			return fmt.Errorf(
 				"_flushUserAssociationEntriesToDbWithTxn: association entry key %v doesn't match the map key %v",
@@ -1135,7 +1135,7 @@ func (bav *UtxoView) _flushPostAssociationEntriesToDbWithTxn(txn *badger.Txn, bl
 
 		// Sanity-check that the AssociationMapKey computed from the AssociationEntry
 		// is equal to the AssociationMapKey that maps to that entry.
-		mapKeyInEntry := AssociationMapKey{AssociationID: *associationEntry.AssociationID}
+		mapKeyInEntry := associationEntry.ToMapKey()
 		if mapKeyInEntry != associationMapKeyCopy {
 			return fmt.Errorf(
 				"_flushPostAssociationEntriesToDbWithTxn: association entry key %v doesn't match the map key %v",

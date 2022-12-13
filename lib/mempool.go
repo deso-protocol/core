@@ -1794,8 +1794,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		txnMeta.CreateUserAssociationTxindexMetadata = &CreateUserAssociationTxindexMetadata{
 			TargetUserPublicKeyBase58Check: targetUserPublicKeyBase58Check,
 			AppPublicKeyBase58Check:        appPublicKeyBase58Check,
-			AssociationType:                realTxMeta.AssociationType,
-			AssociationValue:               realTxMeta.AssociationValue,
+			AssociationType:                string(realTxMeta.AssociationType),
+			AssociationValue:               string(realTxMeta.AssociationValue),
 		}
 
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
@@ -1822,8 +1822,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			AssociationIDHex:               hex.EncodeToString(realTxMeta.AssociationID.ToBytes()),
 			TargetUserPublicKeyBase58Check: targetUserPublicKeyBase58Check,
 			AppPublicKeyBase58Check:        appPublicKeyKeyBase58Check,
-			AssociationType:                prevAssociationEntry.AssociationType,
-			AssociationValue:               prevAssociationEntry.AssociationValue,
+			AssociationType:                string(prevAssociationEntry.AssociationType),
+			AssociationValue:               string(prevAssociationEntry.AssociationValue),
 		}
 
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
@@ -1838,8 +1838,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		txnMeta.CreatePostAssociationTxindexMetadata = &CreatePostAssociationTxindexMetadata{
 			PostHashHex:             hex.EncodeToString(realTxMeta.PostHash.ToBytes()),
 			AppPublicKeyBase58Check: appPublicKeyBase58Check,
-			AssociationType:         realTxMeta.AssociationType,
-			AssociationValue:        realTxMeta.AssociationValue,
+			AssociationType:         string(realTxMeta.AssociationType),
+			AssociationValue:        string(realTxMeta.AssociationValue),
 		}
 
 		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.PostHash)
@@ -1871,8 +1871,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			AssociationIDHex:        hex.EncodeToString(realTxMeta.AssociationID.ToBytes()),
 			PostHashHex:             postHashHex,
 			AppPublicKeyBase58Check: appPublicKeyKeyBase58Check,
-			AssociationType:         prevAssociationEntry.AssociationType,
-			AssociationValue:        prevAssociationEntry.AssociationValue,
+			AssociationType:         string(prevAssociationEntry.AssociationType),
+			AssociationValue:        string(prevAssociationEntry.AssociationValue),
 		}
 
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
