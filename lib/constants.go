@@ -1258,6 +1258,6 @@ const (
 )
 
 // Constants for UserAssociation and PostAssociation txn types.
-const MaxAssociationTypeCharLength int = 64
-const MaxAssociationValueCharLength int = 256
+const MaxAssociationTypeByteLength int = 64
+const MaxAssociationValueByteLength int = 256
 const AssociationTypeReservedPrefix = "DESO"

@@ -1,10 +1,10 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"strings"
 )
 
 func (bav *UtxoView) _connectCreateUserAssociation(
@@ -507,14 +507,14 @@ func (bav *UtxoView) IsValidCreateUserAssociationMetadata(transactorPK []byte, m
 
 	// Validate AssociationType.
 	if len(metadata.AssociationType) == 0 ||
-		len(metadata.AssociationType) > MaxAssociationTypeCharLength ||
-		strings.HasPrefix(metadata.AssociationType, AssociationTypeReservedPrefix) {
+		len(metadata.AssociationType) > MaxAssociationTypeByteLength ||
+		bytes.HasPrefix(metadata.AssociationType, []byte(AssociationTypeReservedPrefix)) {
 		return RuleErrorAssociationInvalidType
 	}
 
 	// Validate AssociationValue.
 	if len(metadata.AssociationValue) == 0 ||
-		len(metadata.AssociationValue) > MaxAssociationValueCharLength {
+		len(metadata.AssociationValue) > MaxAssociationValueByteLength {
 		return RuleErrorAssociationInvalidValue
 	}
 	return nil
@@ -586,14 +586,14 @@ func (bav *UtxoView) IsValidCreatePostAssociationMetadata(transactorPK []byte, m
 
 	// Validate AssociationType.
 	if len(metadata.AssociationType) == 0 ||
-		len(metadata.AssociationType) > MaxAssociationTypeCharLength ||
-		strings.HasPrefix(metadata.AssociationType, AssociationTypeReservedPrefix) {
+		len(metadata.AssociationType) > MaxAssociationTypeByteLength ||
+		bytes.HasPrefix(metadata.AssociationType, []byte(AssociationTypeReservedPrefix)) {
 		return RuleErrorAssociationInvalidType
 	}
 
 	// Validate AssociationValue.
 	if len(metadata.AssociationValue) == 0 ||
-		len(metadata.AssociationValue) > MaxAssociationValueCharLength {
+		len(metadata.AssociationValue) > MaxAssociationValueByteLength {
 		return RuleErrorAssociationInvalidValue
 	}
 	return nil
@@ -635,14 +635,14 @@ func _isValidUserAssociationQuery(associationQuery *UserAssociationQuery) error 
 	if associationQuery.TransactorPKID == nil &&
 		associationQuery.TargetUserPKID == nil &&
 		associationQuery.AppPKID == nil &&
-		associationQuery.AssociationType == "" &&
-		associationQuery.AssociationTypePrefix == "" &&
-		associationQuery.AssociationValue == "" &&
-		associationQuery.AssociationValuePrefix == "" {
+		len(associationQuery.AssociationType) == 0 &&
+		len(associationQuery.AssociationTypePrefix) == 0 &&
+		len(associationQuery.AssociationValue) == 0 &&
+		len(associationQuery.AssociationValuePrefix) == 0 {
 		return errors.New("invalid query params")
 	}
-	if (associationQuery.AssociationType != "" && associationQuery.AssociationTypePrefix != "") ||
-		(associationQuery.AssociationValue != "" && associationQuery.AssociationValuePrefix != "") {
+	if (len(associationQuery.AssociationType) > 0 && len(associationQuery.AssociationTypePrefix) > 0) ||
+		(len(associationQuery.AssociationValue) > 0 && len(associationQuery.AssociationValuePrefix) > 0) {
 		return errors.New("invalid query params")
 	}
 	return nil
@@ -652,14 +652,14 @@ func _isValidPostAssociationQuery(associationQuery *PostAssociationQuery) error 
 	if associationQuery.TransactorPKID == nil &&
 		associationQuery.PostHash == nil &&
 		associationQuery.AppPKID == nil &&
-		associationQuery.AssociationType == "" &&
-		associationQuery.AssociationTypePrefix == "" &&
-		associationQuery.AssociationValue == "" &&
-		associationQuery.AssociationValuePrefix == "" {
+		len(associationQuery.AssociationType) == 0 &&
+		len(associationQuery.AssociationTypePrefix) == 0 &&
+		len(associationQuery.AssociationValue) == 0 &&
+		len(associationQuery.AssociationValuePrefix) == 0 {
 		return errors.New("invalid query params")
 	}
-	if (associationQuery.AssociationType != "" && associationQuery.AssociationTypePrefix != "") ||
-		(associationQuery.AssociationValue != "" && associationQuery.AssociationValuePrefix != "") {
+	if (len(associationQuery.AssociationType) > 0 && len(associationQuery.AssociationTypePrefix) > 0) ||
+		(len(associationQuery.AssociationValue) > 0 && len(associationQuery.AssociationValuePrefix) > 0) {
 		return errors.New("invalid query params")
 	}
 	return nil
@@ -820,51 +820,8 @@ func (bav *UtxoView) _getUtxoUserAssociationEntriesByAttributes(
 	var newUtxoAssociationEntries []*UserAssociationEntry
 	deletedUtxoAssociationEntryIDs := make(map[*BlockHash]bool)
 	for _, utxoAssociationEntry := range bav.AssociationMapKeyToUserAssociationEntry {
-		// If TransactorPKID is set, they have to match.
-		if associationQuery.TransactorPKID != nil &&
-			!associationQuery.TransactorPKID.Eq(utxoAssociationEntry.TransactorPKID) {
+		if !_isMatchingUtxoUserAssociationEntry(associationQuery, utxoAssociationEntry) {
 			continue
-		}
-		// If TargetUserPKID is set, they have to match.
-		if associationQuery.TargetUserPKID != nil &&
-			!associationQuery.TargetUserPKID.Eq(utxoAssociationEntry.TargetUserPKID) {
-			continue
-		}
-		// If AppPKID is set, they have to match.
-		if associationQuery.AppPKID != nil &&
-			!associationQuery.AppPKID.Eq(utxoAssociationEntry.AppPKID) {
-			continue
-		}
-		// If AssociationType is set, they have to match.
-		if associationQuery.AssociationType != "" {
-			if strings.Compare(
-				strings.ToLower(associationQuery.AssociationType),
-				strings.ToLower(utxoAssociationEntry.AssociationType),
-			) != 0 {
-				continue
-			}
-		} else if associationQuery.AssociationTypePrefix != "" {
-			// If AssociationTypePrefix is set, they have to prefix match.
-			if !strings.HasPrefix(
-				strings.ToLower(utxoAssociationEntry.AssociationType),
-				strings.ToLower(associationQuery.AssociationTypePrefix),
-			) {
-				continue
-			}
-		}
-		// If AssociationValue is set, they have to match.
-		if associationQuery.AssociationValue != "" {
-			if strings.Compare(associationQuery.AssociationValue, utxoAssociationEntry.AssociationValue) != 0 {
-				continue
-			}
-		} else if associationQuery.AssociationValuePrefix != "" {
-			// If AssociationValuePrefix is set, they have to prefix match.
-			if !strings.HasPrefix(
-				utxoAssociationEntry.AssociationValue,
-				associationQuery.AssociationValuePrefix,
-			) {
-				continue
-			}
 		}
 		if utxoAssociationEntry.isDeleted {
 			deletedUtxoAssociationEntryIDs[utxoAssociationEntry.AssociationID] = true
@@ -873,6 +830,53 @@ func (bav *UtxoView) _getUtxoUserAssociationEntriesByAttributes(
 		}
 	}
 	return newUtxoAssociationEntries, deletedUtxoAssociationEntryIDs
+}
+
+func _isMatchingUtxoUserAssociationEntry(associationQuery *UserAssociationQuery, associationEntry *UserAssociationEntry) bool {
+	// If TransactorPKID is set, they have to match.
+	if associationQuery.TransactorPKID != nil &&
+		!associationQuery.TransactorPKID.Eq(associationEntry.TransactorPKID) {
+		return false
+	}
+	// If TargetUserPKID is set, they have to match.
+	if associationQuery.TargetUserPKID != nil &&
+		!associationQuery.TargetUserPKID.Eq(associationEntry.TargetUserPKID) {
+		return false
+	}
+	// If AppPKID is set, they have to match.
+	if associationQuery.AppPKID != nil &&
+		!associationQuery.AppPKID.Eq(associationEntry.AppPKID) {
+		return false
+	}
+	// If AssociationType is set, they have to match.
+	if len(associationQuery.AssociationType) > 0 {
+		if !bytes.Equal(
+			bytes.ToLower(associationQuery.AssociationType),
+			bytes.ToLower(associationEntry.AssociationType),
+		) {
+			return false
+		}
+	} else if len(associationQuery.AssociationTypePrefix) > 0 {
+		// If AssociationTypePrefix is set, they have to prefix match.
+		if !bytes.HasPrefix(
+			bytes.ToLower(associationEntry.AssociationType),
+			bytes.ToLower(associationQuery.AssociationTypePrefix),
+		) {
+			return false
+		}
+	}
+	// If AssociationValue is set, they have to match.
+	if len(associationQuery.AssociationValue) > 0 {
+		if !bytes.Equal(associationQuery.AssociationValue, associationEntry.AssociationValue) {
+			return false
+		}
+	} else if len(associationQuery.AssociationValuePrefix) > 0 {
+		// If AssociationValuePrefix is set, they have to prefix match.
+		if !bytes.HasPrefix(associationEntry.AssociationValue, associationQuery.AssociationValuePrefix) {
+			return false
+		}
+	}
+	return true
 }
 
 func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
@@ -948,51 +952,8 @@ func (bav *UtxoView) _getUtxoPostAssociationEntriesByAttributes(
 	var newUtxoAssociationEntries []*PostAssociationEntry
 	deletedUtxoAssociationEntryIDs := make(map[*BlockHash]bool)
 	for _, utxoAssociationEntry := range bav.AssociationMapKeyToPostAssociationEntry {
-		// If TransactorPKID is set, they have to match.
-		if associationQuery.TransactorPKID != nil &&
-			!associationQuery.TransactorPKID.Eq(utxoAssociationEntry.TransactorPKID) {
+		if !_isMatchingUtxoPostAssociationEntry(associationQuery, utxoAssociationEntry) {
 			continue
-		}
-		// If PostHash is set, they have to match.
-		if associationQuery.PostHash != nil &&
-			!associationQuery.PostHash.IsEqual(utxoAssociationEntry.PostHash) {
-			continue
-		}
-		// If AppPKID is set, they have to match.
-		if associationQuery.AppPKID != nil &&
-			!associationQuery.AppPKID.Eq(utxoAssociationEntry.AppPKID) {
-			continue
-		}
-		// If AssociationType is set, they have to match.
-		if associationQuery.AssociationType != "" {
-			if strings.Compare(
-				strings.ToLower(associationQuery.AssociationType),
-				strings.ToLower(utxoAssociationEntry.AssociationType),
-			) != 0 {
-				continue
-			}
-		} else if associationQuery.AssociationTypePrefix != "" {
-			// If AssociationTypePrefix is set, they have to prefix match.
-			if !strings.HasPrefix(
-				strings.ToLower(utxoAssociationEntry.AssociationType),
-				strings.ToLower(associationQuery.AssociationTypePrefix),
-			) {
-				continue
-			}
-		}
-		// If AssociationValue is set, they have to match.
-		if associationQuery.AssociationValue != "" {
-			if strings.Compare(associationQuery.AssociationValue, utxoAssociationEntry.AssociationValue) != 0 {
-				continue
-			}
-		} else if associationQuery.AssociationValuePrefix != "" {
-			// If AssociationValuePrefix is set, they have to prefix match.
-			if !strings.HasPrefix(
-				utxoAssociationEntry.AssociationValue,
-				associationQuery.AssociationValuePrefix,
-			) {
-				continue
-			}
 		}
 		if utxoAssociationEntry.isDeleted {
 			deletedUtxoAssociationEntryIDs[utxoAssociationEntry.AssociationID] = true
@@ -1001,6 +962,53 @@ func (bav *UtxoView) _getUtxoPostAssociationEntriesByAttributes(
 		}
 	}
 	return newUtxoAssociationEntries, deletedUtxoAssociationEntryIDs
+}
+
+func _isMatchingUtxoPostAssociationEntry(associationQuery *PostAssociationQuery, associationEntry *PostAssociationEntry) bool {
+	// If TransactorPKID is set, they have to match.
+	if associationQuery.TransactorPKID != nil &&
+		!associationQuery.TransactorPKID.Eq(associationEntry.TransactorPKID) {
+		return false
+	}
+	// If PostHash is set, they have to match.
+	if associationQuery.PostHash != nil &&
+		!associationQuery.PostHash.IsEqual(associationEntry.PostHash) {
+		return false
+	}
+	// If AppPKID is set, they have to match.
+	if associationQuery.AppPKID != nil &&
+		!associationQuery.AppPKID.Eq(associationEntry.AppPKID) {
+		return false
+	}
+	// If AssociationType is set, they have to match.
+	if len(associationQuery.AssociationType) > 0 {
+		if !bytes.Equal(
+			bytes.ToLower(associationQuery.AssociationType),
+			bytes.ToLower(associationEntry.AssociationType),
+		) {
+			return false
+		}
+	} else if len(associationQuery.AssociationTypePrefix) > 0 {
+		// If AssociationTypePrefix is set, they have to prefix match.
+		if !bytes.HasPrefix(
+			bytes.ToLower(associationEntry.AssociationType),
+			bytes.ToLower(associationQuery.AssociationTypePrefix),
+		) {
+			return false
+		}
+	}
+	// If AssociationValue is set, they have to match.
+	if len(associationQuery.AssociationValue) > 0 {
+		if !bytes.Equal(associationQuery.AssociationValue, associationEntry.AssociationValue) {
+			return false
+		}
+	} else if len(associationQuery.AssociationValuePrefix) > 0 {
+		// If AssociationValuePrefix is set, they have to prefix match.
+		if !bytes.HasPrefix(associationEntry.AssociationValue, associationQuery.AssociationValuePrefix) {
+			return false
+		}
+	}
+	return true
 }
 
 // ###########################
@@ -1014,7 +1022,7 @@ func (bav *UtxoView) _setUserAssociationEntryMappings(entry *UserAssociationEntr
 		return
 	}
 
-	bav.AssociationMapKeyToUserAssociationEntry[AssociationMapKey{*entry.AssociationID}] = entry
+	bav.AssociationMapKeyToUserAssociationEntry[entry.ToMapKey()] = entry
 }
 
 func (bav *UtxoView) _deleteUserAssociationEntryMappings(entry *UserAssociationEntry) {
@@ -1039,7 +1047,7 @@ func (bav *UtxoView) _setPostAssociationEntryMappings(entry *PostAssociationEntr
 		return
 	}
 
-	bav.AssociationMapKeyToPostAssociationEntry[AssociationMapKey{*entry.AssociationID}] = entry
+	bav.AssociationMapKeyToPostAssociationEntry[entry.ToMapKey()] = entry
 }
 
 func (bav *UtxoView) _deletePostAssociationEntryMappings(entry *PostAssociationEntry) {

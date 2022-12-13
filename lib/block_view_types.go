@@ -4593,8 +4593,8 @@ type UserAssociationEntry struct {
 	TransactorPKID   *PKID
 	TargetUserPKID   *PKID
 	AppPKID          *PKID
-	AssociationType  string
-	AssociationValue string
+	AssociationType  []byte
+	AssociationValue []byte
 	ExtraData        map[string][]byte
 	BlockHeight      uint32
 	isDeleted        bool
@@ -4605,8 +4605,8 @@ type PostAssociationEntry struct {
 	TransactorPKID   *PKID
 	PostHash         *BlockHash
 	AppPKID          *PKID
-	AssociationType  string
-	AssociationValue string
+	AssociationType  []byte
+	AssociationValue []byte
 	ExtraData        map[string][]byte
 	BlockHeight      uint32
 	isDeleted        bool
@@ -4625,8 +4625,8 @@ func (associationEntry *UserAssociationEntry) Copy() *UserAssociationEntry {
 		TransactorPKID:   associationEntry.TransactorPKID.NewPKID(),
 		TargetUserPKID:   associationEntry.TargetUserPKID.NewPKID(),
 		AppPKID:          associationEntry.AppPKID.NewPKID(),
-		AssociationType:  strings.Clone(associationEntry.AssociationType),
-		AssociationValue: strings.Clone(associationEntry.AssociationValue),
+		AssociationType:  append([]byte{}, associationEntry.AssociationType...),  // Makes a copy.
+		AssociationValue: append([]byte{}, associationEntry.AssociationValue...), // Makes a copy.
 		ExtraData:        extraDataCopy,
 		BlockHeight:      associationEntry.BlockHeight,
 		isDeleted:        associationEntry.isDeleted,
@@ -4646,11 +4646,23 @@ func (associationEntry *PostAssociationEntry) Copy() *PostAssociationEntry {
 		TransactorPKID:   associationEntry.TransactorPKID.NewPKID(),
 		PostHash:         associationEntry.PostHash.NewBlockHash(),
 		AppPKID:          associationEntry.AppPKID.NewPKID(),
-		AssociationType:  strings.Clone(associationEntry.AssociationType),
-		AssociationValue: strings.Clone(associationEntry.AssociationValue),
+		AssociationType:  append([]byte{}, associationEntry.AssociationType...),  // Makes a copy.
+		AssociationValue: append([]byte{}, associationEntry.AssociationValue...), // Makes a copy.
 		ExtraData:        extraDataCopy,
 		BlockHeight:      associationEntry.BlockHeight,
 		isDeleted:        associationEntry.isDeleted,
+	}
+}
+
+func (associationEntry *UserAssociationEntry) ToMapKey() AssociationMapKey {
+	return AssociationMapKey{
+		AssociationID: *associationEntry.AssociationID,
+	}
+}
+
+func (associationEntry *PostAssociationEntry) ToMapKey() AssociationMapKey {
+	return AssociationMapKey{
+		AssociationID: *associationEntry.AssociationID,
 	}
 }
 
@@ -4660,8 +4672,8 @@ func (associationEntry *UserAssociationEntry) RawEncodeWithoutMetadata(blockHeig
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.TransactorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.TargetUserPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.AppPKID, skipMetadata...)...)
-	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationType))...)
-	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationValue))...)
+	data = append(data, EncodeByteArray(associationEntry.AssociationType)...)
+	data = append(data, EncodeByteArray(associationEntry.AssociationValue)...)
 	data = append(data, EncodeExtraData(associationEntry.ExtraData)...)
 	data = append(data, UintToBuf(uint64(associationEntry.BlockHeight))...)
 	return data
@@ -4673,8 +4685,8 @@ func (associationEntry *PostAssociationEntry) RawEncodeWithoutMetadata(blockHeig
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.TransactorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.PostHash, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, associationEntry.AppPKID, skipMetadata...)...)
-	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationType))...)
-	data = append(data, EncodeByteArray([]byte(associationEntry.AssociationValue))...)
+	data = append(data, EncodeByteArray(associationEntry.AssociationType)...)
+	data = append(data, EncodeByteArray(associationEntry.AssociationValue)...)
 	data = append(data, EncodeExtraData(associationEntry.ExtraData)...)
 	data = append(data, UintToBuf(uint64(associationEntry.BlockHeight))...)
 	return data
@@ -4720,14 +4732,14 @@ func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	if err != nil {
 		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AssociationType: ")
 	}
-	associationEntry.AssociationType = string(associationTypeBytes)
+	associationEntry.AssociationType = associationTypeBytes
 
 	// AssociationValue
 	associationValueBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AssociationValue: ")
 	}
-	associationEntry.AssociationValue = string(associationValueBytes)
+	associationEntry.AssociationValue = associationValueBytes
 
 	// ExtraData
 	extraData, err := DecodeExtraData(rr)
@@ -4789,14 +4801,14 @@ func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	if err != nil {
 		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AssociationType: ")
 	}
-	associationEntry.AssociationType = string(associationTypeBytes)
+	associationEntry.AssociationType = associationTypeBytes
 
 	// AssociationValue
 	associationValueBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AssociationValue: ")
 	}
-	associationEntry.AssociationValue = string(associationValueBytes)
+	associationEntry.AssociationValue = associationValueBytes
 
 	// ExtraData
 	extraData, err := DecodeExtraData(rr)
@@ -4845,8 +4857,8 @@ func (associationEntry *UserAssociationEntry) Eq(other *UserAssociationEntry) bo
 	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
 		associationEntry.TargetUserPKID.Eq(other.TargetUserPKID) &&
 		associationEntry.AppPKID.Eq(other.AppPKID) &&
-		strings.Compare(strings.ToLower(associationEntry.AssociationType), strings.ToLower(other.AssociationType)) == 0 &&
-		strings.Compare(associationEntry.AssociationValue, other.AssociationValue) == 0
+		bytes.Equal(bytes.ToLower(associationEntry.AssociationType), bytes.ToLower(other.AssociationType)) &&
+		bytes.Equal(associationEntry.AssociationValue, other.AssociationValue)
 }
 
 func (associationEntry *PostAssociationEntry) Eq(other *PostAssociationEntry) bool {
@@ -4856,8 +4868,8 @@ func (associationEntry *PostAssociationEntry) Eq(other *PostAssociationEntry) bo
 	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
 		associationEntry.PostHash.IsEqual(other.PostHash) &&
 		associationEntry.AppPKID.Eq(other.AppPKID) &&
-		strings.Compare(strings.ToLower(associationEntry.AssociationType), strings.ToLower(other.AssociationType)) == 0 &&
-		strings.Compare(associationEntry.AssociationValue, other.AssociationValue) == 0
+		bytes.Equal(bytes.ToLower(associationEntry.AssociationType), bytes.ToLower(other.AssociationType)) &&
+		bytes.Equal(associationEntry.AssociationValue, other.AssociationValue)
 }
 
 type CreateUserAssociationTxindexMetadata struct {
