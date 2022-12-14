@@ -4872,7 +4872,7 @@ func (associationEntry *PostAssociationEntry) Eq(other *PostAssociationEntry) bo
 	if other == nil {
 		return false
 	}
-	return associationEntry.TransactorPKID != nil  &&
+	return associationEntry.TransactorPKID != nil &&
 		associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
 		associationEntry.PostHash != nil &&
 		associationEntry.PostHash.IsEqual(other.PostHash) &&
