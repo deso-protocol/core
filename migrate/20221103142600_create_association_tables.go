@@ -68,7 +68,10 @@ func init() {
 				association_value TEXT NOT NULL,
 				extra_data        JSONB NOT NULL,
 				block_height      BIGINT NOT NULL
-			)
+			);
+
+			CREATE INDEX pg_user_associations_association_type
+			ON pg_user_associations(association_type);
 		`)
 		if err != nil {
 			return err
@@ -85,7 +88,10 @@ func init() {
 				association_value TEXT NOT NULL,
 				extra_data        JSONB NOT NULL,
 				block_height      BIGINT NOT NULL
-			)
+			);
+
+			CREATE INDEX pg_post_associations_association_type
+			ON pg_post_associations(association_type);
 		`)
 		if err != nil {
 			return err
