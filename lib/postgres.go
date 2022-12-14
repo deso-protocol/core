@@ -1366,8 +1366,8 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				TransactionHash:     txnHash,
 				TargetUserPublicKey: txMeta.TargetUserPublicKey,
 				AppPublicKey:        txMeta.AppPublicKey,
-				AssociationType:     txMeta.AssociationType,
-				AssociationValue:    txMeta.AssociationValue,
+				AssociationType:     string(txMeta.AssociationType),
+				AssociationValue:    string(txMeta.AssociationValue),
 			})
 
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeDeleteUserAssociation {
@@ -1383,8 +1383,8 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				TransactionHash:  txnHash,
 				PostHash:         txMeta.PostHash,
 				AppPublicKey:     txMeta.AppPublicKey,
-				AssociationType:  txMeta.AssociationType,
-				AssociationValue: txMeta.AssociationValue,
+				AssociationType:  string(txMeta.AssociationType),
+				AssociationValue: string(txMeta.AssociationValue),
 			})
 
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeDeletePostAssociation {
@@ -3020,8 +3020,8 @@ type PGMetadataCreateUserAssociation struct {
 	tableName struct{} `pg:"pg_metadata_create_user_association"`
 
 	TransactionHash     *BlockHash `pg:",pk,type:bytea"`
-	TargetUserPublicKey *PublicKey `pg:"target_user_public_key,type:bytea"`
-	AppPublicKey        *PublicKey `pg:"app_public_key,type:bytea"`
+	TargetUserPublicKey *PublicKey `pg:",type:bytea"`
+	AppPublicKey        *PublicKey `pg:",type:bytea"`
 	AssociationType     string     `pg:",use_zero"`
 	AssociationValue    string     `pg:",use_zero"`
 }
@@ -3040,7 +3040,7 @@ type PGMetadataCreatePostAssociation struct {
 
 	TransactionHash  *BlockHash `pg:",pk,type:bytea"`
 	PostHash         *BlockHash `pg:",type:bytea"`
-	AppPublicKey     *PublicKey `pg:"app_public_key,type:bytea"`
+	AppPublicKey     *PublicKey `pg:",type:bytea"`
 	AssociationType  string     `pg:",use_zero"`
 	AssociationValue string     `pg:",use_zero"`
 }
@@ -3086,8 +3086,8 @@ func (userAssociation *PGUserAssociation) FromUserAssociationEntry(associationEn
 	userAssociation.TransactorPKID = associationEntry.TransactorPKID
 	userAssociation.TargetUserPKID = associationEntry.TargetUserPKID
 	userAssociation.AppPKID = associationEntry.AppPKID
-	userAssociation.AssociationType = associationEntry.AssociationType
-	userAssociation.AssociationValue = associationEntry.AssociationValue
+	userAssociation.AssociationType = string(associationEntry.AssociationType)
+	userAssociation.AssociationValue = string(associationEntry.AssociationValue)
 	userAssociation.ExtraData = associationEntry.ExtraData
 	userAssociation.BlockHeight = associationEntry.BlockHeight
 	return userAssociation
@@ -3098,8 +3098,8 @@ func (postAssociation *PGPostAssociation) FromPostAssociationEntry(associationEn
 	postAssociation.TransactorPKID = associationEntry.TransactorPKID
 	postAssociation.PostHash = associationEntry.PostHash
 	postAssociation.AppPKID = associationEntry.AppPKID
-	postAssociation.AssociationType = associationEntry.AssociationType
-	postAssociation.AssociationValue = associationEntry.AssociationValue
+	postAssociation.AssociationType = string(associationEntry.AssociationType)
+	postAssociation.AssociationValue = string(associationEntry.AssociationValue)
 	postAssociation.ExtraData = associationEntry.ExtraData
 	postAssociation.BlockHeight = associationEntry.BlockHeight
 	return postAssociation
@@ -3111,8 +3111,8 @@ func (userAssociation *PGUserAssociation) ToUserAssociationEntry() *UserAssociat
 		TransactorPKID:   userAssociation.TransactorPKID,
 		TargetUserPKID:   userAssociation.TargetUserPKID,
 		AppPKID:          userAssociation.AppPKID,
-		AssociationType:  userAssociation.AssociationType,
-		AssociationValue: userAssociation.AssociationValue,
+		AssociationType:  []byte(userAssociation.AssociationType),
+		AssociationValue: []byte(userAssociation.AssociationValue),
 		ExtraData:        userAssociation.ExtraData,
 		BlockHeight:      userAssociation.BlockHeight,
 	}
@@ -3124,8 +3124,8 @@ func (postAssociation *PGPostAssociation) ToPostAssociationEntry() *PostAssociat
 		TransactorPKID:   postAssociation.TransactorPKID,
 		PostHash:         postAssociation.PostHash,
 		AppPKID:          postAssociation.AppPKID,
-		AssociationType:  postAssociation.AssociationType,
-		AssociationValue: postAssociation.AssociationValue,
+		AssociationType:  []byte(postAssociation.AssociationType),
+		AssociationValue: []byte(postAssociation.AssociationValue),
 		ExtraData:        postAssociation.ExtraData,
 		BlockHeight:      postAssociation.BlockHeight,
 	}
@@ -3162,8 +3162,8 @@ func (postgres *Postgres) GetUserAssociationByAttributes(associationEntry *UserA
 		Where("transactor_pkid = ?", associationEntry.TransactorPKID).
 		Where("target_user_pkid = ?", associationEntry.TargetUserPKID).
 		Where("app_pkid = ?", associationEntry.AppPKID).
-		Where("LOWER(association_type) = ?", strings.ToLower(associationEntry.AssociationType)).
-		Where("association_value = ?", associationEntry.AssociationValue).
+		Where("LOWER(association_type) = ?", string(bytes.ToLower(associationEntry.AssociationType))).
+		Where("association_value = ?", string(associationEntry.AssociationValue)).
 		First(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
@@ -3181,8 +3181,8 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 		Where("transactor_pkid = ?", associationEntry.TransactorPKID).
 		Where("post_hash = ?", associationEntry.PostHash).
 		Where("app_pkid = ?", associationEntry.AppPKID).
-		Where("LOWER(association_type) = ?", strings.ToLower(associationEntry.AssociationType)).
-		Where("association_value = ?", associationEntry.AssociationValue).
+		Where("LOWER(association_type) = ?", string(bytes.ToLower(associationEntry.AssociationType))).
+		Where("association_value = ?", string(associationEntry.AssociationValue)).
 		First(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
@@ -3253,15 +3253,15 @@ func _constructFilterUserAssociationsByAttributesQuery(
 	if associationQuery.AppPKID != nil {
 		sqlQuery.Where("app_pkid = ?", associationQuery.AppPKID)
 	}
-	if associationQuery.AssociationType != "" {
-		sqlQuery.Where("LOWER(association_type) = ?", strings.ToLower(associationQuery.AssociationType))
-	} else if associationQuery.AssociationTypePrefix != "" {
-		sqlQuery.Where("LOWER(association_type) LIKE ?", strings.ToLower(associationQuery.AssociationTypePrefix)+"%")
+	if len(associationQuery.AssociationType) > 0 {
+		sqlQuery.Where("LOWER(association_type) = ?", string(bytes.ToLower(associationQuery.AssociationType)))
+	} else if len(associationQuery.AssociationTypePrefix) > 0 {
+		sqlQuery.Where("LOWER(association_type) LIKE ?", string(bytes.ToLower(associationQuery.AssociationTypePrefix))+"%")
 	}
-	if associationQuery.AssociationValue != "" {
-		sqlQuery.Where("association_value = ?", associationQuery.AssociationValue)
-	} else if associationQuery.AssociationValuePrefix != "" {
-		sqlQuery.Where("association_value LIKE ?", associationQuery.AssociationValuePrefix+"%")
+	if len(associationQuery.AssociationValue) > 0 {
+		sqlQuery.Where("association_value = ?", string(associationQuery.AssociationValue))
+	} else if len(associationQuery.AssociationValuePrefix) > 0 {
+		sqlQuery.Where("association_value LIKE ?", string(associationQuery.AssociationValuePrefix)+"%")
 	}
 	if associationQuery.Limit > 0 {
 		sqlQuery.Limit(int(associationQuery.Limit))
@@ -3340,15 +3340,15 @@ func _constructFilterPostAssociationsByAttributesQuery(
 	if associationQuery.AppPKID != nil {
 		sqlQuery.Where("app_pkid = ?", associationQuery.AppPKID)
 	}
-	if associationQuery.AssociationType != "" {
-		sqlQuery.Where("LOWER(association_type) = ?", strings.ToLower(associationQuery.AssociationType))
-	} else if associationQuery.AssociationTypePrefix != "" {
-		sqlQuery.Where("LOWER(association_type) LIKE ?", strings.ToLower(associationQuery.AssociationTypePrefix)+"%")
+	if len(associationQuery.AssociationType) > 0 {
+		sqlQuery.Where("LOWER(association_type) = ?", string(bytes.ToLower(associationQuery.AssociationType)))
+	} else if len(associationQuery.AssociationTypePrefix) > 0 {
+		sqlQuery.Where("LOWER(association_type) LIKE ?", string(bytes.ToLower(associationQuery.AssociationTypePrefix))+"%")
 	}
-	if associationQuery.AssociationValue != "" {
-		sqlQuery.Where("association_value = ?", associationQuery.AssociationValue)
-	} else if associationQuery.AssociationValuePrefix != "" {
-		sqlQuery.Where("association_value LIKE ?", associationQuery.AssociationValuePrefix+"%")
+	if len(associationQuery.AssociationValue) > 0 {
+		sqlQuery.Where("association_value = ?", string(associationQuery.AssociationValue))
+	} else if len(associationQuery.AssociationValuePrefix) > 0 {
+		sqlQuery.Where("association_value LIKE ?", string(associationQuery.AssociationValuePrefix)+"%")
 	}
 	if associationQuery.Limit > 0 {
 		sqlQuery.Limit(int(associationQuery.Limit))

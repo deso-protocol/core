@@ -6600,8 +6600,8 @@ func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 type CreateUserAssociationMetadata struct {
 	TargetUserPublicKey *PublicKey
 	AppPublicKey        *PublicKey
-	AssociationType     string
-	AssociationValue    string
+	AssociationType     []byte
+	AssociationValue    []byte
 }
 
 type DeleteUserAssociationMetadata struct {
@@ -6611,8 +6611,8 @@ type DeleteUserAssociationMetadata struct {
 type CreatePostAssociationMetadata struct {
 	PostHash         *BlockHash
 	AppPublicKey     *PublicKey
-	AssociationType  string
-	AssociationValue string
+	AssociationType  []byte
+	AssociationValue []byte
 }
 
 type DeletePostAssociationMetadata struct {
@@ -6639,8 +6639,8 @@ func (txnData *CreateUserAssociationMetadata) ToBytes(preSignature bool) ([]byte
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.TargetUserPublicKey.ToBytes())...)
 	data = append(data, EncodeByteArray(txnData.AppPublicKey.ToBytes())...)
-	data = append(data, EncodeByteArray([]byte(txnData.AssociationType))...)
-	data = append(data, EncodeByteArray([]byte(txnData.AssociationValue))...)
+	data = append(data, EncodeByteArray(txnData.AssociationType)...)
+	data = append(data, EncodeByteArray(txnData.AssociationValue)...)
 	return data, nil
 }
 
@@ -6654,8 +6654,8 @@ func (txnData *CreatePostAssociationMetadata) ToBytes(preSignature bool) ([]byte
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.PostHash.ToBytes())...)
 	data = append(data, EncodeByteArray(txnData.AppPublicKey.ToBytes())...)
-	data = append(data, EncodeByteArray([]byte(txnData.AssociationType))...)
-	data = append(data, EncodeByteArray([]byte(txnData.AssociationValue))...)
+	data = append(data, EncodeByteArray(txnData.AssociationType)...)
+	data = append(data, EncodeByteArray(txnData.AssociationValue)...)
 	return data, nil
 }
 
@@ -6687,14 +6687,14 @@ func (txnData *CreateUserAssociationMetadata) FromBytes(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AssociationType: ")
 	}
-	txnData.AssociationType = string(associationTypeBytes)
+	txnData.AssociationType = associationTypeBytes
 
 	// AssociationValue
 	associationValueBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AssociationValue: ")
 	}
-	txnData.AssociationValue = string(associationValueBytes)
+	txnData.AssociationValue = associationValueBytes
 
 	return nil
 }
@@ -6734,14 +6734,14 @@ func (txnData *CreatePostAssociationMetadata) FromBytes(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AssociationType: ")
 	}
-	txnData.AssociationType = string(associationTypeBytes)
+	txnData.AssociationType = associationTypeBytes
 
 	// AssociationValue
 	associationValueBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AssociationValue: ")
 	}
-	txnData.AssociationValue = string(associationValueBytes)
+	txnData.AssociationValue = associationValueBytes
 
 	return nil
 }
@@ -6779,10 +6779,10 @@ type UserAssociationQuery struct {
 	TransactorPKID         *PKID
 	TargetUserPKID         *PKID
 	AppPKID                *PKID
-	AssociationType        string
-	AssociationTypePrefix  string
-	AssociationValue       string
-	AssociationValuePrefix string
+	AssociationType        []byte
+	AssociationTypePrefix  []byte
+	AssociationValue       []byte
+	AssociationValuePrefix []byte
 	Limit                  int
 	LastSeenAssociationID  *BlockHash
 	SortDescending         bool
@@ -6792,10 +6792,10 @@ type PostAssociationQuery struct {
 	TransactorPKID         *PKID
 	PostHash               *BlockHash
 	AppPKID                *PKID
-	AssociationType        string
-	AssociationTypePrefix  string
-	AssociationValue       string
-	AssociationValuePrefix string
+	AssociationType        []byte
+	AssociationTypePrefix  []byte
+	AssociationValue       []byte
+	AssociationValuePrefix []byte
 	Limit                  int
 	LastSeenAssociationID  *BlockHash
 	SortDescending         bool
