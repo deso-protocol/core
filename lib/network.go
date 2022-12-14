@@ -6683,18 +6683,16 @@ func (txnData *CreateUserAssociationMetadata) FromBytes(data []byte) error {
 	txnData.AppPublicKey = NewPublicKey(appPublicKeyBytes)
 
 	// AssociationType
-	associationTypeBytes, err := DecodeByteArray(rr)
+	txnData.AssociationType, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AssociationType: ")
 	}
-	txnData.AssociationType = associationTypeBytes
 
 	// AssociationValue
-	associationValueBytes, err := DecodeByteArray(rr)
+	txnData.AssociationValue, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AssociationValue: ")
 	}
-	txnData.AssociationValue = associationValueBytes
 
 	return nil
 }
@@ -6730,18 +6728,16 @@ func (txnData *CreatePostAssociationMetadata) FromBytes(data []byte) error {
 	txnData.AppPublicKey = NewPublicKey(appPublicKeyBytes)
 
 	// AssociationType
-	associationTypeBytes, err := DecodeByteArray(rr)
+	txnData.AssociationType, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AssociationType: ")
 	}
-	txnData.AssociationType = associationTypeBytes
 
 	// AssociationValue
-	associationValueBytes, err := DecodeByteArray(rr)
+	txnData.AssociationValue, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AssociationValue: ")
 	}
-	txnData.AssociationValue = associationValueBytes
 
 	return nil
 }
