@@ -3194,7 +3194,7 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 }
 
 func (postgres *Postgres) GetUserAssociationsByAttributes(
-	associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
+	associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs Set[*BlockHash],
 ) ([]*UserAssociationEntry, []byte, error) {
 	// Construct SQL query.
 	var pgAssociations []PGUserAssociation
@@ -3219,8 +3219,8 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(
 }
 
 func (postgres *Postgres) GetUserAssociationIdsByAttributes(
-	associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
-) (*Set[*BlockHash], []byte, error) {
+	associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs Set[*BlockHash],
+) (Set[*BlockHash], []byte, error) {
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGUserAssociation{}).Column("association_id")
 	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIDs)
@@ -3230,15 +3230,15 @@ func (postgres *Postgres) GetUserAssociationIdsByAttributes(
 	if err := sqlQuery.Select(&associationIds); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
-			return nil, nil, nil
+			return NewSet([]*BlockHash{}), nil, nil
 		}
-		return nil, nil, err
+		return NewSet([]*BlockHash{}), nil, err
 	}
 	return NewSet(associationIds), nil, nil
 }
 
 func _constructFilterUserAssociationsByAttributesQuery(
-	sqlQuery *pg.Query, associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
+	sqlQuery *pg.Query, associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs Set[*BlockHash],
 ) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	if deletedUtxoAssociationIDs.Size() > 0 {
@@ -3281,7 +3281,7 @@ func _constructFilterUserAssociationsByAttributesQuery(
 }
 
 func (postgres *Postgres) GetPostAssociationsByAttributes(
-	associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
+	associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs Set[*BlockHash],
 ) ([]*PostAssociationEntry, []byte, error) {
 	// Construct SQL query.
 	var pgAssociations []PGPostAssociation
@@ -3306,8 +3306,8 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(
 }
 
 func (postgres *Postgres) GetPostAssociationIdsByAttributes(
-	associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
-) (*Set[*BlockHash], []byte, error) {
+	associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs Set[*BlockHash],
+) (Set[*BlockHash], []byte, error) {
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGPostAssociation{}).Column("association_id")
 	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedUtxoAssociationIDs)
@@ -3317,15 +3317,15 @@ func (postgres *Postgres) GetPostAssociationIdsByAttributes(
 	if err := sqlQuery.Select(&associationIds); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
-			return nil, nil, nil
+			return NewSet([]*BlockHash{}), nil, nil
 		}
-		return nil, nil, err
+		return NewSet([]*BlockHash{}), nil, err
 	}
 	return NewSet(associationIds), nil, nil
 }
 
 func _constructFilterPostAssociationsByAttributesQuery(
-	sqlQuery *pg.Query, associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
+	sqlQuery *pg.Query, associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs Set[*BlockHash],
 ) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	if deletedUtxoAssociationIDs.Size() > 0 {

@@ -632,6 +632,7 @@ func (bav *UtxoView) IsValidDeletePostAssociationMetadata(transactorPK []byte, m
 }
 
 func _isValidUserAssociationQuery(associationQuery *UserAssociationQuery) error {
+	err := errors.New("invalid query params")
 	if associationQuery.TransactorPKID == nil &&
 		associationQuery.TargetUserPKID == nil &&
 		associationQuery.AppPKID == nil &&
@@ -639,16 +640,33 @@ func _isValidUserAssociationQuery(associationQuery *UserAssociationQuery) error 
 		len(associationQuery.AssociationTypePrefix) == 0 &&
 		len(associationQuery.AssociationValue) == 0 &&
 		len(associationQuery.AssociationValuePrefix) == 0 {
-		return errors.New("invalid query params")
+		return err
 	}
 	if (len(associationQuery.AssociationType) > 0 && len(associationQuery.AssociationTypePrefix) > 0) ||
 		(len(associationQuery.AssociationValue) > 0 && len(associationQuery.AssociationValuePrefix) > 0) {
+		return err
+	}
+	if associationQuery.Limit < 0 {
+		return err
+	}
+	return nil
+}
+
+func _isValidCountUserAssociationQuery(associationQuery *UserAssociationQuery) error {
+	err := _isValidUserAssociationQuery(associationQuery)
+	if err != nil {
+		return err
+	}
+	if associationQuery.Limit > 0 ||
+		associationQuery.LastSeenAssociationID != nil ||
+		associationQuery.SortDescending {
 		return errors.New("invalid query params")
 	}
 	return nil
 }
 
 func _isValidPostAssociationQuery(associationQuery *PostAssociationQuery) error {
+	err := errors.New("invalid query params")
 	if associationQuery.TransactorPKID == nil &&
 		associationQuery.PostHash == nil &&
 		associationQuery.AppPKID == nil &&
@@ -656,10 +674,26 @@ func _isValidPostAssociationQuery(associationQuery *PostAssociationQuery) error 
 		len(associationQuery.AssociationTypePrefix) == 0 &&
 		len(associationQuery.AssociationValue) == 0 &&
 		len(associationQuery.AssociationValuePrefix) == 0 {
-		return errors.New("invalid query params")
+		return err
 	}
 	if (len(associationQuery.AssociationType) > 0 && len(associationQuery.AssociationTypePrefix) > 0) ||
 		(len(associationQuery.AssociationValue) > 0 && len(associationQuery.AssociationValuePrefix) > 0) {
+		return err
+	}
+	if associationQuery.Limit < 0 {
+		return err
+	}
+	return nil
+}
+
+func _isValidCountPostAssociationQuery(associationQuery *PostAssociationQuery) error {
+	err := _isValidPostAssociationQuery(associationQuery)
+	if err != nil {
+		return err
+	}
+	if associationQuery.Limit > 0 ||
+		associationQuery.LastSeenAssociationID != nil ||
+		associationQuery.SortDescending {
 		return errors.New("invalid query params")
 	}
 	return nil
@@ -779,7 +813,7 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 	// Skip UTXO association entries up to the last seen association ID if specified.
 	var utxoAssociationEntries []*UserAssociationEntry
 	isNewEntry := associationQuery.LastSeenAssociationID == nil
-	for _, associationEntry := range sortedUtxoAssociationEntries {
+	for ii, associationEntry := range sortedUtxoAssociationEntries {
 		if associationEntry.AssociationID.IsEqual(associationQuery.LastSeenAssociationID) {
 			isNewEntry = true
 			continue
@@ -787,7 +821,8 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 		if !isNewEntry {
 			continue
 		}
-		utxoAssociationEntries = append(utxoAssociationEntries, associationEntry)
+		utxoAssociationEntries = sortedUtxoAssociationEntries[ii:]
+		break
 	}
 	if associationQuery.SortDescending {
 		// Sort descending, so add UTXO view association entries first.
@@ -839,15 +874,9 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 
 func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAssociationQuery) (uint64, error) {
 	// Validate query params.
-	err := _isValidUserAssociationQuery(associationQuery)
+	err := _isValidCountUserAssociationQuery(associationQuery)
 	if err != nil {
 		return 0, errors.Wrap(err, "CountUserAssociationsByAttributes: ")
-	}
-	if associationQuery.Limit > 0 ||
-		associationQuery.LastSeenAssociationID != nil ||
-		associationQuery.SortDescending {
-		// These params are only used in fetching, not in counting.
-		return 0, errors.New("CountUserAssociationsByAttributes: invalid query params")
 	}
 	// First pull matching association entries from the UTXO view so that
 	// we can track deleted association entries and can properly limit
@@ -872,7 +901,7 @@ func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAss
 
 func (bav *UtxoView) _getUtxoUserAssociationEntriesByAttributes(
 	associationQuery *UserAssociationQuery,
-) ([]*UserAssociationEntry, *Set[*BlockHash]) {
+) ([]*UserAssociationEntry, Set[*BlockHash]) {
 	// Returns a slice of new association entries in the UTXO view as well as a map of deleted entry IDs.
 	var newUtxoAssociationEntries []*UserAssociationEntry
 	deletedUtxoAssociationIDs := NewSet[*BlockHash]([]*BlockHash{})
@@ -962,7 +991,7 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 	// Skip UTXO association entries up to the last seen association ID if specified.
 	var utxoAssociationEntries []*PostAssociationEntry
 	isNewEntry := associationQuery.LastSeenAssociationID == nil
-	for _, associationEntry := range sortedUtxoAssociationEntries {
+	for ii, associationEntry := range sortedUtxoAssociationEntries {
 		if associationEntry.AssociationID.IsEqual(associationQuery.LastSeenAssociationID) {
 			isNewEntry = true
 			continue
@@ -970,7 +999,8 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 		if !isNewEntry {
 			continue
 		}
-		utxoAssociationEntries = append(utxoAssociationEntries, associationEntry)
+		utxoAssociationEntries = sortedUtxoAssociationEntries[ii:]
+		break
 	}
 	if associationQuery.SortDescending {
 		// Sort descending, so add UTXO view association entries first.
@@ -1022,15 +1052,9 @@ func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssoc
 
 func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAssociationQuery) (uint64, error) {
 	// Validate query params.
-	err := _isValidPostAssociationQuery(associationQuery)
+	err := _isValidCountPostAssociationQuery(associationQuery)
 	if err != nil {
 		return 0, errors.Wrapf(err, "GetPostAssociationsByAttributes: ")
-	}
-	if associationQuery.Limit > 0 ||
-		associationQuery.LastSeenAssociationID != nil ||
-		associationQuery.SortDescending {
-		// These params are only used in fetching, not in counting.
-		return 0, errors.New("CountPostAssociationsByAttributes: invalid query params")
 	}
 	// First pull matching association entries from the UTXO view so that
 	// we can track deleted association entries and can properly limit
@@ -1055,7 +1079,7 @@ func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAss
 
 func (bav *UtxoView) _getUtxoPostAssociationEntriesByAttributes(
 	associationQuery *PostAssociationQuery,
-) ([]*PostAssociationEntry, *Set[*BlockHash]) {
+) ([]*PostAssociationEntry, Set[*BlockHash]) {
 	// Returns a slice of new association entries in the UTXO view as well as a map of deleted entry IDs.
 	var newUtxoAssociationEntries []*PostAssociationEntry
 	deletedUtxoAssociationIDs := NewSet([]*BlockHash{})
