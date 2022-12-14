@@ -4728,18 +4728,16 @@ func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	}
 
 	// AssociationType
-	associationTypeBytes, err := DecodeByteArray(rr)
+	associationEntry.AssociationType, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AssociationType: ")
 	}
-	associationEntry.AssociationType = associationTypeBytes
 
 	// AssociationValue
-	associationValueBytes, err := DecodeByteArray(rr)
+	associationEntry.AssociationValue, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AssociationValue: ")
 	}
-	associationEntry.AssociationValue = associationValueBytes
 
 	// ExtraData
 	extraData, err := DecodeExtraData(rr)
@@ -4797,18 +4795,16 @@ func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	}
 
 	// AssociationType
-	associationTypeBytes, err := DecodeByteArray(rr)
+	associationEntry.AssociationType, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AssociationType: ")
 	}
-	associationEntry.AssociationType = associationTypeBytes
 
 	// AssociationValue
-	associationValueBytes, err := DecodeByteArray(rr)
+	associationEntry.AssociationValue, err = DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AssociationValue: ")
 	}
-	associationEntry.AssociationValue = associationValueBytes
 
 	// ExtraData
 	extraData, err := DecodeExtraData(rr)
@@ -4854,8 +4850,15 @@ func (associationEntry *UserAssociationEntry) Eq(other *UserAssociationEntry) bo
 	// Compare if two user association entries are equal. Note that their ExtraData and
 	// BlockHeights can differ, and we would still consider them equal. Also note that
 	// AssociationType is case-insensitive while AssociationValue is case-sensitive.
-	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
+	// Basically all of these nil checks can never happen. But they're safety checks.
+	if other == nil {
+		return false
+	}
+	return associationEntry.TransactorPKID != nil &&
+		associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
+		associationEntry.TargetUserPKID != nil &&
 		associationEntry.TargetUserPKID.Eq(other.TargetUserPKID) &&
+		associationEntry.AppPKID != nil &&
 		associationEntry.AppPKID.Eq(other.AppPKID) &&
 		_isMatchingAssociationType(associationEntry.AssociationType, other.AssociationType) &&
 		bytes.Equal(associationEntry.AssociationValue, other.AssociationValue)
@@ -4865,8 +4868,15 @@ func (associationEntry *PostAssociationEntry) Eq(other *PostAssociationEntry) bo
 	// Compare if two post association entries are equal. Note that their ExtraData and
 	// BlockHeights can differ, and we would still consider them equal. Also note that
 	// AssociationType is case-insensitive while AssociationValue is case-sensitive.
-	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
+	// Basically all of these nil checks can never happen. But they're safety checks.
+	if other == nil {
+		return false
+	}
+	return associationEntry.TransactorPKID != nil &&
+		associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
+		associationEntry.PostHash != nil &&
 		associationEntry.PostHash.IsEqual(other.PostHash) &&
+		associationEntry.AppPKID != nil &&
 		associationEntry.AppPKID.Eq(other.AppPKID) &&
 		_isMatchingAssociationType(associationEntry.AssociationType, other.AssociationType) &&
 		bytes.Equal(associationEntry.AssociationValue, other.AssociationValue)
