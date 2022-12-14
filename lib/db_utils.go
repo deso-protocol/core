@@ -8609,7 +8609,7 @@ func DBGetUserAssociationsByAttributes(
 	handle *badger.DB,
 	snap *Snapshot,
 	associationQuery *UserAssociationQuery,
-	deletedUtxoAssociationIDs Set[*BlockHash],
+	deletedUtxoAssociationIDs *Set[*BlockHash],
 ) ([]*UserAssociationEntry, []byte, error) {
 	// Query for association IDs by input query params.
 	associationIDs, prefixType, err := DBGetUserAssociationIdsByAttributes(
@@ -8636,8 +8636,8 @@ func DBGetUserAssociationIdsByAttributes(
 	handle *badger.DB,
 	snap *Snapshot,
 	associationQuery *UserAssociationQuery,
-	deletedUtxoAssociationIDs Set[*BlockHash],
-) (Set[*BlockHash], []byte, error) {
+	deletedUtxoAssociationIDs *Set[*BlockHash],
+) (*Set[*BlockHash], []byte, error) {
 	// Construct key based on input query params.
 	var prefixType []byte
 	var keyPrefix []byte
@@ -8664,7 +8664,7 @@ func DBGetUserAssociationIdsByAttributes(
 		keyPrefix = append(keyPrefix, associationQuery.TargetUserPKID.ToBytes()...)
 	} else {
 		// TransactorPKID == nil, TargetUserPKID == nil
-		return NewSet([]*BlockHash{}), nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params")
+		return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params")
 	}
 
 	// AssociationType
@@ -8673,7 +8673,7 @@ func DBGetUserAssociationIdsByAttributes(
 		keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
 		// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
-		return NewSet([]*BlockHash{}), nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params")
+		return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params")
 	} else if len(associationQuery.AssociationTypePrefix) > 0 {
 		keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
 	}
@@ -8692,7 +8692,7 @@ func DBGetUserAssociationIdsByAttributes(
 			associationQuery.TargetUserPKID == nil ||
 			len(associationQuery.AssociationType) == 0 ||
 			len(associationQuery.AssociationValue) == 0 {
-			return NewSet([]*BlockHash{}), nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params")
 		}
 		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
 	}
@@ -8702,7 +8702,7 @@ func DBGetUserAssociationIdsByAttributes(
 	if associationQuery.LastSeenAssociationID != nil {
 		lastSeenKey, err = _dbUserAssociationIdToKey(handle, snap, associationQuery.LastSeenAssociationID, prefixType)
 		if err != nil {
-			return NewSet([]*BlockHash{}), nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
+			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
 		}
 	}
 
@@ -8711,7 +8711,7 @@ func DBGetUserAssociationIdsByAttributes(
 	for _, deletedUtxoAssociationId := range deletedUtxoAssociationIDs.ToSlice() {
 		deletedUtxoKey, err := _dbUserAssociationIdToKey(handle, snap, deletedUtxoAssociationId, prefixType)
 		if err != nil {
-			return NewSet([]*BlockHash{}), nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
+			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
 		}
 		if deletedUtxoKey != nil {
 			deletedUtxoKeys.Add(string(deletedUtxoKey))
@@ -8734,7 +8734,7 @@ func DBGetUserAssociationIdsByAttributes(
 		associationID := &BlockHash{}
 		rr := bytes.NewReader(valBytes)
 		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
-			return NewSet([]*BlockHash{}), nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: problem decoding association id: ")
+			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: problem decoding association id: ")
 		}
 		associationIDs.Add(associationID)
 	}
@@ -8745,7 +8745,7 @@ func DBGetPostAssociationsByAttributes(
 	handle *badger.DB,
 	snap *Snapshot,
 	associationQuery *PostAssociationQuery,
-	deletedUtxoAssociationIDs Set[*BlockHash],
+	deletedUtxoAssociationIDs *Set[*BlockHash],
 ) ([]*PostAssociationEntry, []byte, error) {
 	// Query for association IDs by input query params.
 	associationIDs, prefixType, err := DBGetPostAssociationIdsByAttributes(
@@ -8772,8 +8772,8 @@ func DBGetPostAssociationIdsByAttributes(
 	handle *badger.DB,
 	snap *Snapshot,
 	associationQuery *PostAssociationQuery,
-	deletedUtxoAssociationIDs Set[*BlockHash],
-) (Set[*BlockHash], []byte, error) {
+	deletedUtxoAssociationIDs *Set[*BlockHash],
+) (*Set[*BlockHash], []byte, error) {
 	// Construct key based on input query params.
 	var prefixType []byte
 	var keyPrefix []byte
@@ -8796,7 +8796,7 @@ func DBGetPostAssociationIdsByAttributes(
 			len(associationQuery.AssociationValuePrefix) > 0 ||
 			associationQuery.PostHash != nil {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "" || PostHash != nil)
-			return NewSet([]*BlockHash{}), nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		} else if len(associationQuery.AssociationTypePrefix) > 0 {
 			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
 		}
@@ -8807,7 +8807,7 @@ func DBGetPostAssociationIdsByAttributes(
 			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 		} else if associationQuery.PostHash != nil {
 			// AssociationValue == "", PostHash != nil
-			return NewSet([]*BlockHash{}), nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		} else if len(associationQuery.AssociationValuePrefix) > 0 {
 			keyPrefix = append(keyPrefix, associationQuery.AssociationValuePrefix...)
 		}
@@ -8832,7 +8832,7 @@ func DBGetPostAssociationIdsByAttributes(
 			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 		} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
-			return NewSet([]*BlockHash{}), nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		} else if len(associationQuery.AssociationTypePrefix) > 0 {
 			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
 		}
@@ -8857,7 +8857,7 @@ func DBGetPostAssociationIdsByAttributes(
 			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 		} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
-			return NewSet([]*BlockHash{}), nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		} else if len(associationQuery.AssociationTypePrefix) > 0 {
 			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
 		}
@@ -8877,7 +8877,7 @@ func DBGetPostAssociationIdsByAttributes(
 			associationQuery.PostHash == nil ||
 			len(associationQuery.AssociationType) == 0 ||
 			len(associationQuery.AssociationValue) == 0 {
-			return NewSet([]*BlockHash{}), nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
 		}
 		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
 	}
@@ -8887,7 +8887,7 @@ func DBGetPostAssociationIdsByAttributes(
 	if associationQuery.LastSeenAssociationID != nil {
 		lastSeenKey, err = _dbPostAssociationIdToKey(handle, snap, associationQuery.LastSeenAssociationID, prefixType)
 		if err != nil {
-			return NewSet([]*BlockHash{}), nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
+			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
 		}
 	}
 
@@ -8896,7 +8896,7 @@ func DBGetPostAssociationIdsByAttributes(
 	for _, deletedUtxoAssociationId := range deletedUtxoAssociationIDs.ToSlice() {
 		deletedUtxoKey, err := _dbPostAssociationIdToKey(handle, snap, deletedUtxoAssociationId, prefixType)
 		if err != nil {
-			return NewSet([]*BlockHash{}), nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
+			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
 		}
 		if deletedUtxoKey != nil {
 			deletedUtxoKeys.Add(string(deletedUtxoKey))
@@ -8913,7 +8913,7 @@ func DBGetPostAssociationIdsByAttributes(
 		deletedUtxoKeys,
 	)
 	if err != nil {
-		return NewSet([]*BlockHash{}), nil, errors.Wrapf(err, "DBGetPostAssociationsIdsByAttributes: ")
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationsIdsByAttributes: ")
 	}
 
 	// Cast resulting values from bytes to association IDs.
@@ -8922,7 +8922,7 @@ func DBGetPostAssociationIdsByAttributes(
 		associationID := &BlockHash{}
 		rr := bytes.NewReader(valBytes)
 		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
-			return NewSet([]*BlockHash{}), nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: problem decoding association id: ")
+			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: problem decoding association id: ")
 		}
 		associationIDs.Add(associationID)
 	}
@@ -9138,7 +9138,7 @@ func EnumerateKeysForPrefixWithLimitOffsetOrder(
 	limit int,
 	lastSeenKey []byte,
 	sortDescending bool,
-	deletedUtxoKeys Set[string],
+	deletedUtxoKeys *Set[string],
 ) ([][]byte, [][]byte, error) {
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
@@ -9166,7 +9166,7 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 	limit int,
 	lastSeenKey []byte,
 	sortDescending bool,
-	deletedUtxoKeys Set[string],
+	deletedUtxoKeys *Set[string],
 ) ([][]byte, [][]byte, error) {
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}

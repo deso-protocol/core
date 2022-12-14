@@ -66,7 +66,7 @@ func (adapter *DbAdapter) GetPostAssociationByAttributes(associationEntry *PostA
 }
 
 func (adapter *DbAdapter) GetUserAssociationsByAttributes(
-	associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs Set[*BlockHash],
+	associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
 ) ([]*UserAssociationEntry, []byte, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetUserAssociationsByAttributes(associationQuery, deletedUtxoAssociationIDs)
@@ -75,7 +75,7 @@ func (adapter *DbAdapter) GetUserAssociationsByAttributes(
 }
 
 func (adapter *DbAdapter) GetPostAssociationsByAttributes(
-	associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs Set[*BlockHash],
+	associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
 ) ([]*PostAssociationEntry, []byte, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetPostAssociationsByAttributes(associationQuery, deletedUtxoAssociationIDs)
@@ -84,8 +84,8 @@ func (adapter *DbAdapter) GetPostAssociationsByAttributes(
 }
 
 func (adapter *DbAdapter) GetUserAssociationIdsByAttributes(
-	associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs Set[*BlockHash],
-) (Set[*BlockHash], []byte, error) {
+	associationQuery *UserAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
+) (*Set[*BlockHash], []byte, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetUserAssociationIdsByAttributes(associationQuery, deletedUtxoAssociationIDs)
 	}
@@ -93,8 +93,8 @@ func (adapter *DbAdapter) GetUserAssociationIdsByAttributes(
 }
 
 func (adapter *DbAdapter) GetPostAssociationIdsByAttributes(
-	associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs Set[*BlockHash],
-) (Set[*BlockHash], []byte, error) {
+	associationQuery *PostAssociationQuery, deletedUtxoAssociationIDs *Set[*BlockHash],
+) (*Set[*BlockHash], []byte, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetPostAssociationIdsByAttributes(associationQuery, deletedUtxoAssociationIDs)
 	}

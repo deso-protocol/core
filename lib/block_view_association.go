@@ -901,7 +901,7 @@ func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAss
 
 func (bav *UtxoView) _getUtxoUserAssociationEntriesByAttributes(
 	associationQuery *UserAssociationQuery,
-) ([]*UserAssociationEntry, Set[*BlockHash]) {
+) ([]*UserAssociationEntry, *Set[*BlockHash]) {
 	// Returns a slice of new association entries in the UTXO view as well as a map of deleted entry IDs.
 	var newUtxoAssociationEntries []*UserAssociationEntry
 	deletedUtxoAssociationIDs := NewSet[*BlockHash]([]*BlockHash{})
@@ -1079,7 +1079,7 @@ func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAss
 
 func (bav *UtxoView) _getUtxoPostAssociationEntriesByAttributes(
 	associationQuery *PostAssociationQuery,
-) ([]*PostAssociationEntry, Set[*BlockHash]) {
+) ([]*PostAssociationEntry, *Set[*BlockHash]) {
 	// Returns a slice of new association entries in the UTXO view as well as a map of deleted entry IDs.
 	var newUtxoAssociationEntries []*PostAssociationEntry
 	deletedUtxoAssociationIDs := NewSet([]*BlockHash{})
