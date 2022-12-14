@@ -850,18 +850,12 @@ func _isMatchingUtxoUserAssociationEntry(associationQuery *UserAssociationQuery,
 	}
 	// If AssociationType is set, they have to match.
 	if len(associationQuery.AssociationType) > 0 {
-		if !bytes.Equal(
-			bytes.ToLower(associationQuery.AssociationType),
-			bytes.ToLower(associationEntry.AssociationType),
-		) {
+		if !_isMatchingAssociationType(associationQuery.AssociationType, associationEntry.AssociationType) {
 			return false
 		}
 	} else if len(associationQuery.AssociationTypePrefix) > 0 {
 		// If AssociationTypePrefix is set, they have to prefix match.
-		if !bytes.HasPrefix(
-			bytes.ToLower(associationEntry.AssociationType),
-			bytes.ToLower(associationQuery.AssociationTypePrefix),
-		) {
+		if !_isMatchingAssociationTypePrefix(associationEntry.AssociationType, associationQuery.AssociationTypePrefix) {
 			return false
 		}
 	}
@@ -982,18 +976,12 @@ func _isMatchingUtxoPostAssociationEntry(associationQuery *PostAssociationQuery,
 	}
 	// If AssociationType is set, they have to match.
 	if len(associationQuery.AssociationType) > 0 {
-		if !bytes.Equal(
-			bytes.ToLower(associationQuery.AssociationType),
-			bytes.ToLower(associationEntry.AssociationType),
-		) {
+		if !_isMatchingAssociationType(associationQuery.AssociationType, associationEntry.AssociationType) {
 			return false
 		}
 	} else if len(associationQuery.AssociationTypePrefix) > 0 {
 		// If AssociationTypePrefix is set, they have to prefix match.
-		if !bytes.HasPrefix(
-			bytes.ToLower(associationEntry.AssociationType),
-			bytes.ToLower(associationQuery.AssociationTypePrefix),
-		) {
+		if !_isMatchingAssociationTypePrefix(associationEntry.AssociationType, associationQuery.AssociationTypePrefix) {
 			return false
 		}
 	}
@@ -1009,6 +997,14 @@ func _isMatchingUtxoPostAssociationEntry(associationQuery *PostAssociationQuery,
 		}
 	}
 	return true
+}
+
+func _isMatchingAssociationType(associationType1 []byte, associationType2 []byte) bool {
+	return bytes.Equal(bytes.ToLower(associationType1), bytes.ToLower(associationType2))
+}
+
+func _isMatchingAssociationTypePrefix(associationType []byte, associationTypePrefix []byte) bool {
+	return bytes.HasPrefix(bytes.ToLower(associationType), bytes.ToLower(associationTypePrefix))
 }
 
 // ###########################

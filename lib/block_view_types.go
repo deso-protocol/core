@@ -4857,7 +4857,7 @@ func (associationEntry *UserAssociationEntry) Eq(other *UserAssociationEntry) bo
 	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
 		associationEntry.TargetUserPKID.Eq(other.TargetUserPKID) &&
 		associationEntry.AppPKID.Eq(other.AppPKID) &&
-		bytes.Equal(bytes.ToLower(associationEntry.AssociationType), bytes.ToLower(other.AssociationType)) &&
+		_isMatchingAssociationType(associationEntry.AssociationType, other.AssociationType) &&
 		bytes.Equal(associationEntry.AssociationValue, other.AssociationValue)
 }
 
@@ -4868,7 +4868,7 @@ func (associationEntry *PostAssociationEntry) Eq(other *PostAssociationEntry) bo
 	return associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
 		associationEntry.PostHash.IsEqual(other.PostHash) &&
 		associationEntry.AppPKID.Eq(other.AppPKID) &&
-		bytes.Equal(bytes.ToLower(associationEntry.AssociationType), bytes.ToLower(other.AssociationType)) &&
+		_isMatchingAssociationType(associationEntry.AssociationType, other.AssociationType) &&
 		bytes.Equal(associationEntry.AssociationValue, other.AssociationValue)
 }
 
