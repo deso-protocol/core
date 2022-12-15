@@ -1116,11 +1116,13 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
 	}
 
-	// PrevUserAssociationEntry
-	data = append(data, EncodeToBytes(blockHeight, op.PrevUserAssociationEntry, skipMetadata...)...)
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		// PrevUserAssociationEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevUserAssociationEntry, skipMetadata...)...)
 
-	// PrevPostAssociationEntry
-	data = append(data, EncodeToBytes(blockHeight, op.PrevPostAssociationEntry, skipMetadata...)...)
+		// PrevPostAssociationEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevPostAssociationEntry, skipMetadata...)...)
+	}
 
 	return data
 }
@@ -1656,27 +1658,29 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FilledDAOCoinLimitOrder")
 	}
 
-	// PrevUserAssociationEntry
-	prevUserAssociationEntry := &UserAssociationEntry{}
-	if exist, err := DecodeFromBytes(prevUserAssociationEntry, rr); exist && err == nil {
-		op.PrevUserAssociationEntry = prevUserAssociationEntry
-	} else if err != nil {
-		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevUserAssociationEntry")
-	}
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		// PrevUserAssociationEntry
+		prevUserAssociationEntry := &UserAssociationEntry{}
+		if exist, err := DecodeFromBytes(prevUserAssociationEntry, rr); exist && err == nil {
+			op.PrevUserAssociationEntry = prevUserAssociationEntry
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevUserAssociationEntry")
+		}
 
-	// PrevPostAssociationEntry
-	prevPostAssociationEntry := &PostAssociationEntry{}
-	if exist, err := DecodeFromBytes(prevPostAssociationEntry, rr); exist && err == nil {
-		op.PrevPostAssociationEntry = prevPostAssociationEntry
-	} else if err != nil {
-		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevPostAssociationEntry")
+		// PrevPostAssociationEntry
+		prevPostAssociationEntry := &PostAssociationEntry{}
+		if exist, err := DecodeFromBytes(prevPostAssociationEntry, rr); exist && err == nil {
+			op.PrevPostAssociationEntry = prevPostAssociationEntry
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevPostAssociationEntry")
+		}
 	}
 
 	return nil
 }
 
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, AssociationsMigration)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {

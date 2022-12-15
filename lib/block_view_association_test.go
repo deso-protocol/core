@@ -40,6 +40,8 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true)
 	params.ForkHeights.AssociationsBlockHeight = uint32(0)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
 	utxoView := func() *UtxoView {
 		newUtxoView, err := mempool.GetAugmentedUniversalView()

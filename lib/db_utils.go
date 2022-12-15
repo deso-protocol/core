@@ -5512,14 +5512,18 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.UpdateNFTTxindexMetadata, skipMetadata...)...)
 	// encoding DAOCoinLimitOrderTxindexMetadata
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinLimitOrderTxindexMetadata, skipMetadata...)...)
-	// encoding CreateUserAssociationTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.CreateUserAssociationTxindexMetadata, skipMetadata...)...)
-	// encoding DeleteUserAssociationTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.DeleteUserAssociationTxindexMetadata, skipMetadata...)...)
-	// encoding CreatePostAssociationTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.CreatePostAssociationTxindexMetadata, skipMetadata...)...)
-	// encoding DeletePostAssociationTxindexMetadata
-	data = append(data, EncodeToBytes(blockHeight, txnMeta.DeletePostAssociationTxindexMetadata, skipMetadata...)...)
+
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		// encoding CreateUserAssociationTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.CreateUserAssociationTxindexMetadata, skipMetadata...)...)
+		// encoding DeleteUserAssociationTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.DeleteUserAssociationTxindexMetadata, skipMetadata...)...)
+		// encoding CreatePostAssociationTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.CreatePostAssociationTxindexMetadata, skipMetadata...)...)
+		// encoding DeletePostAssociationTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.DeletePostAssociationTxindexMetadata, skipMetadata...)...)
+	}
+
 	return data
 }
 
@@ -5713,39 +5717,43 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinLimitOrderTxindexMetadata")
 	}
-	// decoding CreateUserAssociationTxindexMetadata
-	CopyCreateUserAssociationTxindexMetadata := &CreateUserAssociationTxindexMetadata{}
-	if exist, err := DecodeFromBytes(CopyCreateUserAssociationTxindexMetadata, rr); exist && err == nil {
-		txnMeta.CreateUserAssociationTxindexMetadata = CopyCreateUserAssociationTxindexMetadata
-	} else {
-		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreateUserAssociationTxindexMetadata")
+
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		// decoding CreateUserAssociationTxindexMetadata
+		CopyCreateUserAssociationTxindexMetadata := &CreateUserAssociationTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyCreateUserAssociationTxindexMetadata, rr); exist && err == nil {
+			txnMeta.CreateUserAssociationTxindexMetadata = CopyCreateUserAssociationTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreateUserAssociationTxindexMetadata")
+		}
+		// decoding DeleteUserAssociationTxindexMetadata
+		CopyDeleteUserAssociationTxindexMetadata := &DeleteUserAssociationTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyDeleteUserAssociationTxindexMetadata, rr); exist && err == nil {
+			txnMeta.DeleteUserAssociationTxindexMetadata = CopyDeleteUserAssociationTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeleteUserAssociationTxindexMetadata")
+		}
+		// decoding CreatePostAssociationTxindexMetadata
+		CopyCreatePostAssociationTxindexMetadata := &CreatePostAssociationTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyCreatePostAssociationTxindexMetadata, rr); exist && err == nil {
+			txnMeta.CreatePostAssociationTxindexMetadata = CopyCreatePostAssociationTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreatePostAssociationTxindexMetadata")
+		}
+		// decoding DeletePostAssociationTxindexMetadata
+		CopyDeletePostAssociationTxindexMetadata := &DeletePostAssociationTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyDeletePostAssociationTxindexMetadata, rr); exist && err == nil {
+			txnMeta.DeletePostAssociationTxindexMetadata = CopyDeletePostAssociationTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeletePostAssociationTxindexMetadata")
+		}
 	}
-	// decoding DeleteUserAssociationTxindexMetadata
-	CopyDeleteUserAssociationTxindexMetadata := &DeleteUserAssociationTxindexMetadata{}
-	if exist, err := DecodeFromBytes(CopyDeleteUserAssociationTxindexMetadata, rr); exist && err == nil {
-		txnMeta.DeleteUserAssociationTxindexMetadata = CopyDeleteUserAssociationTxindexMetadata
-	} else {
-		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeleteUserAssociationTxindexMetadata")
-	}
-	// decoding CreatePostAssociationTxindexMetadata
-	CopyCreatePostAssociationTxindexMetadata := &CreatePostAssociationTxindexMetadata{}
-	if exist, err := DecodeFromBytes(CopyCreatePostAssociationTxindexMetadata, rr); exist && err == nil {
-		txnMeta.CreatePostAssociationTxindexMetadata = CopyCreatePostAssociationTxindexMetadata
-	} else {
-		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreatePostAssociationTxindexMetadata")
-	}
-	// decoding DeletePostAssociationTxindexMetadata
-	CopyDeletePostAssociationTxindexMetadata := &DeletePostAssociationTxindexMetadata{}
-	if exist, err := DecodeFromBytes(CopyDeletePostAssociationTxindexMetadata, rr); exist && err == nil {
-		txnMeta.DeletePostAssociationTxindexMetadata = CopyDeletePostAssociationTxindexMetadata
-	} else {
-		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeletePostAssociationTxindexMetadata")
-	}
+
 	return nil
 }
 
 func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, AssociationsMigration)
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {
