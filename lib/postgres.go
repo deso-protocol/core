@@ -752,28 +752,48 @@ type PGDAOCoinLimitOrder struct {
 }
 
 func (order *PGDAOCoinLimitOrder) FromDAOCoinLimitOrderEntry(orderEntry *DAOCoinLimitOrderEntry) {
-	order.OrderID = orderEntry.OrderID
-	order.TransactorPKID = orderEntry.TransactorPKID
-	order.BuyingDAOCoinCreatorPKID = orderEntry.BuyingDAOCoinCreatorPKID
-	order.SellingDAOCoinCreatorPKID = orderEntry.SellingDAOCoinCreatorPKID
-	order.ScaledExchangeRateCoinsToSellPerCoinToBuy = Uint256ToLeftPaddedHex(orderEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy)
-	order.QuantityToFillInBaseUnits = Uint256ToLeftPaddedHex(orderEntry.QuantityToFillInBaseUnits)
-	order.OperationType = uint8(orderEntry.OperationType)
-	order.FillType = uint8(orderEntry.FillType)
-	order.BlockHeight = orderEntry.BlockHeight
+	orderId := *orderEntry.OrderID
+	transactorPKID := *orderEntry.TransactorPKID
+	buyingDAOCoinCreatorPKID := *orderEntry.BuyingDAOCoinCreatorPKID
+	sellingDAOCoinCreatorPKID := *orderEntry.SellingDAOCoinCreatorPKID
+	scaledExchangeRateCoinsToSellPerCoinToBuy := orderEntry.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone()
+	quantityToFillInBaseUnits := orderEntry.QuantityToFillInBaseUnits.Clone()
+	operationType := uint8(orderEntry.OperationType)
+	fillType := uint8(orderEntry.FillType)
+	blockHeight := orderEntry.BlockHeight
+
+	order.OrderID = &orderId
+	order.TransactorPKID = &transactorPKID
+	order.BuyingDAOCoinCreatorPKID = &buyingDAOCoinCreatorPKID
+	order.SellingDAOCoinCreatorPKID = &sellingDAOCoinCreatorPKID
+	order.ScaledExchangeRateCoinsToSellPerCoinToBuy = Uint256ToLeftPaddedHex(scaledExchangeRateCoinsToSellPerCoinToBuy)
+	order.QuantityToFillInBaseUnits = Uint256ToLeftPaddedHex(quantityToFillInBaseUnits)
+	order.OperationType = operationType
+	order.FillType = fillType
+	order.BlockHeight = blockHeight
 }
 
 func (order *PGDAOCoinLimitOrder) ToDAOCoinLimitOrderEntry() *DAOCoinLimitOrderEntry {
+	orderId := *order.OrderID
+	transactorPKID := *order.TransactorPKID
+	buyingDAOCoinCreatorPKID := *order.BuyingDAOCoinCreatorPKID
+	sellingDAOCoinCreatorPKID := *order.SellingDAOCoinCreatorPKID
+	scaledExchangeRateCoinsToSellPerCoinToBuy := order.ScaledExchangeRateCoinsToSellPerCoinToBuy
+	quantityToFillInBaseUnits := order.QuantityToFillInBaseUnits
+	operationType := order.OperationType
+	fillType := order.FillType
+	blockHeight := order.BlockHeight
+
 	return &DAOCoinLimitOrderEntry{
-		OrderID:                   order.OrderID,
-		TransactorPKID:            order.TransactorPKID,
-		BuyingDAOCoinCreatorPKID:  order.BuyingDAOCoinCreatorPKID,
-		SellingDAOCoinCreatorPKID: order.SellingDAOCoinCreatorPKID,
-		ScaledExchangeRateCoinsToSellPerCoinToBuy: LeftPaddedHexToUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy),
-		QuantityToFillInBaseUnits:                 LeftPaddedHexToUint256(order.QuantityToFillInBaseUnits),
-		OperationType:                             DAOCoinLimitOrderOperationType(order.OperationType),
-		FillType:                                  DAOCoinLimitOrderFillType(order.FillType),
-		BlockHeight:                               order.BlockHeight,
+		OrderID:                   &orderId,
+		TransactorPKID:            &transactorPKID,
+		BuyingDAOCoinCreatorPKID:  &buyingDAOCoinCreatorPKID,
+		SellingDAOCoinCreatorPKID: &sellingDAOCoinCreatorPKID,
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: LeftPaddedHexToUint256(scaledExchangeRateCoinsToSellPerCoinToBuy),
+		QuantityToFillInBaseUnits:                 LeftPaddedHexToUint256(quantityToFillInBaseUnits),
+		OperationType:                             DAOCoinLimitOrderOperationType(operationType),
+		FillType:                                  DAOCoinLimitOrderFillType(fillType),
+		BlockHeight:                               blockHeight,
 	}
 }
 
@@ -788,18 +808,30 @@ type PGAccessGroupEntry struct {
 }
 
 func (accessGroup *PGAccessGroupEntry) FromAccessGroupEntry(accessGroupEntry *AccessGroupEntry) {
-	accessGroup.AccessGroupOwnerPublicKey = accessGroupEntry.AccessGroupOwnerPublicKey
-	accessGroup.AccessGroupKeyName = accessGroupEntry.AccessGroupKeyName
-	accessGroup.AccessGroupPublicKey = accessGroupEntry.AccessGroupPublicKey
-	accessGroup.ExtraData = accessGroupEntry.ExtraData
+
+	accessGroupOwnerCopy := *accessGroupEntry.AccessGroupOwnerPublicKey
+	accessGroupKeyNameCopy := *accessGroupEntry.AccessGroupKeyName
+	accessGroupPublicKeyCopy := *accessGroupEntry.AccessGroupPublicKey
+	extraDataCopy, _ := DecodeExtraData(bytes.NewReader(EncodeExtraData(accessGroupEntry.ExtraData)))
+
+	accessGroup.AccessGroupOwnerPublicKey = &accessGroupOwnerCopy
+	accessGroup.AccessGroupKeyName = &accessGroupKeyNameCopy
+	accessGroup.AccessGroupPublicKey = &accessGroupPublicKeyCopy
+	accessGroup.ExtraData = extraDataCopy
 }
 
 func (accessGroup *PGAccessGroupEntry) ToAccessGroupEntry() *AccessGroupEntry {
+
+	accessGroupOwnerCopy := *accessGroup.AccessGroupOwnerPublicKey
+	accessGroupKeyNameCopy := *accessGroup.AccessGroupKeyName
+	accessGroupPublicKeyCopy := *accessGroup.AccessGroupPublicKey
+	extraDataCopy, _ := DecodeExtraData(bytes.NewReader(EncodeExtraData(accessGroup.ExtraData)))
+
 	return &AccessGroupEntry{
-		AccessGroupOwnerPublicKey: accessGroup.AccessGroupOwnerPublicKey,
-		AccessGroupKeyName:        accessGroup.AccessGroupKeyName,
-		AccessGroupPublicKey:      accessGroup.AccessGroupPublicKey,
-		ExtraData:                 accessGroup.ExtraData,
+		AccessGroupOwnerPublicKey: &accessGroupOwnerCopy,
+		AccessGroupKeyName:        &accessGroupKeyNameCopy,
+		AccessGroupPublicKey:      &accessGroupPublicKeyCopy,
+		ExtraData:                 extraDataCopy,
 	}
 }
 
@@ -818,24 +850,35 @@ type PGAccessGroupMemberEntry struct {
 func (accessGroupMember *PGAccessGroupMemberEntry) FromAccessGroupMemberEntry(accessGroupOwnerPublicKey PublicKey,
 	accessGroupKeyName GroupKeyName, accessGroupMemberEntry *AccessGroupMemberEntry) {
 
+	accessGroupMemberPublicKeyCopy := *accessGroupMemberEntry.AccessGroupMemberPublicKey
+	accessGroupMemberKeyNameCopy := *accessGroupMemberEntry.AccessGroupMemberKeyName
+	encryptedKeyCopy := accessGroupMemberEntry.EncryptedKey
+	extraDataCopy, _ := DecodeExtraData(bytes.NewReader(EncodeExtraData(accessGroupMemberEntry.ExtraData)))
+
 	accessGroupMember.AccessGroupOwnerPublicKey = &accessGroupOwnerPublicKey
 	accessGroupMember.AccessGroupKeyName = &accessGroupKeyName
-	accessGroupMember.AccessGroupMemberPublicKey = accessGroupMemberEntry.AccessGroupMemberPublicKey
-	accessGroupMember.AccessGroupMemberKeyName = accessGroupMemberEntry.AccessGroupMemberKeyName
-	accessGroupMember.EncryptedKey = accessGroupMemberEntry.EncryptedKey
-	accessGroupMember.ExtraData = accessGroupMemberEntry.ExtraData
+	accessGroupMember.AccessGroupMemberPublicKey = &accessGroupMemberPublicKeyCopy
+	accessGroupMember.AccessGroupMemberKeyName = &accessGroupMemberKeyNameCopy
+	accessGroupMember.EncryptedKey = encryptedKeyCopy
+	accessGroupMember.ExtraData = extraDataCopy
 }
 
 func (accessGroupMember *PGAccessGroupMemberEntry) ToAccessGroupMemberEntry() (
 	_accessGroupOwnerPublicKey *PublicKey, _accessGroupKeyName *GroupKeyName, _accessGroupMemberEntry *AccessGroupMemberEntry) {
 
-	return accessGroupMember.AccessGroupOwnerPublicKey,
-		accessGroupMember.AccessGroupKeyName,
+	accessGroupOwnerPublicKeyCopy := *accessGroupMember.AccessGroupOwnerPublicKey
+	accessGroupKeyNameCopy := *accessGroupMember.AccessGroupKeyName
+	accessGroupMemberPublicKeyCopy := *accessGroupMember.AccessGroupMemberPublicKey
+	accessGroupMemberKeyNameCopy := *accessGroupMember.AccessGroupMemberKeyName
+	encryptedKeyCopy := accessGroupMember.EncryptedKey
+	extraDataCopy, _ := DecodeExtraData(bytes.NewReader(EncodeExtraData(accessGroupMember.ExtraData)))
+	return &accessGroupOwnerPublicKeyCopy,
+		&accessGroupKeyNameCopy,
 		&AccessGroupMemberEntry{
-			AccessGroupMemberPublicKey: accessGroupMember.AccessGroupMemberPublicKey,
-			AccessGroupMemberKeyName:   accessGroupMember.AccessGroupMemberKeyName,
-			EncryptedKey:               accessGroupMember.EncryptedKey,
-			ExtraData:                  accessGroupMember.ExtraData,
+			AccessGroupMemberPublicKey: &accessGroupMemberPublicKeyCopy,
+			AccessGroupMemberKeyName:   &accessGroupMemberKeyNameCopy,
+			EncryptedKey:               encryptedKeyCopy,
+			ExtraData:                  extraDataCopy,
 		}
 }
 
@@ -869,16 +912,21 @@ func (messageEntry *PGNewMessageDmEntry) FromNewMessageEntry(newMessageEntry *Ne
 		*newMessageEntry.SenderAccessGroupOwnerPublicKey, *newMessageEntry.SenderAccessGroupKeyName,
 		*newMessageEntry.RecipientAccessGroupOwnerPublicKey, *newMessageEntry.RecipientAccessGroupKeyName,
 		newMessageEntry.TimestampNanos)
+	senderAccessGroupPublicKeyCopy := *newMessageEntry.SenderAccessGroupPublicKey
+	recipientAccessGroupPublicKeyCopy := *newMessageEntry.RecipientAccessGroupPublicKey
+	encryptedTextCopy := newMessageEntry.EncryptedText
+	timestampNanosCopy := newMessageEntry.TimestampNanos
+	extraDataCopy, _ := DecodeExtraData(bytes.NewReader(EncodeExtraData(newMessageEntry.ExtraData)))
 
 	messageEntry.MinorAccessGroupOwnerPublicKey = &dmMessageKey.MinorGroupOwnerPublicKey
 	messageEntry.MinorAccessGroupKeyName = &dmMessageKey.MinorGroupKeyName
-	messageEntry.SenderAccessGroupPublicKey = newMessageEntry.SenderAccessGroupPublicKey
+	messageEntry.SenderAccessGroupPublicKey = &senderAccessGroupPublicKeyCopy
 	messageEntry.MajorAccessGroupOwnerPublicKey = &dmMessageKey.MajorGroupOwnerPublicKey
 	messageEntry.MajorAccessGroupKeyName = &dmMessageKey.MajorGroupKeyName
-	messageEntry.RecipientAccessGroupPublicKey = newMessageEntry.RecipientAccessGroupPublicKey
-	messageEntry.EncryptedText = newMessageEntry.EncryptedText
-	messageEntry.TimestampNanos = newMessageEntry.TimestampNanos
-	messageEntry.ExtraData = newMessageEntry.ExtraData
+	messageEntry.RecipientAccessGroupPublicKey = &recipientAccessGroupPublicKeyCopy
+	messageEntry.EncryptedText = encryptedTextCopy
+	messageEntry.TimestampNanos = timestampNanosCopy
+	messageEntry.ExtraData = extraDataCopy
 
 	if bytes.Equal(dmMessageKey.MinorGroupOwnerPublicKey.ToBytes(), newMessageEntry.SenderAccessGroupOwnerPublicKey.ToBytes()) &&
 		bytes.Equal(dmMessageKey.MinorGroupKeyName.ToBytes(), newMessageEntry.SenderAccessGroupKeyName.ToBytes()) {
@@ -891,27 +939,32 @@ func (messageEntry *PGNewMessageDmEntry) FromNewMessageEntry(newMessageEntry *Ne
 
 func (messageEntry *PGNewMessageDmEntry) ToNewMessageEntry() *NewMessageEntry {
 
-	senderAccessGroupOwnerPublicKey := messageEntry.MinorAccessGroupOwnerPublicKey
-	senderAccessGroupKeyName := messageEntry.MinorAccessGroupKeyName
-	recipientAccessGroupOwnerPublicKey := messageEntry.MajorAccessGroupOwnerPublicKey
-	recipientAccessGroupKeyName := messageEntry.MajorAccessGroupKeyName
+	senderAccessGroupOwnerPublicKey := *messageEntry.MinorAccessGroupOwnerPublicKey
+	senderAccessGroupKeyName := *messageEntry.MinorAccessGroupKeyName
+	recipientAccessGroupOwnerPublicKey := *messageEntry.MajorAccessGroupOwnerPublicKey
+	recipientAccessGroupKeyName := *messageEntry.MajorAccessGroupKeyName
 	if !messageEntry.IsSenderMinor {
-		senderAccessGroupOwnerPublicKey = messageEntry.MajorAccessGroupOwnerPublicKey
-		senderAccessGroupKeyName = messageEntry.MajorAccessGroupKeyName
-		recipientAccessGroupOwnerPublicKey = messageEntry.MinorAccessGroupOwnerPublicKey
-		recipientAccessGroupKeyName = messageEntry.MinorAccessGroupKeyName
+		senderAccessGroupOwnerPublicKey = *messageEntry.MajorAccessGroupOwnerPublicKey
+		senderAccessGroupKeyName = *messageEntry.MajorAccessGroupKeyName
+		recipientAccessGroupOwnerPublicKey = *messageEntry.MinorAccessGroupOwnerPublicKey
+		recipientAccessGroupKeyName = *messageEntry.MinorAccessGroupKeyName
 	}
+	senderAccessGroupPublicKeyCopy := *messageEntry.SenderAccessGroupPublicKey
+	recipientAccessGroupPublicKeyCopy := *messageEntry.RecipientAccessGroupPublicKey
+	encryptedTextCopy := messageEntry.EncryptedText
+	timestampNanosCopy := messageEntry.TimestampNanos
+	extraDataCopy, _ := DecodeExtraData(bytes.NewReader(EncodeExtraData(messageEntry.ExtraData)))
 
 	return &NewMessageEntry{
-		SenderAccessGroupOwnerPublicKey:    senderAccessGroupOwnerPublicKey,
-		SenderAccessGroupKeyName:           senderAccessGroupKeyName,
-		SenderAccessGroupPublicKey:         messageEntry.SenderAccessGroupPublicKey,
-		RecipientAccessGroupOwnerPublicKey: recipientAccessGroupOwnerPublicKey,
-		RecipientAccessGroupKeyName:        recipientAccessGroupKeyName,
-		RecipientAccessGroupPublicKey:      messageEntry.RecipientAccessGroupPublicKey,
-		EncryptedText:                      messageEntry.EncryptedText,
-		TimestampNanos:                     messageEntry.TimestampNanos,
-		ExtraData:                          messageEntry.ExtraData,
+		SenderAccessGroupOwnerPublicKey:    &senderAccessGroupOwnerPublicKey,
+		SenderAccessGroupKeyName:           &senderAccessGroupKeyName,
+		SenderAccessGroupPublicKey:         &senderAccessGroupPublicKeyCopy,
+		RecipientAccessGroupOwnerPublicKey: &recipientAccessGroupOwnerPublicKey,
+		RecipientAccessGroupKeyName:        &recipientAccessGroupKeyName,
+		RecipientAccessGroupPublicKey:      &recipientAccessGroupPublicKeyCopy,
+		EncryptedText:                      encryptedTextCopy,
+		TimestampNanos:                     timestampNanosCopy,
+		ExtraData:                          extraDataCopy,
 	}
 }
 
@@ -932,30 +985,78 @@ type PGNewMessageGroupChatEntry struct {
 }
 
 func (messageEntry *PGNewMessageGroupChatEntry) FromNewMessageEntry(newMessageEntry *NewMessageEntry) {
-	messageEntry.AccessGroupOwnerPublicKey = newMessageEntry.RecipientAccessGroupOwnerPublicKey
-	messageEntry.AccessGroupKeyName = newMessageEntry.RecipientAccessGroupKeyName
-	messageEntry.AccessGroupPublicKey = newMessageEntry.RecipientAccessGroupPublicKey
+	recipientAccessGroupOwnerPublicKeyCopy := *newMessageEntry.RecipientAccessGroupOwnerPublicKey
+	recipientAccessGroupKeyNameCopy := *newMessageEntry.RecipientAccessGroupKeyName
+	recipientAccessGroupPublicKeyCopy := *newMessageEntry.RecipientAccessGroupPublicKey
+	senderAccessGroupOwnerPublicKeyCopy := *newMessageEntry.SenderAccessGroupOwnerPublicKey
+	senderAccessGroupKeyNameCopy := *newMessageEntry.SenderAccessGroupKeyName
+	senderAccessGroupPublicKeyCopy := *newMessageEntry.SenderAccessGroupPublicKey
+	encryptedTextCopy := newMessageEntry.EncryptedText
+	timestampNanosCopy := newMessageEntry.TimestampNanos
+	extraDataCopy, _ := DecodeExtraData(bytes.NewReader(EncodeExtraData(newMessageEntry.ExtraData)))
 
-	messageEntry.SenderAccessGroupOwnerPublicKey = newMessageEntry.SenderAccessGroupOwnerPublicKey
-	messageEntry.SenderAccessGroupKeyName = newMessageEntry.SenderAccessGroupKeyName
-	messageEntry.SenderAccessGroupPublicKey = newMessageEntry.SenderAccessGroupPublicKey
-
-	messageEntry.EncryptedText = newMessageEntry.EncryptedText
-	messageEntry.TimestampNanos = newMessageEntry.TimestampNanos
-	messageEntry.ExtraData = newMessageEntry.ExtraData
+	messageEntry.AccessGroupOwnerPublicKey = &recipientAccessGroupOwnerPublicKeyCopy
+	messageEntry.AccessGroupKeyName = &recipientAccessGroupKeyNameCopy
+	messageEntry.AccessGroupPublicKey = &recipientAccessGroupPublicKeyCopy
+	messageEntry.SenderAccessGroupOwnerPublicKey = &senderAccessGroupOwnerPublicKeyCopy
+	messageEntry.SenderAccessGroupKeyName = &senderAccessGroupKeyNameCopy
+	messageEntry.SenderAccessGroupPublicKey = &senderAccessGroupPublicKeyCopy
+	messageEntry.EncryptedText = encryptedTextCopy
+	messageEntry.TimestampNanos = timestampNanosCopy
+	messageEntry.ExtraData = extraDataCopy
 }
 
 func (messageEntry *PGNewMessageGroupChatEntry) ToNewMessageEntry() *NewMessageEntry {
+	senderAccessGroupOwnerPublicKeyCopy := *messageEntry.SenderAccessGroupOwnerPublicKey
+	senderAccessGroupKeyNameCopy := *messageEntry.SenderAccessGroupKeyName
+	senderAccessGroupPublicKeyCopy := *messageEntry.SenderAccessGroupPublicKey
+	accessGroupOwnerPublicKeyCopy := *messageEntry.AccessGroupOwnerPublicKey
+	accessGroupKeyNameCopy := *messageEntry.AccessGroupKeyName
+	accessGroupPublicKeyCopy := *messageEntry.AccessGroupPublicKey
+	encryptedTextCopy := messageEntry.EncryptedText
+	timestampNanosCopy := messageEntry.TimestampNanos
+	extraDataCopy, _ := DecodeExtraData(bytes.NewReader(EncodeExtraData(messageEntry.ExtraData)))
+
 	return &NewMessageEntry{
-		SenderAccessGroupOwnerPublicKey:    messageEntry.SenderAccessGroupOwnerPublicKey,
-		SenderAccessGroupKeyName:           messageEntry.SenderAccessGroupKeyName,
-		SenderAccessGroupPublicKey:         messageEntry.SenderAccessGroupPublicKey,
-		RecipientAccessGroupOwnerPublicKey: messageEntry.AccessGroupOwnerPublicKey,
-		RecipientAccessGroupKeyName:        messageEntry.AccessGroupKeyName,
-		RecipientAccessGroupPublicKey:      messageEntry.AccessGroupPublicKey,
-		EncryptedText:                      messageEntry.EncryptedText,
-		TimestampNanos:                     messageEntry.TimestampNanos,
-		ExtraData:                          messageEntry.ExtraData,
+		SenderAccessGroupOwnerPublicKey:    &senderAccessGroupOwnerPublicKeyCopy,
+		SenderAccessGroupKeyName:           &senderAccessGroupKeyNameCopy,
+		SenderAccessGroupPublicKey:         &senderAccessGroupPublicKeyCopy,
+		RecipientAccessGroupOwnerPublicKey: &accessGroupOwnerPublicKeyCopy,
+		RecipientAccessGroupKeyName:        &accessGroupKeyNameCopy,
+		RecipientAccessGroupPublicKey:      &accessGroupPublicKeyCopy,
+		EncryptedText:                      encryptedTextCopy,
+		TimestampNanos:                     timestampNanosCopy,
+		ExtraData:                          extraDataCopy,
+	}
+}
+
+type PGNewMessageDmThreadEntry struct {
+	tableName struct{} `pg:"pg_new_message_dm_thread_entries"`
+
+	UserAccessGroupOwnerPublicKey  *PublicKey    `pg:",pk,type:bytea"`
+	UserAccessGroupKeyName         *GroupKeyName `pg:",pk,type:bytea"`
+	PartyAccessGroupOwnerPublicKey *PublicKey    `pg:",pk,type:bytea"`
+	PartyAccessGroupKeyName        *GroupKeyName `pg:",pk,type:bytea"`
+}
+
+func (messageEntry *PGNewMessageDmThreadEntry) FromDmThreadKey(dmThreadKey *DmThreadKey) {
+	dmThreadKeyCopy := *dmThreadKey
+	messageEntry.UserAccessGroupOwnerPublicKey = &dmThreadKeyCopy.userGroupOwnerPublicKey
+	messageEntry.UserAccessGroupKeyName = &dmThreadKeyCopy.userGroupKeyName
+	messageEntry.PartyAccessGroupOwnerPublicKey = &dmThreadKeyCopy.partyGroupOwnerPublicKey
+	messageEntry.PartyAccessGroupKeyName = &dmThreadKeyCopy.partyGroupKeyName
+}
+
+func (messageEntry *PGNewMessageDmThreadEntry) ToDmThreadKey() *DmThreadKey {
+	userAccessGroupOwnerPublicKeyCopy := *messageEntry.UserAccessGroupOwnerPublicKey
+	userAccessGroupKeyNameCopy := *messageEntry.UserAccessGroupKeyName
+	partyAccessGroupOwnerPublicKeyCopy := *messageEntry.PartyAccessGroupOwnerPublicKey
+	partyAccessGroupKeyNameCopy := *messageEntry.PartyAccessGroupKeyName
+	return &DmThreadKey{
+		userGroupOwnerPublicKey:  userAccessGroupOwnerPublicKeyCopy,
+		userGroupKeyName:         userAccessGroupKeyNameCopy,
+		partyGroupOwnerPublicKey: partyAccessGroupOwnerPublicKeyCopy,
+		partyGroupKeyName:        partyAccessGroupKeyNameCopy,
 	}
 }
 
@@ -2873,12 +2974,14 @@ func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoVie
 func (postgres *Postgres) flushNewMessageEntries(tx *pg.Tx, view *UtxoView) error {
 	var insertNewMessageDmEntries []*PGNewMessageDmEntry
 	var deleteNewMessageDmEntries []*PGNewMessageDmEntry
+	var insertNewMessageDmThreadEntries []*PGNewMessageDmThreadEntry
+	var deleteNewMessageDmThreadEntries []*PGNewMessageDmThreadEntry
 	var insertNewMessageGroupEntries []*PGNewMessageGroupChatEntry
 	var deleteNewMessageGroupEntries []*PGNewMessageGroupChatEntry
 
 	for id, entry := range view.DmMessagesIndex {
 		if entry == nil {
-			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for id %v. This should never happen", id)
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for DmMessagesIndex id %v. This should never happen", id)
 			continue
 		}
 
@@ -2890,9 +2993,24 @@ func (postgres *Postgres) flushNewMessageEntries(tx *pg.Tx, view *UtxoView) erro
 			insertNewMessageDmEntries = append(insertNewMessageDmEntries, newMessageDmEntry)
 		}
 	}
+	for id, entry := range view.DmThreadIndex {
+		if entry == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for DmThreadIndex id %v. This should never happen", id)
+			continue
+		}
+
+		newMessageDmThreadEntry := &PGNewMessageDmThreadEntry{}
+		idCopy := id
+		newMessageDmThreadEntry.FromDmThreadKey(&idCopy)
+		if entry.isDeleted {
+			deleteNewMessageDmThreadEntries = append(deleteNewMessageDmThreadEntries, newMessageDmThreadEntry)
+		} else {
+			insertNewMessageDmThreadEntries = append(insertNewMessageDmThreadEntries, newMessageDmThreadEntry)
+		}
+	}
 	for id, entry := range view.GroupChatMessagesIndex {
 		if entry == nil {
-			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for id %v. This should never happen", id)
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for GroupChatMessagesIndex id %v. This should never happen", id)
 			continue
 		}
 
@@ -2920,6 +3038,24 @@ func (postgres *Postgres) flushNewMessageEntries(tx *pg.Tx, view *UtxoView) erro
 		_, err := tx.Model(&deleteNewMessageDmEntries).Returning("NULL").Delete()
 		if err != nil {
 			return fmt.Errorf("Postgres.flushNewMessageEntries: deleteNewMessageDmEntries: %v", err)
+		}
+	}
+
+	if len(insertNewMessageDmThreadEntries) > 0 {
+		_, err := tx.Model(&insertNewMessageDmThreadEntries).
+			WherePK().
+			OnConflict("(user_access_group_owner_public_key, user_access_group_key_name, " +
+				"party_access_group_owner_public_key, party_access_group_key_name) DO NOTHING").
+			Returning("NULL").
+			Insert()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushNewMessageEntries: insertNewMessageDmThreadEntries: %v", err)
+		}
+	}
+	if len(deleteNewMessageDmThreadEntries) > 0 {
+		_, err := tx.Model(&deleteNewMessageDmThreadEntries).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushNewMessageEntries: deleteNewMessageDmThreadEntries: %v", err)
 		}
 	}
 
@@ -3422,8 +3558,8 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
-		Order("block_height ASC").                                        // Then oldest first (FIFO)
-		Order("order_id DESC").                                           // Then match BadgerDB ordering
+		Order("block_height ASC"). // Then oldest first (FIFO)
+		Order("order_id DESC"). // Then match BadgerDB ordering
 		Select()
 
 	if err != nil {
@@ -3679,6 +3815,22 @@ func (postgres *Postgres) GetNewMessageGroupChatEntry(groupChatMessageKey GroupC
 		return nil
 	}
 	return newMessageGroupChatEntry
+}
+
+func (postgres *Postgres) CheckDmThreadExistence(dmThreadKey DmThreadKey) *DmThreadExistence {
+
+	newMessageDmThreadEntry := &PGNewMessageDmThreadEntry{
+		UserAccessGroupOwnerPublicKey:  &dmThreadKey.userGroupOwnerPublicKey,
+		UserAccessGroupKeyName:         &dmThreadKey.userGroupKeyName,
+		PartyAccessGroupOwnerPublicKey: &dmThreadKey.partyGroupOwnerPublicKey,
+		PartyAccessGroupKeyName:        &dmThreadKey.partyGroupKeyName,
+	}
+	err := postgres.db.Model(newMessageDmThreadEntry).WherePK().First()
+	if err != nil {
+		return nil
+	}
+	dmThreadExist := MakeDmThreadExistence()
+	return &dmThreadExist
 }
 
 //

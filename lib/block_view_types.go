@@ -104,6 +104,7 @@ const (
 	EncoderTypeAccessGroupMemberEntry
 	EncoderTypeGroupMembershipKey
 	EncoderTypeNewMessageEntry
+	EncoderTypeDmThreadExistence
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -832,6 +833,8 @@ type UtxoOperation struct {
 
 	// PrevNewMessageEntry is the previous message entry, used for disconnecting NewMessage transactions.
 	PrevNewMessageEntry *NewMessageEntry
+	// PrevDmThreadExistence is used for disconnecting DM message threads.
+	PrevDmThreadExistence *DmThreadExistence
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1132,6 +1135,9 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// PrevNewMessageEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevNewMessageEntry, skipMetadata...)...)
+
+		// PrevDmThreadExistence
+		data = append(data, EncodeToBytes(blockHeight, op.PrevDmThreadExistence, skipMetadata...)...)
 	}
 
 	return data
@@ -1702,6 +1708,14 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		} else if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNewMessageEntry")
 		}
+
+		// PrevDmThreadExistence
+		dmThreadExistence := &DmThreadExistence{}
+		if exist, err := DecodeFromBytes(dmThreadExistence, rr); exist && err == nil {
+			op.PrevDmThreadExistence = dmThreadExistence
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevDmThreadExistence")
+		}
 	}
 
 	return nil
@@ -2106,42 +2120,6 @@ func MakeGroupChatMessageKey(groupOwnerPublicKey PublicKey, groupKeyName GroupKe
 	}
 }
 
-type DmThreadKey struct {
-	XGroupOwnerPublicKey PublicKey
-	XGroupKeyName        GroupKeyName
-	YGroupOwnerPublicKey PublicKey
-	YGroupKeyName        GroupKeyName
-}
-
-func MakeDmThreadKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName,
-	yGroupOwnerPublicKey PublicKey, yGroupKeyName GroupKeyName) DmThreadKey {
-	return DmThreadKey{
-		XGroupOwnerPublicKey: xGroupOwnerPublicKey,
-		XGroupKeyName:        xGroupKeyName,
-		YGroupOwnerPublicKey: yGroupOwnerPublicKey,
-		YGroupKeyName:        yGroupKeyName,
-	}
-}
-
-func MakeDmThreadKeyFromMessageEntry(messageEntry *NewMessageEntry, shouldReverse bool) (DmThreadKey, error) {
-	if messageEntry == nil {
-		return DmThreadKey{}, fmt.Errorf("MakeDmThreadKeyFromMessageEntry: messageEntry is nil")
-	}
-	if messageEntry.RecipientAccessGroupOwnerPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil ||
-		messageEntry.SenderAccessGroupOwnerPublicKey == nil || messageEntry.SenderAccessGroupKeyName == nil {
-		return DmThreadKey{}, fmt.Errorf("MakeDmThreadKeyFromMessageEntry: messageEntry is missing fields")
-	}
-	if shouldReverse {
-		return MakeDmThreadKey(
-			*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName,
-			*messageEntry.SenderAccessGroupOwnerPublicKey, *messageEntry.SenderAccessGroupKeyName), nil
-	} else {
-		return MakeDmThreadKey(
-			*messageEntry.SenderAccessGroupOwnerPublicKey, *messageEntry.SenderAccessGroupKeyName,
-			*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName), nil
-	}
-}
-
 type DmMessageKey struct {
 	MinorGroupOwnerPublicKey PublicKey
 	MinorGroupKeyName        GroupKeyName
@@ -2157,11 +2135,21 @@ func MakeDmMessageKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName
 	minorGroupKeyName := xGroupKeyName
 	majorGroupOwnerPublicKey := yGroupOwnerPublicKey
 	majorGroupKeyName := yGroupKeyName
-	if bytes.Compare(xGroupOwnerPublicKey.ToBytes(), yGroupOwnerPublicKey.ToBytes()) == 1 {
+	switch bytes.Compare(xGroupOwnerPublicKey.ToBytes(), yGroupOwnerPublicKey.ToBytes()) {
+	case 1:
 		minorGroupOwnerPublicKey = yGroupOwnerPublicKey
 		minorGroupKeyName = yGroupKeyName
 		majorGroupOwnerPublicKey = xGroupOwnerPublicKey
 		majorGroupKeyName = xGroupKeyName
+	case 0:
+		// If there is a tie on public keys, then we compare group key names.
+		switch bytes.Compare(xGroupKeyName.ToBytes(), yGroupKeyName.ToBytes()) {
+		case 1:
+			minorGroupOwnerPublicKey = yGroupOwnerPublicKey
+			minorGroupKeyName = yGroupKeyName
+			majorGroupOwnerPublicKey = xGroupOwnerPublicKey
+			majorGroupKeyName = xGroupKeyName
+		}
 	}
 
 	return DmMessageKey{
@@ -2180,6 +2168,68 @@ func MakeDmMessageKeyForSenderRecipient(senderAccessGroupOwnerPublicKey PublicKe
 		senderAccessGroupOwnerPublicKey, senderAccessGroupKeyName,
 		recipientAccessGroupOwnerPublicKey, recipientAccessGroupKeyName,
 		tstampNanos)
+}
+
+type DmThreadKey struct {
+	userGroupOwnerPublicKey  PublicKey
+	userGroupKeyName         GroupKeyName
+	partyGroupOwnerPublicKey PublicKey
+	partyGroupKeyName        GroupKeyName
+}
+
+func MakeDmThreadKey(userGroupOwnerPublicKey PublicKey, userGroupKeyName GroupKeyName,
+	partyGroupOwnerPublicKey PublicKey, partyGroupKeyName GroupKeyName) DmThreadKey {
+	return DmThreadKey{
+		userGroupOwnerPublicKey:  userGroupOwnerPublicKey,
+		userGroupKeyName:         userGroupKeyName,
+		partyGroupOwnerPublicKey: partyGroupOwnerPublicKey,
+		partyGroupKeyName:        partyGroupKeyName,
+	}
+}
+
+func MakeDmThreadKeyFromMessageEntry(messageEntry *NewMessageEntry, shouldUseRecipientUser bool) (DmThreadKey, error) {
+	if messageEntry == nil {
+		return DmThreadKey{}, fmt.Errorf("MakeDmThreadKeyFromMessageEntry: messageEntry is nil")
+	}
+	if messageEntry.RecipientAccessGroupOwnerPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil ||
+		messageEntry.SenderAccessGroupOwnerPublicKey == nil || messageEntry.SenderAccessGroupKeyName == nil {
+		return DmThreadKey{}, fmt.Errorf("MakeDmThreadKeyFromMessageEntry: messageEntry is missing fields")
+	}
+	if shouldUseRecipientUser {
+		return MakeDmThreadKey(
+			*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName,
+			*messageEntry.SenderAccessGroupOwnerPublicKey, *messageEntry.SenderAccessGroupKeyName), nil
+	} else {
+		return MakeDmThreadKey(
+			*messageEntry.SenderAccessGroupOwnerPublicKey, *messageEntry.SenderAccessGroupKeyName,
+			*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName), nil
+	}
+}
+
+type DmThreadExistence struct {
+	isDeleted bool
+}
+
+func MakeDmThreadExistence() DmThreadExistence {
+	return DmThreadExistence{
+		isDeleted: false,
+	}
+}
+
+func (exists *DmThreadExistence) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	return []byte{}
+}
+
+func (exists *DmThreadExistence) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	return nil
+}
+
+func (exists *DmThreadExistence) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (exists *DmThreadExistence) GetEncoderType() EncoderType {
+	return EncoderTypeDmThreadExistence
 }
 
 // GroupKeyName helps with handling key names in AccessGroups

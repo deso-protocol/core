@@ -150,13 +150,19 @@ func TestNewMessage(t *testing.T) {
 		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, *m1PublicKey, *groupName1, *m1PublicKey,
 		updateGroupMessage, 2, NewMessageTypeGroupChat, NewMessageOperationUpdate, updateGroupExtraData,
 		nil)
+	// TODO: Test owner sending group chat, test minor / major for the same public key.
+	// TODO: Test that only group members can send group chat messages.
+	// TODO: Re-read your old messaging group tests.
 
+	// Add the above transactions to a block.
 	tvv1 := []*transactionTestVector{tv1, tv2, tv3, tv4, tv5, tv6, tv7}
 	tvb1DisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
 		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 100
 	}
 	tvb1 := NewTransactionTestVectorBlock(tvv1, nil, tvb1DisconnectCallback)
+
 	tvbb := []*transactionTestVectorBlock{tvb1}
+
 	tes := NewTransactionTestSuite(t, tvbb, tConfig)
 	tes.Run()
 }

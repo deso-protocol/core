@@ -1129,59 +1129,91 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 			numPut++
 		}
 	}
+	glog.V(2).Infof("_flushAccessGroupMembersToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 	return nil
 }
 
 func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: flushing (len=%d) group chat messages, "+
-		"(len=%d) dm messages", len(bav.GroupChatMessagesIndex), len(bav.DmMessagesIndex))
-	numDeleted := 0
-	numPut := 0
+		"(len=%d) dm messages, (len=%d) dm threads", len(bav.GroupChatMessagesIndex), len(bav.DmMessagesIndex),
+		len(bav.DmThreadIndex))
 
-	for groupChatMessageKeyIter, messageEntry := range bav.GroupChatMessagesIndex {
-		groupChatMessageKey := groupChatMessageKeyIter
+	{
+		numDeleted := 0
+		numPut := 0
+		for groupChatMessageKeyIter, messageEntry := range bav.GroupChatMessagesIndex {
+			groupChatMessageKey := groupChatMessageKeyIter
 
-		if err := DBDeleteGroupChatMessageEntryWithTxn(txn, bav.Snapshot, groupChatMessageKey); err != nil {
-			return errors.Wrapf(
-				err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
-					"for GroupChatMessageKey: %v: ", &groupChatMessageKey)
-		}
-
-		if messageEntry.isDeleted {
-			numDeleted++
-		} else {
-			if err := DBPutGroupChatMessageEntryWithTxn(txn, bav.Snapshot, blockHeight,
-				groupChatMessageKey, messageEntry); err != nil {
+			if err := DBDeleteGroupChatMessageEntryWithTxn(txn, bav.Snapshot, groupChatMessageKey); err != nil {
 				return errors.Wrapf(
-					err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry into "+
-						"group chat message index with key %v and value %v", groupChatMessageKey, messageEntry)
+					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
+						"for GroupChatMessageKey: %v: ", &groupChatMessageKey)
 			}
-			numPut++
+
+			if messageEntry.isDeleted {
+				numDeleted++
+			} else {
+				if err := DBPutGroupChatMessageEntryWithTxn(txn, bav.Snapshot, blockHeight,
+					groupChatMessageKey, messageEntry); err != nil {
+					return errors.Wrapf(
+						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry into "+
+							"group chat message index with key %v and value %v", groupChatMessageKey, messageEntry)
+				}
+				numPut++
+			}
 		}
+		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d group chat messages, put %d group chat messages", numDeleted, numPut)
 	}
 
-	for dmMessageKeyIter, messageEntry := range bav.DmMessagesIndex {
-		dmMessageKey := dmMessageKeyIter
+	{
+		numDeleted := 0
+		numPut := 0
+		for dmMessageKeyIter, messageEntry := range bav.DmMessagesIndex {
+			dmMessageKey := dmMessageKeyIter
 
-		if err := DBDeleteDmMessageEntryWithTxn(txn, bav.Snapshot, dmMessageKey); err != nil {
-			return errors.Wrapf(
-				err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
-					"for DmMessageKey: %v: ", &dmMessageKey)
-		}
-
-		if messageEntry.isDeleted {
-			numDeleted++
-		} else {
-			if err := DBPutDmMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, dmMessageKey, messageEntry); err != nil {
+			if err := DBDeleteDmMessageEntryWithTxn(txn, bav.Snapshot, dmMessageKey); err != nil {
 				return errors.Wrapf(
-					err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry "+
-						"into dm message index with key %v and value %v", dmMessageKey, messageEntry)
+					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
+						"for DmMessageKey: %v: ", &dmMessageKey)
 			}
-			numPut++
+
+			if messageEntry.isDeleted {
+				numDeleted++
+			} else {
+				if err := DBPutDmMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, dmMessageKey, messageEntry); err != nil {
+					return errors.Wrapf(
+						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry "+
+							"into dm message index with key %v and value %v", dmMessageKey, messageEntry)
+				}
+				numPut++
+			}
 		}
+		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d dm messages, put %d dm messages", numDeleted, numPut)
 	}
 
-	// TODO: Also flush dm threads... group chats too?
+	{
+		numDeleted := 0
+		numPut := 0
+		for dmThreadKeyIter, existence := range bav.DmThreadIndex {
+			dmThreadKey := dmThreadKeyIter
+
+			if err := DBDeleteDmThreadIndexWithTxn(txn, bav.Snapshot, dmThreadKey); err != nil {
+				return errors.Wrapf(
+					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings for DmThreadKey: %v: ", &dmThreadKey)
+			}
+
+			if existence.isDeleted {
+				numDeleted++
+			} else {
+				if err := DBPutDmThreadIndexWithTxn(txn, bav.Snapshot, dmThreadKey); err != nil {
+					return errors.Wrapf(
+						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting DmThreadKey: %v", dmThreadKey)
+				}
+				numPut++
+			}
+		}
+		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d dm threads, put %d dm threads", numDeleted, numPut)
+	}
 
 	return nil
 }

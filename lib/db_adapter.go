@@ -314,3 +314,16 @@ func (adapter *DbAdapter) GetGroupChatMessageEntry(groupChatMessageKey GroupChat
 		return DBGetGroupChatMessageEntry(adapter.badgerDb, adapter.snapshot, groupChatMessageKey)
 	}
 }
+
+func (adapter *DbAdapter) CheckDmThreadExistence(dmThreadKey DmThreadKey) (*DmThreadExistence, error) {
+
+	if adapter.postgresDb != nil {
+		pgDmThreadExistence := adapter.postgresDb.CheckDmThreadExistence(dmThreadKey)
+		if pgDmThreadExistence == nil {
+			return nil, nil
+		}
+		return pgDmThreadExistence, nil
+	} else {
+		return DBCheckDmThreadExistence(adapter.badgerDb, adapter.snapshot, dmThreadKey)
+	}
+}

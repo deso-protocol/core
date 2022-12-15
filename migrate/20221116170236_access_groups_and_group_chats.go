@@ -111,6 +111,21 @@ func init() {
 		}
 
 		_, err = db.Exec(`
+			CREATE TABLE IF NOT EXISTS pg_new_message_dm_thread_entries (
+				user_access_group_owner_public_key  BYTEA NOT NULL,
+				user_access_group_key_name          BYTEA NOT NULL,
+				party_access_group_owner_public_key BYTEA NOT NULL,
+				party_access_group_key_name         BYTEA NOT NULL,
+
+				PRIMARY KEY (user_access_group_owner_public_key, user_access_group_key_name, 
+					party_access_group_owner_public_key, party_access_group_key_name)
+			);
+		`)
+		if err != nil {
+			return err
+		}
+
+		_, err = db.Exec(`
 			CREATE TABLE IF NOT EXISTS pg_new_message_group_chat_entries (
 				access_group_owner_public_key        BYTEA NOT NULL,
 				access_group_key_name                BYTEA,

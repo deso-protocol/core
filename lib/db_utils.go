@@ -371,8 +371,9 @@ type DBPrefixes struct {
 
 	PrefixGroupChatMessagesIndex []byte `prefix_id:"[66]" is_state:"true"`
 	PrefixDmMessageIndex         []byte `prefix_id:"[67]" is_state:"true"`
+	PrefixDmThreadIndex          []byte `prefix_id:"[68]" is_state:"true"`
 
-	// NEXT_TAG: 68
+	// NEXT_TAG: 69
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -544,6 +545,8 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessageIndex) {
 		// prefix_id:"[67]"
 		return true, &NewMessageEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
+		return false, nil
 	}
 
 	return true, nil
@@ -1585,14 +1588,14 @@ func DBGetLimitedMessageForMessagingKeys(handle *badger.DB, messagingKeys []*Mes
 
 func _dbKeyForMessagingGroupEntry(messagingGroupEntry *MessagingGroupKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName...)
-	key := append(prefixCopy, messagingGroupEntry.OwnerPublicKey[:]...)
-	key = append(key, messagingGroupEntry.GroupKeyName[:]...)
+	key := append(prefixCopy, messagingGroupEntry.OwnerPublicKey.ToBytes()...)
+	key = append(key, messagingGroupEntry.GroupKeyName.ToBytes()...)
 	return key
 }
 
 func _dbSeekPrefixForMessagingGroupEntry(ownerPublicKey *PublicKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName...)
-	return append(prefixCopy, ownerPublicKey[:]...)
+	return append(prefixCopy, ownerPublicKey.ToBytes()...)
 }
 
 func DBPutMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
@@ -1748,16 +1751,16 @@ func DBGetAllUserGroupEntries(handle *badger.DB, ownerPublicKey []byte) ([]*Mess
 // _dbSeekPrefixForGroupMemberAttributesIndex returns prefix to enumerate over the given member's attributes.
 func _dbKeyForGroupChatMessagesIndex(key GroupChatMessageKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixGroupChatMessagesIndex...)
-	prefixCopy = append(prefixCopy, key.GroupOwnerPublicKey[:]...)
-	prefixCopy = append(prefixCopy, key.GroupKeyName[:]...)
+	prefixCopy = append(prefixCopy, key.GroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.GroupKeyName.ToBytes()...)
 	prefixCopy = append(prefixCopy, EncodeUint64(key.TimestampNanos)...)
 	return prefixCopy
 }
 
 func _dbSeekPrefixForGroupChatMessagesIndex(key GroupChatMessageKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixGroupChatMessagesIndex...)
-	prefixCopy = append(prefixCopy, key.GroupOwnerPublicKey[:]...)
-	prefixCopy = append(prefixCopy, key.GroupKeyName[:]...)
+	prefixCopy = append(prefixCopy, key.GroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.GroupKeyName.ToBytes()...)
 	return prefixCopy
 }
 
@@ -1835,20 +1838,20 @@ func DBDeleteGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key G
 
 func _dbKeyForPrefixDmMessageIndex(key DmMessageKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessageIndex...)
-	prefixCopy = append(prefixCopy, key.MinorGroupOwnerPublicKey[:]...)
-	prefixCopy = append(prefixCopy, key.MinorGroupKeyName[:]...)
-	prefixCopy = append(prefixCopy, key.MajorGroupOwnerPublicKey[:]...)
-	prefixCopy = append(prefixCopy, key.MajorGroupKeyName[:]...)
+	prefixCopy = append(prefixCopy, key.MinorGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MinorGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MajorGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MajorGroupKeyName.ToBytes()...)
 	prefixCopy = append(prefixCopy, EncodeUint64(key.TimestampNanos)...)
 	return prefixCopy
 }
 
 func _dbSeekPrefixForPrefixDmMessageIndex(key DmMessageKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessageIndex...)
-	prefixCopy = append(prefixCopy, key.MinorGroupOwnerPublicKey[:]...)
-	prefixCopy = append(prefixCopy, key.MinorGroupKeyName[:]...)
-	prefixCopy = append(prefixCopy, key.MajorGroupOwnerPublicKey[:]...)
-	prefixCopy = append(prefixCopy, key.MajorGroupKeyName[:]...)
+	prefixCopy = append(prefixCopy, key.MinorGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MinorGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MajorGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MajorGroupKeyName.ToBytes()...)
 	return prefixCopy
 }
 
@@ -1912,6 +1915,201 @@ func DBDeleteDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessag
 
 		return errors.Wrapf(err, "DBDeleteDmMessageEntryWithTxn: Deleting mapping for dm message"+
 			"with message key: %v", key)
+	}
+
+	return nil
+}
+
+// -------------------------------------------------------------------------------------
+// PrefixDmThreadIndex
+// This prefix stores information about all the different DM threads that the user has participated in.
+// We store a duplicate entry for each thread, with the "user", "party" accessGroupIds flipped.
+// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName, partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName> -> <>
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForPrefixDmThreadIndex(key DmThreadKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixDmThreadIndex...)
+	prefixCopy = append(prefixCopy, key.userGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.userGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.partyGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.partyGroupKeyName.ToBytes()...)
+	return prefixCopy
+}
+
+func _dbSeekPrefixForPrefixDmThreadIndex(userGroupOwnerPublicKey PublicKey, userGroupKeyName GroupKeyName) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixDmThreadIndex...)
+	prefixCopy = append(prefixCopy, userGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, userGroupKeyName.ToBytes()...)
+	return prefixCopy
+}
+
+func _dbDecodeKeyForPrefixDmThreadIndex(key []byte) (_userGroupOwnerPublicKey PublicKey, _userGroupKeyName GroupKeyName,
+	_partyGroupOwnerPublicKey PublicKey, _partyGroupKeyName GroupKeyName, _err error) {
+	// The key should be of the form:
+	// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName>
+	expectedKeyLenght := len(Prefixes.PrefixDmThreadIndex) + PublicKeyLenCompressed + MaxAccessGroupKeyNameCharacters +
+		PublicKeyLenCompressed + MaxAccessGroupKeyNameCharacters
+	if len(key) != expectedKeyLenght {
+		return PublicKey{}, GroupKeyName{}, PublicKey{}, GroupKeyName{}, fmt.Errorf("_dbDecodeKeyForAccessGroupEntry: "+
+			"key length is invalid: %v, should be: %v", len(key), expectedKeyLenght)
+	}
+	keyWithoutPrefix := key[len(Prefixes.PrefixDmThreadIndex):]
+	userGroupOwnerPublicKey := *NewPublicKey(keyWithoutPrefix[:PublicKeyLenCompressed])
+
+	keyWithoutPrefix = keyWithoutPrefix[PublicKeyLenCompressed:]
+	userGroupKeyName := *NewGroupKeyName(keyWithoutPrefix[:MaxAccessGroupKeyNameCharacters])
+
+	keyWithoutPrefix = keyWithoutPrefix[MaxAccessGroupKeyNameCharacters:]
+	partyGroupOwnerPublicKey := *NewPublicKey(keyWithoutPrefix[:PublicKeyLenCompressed])
+
+	keyWithoutPrefix = keyWithoutPrefix[PublicKeyLenCompressed:]
+	partyGroupKeyName := *NewGroupKeyName(keyWithoutPrefix[:MaxAccessGroupKeyNameCharacters])
+
+	return userGroupOwnerPublicKey, userGroupKeyName, partyGroupOwnerPublicKey, partyGroupKeyName, nil
+}
+
+func DBCheckDmThreadExistence(db *badger.DB, snap *Snapshot, key DmThreadKey) (*DmThreadExistence, error) {
+	var ret *DmThreadExistence
+	var err error
+	err = db.View(func(txn *badger.Txn) error {
+		ret, err = DBCheckDmThreadExistenceWithTxn(txn, snap, key)
+		return err
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBCheckDmThreadExistence: Problem checking dm thread existence with key: %v", key)
+	}
+	return ret, nil
+}
+
+func DBCheckDmThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, key DmThreadKey) (*DmThreadExistence, error) {
+
+	prefix := _dbKeyForPrefixDmThreadIndex(key)
+	_, err := DBGetWithTxn(txn, snap, prefix)
+	if err == badger.ErrKeyNotFound {
+		return nil, nil
+	} else if err != nil {
+		return nil, errors.Wrapf(err, "DBCheckDmThreadExistenceWithTxn: Problem checking dm thread existence with key: %v", key)
+	}
+
+	dmThreadExists := MakeDmThreadExistence()
+	return &dmThreadExists, nil
+}
+
+func DBGetAllUserDmThreadsByGroupKeyName(db *badger.DB, snap *Snapshot,
+	userGroupOwnerPublicKey PublicKey, userGroupKeyName GroupKeyName) ([]*DmThreadKey, error) {
+	var ret []*DmThreadKey
+	var err error
+	err = db.View(func(txn *badger.Txn) error {
+		ret, err = DBGetAllUserDmThreadsByGroupKeyNameWithTxn(txn, snap, userGroupOwnerPublicKey, userGroupKeyName)
+		return err
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetAllUserDmThreads: Problem getting all user dm threads with "+
+			"userGroupOwnerPublicKey: %v, userGroupKeyName: %v", userGroupOwnerPublicKey, userGroupKeyName)
+	}
+	return ret, nil
+}
+
+func DBGetAllUserDmThreadsByGroupKeyNameWithTxn(txn *badger.Txn, snap *Snapshot,
+	userGroupOwnerPublicKey PublicKey, userGroupKeyName GroupKeyName) ([]*DmThreadKey, error) {
+
+	prefix := _dbSeekPrefixForPrefixDmThreadIndex(userGroupOwnerPublicKey, userGroupKeyName)
+	keysFound := _enumerateKeysOnlyForPrefixWithTxn(txn, prefix)
+
+	// Decode found keys.
+	var userDmThreads []*DmThreadKey
+	for _, key := range keysFound {
+		_userGroupOwnerPublicKey, _userGroupKeyName,
+			_partyGroupOwnerPublicKey, _partyGroupKeyName, err := _dbDecodeKeyForPrefixDmThreadIndex(key)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllUserDmThreadsWithTxn: Problem decoding key: %v", key)
+		}
+		if !bytes.Equal(_userGroupOwnerPublicKey.ToBytes(), userGroupOwnerPublicKey.ToBytes()) {
+			return nil, fmt.Errorf("DBGetAllUserDmThreadsWithTxn: Found key with unexpected user public key: %v, "+
+				"expected: %v", _userGroupOwnerPublicKey, userGroupOwnerPublicKey)
+		}
+		if !bytes.Equal(_userGroupKeyName.ToBytes(), userGroupKeyName.ToBytes()) {
+			return nil, fmt.Errorf("DBGetAllUserDmThreadsWithTxn: Found key with unexpected user group key name: %v, "+
+				"expected: %v", _userGroupKeyName, userGroupKeyName)
+		}
+
+		dmThread := MakeDmThreadKey(_userGroupOwnerPublicKey, _userGroupKeyName, _partyGroupOwnerPublicKey, _partyGroupKeyName)
+		userDmThreads = append(userDmThreads, &dmThread)
+	}
+	return userDmThreads, nil
+}
+
+func DBGetAllUserDmThreads(db *badger.DB, snap *Snapshot, userGroupOwnerPublicKey PublicKey) ([]*DmThreadKey, error) {
+	var ret []*DmThreadKey
+	var err error
+	err = db.View(func(txn *badger.Txn) error {
+		ret, err = DBGetAllUserDmThreadsWithTxn(txn, snap, userGroupOwnerPublicKey)
+		return err
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetAllUserDmThreads: Problem getting all user dm threads with "+
+			"userGroupOwnerPublicKey: %v", userGroupOwnerPublicKey)
+	}
+	return ret, nil
+}
+
+func DBGetAllUserDmThreadsWithTxn(txn *badger.Txn, snap *Snapshot,
+	userGroupOwnerPublicKey PublicKey) ([]*DmThreadKey, error) {
+
+	prefix := _dbSeekPrefixForPrefixDmThreadIndex(userGroupOwnerPublicKey, GroupKeyName{})
+	keysFound := _enumerateKeysOnlyForPrefixWithTxn(txn, prefix)
+
+	// Decode found keys.
+	var userDmThreads []*DmThreadKey
+	for _, key := range keysFound {
+		_userGroupOwnerPublicKey, _userGroupKeyName,
+			_partyGroupOwnerPublicKey, _partyGroupKeyName, err := _dbDecodeKeyForPrefixDmThreadIndex(key)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllUserDmThreadsWithTxn: Problem decoding key: %v", key)
+		}
+		if !bytes.Equal(_userGroupOwnerPublicKey.ToBytes(), userGroupOwnerPublicKey.ToBytes()) {
+			return nil, fmt.Errorf("DBGetAllUserDmThreadsWithTxn: Found key with unexpected user public key: %v, "+
+				"expected: %v", _userGroupOwnerPublicKey, userGroupOwnerPublicKey)
+		}
+
+		dmThread := MakeDmThreadKey(_userGroupOwnerPublicKey, _userGroupKeyName, _partyGroupOwnerPublicKey, _partyGroupKeyName)
+		userDmThreads = append(userDmThreads, &dmThread)
+	}
+	return userDmThreads, nil
+}
+
+func DBPutDmThreadIndex(db *badger.DB, snap *Snapshot, dmThreadKey DmThreadKey) error {
+	err := db.Update(func(txn *badger.Txn) error {
+		return DBPutDmThreadIndexWithTxn(txn, snap, dmThreadKey)
+	})
+	if err != nil {
+		return errors.Wrapf(err, "DBPutDmThreadIndex: Problem putting dm thread index with key: %v", dmThreadKey)
+	}
+	return nil
+}
+
+func DBPutDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, dmThreadKey DmThreadKey) error {
+	prefix := _dbKeyForPrefixDmThreadIndex(dmThreadKey)
+	if err := DBSetWithTxn(txn, snap, prefix, []byte{}); err != nil {
+		return errors.Wrapf(err, "DBPutDmThreadIndex: Problem putting dm thread index with key: %v", dmThreadKey)
+	}
+	return nil
+}
+
+func DBDeleteDmThreadIndex(db *badger.DB, snap *Snapshot, dmThreadKey DmThreadKey) error {
+	err := db.Update(func(txn *badger.Txn) error {
+		return DBDeleteDmThreadIndexWithTxn(txn, snap, dmThreadKey)
+	})
+	if err != nil {
+		return errors.Wrapf(err, "DBDeleteDmThreadIndex: Problem deleting dm thread index with key: %v", dmThreadKey)
+	}
+	return nil
+}
+
+func DBDeleteDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, dmThreadKey DmThreadKey) error {
+	prefix := _dbKeyForPrefixDmThreadIndex(dmThreadKey)
+	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
+		return errors.Wrapf(err, "DBDeleteDmThreadIndex: Problem deleting dm thread index with key: %v", dmThreadKey)
 	}
 
 	return nil
@@ -4461,8 +4659,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -8439,7 +8637,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -8566,7 +8764,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}

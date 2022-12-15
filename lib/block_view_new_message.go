@@ -115,6 +115,39 @@ func (bav *UtxoView) deleteDmMessagesIndex(messageEntry *NewMessageEntry) error 
 	return nil
 }
 
+// ==================================================================
+// DmThreadIndex
+// ==================================================================
+
+func (bav *UtxoView) getDmThreadExistence(dmThreadKey DmThreadKey) (*DmThreadExistence, error) {
+	mapValue, existsMapValue := bav.DmThreadIndex[dmThreadKey]
+	if existsMapValue {
+		return mapValue, nil
+	}
+
+	dbAdapter := bav.GetDbAdapter()
+	dbThreadExists, err := dbAdapter.CheckDmThreadExistence(dmThreadKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "getDmThreadExistence: ")
+	}
+
+	if dbThreadExists != nil {
+		bav.DmThreadIndex[dmThreadKey] = dbThreadExists
+	}
+	return dbThreadExists, nil
+}
+
+func (bav *UtxoView) setDmThreadIndex(dmThreadKey DmThreadKey, existence DmThreadExistence) {
+	existenceCopy := existence
+	bav.DmThreadIndex[dmThreadKey] = &existenceCopy
+}
+
+func (bav *UtxoView) deleteDmThreadIndex(dmThreadKey DmThreadKey) {
+	existence := MakeDmThreadExistence()
+	existence.isDeleted = true
+	bav.setDmThreadIndex(dmThreadKey, existence)
+}
+
 func (bav *UtxoView) _connectNewMessage(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
@@ -185,6 +218,7 @@ func (bav *UtxoView) _connectNewMessage(
 	}
 
 	var prevNewMessageEntry *NewMessageEntry
+	var prevDmThreadExistence *DmThreadExistence
 
 	switch txMeta.NewMessageOperation {
 	case NewMessageOperationCreate:
@@ -203,11 +237,46 @@ func (bav *UtxoView) _connectNewMessage(
 					"_connectNewMessage: DM thread already exists for sender (%v) and recipient (%v)",
 					txMeta.SenderAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupOwnerPublicKey)
 			}
+			// Because DM messages between two users are indexed by <AGroupId, BGroupId>, we need to store
+			// mirror entries for both <AGroupId, BGroupId> and <BGroupId, AGroupId>. However, we don't
+			// necessarily need to store two messages for the same user. To store messages, it suffices
+			// to find lexicographical minimum of AGroupId.ToBytes(), BGroupId.ToBytes and store the message
+			// under <minGroupId, maxGroupId>. Next, in a different table, we store pointers to this message
+			// under <AGroupId, BGroupId> and <BGroupId, AGroupId>. This halves the space with an overhead
+			// of just a single additional DB key-only lookup operation, which is rather efficient.
+			dmThreadKeySender, err := MakeDmThreadKeyFromMessageEntry(messageEntry, false)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+					"making dm thread key from message entry: %v", messageEntry)
+			}
+			// Make a dm thread key for the sender.
+			dmThreadKeyRecipient, err := MakeDmThreadKeyFromMessageEntry(messageEntry, true)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+					"making dm thread key for sender from message entry: %v", messageEntry)
+			}
+			dmThread, err := bav.getDmThreadExistence(dmThreadKeySender)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+					"getting dm thread existence from index with dm thread key %v: ", dmThreadKeySender)
+			}
+			// If thread exists, we should set the prevDmThreadExistence for the UtxoOperation.
+			if dmThread != nil && !dmThread.isDeleted {
+				dmThreadCopy := *dmThread
+				prevDmThreadExistence = &dmThreadCopy
+			} else {
+				// If thread does not exist, we should set the prevDmThreadExistence to nil.
+				// This means we are dealing with the first message between these two users.
+				prevDmThreadExistence = nil
+			}
 			err = bav.setDmMessagesIndex(messageEntry)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
 					"setting dm message in index with dm message key %v: ", dmMessageKey)
 			}
+
+			bav.setDmThreadIndex(dmThreadKeySender, MakeDmThreadExistence())
+			bav.setDmThreadIndex(dmThreadKeyRecipient, MakeDmThreadExistence())
 		case NewMessageTypeGroupChat:
 			// Fetch the group chat entry, which is indexed by the recipient's access group.
 			groupChatMessageKey := MakeGroupChatMessageKey(
@@ -260,6 +329,11 @@ func (bav *UtxoView) _connectNewMessage(
 				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
 					"setting dm message in index with dm message key %v: ", dmMessageKey)
 			}
+			// Since a message exists, we know that the DM thread must also exist.
+			// We should set the prevDmThreadExistence to exists for the UtxoOperation.
+			dmThreadExists := MakeDmThreadExistence()
+			prevDmThreadExistence = &dmThreadExists
+
 		case NewMessageTypeGroupChat:
 			// Fetch the group chat entry, which is indexed by the recipient's access group.
 			groupChatMessageKey := MakeGroupChatMessageKey(
@@ -295,8 +369,9 @@ func (bav *UtxoView) _connectNewMessage(
 	}
 
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                OperationTypeNewMessage,
-		PrevNewMessageEntry: prevNewMessageEntry,
+		Type:                  OperationTypeNewMessage,
+		PrevNewMessageEntry:   prevNewMessageEntry,
+		PrevDmThreadExistence: prevDmThreadExistence,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -341,9 +416,35 @@ func (bav *UtxoView) _disconnectNewMessage(
 					txMeta.SenderAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupOwnerPublicKey)
 			}
 
+			// Delete the dm thread existence index.
+			dmThreadKeySender, err := MakeDmThreadKeyFromMessageEntry(dmMessage, false)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectNewMessage: Problem making dm thread key for "+
+					"message entry: %v", dmMessage)
+			}
+			dmThreadKeyRecipient, err := MakeDmThreadKeyFromMessageEntry(dmMessage, true)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectNewMessage: Problem making dm thread key for "+
+					"message entry: %v", dmMessage)
+			}
+			dmThread, err := bav.getDmThreadExistence(dmThreadKeySender)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectNewMessage: Problem getting dm thread existence from "+
+					"index with dm thread key %v: ", dmThreadKeySender)
+			}
+			if dmThread != nil && dmThread.isDeleted {
+				return fmt.Errorf("_disconnectNewMessage: DM thread existence is deleted for "+
+					"dm thread key %v", dmThread)
+			}
+
 			err = bav.deleteDmMessagesIndex(dmMessage)
 			if err != nil {
 				return errors.Wrapf(err, "_disconnectNewMessage: Problem deleting dm message index: ")
+			}
+			// If prevUtxoOp is set to nil, we should delete the thread from the db.
+			if prevUtxoOp.PrevDmThreadExistence == nil {
+				bav.deleteDmThreadIndex(dmThreadKeySender)
+				bav.deleteDmThreadIndex(dmThreadKeyRecipient)
 			}
 		case NewMessageTypeGroupChat:
 			groupChatMessageKey := MakeGroupChatMessageKey(
@@ -385,6 +486,11 @@ func (bav *UtxoView) _disconnectNewMessage(
 			if dmMessage == nil || dmMessage.isDeleted {
 				return fmt.Errorf("_disconnectNewMessage: DM thread does not exist for dm message key (%v)",
 					dmMessageKey)
+			}
+			// Dm thread index must exist for new message update.
+			if prevUtxoOp.PrevDmThreadExistence == nil || prevUtxoOp.PrevDmThreadExistence.isDeleted {
+				return fmt.Errorf("_disconnectNewMessage: DM thread existence is nil or deleted for "+
+					"dm thread key %v", dmMessageKey)
 			}
 
 			// Revert the dm message entry.
