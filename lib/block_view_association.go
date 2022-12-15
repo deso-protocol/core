@@ -890,9 +890,6 @@ func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAss
 	// Loop through UTXO view association entries adding non-deleted
 	// association entries. Note that the Set prevents duplicates.
 	for _, associationEntry := range newAssociationEntries {
-		if associationQuery.Limit > 0 && associationIDs.Size() >= associationQuery.Limit {
-			break
-		}
 		// Add new association entries found in the UTXO view.
 		associationIDs.Add(associationEntry.AssociationID)
 	}
@@ -1068,9 +1065,6 @@ func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAss
 	// Loop through UTXO view association entries adding non-deleted
 	// association entries. Note that the Set prevents duplicates.
 	for _, utxoViewAssociationEntry := range newAssociationEntries {
-		if associationQuery.Limit > 0 && associationIDs.Size() >= associationQuery.Limit {
-			break
-		}
 		// Add new association entries found in the UTXO view.
 		associationIDs.Add(utxoViewAssociationEntry.AssociationID)
 	}

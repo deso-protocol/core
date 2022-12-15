@@ -9201,19 +9201,19 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 		if limit > 0 && len(keysFound) >= limit {
 			break
 		}
-		// Copy key.
 		key := nodeIterator.Item().Key()
-		keyCopy := make([]byte, len(key))
-		copy(keyCopy[:], key[:])
 		// Skip if key is the last seen key.
-		if !haveSeenLastSeenKey && bytes.Equal(keyCopy, lastSeenKey) {
+		if !haveSeenLastSeenKey && bytes.Equal(key, lastSeenKey) {
 			haveSeenLastSeenKey = true
 			continue
 		}
 		// Skip if key was already deleted e.g. in the UTXO view.
-		if deletedKeys.Includes(string(keyCopy)) {
+		if deletedKeys.Includes(string(key)) {
 			continue
 		}
+		// Copy key.
+		keyCopy := make([]byte, len(key))
+		copy(keyCopy[:], key[:])
 		// Copy value.
 		valCopy, err := nodeIterator.Item().ValueCopy(nil)
 		if err != nil {
