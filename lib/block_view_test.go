@@ -10,7 +10,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/Workiva/go-datastructures/threadsafe/err"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/decred/dcrd/lru"
 	"github.com/dgraph-io/badger/v3"
@@ -1808,65 +1807,149 @@ func TestMempoolProcessError(t *testing.T) {
 func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 	require := require.New(t)
 
+	tb := NewTestBlockChain(t)
 	// generating a random pricate key to be used for the tests.
 	randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
 	randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
 
+	transactionSpendingLimit := &TransactionSpendingLimit{
+		GlobalDESOLimit:              100,
+		TransactionCountLimitMap:     make(map[TxnType]uint64),
+		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
+		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
+	}
+	transactionSpendingLimit.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
+
+	// Creating an derived key entry for the tests.
+	transactionSpendingLimitWithDerivedKeyEntry := &TransactionSpendingLimit{
+		GlobalDESOLimit:              100,
+		TransactionCountLimitMap:     make(map[TxnType]uint64),
+		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
+		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
+	}
+	transactionSpendingLimitWithDerivedKeyEntry.TransactionCountLimitMap[TxnTypeBasicTransfer] = 2
+	transactionSpendingLimitWithDerivedKeyEntry.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
+	derivedKeyTxn, derivedPriv := doDerivedKeyTransaction(tb.t, transactionSpendingLimitWithDerivedKeyEntry)
+	derivedPrivBase58CheckWithEntry := Base58CheckEncode(derivedPriv.Serialize(), true, params)
+	signTransaction(t, derivedKeyTxn, ECDSA, senderPrivString)
+	_, err = tb.mempoolProcessTransaction(derivedKeyTxn)
+	require.NoError(err)
+
 	testCases := []struct {
 		signType                  signatureType
 		signaturePrivateKeyBase58 string
+		transactionSpendingLimit  *TransactionSpendingLimit
 		expectedError             RuleError
 	}{
 		// Try signing the basic transfer with the owner's private key.
 		// Test case 1
 		{
 
-			signType:                  STANDARD_DER,
-			expectedError:             RuleErrorDerivedKeyNotAuthorized,
-			signaturePrivateKeyBase58: senderPrivString,
+			signType:                  ECDSA,
+			transactionSpendingLimit:  transactionSpendingLimit,
+			expectedError:             RuleErrorInvalidTransactionSignature,
+			signaturePrivateKeyBase58: "",
 		},
 		// Test case 2
 		{
 
 			signType:                  DESO_DER,
-			expectedError:             RuleErrorDerivedKeyNotAuthorized,
+			transactionSpendingLimit:  transactionSpendingLimit,
+			expectedError:             RuleErrorInvalidTransactionSignature,
 			signaturePrivateKeyBase58: senderPrivString,
 		},
 		// Test case 3
 		// Try signing the basic transfer with a random private key.
 		{
 
-			signType:                  ECDSA,
-			expectedError:             RuleErrorInvalidTransactionSignature,
-			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+			signType:                  STANDARD_DER,
+			transactionSpendingLimit:  transactionSpendingLimit,
+			expectedError:             RuleErrorDerivedKeyNotAuthorized,
+			signaturePrivateKeyBase58: senderPrivString,
 		},
 		// Test case 4
 		{
 
+			signType:                  ECDSA,
+			transactionSpendingLimit:  transactionSpendingLimit,
+			expectedError:             RuleErrorInvalidTransactionSignature,
+			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+		},
+		{
+
 			signType:                  STANDARD_DER,
+			transactionSpendingLimit:  transactionSpendingLimit,
 			expectedError:             RuleErrorDerivedKeyNotAuthorized,
 			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
 		},
 		// Test case 5
 		{
 			signType:                  DESO_DER,
+			transactionSpendingLimit:  transactionSpendingLimit,
+			expectedError:             RuleErrorDerivedKeyNotAuthorized,
+			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+		},
+		// Third scenario, there exists an authorize derived key entry and we're signing a basic transfer.
+		// Sign the basic transfer with the sender's private key.
+		// Test case 6
+		{
+
+			signType:                  STANDARD_DER,
+			transactionSpendingLimit:  transactionSpendingLimit,
+			signaturePrivateKeyBase58: senderPrivString,
+			expectedError:             RuleErrorDerivedKeyNotAuthorized,
+		},
+		// Test case 7
+		{
+			signType:                  DESO_DER,
+			transactionSpendingLimit:  transactionSpendingLimit,
+			signaturePrivateKeyBase58: senderPrivString,
+			expectedError:             RuleErrorDerivedKeyNotAuthorized,
+		},
+		// Test case 8
+		{
+			signType:                  DESO_DER,
+			transactionSpendingLimit:  transactionSpendingLimit,
+			signaturePrivateKeyBase58: derivedPrivBase58CheckWithEntry,
+			expectedError:             RuleErrorInvalidTransactionSignature,
+		},
+		// sign using random private key
+		// Test case 9
+		{
+
+			signType:                  ECDSA,
+			transactionSpendingLimit:  transactionSpendingLimit,
+			expectedError:             RuleErrorInvalidTransactionSignature,
+			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+		},
+		// Test case 10
+		{
+
+			signType:                  STANDARD_DER,
+			transactionSpendingLimit:  transactionSpendingLimit,
+			expectedError:             RuleErrorDerivedKeyNotAuthorized,
+			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+		},
+		// Test case 11
+		{
+			signType:                  DESO_DER,
+			transactionSpendingLimit:  transactionSpendingLimit,
 			expectedError:             RuleErrorDerivedKeyNotAuthorized,
 			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
 		},
 	}
 
-	tb := NewTestBlockChain(t)
-
 	for i := 0; i < len(testCases); i++ {
 		signaturePrivateKeyBase58 := testCases[i].signaturePrivateKeyBase58
+		derivedKeyTxn, derivedPriv := doDerivedKeyTransaction(t, testCases[i].transactionSpendingLimit)
 		var signerPrivBase58 string
 		if signaturePrivateKeyBase58 != "" {
 			signerPrivBase58 = signaturePrivateKeyBase58
-		}
-		derivedKeyTxn, derivedPriv := doDerivedKeyTransaction(t, transactionSpendingLimit)
-		if signaturePrivateKeyBase58 == "" {
-			signerPrivBase58 = Base58CheckEncode(derivedPriv.Serialize(), true, params)
+		} else {
+			signerPrivBase58 = Base58CheckEncode(derivedPriv.Serialize(), true, tb.params)
 		}
 		signTransaction(t, derivedKeyTxn, testCases[i].signType, signerPrivBase58)
 		_, err := tb.mempool.processTransaction(derivedKeyTxn, true, true, 0, true)
@@ -2029,34 +2112,28 @@ func TestBasicTransferSignatures(t *testing.T) {
 		derivedKeyTransaction func(*TransactionSpendingLimit) (*MsgDeSoTxn, *btcec.PrivateKey),
 		signaturePrivateKeyBase58 string,
 		transactionSpendingLimit *TransactionSpendingLimit,
-		testVector [3]RuleError) []*MsgDeSoTxn {
+	) []*MsgDeSoTxn {
 
 		var allTxns []*MsgDeSoTxn
-		processTxn := func(ii int, txn *MsgDeSoTxn) {
-			if testVector[ii].Error() == "" {
-				allTxns = append(allTxns, txn)
-				_, err = mempoolProcess(txn)
-				require.NoError(err)
-			} else {
-				_, err = mempoolProcess(txn)
-				require.Error(err)
-				require.Contains(err.Error(), testVector[ii].Error())
-			}
+		processTxn := func(txn *MsgDeSoTxn) {
+			_, err := mempoolProcess(txn)
+			require.NoError(err)
+			allTxns = append(allTxns, txn)
 		}
 
 		if createTransaction != nil {
 			txn := createTransaction()
 			// Sign the transaction with the recipient's key rather than the sender's key.
 			_signTxn(t, txn, signaturePrivateKeyBase58)
-			processTxn(0, txn)
+			processTxn(txn)
 
 			txn = createTransaction()
 			_signTxnWithDerivedKeyAndType(t, txn, signaturePrivateKeyBase58, 0)
-			processTxn(1, txn)
+			processTxn(txn)
 
 			txn = createTransaction()
 			_signTxnWithDerivedKeyAndType(t, txn, signaturePrivateKeyBase58, 1)
-			processTxn(2, txn)
+			processTxn(txn)
 		} else if derivedKeyTransaction != nil {
 			var signerPrivBase58 string
 			if signaturePrivateKeyBase58 != "" {
@@ -2068,21 +2145,21 @@ func TestBasicTransferSignatures(t *testing.T) {
 				signerPrivBase58 = Base58CheckEncode(derivedPriv.Serialize(), true, params)
 			}
 			_signTxn(t, derivedKeyTxn, signerPrivBase58)
-			processTxn(0, derivedKeyTxn)
+			processTxn(derivedKeyTxn)
 
 			derivedKeyTxn, derivedPriv = doDerivedKeyTransaction(t, transactionSpendingLimit)
 			if signaturePrivateKeyBase58 == "" {
 				signerPrivBase58 = Base58CheckEncode(derivedPriv.Serialize(), true, params)
 			}
 			_signTxnWithDerivedKeyAndType(t, derivedKeyTxn, signerPrivBase58, 0)
-			processTxn(1, derivedKeyTxn)
+			processTxn(derivedKeyTxn)
 
 			derivedKeyTxn, derivedPriv = doDerivedKeyTransaction(t, transactionSpendingLimit)
 			if signaturePrivateKeyBase58 == "" {
 				signerPrivBase58 = Base58CheckEncode(derivedPriv.Serialize(), true, params)
 			}
 			_signTxnWithDerivedKeyAndType(t, derivedKeyTxn, signerPrivBase58, 1)
-			processTxn(2, derivedKeyTxn)
+			processTxn(derivedKeyTxn)
 		}
 		return allTxns
 	}
@@ -2091,21 +2168,14 @@ func TestBasicTransferSignatures(t *testing.T) {
 	t.Run("sign_basic_transfer", func(t *testing.T) {
 		var allTxns []*MsgDeSoTxn
 		// Try signing the basic transfer with the owner's private key.
-		testSenderVector := [3]RuleError{
-			"", RuleErrorDerivedKeyNotAuthorized, RuleErrorDerivedKeyNotAuthorized,
-		}
 		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
 			createTransaction,
 			nil,
 			senderPrivString,
 			nil,
-			testSenderVector,
 		)...)
 
 		// Try signing the basic transfer with a random private key.
-		testRandomVector := [3]RuleError{
-			RuleErrorInvalidTransactionSignature, RuleErrorDerivedKeyNotAuthorized, RuleErrorDerivedKeyNotAuthorized,
-		}
 		randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
 		randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
@@ -2115,7 +2185,6 @@ func TestBasicTransferSignatures(t *testing.T) {
 			nil,
 			randomPrivKeyBase58Check,
 			nil,
-			testRandomVector,
 		)...)
 
 		mineBlockAndVerifySignatures(allTxns)
@@ -2135,33 +2204,22 @@ func TestBasicTransferSignatures(t *testing.T) {
 		transactionSpendingLimit.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
 
 		// First try signing the authorize derived key transaction with the derived key itself.
-		testDerivedKeyVector := [3]RuleError{
-			RuleErrorInvalidTransactionSignature, "", "",
-		}
 		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
 			nil,
 			doDerivedKeyTransaction,
 			"",
 			transactionSpendingLimit,
-			testDerivedKeyVector,
 		)...)
 
 		// Now try signing the authorize derived key transaction with the sender's private key.
-		testSignerKeyVector := [3]RuleError{
-			"", RuleErrorDerivedKeyNotAuthorized, RuleErrorDerivedKeyNotAuthorized,
-		}
 		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
 			nil,
 			doDerivedKeyTransaction,
 			senderPrivString,
 			transactionSpendingLimit,
-			testSignerKeyVector,
 		)...)
 
 		// Finally try a random private key.
-		testRandomKeyVector := [3]RuleError{
-			RuleErrorInvalidTransactionSignature, RuleErrorDerivedKeyNotAuthorized, RuleErrorDerivedKeyNotAuthorized,
-		}
 		randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
 		randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
@@ -2170,7 +2228,6 @@ func TestBasicTransferSignatures(t *testing.T) {
 			doDerivedKeyTransaction,
 			randomPrivKeyBase58Check,
 			transactionSpendingLimit,
-			testRandomKeyVector,
 		)...)
 
 		mineBlockAndVerifySignatures(allTxns)
@@ -2198,33 +2255,21 @@ func TestBasicTransferSignatures(t *testing.T) {
 		require.NoError(err)
 
 		// Sign the basic transfer with the sender's private key.
-		testMoneyOwnerVector := [3]RuleError{
-			"", RuleErrorDerivedKeyNotAuthorized, RuleErrorDerivedKeyNotAuthorized,
-		}
 		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
 			createTransaction,
 			nil,
 			senderPrivString,
 			nil,
-			testMoneyOwnerVector,
 		)...)
 
 		// Sign the basic transfer with the derived key.
-		testMoneyDerivedVector := [3]RuleError{
-			RuleErrorInvalidTransactionSignature, "", "",
-		}
 		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
 			createTransaction,
 			nil,
 			derivedPrivBase58Check,
 			nil,
-			testMoneyDerivedVector,
 		)...)
 
-		// Sign the basic transfer with a random private key.
-		testMoneyRandomVector := [3]RuleError{
-			RuleErrorInvalidTransactionSignature, RuleErrorDerivedKeyNotAuthorized, RuleErrorDerivedKeyNotAuthorized,
-		}
 		randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
 		randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
@@ -2234,7 +2279,6 @@ func TestBasicTransferSignatures(t *testing.T) {
 			nil,
 			randomPrivKeyBase58Check,
 			nil,
-			testMoneyRandomVector,
 		)...)
 
 		mineBlockAndVerifySignatures(allTxns)
