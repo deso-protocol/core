@@ -319,6 +319,7 @@ type MigrationHeight struct {
 const (
 	DefaultMigration              MigrationName = "DefaultMigration"
 	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
+	AssociationsMigration         MigrationName = "AssociationsMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -326,6 +327,9 @@ type EncoderMigrationHeights struct {
 
 	// DeSoUnlimitedDerivedKeys coincides with the DeSoUnlimitedDerivedKeysBlockHeight block
 	DeSoUnlimitedDerivedKeys MigrationHeight
+
+	// DeSoAssociations coincides with the AssociationsBlockHeight block
+	DeSoAssociations MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -339,6 +343,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 1,
 			Height:  uint64(forkHeights.DeSoUnlimitedDerivedKeysBlockHeight),
 			Name:    UnlimitedDerivedKeysMigration,
+		},
+		DeSoAssociations: MigrationHeight{
+			Version: 2,
+			Height:  uint64(forkHeights.AssociationsBlockHeight),
+			Name:    AssociationsMigration,
 		},
 	}
 }
