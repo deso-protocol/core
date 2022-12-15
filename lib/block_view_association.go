@@ -632,7 +632,6 @@ func (bav *UtxoView) IsValidDeletePostAssociationMetadata(transactorPK []byte, m
 }
 
 func _isValidUserAssociationQuery(associationQuery *UserAssociationQuery) error {
-	err := errors.New("invalid query params")
 	if associationQuery.TransactorPKID == nil &&
 		associationQuery.TargetUserPKID == nil &&
 		associationQuery.AppPKID == nil &&
@@ -640,14 +639,16 @@ func _isValidUserAssociationQuery(associationQuery *UserAssociationQuery) error 
 		len(associationQuery.AssociationTypePrefix) == 0 &&
 		len(associationQuery.AssociationValue) == 0 &&
 		len(associationQuery.AssociationValuePrefix) == 0 {
-		return err
+		return errors.New("invalid query params: none provided")
 	}
-	if (len(associationQuery.AssociationType) > 0 && len(associationQuery.AssociationTypePrefix) > 0) ||
-		(len(associationQuery.AssociationValue) > 0 && len(associationQuery.AssociationValuePrefix) > 0) {
-		return err
+	if len(associationQuery.AssociationType) > 0 && len(associationQuery.AssociationTypePrefix) > 0 {
+		return errors.New("invalid query params: both AssociationType and AssociationTypePrefix provided")
+	}
+	if len(associationQuery.AssociationValue) > 0 && len(associationQuery.AssociationValuePrefix) > 0 {
+		return errors.New("invalid query params: both AssociationValue and AssociationValuePrefix provided")
 	}
 	if associationQuery.Limit < 0 {
-		return err
+		return errors.New("invalid query params: negative Limit provided")
 	}
 	return nil
 }
@@ -657,16 +658,19 @@ func _isValidCountUserAssociationQuery(associationQuery *UserAssociationQuery) e
 	if err != nil {
 		return err
 	}
-	if associationQuery.Limit > 0 ||
-		associationQuery.LastSeenAssociationID != nil ||
-		associationQuery.SortDescending {
-		return errors.New("invalid query params")
+	if associationQuery.Limit > 0 {
+		return errors.New("invalid query params: cannot provide Limit")
+	}
+	if associationQuery.LastSeenAssociationID != nil {
+		return errors.New("invalid query params: cannot provide LastSeenAssociationID")
+	}
+	if associationQuery.SortDescending {
+		return errors.New("invalid query params: cannot provide SortDescending")
 	}
 	return nil
 }
 
 func _isValidPostAssociationQuery(associationQuery *PostAssociationQuery) error {
-	err := errors.New("invalid query params")
 	if associationQuery.TransactorPKID == nil &&
 		associationQuery.PostHash == nil &&
 		associationQuery.AppPKID == nil &&
@@ -674,14 +678,16 @@ func _isValidPostAssociationQuery(associationQuery *PostAssociationQuery) error 
 		len(associationQuery.AssociationTypePrefix) == 0 &&
 		len(associationQuery.AssociationValue) == 0 &&
 		len(associationQuery.AssociationValuePrefix) == 0 {
-		return err
+		return errors.New("invalid query params: none provided")
 	}
-	if (len(associationQuery.AssociationType) > 0 && len(associationQuery.AssociationTypePrefix) > 0) ||
-		(len(associationQuery.AssociationValue) > 0 && len(associationQuery.AssociationValuePrefix) > 0) {
-		return err
+	if len(associationQuery.AssociationType) > 0 && len(associationQuery.AssociationTypePrefix) > 0 {
+		return errors.New("invalid query params: both AssociationType and AssociationTypePrefix provided")
+	}
+	if len(associationQuery.AssociationValue) > 0 && len(associationQuery.AssociationValuePrefix) > 0 {
+		return errors.New("invalid query params: both AssociationValue and AssociationValuePrefix provided")
 	}
 	if associationQuery.Limit < 0 {
-		return err
+		return errors.New("invalid query params: negative Limit provided")
 	}
 	return nil
 }
@@ -691,10 +697,14 @@ func _isValidCountPostAssociationQuery(associationQuery *PostAssociationQuery) e
 	if err != nil {
 		return err
 	}
-	if associationQuery.Limit > 0 ||
-		associationQuery.LastSeenAssociationID != nil ||
-		associationQuery.SortDescending {
-		return errors.New("invalid query params")
+	if associationQuery.Limit > 0 {
+		return errors.New("invalid query params: cannot provide Limit")
+	}
+	if associationQuery.LastSeenAssociationID != nil {
+		return errors.New("invalid query params: cannot provide LastSeenAssociationID")
+	}
+	if associationQuery.SortDescending {
+		return errors.New("invalid query params: cannot provide SortDescending")
 	}
 	return nil
 }

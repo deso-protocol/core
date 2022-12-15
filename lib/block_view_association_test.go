@@ -904,12 +904,12 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		userAssociationQuery = &UserAssociationQuery{}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.Contains(t, err.Error(), "invalid query params: none provided")
 		require.Nil(t, userAssociationEntries)
 
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.Contains(t, err.Error(), "invalid query params: none provided")
 		require.Zero(t, count)
 
 		// Failed query: AssociationType and AssociationTypePrefix specified
@@ -920,12 +920,12 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.Contains(t, err.Error(), "invalid query params: both AssociationType and AssociationTypePrefix provided")
 		require.Nil(t, userAssociationEntries)
 
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.Contains(t, err.Error(), "invalid query params: both AssociationType and AssociationTypePrefix provided")
 		require.Zero(t, count)
 
 		// Failed query: AssociationValue and AssociationValuePrefix specified
@@ -937,12 +937,65 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.Contains(t, err.Error(), "invalid query params: both AssociationValue and AssociationValuePrefix provided")
 		require.Nil(t, userAssociationEntries)
 
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.Contains(t, err.Error(), "invalid query params: both AssociationValue and AssociationValuePrefix provided")
+		require.Zero(t, count)
+
+		// Failed query: negative Limit specified
+		userAssociationQuery = &UserAssociationQuery{
+			TargetUserPKID:   m3PKID,
+			AssociationType:  []byte("ENDORSEMENT"),
+			AssociationValue: []byte("C#"),
+			Limit:            -1,
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: negative Limit provided")
+		require.Nil(t, userAssociationEntries)
+
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: negative Limit provided")
+		require.Zero(t, count)
+
+		// Failed count query: Limit specified
+		userAssociationQuery = &UserAssociationQuery{
+			TargetUserPKID:   m3PKID,
+			AssociationType:  []byte("ENDORSEMENT"),
+			AssociationValue: []byte("C#"),
+			Limit:            1,
+		}
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: cannot provide Limit")
+		require.Zero(t, count)
+
+		// Failed count query: LastSeenAssociationID specified
+		userAssociationQuery = &UserAssociationQuery{
+			TargetUserPKID:        m3PKID,
+			AssociationType:       []byte("ENDORSEMENT"),
+			AssociationValue:      []byte("C#"),
+			LastSeenAssociationID: associationID,
+		}
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: cannot provide LastSeenAssociationID")
+		require.Zero(t, count)
+
+		// Failed count query: SortDescending specified
+		userAssociationQuery = &UserAssociationQuery{
+			TargetUserPKID:   m3PKID,
+			AssociationType:  []byte("ENDORSEMENT"),
+			AssociationValue: []byte("C#"),
+			SortDescending:   true,
+		}
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: cannot provide SortDescending")
 		require.Zero(t, count)
 
 		// Failed query if Badger: no Transactor or TargetUser specified
@@ -957,7 +1010,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, userAssociationEntries[0].TargetUserPKID, m3PKID)
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing Transactor or TargetUser")
 			require.Nil(t, userAssociationEntries)
 		}
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
@@ -966,7 +1019,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing Transactor or TargetUser")
 			require.Zero(t, count)
 		}
 
@@ -982,7 +1035,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, userAssociationEntries[0].TargetUserPKID, m3PKID)
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Nil(t, userAssociationEntries)
 		}
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
@@ -991,7 +1044,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Zero(t, count)
 		}
 
@@ -1008,7 +1061,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, userAssociationEntries[0].TargetUserPKID, m3PKID)
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Nil(t, userAssociationEntries)
 		}
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
@@ -1017,7 +1070,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Zero(t, count)
 		}
 
@@ -1035,7 +1088,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, userAssociationEntries[0].AssociationValue, []byte("SQL"))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: querying by App requires all other parameters")
 			require.Nil(t, userAssociationEntries)
 		}
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
@@ -1044,7 +1097,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: querying by App requires all other parameters")
 			require.Zero(t, count)
 		}
 
@@ -1469,12 +1522,12 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		postAssociationQuery = &PostAssociationQuery{}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.Contains(t, err.Error(), "invalid query params: none provided")
 		require.Nil(t, postAssociationEntries)
 
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.Contains(t, err.Error(), "invalid query params: none provided")
 		require.Zero(t, count)
 
 		// Failed query: AssociationType and AssociationTypePrefix specified
@@ -1485,12 +1538,12 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.Contains(t, err.Error(), "invalid query params: both AssociationType and AssociationTypePrefix provided")
 		require.Nil(t, postAssociationEntries)
 
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.Contains(t, err.Error(), "invalid query params: both AssociationType and AssociationTypePrefix provided")
 		require.Zero(t, count)
 
 		// Failed query: AssociationValue and AssociationValuePrefix specified
@@ -1501,12 +1554,61 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		}
 		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.Contains(t, err.Error(), "invalid query params: both AssociationValue and AssociationValuePrefix provided")
 		require.Nil(t, postAssociationEntries)
 
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid query params")
+		require.Contains(t, err.Error(), "invalid query params: both AssociationValue and AssociationValuePrefix provided")
+		require.Zero(t, count)
+
+		// Failed query: negative Limit specified
+		postAssociationQuery = &PostAssociationQuery{
+			AssociationType:  []byte("tag"),
+			AssociationValue: []byte("r/new"),
+			Limit:            -1,
+		}
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: negative Limit provided")
+		require.Nil(t, postAssociationEntries)
+
+		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: negative Limit provided")
+		require.Zero(t, count)
+
+		// Failed count query: Limit specified
+		postAssociationQuery = &PostAssociationQuery{
+			AssociationType:  []byte("tag"),
+			AssociationValue: []byte("r/new"),
+			Limit:            1,
+		}
+		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: cannot provide Limit")
+		require.Zero(t, count)
+
+		// Failed count query: LastSeenAssociationID specified
+		postAssociationQuery = &PostAssociationQuery{
+			AssociationType:       []byte("tag"),
+			AssociationValue:      []byte("r/new"),
+			LastSeenAssociationID: associationID,
+		}
+		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: cannot provide LastSeenAssociationID")
+		require.Zero(t, count)
+
+		// Failed count query: SortDescending specified
+		postAssociationQuery = &PostAssociationQuery{
+			AssociationType:  []byte("tag"),
+			AssociationValue: []byte("r/new"),
+			SortDescending:   true,
+		}
+		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: cannot provide SortDescending")
 		require.Zero(t, count)
 
 		// Failed query if Badger: non-empty Transactor, non-empty AssociationTypePrefix, non-empty AssociationValue
@@ -1522,7 +1624,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, postAssociationEntries[0].PostHash, postHash2)
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Nil(t, postAssociationEntries)
 		}
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1531,7 +1633,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Zero(t, count)
 		}
 
@@ -1548,7 +1650,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("NSFW"))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Nil(t, postAssociationEntries)
 		}
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1557,7 +1659,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Zero(t, count)
 		}
 
@@ -1575,7 +1677,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("NSFW"))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationValue")
 			require.Nil(t, postAssociationEntries)
 		}
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1584,7 +1686,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationValue")
 			require.Zero(t, count)
 		}
 
@@ -1601,7 +1703,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("NSFW"))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationValue")
 			require.Nil(t, postAssociationEntries)
 		}
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1610,7 +1712,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationValue")
 			require.Zero(t, count)
 		}
 
@@ -1626,7 +1728,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, postAssociationEntries[0].PostHash, postHash2)
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Nil(t, postAssociationEntries)
 		}
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1635,7 +1737,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Zero(t, count)
 		}
 
@@ -1651,7 +1753,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, postAssociationEntries[0].AssociationValue, []byte("NSFW"))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Nil(t, postAssociationEntries)
 		}
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1660,7 +1762,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Zero(t, count)
 		}
 
@@ -1677,7 +1779,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, postAssociationEntries[0].TransactorPKID, m3PKID)
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Nil(t, postAssociationEntries)
 		}
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1686,7 +1788,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Zero(t, count)
 		}
 
@@ -1702,7 +1804,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, postAssociationEntries[0].TransactorPKID, m3PKID)
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Nil(t, postAssociationEntries)
 		}
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1711,7 +1813,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Zero(t, count)
 		}
 
@@ -1726,7 +1828,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, postAssociationEntries[0].TransactorPKID, m3PKID)
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Nil(t, postAssociationEntries)
 		}
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1735,7 +1837,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Zero(t, count)
 		}
 
@@ -1751,7 +1853,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, postAssociationEntries[0].TransactorPKID, m3PKID)
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Nil(t, postAssociationEntries)
 		}
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1760,7 +1862,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: missing AssociationType")
 			require.Zero(t, count)
 		}
 
@@ -1778,7 +1880,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, postAssociationEntries[0].TransactorPKID, m0PKID)
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: querying by App requires all other parameters")
 			require.Nil(t, postAssociationEntries)
 		}
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
@@ -1787,7 +1889,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			require.Equal(t, count, uint64(1))
 		} else {
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid query params")
+			require.Contains(t, err.Error(), "invalid query params: querying by App requires all other parameters")
 			require.Zero(t, count)
 		}
 

@@ -8672,7 +8672,7 @@ func DBGetUserAssociationIdsByAttributes(
 		keyPrefix = append(keyPrefix, associationQuery.TargetUserPKID.ToBytes()...)
 	} else {
 		// TransactorPKID == nil, TargetUserPKID == nil
-		return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params")
+		return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params: missing Transactor or TargetUser")
 	}
 
 	// AssociationType
@@ -8681,7 +8681,7 @@ func DBGetUserAssociationIdsByAttributes(
 		keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 	} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
 		// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
-		return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params")
+		return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params: missing AssociationType")
 	} else if len(associationQuery.AssociationTypePrefix) > 0 {
 		keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
 	}
@@ -8700,7 +8700,7 @@ func DBGetUserAssociationIdsByAttributes(
 			associationQuery.TargetUserPKID == nil ||
 			len(associationQuery.AssociationType) == 0 ||
 			len(associationQuery.AssociationValue) == 0 {
-			return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params: querying by App requires all other parameters")
 		}
 		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
 	}
@@ -8804,7 +8804,7 @@ func DBGetPostAssociationIdsByAttributes(
 			len(associationQuery.AssociationValuePrefix) > 0 ||
 			associationQuery.PostHash != nil {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "" || PostHash != nil)
-			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationType")
 		} else if len(associationQuery.AssociationTypePrefix) > 0 {
 			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
 		}
@@ -8815,7 +8815,7 @@ func DBGetPostAssociationIdsByAttributes(
 			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
 		} else if associationQuery.PostHash != nil {
 			// AssociationValue == "", PostHash != nil
-			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationValue")
 		} else if len(associationQuery.AssociationValuePrefix) > 0 {
 			keyPrefix = append(keyPrefix, associationQuery.AssociationValuePrefix...)
 		}
@@ -8840,7 +8840,7 @@ func DBGetPostAssociationIdsByAttributes(
 			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 		} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
-			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationType")
 		} else if len(associationQuery.AssociationTypePrefix) > 0 {
 			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
 		}
@@ -8865,7 +8865,7 @@ func DBGetPostAssociationIdsByAttributes(
 			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
 		} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
-			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationType")
 		} else if len(associationQuery.AssociationTypePrefix) > 0 {
 			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
 		}
@@ -8885,7 +8885,7 @@ func DBGetPostAssociationIdsByAttributes(
 			associationQuery.PostHash == nil ||
 			len(associationQuery.AssociationType) == 0 ||
 			len(associationQuery.AssociationValue) == 0 {
-			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: querying by App requires all other parameters")
 		}
 		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
 	}
