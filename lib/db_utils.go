@@ -8620,7 +8620,7 @@ func DBGetUserAssociationsByAttributes(
 	utxoViewAssociationIds *Set[*BlockHash],
 ) ([]*UserAssociationEntry, []byte, error) {
 	// Query for association IDs by input query params.
-	associationIDs, prefixType, err := DBGetUserAssociationIdsByAttributes(
+	associationIds, prefixType, err := DBGetUserAssociationIdsByAttributes(
 		handle, snap, associationQuery, utxoViewAssociationIds,
 	)
 	if err != nil {
@@ -8629,7 +8629,7 @@ func DBGetUserAssociationsByAttributes(
 
 	// Map from association IDs to association entries.
 	var associationEntries []*UserAssociationEntry
-	for _, associationID := range associationIDs.ToOrderedSlice() {
+	for _, associationID := range associationIds.ToOrderedSlice() {
 		// Retrieve association entry from db by ID.
 		associationEntry, err := DBGetUserAssociationByID(handle, snap, associationID)
 		if err != nil {
@@ -8714,15 +8714,15 @@ func DBGetUserAssociationIdsByAttributes(
 		}
 	}
 
-	// Map deleted AssociationIDs to keys.
+	// Map UTXO view AssociationIDs to keys.
 	utxoViewAssociationKeys := NewSet[string]([]string{})
-	for _, deletedAssociationId := range utxoViewAssociationIds.ToSlice() {
-		deletedAssociationKey, err := _dbUserAssociationIdToKey(handle, snap, deletedAssociationId, prefixType)
+	for _, utxoViewAssociationID := range utxoViewAssociationIds.ToSlice() {
+		utxoViewAssociationKey, err := _dbUserAssociationIdToKey(handle, snap, utxoViewAssociationID, prefixType)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
 		}
-		if deletedAssociationKey != nil {
-			utxoViewAssociationKeys.Add(string(deletedAssociationKey))
+		if utxoViewAssociationKey != nil {
+			utxoViewAssociationKeys.Add(string(utxoViewAssociationKey))
 		}
 	}
 
@@ -8737,16 +8737,16 @@ func DBGetUserAssociationIdsByAttributes(
 	)
 
 	// Cast resulting values from bytes to association IDs.
-	associationIDs := NewSet[*BlockHash]([]*BlockHash{})
+	associationIds := NewSet[*BlockHash]([]*BlockHash{})
 	for _, valBytes := range valsFound {
 		associationID := &BlockHash{}
 		rr := bytes.NewReader(valBytes)
 		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
 			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: problem decoding association id: ")
 		}
-		associationIDs.Add(associationID)
+		associationIds.Add(associationID)
 	}
-	return associationIDs, prefixType, nil
+	return associationIds, prefixType, nil
 }
 
 func DBGetPostAssociationsByAttributes(
@@ -8756,7 +8756,7 @@ func DBGetPostAssociationsByAttributes(
 	utxoViewAssociationIds *Set[*BlockHash],
 ) ([]*PostAssociationEntry, []byte, error) {
 	// Query for association IDs by input query params.
-	associationIDs, prefixType, err := DBGetPostAssociationIdsByAttributes(
+	associationIds, prefixType, err := DBGetPostAssociationIdsByAttributes(
 		handle, snap, associationQuery, utxoViewAssociationIds,
 	)
 	if err != nil {
@@ -8765,7 +8765,7 @@ func DBGetPostAssociationsByAttributes(
 
 	// Map from association IDs to association entries.
 	var associationEntries []*PostAssociationEntry
-	for _, associationID := range associationIDs.ToOrderedSlice() {
+	for _, associationID := range associationIds.ToOrderedSlice() {
 		// Retrieve association entry from db by ID.
 		associationEntry, err := DBGetPostAssociationByID(handle, snap, associationID)
 		if err != nil {
@@ -8899,10 +8899,10 @@ func DBGetPostAssociationIdsByAttributes(
 		}
 	}
 
-	// Map deleted AssociationIDs to keys.
+	// Map UTXO view AssociationIDs to keys.
 	utxoViewAssociationKeys := NewSet[string]([]string{})
-	for _, utxoViewAssociationId := range utxoViewAssociationIds.ToSlice() {
-		utxoViewAssociationKey, err := _dbPostAssociationIdToKey(handle, snap, utxoViewAssociationId, prefixType)
+	for _, utxoViewAssociationID := range utxoViewAssociationIds.ToSlice() {
+		utxoViewAssociationKey, err := _dbPostAssociationIdToKey(handle, snap, utxoViewAssociationID, prefixType)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
 		}
@@ -8925,16 +8925,16 @@ func DBGetPostAssociationIdsByAttributes(
 	}
 
 	// Cast resulting values from bytes to association IDs.
-	associationIDs := NewSet[*BlockHash]([]*BlockHash{})
+	associationIds := NewSet[*BlockHash]([]*BlockHash{})
 	for _, valBytes := range valsFound {
 		associationID := &BlockHash{}
 		rr := bytes.NewReader(valBytes)
 		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
 			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: problem decoding association id: ")
 		}
-		associationIDs.Add(associationID)
+		associationIds.Add(associationID)
 	}
-	return associationIDs, prefixType, nil
+	return associationIds, prefixType, nil
 }
 
 func _dbUserAssociationIdToKey(
@@ -9185,6 +9185,11 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 	if lastSeenKey != nil {
 		startingKey = lastSeenKey
 		haveSeenLastSeenKey = false
+		if limit > 0 {
+			// Need to increment limit by one (if non-zero) since
+			// we include the lastSeenKey/lastSeenValue.
+			limit += 1
+		}
 	}
 
 	opts := badger.DefaultIteratorOptions
@@ -9202,12 +9207,16 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 			break
 		}
 		key := nodeIterator.Item().Key()
-		// Skip if key is the last seen key.
-		if !haveSeenLastSeenKey && bytes.Equal(key, lastSeenKey) {
+		// Skip if key is before the last seen key. The caller
+		// needs to filter out the lastSeenKey in the view as
+		// we return any key >= the lastSeenKey.
+		if !haveSeenLastSeenKey {
+			if !bytes.Equal(key, lastSeenKey) {
+				continue
+			}
 			haveSeenLastSeenKey = true
-			continue
 		}
-		// Skip if key was already deleted e.g. in the UTXO view.
+		// Skip if key is included in the set of skipKeys.
 		if skipKeys.Includes(string(key)) {
 			continue
 		}
