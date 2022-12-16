@@ -631,7 +631,7 @@ func (bav *UtxoView) IsValidDeletePostAssociationMetadata(transactorPK []byte, m
 	return nil
 }
 
-func _isValidUserAssociationQuery(associationQuery *UserAssociationQuery) error {
+func (bav *UtxoView) _isValidUserAssociationQuery(associationQuery *UserAssociationQuery) error {
 	if associationQuery.TransactorPKID == nil &&
 		associationQuery.TargetUserPKID == nil &&
 		associationQuery.AppPKID == nil &&
@@ -650,12 +650,20 @@ func _isValidUserAssociationQuery(associationQuery *UserAssociationQuery) error 
 	if associationQuery.Limit < 0 {
 		return errors.New("invalid query params: negative Limit provided")
 	}
+	if associationQuery.LastSeenAssociationID != nil {
+		lastSeenAssociationEntry, err := bav.GetUserAssociationByID(associationQuery.LastSeenAssociationID)
+		if err != nil {
+			return err
+		}
+		if lastSeenAssociationEntry == nil {
+			return errors.New("invalid query params: LastSeenAssociationEntry not found")
+		}
+	}
 	return nil
 }
 
-func _isValidCountUserAssociationQuery(associationQuery *UserAssociationQuery) error {
-	err := _isValidUserAssociationQuery(associationQuery)
-	if err != nil {
+func (bav *UtxoView) _isValidCountUserAssociationQuery(associationQuery *UserAssociationQuery) error {
+	if err := bav._isValidUserAssociationQuery(associationQuery); err != nil {
 		return err
 	}
 	if associationQuery.Limit > 0 {
@@ -670,7 +678,7 @@ func _isValidCountUserAssociationQuery(associationQuery *UserAssociationQuery) e
 	return nil
 }
 
-func _isValidPostAssociationQuery(associationQuery *PostAssociationQuery) error {
+func (bav *UtxoView) _isValidPostAssociationQuery(associationQuery *PostAssociationQuery) error {
 	if associationQuery.TransactorPKID == nil &&
 		associationQuery.PostHash == nil &&
 		associationQuery.AppPKID == nil &&
@@ -689,12 +697,20 @@ func _isValidPostAssociationQuery(associationQuery *PostAssociationQuery) error 
 	if associationQuery.Limit < 0 {
 		return errors.New("invalid query params: negative Limit provided")
 	}
+	if associationQuery.LastSeenAssociationID != nil {
+		lastSeenAssociationEntry, err := bav.GetPostAssociationByID(associationQuery.LastSeenAssociationID)
+		if err != nil {
+			return err
+		}
+		if lastSeenAssociationEntry == nil {
+			return errors.New("invalid query params: LastSeenAssociationEntry not found")
+		}
+	}
 	return nil
 }
 
-func _isValidCountPostAssociationQuery(associationQuery *PostAssociationQuery) error {
-	err := _isValidPostAssociationQuery(associationQuery)
-	if err != nil {
+func (bav *UtxoView) _isValidCountPostAssociationQuery(associationQuery *PostAssociationQuery) error {
+	if err := bav._isValidPostAssociationQuery(associationQuery); err != nil {
 		return err
 	}
 	if associationQuery.Limit > 0 {
@@ -793,11 +809,11 @@ func (bav *UtxoView) GetPostAssociationByAttributes(transactorPK []byte, metadat
 
 func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssociationQuery) ([]*UserAssociationEntry, error) {
 	// Validate query params.
-	if err := _isValidUserAssociationQuery(associationQuery); err != nil {
+	if err := bav._isValidUserAssociationQuery(associationQuery); err != nil {
 		return nil, errors.Wrap(err, "GetUserAssociationsByAttributes: ")
 	}
 	// First, pull matching association entries from the UTXO view so that
-	// we can track all association Ids from the view and can properly limit the
+	// we can track all association IDs from the view and can properly limit the
 	// number of entries retrieved from the database.
 	newAssociationEntries, allUtxoViewAssociationIds := bav._getUtxoViewUserAssociationEntriesByAttributes(associationQuery)
 	// Check the database for matching association entries, excluding all association ids from the view
@@ -806,7 +822,7 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 		return nil, errors.Wrapf(err, "GetUserAssociationsByAttributes: ")
 	}
 	// Sort the UTXO view association and DB entries according to the query's specified sort order.
-	sortedUserAssociationEntries, err := bav.GetDbAdapter().SortUserAssociationEntriesByPrefix(
+	sortedAssociationEntries, err := bav.GetDbAdapter().SortUserAssociationEntriesByPrefix(
 		append(newAssociationEntries, dbAssociationEntries...), prefixType, associationQuery.SortDescending,
 	)
 	if err != nil {
@@ -814,39 +830,36 @@ func (bav *UtxoView) GetUserAssociationsByAttributes(associationQuery *UserAssoc
 	}
 	startIndex := 0
 	if associationQuery.LastSeenAssociationID != nil {
-		for ii, associationEntry := range sortedUserAssociationEntries {
-			if associationEntry.AssociationID == associationQuery.LastSeenAssociationID {
+		for ii, associationEntry := range sortedAssociationEntries {
+			if associationEntry.AssociationID.IsEqual(associationQuery.LastSeenAssociationID) {
 				startIndex = ii + 1
 				break
 			}
 		}
-		if startIndex == 0 {
-			glog.Errorf("did not find LastSeenAssociationId, returning from beginning of slice")
-		}
 	}
 
 	maxIndex := startIndex + associationQuery.Limit
-	if maxIndex == 0 || maxIndex > len(sortedUserAssociationEntries) {
-		maxIndex = len(sortedUserAssociationEntries)
+	if maxIndex == 0 || maxIndex > len(sortedAssociationEntries) {
+		maxIndex = len(sortedAssociationEntries)
 	}
-	return sortedUserAssociationEntries[startIndex:maxIndex], nil
+	return sortedAssociationEntries[startIndex:maxIndex], nil
 }
 
 func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAssociationQuery) (uint64, error) {
 	// Validate query params.
-	if err := _isValidCountUserAssociationQuery(associationQuery); err != nil {
+	if err := bav._isValidCountUserAssociationQuery(associationQuery); err != nil {
 		return 0, errors.Wrap(err, "CountUserAssociationsByAttributes: ")
 	}
 	// First pull matching association entries from the UTXO view so that
-	// we can track all association Ids from the view and can properly limit
+	// we can track all association IDs from the view and can properly limit
 	// the number of entries retrieved from the database.
-	newAssociationEntries, allUtxoViewAssociationIds := bav._getUtxoViewUserAssociationEntriesByAttributes(associationQuery)
+	newUtxoViewAssociationEntries, allUtxoViewAssociationIds := bav._getUtxoViewUserAssociationEntriesByAttributes(associationQuery)
 	// Pull matching association IDs from the db.
-	associationIDs, _, err := bav.GetDbAdapter().GetUserAssociationIdsByAttributes(associationQuery, allUtxoViewAssociationIds)
+	dbAssociationIds, _, err := bav.GetDbAdapter().GetUserAssociationIdsByAttributes(associationQuery, allUtxoViewAssociationIds)
 	if err != nil {
 		return 0, errors.Wrapf(err, "CountUserAssociationsByAttributes: ")
 	}
-	return uint64(len(newAssociationEntries) + associationIDs.Size()), nil
+	return uint64(len(newUtxoViewAssociationEntries) + dbAssociationIds.Size()), nil
 }
 
 func (bav *UtxoView) _getUtxoViewUserAssociationEntriesByAttributes(
@@ -910,60 +923,57 @@ func _isMatchingUtxoUserAssociationEntry(associationQuery *UserAssociationQuery,
 
 func (bav *UtxoView) GetPostAssociationsByAttributes(associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
 	// Validate query params.
-	if err := _isValidPostAssociationQuery(associationQuery); err != nil {
+	if err := bav._isValidPostAssociationQuery(associationQuery); err != nil {
 		return nil, errors.Wrap(err, "GetPostAssociationsByAttributes: ")
 	}
 	// First, pull matching association entries from the UTXO view so that
-	// we can track all association Ids from the view and can properly limit the
+	// we can track all association IDs from the view and can properly limit the
 	// number of entries retrieved from the database.
-	newAssociationEntries, utxoViewAssociationIds := bav._getUtxoViewPostAssociationEntriesByAttributes(associationQuery)
+	newUtxoViewAssociationEntries, utxoViewAssociationIds := bav._getUtxoViewPostAssociationEntriesByAttributes(associationQuery)
 	// Check the database for matching association entries.
 	dbAssociationEntries, prefixType, err := bav.GetDbAdapter().GetPostAssociationsByAttributes(associationQuery, utxoViewAssociationIds)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetPostAssociationsByAttributes: ")
 	}
 	// Sort the UTXO view association entries and DB entries according to the query's specified sort order.
-	sortedPostAssociationEntries, err := bav.GetDbAdapter().SortPostAssociationEntriesByPrefix(
-		append(newAssociationEntries, dbAssociationEntries...), prefixType, associationQuery.SortDescending,
+	sortedAssociationEntries, err := bav.GetDbAdapter().SortPostAssociationEntriesByPrefix(
+		append(newUtxoViewAssociationEntries, dbAssociationEntries...), prefixType, associationQuery.SortDescending,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetPostAssociationsByAttributes: ")
 	}
 	startIndex := 0
 	if associationQuery.LastSeenAssociationID != nil {
-		for ii, associationEntry := range sortedPostAssociationEntries {
-			if associationEntry.AssociationID == associationQuery.LastSeenAssociationID {
+		for ii, associationEntry := range sortedAssociationEntries {
+			if associationEntry.AssociationID.IsEqual(associationQuery.LastSeenAssociationID) {
 				startIndex = ii + 1
 				break
 			}
 		}
-		if startIndex == 0 {
-			glog.Errorf("did not find LastSeenAssociationId, returning from beginning of slice")
-		}
 	}
 
 	maxIndex := startIndex + associationQuery.Limit
-	if maxIndex == 0 || maxIndex > len(sortedPostAssociationEntries) {
-		maxIndex = len(sortedPostAssociationEntries)
+	if maxIndex == 0 || maxIndex > len(sortedAssociationEntries) {
+		maxIndex = len(sortedAssociationEntries)
 	}
-	return sortedPostAssociationEntries[startIndex:maxIndex], nil
+	return sortedAssociationEntries[startIndex:maxIndex], nil
 }
 
 func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAssociationQuery) (uint64, error) {
 	// Validate query params.
-	if err := _isValidCountPostAssociationQuery(associationQuery); err != nil {
+	if err := bav._isValidCountPostAssociationQuery(associationQuery); err != nil {
 		return 0, errors.Wrapf(err, "CountPostAssociationsByAttributes: ")
 	}
 	// First pull matching association entries from the UTXO view so that
-	// we can track all association Ids from the view and can properly limit
+	// we can track all association IDs from the view and can properly limit
 	// the number of entries retrieved from the database.
-	newAssociationEntries, allUtxoViewAssociationIds := bav._getUtxoViewPostAssociationEntriesByAttributes(associationQuery)
+	newUtxoViewAssociationEntries, allUtxoViewAssociationIds := bav._getUtxoViewPostAssociationEntriesByAttributes(associationQuery)
 	// Pull matching association IDs from the db.
-	associationIDs, _, err := bav.GetDbAdapter().GetPostAssociationIdsByAttributes(associationQuery, allUtxoViewAssociationIds)
+	dbAssociationIds, _, err := bav.GetDbAdapter().GetPostAssociationIdsByAttributes(associationQuery, allUtxoViewAssociationIds)
 	if err != nil {
 		return 0, errors.Wrapf(err, "CountPostAssociationsByAttributes: ")
 	}
-	return uint64(len(newAssociationEntries) + associationIDs.Size()), nil
+	return uint64(len(newUtxoViewAssociationEntries) + dbAssociationIds.Size()), nil
 }
 
 func (bav *UtxoView) _getUtxoViewPostAssociationEntriesByAttributes(

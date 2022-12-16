@@ -3265,13 +3265,19 @@ func _constructFilterUserAssociationsByAttributesQuery(
 		sqlQuery.Where("association_value LIKE ?", string(associationQuery.AssociationValuePrefix)+"%")
 	}
 	if associationQuery.Limit > 0 {
-		sqlQuery.Limit(int(associationQuery.Limit))
+		if associationQuery.LastSeenAssociationID != nil {
+			// We need to increase the limit by one since we
+			// are including the LastSeenAssociationEntry.
+			sqlQuery.Limit(associationQuery.Limit + 1)
+		} else {
+			sqlQuery.Limit(associationQuery.Limit)
+		}
 	}
 	if associationQuery.LastSeenAssociationID != nil {
 		if associationQuery.SortDescending {
-			sqlQuery.Where("association_id < ?", associationQuery.LastSeenAssociationID)
+			sqlQuery.Where("association_id <= ?", associationQuery.LastSeenAssociationID)
 		} else {
-			sqlQuery.Where("association_id > ?", associationQuery.LastSeenAssociationID)
+			sqlQuery.Where("association_id >= ?", associationQuery.LastSeenAssociationID)
 		}
 	}
 	if associationQuery.SortDescending {
@@ -3352,13 +3358,19 @@ func _constructFilterPostAssociationsByAttributesQuery(
 		sqlQuery.Where("association_value LIKE ?", string(associationQuery.AssociationValuePrefix)+"%")
 	}
 	if associationQuery.Limit > 0 {
-		sqlQuery.Limit(int(associationQuery.Limit))
+		if associationQuery.LastSeenAssociationID != nil {
+			// We need to increase the limit by one since we
+			// are including the LastSeenAssociationEntry.
+			sqlQuery.Limit(associationQuery.Limit + 1)
+		} else {
+			sqlQuery.Limit(associationQuery.Limit)
+		}
 	}
 	if associationQuery.LastSeenAssociationID != nil {
 		if associationQuery.SortDescending {
-			sqlQuery.Where("association_id < ?", associationQuery.LastSeenAssociationID)
+			sqlQuery.Where("association_id <= ?", associationQuery.LastSeenAssociationID)
 		} else {
-			sqlQuery.Where("association_id > ?", associationQuery.LastSeenAssociationID)
+			sqlQuery.Where("association_id >= ?", associationQuery.LastSeenAssociationID)
 		}
 	}
 	if associationQuery.SortDescending {
