@@ -8716,14 +8716,18 @@ func DBGetUserAssociationIdsByAttributes(
 
 	// Map UTXO view AssociationIDs to keys.
 	utxoViewAssociationKeys := NewSet[string]([]string{})
-	for _, utxoViewAssociationID := range utxoViewAssociationIds.ToSlice() {
-		utxoViewAssociationKey, err := _dbUserAssociationIdToKey(handle, snap, utxoViewAssociationID, prefixType)
+	err = utxoViewAssociationIds.RangeApply(func (associationID *BlockHash) error {
+		utxoViewAssociationKey, err := _dbUserAssociationIdToKey(handle, snap, associationID, prefixType)
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
+			return err
 		}
 		if utxoViewAssociationKey != nil {
 			utxoViewAssociationKeys.Add(string(utxoViewAssociationKey))
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
 	}
 
 	// Scan for all association IDs with the given key prefix.
@@ -8901,14 +8905,18 @@ func DBGetPostAssociationIdsByAttributes(
 
 	// Map UTXO view AssociationIDs to keys.
 	utxoViewAssociationKeys := NewSet[string]([]string{})
-	for _, utxoViewAssociationID := range utxoViewAssociationIds.ToSlice() {
-		utxoViewAssociationKey, err := _dbPostAssociationIdToKey(handle, snap, utxoViewAssociationID, prefixType)
+	err = utxoViewAssociationIds.RangeApply(func (associationID *BlockHash) error {
+		utxoViewAssociationKey, err := _dbPostAssociationIdToKey(handle, snap, associationID, prefixType)
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
+			return err
 		}
 		if utxoViewAssociationKey != nil {
 			utxoViewAssociationKeys.Add(string(utxoViewAssociationKey))
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
 	}
 
 	// Scan for all association IDs with the given key prefix.
