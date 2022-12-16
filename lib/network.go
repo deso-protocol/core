@@ -5064,6 +5064,10 @@ type TransactionSpendingLimit struct {
 	// transactions
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
 
+	// ===== ENCODER MIGRATION AssociationsMigration =====
+	// AssociationType || AppPKID to number of transactions
+	AssociationLimitMap map[AssociationLimitKey]uint64
+
 	// ===== ENCODER MIGRATION UnlimitedDerivedKeysMigration =====
 	// IsUnlimited field determines whether this derived key has no spending limit.
 	IsUnlimited bool
@@ -5212,6 +5216,35 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 		indentationCounter--
 	}
 
+	// AssociationLimitMap
+	if len(tsl.AssociationLimitMap) > 0 {
+		var associationLimitStr []string
+		str += _indt(indentationCounter) + "Association Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.AssociationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Association Class: " +
+				limitKey.AssociationClass.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Association Type: " +
+				limitKey.AssociationType + "\n"
+			opString += _indt(indentationCounter) + "App PKID: " +
+				Base58CheckEncode(limitKey.AppPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			associationLimitStr = append(associationLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(associationLimitStr)
+		indentationCounter--
+	}
+
 	// IsUnlimited
 	if tsl.IsUnlimited {
 		str += "Unlimited"
@@ -5337,6 +5370,28 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 		for _, key := range keys {
 			data = append(data, key.Encode()...)
 			data = append(data, UintToBuf(tsl.DAOCoinLimitOrderLimitMap[key])...)
+		}
+	}
+
+	// AssociationLimitMap, gated by the encoder migration
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		associationLimitMapLength := uint64(len(tsl.AssociationLimitMap))
+		data = append(data, UintToBuf(associationLimitMapLength)...)
+		if associationLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[AssociationLimitKey](0, associationLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.AssociationLimitMap {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.AssociationLimitMap[key])...)
+			}
 		}
 	}
 
@@ -5470,6 +5525,31 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		associationMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
+		if associationMapLen > 0 {
+			for ii := uint64(0); ii < associationMapLen; ii++ {
+				associationLimitKey := &AssociationLimitKey{}
+				if err = associationLimitKey.Decode(rr); err != nil {
+					return errors.Wrap(err, "Error decoding Association Key")
+				}
+				var operationCount uint64
+				operationCount, err = ReadUvarint(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.AssociationLimitMap[*associationLimitKey]; exists {
+					return errors.New("Association Key already exists in map")
+				}
+				tsl.AssociationLimitMap[*associationLimitKey] = operationCount
+			}
+		}
+	}
+
 	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
 		tsl.IsUnlimited, err = ReadBoolByte(rr)
 		if err != nil {
@@ -5488,6 +5568,7 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
+		AssociationLimitMap:          make(map[AssociationLimitKey]uint64),
 		IsUnlimited:                  tsl.IsUnlimited,
 	}
 
@@ -5511,6 +5592,10 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		copyTSL.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = daoCoinLimitOrderCount
 	}
 
+	for associationLimitKey, associationCount := range tsl.AssociationLimitMap {
+		copyTSL.AssociationLimitMap[associationLimitKey] = associationCount
+	}
+
 	return copyTSL
 }
 
@@ -5526,7 +5611,8 @@ func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpending
 		len(tsl.CreatorCoinOperationLimitMap) > 0 ||
 		len(tsl.DAOCoinOperationLimitMap) > 0 ||
 		len(tsl.NFTOperationLimitMap) > 0 ||
-		len(tsl.DAOCoinLimitOrderLimitMap) > 0) {
+		len(tsl.DAOCoinLimitOrderLimitMap) > 0 ||
+		len(tsl.AssociationLimitMap) > 0) {
 
 		return tsl.IsUnlimited, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
 	}
@@ -5922,6 +6008,92 @@ func MakeDAOCoinLimitOrderLimitKey(buyingDAOCoinCreatorPKID PKID, sellingDAOCoin
 		BuyingDAOCoinCreatorPKID:  buyingDAOCoinCreatorPKID,
 		SellingDAOCoinCreatorPKID: sellingDAOCoinCreatorPKID,
 	}
+}
+
+type AssociationLimitKey struct {
+	AssociationClass AssociationClass // User || Post
+	AssociationType  string
+	AppPKID          PKID
+	Operation        AssociationOperation // Create || Delete
+}
+
+type AssociationClass uint8
+type AssociationOperation uint8
+
+const (
+	AssociationClassUser       AssociationClass     = 0
+	AssociationClassPost       AssociationClass     = 1
+	AssociationOperationCreate AssociationOperation = 0
+	AssociationOperationDelete AssociationOperation = 1
+)
+
+func (associationLimitKey AssociationLimitKey) Encode() []byte {
+	var data []byte
+	data = append(data, UintToBuf(uint64(associationLimitKey.AssociationClass))...)
+	data = append(data, EncodeByteArray([]byte(associationLimitKey.AssociationType))...)
+	data = append(data, associationLimitKey.AppPKID.ToBytes()...)
+	data = append(data, UintToBuf(uint64(associationLimitKey.Operation))...)
+	return data
+}
+
+func (associationLimitKey *AssociationLimitKey) Decode(rr *bytes.Reader) error {
+	var err error
+	// AssociationClass: User || Post
+	associationClass, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AssociationLimitKey.Decode: Problem reading AssociationClass: ")
+	}
+	associationLimitKey.AssociationClass = AssociationClass(associationClass)
+	// AssociationType
+	associationType, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AssociationType: ")
+	}
+	associationLimitKey.AssociationType = string(associationType)
+	// AppPKID
+	appPKID := &PKID{}
+	if err = appPKID.FromBytes(rr); err != nil {
+		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AppPKID: ")
+	}
+	associationLimitKey.AppPKID = *appPKID
+	// Operation: Create || Delete
+	operation, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AssociationLimitKey.Decode: Problem reading Operation: ")
+	}
+	associationLimitKey.Operation = AssociationOperation(operation)
+	return nil
+}
+
+func MakeAssociationLimitKey(
+	associationClass AssociationClass, associationType []byte, appPKID PKID, operation AssociationOperation,
+) AssociationLimitKey {
+	return AssociationLimitKey{
+		AssociationClass: associationClass,
+		AssociationType:  string(associationType),
+		AppPKID:          appPKID,
+		Operation:        operation,
+	}
+}
+
+func (associationClass AssociationClass) ToString() string {
+	if associationClass == AssociationClassUser {
+		return "User"
+	}
+	if associationClass == AssociationClassPost {
+		return "Post"
+	}
+	return ""
+}
+
+func (associationOperation AssociationOperation) ToString() string {
+	if associationOperation == AssociationOperationCreate {
+		return "Create"
+	}
+	if associationOperation == AssociationOperationDelete {
+		return "Delete"
+	}
+	return ""
 }
 
 func (txnData *AuthorizeDerivedKeyMetadata) GetTxnType() TxnType {
