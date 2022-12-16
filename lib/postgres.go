@@ -3193,19 +3193,21 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 	return pgAssociation.ToPostAssociationEntry(), nil
 }
 
-func (postgres *Postgres) GetUserAssociationsByAttributes(associationQuery *UserAssociationQuery) ([]*UserAssociationEntry, error) {
+func (postgres *Postgres) GetUserAssociationsByAttributes(
+	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
+) ([]*UserAssociationEntry, []byte, error) {
 	// Construct SQL query.
 	var pgAssociations []PGUserAssociation
 	sqlQuery := postgres.db.Model(&pgAssociations)
-	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery)
+	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
 
 	// Execute SQL query.
 	if err := sqlQuery.Select(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Map from PGAssociation to AssociationEntry.
@@ -3213,28 +3215,36 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(associationQuery *User
 	for _, pgAssociation := range pgAssociations {
 		associationEntries = append(associationEntries, pgAssociation.ToUserAssociationEntry())
 	}
-	return associationEntries, nil
+	return associationEntries, nil, nil
 }
 
-func (postgres *Postgres) GetUserAssociationIdsByAttributes(associationQuery *UserAssociationQuery) ([]*BlockHash, error) {
+func (postgres *Postgres) GetUserAssociationIdsByAttributes(
+	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
+) (*Set[*BlockHash], []byte, error) {
+
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGUserAssociation{}).Column("association_id")
-	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery)
+	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
 
 	// Execute SQL query.
 	var associationIds []*BlockHash
 	if err := sqlQuery.Select(&associationIds); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
-			return nil, nil
+			return NewSet([]*BlockHash{}), nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
-	return associationIds, nil
+	return NewSet(associationIds), nil, nil
 }
 
-func _constructFilterUserAssociationsByAttributesQuery(sqlQuery *pg.Query, associationQuery *UserAssociationQuery) {
+func _constructFilterUserAssociationsByAttributesQuery(
+	sqlQuery *pg.Query, associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
+) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
+	if utxoViewAssociationIds.Size() > 0 {
+		sqlQuery.Where("association_id NOT IN (?)", utxoViewAssociationIds.ToSlice())
+	}
 	if associationQuery.TransactorPKID != nil {
 		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
 	}
@@ -3254,21 +3264,44 @@ func _constructFilterUserAssociationsByAttributesQuery(sqlQuery *pg.Query, assoc
 	} else if len(associationQuery.AssociationValuePrefix) > 0 {
 		sqlQuery.Where("association_value LIKE ?", string(associationQuery.AssociationValuePrefix)+"%")
 	}
+	if associationQuery.Limit > 0 {
+		if associationQuery.LastSeenAssociationID != nil {
+			// We need to increase the limit by one since we
+			// are including the LastSeenAssociationEntry.
+			sqlQuery.Limit(associationQuery.Limit + 1)
+		} else {
+			sqlQuery.Limit(associationQuery.Limit)
+		}
+	}
+	if associationQuery.LastSeenAssociationID != nil {
+		if associationQuery.SortDescending {
+			sqlQuery.Where("association_id <= ?", associationQuery.LastSeenAssociationID)
+		} else {
+			sqlQuery.Where("association_id >= ?", associationQuery.LastSeenAssociationID)
+		}
+	}
+	if associationQuery.SortDescending {
+		sqlQuery.Order("association_id DESC")
+	} else {
+		sqlQuery.Order("association_id ASC")
+	}
 }
 
-func (postgres *Postgres) GetPostAssociationsByAttributes(associationQuery *PostAssociationQuery) ([]*PostAssociationEntry, error) {
+func (postgres *Postgres) GetPostAssociationsByAttributes(
+	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
+) ([]*PostAssociationEntry, []byte, error) {
 	// Construct SQL query.
 	var pgAssociations []PGPostAssociation
 	sqlQuery := postgres.db.Model(&pgAssociations)
-	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery)
+	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
 
 	// Execute SQL query.
 	if err := sqlQuery.Select(); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Map from PGAssociation to AssociationEntry.
@@ -3276,28 +3309,35 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(associationQuery *Post
 	for _, pgAssociation := range pgAssociations {
 		associationEntries = append(associationEntries, pgAssociation.ToPostAssociationEntry())
 	}
-	return associationEntries, nil
+	return associationEntries, nil, nil
 }
 
-func (postgres *Postgres) GetPostAssociationIdsByAttributes(associationQuery *PostAssociationQuery) ([]*BlockHash, error) {
+func (postgres *Postgres) GetPostAssociationIdsByAttributes(
+	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
+) (*Set[*BlockHash], []byte, error) {
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGPostAssociation{}).Column("association_id")
-	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery)
+	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
 
 	// Execute SQL query.
 	var associationIds []*BlockHash
 	if err := sqlQuery.Select(&associationIds); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
-			return nil, nil
+			return NewSet([]*BlockHash{}), nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
-	return associationIds, nil
+	return NewSet(associationIds), nil, nil
 }
 
-func _constructFilterPostAssociationsByAttributesQuery(sqlQuery *pg.Query, associationQuery *PostAssociationQuery) {
+func _constructFilterPostAssociationsByAttributesQuery(
+	sqlQuery *pg.Query, associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
+) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
+	if utxoViewAssociationIds.Size() > 0 {
+		sqlQuery.Where("association_id NOT IN (?)", utxoViewAssociationIds.ToSlice())
+	}
 	if associationQuery.TransactorPKID != nil {
 		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
 	}
@@ -3316,6 +3356,27 @@ func _constructFilterPostAssociationsByAttributesQuery(sqlQuery *pg.Query, assoc
 		sqlQuery.Where("association_value = ?", string(associationQuery.AssociationValue))
 	} else if len(associationQuery.AssociationValuePrefix) > 0 {
 		sqlQuery.Where("association_value LIKE ?", string(associationQuery.AssociationValuePrefix)+"%")
+	}
+	if associationQuery.Limit > 0 {
+		if associationQuery.LastSeenAssociationID != nil {
+			// We need to increase the limit by one since we
+			// are including the LastSeenAssociationEntry.
+			sqlQuery.Limit(associationQuery.Limit + 1)
+		} else {
+			sqlQuery.Limit(associationQuery.Limit)
+		}
+	}
+	if associationQuery.LastSeenAssociationID != nil {
+		if associationQuery.SortDescending {
+			sqlQuery.Where("association_id <= ?", associationQuery.LastSeenAssociationID)
+		} else {
+			sqlQuery.Where("association_id >= ?", associationQuery.LastSeenAssociationID)
+		}
+	}
+	if associationQuery.SortDescending {
+		sqlQuery.Order("association_id DESC")
+	} else {
+		sqlQuery.Order("association_id ASC")
 	}
 }
 
