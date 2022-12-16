@@ -1395,29 +1395,29 @@ func TestVerifyInputFeeSpendValues(t *testing.T) {
 		// test case 1
 		// simple test case in only one value in the transaction spend array.
 		{
-			"Case 1: Simple spend and fee test case",
-			[]*DeSoOutput{
+			description: "Case 1: Simple spend and fee test case",
+			txnSpend: []*DeSoOutput{
 				{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
 				},
 			},
 			// test is expected to pass
-			false,
-			nil,
+			expectedToFail: false,
+			expectedErr:    nil,
 			// expected total input, spend amount, change amount, fee
-			1000000000,
-			1,
-			999999998,
-			1,
+			expectedTotalInput:   1000000000,
+			expectedSpendAmount:  1,
+			expectedChangeAmount: 999999998,
+			expectedFees:         1,
 		},
 		// test case 2
 		// adding two values to txnSpend array.
 		// verifying whether the sum of the values in the DesoOutput array
 		// is taken into account for
 		{
-			"Case 2: Case with two spend requests",
-			[]*DeSoOutput{
+			description: "Case 2: Case with two spend requests",
+			txnSpend: []*DeSoOutput{
 				{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
@@ -1428,18 +1428,18 @@ func TestVerifyInputFeeSpendValues(t *testing.T) {
 				},
 			},
 			// test is expected to pass
-			false,
-			nil,
+			expectedToFail: false,
+			expectedErr:    nil,
 			// expected total input, spend amount, change amount, fee
-			1000000000,
-			4,
-			999999994,
-			2,
+			expectedTotalInput:   1000000000,
+			expectedSpendAmount:  4,
+			expectedChangeAmount: 999999994,
+			expectedFees:         2,
 		},
 		// test case 3
 		{
-			"Case 3: Testing with four spend requests.",
-			[]*DeSoOutput{
+			description: "Case 3: Testing with four spend requests.",
+			txnSpend: []*DeSoOutput{
 				{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1,
@@ -1458,52 +1458,52 @@ func TestVerifyInputFeeSpendValues(t *testing.T) {
 				},
 			},
 			// test is expected to pass.
-			false,
-			nil,
+			expectedToFail: false,
+			expectedErr:    nil,
 			// expected total input, spend amount, change amount, fee
-			1000000000,
-			35,
-			999999963,
-			2,
+			expectedTotalInput:   1000000000,
+			expectedSpendAmount:  35,
+			expectedChangeAmount: 999999963,
+			expectedFees:         2,
 		},
 		// test case 4
 		{
 			"case 4: Testing case with spend equal to the available balance.",
-			[]*DeSoOutput{
+			txnSpend: []*DeSoOutput{
 				{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 1000000000,
 				},
 			},
 			// test is expected to fail
-			true,
-			fmt.Errorf("Total input 1000000000 is not sufficient to cover the spend amount (=1000000000) plus the fee (=1, feerate=10, txsize=185), total=1000000001"),
-			0,
-			0,
-			0,
-			0,
+			expectedToFail:       true,
+			expectedErr:          fmt.Errorf("Total input 1000000000 is not sufficient to cover the spend amount (=1000000000) plus the fee (=1, feerate=10, txsize=185), total=1000000001"),
+			expectedTotalInput:   0,
+			expectedSpendAmount:  0,
+			expectedChangeAmount: 0,
+			expectedFees:         0,
 		},
 		// test case 5
 		{
-			"Case 5: Case where single entry of the DeSoOutput for the spend is greater than the avaialble input balance.",
-			[]*DeSoOutput{
+			description: "Case 5: Case where single entry of the DeSoOutput for the spend is greater than the avaialble input balance.",
+			txnSpend: []*DeSoOutput{
 				{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 2000000000,
 				},
 			},
 			// test is expected to fail
-			true,
-			fmt.Errorf("Total input 1000000000 is not sufficient to cover the spend amount (=2000000000) plus the fee (=1, feerate=10, txsize=185), total=2000000001"),
-			0,
-			0,
-			0,
-			0,
+			expectedToFail:       true,
+			expectedErr:          fmt.Errorf("Total input 1000000000 is not sufficient to cover the spend amount (=2000000000) plus the fee (=1, feerate=10, txsize=185), total=2000000001"),
+			expectedTotalInput:   0,
+			expectedSpendAmount:  0,
+			expectedChangeAmount: 0,
+			expectedFees:         0,
 		},
 		// test case 6
 		{
-			"Case 6: Testing sum of four test cases.",
-			[]*DeSoOutput{
+			description: "Case 6: Testing sum of four test cases.",
+			txnSpend: []*DeSoOutput{
 				{
 					PublicKey:   recipientPkBytes,
 					AmountNanos: 500000000,
@@ -1518,12 +1518,12 @@ func TestVerifyInputFeeSpendValues(t *testing.T) {
 				},
 			},
 			// test is expected to fail
-			true,
-			fmt.Errorf("Total input 1000000000 is not sufficient to cover the spend amount (=1200000000) plus the fee (=2, feerate=10, txsize=261), total=1200000002"),
-			0,
-			0,
-			0,
-			0,
+			expectedToFail:       true,
+			expectedErr:          fmt.Errorf("Total input 1000000000 is not sufficient to cover the spend amount (=1200000000) plus the fee (=2, feerate=10, txsize=261), total=1200000002"),
+			expectedTotalInput:   0,
+			expectedSpendAmount:  0,
+			expectedChangeAmount: 0,
+			expectedFees:         0,
 		},
 	}
 
