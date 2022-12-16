@@ -895,6 +895,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Equal(t, userAssociationEntries[0].AssociationValue, []byte("C"))
 		require.Equal(t, userAssociationEntries[1].AssociationValue, []byte("C#"))
 		require.Equal(t, userAssociationEntries[2].AssociationValue, []byte("C++"))
+		associationID = userAssociationEntries[0].AssociationID
 
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
@@ -960,6 +961,23 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid query params: negative Limit provided")
+		require.Zero(t, count)
+
+		// Failed query: LastSeenAssociationID not found
+		userAssociationQuery = &UserAssociationQuery{
+			TargetUserPKID:        m3PKID,
+			AssociationType:       []byte("ENDORSEMENT"),
+			AssociationValue:      []byte("C#"),
+			LastSeenAssociationID: NewBlockHash(RandomBytes(HashSizeBytes)),
+		}
+		userAssociationEntries, err = utxoView().GetUserAssociationsByAttributes(userAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: LastSeenAssociationEntry not found")
+		require.Nil(t, userAssociationEntries)
+
+		count, err = utxoView().CountUserAssociationsByAttributes(userAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: LastSeenAssociationEntry not found")
 		require.Zero(t, count)
 
 		// Failed count query: Limit specified
@@ -1513,6 +1531,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Len(t, postAssociationEntries, 1)
 		require.Equal(t, postAssociationEntries[0].TransactorPKID, m1PKID)
+		associationID = postAssociationEntries[0].AssociationID
 
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
 		require.NoError(t, err)
@@ -1576,6 +1595,22 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid query params: negative Limit provided")
+		require.Zero(t, count)
+
+		// Failed query: LastSeenAssociationID not found
+		postAssociationQuery = &PostAssociationQuery{
+			AssociationType:       []byte("TAG"),
+			Limit:                 1,
+			LastSeenAssociationID: NewBlockHash(RandomBytes(HashSizeBytes)),
+		}
+		postAssociationEntries, err = utxoView().GetPostAssociationsByAttributes(postAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: LastSeenAssociationEntry not found")
+		require.Nil(t, postAssociationEntries)
+
+		count, err = utxoView().CountPostAssociationsByAttributes(postAssociationQuery)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid query params: LastSeenAssociationEntry not found")
 		require.Zero(t, count)
 
 		// Failed count query: Limit specified

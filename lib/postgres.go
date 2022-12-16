@@ -3194,12 +3194,12 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 }
 
 func (postgres *Postgres) GetUserAssociationsByAttributes(
-	associationQuery *UserAssociationQuery, deletedAssociationIDs *Set[*BlockHash],
+	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
 ) ([]*UserAssociationEntry, []byte, error) {
 	// Construct SQL query.
 	var pgAssociations []PGUserAssociation
 	sqlQuery := postgres.db.Model(&pgAssociations)
-	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedAssociationIDs)
+	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
 
 	// Execute SQL query.
 	if err := sqlQuery.Select(); err != nil {
@@ -3219,12 +3219,12 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(
 }
 
 func (postgres *Postgres) GetUserAssociationIdsByAttributes(
-	associationQuery *UserAssociationQuery, deletedAssociationIDs *Set[*BlockHash],
+	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
 ) (*Set[*BlockHash], []byte, error) {
 
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGUserAssociation{}).Column("association_id")
-	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedAssociationIDs)
+	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
 
 	// Execute SQL query.
 	var associationIds []*BlockHash
@@ -3239,11 +3239,11 @@ func (postgres *Postgres) GetUserAssociationIdsByAttributes(
 }
 
 func _constructFilterUserAssociationsByAttributesQuery(
-	sqlQuery *pg.Query, associationQuery *UserAssociationQuery, deletedAssociationIDs *Set[*BlockHash],
+	sqlQuery *pg.Query, associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
 ) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
-	if deletedAssociationIDs.Size() > 0 {
-		sqlQuery.Where("association_id NOT IN (?)", deletedAssociationIDs.ToSlice())
+	if utxoViewAssociationIds.Size() > 0 {
+		sqlQuery.Where("association_id NOT IN (?)", utxoViewAssociationIds.ToSlice())
 	}
 	if associationQuery.TransactorPKID != nil {
 		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
@@ -3265,13 +3265,19 @@ func _constructFilterUserAssociationsByAttributesQuery(
 		sqlQuery.Where("association_value LIKE ?", string(associationQuery.AssociationValuePrefix)+"%")
 	}
 	if associationQuery.Limit > 0 {
-		sqlQuery.Limit(int(associationQuery.Limit))
+		if associationQuery.LastSeenAssociationID != nil {
+			// We need to increase the limit by one since we
+			// are including the LastSeenAssociationEntry.
+			sqlQuery.Limit(associationQuery.Limit + 1)
+		} else {
+			sqlQuery.Limit(associationQuery.Limit)
+		}
 	}
 	if associationQuery.LastSeenAssociationID != nil {
 		if associationQuery.SortDescending {
-			sqlQuery.Where("association_id < ?", associationQuery.LastSeenAssociationID)
+			sqlQuery.Where("association_id <= ?", associationQuery.LastSeenAssociationID)
 		} else {
-			sqlQuery.Where("association_id > ?", associationQuery.LastSeenAssociationID)
+			sqlQuery.Where("association_id >= ?", associationQuery.LastSeenAssociationID)
 		}
 	}
 	if associationQuery.SortDescending {
@@ -3282,12 +3288,12 @@ func _constructFilterUserAssociationsByAttributesQuery(
 }
 
 func (postgres *Postgres) GetPostAssociationsByAttributes(
-	associationQuery *PostAssociationQuery, deletedAssociationIDs *Set[*BlockHash],
+	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
 ) ([]*PostAssociationEntry, []byte, error) {
 	// Construct SQL query.
 	var pgAssociations []PGPostAssociation
 	sqlQuery := postgres.db.Model(&pgAssociations)
-	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedAssociationIDs)
+	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
 
 	// Execute SQL query.
 	if err := sqlQuery.Select(); err != nil {
@@ -3307,11 +3313,11 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(
 }
 
 func (postgres *Postgres) GetPostAssociationIdsByAttributes(
-	associationQuery *PostAssociationQuery, deletedAssociationIDs *Set[*BlockHash],
+	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
 ) (*Set[*BlockHash], []byte, error) {
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGPostAssociation{}).Column("association_id")
-	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, deletedAssociationIDs)
+	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
 
 	// Execute SQL query.
 	var associationIds []*BlockHash
@@ -3326,11 +3332,11 @@ func (postgres *Postgres) GetPostAssociationIdsByAttributes(
 }
 
 func _constructFilterPostAssociationsByAttributesQuery(
-	sqlQuery *pg.Query, associationQuery *PostAssociationQuery, deletedAssociationIDs *Set[*BlockHash],
+	sqlQuery *pg.Query, associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
 ) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
-	if deletedAssociationIDs.Size() > 0 {
-		sqlQuery.Where("association_id NOT IN (?)", deletedAssociationIDs.ToSlice())
+	if utxoViewAssociationIds.Size() > 0 {
+		sqlQuery.Where("association_id NOT IN (?)", utxoViewAssociationIds.ToSlice())
 	}
 	if associationQuery.TransactorPKID != nil {
 		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
@@ -3352,13 +3358,19 @@ func _constructFilterPostAssociationsByAttributesQuery(
 		sqlQuery.Where("association_value LIKE ?", string(associationQuery.AssociationValuePrefix)+"%")
 	}
 	if associationQuery.Limit > 0 {
-		sqlQuery.Limit(int(associationQuery.Limit))
+		if associationQuery.LastSeenAssociationID != nil {
+			// We need to increase the limit by one since we
+			// are including the LastSeenAssociationEntry.
+			sqlQuery.Limit(associationQuery.Limit + 1)
+		} else {
+			sqlQuery.Limit(associationQuery.Limit)
+		}
 	}
 	if associationQuery.LastSeenAssociationID != nil {
 		if associationQuery.SortDescending {
-			sqlQuery.Where("association_id < ?", associationQuery.LastSeenAssociationID)
+			sqlQuery.Where("association_id <= ?", associationQuery.LastSeenAssociationID)
 		} else {
-			sqlQuery.Where("association_id > ?", associationQuery.LastSeenAssociationID)
+			sqlQuery.Where("association_id >= ?", associationQuery.LastSeenAssociationID)
 		}
 	}
 	if associationQuery.SortDescending {
