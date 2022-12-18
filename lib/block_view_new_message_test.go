@@ -114,11 +114,30 @@ func TestNewMessage(t *testing.T) {
 	updatedDmExtraData := map[string][]byte{
 		"some random value": []byte("even more random value"),
 	}
+	groupIdM0B := *NewAccessGroupId(m0PublicKey, BaseGroupKeyName().ToBytes())
+	groupIdM1B := *NewAccessGroupId(m1PublicKey, BaseGroupKeyName().ToBytes())
+	dmM0BM1B := _createDmThreadKey(groupIdM0B, groupIdM1B)
+	dmThreads2 := []*DmThreadKey{&dmM0BM1B}
+	tv2.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, dmThreads2)
+		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, dmThreads2)
+	}
+	tv2.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, []*DmThreadKey{})
+		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, []*DmThreadKey{})
+	}
+
 	tv3 := _createNewMessageTestVector("TEST 3: (PASS) Try connecting new message update transaction for a DM "+
 		"sent from (m0, baseGroup) to (m1, baseGroup)", m0Priv, m0PubBytes,
 		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, *m1PublicKey, *BaseGroupKeyName(), *m1PublicKey,
 		updatedDmMessage, 1, NewMessageTypeDm, NewMessageOperationUpdate, updatedDmExtraData,
 		nil)
+	dmThreads3 := dmThreads2
+	tv3.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, dmThreads3)
+		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, dmThreads3)
+	}
+	tv3.disconnectCallback = tv2.connectCallback
 
 	// Create access group (m1, groupName1) and add m0 to it.
 	// We will then attempt sending some group chat messages.
@@ -153,6 +172,7 @@ func TestNewMessage(t *testing.T) {
 	// TODO: Test owner sending group chat, test minor / major for the same public key.
 	// TODO: Test that only group members can send group chat messages.
 	// TODO: Re-read your old messaging group tests.
+	// TODO: Make sure group id cant send a message to itself.
 
 	// Add the above transactions to a block.
 	tvv1 := []*transactionTestVector{tv1, tv2, tv3, tv4, tv5, tv6, tv7}
@@ -373,4 +393,61 @@ func _verifyEqualNewMessage(t *testing.T, newMessageEntry *NewMessageEntry, data
 		return false
 	}
 	return true
+}
+
+func _createDmThreadKey(userAccessGroupId AccessGroupId, partyAccessGroupId AccessGroupId) DmThreadKey {
+	return DmThreadKey{
+		userGroupOwnerPublicKey:  userAccessGroupId.AccessGroupOwnerPublicKey,
+		userGroupKeyName:         userAccessGroupId.AccessGroupKeyName,
+		partyGroupOwnerPublicKey: partyAccessGroupId.AccessGroupOwnerPublicKey,
+		partyGroupKeyName:        partyAccessGroupId.AccessGroupKeyName,
+	}
+}
+
+func _verifyDmThreadKeysWithUtxoView(t *testing.T, utxoView *UtxoView, userAccessGroupOwnerPublicKey PublicKey,
+	expectedDmThreadKeys []*DmThreadKey) {
+
+	require := require.New(t)
+	dmThreads, err := utxoView.GetAllUserDmThreads(userAccessGroupOwnerPublicKey)
+	require.NoError(err)
+	_verifyDmThreadKeys(t, dmThreads, userAccessGroupOwnerPublicKey, expectedDmThreadKeys)
+}
+
+func _verifyDmThreadKeys(t *testing.T, dmThreadKeys []*DmThreadKey, userAccessGroupOwnerPublicKey PublicKey,
+	expectedDmThreadKeys []*DmThreadKey) {
+
+	require := require.New(t)
+	require.Equal(len(expectedDmThreadKeys), len(dmThreadKeys))
+	expectedDmThreadKeysMap := make(map[DmThreadKey]struct{})
+	for _, dmThreadKey := range expectedDmThreadKeys {
+		if bytes.Equal(dmThreadKey.userGroupOwnerPublicKey.ToBytes(), dmThreadKey.partyGroupOwnerPublicKey.ToBytes()) {
+			t.Fatalf("userGroupOwnerPublicKey and partyGroupOwnerPublicKey should not be equal in these tests.")
+		}
+		if bytes.Equal(dmThreadKey.partyGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()) {
+			swapDmThreadKey := DmThreadKey{
+				userGroupOwnerPublicKey:  dmThreadKey.partyGroupOwnerPublicKey,
+				userGroupKeyName:         dmThreadKey.partyGroupKeyName,
+				partyGroupOwnerPublicKey: dmThreadKey.userGroupOwnerPublicKey,
+				partyGroupKeyName:        dmThreadKey.userGroupKeyName,
+			}
+			expectedDmThreadKeysMap[swapDmThreadKey] = struct{}{}
+		} else {
+			expectedDmThreadKeysMap[*dmThreadKey] = struct{}{}
+		}
+	}
+
+	// Verify there is no repetitions among dmThreadKeys.
+	tempDmThreadKeysMap := make(map[DmThreadKey]struct{})
+	for _, dmThreadKey := range dmThreadKeys {
+		_, exists := tempDmThreadKeysMap[*dmThreadKey]
+		require.Equal(false, exists)
+		tempDmThreadKeysMap[*dmThreadKey] = struct{}{}
+	}
+
+	// Make sure expectedDmThreadKeys is identical to dmThreadKeys.
+	for _, dmThreadKey := range dmThreadKeys {
+		require.Equal(true, bytes.Equal(dmThreadKey.userGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()))
+		_, exists := expectedDmThreadKeysMap[*dmThreadKey]
+		require.Equal(true, exists)
+	}
 }

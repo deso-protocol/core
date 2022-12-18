@@ -3558,8 +3558,8 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
-		Order("block_height ASC").                                        // Then oldest first (FIFO)
-		Order("order_id DESC").                                           // Then match BadgerDB ordering
+		Order("block_height ASC"). // Then oldest first (FIFO)
+		Order("order_id DESC"). // Then match BadgerDB ordering
 		Select()
 
 	if err != nil {
@@ -3831,6 +3831,26 @@ func (postgres *Postgres) CheckDmThreadExistence(dmThreadKey DmThreadKey) *DmThr
 	}
 	dmThreadExist := MakeDmThreadExistence()
 	return &dmThreadExist
+}
+
+func (postgres *Postgres) GetAllUserDmThreads(userAccessGroupOwnerPublicKey PublicKey) ([]*DmThreadKey, error) {
+
+	var pgDmThreadEntries []*PGNewMessageDmThreadEntry
+	var dmThreadKeys []*DmThreadKey
+
+	err := postgres.db.Model(&pgDmThreadEntries).
+		Where("user_access_group_owner_public_key = ?", userAccessGroupOwnerPublicKey).
+		Select()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, pgDmThreadEntry := range pgDmThreadEntries {
+		dmThreadKey := pgDmThreadEntry.ToDmThreadKey()
+		dmThreadKeys = append(dmThreadKeys, dmThreadKey)
+	}
+
+	return dmThreadKeys, nil
 }
 
 //

@@ -370,8 +370,9 @@ type DBPrefixes struct {
 	PrefixAccessGroupMemberEnumerationIndex []byte `prefix_id:"[65]" is_state:"true"`
 
 	PrefixGroupChatMessagesIndex []byte `prefix_id:"[66]" is_state:"true"`
-	PrefixDmMessageIndex         []byte `prefix_id:"[67]" is_state:"true"`
-	PrefixDmThreadIndex          []byte `prefix_id:"[68]" is_state:"true"`
+	PrefixGroupChatThreadIndex   []byte `prefix_id:"[67]" is_state:"true"`
+	PrefixDmMessageIndex         []byte `prefix_id:"[68]" is_state:"true"`
+	PrefixDmThreadIndex          []byte `prefix_id:"[69]" is_state:"true"`
 
 	// NEXT_TAG: 69
 }
@@ -542,10 +543,14 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatMessagesIndex) {
 		// prefix_id:"[66]"
 		return true, &NewMessageEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessageIndex) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatThreadIndex) {
 		// prefix_id:"[67]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessageIndex) {
+		// prefix_id:"[68]"
 		return true, &NewMessageEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
+		// prefix_id:"[69]"
 		return false, nil
 	}
 
@@ -1826,6 +1831,87 @@ func DBDeleteGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key G
 
 		return errors.Wrapf(err, "DBDeleteGroupChatMessageIndexWithTxn: Deleting mapping for group chat "+
 			"message key: %v", key)
+	}
+
+	return nil
+}
+
+// -------------------------------------------------------------------------------------
+// PrefixGroupChatThreadIndex
+// <groupOwnerPublicKey, groupKeyName> -> <>
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForGroupChatThreadIndex(key AccessGroupId) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixGroupChatThreadIndex...)
+	prefixCopy = append(prefixCopy, key.AccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.AccessGroupKeyName.ToBytes()...)
+	return prefixCopy
+}
+
+func DBCheckGroupChatThreadExistence(db *badger.DB, snap *Snapshot, groupId AccessGroupId) (*GroupChatThreadExistence, error) {
+	var ret *GroupChatThreadExistence
+	var err error
+	err = db.View(func(txn *badger.Txn) error {
+		ret, err = DBCheckGroupChatThreadExistenceWithTxn(txn, snap, groupId)
+		return err
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBCheckGroupChatThreadExistence: Problem getting group chat thread index")
+	}
+	return ret, nil
+}
+
+func DBCheckGroupChatThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, groupId AccessGroupId) (*GroupChatThreadExistence, error) {
+
+	prefix := _dbKeyForGroupChatThreadIndex(groupId)
+	_, err := DBGetWithTxn(txn, snap, prefix)
+	if err == badger.ErrKeyNotFound {
+		return nil, nil
+	} else if err != nil {
+		return nil, errors.Wrapf(err, "DBCheckGroupChatThreadExistenceWithTxn: Problem getting group chat thread index")
+	}
+
+	groupChatThreadExistence := MakeGroupChatThreadExistence()
+	return &groupChatThreadExistence, nil
+}
+
+func DBPutGroupChatThreadIndex(db *badger.DB, snap *Snapshot, blockHeight uint64, groupId AccessGroupId) error {
+	err := db.Update(func(txn *badger.Txn) error {
+		return DBPutGroupChatThreadIndexWithTxn(txn, snap, blockHeight, groupId)
+	})
+	if err != nil {
+		return errors.Wrapf(err, "DBPutGroupChatThreadIndex: Problem putting group chat thread index")
+	}
+	return nil
+}
+
+func DBPutGroupChatThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
+	groupId AccessGroupId) error {
+
+	prefix := _dbKeyForGroupChatThreadIndex(groupId)
+	if err := DBSetWithTxn(txn, snap, prefix, []byte{}); err != nil {
+		return errors.Wrapf(err, "DBPutGroupChatThreadExistenceWithTxn: Problem setting group chat thread index "+
+			"with key (%v) in the db", prefix)
+	}
+	return nil
+}
+
+func DBDeleteGroupChatThreadIndex(db *badger.DB, snap *Snapshot, groupId AccessGroupId) error {
+	err := db.Update(func(txn *badger.Txn) error {
+		return DBDeleteGroupChatThreadIndexWithTxn(txn, snap, groupId)
+	})
+	if err != nil {
+		return errors.Wrapf(err, "DBDeleteGroupChatThreadIndex: Problem deleting group chat thread index")
+	}
+	return nil
+}
+
+func DBDeleteGroupChatThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, groupId AccessGroupId) error {
+
+	prefix := _dbKeyForGroupChatThreadIndex(groupId)
+	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
+		return errors.Wrapf(err, "DBDeleteGroupChatThreadExistenceWithTxn: Deleting mapping for group chat "+
+			"thread key: %v", groupId)
 	}
 
 	return nil
@@ -4659,8 +4745,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -8637,7 +8723,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -8764,7 +8850,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}

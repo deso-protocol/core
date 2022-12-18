@@ -1135,9 +1135,10 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 
 func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: flushing (len=%d) group chat messages, "+
-		"(len=%d) dm messages, (len=%d) dm threads", len(bav.GroupChatMessagesIndex), len(bav.DmMessagesIndex),
-		len(bav.DmThreadIndex))
+		"(len=%d) dm messages, (len=%d) dm threads, (len=%d) group chat threads",
+		len(bav.GroupChatMessagesIndex), len(bav.DmMessagesIndex), len(bav.DmThreadIndex), len(bav.GroupChatThreadIndex))
 
+	// Flush group chat messages to db.
 	{
 		numDeleted := 0
 		numPut := 0
@@ -1164,7 +1165,34 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 		}
 		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d group chat messages, put %d group chat messages", numDeleted, numPut)
 	}
+	// Flush group chat threads to db.
+	{
+		numDeleted := 0
+		numPut := 0
+		for groupChatThreadKeyIter, existence := range bav.GroupChatThreadIndex {
+			groupChatThreadKey := groupChatThreadKeyIter
 
+			if err := DBDeleteGroupChatThreadIndexWithTxn(txn, bav.Snapshot, groupChatThreadKey); err != nil {
+				return errors.Wrapf(
+					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
+						"for GroupChatThreadKey: %v: ", &groupChatThreadKey)
+			}
+
+			if existence.isDeleted {
+				numDeleted++
+			} else {
+				if err := DBPutGroupChatThreadIndexWithTxn(txn, bav.Snapshot, blockHeight, groupChatThreadKey); err != nil {
+					return errors.Wrapf(
+						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting group chat thread index "+
+							"with key %v and value %v", groupChatThreadKey, existence)
+				}
+				numPut++
+			}
+		}
+		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d group chat threads, put %d group chat threads", numDeleted, numPut)
+	}
+
+	// Flush dm messages to db.
 	{
 		numDeleted := 0
 		numPut := 0
@@ -1190,7 +1218,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 		}
 		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d dm messages, put %d dm messages", numDeleted, numPut)
 	}
-
+	// Flush dm threads to db.
 	{
 		numDeleted := 0
 		numPut := 0

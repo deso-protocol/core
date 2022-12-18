@@ -105,6 +105,7 @@ const (
 	EncoderTypeGroupMembershipKey
 	EncoderTypeNewMessageEntry
 	EncoderTypeDmThreadExistence
+	EncoderTypeGroupChatThreadExistence
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -2206,6 +2207,7 @@ func MakeDmThreadKeyFromMessageEntry(messageEntry *NewMessageEntry, shouldUseRec
 	}
 }
 
+// DmThreadExistence
 type DmThreadExistence struct {
 	isDeleted bool
 }
@@ -2230,6 +2232,33 @@ func (exists *DmThreadExistence) GetVersionByte(blockHeight uint64) byte {
 
 func (exists *DmThreadExistence) GetEncoderType() EncoderType {
 	return EncoderTypeDmThreadExistence
+}
+
+// GroupChatThreadExistence
+type GroupChatThreadExistence struct {
+	isDeleted bool
+}
+
+func MakeGroupChatThreadExistence() GroupChatThreadExistence {
+	return GroupChatThreadExistence{
+		isDeleted: false,
+	}
+}
+
+func (exists *GroupChatThreadExistence) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	return []byte{}
+}
+
+func (exists *GroupChatThreadExistence) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	return nil
+}
+
+func (exists *GroupChatThreadExistence) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (exists *GroupChatThreadExistence) GetEncoderType() EncoderType {
+	return EncoderTypeGroupChatThreadExistence
 }
 
 // GroupKeyName helps with handling key names in AccessGroups

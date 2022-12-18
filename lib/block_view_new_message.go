@@ -60,6 +60,39 @@ func (bav *UtxoView) deleteGroupChatMessagesIndex(messageEntry *NewMessageEntry)
 }
 
 // ==================================================================
+// GroupChatThreadIndex
+// ==================================================================
+
+func (bav *UtxoView) getGroupChatThreadExistence(groupKey AccessGroupId) (*GroupChatThreadExistence, error) {
+	mapValue, existsMapValue := bav.GroupChatThreadIndex[groupKey]
+	if existsMapValue {
+		return mapValue, nil
+	}
+
+	dbAdapter := bav.GetDbAdapter()
+	dbThreadExists, err := dbAdapter.CheckGroupChatThreadExistence(groupKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "getGroupChatThreadExistence: ")
+	}
+
+	if dbThreadExists != nil {
+		bav.GroupChatThreadIndex[groupKey] = dbThreadExists
+	}
+	return dbThreadExists, nil
+}
+
+func (bav *UtxoView) setGroupChatThreadExistence(groupKey AccessGroupId, existence GroupChatThreadExistence) {
+	existenceCopy := existence
+	bav.GroupChatThreadIndex[groupKey] = &existenceCopy
+}
+
+func (bav *UtxoView) deleteGroupChatThreadExistence(groupKey AccessGroupId) {
+	existence := MakeGroupChatThreadExistence()
+	existence.isDeleted = true
+	bav.setGroupChatThreadExistence(groupKey, existence)
+}
+
+// ==================================================================
 // DmMessagesIndex
 // ==================================================================
 
@@ -135,6 +168,44 @@ func (bav *UtxoView) getDmThreadExistence(dmThreadKey DmThreadKey) (*DmThreadExi
 		bav.DmThreadIndex[dmThreadKey] = dbThreadExists
 	}
 	return dbThreadExists, nil
+}
+
+func (bav *UtxoView) GetAllUserDmThreads(userAccessGroupOwnerPublicKey PublicKey) (_dmThreads []*DmThreadKey, _err error) {
+	dbAdapter := bav.GetDbAdapter()
+	dmThreads, err := dbAdapter.GetAllUserDmThreads(userAccessGroupOwnerPublicKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetAllUserDmThreads: Problem getting dm threads from db "+
+			"for user: %v", userAccessGroupOwnerPublicKey)
+	}
+
+	// Get UtxoView entries
+	dmThreadKeyMap := make(map[DmThreadKey]struct{})
+	for _, dmThreadKey := range dmThreads {
+		dmThreadKeyMap[*dmThreadKey] = struct{}{}
+	}
+
+	// Iterate over UtxoView mappings
+	for dmThreadKeyIter, dmThreadExistence := range bav.DmThreadIndex {
+		if !bytes.Equal(dmThreadKeyIter.userGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()) {
+			continue
+		}
+
+		dmThreadKey := dmThreadKeyIter
+		if dmThreadExistence.isDeleted {
+			delete(dmThreadKeyMap, dmThreadKey)
+			continue
+		}
+		dmThreadKeyMap[dmThreadKey] = struct{}{}
+	}
+
+	// Convert map to slice
+	dmThreadKeys := []*DmThreadKey{}
+	for dmThreadKey := range dmThreadKeyMap {
+		dmThreadKeyCopy := dmThreadKey
+		dmThreadKeys = append(dmThreadKeys, &dmThreadKeyCopy)
+	}
+
+	return dmThreadKeys, nil
 }
 
 func (bav *UtxoView) setDmThreadIndex(dmThreadKey DmThreadKey, existence DmThreadExistence) {

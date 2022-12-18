@@ -273,6 +273,7 @@ func (adapter *DbAdapter) GetPaginatedAccessGroupMembersEnumerationEntries(
 	}
 
 	if adapter.postgresDb != nil {
+		// TODO: This might fail if keys don't exist, but it shouldn't.
 		return adapter.postgresDb.GetPaginatedAccessGroupMembersFromEnumerationIndex(
 			accessGroupOwnerPublicKey, accessGroupKeyName,
 			startingAccessGroupMemberPublicKeyBytes, maxMembersToFetch)
@@ -325,5 +326,29 @@ func (adapter *DbAdapter) CheckDmThreadExistence(dmThreadKey DmThreadKey) (*DmTh
 		return pgDmThreadExistence, nil
 	} else {
 		return DBCheckDmThreadExistence(adapter.badgerDb, adapter.snapshot, dmThreadKey)
+	}
+}
+
+func (adapter *DbAdapter) CheckGroupChatThreadExistence(groupKey AccessGroupId) (*GroupChatThreadExistence, error) {
+
+	if adapter.postgresDb != nil {
+		pgGroupChatThreadExistence := adapter.postgresDb.CheckGroupChatThreadExistence(groupKey)
+		if pgGroupChatThreadExistence == nil {
+			return nil, nil
+		}
+		return pgGroupChatThreadExistence, nil
+	} else {
+		return DBCheckGroupChatThreadExistence(adapter.badgerDb, adapter.snapshot, groupKey)
+	}
+}
+
+func (adapter *DbAdapter) GetAllUserDmThreads(userAccessGroupOwnerPublicKey PublicKey) (
+	_dmThreadKeys []*DmThreadKey, _err error) {
+
+	if adapter.postgresDb != nil {
+		// TODO: The error might be thrown when key doesnt exist
+		return adapter.postgresDb.GetAllUserDmThreads(userAccessGroupOwnerPublicKey)
+	} else {
+		return DBGetAllUserDmThreads(adapter.badgerDb, adapter.snapshot, userAccessGroupOwnerPublicKey)
 	}
 }

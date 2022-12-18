@@ -64,7 +64,8 @@ type UtxoView struct {
 	GroupChatMessagesIndex map[GroupChatMessageKey]*NewMessageEntry
 	DmMessagesIndex        map[DmMessageKey]*NewMessageEntry
 	// The bool type indicates whether the thread should be deleted, it works similarly to isDeleted.
-	DmThreadIndex map[DmThreadKey]*DmThreadExistence
+	DmThreadIndex        map[DmThreadKey]*DmThreadExistence
+	GroupChatThreadIndex map[AccessGroupId]*GroupChatThreadExistence
 
 	// Follow data
 	FollowKeyToFollowEntry map[FollowKey]*FollowEntry
@@ -156,6 +157,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*NewMessageEntry)
 	bav.DmMessagesIndex = make(map[DmMessageKey]*NewMessageEntry)
 	bav.DmThreadIndex = make(map[DmThreadKey]*DmThreadExistence)
+	bav.GroupChatThreadIndex = make(map[AccessGroupId]*GroupChatThreadExistence)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -331,6 +333,13 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for dmThreadKey, threadExistence := range bav.DmThreadIndex {
 		newThreadExistence := *threadExistence
 		newView.DmThreadIndex[dmThreadKey] = &newThreadExistence
+	}
+
+	// Copy group chat thread index
+	newView.GroupChatThreadIndex = make(map[AccessGroupId]*GroupChatThreadExistence)
+	for groupChatThreadKey, threadExistence := range bav.GroupChatThreadIndex {
+		newThreadExistence := *threadExistence
+		newView.GroupChatThreadIndex[groupChatThreadKey] = &newThreadExistence
 	}
 
 	// Copy the follow data
