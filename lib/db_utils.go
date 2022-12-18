@@ -345,27 +345,29 @@ type DBPrefixes struct {
 	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupEntry>
 	PrefixAccessGroupEntriesByAccessGroupId []byte `prefix_id:"[63]" is_state:"true"`
 
-	// This prefix is used to store all mappings for access group members. The group owner has a mapping
-	// with <groupOwnerPk, groupOwnerPk, groupName> and then everybody else has
+	// This prefix is used to store all mappings for access group members. The group owner has a
+	// special-case mapping with <groupOwnerPk, groupOwnerPk, groupName> and then everybody else has
 	// <memberPk, groupOwnerPk, groupName>. We don't need to store members in a group entry anymore since
 	// we can just iterate over the members in the group membership index here. This saves us a lot of space
 	// and makes it easier to add and remove members from groups.
 	//
 	// * Note that as mentioned above, there is a special case where AccessGroupMemberPublicKey == AccessGroupOwnerPublicKey.
 	//   For this index it was convenient for various reasons to automatically save an entry
-	//   with such key in the db whenever user registers a group. This becomes clear if
+	//   with such a key in the db whenever a user registers a group. This becomes clear if
 	//   you read all the fetching code around this index. Particularly functions containing
 	//   the 'owner' keyword. This is not a bug, it's a feature because we might want an owner to be a member
 	//   of their own group for various reasons:
-	//   - To be able to read messages sent to the group if group was created with a derived key.
+	//   - To be able to read messages sent to the group if the group was created with a derived key.
 	//   - To be able to fetch all groups that a user is a member of (including groups that
-	//     they own). This is especially useful for Backend API to fetch all groups for a user.
+	//     they own). This is especially useful for allowing the Backend API to fetch all groups for a user.
 	//
 	// New <GroupMembershipIndex> :
 	// <prefix, AccessGroupMemberPublicKey [33]byte, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupMemberEntry>
 	PrefixAccessGroupMembershipIndex []byte `prefix_id:"[64]" is_state:"true"`
 
-	// Prefix for Enumerating over all the members of a group:
+	// Prefix for enumerating all the members of a group. Note that the previous index allows us to
+	// answer the question, "what groups is this person a member of?" while this index allows us to
+	// answer "who are the members of this particular group?"
 	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, AccessGroupMemberPublicKey [33]byte> -> <>
 	PrefixAccessGroupMemberEnumerationIndex []byte `prefix_id:"[65]" is_state:"true"`
 
@@ -2662,10 +2664,12 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 
 // -------------------------------------------------------------------------------------
 // Reposts mapping functions
-// 		<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
-// 		<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
+//
+//	<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
+//	<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
+//
 // -------------------------------------------------------------------------------------
-//PrefixReposterPubKeyRepostedPostHashToRepostPostHash
+// PrefixReposterPubKeyRepostedPostHashToRepostPostHash
 func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash BlockHash, repostPostHash BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, Prefixes.PrefixReposterPubKeyRepostedPostHashToRepostPostHash...)
@@ -2703,7 +2707,7 @@ func _dbSeekPrefixForPostHashesYouRepost(yourPubKey []byte) []byte {
 	return append(prefixCopy, yourPubKey...)
 }
 
-//PrefixRepostedPostHashReposterPubKey
+// PrefixRepostedPostHashReposterPubKey
 func _dbKeyForRepostedPostHashReposterPubKey(repostedPostHash *BlockHash, reposterPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, Prefixes.PrefixRepostedPostHashReposterPubKey...)
@@ -2713,7 +2717,7 @@ func _dbKeyForRepostedPostHashReposterPubKey(repostedPostHash *BlockHash, repost
 }
 
 // **For quoted reposts**
-//PrefixRepostedPostHashReposterPubKeyRepostPostHash
+// PrefixRepostedPostHashReposterPubKeyRepostPostHash
 func _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
 	repostedPostHash *BlockHash, reposterPubKey []byte, repostPostHash *BlockHash) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.

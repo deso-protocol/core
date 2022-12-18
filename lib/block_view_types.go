@@ -2317,13 +2317,17 @@ func (entry *MessagingGroupEntry) GetEncoderType() EncoderType {
 }
 
 type AccessGroupMemberEntry struct {
-	// AccessGroupMemberPublicKey is the public key of the user in the access group
+	// AccessGroupMemberPublicKey is the *owner* public key of the user in the access group
 	AccessGroupMemberPublicKey *PublicKey
 
-	// AccessGroupMemberKeyName is the name of the user in the access group
+	// AccessGroupMemberKeyName is the key name of the user in the access group
+	// Most of the time, we will be using a user's "default-key" key name
 	AccessGroupMemberKeyName *GroupKeyName
 
 	// EncryptedKey is the encrypted private key of the access group public key
+	// If the access group's private key were GroupPriv, and the member's public
+	// key were MemberPub, then we would have EncrypetdKey would be GroupPriv
+	// encrypted with MemberPub.
 	EncryptedKey []byte
 
 	// ExtraData is an arbitrary key value map
