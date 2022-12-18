@@ -375,7 +375,7 @@ type DBPrefixes struct {
 	PrefixGroupChatMessagesIndex []byte `prefix_id:"[66]" is_state:"true"`
 	// <groupOwnerPublicKey, groupKeyName> -> <>
 	PrefixGroupChatThreadIndex []byte `prefix_id:"[67]" is_state:"true"`
-	// <partyGroupOwnerPublicKey, partyGroupKeyName, partyGroupOwnerPublicKey, partyGroupKeyName, timestamp> -> <MessageEntry>
+	// <minorGroupOwnerPublicKey, minorGroupKeyName, majorGroupOwnerPublicKey, majorGroupKeyName, timestamp> -> <MessageEntry>
 	PrefixDmMessageIndex []byte `prefix_id:"[68]" is_state:"true"`
 	// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName, partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName> -> <>
 	PrefixDmThreadIndex []byte `prefix_id:"[69]" is_state:"true"`
@@ -1925,7 +1925,7 @@ func DBDeleteGroupChatThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, groupI
 
 // -------------------------------------------------------------------------------------
 // PrefixDmMessageIndex
-// <partyGroupOwnerPublicKey, partyGroupKeyName, partyGroupOwnerPublicKey, partyGroupKeyName, timestamp> -> <MessageEntry>
+// <minorGroupOwnerPublicKey, minorGroupKeyName, majorGroupOwnerPublicKey, majorGroupKeyName, timestamp> -> <MessageEntry>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForPrefixDmMessageIndex(key DmMessageKey) []byte {
