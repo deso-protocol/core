@@ -371,10 +371,14 @@ type DBPrefixes struct {
 	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, AccessGroupMemberPublicKey [33]byte> -> <>
 	PrefixAccessGroupMemberEnumerationIndex []byte `prefix_id:"[65]" is_state:"true"`
 
+	// <groupOwnerPublicKey, groupKeyName, timestamp> -> <MessageEntry>
 	PrefixGroupChatMessagesIndex []byte `prefix_id:"[66]" is_state:"true"`
-	PrefixGroupChatThreadIndex   []byte `prefix_id:"[67]" is_state:"true"`
-	PrefixDmMessageIndex         []byte `prefix_id:"[68]" is_state:"true"`
-	PrefixDmThreadIndex          []byte `prefix_id:"[69]" is_state:"true"`
+	// <groupOwnerPublicKey, groupKeyName> -> <>
+	PrefixGroupChatThreadIndex []byte `prefix_id:"[67]" is_state:"true"`
+	// <partyGroupOwnerPublicKey, partyGroupKeyName, partyGroupOwnerPublicKey, partyGroupKeyName, timestamp> -> <MessageEntry>
+	PrefixDmMessageIndex []byte `prefix_id:"[68]" is_state:"true"`
+	// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName, partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName> -> <>
+	PrefixDmThreadIndex []byte `prefix_id:"[69]" is_state:"true"`
 
 	// NEXT_TAG: 69
 }
