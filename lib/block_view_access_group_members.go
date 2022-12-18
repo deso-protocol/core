@@ -44,9 +44,9 @@ func (bav *UtxoView) GetAccessGroupMemberEntry(memberPublicKey *PublicKey, group
 // GetPaginatedAccessGroupMembersEnumerationEntries returns a list of public keys of members of a provided access group.
 // The member public keys will be sorted lexicographically and paginated according to the provided startingAccessGroupMemberPublicKey
 // and maxMembersToFetch. In other words, the returned _accessGroupMembers will follow these constraints:
-// 	1) len(_accessGroupMembers) <= maxMembersToFetch
-// 	2) _accessGroupMembers[0] > startingAccessGroupMemberPublicKey
-// 	3) \forall i, j: i < j => _accessGroupMembers[i] < _accessGroupMembers[j]
+//  1. len(_accessGroupMembers) <= maxMembersToFetch
+//  2. _accessGroupMembers[0] > startingAccessGroupMemberPublicKey
+//  3. \forall i, j: i < j => _accessGroupMembers[i] < _accessGroupMembers[j]
 func (bav *UtxoView) GetPaginatedAccessGroupMembersEnumerationEntries(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
 	startingAccessGroupMemberPublicKey []byte, maxMembersToFetch uint32) (_accessGroupMembers []*PublicKey, _err error) {
 
@@ -356,7 +356,9 @@ func (bav *UtxoView) _setAccessGroupIdToSortedGroupMemberPublicKeys(groupOwnerPu
 // member's entry.
 //
 // Access group members are identified by a tuple of:
-// 	<AccessGroupOwnerPublicKey, AccessGroupKeyName, AccessGroupMemberPublicKey, AccessGroupMemberKeyName>
+//
+//	<AccessGroupOwnerPublicKey, AccessGroupKeyName, AccessGroupMemberPublicKey, AccessGroupMemberKeyName>
+//
 // It is worth noting that access group members are added to access groups via their own access groups. You can see by
 // looking at the index, that it is essentially a 2-access group relationship between the owner's access group and
 // member's access group.
