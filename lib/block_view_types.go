@@ -836,6 +836,8 @@ type UtxoOperation struct {
 	PrevNewMessageEntry *NewMessageEntry
 	// PrevDmThreadExistence is used for disconnecting DM message threads.
 	PrevDmThreadExistence *DmThreadExistence
+	// PrevGroupChatThreadExistence is used for disconnecting Group chat threads.
+	PrevGroupChatThreadExistence *GroupChatThreadExistence
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1139,6 +1141,9 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// PrevDmThreadExistence
 		data = append(data, EncodeToBytes(blockHeight, op.PrevDmThreadExistence, skipMetadata...)...)
+
+		// PrevGroupChatThreadExistence
+		data = append(data, EncodeToBytes(blockHeight, op.PrevGroupChatThreadExistence, skipMetadata...)...)
 	}
 
 	return data
@@ -1716,6 +1721,14 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 			op.PrevDmThreadExistence = dmThreadExistence
 		} else if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevDmThreadExistence")
+		}
+
+		// PrevGroupChatThreadExistence
+		groupChatThreadExistence := &GroupChatThreadExistence{}
+		if exist, err := DecodeFromBytes(groupChatThreadExistence, rr); exist && err == nil {
+			op.PrevGroupChatThreadExistence = groupChatThreadExistence
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGroupChatThreadExistence")
 		}
 	}
 

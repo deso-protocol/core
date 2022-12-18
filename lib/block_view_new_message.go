@@ -81,15 +81,15 @@ func (bav *UtxoView) getGroupChatThreadExistence(groupKey AccessGroupId) (*Group
 	return dbThreadExists, nil
 }
 
-func (bav *UtxoView) setGroupChatThreadExistence(groupKey AccessGroupId, existence GroupChatThreadExistence) {
+func (bav *UtxoView) setGroupChatThreadIndex(groupKey AccessGroupId, existence GroupChatThreadExistence) {
 	existenceCopy := existence
 	bav.GroupChatThreadIndex[groupKey] = &existenceCopy
 }
 
-func (bav *UtxoView) deleteGroupChatThreadExistence(groupKey AccessGroupId) {
+func (bav *UtxoView) deleteGroupChatThreadIndex(groupKey AccessGroupId) {
 	existence := MakeGroupChatThreadExistence()
 	existence.isDeleted = true
-	bav.setGroupChatThreadExistence(groupKey, existence)
+	bav.setGroupChatThreadIndex(groupKey, existence)
 }
 
 // ==================================================================
@@ -290,6 +290,7 @@ func (bav *UtxoView) _connectNewMessage(
 
 	var prevNewMessageEntry *NewMessageEntry
 	var prevDmThreadExistence *DmThreadExistence
+	var prevGroupChatThreadExistence *GroupChatThreadExistence
 
 	switch txMeta.NewMessageOperation {
 	case NewMessageOperationCreate:
@@ -362,11 +363,31 @@ func (bav *UtxoView) _connectNewMessage(
 					"_connectNewMessage: Group chat thread already exists for recipient (%v)",
 					txMeta.RecipientAccessGroupOwnerPublicKey)
 			}
+
+			// Fetch the group chat thread existence entry, which is indexed by the recipient's access group.
+			groupChatAccessGroupId := NewAccessGroupId(&txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName.ToBytes())
+			// Sanity-check that the group chat thread we're reverting was properly set.
+			groupChatThread, err := bav.getGroupChatThreadExistence(*groupChatAccessGroupId)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+					"getting group chat thread existence from index with group chat thread key %v: ", groupChatAccessGroupId)
+			}
+			// If thread exists, we should set the prevGroupChatThreadExistence for the UtxoOperation.
+			if groupChatThread != nil && !groupChatThread.isDeleted {
+				groupChatThreadCopy := *groupChatThread
+				prevGroupChatThreadExistence = &groupChatThreadCopy
+			} else {
+				// If thread does not exist, we should set the prevGroupChatThreadExistence to nil.
+				// This means we are dealing with the first message in this group chat.
+				prevGroupChatThreadExistence = nil
+			}
+
 			err = bav.setGroupChatMessagesIndex(messageEntry)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
 					"setting group chat message in index with group chat message key %v: ", groupChatMessageKey)
 			}
+			bav.setGroupChatThreadIndex(*groupChatAccessGroupId, MakeGroupChatThreadExistence())
 		}
 	case NewMessageOperationUpdate:
 		switch txMeta.NewMessageType {
@@ -436,13 +457,19 @@ func (bav *UtxoView) _connectNewMessage(
 				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
 					"setting group chat message in index with group chat message key %v: ", groupChatMessageKey)
 			}
+
+			// Since a message exists, we know that the group chat thread must also exist.
+			// We should set the prevGroupChatThreadExistence to exists for the UtxoOperation.
+			groupChatThreadExists := MakeGroupChatThreadExistence()
+			prevGroupChatThreadExistence = &groupChatThreadExists
 		}
 	}
 
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                  OperationTypeNewMessage,
-		PrevNewMessageEntry:   prevNewMessageEntry,
-		PrevDmThreadExistence: prevDmThreadExistence,
+		Type:                         OperationTypeNewMessage,
+		PrevNewMessageEntry:          prevNewMessageEntry,
+		PrevDmThreadExistence:        prevDmThreadExistence,
+		PrevGroupChatThreadExistence: prevGroupChatThreadExistence,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -531,9 +558,26 @@ func (bav *UtxoView) _disconnectNewMessage(
 					groupChatMessageKey)
 			}
 
+			// Sanity-check that the group chat thread we're reverting was properly set.
+			groupChatAccessGroupId := NewAccessGroupId(&txMeta.RecipientAccessGroupPublicKey, txMeta.RecipientAccessGroupKeyName.ToBytes())
+			groupChatThread, err := bav.getGroupChatThreadExistence(*groupChatAccessGroupId)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectNewMessage: Problem getting group chat thread existence from "+
+					"index with group chat thread key %v: ", groupChatAccessGroupId)
+			}
+			if groupChatThread != nil && groupChatThread.isDeleted {
+				return fmt.Errorf("_disconnectNewMessage: Group chat thread existence is deleted for "+
+					"group chat thread key %v", groupChatAccessGroupId)
+			}
+
 			err = bav.deleteGroupChatMessagesIndex(groupChatMessage)
 			if err != nil {
 				return errors.Wrapf(err, "_disconnectNewMessage: Problem deleting group chat message index: ")
+			}
+
+			// If prevUtxoOp is set to nil, we should delete the thread from the db.
+			if prevUtxoOp.PrevGroupChatThreadExistence == nil {
+				bav.deleteGroupChatThreadIndex(*groupChatAccessGroupId)
 			}
 		}
 	case NewMessageOperationUpdate:
@@ -583,6 +627,11 @@ func (bav *UtxoView) _disconnectNewMessage(
 			if groupChatMessage == nil || groupChatMessage.isDeleted {
 				return fmt.Errorf("_disconnectNewMessage: Group chat thread does not exist for group chat key (%v)",
 					groupChatMessageKey)
+			}
+			// Group chat thread index must exist for new message update.
+			if prevUtxoOp.PrevGroupChatThreadExistence == nil || prevUtxoOp.PrevGroupChatThreadExistence.isDeleted {
+				return fmt.Errorf("_disconnectNewMessage: Group chat thread existence is nil or deleted for "+
+					"group chat thread key %v", groupChatMessageKey)
 			}
 
 			// Revert the group chat message entry.

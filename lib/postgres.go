@@ -1060,6 +1060,27 @@ func (messageEntry *PGNewMessageDmThreadEntry) ToDmThreadKey() *DmThreadKey {
 	}
 }
 
+type PGNewMessageGroupChatThreadEntry struct {
+	tableName struct{} `pg:"pg_new_message_group_chat_thread_entries"`
+
+	AccessGroupOwnerPublicKey *PublicKey    `pg:",pk,type:bytea"`
+	AccessGroupKeyName        *GroupKeyName `pg:",pk,type:bytea"`
+}
+
+func (messageEntry *PGNewMessageGroupChatThreadEntry) FromAccessGroupId(groupId AccessGroupId) {
+	messageEntry.AccessGroupOwnerPublicKey = &groupId.AccessGroupOwnerPublicKey
+	messageEntry.AccessGroupKeyName = &groupId.AccessGroupKeyName
+}
+
+func (messageEntry *PGNewMessageGroupChatThreadEntry) ToAccessGroupId() AccessGroupId {
+	accessGroupOwnerPublicKeyCopy := *messageEntry.AccessGroupOwnerPublicKey
+	accessGroupKeyNameCopy := *messageEntry.AccessGroupKeyName
+	return AccessGroupId{
+		AccessGroupOwnerPublicKey: accessGroupOwnerPublicKeyCopy,
+		AccessGroupKeyName:        accessGroupKeyNameCopy,
+	}
+}
+
 func HexToUint256(input string) *uint256.Int {
 	output := uint256.NewInt()
 
@@ -2978,6 +2999,8 @@ func (postgres *Postgres) flushNewMessageEntries(tx *pg.Tx, view *UtxoView) erro
 	var deleteNewMessageDmThreadEntries []*PGNewMessageDmThreadEntry
 	var insertNewMessageGroupEntries []*PGNewMessageGroupChatEntry
 	var deleteNewMessageGroupEntries []*PGNewMessageGroupChatEntry
+	var insertNewMessageGroupThreadEntries []*PGNewMessageGroupChatThreadEntry
+	var deleteNewMessageGroupThreadEntries []*PGNewMessageGroupChatThreadEntry
 
 	for id, entry := range view.DmMessagesIndex {
 		if entry == nil {
@@ -3020,6 +3043,20 @@ func (postgres *Postgres) flushNewMessageEntries(tx *pg.Tx, view *UtxoView) erro
 			deleteNewMessageGroupEntries = append(deleteNewMessageGroupEntries, newMessageGroupEntry)
 		} else {
 			insertNewMessageGroupEntries = append(insertNewMessageGroupEntries, newMessageGroupEntry)
+		}
+	}
+	for id, entry := range view.GroupChatThreadIndex {
+		if entry == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for GroupChatThreadIndex id %v. This should never happen", id)
+			continue
+		}
+
+		newMessageGroupThreadEntry := &PGNewMessageGroupChatThreadEntry{}
+		newMessageGroupThreadEntry.FromAccessGroupId(id)
+		if entry.isDeleted {
+			deleteNewMessageGroupThreadEntries = append(deleteNewMessageGroupThreadEntries, newMessageGroupThreadEntry)
+		} else {
+			insertNewMessageGroupThreadEntries = append(insertNewMessageGroupThreadEntries, newMessageGroupThreadEntry)
 		}
 	}
 
@@ -3073,6 +3110,23 @@ func (postgres *Postgres) flushNewMessageEntries(tx *pg.Tx, view *UtxoView) erro
 		_, err := tx.Model(&deleteNewMessageGroupEntries).Returning("NULL").Delete()
 		if err != nil {
 			return fmt.Errorf("Postgres.flushNewMessageEntries: deleteNewMessageGroupEntries: %v", err)
+		}
+	}
+
+	if len(insertNewMessageGroupThreadEntries) > 0 {
+		_, err := tx.Model(&insertNewMessageGroupThreadEntries).
+			WherePK().
+			OnConflict("(access_group_owner_public_key, access_group_key_name) DO NOTHING").
+			Returning("NULL").
+			Insert()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushNewMessageEntries: insertNewMessageGroupThreadEntries: %v", err)
+		}
+	}
+	if len(deleteNewMessageGroupThreadEntries) > 0 {
+		_, err := tx.Model(&deleteNewMessageGroupThreadEntries).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushNewMessageEntries: deleteNewMessageGroupThreadEntries: %v", err)
 		}
 	}
 
@@ -3558,8 +3612,8 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
-		Order("block_height ASC").                                        // Then oldest first (FIFO)
-		Order("order_id DESC").                                           // Then match BadgerDB ordering
+		Order("block_height ASC"). // Then oldest first (FIFO)
+		Order("order_id DESC"). // Then match BadgerDB ordering
 		Select()
 
 	if err != nil {
@@ -3851,6 +3905,20 @@ func (postgres *Postgres) GetAllUserDmThreads(userAccessGroupOwnerPublicKey Publ
 	}
 
 	return dmThreadKeys, nil
+}
+
+func (postgres *Postgres) CheckGroupChatThreadExistence(groupKey AccessGroupId) *GroupChatThreadExistence {
+
+	newMessageGroupChatThreadEntry := &PGNewMessageGroupChatThreadEntry{
+		AccessGroupOwnerPublicKey: &groupKey.AccessGroupOwnerPublicKey,
+		AccessGroupKeyName:        &groupKey.AccessGroupKeyName,
+	}
+	err := postgres.db.Model(newMessageGroupChatThreadEntry).WherePK().First()
+	if err != nil {
+		return nil
+	}
+	groupChatThreadExist := MakeGroupChatThreadExistence()
+	return &groupChatThreadExist
 }
 
 //
