@@ -6024,14 +6024,14 @@ type AssociationOperation uint8
 
 const (
 	// AssociationClass: User || Post
-	AssociationClassUser              AssociationClass        = 0
-	AssociationClassPost              AssociationClass        = 1
+	AssociationClassUser AssociationClass = 0
+	AssociationClassPost AssociationClass = 1
 	// AssociationScope: Any || Scoped
-	AssociationAppScopeTypeAny        AssociationAppScopeType = 0
-	AssociationAppScopeTypeScoped     AssociationAppScopeType = 2
+	AssociationAppScopeTypeAny    AssociationAppScopeType = 0
+	AssociationAppScopeTypeScoped AssociationAppScopeType = 2
 	// AssociationOperation: Create || Delete
-	AssociationOperationCreate        AssociationOperation    = 0
-	AssociationOperationDelete        AssociationOperation    = 1
+	AssociationOperationCreate AssociationOperation = 0
+	AssociationOperationDelete AssociationOperation = 1
 )
 
 func (associationLimitKey AssociationLimitKey) Encode() []byte {

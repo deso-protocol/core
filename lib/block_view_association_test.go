@@ -2242,7 +2242,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	}
 
 	{
-		// Param Updater set min fee rate to 101 nanos per KB
+		// ParamUpdater set min fee rate
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 		_updateGlobalParamsEntryWithTestMeta(
 			testMeta,

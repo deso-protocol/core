@@ -2140,7 +2140,7 @@ func (bav *UtxoView) _checkAssociationLimitAndUpdateDerivedKey(
 		if spendingLimitAssociationScopeType == AssociationAppScopeTypeAny {
 			spendingLimitAppPKID = ZeroPKID
 		}
-		for _, spendingLimitAssociationType := range[][]byte{associationType, []byte("")} {
+		for _, spendingLimitAssociationType := range [][]byte{associationType, []byte("")} {
 			associationLimitKey = MakeAssociationLimitKey(
 				associationClass,
 				spendingLimitAssociationType,
