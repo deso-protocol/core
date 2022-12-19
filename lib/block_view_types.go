@@ -213,6 +213,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMembershipKey{}
 	case EncoderTypeNewMessageEntry:
 		return &NewMessageEntry{}
+	case EncoderTypeDmThreadExistence:
+		return &DmThreadExistence{}
+	case EncoderTypeGroupChatThreadExistence:
+		return &GroupChatThreadExistence{}
 	}
 
 	// Txindex encoder types
