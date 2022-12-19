@@ -2149,20 +2149,20 @@ func (bav *UtxoView) _checkAssociationLimitAndUpdateDerivedKey(
 				operation,
 			)
 			updatedDerivedKeyEntry, err := _checkAssociationLimitAndUpdateDerivedKey(derivedKeyEntry, associationLimitKey)
-			if err != nil {
+			if err == nil {
 				return updatedDerivedKeyEntry, nil
 			}
 		}
 	}
 	// If we get to this point, then no authorized spending limits
 	// were found and the association is not authorized.
-	return derivedKeyEntry, errors.New("_checkAssociationLimitAndUpdateDerivedKey: association not authorized")
+	return derivedKeyEntry, errors.New("_checkAssociationLimitAndUpdateDerivedKey: association not authorized for derived key")
 }
 
 func _checkAssociationLimitAndUpdateDerivedKey(
 	derivedKeyEntry DerivedKeyEntry, associationLimitKey AssociationLimitKey,
 ) (DerivedKeyEntry, error) {
-	errMsg := errors.New("_checkAssociationLimitAndUpdateDerivedKey: association not authorized")
+	errMsg := errors.New("_checkAssociationLimitAndUpdateDerivedKey: association not authorized for derived key")
 	// If derived key spending limit is missing, return unauthorized.
 	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
 		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap == nil {

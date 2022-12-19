@@ -13,8 +13,8 @@ import (
 func TestAssociations(t *testing.T) {
 	// Run all tests twice: once flushing all txns to the
 	// db, and once just keeping all txns in the mempool.
-	_testAssociations(t, true)
-	_testAssociations(t, false)
+	//_testAssociations(t, true)
+	//_testAssociations(t, false)
 	_testAssociationsWithDerivedKey(t)
 }
 
@@ -2099,6 +2099,7 @@ func _submitAssociationTxn(
 
 	// Sign the transaction now that its inputs are set up.
 	if useDerivedKey {
+		//_signTxnWithDerivedKeyAndType(testMeta.t, txn, TransactorPrivateKeyBase58Check, 0)
 		_signTxnWithDerivedKey(testMeta.t, txn, TransactorPrivateKeyBase58Check)
 	} else {
 		_signTxn(testMeta.t, txn, TransactorPrivateKeyBase58Check)
@@ -2191,13 +2192,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
 
 	// Helper funcs
-	//utxoView := func() *UtxoView {
-	//	newUtxoView, err := mempool.GetAugmentedUniversalView()
-	//	require.NoError(t, err)
-	//	return newUtxoView
-	//}
-
-	_createAssociationDerivedKey := func(txnType TxnType, associationLimitKey AssociationLimitKey) ([]byte, string) {
+	_createAssociationDerivedKey := func(txnType TxnType, associationLimitKey AssociationLimitKey) string {
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
@@ -2243,7 +2238,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 
 		err = utxoView.ValidateDerivedKey(senderPkBytes, derivedKeyMetadata.DerivedPublicKey, blockHeight+1)
 		require.NoError(t, err)
-		return derivedKeyMetadata.DerivedPublicKey, derivedKeyAuthPrivBase58Check
+		return derivedKeyAuthPrivBase58Check
 	}
 
 	{
@@ -2262,8 +2257,8 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		)
 	}
 	{
-		// Create derived key for scoped AssociationType, scoped AppPKID association.
-		_, derivedKeyPriv := _createAssociationDerivedKey(
+		// Create derived key for creating ENDORSEMENT user associations on m0's app.
+		derivedKeyPriv := _createAssociationDerivedKey(
 			TxnTypeCreateUserAssociation,
 			MakeAssociationLimitKey(
 				AssociationClassUser,
@@ -2282,12 +2277,23 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			AssociationValue:    []byte("BOT_ACCOUNT"),
 		}
 		_, _, _, err = _submitAssociationTxn(
+			testMeta, senderPkString, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, true, true,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "association not authorized for derived key")
+
+		// Sad path: try to create ENDORSEMENT user association on m1's app
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AppPublicKey:        NewPublicKey(m1PkBytes),
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("Python"),
+		}
+		_, _, _, err = _submitAssociationTxn(
 			testMeta, senderPkString, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, false, true,
 		)
 		require.Error(t, err)
-		require.Contains(t, err, "association not authorized")
-
-		// Sad path: try to create ENDORSEMENT user association on m1's app
+		require.Contains(t, err.Error(), "association not authorized for derived key")
 
 		// Happy path: create ENDORSEMENT user association on m0's app
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
@@ -2297,7 +2303,14 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			AssociationValue:    []byte("Python"),
 		}
 		_submitAssociationTxnHappyPath(
-			testMeta, senderPkString, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, false, true,
+			testMeta, senderPkString, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, true, true,
 		)
+
+		// Sad path: derived key spending limit exceeded
+		_submitAssociationTxn(
+			testMeta, senderPkString, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, true, true,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "association not authorized for derived key")
 	}
 }

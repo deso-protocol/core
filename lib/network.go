@@ -6086,9 +6086,10 @@ func MakeAssociationLimitKey(
 	appScopeType AssociationAppScopeType,
 	operation AssociationOperation,
 ) AssociationLimitKey {
+	// Note: AssociationType is case-insensitive.
 	return AssociationLimitKey{
 		AssociationClass: associationClass,
-		AssociationType:  string(associationType),
+		AssociationType:  string(bytes.ToLower(associationType)),
 		AppPKID:          appPKID,
 		AppScopeType:     appScopeType,
 		Operation:        operation,
