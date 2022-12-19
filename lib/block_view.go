@@ -1758,7 +1758,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			derivedKeyEntry,
 			AssociationClassUser,
 			txnMeta.AssociationType,
-			txnMeta.AppPublicKey.ToBytes(),
+			txnMeta.AppPublicKey,
 			AssociationOperationCreate,
 		); err != nil {
 			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
@@ -1776,7 +1776,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			derivedKeyEntry,
 			AssociationClassUser,
 			associationEntry.AssociationType,
-			bav.GetPublicKeyForPKID(associationEntry.AppPKID),
+			NewPublicKey(bav.GetPublicKeyForPKID(associationEntry.AppPKID)),
 			AssociationOperationDelete,
 		); err != nil {
 			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
@@ -1787,7 +1787,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			derivedKeyEntry,
 			AssociationClassPost,
 			txnMeta.AssociationType,
-			txnMeta.AppPublicKey.ToBytes(),
+			txnMeta.AppPublicKey,
 			AssociationOperationCreate,
 		); err != nil {
 			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
@@ -1805,7 +1805,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			derivedKeyEntry,
 			AssociationClassPost,
 			associationEntry.AssociationType,
-			bav.GetPublicKeyForPKID(associationEntry.AppPKID),
+			NewPublicKey(bav.GetPublicKeyForPKID(associationEntry.AppPKID)),
 			AssociationOperationDelete,
 		); err != nil {
 			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
@@ -2124,8 +2124,43 @@ func (bav *UtxoView) _checkAssociationLimitAndUpdateDerivedKey(
 	derivedKeyEntry DerivedKeyEntry,
 	associationClass AssociationClass,
 	associationType []byte,
-	appPublicKey []byte,
+	appPublicKey *PublicKey,
 	operation AssociationOperation,
+) (DerivedKeyEntry, error) {
+	// Convert AppPublicKey to AppPKID
+	appPKID := bav._associationAppPublicKeyToPKID(appPublicKey)
+	// Construct AssociationLimitKey.
+	var associationLimitKey AssociationLimitKey
+	// First, check for applicable spending limit matching scoped AssociationType, scoped AppPKID.
+	// Then, check for applicable spending limit matching any AssociationType, scoped AppPKID.
+	// Then, check for applicable spending limit matching scoped AssociationType, any AppPKID.
+	// Then, check for applicable spending limit matching any AssociationType, any AppPKID.
+	for _, spendingLimitAssociationScopeType := range []AssociationAppScopeType{AssociationAppScopeTypeScoped, AssociationAppScopeTypeAny} {
+		spendingLimitAppPKID := *appPKID
+		if spendingLimitAssociationScopeType == AssociationAppScopeTypeAny {
+			spendingLimitAppPKID = ZeroPKID
+		}
+		for _, spendingLimitAssociationType := range[][]byte{associationType, []byte("")} {
+			associationLimitKey = MakeAssociationLimitKey(
+				associationClass,
+				spendingLimitAssociationType,
+				spendingLimitAppPKID,
+				spendingLimitAssociationScopeType,
+				operation,
+			)
+			updatedDerivedKeyEntry, err := _checkAssociationLimitAndUpdateDerivedKey(derivedKeyEntry, associationLimitKey)
+			if err != nil {
+				return updatedDerivedKeyEntry, nil
+			}
+		}
+	}
+	// If we get to this point, then no authorized spending limits
+	// were found and the association is not authorized.
+	return derivedKeyEntry, errors.New("_checkAssociationLimitAndUpdateDerivedKey: association not authorized")
+}
+
+func _checkAssociationLimitAndUpdateDerivedKey(
+	derivedKeyEntry DerivedKeyEntry, associationLimitKey AssociationLimitKey,
 ) (DerivedKeyEntry, error) {
 	errMsg := errors.New("_checkAssociationLimitAndUpdateDerivedKey: association not authorized")
 	// If derived key spending limit is missing, return unauthorized.
@@ -2133,15 +2168,6 @@ func (bav *UtxoView) _checkAssociationLimitAndUpdateDerivedKey(
 		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap == nil {
 		return derivedKeyEntry, errMsg
 	}
-	// Convert AppPublicKey to AppPKID
-	appPKIDEntry := bav.GetPKIDForPublicKey(appPublicKey)
-	if appPKIDEntry == nil || appPKIDEntry.isDeleted {
-		return derivedKeyEntry, errors.New("_checkAssociationLimitAndUpdateDerivedKeyEntry: AppPKID not found")
-	}
-	// Construct AssociationLimitKey.
-	associationLimitKey := MakeAssociationLimitKey(
-		associationClass, associationType, *appPKIDEntry.PKID, operation,
-	)
 	// Check if the key is present in the AssociationLimitMap.
 	associationLimit, associationLimitExists :=
 		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap[associationLimitKey]

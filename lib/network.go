@@ -6014,17 +6014,24 @@ type AssociationLimitKey struct {
 	AssociationClass AssociationClass // User || Post
 	AssociationType  string
 	AppPKID          PKID
-	Operation        AssociationOperation // Create || Delete
+	AppScopeType     AssociationAppScopeType // Any || Scoped
+	Operation        AssociationOperation    // Create || Delete
 }
 
 type AssociationClass uint8
+type AssociationAppScopeType uint8
 type AssociationOperation uint8
 
 const (
-	AssociationClassUser       AssociationClass     = 0
-	AssociationClassPost       AssociationClass     = 1
-	AssociationOperationCreate AssociationOperation = 0
-	AssociationOperationDelete AssociationOperation = 1
+	// AssociationClass: User || Post
+	AssociationClassUser              AssociationClass        = 0
+	AssociationClassPost              AssociationClass        = 1
+	// AssociationScope: Any || Scoped
+	AssociationAppScopeTypeAny        AssociationAppScopeType = 0
+	AssociationAppScopeTypeScoped     AssociationAppScopeType = 2
+	// AssociationOperation: Create || Delete
+	AssociationOperationCreate        AssociationOperation    = 0
+	AssociationOperationDelete        AssociationOperation    = 1
 )
 
 func (associationLimitKey AssociationLimitKey) Encode() []byte {
@@ -6032,6 +6039,7 @@ func (associationLimitKey AssociationLimitKey) Encode() []byte {
 	data = append(data, UintToBuf(uint64(associationLimitKey.AssociationClass))...)
 	data = append(data, EncodeByteArray([]byte(associationLimitKey.AssociationType))...)
 	data = append(data, associationLimitKey.AppPKID.ToBytes()...)
+	data = append(data, UintToBuf(uint64(associationLimitKey.AppScopeType))...)
 	data = append(data, UintToBuf(uint64(associationLimitKey.Operation))...)
 	return data
 }
@@ -6056,6 +6064,12 @@ func (associationLimitKey *AssociationLimitKey) Decode(rr *bytes.Reader) error {
 		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AppPKID: ")
 	}
 	associationLimitKey.AppPKID = *appPKID
+	// AppScopeType: Any || Scoped
+	appScopeType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AppScopeType: ")
+	}
+	associationLimitKey.AppScopeType = AssociationAppScopeType(appScopeType)
 	// Operation: Create || Delete
 	operation, err := ReadUvarint(rr)
 	if err != nil {
@@ -6066,12 +6080,17 @@ func (associationLimitKey *AssociationLimitKey) Decode(rr *bytes.Reader) error {
 }
 
 func MakeAssociationLimitKey(
-	associationClass AssociationClass, associationType []byte, appPKID PKID, operation AssociationOperation,
+	associationClass AssociationClass,
+	associationType []byte,
+	appPKID PKID,
+	appScopeType AssociationAppScopeType,
+	operation AssociationOperation,
 ) AssociationLimitKey {
 	return AssociationLimitKey{
 		AssociationClass: associationClass,
 		AssociationType:  string(associationType),
 		AppPKID:          appPKID,
+		AppScopeType:     appScopeType,
 		Operation:        operation,
 	}
 }
