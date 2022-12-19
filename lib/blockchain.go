@@ -76,6 +76,7 @@ const (
 
 // IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
 func (blockStatus BlockStatus) IsFullyProcessed() bool {
+	glog.Infof("Checking if fully processed - current statuses are: %+v", blockStatus)
 	return blockStatus&StatusHeaderValidated != 0 &&
 		blockStatus&StatusBlockStored != 0 &&
 		blockStatus&StatusBlockProcessed != 0 &&
