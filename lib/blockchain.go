@@ -76,7 +76,6 @@ const (
 
 // IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
 func (blockStatus BlockStatus) IsFullyProcessed() bool {
-	glog.Infof("Checking if fully processed - current statuses are: %+v", blockStatus)
 	return blockStatus&StatusHeaderValidated != 0 &&
 		blockStatus&StatusBlockStored != 0 &&
 		blockStatus&StatusBlockProcessed != 0 &&
@@ -1912,6 +1911,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	}
 
 	if nodeToValidate.Status.IsFullyProcessed() {
+		glog.Infof("Node is not fully processed - current statuses are: %+v", nodeToValidate.Status)
 		return false, false, RuleErrorBlockAlreadyExists
 	}
 
