@@ -114,6 +114,51 @@ const (
 	transactionTestInputTypeAccessGroupMembers
 )
 
+type testTxn interface {
+	generateTxn(t *testing.T) *MsgDeSoTxn
+}
+
+type basicTxn struct {
+	senderPublicKeyBytes   []byte
+	receiverPublicKeyBytes []byte
+	amountNanos            uint64
+}
+
+func generateRandomPrivateKeyBase58(t *testing.T) string {
+	t.Helper()
+
+	randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(t, err)
+	randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
+	return randomPrivKeyBase58Check
+}
+
+func (bt basicTxn) generateTxn(t *testing.T) *MsgDeSoTxn {
+	t.Helper()
+	txn := &MsgDeSoTxn{
+		// The inputs will be set below.
+		TxInputs: []*DeSoInput{},
+		TxOutputs: []*DeSoOutput{
+			{
+				PublicKey:   []byte(bt.toPrivateKeyBase58),
+				AmountNanos: bt.amountNanos,
+			},
+		},
+		PublicKey: []byte(bt.fromPrivateKeyBase58),
+		TxnMeta:   &BasicTransferMetadata{},
+	}
+	return txn
+}
+
+type derivedKeyTxn struct {
+	transactionSpendingLimit *TransactionSpendingLimit
+}
+
+func (txn derivedKeyTxn) generateTxn(t *testing.T) *MsgDeSoTxn {
+	derivedKeyTxn, _ := doDerivedKeyTransaction(t, txn.transactionSpendingLimit)
+	return derivedKeyTxn
+}
+
 type transactionTestInputSpace interface {
 	// IsDependency should return true if the other input space will have overlapping utxoView/utxoOps mappings or db records
 	// with the current input space. This is used by the transactionTest framework to determine which transactionTestVector
@@ -979,7 +1024,7 @@ func (tb *TestBlockChain) connectTransaction(txn *MsgDeSoTxn) error {
 	return err
 }
 
-func (tb *TestBlockChain) buildTransaction(txn *MsgDeSoTxn) {
+func (tb *TestBlockChain) addTxnInputs(txn *MsgDeSoTxn) {
 	tb.t.Helper()
 	require := require.New(tb.t)
 	// testChain.buildTransaction(txn, recipientPrivString)
@@ -992,53 +1037,6 @@ func (tb *TestBlockChain) buildTransaction(txn *MsgDeSoTxn) {
 	// Sign the transaction with the recipient's key rather than the
 	// sender's key.
 	//txn.Signature.SetSignature(generateTxnSign(tb.t, txn, keyToSignTxn))
-}
-func (tb *TestBlockChain) newBasicTransaction() *MsgDeSoTxn {
-	tb.t.Helper()
-	basicTxn := &MsgDeSoTxn{
-		// The inputs will be set below.
-		TxInputs: []*DeSoInput{},
-		TxOutputs: []*DeSoOutput{
-			{
-				PublicKey:   recipientPkBytes,
-				AmountNanos: 1,
-			},
-		},
-		PublicKey: senderPkBytes,
-		TxnMeta:   &BasicTransferMetadata{},
-	}
-	tb.buildTransaction(basicTxn)
-	return basicTxn
-}
-
-func (tb *TestBlockChain) newBasicTransactionWithSign(signType signatureType, keyToSignTxn string) *MsgDeSoTxn {
-	tb.t.Helper()
-
-	senderPkBytes := ProcessKeyBytes(tb.t, senderPkString)
-	recipientPkBytes := ProcessKeyBytes(tb.t, recipientPkString)
-
-	basicTxn := &MsgDeSoTxn{
-		// The inputs will be set below.
-		TxInputs: []*DeSoInput{},
-		TxOutputs: []*DeSoOutput{
-			{
-				PublicKey:   recipientPkBytes,
-				AmountNanos: 1,
-			},
-		},
-		PublicKey: senderPkBytes,
-		TxnMeta:   &BasicTransferMetadata{},
-	}
-
-	tb.buildTransactionWithSign(basicTxn, signType, keyToSignTxn)
-	return basicTxn
-}
-
-func (tb *TestBlockChain) buildTransactionWithSign(txn *MsgDeSoTxn, signType signatureType, keyToSignTxn string) *MsgDeSoTxn {
-	tb.t.Helper()
-	tb.buildTransaction(txn)
-	return signTransaction(tb.t, txn, signType, keyToSignTxn)
-
 }
 
 func (tb *TestBlockChain) mineBlock() {
@@ -1468,7 +1466,7 @@ func TestVerifyInputFeeSpendValues(t *testing.T) {
 		},
 		// test case 4
 		{
-			"case 4: Testing case with spend equal to the available balance.",
+			description: "case 4: Testing case with spend equal to the available balance.",
 			txnSpend: []*DeSoOutput{
 				{
 					PublicKey:   recipientPkBytes,
@@ -2281,6 +2279,36 @@ func TestBasicTransferSignatures(t *testing.T) {
 			nil,
 		)...)
 
+		testCases := []struct {
+			transactionGen   testTxn
+			signType         signatureType
+			signingKeyBase58 string
+		}{
+			{
+				transactionGen: basicTxn{
+					senderPublicKeyBytes:   senderPkBytes,
+					receiverPublicKeyBytes: recipientPkBytes,
+					amountNanos:            1,
+				},
+				signType:         ECDSA,
+				signingKeyBase58: "",
+			},
+		}
+
+		// Go through the test cases, add and process the transaction to the mempool
+		for i := 0; i < len(testCases); i++ {
+			tc := testCases[i]
+			txn := tc.transactionGen.generateTxn()
+
+			switch tc.transactionGen.(type) {
+			case basicTxn:
+				tb.addTxnInputs(txn)
+			}
+			signTransaction(tb.t, txn, tc.signType, tc.signingKeyBase58)
+			tb.mempoolProcessTransaction(txn)
+			allTxns.append(txn)
+		}
+		// Mine and verify the blocks processed in mempool
 		mineBlockAndVerifySignatures(allTxns)
 	})
 }
