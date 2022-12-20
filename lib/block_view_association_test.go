@@ -2175,6 +2175,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
 
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
+	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
 
 	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
 	require.NoError(t, err)
@@ -2248,6 +2249,15 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 				mempool,
 				[]*DeSoOutput{},
 			)
+		case TxnTypeDeleteUserAssociation:
+			txn, _, _, _, err = testMeta.chain.CreateDeleteUserAssociationTxn(
+				transactorPkBytes,
+				inputTxn.TxnMeta.(*DeleteUserAssociationMetadata),
+				make(map[string][]byte),
+				testMeta.feeRateNanosPerKb,
+				mempool,
+				[]*DeSoOutput{},
+			)
 		default:
 			return errors.New("invalid txn type")
 		}
@@ -2296,10 +2306,10 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			TxnTypeCreateUserAssociation,
 			MakeAssociationLimitKey(
 				AssociationClassUser,
-				[]byte("ENDORSEMENT"), // AssociationType
-				*m0PKID,               // AppPKID
+				[]byte("ENDORSEMENT"), // AssociationType == ENDORSEMENT
+				*m0PKID,               // AppPKID == m0
 				AssociationAppScopeTypeScoped,
-				AssociationOperationCreate,
+				AssociationOperationCreate, // OperationType == Create
 			),
 			1,
 		)
@@ -2357,7 +2367,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 				[]byte(""),                    // AssociationType == Any
 				ZeroPKID,                      // AppPKID == ZeroPKID
 				AssociationAppScopeTypeScoped, // Scoped to GlobalOnly
-				AssociationOperationCreate,
+				AssociationOperationCreate,    // OperationType == Create
 			),
 			1,
 		)
@@ -2394,7 +2404,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "association not authorized for derived key")
 
-		// Create derived key for creating ANY user associations on any app.
+		// Create derived key for creating ANY user associations on ANY app.
 		derivedKeyPriv = _submitAuthorizeDerivedKeyTxn(
 			TxnTypeCreateUserAssociation,
 			MakeAssociationLimitKey(
@@ -2402,7 +2412,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 				[]byte(""), // AssociationType == Any
 				ZeroPKID,
 				AssociationAppScopeTypeAny, // AppPKID == Any
-				AssociationOperationCreate,
+				AssociationOperationCreate, // OperationType == Create
 			),
 			2,
 		)
@@ -2418,6 +2428,25 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
 		)
 		require.NoError(t, err)
+
+		// Sad path: not authorized to delete user association
+		userAssociationQuery := &UserAssociationQuery{
+			TargetUserPKID:   m1PKID,
+			AssociationType:  []byte("ENDORSEMENT"),
+			AssociationValue: []byte("Python"),
+		}
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		userAssociationEntries, err := utxoView.GetUserAssociationsByAttributes(userAssociationQuery)
+		require.NoError(t, err)
+		require.Len(t, userAssociationEntries, 1)
+		associationID := userAssociationEntries[0].AssociationID
+		deleteUserAssociationMetadata := &DeleteUserAssociationMetadata{AssociationID: associationID}
+		err = _submitAssociationTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "association not authorized for derived key")
 
 		// Happy path: creating FLAG user association globally
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
@@ -2437,5 +2466,24 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "association not authorized for derived key")
+
+		// Create derived key for creating or deleting ANY user associations on ANY app.
+		derivedKeyPriv = _submitAuthorizeDerivedKeyTxn(
+			TxnTypeCreateUserAssociation,
+			MakeAssociationLimitKey(
+				AssociationClassUser,
+				[]byte(""), // AssociationType == Any
+				ZeroPKID,
+				AssociationAppScopeTypeAny, // AppPKID == Any
+				AssociationOperationAny,    // OperationType == Any
+			),
+			1,
+		)
+
+		// Happy path: delete user association
+		err = _submitAssociationTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata},
+		)
+		require.NoError(t, err)
 	}
 }

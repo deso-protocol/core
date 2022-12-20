@@ -2131,26 +2131,28 @@ func (bav *UtxoView) _checkAssociationLimitAndUpdateDerivedKey(
 	appPKID := bav._associationAppPublicKeyToPKID(appPublicKey)
 	// Construct AssociationLimitKey.
 	var associationLimitKey AssociationLimitKey
-	// First, check for applicable spending limit matching scoped AssociationType, scoped AppPKID.
-	// Then, check for applicable spending limit matching any AssociationType, scoped AppPKID.
-	// Then, check for applicable spending limit matching scoped AssociationType, any AppPKID.
-	// Then, check for applicable spending limit matching any AssociationType, any AppPKID.
-	for _, spendingLimitAssociationScopeType := range []AssociationAppScopeType{AssociationAppScopeTypeScoped, AssociationAppScopeTypeAny} {
+	// Check for applicable spending limit matching:
+	//   - Scoped AppScopeType else any AppScopeType
+	//   - Scoped AssociationType else any AssociationType
+	//   - Scoped OperationType else any OperationType
+	for _, spendingLimitScopeType := range []AssociationAppScopeType{AssociationAppScopeTypeScoped, AssociationAppScopeTypeAny} {
 		spendingLimitAppPKID := *appPKID
-		if spendingLimitAssociationScopeType == AssociationAppScopeTypeAny {
+		if spendingLimitScopeType == AssociationAppScopeTypeAny {
 			spendingLimitAppPKID = ZeroPKID
 		}
 		for _, spendingLimitAssociationType := range [][]byte{associationType, []byte("")} {
-			associationLimitKey = MakeAssociationLimitKey(
-				associationClass,
-				spendingLimitAssociationType,
-				spendingLimitAppPKID,
-				spendingLimitAssociationScopeType,
-				operation,
-			)
-			updatedDerivedKeyEntry, err := _checkAssociationLimitAndUpdateDerivedKey(derivedKeyEntry, associationLimitKey)
-			if err == nil {
-				return updatedDerivedKeyEntry, nil
+			for _, spendingLimitOperationType := range []AssociationOperation{operation, AssociationOperationAny} {
+				associationLimitKey = MakeAssociationLimitKey(
+					associationClass,
+					spendingLimitAssociationType,
+					spendingLimitAppPKID,
+					spendingLimitScopeType,
+					spendingLimitOperationType,
+				)
+				updatedDerivedKeyEntry, err := _checkAssociationLimitAndUpdateDerivedKey(derivedKeyEntry, associationLimitKey)
+				if err == nil {
+					return updatedDerivedKeyEntry, nil
+				}
 			}
 		}
 	}

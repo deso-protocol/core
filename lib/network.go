@@ -6015,7 +6015,7 @@ type AssociationLimitKey struct {
 	AssociationType  string
 	AppPKID          PKID
 	AppScopeType     AssociationAppScopeType // Any || Scoped
-	Operation        AssociationOperation    // Create || Delete
+	Operation        AssociationOperation    // Any || Create || Delete
 }
 
 type AssociationClass uint8
@@ -6029,9 +6029,10 @@ const (
 	// AssociationScope: Any || Scoped
 	AssociationAppScopeTypeAny    AssociationAppScopeType = 0
 	AssociationAppScopeTypeScoped AssociationAppScopeType = 2
-	// AssociationOperation: Create || Delete
-	AssociationOperationCreate AssociationOperation = 0
-	AssociationOperationDelete AssociationOperation = 1
+	// AssociationOperation: Any || Create || Delete
+	AssociationOperationAny    AssociationOperation = 0
+	AssociationOperationCreate AssociationOperation = 1
+	AssociationOperationDelete AssociationOperation = 2
 )
 
 func (associationLimitKey AssociationLimitKey) Encode() []byte {
@@ -6070,7 +6071,7 @@ func (associationLimitKey *AssociationLimitKey) Decode(rr *bytes.Reader) error {
 		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AppScopeType: ")
 	}
 	associationLimitKey.AppScopeType = AssociationAppScopeType(appScopeType)
-	// Operation: Create || Delete
+	// Operation: Any || Create || Delete
 	operation, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "AssociationLimitKey.Decode: Problem reading Operation: ")
@@ -6107,6 +6108,9 @@ func (associationClass AssociationClass) ToString() string {
 }
 
 func (associationOperation AssociationOperation) ToString() string {
+	if associationOperation == AssociationOperationAny {
+		return "Any"
+	}
 	if associationOperation == AssociationOperationCreate {
 		return "Create"
 	}
