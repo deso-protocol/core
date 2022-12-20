@@ -13,7 +13,7 @@ func (bav *UtxoView) FlushToDb(blockHeight uint64) error {
 	// Make sure everything happens inside a single transaction.
 	var err error
 	if bav.Postgres != nil {
-		err = bav.Postgres.FlushView(bav)
+		err = bav.Postgres.FlushView(bav, blockHeight)
 		if err != nil {
 			return err
 		}
@@ -1025,7 +1025,7 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 }
 
 func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	glog.V(1).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: flushing %d mappings", len(bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry))
+	glog.V(2).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: flushing %d mappings", len(bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry))
 
 	// Go through all the entries in the DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry map.
 	for orderIter, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
@@ -1071,7 +1071,7 @@ func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, 
 		}
 	}
 
-	glog.V(1).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(2).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// At this point all of the DAO coin limit order mappings in the db should be up-to-date.
 	return nil

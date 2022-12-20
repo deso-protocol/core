@@ -676,9 +676,10 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 		if len(utxoOpsForTxn) > 0 && utxoOpsForTxn[operationIndex].Type == OperationTypeSpendingLimitAccounting {
 			currentOperation := utxoOpsForTxn[operationIndex]
 			// Get the current derived key entry
-			derivedPkBytes, isDerived := IsDerivedSignature(currentTxn)
-			if !isDerived {
-				return fmt.Errorf("_disconnectBasicTransfer: Found Spending Limit Accounting op with non-derived key signature")
+			derivedPkBytes, isDerived, err := IsDerivedSignature(currentTxn)
+			if !isDerived || err != nil {
+				return fmt.Errorf("_disconnectBasicTransfer: Found Spending Limit Accounting op with non-derived "+
+					"key signature or got an error %v", err)
 			}
 			if err := IsByteArrayValidPublicKey(derivedPkBytes); err != nil {
 				return fmt.Errorf(
@@ -686,7 +687,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 					PkToString(derivedPkBytes, bav.Params),
 					err)
 			}
-			derivedKeyEntry := bav._getDerivedKeyMappingForOwner(currentTxn.PublicKey, derivedPkBytes)
+			derivedKeyEntry := bav.GetDerivedKeyMappingForOwner(currentTxn.PublicKey, derivedPkBytes)
 			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
 				return fmt.Errorf("_disconnectBasicTransfer: could not find derived key entry")
 			}
@@ -1114,6 +1115,9 @@ func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, param
 }
 
 func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _err error) {
+	if txn.Signature.Sign == nil {
+		return nil, fmt.Errorf("_verifySignature: Transaction signature is empty")
+	}
 	// Compute a hash of the transaction.
 	txBytes, err := txn.ToBytes(true /*preSignature*/)
 	if err != nil {
@@ -1122,13 +1126,20 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	txHash := Sha256DoubleHash(txBytes)
 
 	// Look for the derived key in transaction ExtraData and validate it. For transactions
-	// signed using a derived key, the derived public key is passed to ExtraData.
+	// signed using a derived key, the derived public key is passed in ExtraData. Alternatively,
+	// if the signature uses DeSo-DER encoding, meaning we can recover the derived public key from
+	// the signature.
 	var derivedPk *btcec.PublicKey
-	derivedPkBytes, isDerived := IsDerivedSignature(txn)
+	derivedPkBytes, isDerived, err := IsDerivedSignature(txn)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_verifySignature: Something went wrong while checking for "+
+			"derived key signature")
+	}
+	// If we got a derived key then try parsing it.
 	if isDerived {
 		derivedPk, err = btcec.ParsePubKey(derivedPkBytes, btcec.S256())
 		if err != nil {
-			return nil, RuleErrorDerivedKeyInvalidExtraData
+			return nil, fmt.Errorf("%v %v", RuleErrorDerivedKeyInvalidExtraData, RuleErrorDerivedKeyInvalidRecoveryId)
 		}
 	}
 
@@ -1139,49 +1150,21 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 		return nil, errors.Wrapf(err, "_verifySignature: Problem parsing owner public key: ")
 	}
 
-	// If no derived key is present in ExtraData, we check if transaction was signed by the owner.
-	// If derived key is present in ExtraData, we check if transaction was signed by the derived key.
+	// If no derived key was used, we check if transaction was signed by the owner.
+	// If derived key *was* used, we check if transaction was signed by the derived key.
 	if derivedPk == nil {
 		// Verify that the transaction is signed by the specified key.
 		if txn.Signature.Verify(txHash[:], ownerPk) {
 			return nil, nil
 		}
 	} else {
-		// Look for a derived key entry in UtxoView and DB, check to make sure it exists
-		// and is not isDeleted.
-		derivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPkBytes, derivedPkBytes)
-		if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
-			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized,
-				"Derived key mapping for owner not found: Owner: %v, "+
-					"Derived key: %v", PkToStringMainnet(ownerPkBytes),
-				PkToStringMainnet(derivedPkBytes))
+		// Look for a derived key entry in UtxoView and DB, check to make sure it exists and is not isDeleted.
+		if err := bav.ValidateDerivedKey(ownerPkBytes, derivedPkBytes, uint64(blockHeight)); err != nil {
+			return nil, err
 		}
 
-		// Sanity-check that transaction public keys line up with looked-up derivedKeyEntry public keys.
-		if !reflect.DeepEqual(ownerPkBytes, derivedKeyEntry.OwnerPublicKey[:]) ||
-			!reflect.DeepEqual(derivedPkBytes, derivedKeyEntry.DerivedPublicKey[:]) {
-			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "DB entry (OwnerPubKey, "+
-				"DerivedPubKey) = (%v, %v) does not match keys used to "+
-				"look up the entry: (%v, %v). This should never happen.",
-				PkToStringMainnet(derivedKeyEntry.OwnerPublicKey[:]),
-				PkToStringMainnet(derivedKeyEntry.DerivedPublicKey[:]),
-				PkToStringMainnet(ownerPkBytes),
-				PkToStringMainnet(derivedPkBytes))
-		}
-
-		// At this point, we know the derivedKeyEntry that we have is matching.
-		// We check if the derived key hasn't been de-authorized or hasn't expired.
-		if derivedKeyEntry.OperationType != AuthorizeDerivedKeyOperationValid ||
-			derivedKeyEntry.ExpirationBlock <= uint64(blockHeight) {
-			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Derived key EITHER "+
-				"deactivated or block height expired. Deactivation status: %v, "+
-				"Expiration block height: %v, Current block height: %v",
-				derivedKeyEntry.OperationType,
-				derivedKeyEntry.ExpirationBlock,
-				blockHeight)
-		}
-
-		// All checks passed so we try to verify the signature.
+		// All checks passed so we try to verify the signature. This step can be avoided for DeSo-DER signatures
+		// but we run it redundantly just in case.
 		if txn.Signature.Verify(txHash[:], derivedPk) {
 			return derivedPk.SerializeCompressed(), nil
 		}
@@ -1192,12 +1175,75 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	return nil, RuleErrorInvalidTransactionSignature
 }
 
-func IsDerivedSignature(txn *MsgDeSoTxn) (_derivedPkBytes []byte, _isDerived bool) {
-	if txn.ExtraData == nil {
-		return nil, false
+// ValidateDerivedKey checks if a derived key is authorized and valid.
+func (bav *UtxoView) ValidateDerivedKey(ownerPkBytes []byte, derivedPkBytes []byte, blockHeight uint64) error {
+	derivedKeyEntry := bav.GetDerivedKeyMappingForOwner(ownerPkBytes, derivedPkBytes)
+	if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
+		return errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Derived key mapping for owner not found: Owner: %v, "+
+			"Derived key: %v", PkToStringBoth(ownerPkBytes), PkToStringBoth(derivedPkBytes))
 	}
-	derivedPkBytes, isDerived := txn.ExtraData[DerivedPublicKey]
-	return derivedPkBytes, isDerived
+
+	// Sanity-check that transaction public keys line up with looked-up derivedKeyEntry public keys.
+	if !reflect.DeepEqual(ownerPkBytes, derivedKeyEntry.OwnerPublicKey[:]) ||
+		!reflect.DeepEqual(derivedPkBytes, derivedKeyEntry.DerivedPublicKey[:]) {
+		return errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "DB entry (OwnerPubKey, DerivedPubKey) = (%v, %v) does not "+
+			"match keys used to look up the entry: (%v, %v). This should never happen.",
+			PkToStringBoth(derivedKeyEntry.OwnerPublicKey[:]), PkToStringBoth(derivedKeyEntry.DerivedPublicKey[:]),
+			PkToStringBoth(ownerPkBytes), PkToStringBoth(derivedPkBytes))
+	}
+
+	// At this point, we know the derivedKeyEntry that we have is matching.
+	// We check if the derived key hasn't been de-authorized or hasn't expired.
+	if derivedKeyEntry.OperationType != AuthorizeDerivedKeyOperationValid ||
+		derivedKeyEntry.ExpirationBlock <= blockHeight {
+		return errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Derived key EITHER deactivated or block height expired. "+
+			"Deactivation status: %v, Expiration block height: %v, Current block height: %v",
+			derivedKeyEntry.OperationType, derivedKeyEntry.ExpirationBlock, blockHeight)
+	}
+
+	// If we get to this point, we got a valid derived key.
+	return nil
+}
+
+// IsDerivedSignature checks if a transaction was signed using a derived key. If so, it will recover the derived key used
+// to sign the transaction. There are two possible ways to serialize transaction's ECDSA signature for a derived key.
+// Either to use the DER encoding and place the derived public key in transaction's ExtraData, or to use DeSo-DER signature
+// encoding and pass a special recovery ID into the signature's bytes. However, both encodings can't be used at the same time.
+func IsDerivedSignature(txn *MsgDeSoTxn) (_derivedPkBytes []byte, _isDerived bool, _err error) {
+	// If transaction contains ExtraData, then check if the DerivedPublicKey was passed along.
+	if txn.ExtraData != nil {
+		derivedPkBytes, isDerived := txn.ExtraData[DerivedPublicKey]
+		// Make sure both encodings aren't used concurrently.
+		if isDerived && txn.Signature.IsRecoverable {
+			return nil, false, errors.Wrapf(RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId,
+				"IsDerivedSignature: transaction signed with a derived key can either store public key in "+
+					"ExtraData or use the DeSo-DER recoverable signature encoding but not BOTH")
+		}
+		if isDerived {
+			return derivedPkBytes, isDerived, nil
+		}
+	}
+
+	// If transaction doesn't contain a derived key in ExtraData, then check if it contains the recovery ID.
+	if txn.Signature.IsRecoverable {
+		// Assemble the transaction hash; we need it in order to recover the public key.
+		txBytes, err := txn.ToBytes(true /*preSignature*/)
+		if err != nil {
+			return nil, false, errors.Wrapf(err, "IsDerivedSignature: Problem "+
+				"serializing txn without signature: ")
+		}
+		txHash := Sha256DoubleHash(txBytes)[:]
+
+		// Recover the public key from the signature.
+		derivedPublicKey, err := txn.Signature.RecoverPublicKey(txHash)
+		if err != nil {
+			return nil, false, errors.Wrapf(err, "IsDerivedSignature: Problem recovering "+
+				"public key from signature")
+		}
+		return derivedPublicKey.SerializeCompressed(), true, nil
+	}
+	return nil, false, nil
+
 }
 
 func (bav *UtxoView) _connectBasicTransfer(
@@ -1467,7 +1513,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// also not allowed to have any inputs because they by construction cannot authorize
 		// the spending of any inputs.
 		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
-			if len(txn.PublicKey) != 0 || txn.Signature != nil {
+			if len(txn.PublicKey) != 0 || txn.Signature.Sign != nil {
 				return 0, 0, nil, RuleErrorBlockRewardTxnNotAllowedToHaveSignature
 			}
 		} else {
@@ -1478,8 +1524,11 @@ func (bav *UtxoView) _connectBasicTransfer(
 	}
 
 	if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
-		if derivedPkBytes, isDerivedSig := IsDerivedSignature(txn); isDerivedSig {
-			var err error
+		if derivedPkBytes, isDerivedSig, err := IsDerivedSignature(txn); isDerivedSig {
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: "+
+					"It looks like this transaction was signed with a derived key, but the signature is malformed: ")
+			}
 			// Now we check the transaction limits on the derived key
 			utxoOpsForTxn, err = bav._checkDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn)
 			if err != nil {
@@ -1498,13 +1547,22 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 	_utxoOpsForTxn []*UtxoOperation, _err error) {
 
 	// Get the derived key entry
-	prevDerivedKeyEntry := bav._getDerivedKeyMappingForOwner(txn.PublicKey, derivedPkBytes)
+	prevDerivedKeyEntry := bav.GetDerivedKeyMappingForOwner(txn.PublicKey, derivedPkBytes)
 	if prevDerivedKeyEntry == nil || prevDerivedKeyEntry.isDeleted {
 		return utxoOpsForTxn, fmt.Errorf("_checkDerivedKeySpendingLimit: No derived key entry found")
 	}
 
 	// Create a copy of the prevDerivedKeyEntry so we can safely modify the new entry
 	derivedKeyEntry := *prevDerivedKeyEntry.Copy()
+	// Make sure spending limit is not nil.
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil {
+		return utxoOpsForTxn, errors.Wrap(RuleErrorDerivedKeyNotAuthorized,
+			"_checkDerivedKeySpendingLimit: TransactionSpendingLimitTracker is nil")
+	}
+	// If the derived key is an unlimited key, we don't need to check spending limits whatsoever.
+	if derivedKeyEntry.TransactionSpendingLimitTracker.IsUnlimited {
+		return utxoOpsForTxn, nil
+	}
 
 	// Spend amount is total inputs minus sum of AddUtxo type operations
 	// going to transactor (i.e. change).
@@ -1531,11 +1589,6 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			}
 			spendAmount -= utxoOp.Entry.AmountNanos
 		}
-	}
-
-	if derivedKeyEntry.TransactionSpendingLimitTracker == nil {
-		return utxoOpsForTxn, errors.Wrap(RuleErrorDerivedKeyNotAuthorized,
-			"_checkDerivedKeySpendingLimit: TransactionSpendingLimitTracker is nil")
 	}
 
 	// If the spend amount exceeds the Global DESO limit, this derived key is not authorized to spend this DESO.

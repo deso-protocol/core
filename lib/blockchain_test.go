@@ -7,6 +7,7 @@ import (
 	"github.com/go-pg/pg/v10"
 	"log"
 	"math/big"
+	"math/rand"
 	"os"
 	"testing"
 	"time"
@@ -751,25 +752,41 @@ func _signTxn(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
 	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
 	txnSignature, err := txn.Sign(privKey)
 	require.NoError(err)
-	txn.Signature = txnSignature
+	txn.Signature.SetSignature(txnSignature)
+}
+
+func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrBase58Check string) {
+	signatureType := rand.Int() % 2
+	_signTxnWithDerivedKeyAndType(t, txn, privKeyStrBase58Check, signatureType)
 }
 
 // Signs the transaction with a derived key. Transaction ExtraData contains the derived
 // public key, so that _verifySignature() knows transaction wasn't signed by the owner.
-func _signTxnWithDerivedKey(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
+func _signTxnWithDerivedKeyAndType(t *testing.T, txn *MsgDeSoTxn, privKeyStrBase58Check string, signatureType int) {
 	require := require.New(t)
 
-	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
+	privKeyBytes, _, err := Base58CheckDecode(privKeyStrBase58Check)
 	require.NoError(err)
 	privateKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
-	if txn.ExtraData == nil {
-		txn.ExtraData = make(map[string][]byte)
-	}
-	txn.ExtraData[DerivedPublicKey] = publicKey.SerializeCompressed()
-	txnSignature, err := txn.Sign(privateKey)
-	require.NoError(err)
 
-	txn.Signature = txnSignature
+	// We will randomly sign with the standard DER encoding + ExtraData, or with the DeSo-DER encoding.
+	if signatureType == 0 {
+		if txn.ExtraData == nil {
+			txn.ExtraData = make(map[string][]byte)
+		}
+		txn.ExtraData[DerivedPublicKey] = publicKey.SerializeCompressed()
+		txnSignature, err := txn.Sign(privateKey)
+		require.NoError(err)
+		txn.Signature.SetSignature(txnSignature)
+	} else {
+		txBytes, err := txn.ToBytes(true /*preSignature*/)
+		require.NoError(err)
+		txHash := Sha256DoubleHash(txBytes)[:]
+
+		desoSignature, err := SignRecoverable(txHash, privateKey)
+		require.NoError(err)
+		txn.Signature = *desoSignature
+	}
 }
 
 func _assembleBasicTransferTxnFullySigned(t *testing.T, chain *Blockchain,

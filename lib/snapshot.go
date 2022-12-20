@@ -14,6 +14,7 @@ import (
 	"github.com/oleiade/lane"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/semaphore"
+	"math"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -180,7 +181,8 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	}
 
 	operationChannel := &SnapshotOperationChannel{}
-	if err := operationChannel.Initialize(snapshotDb, &snapshotDbMutex); err != nil {
+	// Initialize the SnapshotOperationChannel. We don't set any of the handlers yet because we don't have a snapshot instance yet.
+	if err := operationChannel.Initialize(snapshotDb, &snapshotDbMutex, nil, nil); err != nil {
 		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotOperationChannel"), true
 	}
 
@@ -241,6 +243,8 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 		timer:                        timer,
 		ExitChannel:                  make(chan bool),
 	}
+	// Now we will set the handler for finishing all operations in the operation channel.
+	snap.OperationChannel.SetFinishAllOperationsHandler(snap.PersistChecksumAndMigration)
 	// Run the snapshot main loop.
 	go snap.Run()
 
@@ -440,6 +444,16 @@ func (snap *Snapshot) StartAncestralRecordsFlush(shouldIncrement bool) {
 	snap.OperationChannel.EnqueueOperation(&SnapshotOperation{
 		operationType: SnapshotOperationFlush,
 	})
+}
+
+func (snap *Snapshot) PersistChecksumAndMigration() error {
+	if err := snap.Checksum.SaveChecksum(); err != nil {
+		return errors.Wrapf(err, "PersistChecksumAndMigration: Problem saving checksum")
+	}
+	if err := snap.Migrations.SaveMigrations(); err != nil {
+		return errors.Wrapf(err, "PersistChecksumAndMigration: Problem saving migrations")
+	}
+	return nil
 }
 
 func (snap *Snapshot) PrintChecksum(text string) {
@@ -780,7 +794,7 @@ func (snap *Snapshot) GetAncestralRecordsKeyWithTxn(txn *badger.Txn, key []byte,
 
 // DBSetAncestralRecordWithTxn sets a record corresponding to our ExistingRecordsMap.
 // We append a []byte{1} to the end to indicate that this is an existing record, and
-// we append a []byte{0} to the end to indicate that this is a NON-existing record. We
+// we append a []byte{0} to the end to indicate that this is a NON-existent record. We
 // need to create this distinction to tell the difference between a record that was
 // updated to have an *empty* value vs a record that was deleted entirely.
 func (snap *Snapshot) DBSetAncestralRecordWithTxn(
@@ -1315,9 +1329,15 @@ func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
 // The parameter addBytes determines if we want to add or remove bytes from the checksums.
 func (sc *StateChecksum) AddOrRemoveBytesWithMigrations(keyInput []byte, valueInput []byte, blockHeight uint64,
 	encoderMigrationChecksums []*EncoderMigrationChecksum, addBytes bool) error {
-	key := make([]byte, len(keyInput))
+	key, err := SafeMakeSliceWithLength[byte](uint64(len(keyInput)))
+	if err != nil {
+		return err
+	}
 	copy(key, keyInput)
-	value := make([]byte, len(valueInput))
+	value, err := SafeMakeSliceWithLength[byte](uint64(len(valueInput)))
+	if err != nil {
+		return err
+	}
 	copy(value, valueInput)
 
 	// First check if we can add another worker to the worker pool by trying to increment the semaphore.
@@ -1627,8 +1647,8 @@ type AncestralRecordValue struct {
 // main db flushes and ancestral records flushes. For each main db flush transaction, we
 // will build an ancestral cache that contains maps of historical values that were in the
 // main db before we flushed. In particular, we distinguish between existing and
-// non-existing records. Existing records are those records that had already been present
-// in the main db prior to the flush. Non-existing records were not present in the main db,
+// non-existent records. Existing records are those records that had already been present
+// in the main db prior to the flush. Non-existent records were not present in the main db,
 // and the flush added them for the first time.
 //
 // The AncestralCache is stored in the Snapshot struct in a concurrency-safe deque (bi-directional
@@ -1722,14 +1742,21 @@ type SnapshotOperationChannel struct {
 
 	snapshotDb      *badger.DB
 	snapshotDbMutex *sync.Mutex
+
+	startOperationHandler      func(op *SnapshotOperation) error
+	finishAllOperationsHandler func() error
 }
 
-func (opChan *SnapshotOperationChannel) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
+func (opChan *SnapshotOperationChannel) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex,
+	startOperationHandler func(op *SnapshotOperation) error, finishAllOperationsHandler func() error) error {
 	opChan.OperationChannel = make(chan *SnapshotOperation, 100000)
 	opChan.StateSemaphore = 0
 
 	opChan.snapshotDb = snapshotDb
 	opChan.snapshotDbMutex = snapshotDbMutex
+
+	opChan.startOperationHandler = startOperationHandler
+	opChan.finishAllOperationsHandler = finishAllOperationsHandler
 
 	if snapshotDb == nil || snapshotDbMutex == nil {
 		opChan.snapshotDbMutex = &sync.Mutex{}
@@ -1761,6 +1788,14 @@ func (opChan *SnapshotOperationChannel) Initialize(snapshotDb *badger.DB, snapsh
 	return nil
 }
 
+func (opChan *SnapshotOperationChannel) SetStartOperationHandler(handler func(op *SnapshotOperation) error) {
+	opChan.startOperationHandler = handler
+}
+
+func (opChan *SnapshotOperationChannel) SetFinishAllOperationsHandler(handler func() error) {
+	opChan.finishAllOperationsHandler = handler
+}
+
 func (opChan *SnapshotOperationChannel) SaveOperationChannel() error {
 	opChan.snapshotDbMutex.Lock()
 	defer opChan.snapshotDbMutex.Unlock()
@@ -1784,7 +1819,14 @@ func (opChan *SnapshotOperationChannel) EnqueueOperation(op *SnapshotOperation) 
 }
 
 func (opChan *SnapshotOperationChannel) DequeueOperationStateless() *SnapshotOperation {
-	return <-opChan.OperationChannel
+	op := <-opChan.OperationChannel
+	if opChan.startOperationHandler != nil {
+		if err := opChan.startOperationHandler(op); err != nil {
+			glog.Errorf("SnapshotOperationChannel.DequeueOperationStateless: Problem executing startOperationHandler "+
+				"on operation (%v), error (%v)", op, err)
+		}
+	}
+	return op
 }
 
 func (opChan *SnapshotOperationChannel) FinishOperation() {
@@ -1795,6 +1837,12 @@ func (opChan *SnapshotOperationChannel) FinishOperation() {
 	if opChan.StateSemaphore == 0 {
 		if err := opChan.SaveOperationChannel(); err != nil {
 			glog.Errorf("SnapshotOperationChannel.FinishOperation: Problem saving StateSemaphore to db, error (%v)", err)
+		}
+		// We will invoke the external finishAllOperationsHandler if it is set.
+		if opChan.finishAllOperationsHandler != nil {
+			if err := opChan.finishAllOperationsHandler(); err != nil {
+				glog.Errorf("SnapshotOperationChannel.FinishOperation: Problem executing finishAllOperationsHandler, error (%v)", err)
+			}
 		}
 	}
 }
@@ -2048,8 +2096,7 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 			// sanity-check that node has the same "version" of migration version map.
 			exists := false
 			for _, migrationHeight := range params.EncoderMigrationHeightsList {
-				if migrationChecksum.BlockHeight == migrationHeight.Height &&
-					migrationChecksum.Version == migrationHeight.Version {
+				if migrationChecksum.Version == migrationHeight.Version {
 					exists = true
 				}
 			}
@@ -2071,10 +2118,15 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 	// Check if there are any outstanding migrations apart from the migrations we've saved in the db.
 	// If so, add them to the migrationChecksums.
 	for _, migrationHeight := range params.EncoderMigrationHeightsList {
-		if migrationHeight.Height > blockHeight {
+		// We ignore migrations with height equal to the max because these migrations
+		// will have their block heights modified to a rational value before they're
+		// supposed to trigger, and thus we should not store them in the db.
+		if migrationHeight.Height != math.MaxUint32 &&
+			migrationHeight.Height > blockHeight {
 			exists := false
 			for _, migrationChecksum := range migration.migrationChecksums {
-				if migrationChecksum.BlockHeight == migrationHeight.Height {
+				// If we already have a migration with the same version in our migrationChecksums, we set exists to true.
+				if migrationChecksum.Version == migrationHeight.Version {
 					exists = true
 					break
 				}
