@@ -7,7 +7,7 @@ import (
 
 func TestSet(t *testing.T) {
 	// Set of strings
-	set := NewSet[string]([]string{"a", "b", "c"})
+	set := NewSet([]string{"a", "b", "c"})
 	require.Equal(t, set.Size(), 3)
 	require.True(t, set.Includes("c"))
 	set.Add("d")
@@ -15,8 +15,19 @@ func TestSet(t *testing.T) {
 	set.Remove("c")
 	require.Equal(t, set.Size(), 3)
 	require.False(t, set.Includes("c"))
-	require.Equal(t, set.ToOrderedSlice(), []string{"a", "b", "d"})
+	toSlice := set.ToSlice()
+	require.Contains(t, toSlice, "a")
+	require.Contains(t, toSlice, "b")
+	require.Contains(t, toSlice, "d")
 	set.Add("e")
 	require.Equal(t, set.Size(), 4)
-	require.Equal(t, set.ToOrderedSlice(), []string{"a", "b", "d", "e"})
+	mappedSet := []string{}
+	err := set.ForEach(func(elem string) error {
+		mappedSet = append(mappedSet, elem+"!")
+		return nil
+	})
+	require.NoError(t, err)
+	require.Contains(t, mappedSet, "a!")
+	require.Contains(t, mappedSet, "b!")
+	require.Contains(t, mappedSet, "d!")
 }

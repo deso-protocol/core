@@ -864,15 +864,15 @@ func (bav *UtxoView) CountUserAssociationsByAttributes(associationQuery *UserAss
 
 func (bav *UtxoView) _getUtxoViewUserAssociationEntriesByAttributes(
 	associationQuery *UserAssociationQuery,
-) ([]*UserAssociationEntry, *Set[*BlockHash]) {
+) ([]*UserAssociationEntry, *Set[BlockHash]) {
 	// Returns a slice of new association entries in the UTXO view as well as a map of deleted entry IDs.
 	var newAssociationEntries []*UserAssociationEntry
-	allAssociationIds := NewSet[*BlockHash]([]*BlockHash{})
+	allAssociationIds := NewSet([]BlockHash{})
 	for _, associationEntry := range bav.AssociationMapKeyToUserAssociationEntry {
 		if !_isMatchingUtxoUserAssociationEntry(associationQuery, associationEntry) {
 			continue
 		}
-		allAssociationIds.Add(associationEntry.AssociationID)
+		allAssociationIds.Add(*associationEntry.AssociationID)
 		if !associationEntry.isDeleted {
 			newAssociationEntries = append(newAssociationEntries, associationEntry)
 		}
@@ -978,15 +978,15 @@ func (bav *UtxoView) CountPostAssociationsByAttributes(associationQuery *PostAss
 
 func (bav *UtxoView) _getUtxoViewPostAssociationEntriesByAttributes(
 	associationQuery *PostAssociationQuery,
-) ([]*PostAssociationEntry, *Set[*BlockHash]) {
+) ([]*PostAssociationEntry, *Set[BlockHash]) {
 	// Returns a slice of new association entries in the UTXO view as well as a map of deleted entry IDs.
 	var newAssociationEntries []*PostAssociationEntry
-	allAssociationIds := NewSet([]*BlockHash{})
+	allAssociationIds := NewSet([]BlockHash{})
 	for _, associationEntry := range bav.AssociationMapKeyToPostAssociationEntry {
 		if !_isMatchingUtxoPostAssociationEntry(associationQuery, associationEntry) {
 			continue
 		}
-		allAssociationIds.Add(associationEntry.AssociationID)
+		allAssociationIds.Add(*associationEntry.AssociationID)
 		if !associationEntry.isDeleted {
 			newAssociationEntries = append(newAssociationEntries, associationEntry)
 		}
