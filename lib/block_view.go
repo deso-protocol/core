@@ -1752,6 +1752,64 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			derivedKeyEntry, txnMeta.NFTPostHash, txnMeta.SerialNumber, BurnNFTOperation); err != nil {
 			return utxoOpsForTxn, err
 		}
+	case TxnTypeCreateUserAssociation:
+		txnMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
+		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
+			derivedKeyEntry,
+			AssociationClassUser,
+			txnMeta.AssociationType,
+			txnMeta.AppPublicKey,
+			AssociationOperationCreate,
+		); err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+	case TxnTypeDeleteUserAssociation:
+		txnMeta := txn.TxnMeta.(*DeleteUserAssociationMetadata)
+		associationEntry, err := bav.GetUserAssociationByID(txnMeta.AssociationID)
+		if err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+		if associationEntry == nil {
+			return utxoOpsForTxn, errors.New("_checkDerivedKeySpendingLimit: association to delete not found")
+		}
+		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
+			derivedKeyEntry,
+			AssociationClassUser,
+			associationEntry.AssociationType,
+			NewPublicKey(bav.GetPublicKeyForPKID(associationEntry.AppPKID)),
+			AssociationOperationDelete,
+		); err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+	case TxnTypeCreatePostAssociation:
+		txnMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
+		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
+			derivedKeyEntry,
+			AssociationClassPost,
+			txnMeta.AssociationType,
+			txnMeta.AppPublicKey,
+			AssociationOperationCreate,
+		); err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+	case TxnTypeDeletePostAssociation:
+		txnMeta := txn.TxnMeta.(*DeletePostAssociationMetadata)
+		associationEntry, err := bav.GetPostAssociationByID(txnMeta.AssociationID)
+		if err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+		if associationEntry == nil {
+			return utxoOpsForTxn, errors.New("_checkDerivedKeySpendingLimit: association to delete not found")
+		}
+		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
+			derivedKeyEntry,
+			AssociationClassPost,
+			associationEntry.AssociationType,
+			NewPublicKey(bav.GetPublicKeyForPKID(associationEntry.AppPKID)),
+			AssociationOperationDelete,
+		); err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
 	default:
 		// If we get here, it means we're dealing with a txn that doesn't have any special
 		// granular limits to deal with. This means we just check whether we have
@@ -2060,6 +2118,74 @@ func (bav *UtxoView) _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
 
 	return derivedKeyEntry, errors.Wrapf(RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized,
 		"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntr: DAO Coin limit order not authorized: ")
+}
+
+func (bav *UtxoView) _checkAssociationLimitAndUpdateDerivedKey(
+	derivedKeyEntry DerivedKeyEntry,
+	associationClass AssociationClass,
+	associationType []byte,
+	appPublicKey *PublicKey,
+	operation AssociationOperation,
+) (DerivedKeyEntry, error) {
+	// Convert AppPublicKey to AppPKID
+	appPKID := bav._associationAppPublicKeyToPKID(appPublicKey)
+	// Construct AssociationLimitKey.
+	var associationLimitKey AssociationLimitKey
+	// Check for applicable spending limit matching:
+	//   - Scoped AppScopeType else any AppScopeType
+	//   - Scoped AssociationType else any AssociationType
+	//   - Scoped OperationType else any OperationType
+	for _, spendingLimitScopeType := range []AssociationAppScopeType{AssociationAppScopeTypeScoped, AssociationAppScopeTypeAny} {
+		spendingLimitAppPKID := *appPKID
+		if spendingLimitScopeType == AssociationAppScopeTypeAny {
+			spendingLimitAppPKID = ZeroPKID
+		}
+		for _, spendingLimitAssociationType := range [][]byte{associationType, []byte("")} {
+			for _, spendingLimitOperationType := range []AssociationOperation{operation, AssociationOperationAny} {
+				associationLimitKey = MakeAssociationLimitKey(
+					associationClass,
+					spendingLimitAssociationType,
+					spendingLimitAppPKID,
+					spendingLimitScopeType,
+					spendingLimitOperationType,
+				)
+				updatedDerivedKeyEntry, err := _checkAssociationLimitAndUpdateDerivedKey(derivedKeyEntry, associationLimitKey)
+				if err == nil {
+					return updatedDerivedKeyEntry, nil
+				}
+			}
+		}
+	}
+	// If we get to this point, then no authorized spending limits
+	// were found and the association is not authorized.
+	return derivedKeyEntry, errors.New("_checkAssociationLimitAndUpdateDerivedKey: association not authorized for derived key")
+}
+
+func _checkAssociationLimitAndUpdateDerivedKey(
+	derivedKeyEntry DerivedKeyEntry, associationLimitKey AssociationLimitKey,
+) (DerivedKeyEntry, error) {
+	errMsg := errors.New("_checkAssociationLimitAndUpdateDerivedKey: association not authorized for derived key")
+	// If derived key spending limit is missing, return unauthorized.
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap == nil {
+		return derivedKeyEntry, errMsg
+	}
+	// Check if the key is present in the AssociationLimitMap.
+	associationLimit, associationLimitExists :=
+		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap[associationLimitKey]
+	// If the key doesn't exist or the value is <= 0, return unauthorized.
+	if !associationLimitExists || associationLimit <= 0 {
+		return derivedKeyEntry, errMsg
+	}
+	// If this is the last operation allowed for this key, we delete the key from the map.
+	if associationLimit == 1 {
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap, associationLimitKey)
+	} else {
+		// Otherwise, we decrement the number of operations remaining for this key.
+		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap[associationLimitKey]--
+	}
+	// Happy path: we found the key and decremented the remaining operations.
+	return derivedKeyEntry, nil
 }
 
 func (bav *UtxoView) _connectUpdateGlobalParams(
