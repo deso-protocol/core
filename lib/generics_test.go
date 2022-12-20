@@ -21,4 +21,11 @@ func TestSet(t *testing.T) {
 	require.Contains(t, toSlice, "d")
 	set.Add("e")
 	require.Equal(t, set.Size(), 4)
+	mappedSet, err := set.RangeMap(func(elem string) (any, error) {
+		return elem + "!", nil
+	})
+	require.NoError(t, err)
+	require.Contains(t, mappedSet, "a!")
+	require.Contains(t, mappedSet, "b!")
+	require.Contains(t, mappedSet, "d!")
 }
