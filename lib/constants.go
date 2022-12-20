@@ -721,8 +721,8 @@ var MainnetForkHeights = ForkHeights{
 
 	// Mon Sept 19 @ 12pm PST
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
-  
-  CancelDAOCoinLimitOrderFixBlockHeight: uint32(math.MaxUint32), // FIXME
+
+	CancelDAOCoinLimitOrderFixBlockHeight: uint32(math.MaxUint32), // FIXME
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -970,10 +970,10 @@ var TestnetForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:        uint32(360584),
 
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
-	
-  // Tues Sept 13 @ 10am PT
+
+	// Tues Sept 13 @ 10am PT
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
-  
+
 	CancelDAOCoinLimitOrderFixBlockHeight: uint32(math.MaxUint32), // FIXME
 
 	// Be sure to update EncoderMigrationHeights as well via
