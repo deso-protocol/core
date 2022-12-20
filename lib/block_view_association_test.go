@@ -2194,7 +2194,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 				txnType:                    uint64(count),
 			},
 			AssociationLimitMap: map[AssociationLimitKey]uint64{
-				associationLimitKey: uint64(1),
+				associationLimitKey: uint64(count),
 			},
 		}
 
@@ -2417,6 +2417,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		err = _submitAssociationTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
 		)
+		require.NoError(t, err)
 
 		// Happy path: creating FLAG user association globally
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
