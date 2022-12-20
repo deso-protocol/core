@@ -66,7 +66,7 @@ func (adapter *DbAdapter) GetPostAssociationByAttributes(associationEntry *PostA
 }
 
 func (adapter *DbAdapter) GetUserAssociationsByAttributes(
-	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
+	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
 ) ([]*UserAssociationEntry, []byte, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetUserAssociationsByAttributes(associationQuery, utxoViewAssociationIds)
@@ -75,7 +75,7 @@ func (adapter *DbAdapter) GetUserAssociationsByAttributes(
 }
 
 func (adapter *DbAdapter) GetPostAssociationsByAttributes(
-	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
+	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
 ) ([]*PostAssociationEntry, []byte, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetPostAssociationsByAttributes(associationQuery, utxoViewAssociationIds)
@@ -84,8 +84,8 @@ func (adapter *DbAdapter) GetPostAssociationsByAttributes(
 }
 
 func (adapter *DbAdapter) GetUserAssociationIdsByAttributes(
-	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
-) (*Set[*BlockHash], []byte, error) {
+	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetUserAssociationIdsByAttributes(associationQuery, utxoViewAssociationIds)
 	}
@@ -93,8 +93,8 @@ func (adapter *DbAdapter) GetUserAssociationIdsByAttributes(
 }
 
 func (adapter *DbAdapter) GetPostAssociationIdsByAttributes(
-	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
-) (*Set[*BlockHash], []byte, error) {
+	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetPostAssociationIdsByAttributes(associationQuery, utxoViewAssociationIds)
 	}

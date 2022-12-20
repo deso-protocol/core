@@ -8617,7 +8617,7 @@ func DBGetUserAssociationsByAttributes(
 	handle *badger.DB,
 	snap *Snapshot,
 	associationQuery *UserAssociationQuery,
-	utxoViewAssociationIds *Set[*BlockHash],
+	utxoViewAssociationIds *Set[BlockHash],
 ) ([]*UserAssociationEntry, []byte, error) {
 	// Query for association IDs by input query params.
 	associationIds, prefixType, err := DBGetUserAssociationIdsByAttributes(
@@ -8629,13 +8629,17 @@ func DBGetUserAssociationsByAttributes(
 
 	// Map from association IDs to association entries.
 	var associationEntries []*UserAssociationEntry
-	for _, associationID := range associationIds.ToOrderedSlice() {
+	err = associationIds.ForEach(func(associationID BlockHash) error {
 		// Retrieve association entry from db by ID.
-		associationEntry, err := DBGetUserAssociationByID(handle, snap, associationID)
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
+		associationEntry, innerErr := DBGetUserAssociationByID(handle, snap, &associationID)
+		if innerErr != nil {
+			return innerErr
 		}
 		associationEntries = append(associationEntries, associationEntry)
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
 	}
 	return associationEntries, prefixType, nil
 }
@@ -8644,8 +8648,8 @@ func DBGetUserAssociationIdsByAttributes(
 	handle *badger.DB,
 	snap *Snapshot,
 	associationQuery *UserAssociationQuery,
-	utxoViewAssociationIds *Set[*BlockHash],
-) (*Set[*BlockHash], []byte, error) {
+	utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
 	// Construct key based on input query params.
 	var prefixType []byte
 	var keyPrefix []byte
@@ -8715,15 +8719,19 @@ func DBGetUserAssociationIdsByAttributes(
 	}
 
 	// Map UTXO view AssociationIDs to keys.
-	utxoViewAssociationKeys := NewSet[string]([]string{})
-	for _, utxoViewAssociationID := range utxoViewAssociationIds.ToSlice() {
-		utxoViewAssociationKey, err := _dbUserAssociationIdToKey(handle, snap, utxoViewAssociationID, prefixType)
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
+	utxoViewAssociationKeys := NewSet([]string{})
+	err = utxoViewAssociationIds.ForEach(func(associationID BlockHash) error {
+		utxoViewAssociationKey, innerErr := _dbUserAssociationIdToKey(handle, snap, &associationID, prefixType)
+		if innerErr != nil {
+			return innerErr
 		}
 		if utxoViewAssociationKey != nil {
 			utxoViewAssociationKeys.Add(string(utxoViewAssociationKey))
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
 	}
 
 	// Scan for all association IDs with the given key prefix.
@@ -8737,14 +8745,14 @@ func DBGetUserAssociationIdsByAttributes(
 	)
 
 	// Cast resulting values from bytes to association IDs.
-	associationIds := NewSet[*BlockHash]([]*BlockHash{})
+	associationIds := NewSet([]BlockHash{})
 	for _, valBytes := range valsFound {
 		associationID := &BlockHash{}
 		rr := bytes.NewReader(valBytes)
 		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
 			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: problem decoding association id: ")
 		}
-		associationIds.Add(associationID)
+		associationIds.Add(*associationID)
 	}
 	return associationIds, prefixType, nil
 }
@@ -8753,7 +8761,7 @@ func DBGetPostAssociationsByAttributes(
 	handle *badger.DB,
 	snap *Snapshot,
 	associationQuery *PostAssociationQuery,
-	utxoViewAssociationIds *Set[*BlockHash],
+	utxoViewAssociationIds *Set[BlockHash],
 ) ([]*PostAssociationEntry, []byte, error) {
 	// Query for association IDs by input query params.
 	associationIds, prefixType, err := DBGetPostAssociationIdsByAttributes(
@@ -8765,13 +8773,17 @@ func DBGetPostAssociationsByAttributes(
 
 	// Map from association IDs to association entries.
 	var associationEntries []*PostAssociationEntry
-	for _, associationID := range associationIds.ToOrderedSlice() {
+	err = associationIds.ForEach(func(associationID BlockHash) error {
 		// Retrieve association entry from db by ID.
-		associationEntry, err := DBGetPostAssociationByID(handle, snap, associationID)
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
+		associationEntry, innerErr := DBGetPostAssociationByID(handle, snap, &associationID)
+		if innerErr != nil {
+			return innerErr
 		}
 		associationEntries = append(associationEntries, associationEntry)
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
 	}
 	return associationEntries, prefixType, nil
 }
@@ -8780,8 +8792,8 @@ func DBGetPostAssociationIdsByAttributes(
 	handle *badger.DB,
 	snap *Snapshot,
 	associationQuery *PostAssociationQuery,
-	utxoViewAssociationIds *Set[*BlockHash],
-) (*Set[*BlockHash], []byte, error) {
+	utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
 	// Construct key based on input query params.
 	var prefixType []byte
 	var keyPrefix []byte
@@ -8900,15 +8912,19 @@ func DBGetPostAssociationIdsByAttributes(
 	}
 
 	// Map UTXO view AssociationIDs to keys.
-	utxoViewAssociationKeys := NewSet[string]([]string{})
-	for _, utxoViewAssociationID := range utxoViewAssociationIds.ToSlice() {
-		utxoViewAssociationKey, err := _dbPostAssociationIdToKey(handle, snap, utxoViewAssociationID, prefixType)
-		if err != nil {
-			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
+	utxoViewAssociationKeys := NewSet([]string{})
+	err = utxoViewAssociationIds.ForEach(func(associationID BlockHash) error {
+		utxoViewAssociationKey, innerErr := _dbPostAssociationIdToKey(handle, snap, &associationID, prefixType)
+		if innerErr != nil {
+			return innerErr
 		}
 		if utxoViewAssociationKey != nil {
 			utxoViewAssociationKeys.Add(string(utxoViewAssociationKey))
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
 	}
 
 	// Scan for all association IDs with the given key prefix.
@@ -8925,14 +8941,14 @@ func DBGetPostAssociationIdsByAttributes(
 	}
 
 	// Cast resulting values from bytes to association IDs.
-	associationIds := NewSet[*BlockHash]([]*BlockHash{})
+	associationIds := NewSet([]BlockHash{})
 	for _, valBytes := range valsFound {
 		associationID := &BlockHash{}
 		rr := bytes.NewReader(valBytes)
 		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
 			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: problem decoding association id: ")
 		}
-		associationIds.Add(associationID)
+		associationIds.Add(*associationID)
 	}
 	return associationIds, prefixType, nil
 }
