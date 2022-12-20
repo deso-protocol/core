@@ -771,13 +771,27 @@ func (bav *UtxoView) GetUserAssociationByAttributes(transactorPK []byte, metadat
 	}
 	// First, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
+	isDeleted := false
 	for _, utxoViewAssociationEntry := range bav.AssociationMapKeyToUserAssociationEntry {
-		if utxoViewAssociationEntry.isDeleted {
+		if !associationEntry.Eq(utxoViewAssociationEntry) {
 			continue
 		}
-		if associationEntry.Eq(utxoViewAssociationEntry) {
-			return utxoViewAssociationEntry, nil
+		if utxoViewAssociationEntry.isDeleted {
+			// If there is a deleted matching association entry in the UTXO view, we need
+			// to keep searching the UTXO view since there could be other non-deleted
+			// matches. There can be an arbitrary number of deleted matching association
+			// entries, but there will only ever be zero or one non-deleted matching
+			// association entry, since "updating" a matching association entry deletes
+			// the old one and creates a new one with a new association ID. If we don't
+			// find any matches in the UTXO view, we return nil below, before checking
+			// the db which would return a deleted association entry.
+			isDeleted = true
+			continue
 		}
+		return utxoViewAssociationEntry, nil
+	}
+	if isDeleted {
+		return nil, nil
 	}
 	// If not found in the UTXO view, next check the database.
 	return bav.GetDbAdapter().GetUserAssociationByAttributes(associationEntry)
@@ -795,13 +809,27 @@ func (bav *UtxoView) GetPostAssociationByAttributes(transactorPK []byte, metadat
 	}
 	// First, check the UTXO view for most recent association entries which
 	// take priority over any with the same AssociationID from the database.
+	isDeleted := false
 	for _, utxoViewAssociationEntry := range bav.AssociationMapKeyToPostAssociationEntry {
-		if utxoViewAssociationEntry.isDeleted {
+		if !associationEntry.Eq(utxoViewAssociationEntry) {
 			continue
 		}
-		if associationEntry.Eq(utxoViewAssociationEntry) {
-			return utxoViewAssociationEntry, nil
+		if utxoViewAssociationEntry.isDeleted {
+			// If there is a deleted matching association entry in the UTXO view, we need
+			// to keep searching the UTXO view since there could be other non-deleted
+			// matches. There can be an arbitrary number of deleted matching association
+			// entries, but there will only ever be zero or one non-deleted matching
+			// association entry, since "updating" a matching association entry deletes
+			// the old one and creates a new one with a new association ID. If we don't
+			// find any matches in the UTXO view, we return nil below, before checking
+			// the db which would return a deleted association entry.
+			isDeleted = true
+			continue
 		}
+		return utxoViewAssociationEntry, nil
+	}
+	if isDeleted {
+		return nil, nil
 	}
 	// If not found in the UTXO view, next check the database.
 	return bav.GetDbAdapter().GetPostAssociationByAttributes(associationEntry)
