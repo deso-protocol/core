@@ -8641,7 +8641,6 @@ func DBGetUserAssociationsByAttributes(
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
 	}
-
 	return associationEntries, prefixType, nil
 }
 
@@ -8722,9 +8721,9 @@ func DBGetUserAssociationIdsByAttributes(
 	// Map UTXO view AssociationIDs to keys.
 	utxoViewAssociationKeys := NewSet([]string{})
 	err = utxoViewAssociationIds.ForEach(func(associationID BlockHash) error {
-		utxoViewAssociationKey, err := _dbUserAssociationIdToKey(handle, snap, &associationID, prefixType)
-		if err != nil {
-			return err
+		utxoViewAssociationKey, innerErr := _dbUserAssociationIdToKey(handle, snap, &associationID, prefixType)
+		if innerErr != nil {
+			return innerErr
 		}
 		if utxoViewAssociationKey != nil {
 			utxoViewAssociationKeys.Add(string(utxoViewAssociationKey))
@@ -8915,9 +8914,9 @@ func DBGetPostAssociationIdsByAttributes(
 	// Map UTXO view AssociationIDs to keys.
 	utxoViewAssociationKeys := NewSet([]string{})
 	err = utxoViewAssociationIds.ForEach(func(associationID BlockHash) error {
-		utxoViewAssociationKey, err := _dbPostAssociationIdToKey(handle, snap, &associationID, prefixType)
-		if err != nil {
-			return err
+		utxoViewAssociationKey, innerErr := _dbPostAssociationIdToKey(handle, snap, &associationID, prefixType)
+		if innerErr != nil {
+			return innerErr
 		}
 		if utxoViewAssociationKey != nil {
 			utxoViewAssociationKeys.Add(string(utxoViewAssociationKey))

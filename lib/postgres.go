@@ -3227,7 +3227,7 @@ func (postgres *Postgres) GetUserAssociationIdsByAttributes(
 	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
 
 	// Execute SQL query.
-	var associationIds []*BlockHash
+	var associationIds []BlockHash
 	if err := sqlQuery.Select(&associationIds); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
@@ -3235,13 +3235,7 @@ func (postgres *Postgres) GetUserAssociationIdsByAttributes(
 		}
 		return nil, nil, err
 	}
-	associationIdSet := NewSet([]BlockHash{})
-	for _, bh := range associationIds {
-		if bh != nil {
-			associationIdSet.Add(*bh)
-		}
-	}
-	return associationIdSet, nil, nil
+	return NewSet(associationIds), nil, nil
 }
 
 func _constructFilterUserAssociationsByAttributesQuery(
@@ -3326,7 +3320,7 @@ func (postgres *Postgres) GetPostAssociationIdsByAttributes(
 	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
 
 	// Execute SQL query.
-	var associationIds []*BlockHash
+	var associationIds []BlockHash
 	if err := sqlQuery.Select(&associationIds); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
@@ -3334,13 +3328,7 @@ func (postgres *Postgres) GetPostAssociationIdsByAttributes(
 		}
 		return nil, nil, err
 	}
-	associationIdSet := NewSet([]BlockHash{})
-	for _, bh := range associationIds {
-		if bh != nil {
-			associationIdSet.Add(*bh)
-		}
-	}
-	return associationIdSet, nil, nil
+	return NewSet(associationIds), nil, nil
 }
 
 func _constructFilterPostAssociationsByAttributesQuery(
