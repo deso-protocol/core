@@ -5064,13 +5064,19 @@ type TransactionSpendingLimit struct {
 	// transactions
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
 
-	// ===== ENCODER MIGRATION AssociationsMigration =====
-	// AssociationType || AppPKID to number of transactions
-	AssociationLimitMap map[AssociationLimitKey]uint64
-
 	// ===== ENCODER MIGRATION UnlimitedDerivedKeysMigration =====
 	// IsUnlimited field determines whether this derived key has no spending limit.
 	IsUnlimited bool
+
+	// ===== ENCODER MIGRATION AssociationsMigration =====
+	// AssociationClass || AssociationType || AppPKID || AppScopeType || AssociationOperation
+	// to number of transactions
+	//   - AssociationClass: one of { User, Post }
+	//   - AssociationType: a byte slice to scope by AssociationType or an empty byte slice to signify Any
+	//   - AppPKID: a PKID to scope by App, if AppScopeType == Any then AppPKID has to be the ZeroPKID
+	//   - AppScopeType: one of { Any, Scoped }
+	//   - AssociationOperation: one of { Any, Create, Delete }
+	AssociationLimitMap map[AssociationLimitKey]uint64
 }
 
 // ToMetamaskString encodes the TransactionSpendingLimit into a Metamask-compatible string. The encoded string will
@@ -5373,6 +5379,11 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 		}
 	}
 
+	// IsUnlimited, gated by the encoder migration.
+	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
+		data = append(data, BoolToByte(tsl.IsUnlimited))
+	}
+
 	// AssociationLimitMap, gated by the encoder migration
 	if MigrationTriggered(blockHeight, AssociationsMigration) {
 		associationLimitMapLength := uint64(len(tsl.AssociationLimitMap))
@@ -5393,11 +5404,6 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 				data = append(data, UintToBuf(tsl.AssociationLimitMap[key])...)
 			}
 		}
-	}
-
-	// IsUnlimited, gated by the encoder migration.
-	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
-		data = append(data, BoolToByte(tsl.IsUnlimited))
 	}
 
 	return data, nil
@@ -5525,6 +5531,13 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
+	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
+		tsl.IsUnlimited, err = ReadBoolByte(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionSpendingLimit.FromBytes: Problem reading IsUnlimited")
+		}
+	}
+
 	if MigrationTriggered(blockHeight, AssociationsMigration) {
 		associationMapLen, err := ReadUvarint(rr)
 		if err != nil {
@@ -5550,13 +5563,6 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
-	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
-		tsl.IsUnlimited, err = ReadBoolByte(rr)
-		if err != nil {
-			return errors.Wrapf(err, "TransactionSpendingLimit.FromBytes: Problem reading IsUnlimited")
-		}
-	}
-
 	return nil
 }
 
@@ -5568,7 +5574,6 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
-		AssociationLimitMap:          make(map[AssociationLimitKey]uint64),
 		IsUnlimited:                  tsl.IsUnlimited,
 	}
 
@@ -5592,8 +5597,13 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		copyTSL.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = daoCoinLimitOrderCount
 	}
 
-	for associationLimitKey, associationCount := range tsl.AssociationLimitMap {
-		copyTSL.AssociationLimitMap[associationLimitKey] = associationCount
+	if tsl.AssociationLimitMap != nil {
+		// Before the AssociationsBlockHeight, this map will be null.
+		// So we should ensure this is the case in the copy too.
+		copyTSL.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
+		for associationLimitKey, associationCount := range tsl.AssociationLimitMap {
+			copyTSL.AssociationLimitMap[associationLimitKey] = associationCount
+		}
 	}
 
 	return copyTSL
