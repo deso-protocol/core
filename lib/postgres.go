@@ -118,13 +118,15 @@ type PGBlock struct {
 type PGTransaction struct {
 	tableName struct{} `pg:"pg_transactions"`
 
-	Hash      *BlockHash `pg:",pk,type:bytea"`
-	BlockHash *BlockHash `pg:",type:bytea"`
-	Type      TxnType    `pg:",use_zero"`
-	PublicKey []byte     `pg:",type:bytea"`
-	ExtraData map[string][]byte
-	R         *BlockHash `pg:",type:bytea"`
-	S         *BlockHash `pg:",type:bytea"`
+	Hash          *BlockHash `pg:",pk,type:bytea"`
+	BlockHash     *BlockHash `pg:",type:bytea"`
+	Type          TxnType    `pg:",use_zero"`
+	PublicKey     []byte     `pg:",type:bytea"`
+	ExtraData     map[string][]byte
+	R             *BlockHash `pg:",type:bytea"`
+	S             *BlockHash `pg:",type:bytea"`
+	RecoveryId    uint32     `pg:",use_zero"`
+	IsRecoverable bool       `pg:",use_zero"`
 
 	// Relationships
 	Outputs                     []*PGTransactionOutput         `pg:"rel:has-many,join_fk:output_hash"`
@@ -885,13 +887,17 @@ type PGDerivedKey struct {
 	// TransactionSpendingLimit fields
 	TransactionSpendingLimitTracker []byte `pg:",type:bytea"`
 	Memo                            []byte `pg:",type:bytea"`
+	BlockHeight                     uint64 `pg:",use_zero"`
 }
 
 func (key *PGDerivedKey) NewDerivedKeyEntry() *DerivedKeyEntry {
+	if key == nil {
+		return nil
+	}
 	var tsl *TransactionSpendingLimit
 	if len(key.TransactionSpendingLimitTracker) > 0 {
 		tsl = &TransactionSpendingLimit{}
-		if err := tsl.FromBytes(bytes.NewReader(key.TransactionSpendingLimitTracker)); err != nil {
+		if err := tsl.FromBytes(key.BlockHeight, bytes.NewReader(key.TransactionSpendingLimitTracker)); err != nil {
 			glog.Errorf("Error converting Derived Key's TransactionLimitTracker bytes back into a TransactionSpendingLimit: %v", err)
 			return nil
 		}
@@ -1057,9 +1063,11 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 			ExtraData: txn.ExtraData,
 		}
 
-		if txn.Signature != nil {
-			transaction.R = BigintToHash(txn.Signature.R)
-			transaction.S = BigintToHash(txn.Signature.S)
+		if txn.Signature.Sign != nil {
+			transaction.R = BigintToHash(txn.Signature.Sign.R)
+			transaction.S = BigintToHash(txn.Signature.Sign.S)
+			transaction.RecoveryId = uint32(txn.Signature.RecoveryId)
+			transaction.IsRecoverable = txn.Signature.IsRecoverable
 		}
 
 		transactions = append(transactions, transaction)
@@ -1542,11 +1550,22 @@ func (postgres *Postgres) UpsertBlockAndTransactions(blockNode *BlockNode, desoB
 	})
 }
 
+func (postgres *Postgres) GetTransactionByHash(txnHash *BlockHash) *PGTransaction {
+	txn := PGTransaction{
+		Hash: txnHash,
+	}
+	err := postgres.db.Model(&txn).WherePK().Select()
+	if err != nil {
+		return nil
+	}
+	return &txn
+}
+
 //
 // BlockView Flushing
 //
 
-func (postgres *Postgres) FlushView(view *UtxoView) error {
+func (postgres *Postgres) FlushView(view *UtxoView, blockHeight uint64) error {
 	return postgres.db.RunInTransaction(postgres.db.Context(), func(tx *pg.Tx) error {
 		if err := postgres.flushUtxos(tx, view); err != nil {
 			return err
@@ -1587,7 +1606,7 @@ func (postgres *Postgres) FlushView(view *UtxoView) error {
 		if err := postgres.flushNFTBids(tx, view); err != nil {
 			return err
 		}
-		if err := postgres.flushDerivedKeys(tx, view); err != nil {
+		if err := postgres.flushDerivedKeys(tx, view, blockHeight); err != nil {
 			return err
 		}
 		// Temporarily write limit orders to badger
@@ -2144,11 +2163,12 @@ func (postgres *Postgres) flushNFTBids(tx *pg.Tx, view *UtxoView) error {
 	return nil
 }
 
-func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
+func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView, blockHeight uint64) error {
 	var insertKeys []*PGDerivedKey
 	var deleteKeys []*PGDerivedKey
+
 	for _, keyEntry := range view.DerivedKeyToDerivedEntry {
-		tslBytes, err := keyEntry.TransactionSpendingLimitTracker.ToBytes()
+		tslBytes, err := keyEntry.TransactionSpendingLimitTracker.ToBytes(blockHeight)
 		if err != nil {
 			return err
 		}
@@ -2157,8 +2177,10 @@ func (postgres *Postgres) flushDerivedKeys(tx *pg.Tx, view *UtxoView) error {
 			DerivedPublicKey:                keyEntry.DerivedPublicKey,
 			ExpirationBlock:                 keyEntry.ExpirationBlock,
 			OperationType:                   keyEntry.OperationType,
+			ExtraData:                       keyEntry.ExtraData,
 			TransactionSpendingLimitTracker: tslBytes,
 			Memo:                            keyEntry.Memo,
+			BlockHeight:                     blockHeight,
 		}
 
 		if keyEntry.isDeleted {

@@ -335,8 +335,8 @@ func (bav *UtxoView) _deleteProfileEntryMappings(profileEntry *ProfileEntry) {
 	bav._setProfileEntryMappings(&tombstoneProfileEntry)
 }
 
-// _getDerivedKeyMappingForOwner fetches the derived key mapping from the utxoView
-func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
+// GetDerivedKeyMappingForOwner fetches the derived key mapping from the utxoView
+func (bav *UtxoView) GetDerivedKeyMappingForOwner(ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
 	// Check if the entry exists in utxoView.
 	ownerPk := NewPublicKey(ownerPublicKey)
 	derivedPk := NewPublicKey(derivedPublicKey)
@@ -347,15 +347,7 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 	}
 
 	// Check if the entry exists in the DB.
-	if bav.Postgres != nil {
-		if entryPG := bav.Postgres.GetDerivedKey(ownerPk, derivedPk); entryPG != nil {
-			entry = entryPG.NewDerivedKeyEntry()
-		} else {
-			entry = nil
-		}
-	} else {
-		entry = DBGetOwnerToDerivedKeyMapping(bav.Handle, bav.Snapshot, *ownerPk, *derivedPk)
-	}
+	entry = bav.GetDbAdapter().GetOwnerToDerivedKeyMapping(*ownerPk, *derivedPk)
 
 	// If an entry exists, update the UtxoView map.
 	if entry != nil {
@@ -951,7 +943,7 @@ func _verifyBytesSignature(signer, data, signature []byte, blockHeight uint32, p
 
 	if blockHeight >= params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight {
 		// Check if the provided signature is an Eth signature.
-		ethErr = _verifyEthPersonalSignature(signer, data, signature)
+		ethErr = VerifyEthPersonalSignature(signer, data, signature)
 		if ethErr == nil {
 			return nil
 		}
@@ -986,29 +978,27 @@ func TextAndHash(data []byte) ([]byte, string) {
 	return hasher.Sum(nil), msg
 }
 
-// _verifyEthPersonalSignature checks the signature assuming it follows Ethereum's personal_sign standard. This is used
+// VerifyEthPersonalSignature checks the signature assuming it follows Ethereum's personal_sign standard. This is used
 // for the MetaMask DeSo integration.
-func _verifyEthPersonalSignature(signer, data, signature []byte) error {
+func VerifyEthPersonalSignature(signer, data, signature []byte) error {
 	// Ethereum likes uncompressed public keys while we use compressed keys a lot. Make sure we have uncompressed pk bytes.
 	var uncompressedSigner []byte
 	pubKey, err := btcec.ParsePubKey(signer, btcec.S256())
 	if err != nil {
-		return errors.Wrapf(err, "_verifyEthPersonalSignature: Problem parsing signer public key")
+		return errors.Wrapf(err, "VerifyEthPersonalSignature: Problem parsing signer public key")
 	}
 	if len(signer) == btcec.PubKeyBytesLenCompressed {
 		uncompressedSigner = pubKey.SerializeUncompressed()
 	} else if len(signer) == btcec.PubKeyBytesLenUncompressed {
 		uncompressedSigner = signer
 	} else {
-		return fmt.Errorf("_verifyEthPersonalSignature: Public key has incorrect length. It should be either "+
+		return fmt.Errorf("VerifyEthPersonalSignature: Public key has incorrect length. It should be either "+
 			"(%v) for compressed key or (%v) for uncompressed key", btcec.PubKeyBytesLenCompressed, btcec.PubKeyBytesLenUncompressed)
 	}
 
 	// Change the data bytes into Ethereum's personal_sign message standard. This will prepend the message prefix and hash
-	// the prepended message using keccak256. We turn data into a hex string and treat it as a character sequence which is
-	// how MetaMask treats it.
-	dataHex := hex.EncodeToString(data)
-	hash, _ := TextAndHash([]byte(dataHex))
+	// the prepended message using keccak256.
+	hash, _ := TextAndHash(data)
 
 	// Make sure signature has the correct length. If signature has 65 bytes then it contains the recovery ID, we can
 	// slice it off since we already know the signer public key.
@@ -1016,14 +1006,14 @@ func _verifyEthPersonalSignature(signer, data, signature []byte) error {
 	if len(signature) == 64 || len(signature) == 65 {
 		copy(formattedSignature, signature[:64])
 	} else {
-		return fmt.Errorf("_verifyEthPersonalSignature: Signature must be 64 or 65 bytes in size. Got (%v) instead", len(signature))
+		return fmt.Errorf("VerifyEthPersonalSignature: Signature must be 64 or 65 bytes in size. Got (%v) instead", len(signature))
 	}
 
 	// Now, verify the signature.
 	if crypto.VerifySignature(uncompressedSigner, hash, formattedSignature) {
 		return nil
 	} else {
-		return fmt.Errorf("_verifyEthPersonalSignature: Signature verification failed")
+		return fmt.Errorf("VerifyEthPersonalSignature: Signature verification failed")
 	}
 }
 

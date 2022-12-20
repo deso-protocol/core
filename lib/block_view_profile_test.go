@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
@@ -3267,21 +3268,45 @@ func TestEthSignature(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
+	// Make sure encoder migrations are not triggered yet.
+	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
+		if GlobalDeSoParams.EncoderMigrationHeightsList[ii].Version == 0 {
+			continue
+		}
+		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 1
+	}
+
 	// This data was taken directly from MetaMask personal_sign.
-	signatureHex := "e1ddc8f4a6004439988a7578299856cdaa1a211e39ecbe57a500e1c3a65bb389779adf0472812fb35500e5b49ce679a3ed8b2cc4fac851e8783835bd7b82f0721c"
-	publicKeyHex := "04aaa44d617bae2fde81bd3e35857ac6e0358a39da4b62d8be0c94cb60def3f637641d9c5c5adb20e8561bbbbc4f271158871d530053bb917423846c8b482fd518"
-	message := []byte("message to sign")
+	signatureHex := "d1f84f38ce47c0ea6d67d0cf2c228dbb9f46aca12db514aaf7d8442978334e8f1547cd1999d9e84fe3f4ba3b92fc8d57bf982ebcab8227e94c7650f36c0dd7ad1b"
+	transactionSpendingLimitHex := "80c2d72f0305809f4909a08d06138aa41f0000000000"
+	expirationBlock := uint64(45639)
+	derivedPublicKeyBase58Check := "tBCKYV1wrcCgDhXY3ZnvcX3L1yrFNbYjYzTBFnkxHUcjM9vt84NpbT"
+	ownerPublicKeyBase58Check := "tBCKW6GJpevX6g9kfVz4opSb7gVsJMhES67z4k5Bntxnd7zHcHdgFM"
 
 	// parse signature
 	signature, err := hex.DecodeString(signatureHex)
 	require.NoError(err)
 
-	// parse public key
-	publicKeyBytes, err := hex.DecodeString(publicKeyHex)
+	// parse spending limits
+	transactionSpendingLimit := &TransactionSpendingLimit{}
+	transactionSpendingLimitBytes, err := hex.DecodeString(transactionSpendingLimitHex)
+	require.NoError(err)
+	rr := bytes.NewReader(transactionSpendingLimitBytes)
+	// This error is fine because transaction should fail anyway if spending limit cannot be decoded.
+	require.NoError(transactionSpendingLimit.FromBytes(0, rr))
+
+	// parse derived public key
+	derivedPublicKeyBytes, _, err := Base58CheckDecode(derivedPublicKeyBase58Check)
 	require.NoError(err)
 
+	// parse owner public key
+	ownerPublicKeyBytes, _, err := Base58CheckDecode(ownerPublicKeyBase58Check)
+	require.NoError(err)
+
+	// assemble the message
+	accessBytes := AssembleAccessBytesWithMetamaskStrings(derivedPublicKeyBytes, expirationBlock,
+		transactionSpendingLimit, &DeSoTestnetParams)
+
 	// verify signature
-	_, _, _ = publicKeyBytes, message, signature
-	// TODO: replace the test case
-	//require.NoError(_verifyEthPersonalSignature(publicKeyBytes, message, signature))
+	require.NoError(VerifyEthPersonalSignature(ownerPublicKeyBytes, accessBytes, signature))
 }
