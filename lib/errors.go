@@ -1,6 +1,8 @@
 package lib
 
 import (
+	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -292,6 +294,10 @@ const (
 	RuleErrorDerivedKeyNotAuthorized                    RuleError = "RuleErrorDerivedKeyNotAuthorized"
 	RuleErrorDerivedKeyInvalidExtraData                 RuleError = "RuleErrorDerivedKeyInvalidExtraData"
 	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
+	RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId    RuleError = "RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId"
+	RuleErrorDerivedKeyInvalidRecoveryId                RuleError = "RuleErrorDerivedKeyInvalidRecoveryId"
+	RuleErrorUnlimitedDerivedKeyBeforeBlockHeight       RuleError = "RuleErrorUnlimitedDerivedKeyBeforeBlockHeight"
+	RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits  RuleError = "RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits"
 
 	// Messages
 	RuleErrorMessagingPublicKeyCannotBeOwnerKey     RuleError = "RuleErrorMessagingPublicKeyCannotBeOwnerKey"
@@ -395,8 +401,8 @@ const (
 	RuleErrorOldToPublicKeyHasDeletedPKID   RuleError = "RuleErrorOldToPublicKeyHasDeletedPKID"
 
 	// Derived Key Transaction Spending Limits
-	RuleErrorDerivedKeyTxnTypeNotAuthorized              RuleError = "RuleErrorTxnTypeNotAuthorized"
-	RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit  RuleError = "RuleErrorTxnSpendsMoreThanGlobalDESOLimit"
+	RuleErrorDerivedKeyTxnTypeNotAuthorized              RuleError = "RuleErrorDerivedKeyTxnTypeNotAuthorized"
+	RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit  RuleError = "RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit"
 	RuleErrorDerivedKeyInvalidCreatorCoinLimitOperation  RuleError = "RuleErrorInvalidCreatorCoinLimitOperation"
 	RuleErrorDerivedKeyInvalidDAOCoinLimitOperation      RuleError = "RuleErrorInvalidDAOCoinLimitOperation"
 	RuleErrorDerivedKeyNFTOperationNotAuthorized         RuleError = "RuleErrorDerivedKeyNFTOperationNotAuthorized"
@@ -452,4 +458,20 @@ func IsByteArrayValidPublicKey(bytes []byte) error {
 		return RuleErrorParsePublicKey
 	}
 	return nil
+}
+
+// AssertDependencyStructFieldNumbers checks if a struct has a specified number of fields, otherwise it panics. The idea
+// is to place this as an anti-bug feature that will detect changes to the code that poses a risk of causing a bug.
+func AssertDependencyStructFieldNumbers[T any](obj T, num int) {
+	if GetNumberOfStructFields(obj) != num {
+		panic(any(fmt.Sprintf("AssertDependencyStructFieldNumbers: Struct type (%T), number of struct fields (%v), "+
+			"expected (%v). This probably means that you've modified a dependency of this code but did not update the "+
+			"code itself.", obj, GetNumberOfStructFields(obj), num,
+		)))
+	}
+}
+
+func GetNumberOfStructFields[T any](obj T) int {
+	objElements := reflect.ValueOf(obj).Elem()
+	return objElements.NumField()
 }

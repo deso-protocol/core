@@ -35,6 +35,7 @@ type Config struct {
 
 	// Snapshot
 	HyperSync                 bool
+	ForceChecksum             bool
 	SyncType                  lib.NodeSyncType
 	MaxSyncBlockHeight        uint32
 	SnapshotBlockHeightPeriod uint64
@@ -95,6 +96,7 @@ func LoadConfig() *Config {
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
 	config.HyperSync = viper.GetBool("hypersync")
+	config.ForceChecksum = viper.GetBool("force-checksum")
 	config.SyncType = lib.NodeSyncType(viper.GetString("sync-type"))
 	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
 	config.SnapshotBlockHeightPeriod = viper.GetUint64("snapshot-block-height-period")
@@ -160,6 +162,14 @@ func (config *Config) Print() {
 
 	if config.HyperSync {
 		glog.Infof("HyperSync: ON")
+	}
+
+	if config.ForceChecksum {
+		glog.Infof("ForceChecksum: ON")
+	} else {
+		glog.V(0).Infof(lib.CLog(lib.Red, "ForceChecksum: OFF - This could "+
+			"allow a peer to trick you into downloading bad hypersync state. Be sure you're "+
+			"connecting to a trustworthy sync peer."))
 	}
 
 	if config.SnapshotBlockHeightPeriod > 0 {

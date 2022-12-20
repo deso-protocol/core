@@ -742,6 +742,12 @@ func (bav *UtxoView) _connectMessagingGroup(
 			RuleErrorMessagingKeyBeforeBlockHeight, "_connectMessagingGroup: "+
 				"Problem connecting messaging key, too early block height")
 	}
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
+		return 0, 0, nil, fmt.Errorf("_connectMessagingGroup: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
 	txMeta := txn.TxnMeta.(*MessagingGroupMetadata)
 
 	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
@@ -771,14 +777,19 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 	// We now have a valid messaging public key, key name, and owner public key.
 	// The hard-coded default key is only intended to be registered by the owner, so we will require a signature.
-	if EqualGroupKeyName(NewGroupKeyName(txMeta.MessagingGroupKeyName), DefaultGroupKeyName()) {
-		// Verify the GroupOwnerSignature. it should be signature( messagingPublicKey || messagingKeyName )
-		// We need to make sure the default messaging key was authorized by the master public key.
-		// All other keys can be registered by derived keys.
-		bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingGroupKeyName...)
-		if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature, blockHeight, bav.Params); err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
-				"Problem verifying signature bytes, error: %v", RuleErrorMessagingSignatureInvalid)
+	//
+	// Note that we decided to relax this constraint after the fork height. Why? Because keeping it would have
+	// required users to go through two confirmations when approving a key with MetaMask vs just one.
+	if blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight {
+		if EqualGroupKeyName(NewGroupKeyName(txMeta.MessagingGroupKeyName), DefaultGroupKeyName()) {
+			// Verify the GroupOwnerSignature. it should be signature( messagingPublicKey || messagingKeyName )
+			// We need to make sure the default messaging key was authorized by the master public key.
+			// All other keys can be registered by derived keys.
+			bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingGroupKeyName...)
+			if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature, blockHeight, bav.Params); err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+					"Problem verifying signature bytes, error: %v", RuleErrorMessagingSignatureInvalid)
+			}
 		}
 	}
 
