@@ -3692,8 +3692,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -7718,7 +7718,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -7845,7 +7845,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -8629,7 +8629,7 @@ func DBGetUserAssociationsByAttributes(
 
 	// Map from association IDs to association entries.
 	var associationEntries []*UserAssociationEntry
-	err = associationIds.RangeApply(func(associationID BlockHash) error {
+	err = associationIds.ForEach(func(associationID BlockHash) error {
 		// Retrieve association entry from db by ID.
 		associationEntry, innerErr := DBGetUserAssociationByID(handle, snap, &associationID)
 		if innerErr != nil {
@@ -8721,7 +8721,7 @@ func DBGetUserAssociationIdsByAttributes(
 
 	// Map UTXO view AssociationIDs to keys.
 	utxoViewAssociationKeys := NewSet([]string{})
-	err = utxoViewAssociationIds.RangeApply(func(associationID BlockHash) error {
+	err = utxoViewAssociationIds.ForEach(func(associationID BlockHash) error {
 		utxoViewAssociationKey, err := _dbUserAssociationIdToKey(handle, snap, &associationID, prefixType)
 		if err != nil {
 			return err
@@ -8774,7 +8774,7 @@ func DBGetPostAssociationsByAttributes(
 
 	// Map from association IDs to association entries.
 	var associationEntries []*PostAssociationEntry
-	err = associationIds.RangeApply(func(associationID BlockHash) error {
+	err = associationIds.ForEach(func(associationID BlockHash) error {
 		// Retrieve association entry from db by ID.
 		associationEntry, innerErr := DBGetPostAssociationByID(handle, snap, &associationID)
 		if innerErr != nil {
@@ -8914,7 +8914,7 @@ func DBGetPostAssociationIdsByAttributes(
 
 	// Map UTXO view AssociationIDs to keys.
 	utxoViewAssociationKeys := NewSet([]string{})
-	err = utxoViewAssociationIds.RangeApply(func(associationID BlockHash) error {
+	err = utxoViewAssociationIds.ForEach(func(associationID BlockHash) error {
 		utxoViewAssociationKey, err := _dbPostAssociationIdToKey(handle, snap, &associationID, prefixType)
 		if err != nil {
 			return err

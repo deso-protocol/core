@@ -38,7 +38,7 @@ func (set *Set[T]) Includes(element T) bool {
 	return exists
 }
 
-func (set *Set[T]) RangeApply(applyFunc func(elem T) error) error {
+func (set *Set[T]) ForEach(applyFunc func(elem T) error) error {
 	for mapKey := range set._innerMap {
 		if err := applyFunc(mapKey); err != nil {
 			return err
@@ -47,9 +47,9 @@ func (set *Set[T]) RangeApply(applyFunc func(elem T) error) error {
 	return nil
 }
 
-func (set *Set[T]) RangeMap(mapFunc func(elem T) (any, error)) ([]any, error) {
+func (set *Set[T]) Map(mapFunc func(elem T) (any, error)) ([]any, error) {
 	var results []any
-	err := set.RangeApply(func(elem T) error {
+	err := set.ForEach(func(elem T) error {
 		mappedResult, innerErr := mapFunc(elem)
 		if innerErr != nil {
 			return innerErr
