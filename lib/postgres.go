@@ -3194,7 +3194,7 @@ func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostA
 }
 
 func (postgres *Postgres) GetUserAssociationsByAttributes(
-	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
+	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
 ) ([]*UserAssociationEntry, []byte, error) {
 	// Construct SQL query.
 	var pgAssociations []PGUserAssociation
@@ -3219,8 +3219,8 @@ func (postgres *Postgres) GetUserAssociationsByAttributes(
 }
 
 func (postgres *Postgres) GetUserAssociationIdsByAttributes(
-	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
-) (*Set[*BlockHash], []byte, error) {
+	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
 
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGUserAssociation{}).Column("association_id")
@@ -3231,15 +3231,21 @@ func (postgres *Postgres) GetUserAssociationIdsByAttributes(
 	if err := sqlQuery.Select(&associationIds); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
-			return NewSet([]*BlockHash{}), nil, nil
+			return NewSet([]BlockHash{}), nil, nil
 		}
 		return nil, nil, err
 	}
-	return NewSet(associationIds), nil, nil
+	associationIdSet := NewSet([]BlockHash{})
+	for _, bh := range associationIds {
+		if bh != nil {
+			associationIdSet.Add(*bh)
+		}
+	}
+	return associationIdSet, nil, nil
 }
 
 func _constructFilterUserAssociationsByAttributesQuery(
-	sqlQuery *pg.Query, associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
+	sqlQuery *pg.Query, associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
 ) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	if utxoViewAssociationIds.Size() > 0 {
@@ -3288,7 +3294,7 @@ func _constructFilterUserAssociationsByAttributesQuery(
 }
 
 func (postgres *Postgres) GetPostAssociationsByAttributes(
-	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
+	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
 ) ([]*PostAssociationEntry, []byte, error) {
 	// Construct SQL query.
 	var pgAssociations []PGPostAssociation
@@ -3313,8 +3319,8 @@ func (postgres *Postgres) GetPostAssociationsByAttributes(
 }
 
 func (postgres *Postgres) GetPostAssociationIdsByAttributes(
-	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
-) (*Set[*BlockHash], []byte, error) {
+	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
 	// Construct SQL query.
 	sqlQuery := postgres.db.Model(&[]PGPostAssociation{}).Column("association_id")
 	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
@@ -3324,15 +3330,21 @@ func (postgres *Postgres) GetPostAssociationIdsByAttributes(
 	if err := sqlQuery.Select(&associationIds); err != nil {
 		// If we don't find anything, don't error. Just return nil.
 		if err.Error() == "pg: no rows in result set" {
-			return NewSet([]*BlockHash{}), nil, nil
+			return NewSet([]BlockHash{}), nil, nil
 		}
 		return nil, nil, err
 	}
-	return NewSet(associationIds), nil, nil
+	associationIdSet := NewSet([]BlockHash{})
+	for _, bh := range associationIds {
+		if bh != nil {
+			associationIdSet.Add(*bh)
+		}
+	}
+	return associationIdSet, nil, nil
 }
 
 func _constructFilterPostAssociationsByAttributesQuery(
-	sqlQuery *pg.Query, associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[*BlockHash],
+	sqlQuery *pg.Query, associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
 ) {
 	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
 	if utxoViewAssociationIds.Size() > 0 {

@@ -7,7 +7,7 @@ import (
 
 func TestSet(t *testing.T) {
 	// Set of strings
-	set := NewSet[string]([]string{"a", "b", "c"})
+	set := NewSet([]string{"a", "b", "c"})
 	require.Equal(t, set.Size(), 3)
 	require.True(t, set.Includes("c"))
 	set.Add("d")
