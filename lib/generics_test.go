@@ -15,8 +15,10 @@ func TestSet(t *testing.T) {
 	set.Remove("c")
 	require.Equal(t, set.Size(), 3)
 	require.False(t, set.Includes("c"))
-	require.Equal(t, set.ToOrderedSlice(), []string{"a", "b", "d"})
+	toSlice := set.ToSlice()
+	require.Contains(t, toSlice, "a")
+	require.Contains(t, toSlice, "b")
+	require.Contains(t, toSlice, "d")
 	set.Add("e")
 	require.Equal(t, set.Size(), 4)
-	require.Equal(t, set.ToOrderedSlice(), []string{"a", "b", "d", "e"})
 }

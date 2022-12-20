@@ -1,16 +1,12 @@
 package lib
 
-import "sort"
-
 // Generic Set object. Retains the order elements are addd to the set.
-// Use set.ToOrderedSlice() to retrieve in original order.
 type Set[T comparable] struct {
-	_counter  int
-	_innerMap map[T]int
+	_innerMap map[T]struct{}
 }
 
 func NewSet[T comparable](elements []T) *Set[T] {
-	set := &Set[T]{_counter: 0, _innerMap: make(map[T]int)}
+	set := &Set[T]{_innerMap: make(map[T]struct{})}
 	for _, element := range elements {
 		set.Add(element)
 	}
@@ -20,8 +16,7 @@ func NewSet[T comparable](elements []T) *Set[T] {
 func (set *Set[T]) Add(element T) {
 	// Add element to set.
 	if !set.Includes(element) {
-		set._innerMap[element] = set._counter
-		set._counter += 1
+		set._innerMap[element] = struct{}{}
 	}
 }
 
@@ -58,14 +53,5 @@ func (set *Set[T]) ToSlice() []T {
 	for element := range set._innerMap {
 		results = append(results, element)
 	}
-	return results
-}
-
-func (set *Set[T]) ToOrderedSlice() []T {
-	// Convert the set to an ordered slice.
-	results := set.ToSlice()
-	sort.Slice(results, func(ii, jj int) bool {
-		return set._innerMap[results[ii]] < set._innerMap[results[jj]]
-	})
 	return results
 }
