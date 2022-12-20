@@ -2169,7 +2169,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		mempool:           mempool,
 		miner:             miner,
 		savedHeight:       uint32(blockHeight),
-		feeRateNanosPerKb: uint64(231),
+		feeRateNanosPerKb: uint64(101),
 	}
 
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
@@ -2183,7 +2183,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
 
 	// Helper funcs
-	_submitAuthorizeDerivedKeyTxn := func(txnType TxnType, associationLimitKey AssociationLimitKey) string {
+	_submitAuthorizeDerivedKeyTxn := func(txnType TxnType, associationLimitKey AssociationLimitKey, count int) string {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
 
@@ -2191,10 +2191,10 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
-				txnType:                    1,
+				txnType:                    uint64(count),
 			},
 			AssociationLimitMap: map[AssociationLimitKey]uint64{
-				associationLimitKey: 1,
+				associationLimitKey: uint64(1),
 			},
 		}
 
@@ -2284,7 +2284,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			paramUpdaterPub,
 			paramUpdaterPriv,
 			-1,
-			int64(testMeta.feeRateNanosPerKb),
+			1,
 			-1,
 			-1,
 			-1,
@@ -2301,6 +2301,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 				AssociationAppScopeTypeScoped,
 				AssociationOperationCreate,
 			),
+			1,
 		)
 
 		// Sad path: try to create FLAG user association, unauthorized
@@ -2335,6 +2336,94 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			AppPublicKey:        NewPublicKey(m0PkBytes),
 			AssociationType:     []byte("ENDORSEMENT"),
 			AssociationValue:    []byte("Python"),
+		}
+		err = _submitAssociationTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+		require.NoError(t, err)
+
+		// Sad path: derived key spending limit exceeded
+		err = _submitAssociationTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "association not authorized for derived key")
+
+		// Create derived key for creating ANY user associations in the GLOBAL app namespace only.
+		derivedKeyPriv = _submitAuthorizeDerivedKeyTxn(
+			TxnTypeCreateUserAssociation,
+			MakeAssociationLimitKey(
+				AssociationClassUser,
+				[]byte(""),                    // AssociationType == Any
+				ZeroPKID,                      // AppPKID == ZeroPKID
+				AssociationAppScopeTypeScoped, // Scoped to GlobalOnly
+				AssociationOperationCreate,
+			),
+			1,
+		)
+
+		// Sad path: creating ENDORSEMENT user association on m0's app
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AppPublicKey:        NewPublicKey(m0PkBytes),
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("Python"),
+		}
+		err = _submitAssociationTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "association not authorized for derived key")
+
+		// Happy path: creating FLAG user association globally
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AppPublicKey:        &ZeroPublicKey,
+			AssociationType:     []byte("FLAG"),
+			AssociationValue:    []byte("BOT_ACCOUNT"),
+		}
+		err = _submitAssociationTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+		require.NoError(t, err)
+
+		// Sad path: derived key spending limit exceeded
+		err = _submitAssociationTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "association not authorized for derived key")
+
+		// Create derived key for creating ANY user associations on any app.
+		derivedKeyPriv = _submitAuthorizeDerivedKeyTxn(
+			TxnTypeCreateUserAssociation,
+			MakeAssociationLimitKey(
+				AssociationClassUser,
+				[]byte(""), // AssociationType == Any
+				ZeroPKID,
+				AssociationAppScopeTypeAny, // AppPKID == Any
+				AssociationOperationCreate,
+			),
+			2,
+		)
+
+		// Happy path: creating ENDORSEMENT user association on m0's app
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AppPublicKey:        NewPublicKey(m0PkBytes),
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    []byte("Python"),
+		}
+		err = _submitAssociationTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
+		)
+
+		// Happy path: creating FLAG user association globally
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AppPublicKey:        &ZeroPublicKey,
+			AssociationType:     []byte("FLAG"),
+			AssociationValue:    []byte("BOT_ACCOUNT"),
 		}
 		err = _submitAssociationTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata},
