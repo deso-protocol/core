@@ -47,22 +47,6 @@ func (set *Set[T]) ForEach(applyFunc func(elem T) error) error {
 	return nil
 }
 
-func (set *Set[T]) Map(mapFunc func(elem T) (any, error)) ([]any, error) {
-	var results []any
-	err := set.ForEach(func(elem T) error {
-		mappedResult, innerErr := mapFunc(elem)
-		if innerErr != nil {
-			return innerErr
-		}
-		results = append(results, mappedResult)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return results, nil
-}
-
 func (set *Set[T]) ToSlice() []T {
 	// Convert the set to a slice.
 	var results []T
