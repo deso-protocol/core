@@ -21,10 +21,8 @@ func TestSet(t *testing.T) {
 	require.Contains(t, toSlice, "d")
 	set.Add("e")
 	require.Equal(t, set.Size(), 4)
-	mappedSet := []string{}
-	err := set.ForEach(func(elem string) error {
-		mappedSet = append(mappedSet, elem+"!")
-		return nil
+	mappedSet, err := MapSet(set, func(elem string) (string, error) {
+		return elem + "!", nil
 	})
 	require.NoError(t, err)
 	require.Contains(t, mappedSet, "a!")
