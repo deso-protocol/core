@@ -81,6 +81,68 @@ func (bav *UtxoView) getGroupChatThreadExistence(groupKey AccessGroupId) (*Group
 	return dbThreadExists, nil
 }
 
+func (bav *UtxoView) GetAllUserGroupChatThreads(userAccessGroupOwnerPublicKey PublicKey) (
+	_groupChatThreads []*AccessGroupId, _err error) {
+
+	accessGroupIdsOwned, accessGroupIdsMember, err := bav.GetAllAccessGroupIdsForUser(userAccessGroupOwnerPublicKey.ToBytes())
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetAllUserGroupChatThreads: Problem getting all "+
+			"user group ids for user public key %v", userAccessGroupOwnerPublicKey)
+	}
+
+	// There might be repetitive access group Ids among the groups registered
+	// by the user and those in which the user is a member. This is because it is
+	// possible to add oneself as a member to one's own group.
+	accessGroupIdMap := make(map[AccessGroupId]struct{})
+	for _, groupIdIter := range accessGroupIdsOwned {
+		groupId := *groupIdIter
+		accessGroupIdMap[groupId] = struct{}{}
+	}
+	for _, groupIdIter := range accessGroupIdsMember {
+		groupId := *groupIdIter
+		accessGroupIdMap[groupId] = struct{}{}
+	}
+
+	// Now, we will compare the access groups we fetched for a user with the group chat thread existence entries
+	// to filter out all the access groups that were never used as group chats.
+	groupChatKeys := make(map[AccessGroupId]struct{})
+	dbAdapter := bav.GetDbAdapter()
+	for groupIdIter, _ := range accessGroupIdMap {
+		groupId := groupIdIter
+		existence, err := dbAdapter.CheckGroupChatThreadExistence(groupId)
+		if err != nil {
+			return nil, errors.Wrapf(err, "GetAllUserGroupChatThreads: Problem checking group chat thread existence "+
+				"for access group id: %v", groupId)
+		}
+		if existence == nil || existence.isDeleted {
+			continue
+		}
+		groupChatKeys[groupId] = struct{}{}
+	}
+
+	// Now iterate through the utxoView mapping to discard any deleted group chat threads.
+	for groupIdIter, groupExistence := range bav.GroupChatThreadIndex {
+		groupId := groupIdIter
+		if _, ok := accessGroupIdMap[groupId]; !ok {
+			continue
+		}
+		if groupExistence.isDeleted {
+			delete(groupChatKeys, groupId)
+		} else {
+			groupChatKeys[groupId] = struct{}{}
+		}
+	}
+
+	// Serialize the group chat keys map into an array
+	var groupChatsFound []*AccessGroupId
+	for groupIdIter := range groupChatKeys {
+		groupId := groupIdIter
+		groupChatsFound = append(groupChatsFound, &groupId)
+	}
+
+	return groupChatsFound, nil
+}
+
 func (bav *UtxoView) setGroupChatThreadIndex(groupKey AccessGroupId, existence GroupChatThreadExistence) {
 	existenceCopy := existence
 	bav.GroupChatThreadIndex[groupKey] = &existenceCopy
@@ -559,7 +621,7 @@ func (bav *UtxoView) _disconnectNewMessage(
 			}
 
 			// Sanity-check that the group chat thread we're reverting was properly set.
-			groupChatAccessGroupId := NewAccessGroupId(&txMeta.RecipientAccessGroupPublicKey, txMeta.RecipientAccessGroupKeyName.ToBytes())
+			groupChatAccessGroupId := NewAccessGroupId(&txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName.ToBytes())
 			groupChatThread, err := bav.getGroupChatThreadExistence(*groupChatAccessGroupId)
 			if err != nil {
 				return errors.Wrapf(err, "_disconnectNewMessage: Problem getting group chat thread existence from "+

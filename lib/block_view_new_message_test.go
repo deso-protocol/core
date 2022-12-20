@@ -147,6 +147,7 @@ func TestNewMessage(t *testing.T) {
 	tv4 := _createAccessGroupTestVector("TEST 4: (PASS) Try connecting an access group create transaction for "+
 		"group (m1, groupName1)", m1Priv, m1PubBytes, m1PubBytes, groupPk1, groupNameBytes1, AccessGroupOperationTypeCreate,
 		nil, nil)
+	groupM1N1 := NewAccessGroupId(m1PublicKey, groupName1.ToBytes())
 	tv5Members := []*AccessGroupMember{
 		{AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{5, 6, 7}, ExtraData: nil},
 	}
@@ -156,9 +157,17 @@ func TestNewMessage(t *testing.T) {
 	// Send and update a group chat message from (m0, baseGroup) to (m1, groupName1)
 	tv6 := _createNewMessageTestVector("TEST 6: (PASS) Try connecting new message create transaction for a group chat "+
 		"sent from (m0, baseGroup) to (m1, groupName1)", m0Priv, m0PubBytes,
-		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, *m1PublicKey, *groupName1, *m1PublicKey,
+		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, *m1PublicKey, *groupName1, *NewPublicKey(groupPk1),
 		[]byte{4, 5, 6}, 2, NewMessageTypeGroupChat, NewMessageOperationCreate, nil,
 		nil)
+	groupChatThreads6 := []*AccessGroupId{groupM1N1}
+	_ = groupChatThreads6
+	tv6.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m0PublicKey, groupChatThreads6)
+	}
+	tv6.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m0PublicKey, []*AccessGroupId{})
+	}
 	updateGroupMessage := []byte("updated group message")
 	updateGroupExtraData := map[string][]byte{
 		"some random group value": []byte("we are what we repeatedly do. Excellence, then, is not an act but a habit " +
@@ -169,6 +178,8 @@ func TestNewMessage(t *testing.T) {
 		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, *m1PublicKey, *groupName1, *m1PublicKey,
 		updateGroupMessage, 2, NewMessageTypeGroupChat, NewMessageOperationUpdate, updateGroupExtraData,
 		nil)
+	tv7.connectCallback = tv6.connectCallback
+	tv7.disconnectCallback = tv6.connectCallback
 	// TODO: Test owner sending group chat, test minor / major for the same public key.
 	// TODO: Test that only group members can send group chat messages.
 	// TODO: Re-read your old messaging group tests.
@@ -449,5 +460,37 @@ func _verifyDmThreadKeys(t *testing.T, dmThreadKeys []*DmThreadKey, userAccessGr
 		require.Equal(true, bytes.Equal(dmThreadKey.userGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()))
 		_, exists := expectedDmThreadKeysMap[*dmThreadKey]
 		require.Equal(true, exists)
+	}
+}
+
+func _verifyGroupChatThreadsWithUtxoView(t *testing.T, utxoView *UtxoView, userAccessGroupOwnerPublicKey PublicKey,
+	expectedGroupThreadIds []*AccessGroupId) {
+
+	require := require.New(t)
+	groupChatThreads, err := utxoView.GetAllUserGroupChatThreads(userAccessGroupOwnerPublicKey)
+	require.NoError(err)
+	_verifyGroupChatThreads(t, groupChatThreads, expectedGroupThreadIds)
+}
+
+func _verifyGroupChatThreads(t *testing.T, groupChatThreads []*AccessGroupId, expectedGroupThreadIds []*AccessGroupId) {
+
+	require := require.New(t)
+	require.Equal(len(groupChatThreads), len(expectedGroupThreadIds))
+	expectedGroupChatThreadKeysMap := make(map[AccessGroupId]struct{})
+	for _, groupChatThreadIter := range groupChatThreads {
+		groupChatThread := *groupChatThreadIter
+
+		if _, ok := expectedGroupChatThreadKeysMap[groupChatThread]; ok {
+			t.Fatalf("Duplicate group Id in expected group chat thread keys")
+		}
+		expectedGroupChatThreadKeysMap[groupChatThread] = struct{}{}
+	}
+
+	for _, groupChatThreadIter := range groupChatThreads {
+		groupChatThread := *groupChatThreadIter
+
+		if _, ok := expectedGroupChatThreadKeysMap[groupChatThread]; !ok {
+			t.Fatalf("Group chat thread %v does not exist in expected group chat threads", groupChatThread)
+		}
 	}
 }

@@ -461,7 +461,7 @@ func (tes *transactionTestSuite) compareBeforeAfterDbEntries(beforeDbEntries []*
 	for key := range afterDbEntriesMap {
 		_, ok := beforeDbEntriesMap[key]
 		if !ok {
-			tes.t.Errorf("compareBeforeAfterDbEntries: Key %v didn't exist in the db before connect and disconnect", []byte(key))
+			tes.t.Fatalf("compareBeforeAfterDbEntries: Key %v didn't exist in the db before connect and disconnect", []byte(key))
 		}
 	}
 }
