@@ -249,8 +249,8 @@ type ForkHeights struct {
 	// ParamUpdater to use a blockHeight-gated function rather than a constant.
 	ParamUpdaterRefactorBlockHeight uint32
 
-	// CancelDAOCoinLimitOrderFix prevents users from double cancelling an order within the same block
-	CancelDAOCoinLimitOrderFix uint32
+	// CancelDAOCoinLimitOrderFixBlockHeightBlockHeight prevents users from double cancelling an order within the same block
+	CancelDAOCoinLimitOrderFixBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -563,7 +563,7 @@ var RegtestForkHeights = ForkHeights{
 	DerivedKeyEthSignatureCompatibilityBlockHeight:       uint32(0),
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
-	CancelDAOCoinLimitOrderFix:                           uint32(0),
+	CancelDAOCoinLimitOrderFixBlockHeight:                uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -704,7 +704,7 @@ var MainnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
-	CancelDAOCoinLimitOrderFix: uint32(math.MaxUint32), // FIXME
+	CancelDAOCoinLimitOrderFixBlockHeight: uint32(math.MaxUint32), // FIXME
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -953,7 +953,7 @@ var TestnetForkHeights = ForkHeights{
 
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
-	CancelDAOCoinLimitOrderFix: uint32(math.MaxUint32), // FIXME
+	CancelDAOCoinLimitOrderFixBlockHeight: uint32(math.MaxUint32), // FIXME
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.

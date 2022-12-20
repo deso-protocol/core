@@ -293,7 +293,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		if err != nil {
 			return 0, 0, nil, err
 		}
-		if existingTransactorOrder == nil || (blockHeight >= bav.Params.ForkHeights.CancelDAOCoinLimitOrderFix && existingTransactorOrder.isDeleted) {
+		if existingTransactorOrder == nil || (blockHeight >= bav.Params.ForkHeights.CancelDAOCoinLimitOrderFixBlockHeight && existingTransactorOrder.isDeleted) {
 			return 0, 0, nil, RuleErrorDAOCoinLimitOrderToCancelNotFound
 		}
 		if !transactorPKIDEntry.PKID.Eq(existingTransactorOrder.TransactorPKID) {
