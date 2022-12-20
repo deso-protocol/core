@@ -8628,15 +8628,9 @@ func DBGetUserAssociationsByAttributes(
 	}
 
 	// Map from association IDs to association entries.
-	var associationEntries []*UserAssociationEntry
-	err = associationIds.ForEach(func(associationID BlockHash) error {
+	associationEntries, err := MapSet(associationIds, func(associationID BlockHash) (*UserAssociationEntry, error) {
 		// Retrieve association entry from db by ID.
-		associationEntry, innerErr := DBGetUserAssociationByID(handle, snap, &associationID)
-		if innerErr != nil {
-			return innerErr
-		}
-		associationEntries = append(associationEntries, associationEntry)
-		return nil
+		return DBGetUserAssociationByID(handle, snap, &associationID)
 	})
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
@@ -8772,15 +8766,9 @@ func DBGetPostAssociationsByAttributes(
 	}
 
 	// Map from association IDs to association entries.
-	var associationEntries []*PostAssociationEntry
-	err = associationIds.ForEach(func(associationID BlockHash) error {
+	associationEntries, err := MapSet(associationIds, func(associationID BlockHash) (*PostAssociationEntry, error) {
 		// Retrieve association entry from db by ID.
-		associationEntry, innerErr := DBGetPostAssociationByID(handle, snap, &associationID)
-		if innerErr != nil {
-			return innerErr
-		}
-		associationEntries = append(associationEntries, associationEntry)
-		return nil
+		return DBGetPostAssociationByID(handle, snap, &associationID)
 	})
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
