@@ -1806,10 +1806,6 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 	require := require.New(t)
 
 	tb := NewTestBlockChain(t)
-	// generating a random pricate key to be used for the tests.
-	randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
-	require.NoError(err)
-	randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
 
 	transactionSpendingLimit := &TransactionSpendingLimit{
 		GlobalDESOLimit:              100,
@@ -1874,21 +1870,21 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 			signType:                  ECDSA,
 			transactionSpendingLimit:  transactionSpendingLimit,
 			expectedError:             RuleErrorInvalidTransactionSignature,
-			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t),
 		},
 		{
 
 			signType:                  STANDARD_DER,
 			transactionSpendingLimit:  transactionSpendingLimit,
 			expectedError:             RuleErrorDerivedKeyNotAuthorized,
-			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t),
 		},
 		// Test case 5
 		{
 			signType:                  DESO_DER,
 			transactionSpendingLimit:  transactionSpendingLimit,
 			expectedError:             RuleErrorDerivedKeyNotAuthorized,
-			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t),
 		},
 		// Third scenario, there exists an authorize derived key entry and we're signing a basic transfer.
 		// Sign the basic transfer with the sender's private key.
@@ -2291,7 +2287,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 					amountNanos:            1,
 				},
 				signType:         ECDSA,
-				signingKeyBase58: "",
+				signingKeyBase58: senderPrivString,
 			},
 		}
 
