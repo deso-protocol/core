@@ -352,3 +352,19 @@ func (adapter *DbAdapter) GetAllUserDmThreads(userAccessGroupOwnerPublicKey Publ
 		return DBGetAllUserDmThreads(adapter.badgerDb, adapter.snapshot, userAccessGroupOwnerPublicKey)
 	}
 }
+
+func (adapter *DbAdapter) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmThreadKey, startingTimestamp uint64,
+	maxMessagesToFetch uint64) (_messageEntries []*NewMessageEntry, _err error) {
+
+	if maxMessagesToFetch == 0 {
+		return nil, nil
+	}
+
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetPaginatedMessageEntriesForDmThread(
+			dmThreadKey, startingTimestamp, maxMessagesToFetch)
+	} else {
+		return DBGetPaginatedDmMessageEntry(adapter.badgerDb, adapter.snapshot,
+			dmThreadKey, startingTimestamp, maxMessagesToFetch)
+	}
+}

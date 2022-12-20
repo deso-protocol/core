@@ -1197,13 +1197,15 @@ func _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []
 }
 
 // A helper function to enumerate a limited number of the values for a particular prefix.
-func _enumerateLimitedKeysReversedForPrefix(db *badger.DB, dbPrefix []byte, limit uint64) (_keysFound [][]byte, _valsFound [][]byte) {
+func _enumerateLimitedKeysReversedForPrefixAndStartingKey(db *badger.DB, dbPrefix []byte, startingKey []byte,
+	limit uint64) (_keysFound [][]byte, _valsFound [][]byte) {
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
 
 	dbErr := db.View(func(txn *badger.Txn) error {
 		var err error
-		keysFound, valsFound, err = _enumerateLimitedKeysReversedForPrefixWithTxn(txn, dbPrefix, limit)
+		keysFound, valsFound, err = _enumerateLimitedKeysReversedForPrefixAndStartingKeyWithTxn(
+			txn, dbPrefix, startingKey, limit)
 		return err
 	})
 	if dbErr != nil {
@@ -1214,7 +1216,14 @@ func _enumerateLimitedKeysReversedForPrefix(db *badger.DB, dbPrefix []byte, limi
 	return keysFound, valsFound
 }
 
-func _enumerateLimitedKeysReversedForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte, limit uint64) (_keysFound [][]byte, _valsFound [][]byte, _err error) {
+func _enumerateLimitedKeysReversedForPrefixAndStartingKeyWithTxn(txn *badger.Txn, dbPrefix []byte, startingKey []byte,
+	limit uint64) (_keysFound [][]byte, _valsFound [][]byte, _err error) {
+
+	if !bytes.HasPrefix(startingKey, dbPrefix) {
+		return nil, nil, fmt.Errorf("_enumerateLimitedKeysReversedForPrefixAndSt artingKeyWithTxn: Starting key should have "+
+			"dbPrefix as a proper prefix. Instead got startingKey (%v) an dbPrefix (%v)", startingKey, dbPrefix)
+	}
+
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
 
@@ -1228,7 +1237,7 @@ func _enumerateLimitedKeysReversedForPrefixWithTxn(txn *badger.Txn, dbPrefix []b
 	prefix := dbPrefix
 
 	counter := uint64(0)
-	for nodeIterator.Seek(append(prefix, 0xff)); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+	for nodeIterator.Seek(startingKey); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
 		if counter == limit {
 			break
 		}
@@ -1506,6 +1515,8 @@ func _enumerateLimitedMessagesForMessagingKeysReversedWithTxn(
 		opts := badger.DefaultIteratorOptions
 		opts.Reverse = true
 		iterator := txn.NewIterator(opts)
+		// TODO: This will practically work since timestamps usually will not have the major byte set as 0xff; however
+		// 	any message sent with a timestamp larger than 0xff << 8 will not be covered by this seek.
 		iterator.Seek(append(prefix, 0xff))
 		defer iterator.Close()
 		messagingIterators = append(messagingIterators, iterator)
@@ -1938,12 +1949,13 @@ func _dbKeyForPrefixDmMessageIndex(key DmMessageKey) []byte {
 	return prefixCopy
 }
 
-func _dbSeekPrefixForPrefixDmMessageIndex(key DmMessageKey) []byte {
+func _dbSeekPrefixForPrefixDmMessageIndex(minorGroupOwnerPublicKey PublicKey, minorGroupKeyName GroupKeyName,
+	majorGroupOwnerPublicKey PublicKey, majorGroupKeyName GroupKeyName) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessageIndex...)
-	prefixCopy = append(prefixCopy, key.MinorGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.MinorGroupKeyName.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.MajorGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.MajorGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, minorGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, minorGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, majorGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, majorGroupKeyName.ToBytes()...)
 	return prefixCopy
 }
 
@@ -1978,6 +1990,76 @@ func DBGetDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessageKe
 	}
 
 	return dmMessage, nil
+}
+
+func DBGetPaginatedDmMessageEntry(handle *badger.DB, snap *Snapshot,
+	dmThreadKey DmThreadKey, startingTimestamp uint64, maxMessagesToFetch uint64) (
+	_messageEntries []*NewMessageEntry, _err error) {
+
+	var err error
+	var messageEntries []*NewMessageEntry
+	err = handle.View(func(txn *badger.Txn) error {
+		messageEntries, err = DBGetPaginatedDmMessageEntryWithTxn(
+			txn, snap, dmThreadKey, startingTimestamp, maxMessagesToFetch)
+		return err
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetPaginatedDmMessageEntry: "+
+			"Problem getting paginated message entries with dmThreadKey (%v), startingTimestamp (%v), "+
+			"maxMessagesToFetch (%v)", dmThreadKey, startingTimestamp, maxMessagesToFetch)
+	}
+	return messageEntries, nil
+}
+
+func DBGetPaginatedDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
+	dmThreadKey DmThreadKey, startingTimestamp uint64, maxMessagesToFetch uint64) (
+	_messageEntries []*NewMessageEntry, _err error) {
+
+	var messageEntries []*NewMessageEntry
+	// Construct the seek key given the dm thread and the starting timestamp.
+	dmMessageKey := MakeDmMessageKeyFromDmThreadKey(dmThreadKey)
+	prefix := _dbSeekPrefixForPrefixDmMessageIndex(dmMessageKey.MinorGroupOwnerPublicKey, dmMessageKey.MinorGroupKeyName,
+		dmMessageKey.MajorGroupOwnerPublicKey, dmMessageKey.MajorGroupKeyName)
+	startKey := append(prefix, EncodeUint64(startingTimestamp)...)
+
+	// Now fetch the messages from the Db
+	keysFound, valsFound, err := _enumerateLimitedKeysReversedForPrefixAndStartingKeyWithTxn(txn, prefix, startKey, maxMessagesToFetch)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetPaginatedDmMessageEntryWithTxn: Problem fetching paginated messages")
+	}
+
+	// Sanity-check that we don't return the starting key.
+	if len(keysFound) > 0 && bytes.Compare(startKey, keysFound[0]) == 0 {
+		// We will fetch one more key after the last key found and append it to the list of the keys found, with the first element removed.
+		additionalKeys, additionalVals, err := _enumerateLimitedKeysReversedForPrefixAndStartingKeyWithTxn(
+			txn, prefix, keysFound[len(keysFound)-1], 2)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetPaginatedDmMessageEntryWithTxn: Problem getting additional paginated messages")
+		}
+		keysFound = append(keysFound[1:], additionalKeys[1:]...)
+		valsFound = append(valsFound[1:], additionalVals[1:]...)
+	}
+
+	// Turn all fetched values into new message entries.
+	for ii, val := range valsFound {
+		dmMessage := &NewMessageEntry{}
+		rr := bytes.NewReader(val)
+		if exists, err := DecodeFromBytes(dmMessage, rr); !exists || err != nil {
+			return nil, errors.Wrapf(err, "DBGetPaginatedDmMessageEntryWithTxn: "+
+				"Problem decoding dm message entry with key: %v and value: %v", keysFound[ii], val)
+		}
+		messageEntries = append(messageEntries, dmMessage)
+	}
+
+	// Sanity-check that the timestamps we found are sorted.
+	for ii := 1; ii < len(messageEntries); ii++ {
+		if messageEntries[ii-1].TimestampNanos < messageEntries[ii].TimestampNanos {
+			return nil, fmt.Errorf("DBGetPaginatedDmMessageEntryWithTxn: "+
+				"Found unsorted message entries timestamps: %v %v", *messageEntries[ii-1], *messageEntries[ii])
+		}
+	}
+
+	return messageEntries, nil
 }
 
 func DBPutDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,

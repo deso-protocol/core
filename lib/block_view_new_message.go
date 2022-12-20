@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/pkg/errors"
+	"sort"
 )
 
 // ==================================================================
@@ -107,7 +108,7 @@ func (bav *UtxoView) GetAllUserGroupChatThreads(userAccessGroupOwnerPublicKey Pu
 	// to filter out all the access groups that were never used as group chats.
 	groupChatKeys := make(map[AccessGroupId]struct{})
 	dbAdapter := bav.GetDbAdapter()
-	for groupIdIter, _ := range accessGroupIdMap {
+	for groupIdIter := range accessGroupIdMap {
 		groupId := groupIdIter
 		existence, err := dbAdapter.CheckGroupChatThreadExistence(groupId)
 		if err != nil {
@@ -268,6 +269,141 @@ func (bav *UtxoView) GetAllUserDmThreads(userAccessGroupOwnerPublicKey PublicKey
 	}
 
 	return dmThreadKeys, nil
+}
+
+func (bav *UtxoView) GetPaginatedMessageEntriesForDmThread(dmThread DmThreadKey, startingTimestamp uint64,
+	maxMessagesToFetch uint64) (_messageEntries []*NewMessageEntry, _err error) {
+
+	return bav._getPaginatedMessageEntriesForDmThreadRecursionSafe(dmThread, startingTimestamp,
+		maxMessagesToFetch, MaxDmMessageRecursionDepth)
+}
+
+func (bav *UtxoView) _getPaginatedMessageEntriesForDmThreadRecursionSafe(dmThread DmThreadKey, startingTimestamp uint64,
+	maxMessagesToFetch uint64, maxDepth uint32) (_messageEntries []*NewMessageEntry, _err error) {
+
+	if maxMessagesToFetch == 0 {
+		return nil, nil
+	}
+	// This function can make recursive calls to itself. We use a depth counter to prevent infinite recursion
+	// (which shouldn't happen anyway, but better safe than sorry, right?).
+	if maxDepth == 0 {
+		return nil, errors.Wrapf(RuleErrorNewMessageGetDmMessagesRecursionLimit,
+			"_getPaginatedMessageEntriesForDmThreadRecursionSafe: maxDepth == 0")
+	}
+
+	// Fetch the message entries from db.
+	dbAdapter := bav.GetDbAdapter()
+	dbMessageEntries, err := dbAdapter.GetPaginatedMessageEntriesForDmThread(dmThread, startingTimestamp, maxMessagesToFetch)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_getPaginatedMessageEntriesForDmThreadRecursionSafe:"+
+			"Problem getting message entries from db for dmThreadKey (%v), startingTimestamp (%v), maxMessageToFetch (%v)",
+			dmThread, startingTimestamp, maxMessagesToFetch)
+	}
+
+	// We define a predicate that checks whether we fetched maximum number of message entries. We might drop some entries later
+	// when we combine the db message entries with the ones fetched from the UtxoView.
+	isListFilled := uint64(len(dbMessageEntries)) == maxMessagesToFetch
+	var lastKnownDbTimestamp uint64
+	if len(dbMessageEntries) > 0 {
+		lastKnownDbTimestamp = dbMessageEntries[len(dbMessageEntries)-1].TimestampNanos
+	}
+
+	// Finally, there is a possibility that there have been additional messages send during the current block,
+	// and we need to make sure we include them in the list of messages we return. We do this by iterating over all
+	// the members in the current UtxoView and inserting them into the list of members we return.
+	existingMessagesMap := make(map[DmMessageKey]*NewMessageEntry)
+	for _, message := range dbMessageEntries {
+		messageKey := MakeDmMessageKey(*message.SenderAccessGroupOwnerPublicKey, *message.SenderAccessGroupKeyName,
+			*message.RecipientAccessGroupOwnerPublicKey, *message.RecipientAccessGroupKeyName, message.TimestampNanos)
+		messageCopy := *message
+		existingMessagesMap[messageKey] = &messageCopy
+	}
+
+	filteredUtxoViewMessages := make(map[DmMessageKey]*NewMessageEntry)
+	for dmMessageKeyIter, messageEntryIter := range bav.DmMessagesIndex {
+		threadMessageKey := MakeDmMessageKeyFromDmThreadKey(dmThread)
+
+		// Make sure the utxoView message matches our current thread.
+		isValidThread := bytes.Equal(dmMessageKeyIter.MinorGroupOwnerPublicKey.ToBytes(), threadMessageKey.MinorGroupOwnerPublicKey.ToBytes()) &&
+			bytes.Equal(dmMessageKeyIter.MinorGroupKeyName.ToBytes(), threadMessageKey.MinorGroupKeyName.ToBytes()) &&
+			bytes.Equal(dmMessageKeyIter.MajorGroupOwnerPublicKey.ToBytes(), threadMessageKey.MajorGroupOwnerPublicKey.ToBytes()) &&
+			bytes.Equal(dmMessageKeyIter.MajorGroupKeyName.ToBytes(), threadMessageKey.MajorGroupKeyName.ToBytes())
+		if !isValidThread {
+			continue
+		}
+
+		// Make sure the message has a timestamp that is smaller than our starting timestamp.
+		isValidTimestamp := startingTimestamp >= dmMessageKeyIter.TimestampNanos
+		if !isValidTimestamp {
+			continue
+		}
+
+		// In case we already fetched the maximum number of messages, we just need to check whether the current message
+		// timestamp is greater or equal to the last message we fetched from the DB. If it isn't, we can skip. The reason is that
+		// if we added a message with smaller timestamp, there is a chance there might be some messages with smaller
+		// timestamp still present in the db, which we shouldn't skip.
+		var isGreaterOrEqualThanEndTimestamp bool
+		if isListFilled {
+			isGreaterOrEqualThanEndTimestamp = dmMessageKeyIter.TimestampNanos >= lastKnownDbTimestamp
+			if !isGreaterOrEqualThanEndTimestamp {
+				continue
+			}
+		}
+
+		messageEntry := *messageEntryIter
+		dmMessageKey := dmMessageKeyIter
+		filteredUtxoViewMessages[dmMessageKey] = &messageEntry
+	}
+
+	finalMessageEntries := []*NewMessageEntry{}
+	for messageKeyIter, messageEntryIter := range existingMessagesMap {
+		copyMessageEntry := *messageEntryIter
+		if utxoMessage, exists := filteredUtxoViewMessages[messageKeyIter]; exists {
+			if utxoMessage.isDeleted {
+				continue
+			} else {
+				copyMessageEntry = *utxoMessage
+			}
+		}
+		finalMessageEntries = append(finalMessageEntries, &copyMessageEntry)
+	}
+	for utxoMessageKeyIter, utxoMessageEntry := range filteredUtxoViewMessages {
+		if _, exists := existingMessagesMap[utxoMessageKeyIter]; exists {
+			continue
+		}
+		if utxoMessageEntry.isDeleted {
+			continue
+		}
+		copyUtxoMessage := *utxoMessageEntry
+		finalMessageEntries = append(finalMessageEntries, &copyUtxoMessage)
+	}
+	sort.Slice(finalMessageEntries, func(ii, jj int) bool {
+		return finalMessageEntries[ii].TimestampNanos < finalMessageEntries[jj].TimestampNanos
+	})
+
+	// After iterating over all the messages in the current UtxoView, there is a possibility that we now have less messages
+	// than the maxMessagesToFetch, due to deleted messages. In this case, we need to fetch more members from the DB,
+	// which we will do with the magic of recursion.
+	if isListFilled && len(finalMessageEntries) < int(maxMessagesToFetch) &&
+		lastKnownDbTimestamp > startingTimestamp {
+
+		// Note this recursive call will never lead to an infinite loop because the startingTimestamp
+		// will be growing with each recursive call, and because we are checking for isListFilled with
+		// maxMessagesToFetch > 0. But just in case we add a sanity-check parameter maxDepth to break long recursive calls.
+		remainingMessages, err := bav._getPaginatedMessageEntriesForDmThreadRecursionSafe(
+			dmThread, lastKnownDbTimestamp, maxMessagesToFetch-uint64(len(finalMessageEntries)), maxDepth-1)
+		if err != nil {
+			return nil, errors.Wrapf(err, "_getPaginatedMessageEntriesForDmThreadRecursionSafe: "+
+				"Problem fetching recursion message entries for the next message with "+
+				"dmThreadKey (%v), lastKnownDbTimestamp (%v)", dmThread, lastKnownDbTimestamp)
+		}
+		finalMessageEntries = append(finalMessageEntries, remainingMessages...)
+	}
+
+	if len(finalMessageEntries) > int(maxMessagesToFetch) {
+		finalMessageEntries = finalMessageEntries[:maxMessagesToFetch]
+	}
+	return finalMessageEntries, nil
 }
 
 func (bav *UtxoView) setDmThreadIndex(dmThreadKey DmThreadKey, existence DmThreadExistence) {

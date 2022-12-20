@@ -3857,6 +3857,31 @@ func (postgres *Postgres) GetNewMessageDmEntry(dmMessageKey DmMessageKey) *PGNew
 	return newMessageDmEntry
 }
 
+func (postgres *Postgres) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmThreadKey, startingTimestamp uint64,
+	maxMessagesToFetch uint64) (_messageEntries []*NewMessageEntry, _err error) {
+
+	var pgNewMessageDmEntries []*PGNewMessageDmEntry
+	var newMessageEntries []*NewMessageEntry
+
+	dmMessageKey := MakeDmMessageKeyFromDmThreadKey(dmThreadKey)
+	err := postgres.db.Model(&pgNewMessageDmEntries).
+		Where("minor_access_group_owner_public_key = ?", dmMessageKey.MinorGroupOwnerPublicKey).
+		Where("minor_access_group_key_name = ?", dmMessageKey.MinorGroupKeyName).
+		Where("major_access_group_owner_public_key = ?", dmMessageKey.MajorGroupOwnerPublicKey).
+		Where("major_access_group_key_name = ?", dmMessageKey.MajorGroupKeyName).
+		Order("timestamp_nanos DSC").
+		Limit(int(maxMessagesToFetch)).
+		Select()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, pgNewMessageEntry := range pgNewMessageDmEntries {
+		newMessageEntries = append(newMessageEntries, pgNewMessageEntry.ToNewMessageEntry())
+	}
+	return newMessageEntries, nil
+}
+
 func (postgres *Postgres) GetNewMessageGroupChatEntry(groupChatMessageKey GroupChatMessageKey) *PGNewMessageGroupChatEntry {
 
 	newMessageGroupChatEntry := &PGNewMessageGroupChatEntry{

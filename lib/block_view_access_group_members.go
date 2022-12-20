@@ -171,11 +171,6 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 	// Finally, there is a possibility that there have been new members added to the access group in the current block,
 	// and we need to make sure we include them in the list of members we return. We do this by iterating over all the
 	// members in the current UtxoView and inserting them into the list of members we return.
-	var endingAccessGroupMemberPublicKey []byte
-	if len(cachedSortedAccessGroupMembersFromDb) > 0 {
-		endingAccessGroupMemberPublicKey = cachedSortedAccessGroupMembersFromDb[len(cachedSortedAccessGroupMembersFromDb)-1].ToBytes()
-	}
-
 	existingAccessMembers := make(map[PublicKey]struct{})
 	for _, member := range cachedSortedAccessGroupMembersFromDb {
 		existingAccessMembers[*member] = struct{}{}
@@ -197,13 +192,13 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 		}
 
 		// In case we already fetched the maximum number of members, we just need to check whether the current member
-		// is smaller or equal to the last member we fetched from the DB. If it is, we can skip. The reason is that
+		// is smaller or equal to the last member we fetched from the DB. If it isn't, we can skip. The reason is that
 		// if we added the member with greater public key, there is a chance there might be some members with smaller
 		// public key still present in the db, which we shouldn't skip.
 		var isLesserOrEqualThanEndKey bool
 		if len(cachedSortedAccessGroupMembersFromDb) > 0 {
 			// Note we use <= here because if the UtxoView entry is deleted, we should remove the member from our list.
-			isLesserOrEqualThanEndKey = bytes.Compare(memberPublicKey.ToBytes(), endingAccessGroupMemberPublicKey) <= 0
+			isLesserOrEqualThanEndKey = bytes.Compare(memberPublicKey.ToBytes(), lastKnownDbPublicKey) <= 0
 		} else {
 			isLesserOrEqualThanEndKey = true
 		}

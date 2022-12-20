@@ -138,6 +138,7 @@ const (
 	RuleErrorNewMessageGroupChatMessageAlreadyExists         RuleError = "RuleErrorNewMessageGroupChatMessageAlreadyExists"
 	RuleErrorNewMessageGroupChatMessageDoesNotExist          RuleError = "RuleErrorNewMessageGroupChatMessageDoesNotExist"
 	RuleErrorNewMessageGroupMessageTimestampMismatch         RuleError = "RuleErrorNewMessageGroupMessageTimestampMismatch"
+	RuleErrorNewMessageGetDmMessagesRecursionLimit           RuleError = "RuleErrorNewMessageGetDmMessagesRecursionLimit"
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"

@@ -2179,6 +2179,11 @@ func MakeDmMessageKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName
 	}
 }
 
+func MakeDmMessageKeyFromDmThreadKey(dmThreadKey DmThreadKey) DmMessageKey {
+	return MakeDmMessageKeyForSenderRecipient(dmThreadKey.userGroupOwnerPublicKey, dmThreadKey.userGroupKeyName,
+		dmThreadKey.partyGroupOwnerPublicKey, dmThreadKey.partyGroupKeyName, 0)
+}
+
 func MakeDmMessageKeyForSenderRecipient(senderAccessGroupOwnerPublicKey PublicKey, senderAccessGroupKeyName GroupKeyName,
 	recipientAccessGroupOwnerPublicKey PublicKey, recipientAccessGroupKeyName GroupKeyName, tstampNanos uint64) DmMessageKey {
 
