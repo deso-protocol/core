@@ -2182,11 +2182,11 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	require.NoError(t, err)
 	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
 
-	utxoView, err := mempool.GetAugmentedUniversalView()
-	require.NoError(t, err)
-
 	// Helper funcs
 	_submitAuthorizeDerivedKeyTxn := func(txnType TxnType, associationLimitKey AssociationLimitKey) string {
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
@@ -2233,6 +2233,8 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	_submitAssociationTxnWithDerivedKey := func(
 		transactorPkBytes []byte, derivedKeyPrivBase58Check string, inputTxn MsgDeSoTxn,
 	) error {
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
 		var txn *MsgDeSoTxn
 
 		switch inputTxn.TxnMeta.GetTxnType() {
