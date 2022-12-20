@@ -218,7 +218,6 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreatePostAssociation: ")
 	}
-
 	// Delete the existing association entry, if exists.
 	if prevAssociationEntry != nil {
 		bav._deletePostAssociationEntryMappings(prevAssociationEntry)
