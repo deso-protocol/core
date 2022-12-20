@@ -269,7 +269,7 @@ func (bav *UtxoView) GetPostEntryReaderState(
 	senderPKID := bav.GetPKIDForPublicKey(readerPK)
 	receiverPKID := bav.GetPKIDForPublicKey(postEntry.PosterPublicKey)
 	if senderPKID == nil || receiverPKID == nil {
-		glog.V(1).Infof(
+		glog.V(2).Infof(
 			"GetPostEntryReaderState: Could not find PKID for reader PK: %s or poster PK: %s",
 			PkToString(readerPK, bav.Params), PkToString(postEntry.PosterPublicKey, bav.Params))
 	} else {

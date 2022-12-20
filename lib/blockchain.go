@@ -1911,6 +1911,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	}
 
 	if nodeToValidate.Status.IsFullyProcessed() {
+		glog.Infof("Node is not fully processed - current statuses are: %+v", nodeToValidate.Status)
 		return false, false, RuleErrorBlockAlreadyExists
 	}
 
