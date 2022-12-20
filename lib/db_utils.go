@@ -8781,6 +8781,7 @@ func DBGetPostAssociationsByAttributes(
 			return innerErr
 		}
 		associationEntries = append(associationEntries, associationEntry)
+		return nil
 	})
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
