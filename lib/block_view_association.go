@@ -779,8 +779,12 @@ func (bav *UtxoView) GetUserAssociationByAttributes(transactorPK []byte, metadat
 		if utxoViewAssociationEntry.isDeleted {
 			// If there is a deleted matching association entry in the UTXO view, we
 			// need to keep searching the UTXO view since there could be other
-			// non-deleted matches. If we don't find any, we return nil below, before
-			// checking the db which would return that deleted association entry.
+			// non-deleted matches. There can be an arbitrary number of deleted
+			// matching association entries, but there will only ever be zero or one
+			// non-deleted matching association entry, since "updating" a matching
+			// association entry deletes the old one and creates a new one. If we
+			// don't find any matches in the UTXO view, we return nil below, before
+			// checking the db which would return a deleted association entry.
 			isDeleted = true
 			continue
 		}
@@ -813,8 +817,12 @@ func (bav *UtxoView) GetPostAssociationByAttributes(transactorPK []byte, metadat
 		if utxoViewAssociationEntry.isDeleted {
 			// If there is a deleted matching association entry in the UTXO view, we
 			// need to keep searching the UTXO view since there could be other
-			// non-deleted matches. If we don't find any, we return nil below, before
-			// checking the db which would return that deleted association entry.
+			// non-deleted matches. There can be an arbitrary number of deleted
+			// matching association entries, but there will only ever be zero or one
+			// non-deleted matching association entry, since "updating" a matching
+			// association entry deletes the old one and creates a new one. If we
+			// don't find any matches in the UTXO view, we return nil below, before
+			// checking the db which would return a deleted association entry.
 			isDeleted = true
 			continue
 		}
