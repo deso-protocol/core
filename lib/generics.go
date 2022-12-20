@@ -43,8 +43,8 @@ func (set *Set[T]) Includes(element T) bool {
 	return exists
 }
 
-func (set *Set[T]) RangeApply(applyFunc  func (elem T) error) error {
-	for mapKey, _ := range set._innerMap {
+func (set *Set[T]) RangeApply(applyFunc func(elem T) error) error {
+	for mapKey := range set._innerMap {
 		if err := applyFunc(mapKey); err != nil {
 			return err
 		}

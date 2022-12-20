@@ -8716,7 +8716,7 @@ func DBGetUserAssociationIdsByAttributes(
 
 	// Map UTXO view AssociationIDs to keys.
 	utxoViewAssociationKeys := NewSet[string]([]string{})
-	err = utxoViewAssociationIds.RangeApply(func (associationID *BlockHash) error {
+	err = utxoViewAssociationIds.RangeApply(func(associationID *BlockHash) error {
 		utxoViewAssociationKey, err := _dbUserAssociationIdToKey(handle, snap, associationID, prefixType)
 		if err != nil {
 			return err
@@ -8905,7 +8905,7 @@ func DBGetPostAssociationIdsByAttributes(
 
 	// Map UTXO view AssociationIDs to keys.
 	utxoViewAssociationKeys := NewSet[string]([]string{})
-	err = utxoViewAssociationIds.RangeApply(func (associationID *BlockHash) error {
+	err = utxoViewAssociationIds.RangeApply(func(associationID *BlockHash) error {
 		utxoViewAssociationKey, err := _dbPostAssociationIdToKey(handle, snap, associationID, prefixType)
 		if err != nil {
 			return err
