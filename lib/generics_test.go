@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -28,4 +29,15 @@ func TestSet(t *testing.T) {
 	require.Contains(t, mappedSet, "a!")
 	require.Contains(t, mappedSet, "b!")
 	require.Contains(t, mappedSet, "d!")
+	counter := 0
+	nilSet, err := MapSet(set, func(elem string) (string, error) {
+		if counter == 1 {
+			return "", errors.New("TESTERROR")
+		}
+		counter++
+		return elem, nil
+	})
+	require.Error(t, err)
+	require.Equal(t, err.Error(), "TESTERROR")
+	require.Nil(t, nilSet)
 }
