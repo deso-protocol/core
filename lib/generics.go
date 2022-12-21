@@ -55,3 +55,19 @@ func (set *Set[T]) ToSlice() []T {
 	}
 	return results
 }
+
+func MapSet[T comparable, K any](set *Set[T], mapFunc func(elem T) (K, error)) ([]K, error) {
+	var results []K
+	err := set.ForEach(func(elem T) error {
+		mappedResult, innerErr := mapFunc(elem)
+		if innerErr != nil {
+			return innerErr
+		}
+		results = append(results, mappedResult)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
+}
