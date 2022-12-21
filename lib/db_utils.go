@@ -8771,7 +8771,7 @@ func DBGetPostAssociationsByAttributes(
 		return DBGetPostAssociationByID(handle, snap, &associationID)
 	})
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationsByAttributes: problem retrieving association entry by ID: ")
 	}
 	return associationEntries, prefixType, nil
 }
