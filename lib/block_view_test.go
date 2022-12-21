@@ -124,12 +124,12 @@ type basicTestTxn struct {
 	amountNanos            uint64
 }
 
-func generateRandomPrivateKeyBase58(t *testing.T) string {
+func generateRandomPrivateKeyBase58(t *testing.T, tbc *TestBlockChain) string {
 	t.Helper()
 
 	randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(t, err)
-	randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
+	randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, tbc.params)
 	return randomPrivKeyBase58Check
 }
 
@@ -865,12 +865,12 @@ func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.D
 func _registerOrTransferWithTestMeta(testMeta *TestMeta, username string,
 	senderPk string, recipientPk string, senderPriv string, amountToSend uint64) {
 
-	testBlockChain := testMeta.testChain
+	tbc := testMeta.tbc
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testBlockChain.chain, nil, senderPk))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, tbc.chain, nil, senderPk))
 
 	currentOps, currentTxn, _ := _doBasicTransferWithViewFlush(
-		testMeta.t, testBlockChain.chain, testBlockChain.db, testMeta.params, senderPk, recipientPk,
+		testMeta.t, tbc.chain, tbc.db, tbc.params, senderPk, recipientPk,
 		senderPriv, amountToSend, 11 /*feerate*/)
 
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
@@ -957,10 +957,10 @@ func _updateGlobalParamsEntryWithTestMeta(
 
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances,
-		_getBalance(testMeta.t, testMeta.testChain.chain, nil, updaterPkBase58Check))
+		_getBalance(testMeta.t, testMeta.tbc.chain, nil, updaterPkBase58Check))
 
 	currentOps, currentTxn, _, err := _updateGlobalParamsEntry(
-		testMeta.t, testMeta.testChain.chain, testMeta.testChain.db, testMeta.params,
+		testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params,
 		feeRateNanosPerKB,
 		updaterPkBase58Check,
 		updaterPrivBase58Check,
@@ -1797,10 +1797,6 @@ func TestMempoolProcessError(t *testing.T) {
 	require := require.New(t)
 
 	tb := NewTestBlockChain(t)
-	// generating a random pricate key to be used for the tests.
-	randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
-	require.NoError(err)
-	randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, tb.params)
 
 	senderPkBytes := ProcessKeyBytes(t, senderPkString)
 	recipientPkBytes := ProcessKeyBytes(t, recipientPkString)
@@ -1831,20 +1827,20 @@ func TestMempoolProcessError(t *testing.T) {
 
 			signType:                  ECDSA,
 			expectedError:             RuleErrorInvalidTransactionSignature,
-			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 		},
 		// Test case 4
 		{
 
 			signType:                  STANDARD_DER,
 			expectedError:             RuleErrorDerivedKeyNotAuthorized,
-			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 		},
 		// Test case 5
 		{
 			signType:                  DESO_DER,
 			expectedError:             RuleErrorDerivedKeyNotAuthorized,
-			signaturePrivateKeyBase58: randomPrivKeyBase58Check,
+			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 		},
 	}
 
@@ -1934,21 +1930,21 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 			signType:                  ECDSA,
 			transactionSpendingLimit:  transactionSpendingLimit,
 			expectedError:             RuleErrorInvalidTransactionSignature,
-			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t),
+			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 		},
 		{
 
 			signType:                  STANDARD_DER,
 			transactionSpendingLimit:  transactionSpendingLimit,
 			expectedError:             RuleErrorDerivedKeyNotAuthorized,
-			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t),
+			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 		},
 		// Test case 5
 		{
 			signType:                  DESO_DER,
 			transactionSpendingLimit:  transactionSpendingLimit,
 			expectedError:             RuleErrorDerivedKeyNotAuthorized,
-			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t),
+			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 		},
 		// Third scenario, there exists an authorize derived key entry
 		// and we're signing a basic transfer.
@@ -1970,7 +1966,7 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 		},
 		// Test case 8
 		{
-			signType:                  DESO_DER,
+			signType:                  ECDSA,
 			transactionSpendingLimit:  transactionSpendingLimit,
 			signaturePrivateKeyBase58: derivedPrivBase58CheckWithEntry,
 			expectedError:             RuleErrorInvalidTransactionSignature,
@@ -1981,7 +1977,7 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 
 			signType:                  ECDSA,
 			transactionSpendingLimit:  transactionSpendingLimit,
-			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t),
+			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 			expectedError:             RuleErrorInvalidTransactionSignature,
 		},
 		// Test case 10
@@ -1989,14 +1985,14 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 
 			signType:                  STANDARD_DER,
 			transactionSpendingLimit:  transactionSpendingLimit,
-			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t),
+			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 			expectedError:             RuleErrorDerivedKeyNotAuthorized,
 		},
 		// Test case 11
 		{
 			signType:                  DESO_DER,
 			transactionSpendingLimit:  transactionSpendingLimit,
-			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t),
+			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 			expectedError:             RuleErrorDerivedKeyNotAuthorized,
 		},
 	}
