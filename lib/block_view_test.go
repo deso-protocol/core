@@ -2034,50 +2034,16 @@ func TestBasicTransferSignatures(t *testing.T) {
 	_ = tb.db
 
 	senderPkBytes := ProcessKeyBytes(t, senderPkString)
-	senderPrivBytes := ProcessKeyBytes(t, senderPrivString)
-
-	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
-
 	recipientPkBytes := ProcessKeyBytes(t, recipientPkString)
 
 	tb.mineBlock()
 	tb.mineBlock()
-	// Construct an unsigned basic transfer transaction.
-	createTransaction := func() *MsgDeSoTxn {
-		txn := &MsgDeSoTxn{
-			// The inputs will be set below.
-			TxInputs: []*DeSoInput{},
-			TxOutputs: []*DeSoOutput{
-				{
-					PublicKey:   recipientPkBytes,
-					AmountNanos: 1,
-				},
-			},
-			PublicKey: senderPkBytes,
-			TxnMeta:   &BasicTransferMetadata{},
-		}
 
-		totalInput, spendAmount, changeAmount, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, mempool)
-		require.NoError(err)
-		require.Equal(totalInput, spendAmount+changeAmount+fees)
-		require.Greater(totalInput, uint64(0))
-		return txn
-	}
-
+	var allTxns []*MsgDeSoTxn
 	// Add a transaction to the mempool.
-	mempoolProcess := func(txn *MsgDeSoTxn) (_mempoolTxs []*MempoolTx, _err error) {
-		mempoolTxs, err := mempool.processTransaction(txn, true, true, 0, true)
-		if err != nil {
-			return nil, err
-		}
-		require.Equal(1, len(mempoolTxs))
-		return mempoolTxs, err
-	}
-
 	// Mine block with the latest mempool. Validate that the persisted transaction signatures match original transactions.
 	mineBlockAndVerifySignatures := func(allTxns []*MsgDeSoTxn) {
-		block, err := tb.miner.MineAndProcessSingleBlock(0, mempool)
+		block, err := tb.miner.MineAndProcessSingleBlock(0, tb.mempool)
 		blockHash, err := block.Hash()
 		require.NoError(err)
 		require.NoError(err)
@@ -2088,14 +2054,14 @@ func TestBasicTransferSignatures(t *testing.T) {
 			require.Equal(true, reflect.DeepEqual(transactionHash.ToBytes(), block.Txns[ii].Hash().ToBytes()))
 
 			// Now fetch all transactions from the db and verify their signatures have been properly persisted.
-			if postgres != nil {
-				pgTxn := postgres.GetTransactionByHash(transactionHash)
+			if tb.postgres != nil {
+				pgTxn := tb.postgres.GetTransactionByHash(transactionHash)
 				require.Equal(true, reflect.DeepEqual(txn.Signature.Sign.R.Bytes(), HashToBigint(pgTxn.R).Bytes()))
 				require.Equal(true, reflect.DeepEqual(txn.Signature.Sign.S.Bytes(), HashToBigint(pgTxn.S).Bytes()))
 				require.Equal(txn.Signature.RecoveryId, byte(pgTxn.RecoveryId))
 				require.Equal(txn.Signature.IsRecoverable, pgTxn.IsRecoverable)
 			} else {
-				dbBlock, err := GetBlock(blockHash, db, chain.Snapshot())
+				dbBlock, err := GetBlock(blockHash, tb.db, tb.chain.Snapshot())
 				require.NoError(err)
 				for _, blockTxn := range dbBlock.Txns {
 					if reflect.DeepEqual(transactionHash.ToBytes(), blockTxn.Hash().ToBytes()) {
@@ -2109,250 +2075,124 @@ func TestBasicTransferSignatures(t *testing.T) {
 		}
 	}
 
-	// This function will try all possible signature schemes (1), (2), (3) given signer's private key and transaction
-	// generator function createTransaction (BasicTransafer) or derivedKeyTransaction (AuthorizeDerivedKey). TestVector
-	// expresses our expectation as to the errors we are supposed to get when trying to process a transaction signed
-	// with each respective signature scheme.
-	mempoolProcessAllSignatureCombinations := func(
-		createTransaction func() *MsgDeSoTxn,
-		derivedKeyTransaction func(*TransactionSpendingLimit) (*MsgDeSoTxn, *btcec.PrivateKey),
-		signaturePrivateKeyBase58 string,
-		transactionSpendingLimit *TransactionSpendingLimit,
-	) []*MsgDeSoTxn {
-
-		var allTxns []*MsgDeSoTxn
-		processTxn := func(txn *MsgDeSoTxn) {
-			_, err := mempoolProcess(txn)
-			require.NoError(err)
-			allTxns = append(allTxns, txn)
-		}
-
-		if createTransaction != nil {
-			txn := createTransaction()
-			// Sign the transaction with the recipient's key rather than the sender's key.
-			_signTxn(t, txn, signaturePrivateKeyBase58)
-			processTxn(txn)
-
-			txn = createTransaction()
-			_signTxnWithDerivedKeyAndType(t, txn, signaturePrivateKeyBase58, 0)
-			processTxn(txn)
-
-			txn = createTransaction()
-			_signTxnWithDerivedKeyAndType(t, txn, signaturePrivateKeyBase58, 1)
-			processTxn(txn)
-		} else if derivedKeyTransaction != nil {
-			var signerPrivBase58 string
-			if signaturePrivateKeyBase58 != "" {
-				signerPrivBase58 = signaturePrivateKeyBase58
-			}
-
-			derivedKeyTxn, derivedPriv := doDerivedKeyTransaction(t, transactionSpendingLimit)
-			if signaturePrivateKeyBase58 == "" {
-				signerPrivBase58 = Base58CheckEncode(derivedPriv.Serialize(), true, params)
-			}
-			_signTxn(t, derivedKeyTxn, signerPrivBase58)
-			processTxn(derivedKeyTxn)
-
-			derivedKeyTxn, derivedPriv = doDerivedKeyTransaction(t, transactionSpendingLimit)
-			if signaturePrivateKeyBase58 == "" {
-				signerPrivBase58 = Base58CheckEncode(derivedPriv.Serialize(), true, params)
-			}
-			_signTxnWithDerivedKeyAndType(t, derivedKeyTxn, signerPrivBase58, 0)
-			processTxn(derivedKeyTxn)
-
-			derivedKeyTxn, derivedPriv = doDerivedKeyTransaction(t, transactionSpendingLimit)
-			if signaturePrivateKeyBase58 == "" {
-				signerPrivBase58 = Base58CheckEncode(derivedPriv.Serialize(), true, params)
-			}
-			_signTxnWithDerivedKeyAndType(t, derivedKeyTxn, signerPrivBase58, 1)
-			processTxn(derivedKeyTxn)
-		}
-		return allTxns
+	transactionSpendingLimitWithDerivedKeyEntry := &TransactionSpendingLimit{
+		GlobalDESOLimit:              100,
+		TransactionCountLimitMap:     map[TxnType]uint64{TxnTypeAuthorizeDerivedKey: 1, TxnTypeBasicTransfer: 2},
+		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
+		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 	}
 
-	// First scenario, just signing a basic transfer.
-	t.Run("sign_basic_transfer", func(t *testing.T) {
-		var allTxns []*MsgDeSoTxn
-		// Try signing the basic transfer with the owner's private key.
-		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
-			createTransaction,
-			nil,
-			senderPrivString,
-			nil,
-		)...)
+	dkTxn := derivedKeyTestTxn{
+		transactionSpendingLimit: transactionSpendingLimitWithDerivedKeyEntry,
+	}
 
-		mineBlockAndVerifySignatures(allTxns)
-	})
+	derivedKeyTxn := dkTxn.generateTxn(t)
 
-	// Second scenario, authorize derived key transaction.
+	derivedPrivBase58CheckWithEntry := Base58CheckEncode(dkTxn.getDerivedPrivKey(t).Serialize(), true, tb.params)
+	signTransaction(t, derivedKeyTxn, ECDSA, senderPrivString)
+	_, err := tb.mempoolProcessTransaction(derivedKeyTxn)
+	require.NoError(err)
 
-	t.Run("sign_autorize_derive_key_txn", func(t *testing.T) {
-		var allTxns []*MsgDeSoTxn
-		transactionSpendingLimit := &TransactionSpendingLimit{
-			GlobalDESOLimit:              100,
-			TransactionCountLimitMap:     make(map[TxnType]uint64),
-			CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
-			DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
-			NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
-		}
-		transactionSpendingLimit.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
-
-		// First try signing the authorize derived key transaction with the derived key itself.
-		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
-			nil,
-			doDerivedKeyTransaction,
-			"",
-			transactionSpendingLimit,
-		)...)
-
-		// Now try signing the authorize derived key transaction with the sender's private key.
-		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
-			nil,
-			doDerivedKeyTransaction,
-			senderPrivString,
-			transactionSpendingLimit,
-		)...)
-
-		// Finally try a random private key.
-		randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
-		require.NoError(err)
-		randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
-		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
-			nil,
-			doDerivedKeyTransaction,
-			randomPrivKeyBase58Check,
-			transactionSpendingLimit,
-		)...)
-
-		mineBlockAndVerifySignatures(allTxns)
-	})
-
-	// Third scenario, there exists an authorize derived key entry and we're signing a basic transfer.
-	t.Run("sign_derived_key_basic_transfer", func(t *testing.T) {
-		var allTxns []*MsgDeSoTxn
-		transactionSpendingLimit := &TransactionSpendingLimit{
-			GlobalDESOLimit:              100,
-			TransactionCountLimitMap:     make(map[TxnType]uint64),
-			CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
-			DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
-			NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
-		}
-		transactionSpendingLimit.TransactionCountLimitMap[TxnTypeBasicTransfer] = 2
-		transactionSpendingLimit.TransactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
-
-		// First authorize the derived key.
-		derivedKeyTxn, derivedPriv := doDerivedKeyTransaction(transactionSpendingLimit)
-		derivedPrivBase58Check := Base58CheckEncode(derivedPriv.Serialize(), true, params)
-		_signTxn(t, derivedKeyTxn, senderPrivString)
-		allTxns = append(allTxns, derivedKeyTxn)
-		_, err = mempoolProcess(derivedKeyTxn)
-		require.NoError(err)
-
-		// Sign the basic transfer with the sender's private key.
-		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
-			createTransaction,
-			nil,
-			senderPrivString,
-			nil,
-		)...)
-
-		// Sign the basic transfer with the derived key.
-		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
-			createTransaction,
-			nil,
-			derivedPrivBase58Check,
-			nil,
-		)...)
-
-		randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
-		require.NoError(err)
-		randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
-
-		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
-			createTransaction,
-			nil,
-			randomPrivKeyBase58Check,
-			nil,
-		)...)
-
-		testCases := []struct {
-			transactionGen   testTxn
-			signType         signatureType
-			signingKeyBase58 string
-		}{
-			{
-				transactionGen: basicTestTxn{
-					senderPublicKeyBytes:   senderPkBytes,
-					receiverPublicKeyBytes: recipientPkBytes,
-					amountNanos:            1,
-				},
-				signType:         ECDSA,
-				signingKeyBase58: senderPrivString,
+	testCases := []struct {
+		transactionGen   testTxn
+		signType         signatureType
+		signingKeyBase58 string
+	}{
+		{
+			transactionGen: basicTestTxn{
+				senderPublicKeyBytes:   senderPkBytes,
+				receiverPublicKeyBytes: recipientPkBytes,
+				amountNanos:            1,
 			},
-			{
-				transactionGen: derivedKeyTestTxn{
-					transactionSpendingLimit: &TransactionSpendingLimit{
-						GlobalDESOLimit:              100,
-						TransactionCountLimitMap:     map[TxnType]uint64{TxnTypeAuthorizeDerivedKey: 1},
-						CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
-						DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
-						NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
-					},
+			signType:         ECDSA,
+			signingKeyBase58: senderPrivString,
+		},
+		{
+			transactionGen: derivedKeyTestTxn{
+				transactionSpendingLimit: &TransactionSpendingLimit{
+					GlobalDESOLimit:              100,
+					TransactionCountLimitMap:     map[TxnType]uint64{TxnTypeAuthorizeDerivedKey: 1},
+					CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
+					DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+					NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 				},
-				signType:         STANDARD_DER,
-				signingKeyBase58: "",
 			},
-			{
-				transactionGen: derivedKeyTestTxn{
-					transactionSpendingLimit: &TransactionSpendingLimit{
-						GlobalDESOLimit:              100,
-						TransactionCountLimitMap:     map[TxnType]uint64{TxnTypeAuthorizeDerivedKey: 1},
-						CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
-						DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
-						NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
-					},
+			signType:         STANDARD_DER,
+			signingKeyBase58: "",
+		},
+		{
+			transactionGen: derivedKeyTestTxn{
+				transactionSpendingLimit: &TransactionSpendingLimit{
+					GlobalDESOLimit:              100,
+					TransactionCountLimitMap:     map[TxnType]uint64{TxnTypeAuthorizeDerivedKey: 1},
+					CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
+					DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+					NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 				},
-				signType:         DESO_DER,
-				signingKeyBase58: "",
 			},
-			{
-				transactionGen: derivedKeyTestTxn{
-					transactionSpendingLimit: &TransactionSpendingLimit{
-						GlobalDESOLimit:              100,
-						TransactionCountLimitMap:     map[TxnType]uint64{TxnTypeAuthorizeDerivedKey: 1},
-						CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
-						DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
-						NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
-					},
+			signType:         DESO_DER,
+			signingKeyBase58: "",
+		},
+		{
+			transactionGen: derivedKeyTestTxn{
+				transactionSpendingLimit: &TransactionSpendingLimit{
+					GlobalDESOLimit:              100,
+					TransactionCountLimitMap:     map[TxnType]uint64{TxnTypeAuthorizeDerivedKey: 1},
+					CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
+					DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
+					NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 				},
-				signType:         ECDSA,
-				signingKeyBase58: senderPrivString,
 			},
-		}
+			signType:         ECDSA,
+			signingKeyBase58: senderPrivString,
+		},
 
-		var signingKeyBase58 string
-		// Go through the test cases, add and process the transaction to the mempool
-		for i := 0; i < len(testCases); i++ {
-			tc := testCases[i]
-			txn := tc.transactionGen.generateTxn()
+		{
+			transactionGen: derivedKeyTestTxn{
+				transactionSpendingLimit: nil,
+			},
+			signType:         ECDSA,
+			signingKeyBase58: senderPrivString,
+		},
+		{
+			transactionGen: derivedKeyTestTxn{
+				transactionSpendingLimit: nil,
+			},
+			signType:         STANDARD_DER,
+			signingKeyBase58: derivedPrivBase58CheckWithEntry,
+		},
+		{
+			transactionGen: derivedKeyTestTxn{
+				transactionSpendingLimit: nil,
+			},
+			signType:         DESO_DER,
+			signingKeyBase58: derivedPrivBase58CheckWithEntry,
+		},
+	}
 
-			switch v := tc.transactionGen.(type) {
-			case basicTestTxn:
+	var signingKeyBase58 string
+	// Go through the test cases, add and process the transaction to the mempool
+	for i := 0; i < len(testCases); i++ {
+		tc := testCases[i]
+		txn := tc.transactionGen.generateTxn()
+
+		switch v := tc.transactionGen.(type) {
+		case basicTestTxn:
+			signingKeyBase58 = tc.signingKeyBase58
+			tb.addTxnInputs(txn)
+		case derivedKeyTestTxn:
+			derivedKey := v.getDerivedPrivKey(t)
+			if tc.signingKeyBase58 == "" {
+				signingKeyBase58 = Base58CheckEncode(derivedKey.Serialize(), true, tb.params)
+			} else {
 				signingKeyBase58 = tc.signingKeyBase58
-				tb.addTxnInputs(txn)
-			case derivedKeyTestTxn:
-				derivedKey := v.getDerivedPrivKey(t)
-				if tc.signingKeyBase58 == "" {
-					signingKeyBase58 = Base58CheckEncode(derivedKey.Serialize(), true, tb.params)
-				} else {
-					signingKeyBase58 = tc.signingKeyBase58
-				}
 			}
-			signTransaction(tb.t, txn, tc.signType, signingKeyBase58)
-			tb.mempoolProcessTransaction(txn)
-			allTxns = append(allTxns, txn)
 		}
-		// Mine and verify the blocks processed in mempool
-		mineBlockAndVerifySignatures(allTxns)
-	})
+		signTransaction(tb.t, txn, tc.signType, signingKeyBase58)
+		tb.mempoolProcessTransaction(txn)
+		allTxns = append(allTxns, txn)
+	}
+	// Mine and verify the blocks processed in mempool
+	mineBlockAndVerifySignatures(allTxns)
 }
