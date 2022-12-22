@@ -2045,6 +2045,7 @@ func _submitAssociationTxn(
 		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateDeleteUserAssociationTxn(
 			updaterPkBytes,
 			inputTxn.TxnMeta.(*DeleteUserAssociationMetadata),
+			inputTxn.ExtraData,
 			testMeta.feeRateNanosPerKb,
 			testMeta.mempool,
 			[]*DeSoOutput{},
@@ -2062,6 +2063,7 @@ func _submitAssociationTxn(
 		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateDeletePostAssociationTxn(
 			updaterPkBytes,
 			inputTxn.TxnMeta.(*DeletePostAssociationMetadata),
+			inputTxn.ExtraData,
 			testMeta.feeRateNanosPerKb,
 			testMeta.mempool,
 			[]*DeSoOutput{},
@@ -2251,6 +2253,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			txn, _, _, _, err = testMeta.chain.CreateDeleteUserAssociationTxn(
 				transactorPkBytes,
 				inputTxn.TxnMeta.(*DeleteUserAssociationMetadata),
+				make(map[string][]byte),
 				testMeta.feeRateNanosPerKb,
 				mempool,
 				[]*DeSoOutput{},
