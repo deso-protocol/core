@@ -3932,11 +3932,11 @@ func (postgres *Postgres) GetAllUserDmThreads(userAccessGroupOwnerPublicKey Publ
 	return dmThreadKeys, nil
 }
 
-func (postgres *Postgres) CheckGroupChatThreadExistence(groupKey AccessGroupId) *GroupChatThreadExistence {
+func (postgres *Postgres) CheckGroupChatThreadExistence(groupChatThread AccessGroupId) *GroupChatThreadExistence {
 
 	newMessageGroupChatThreadEntry := &PGNewMessageGroupChatThreadEntry{
-		AccessGroupOwnerPublicKey: &groupKey.AccessGroupOwnerPublicKey,
-		AccessGroupKeyName:        &groupKey.AccessGroupKeyName,
+		AccessGroupOwnerPublicKey: &groupChatThread.AccessGroupOwnerPublicKey,
+		AccessGroupKeyName:        &groupChatThread.AccessGroupKeyName,
 	}
 	err := postgres.db.Model(newMessageGroupChatThreadEntry).WherePK().First()
 	if err != nil {
@@ -3944,6 +3944,28 @@ func (postgres *Postgres) CheckGroupChatThreadExistence(groupKey AccessGroupId) 
 	}
 	groupChatThreadExist := MakeGroupChatThreadExistence()
 	return &groupChatThreadExist
+}
+
+func (postgres *Postgres) GetPaginatedMessageEntriesForGroupChatThread(groupChatThread AccessGroupId, startingTimestamp uint64,
+	maxMessagesToFetch uint64) (_messageEntries []*NewMessageEntry, _err error) {
+
+	var pgNewMessageGroupChatEntries []*PGNewMessageGroupChatEntry
+	var newMessageEntries []*NewMessageEntry
+
+	err := postgres.db.Model(&pgNewMessageGroupChatEntries).
+		Where("access_group_owner_public_key = ?", groupChatThread.AccessGroupOwnerPublicKey).
+		Where("access_group_key_name = ?", groupChatThread.AccessGroupKeyName).
+		Order("timestamp_nanos DSC").
+		Limit(int(maxMessagesToFetch)).
+		Select()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, pgNewMessageEntry := range pgNewMessageGroupChatEntries {
+		newMessageEntries = append(newMessageEntries, pgNewMessageEntry.ToNewMessageEntry())
+	}
+	return newMessageEntries, nil
 }
 
 //

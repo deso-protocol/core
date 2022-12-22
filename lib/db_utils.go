@@ -1779,10 +1779,10 @@ func _dbKeyForGroupChatMessagesIndex(key GroupChatMessageKey) []byte {
 	return prefixCopy
 }
 
-func _dbSeekPrefixForGroupChatMessagesIndex(key GroupChatMessageKey) []byte {
+func _dbSeekPrefixForGroupChatMessagesIndex(groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixGroupChatMessagesIndex...)
-	prefixCopy = append(prefixCopy, key.GroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.GroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, groupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, groupKeyName.ToBytes()...)
 	return prefixCopy
 }
 
@@ -1817,6 +1817,76 @@ func DBGetGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key Grou
 	}
 
 	return messagingIndex, nil
+}
+
+func DBGetPaginatedGroupChatMessageEntry(handle *badger.DB, snap *Snapshot,
+	groupChatThreadKey AccessGroupId, startingTimestamp uint64, maxMessagesToFetch uint64) (
+	_messageEntries []*NewMessageEntry, _err error) {
+
+	var err error
+	var messageEntries []*NewMessageEntry
+	err = handle.View(func(txn *badger.Txn) error {
+		messageEntries, err = DBGetPaginatedGroupChatMessageEntryWithTxn(
+			txn, snap, groupChatThreadKey, startingTimestamp, maxMessagesToFetch)
+		return err
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetPaginatedGroupChagMessageEntry: "+
+			"Problem getting paginated group chat messages with group chat thread key (%v), starting timestamp (%v), "+
+			"maxMessagesToFetch (%v)", groupChatThreadKey, startingTimestamp, maxMessagesToFetch)
+	}
+	return messageEntries, nil
+}
+
+func DBGetPaginatedGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
+	groupChatThreadKey AccessGroupId, startingTimestamp uint64, maxMessagesToFetch uint64) (
+	_messageEntries []*NewMessageEntry, _err error) {
+
+	var messageEntries []*NewMessageEntry
+	// Construct the seek key given the group chat thread and the starting timestamp.
+	prefix := _dbSeekPrefixForGroupChatMessagesIndex(
+		groupChatThreadKey.AccessGroupOwnerPublicKey, groupChatThreadKey.AccessGroupKeyName)
+	startKey := append(prefix, EncodeUint64(startingTimestamp)...)
+
+	// Now fetch the messages from the db.
+	keysFound, valsFound, err := _enumerateLimitedKeysReversedForPrefixAndStartingKeyWithTxn(
+		txn, prefix, startKey, maxMessagesToFetch)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetPaginatedGroupChatMessageEntryWithTxn: Problem getting group chat messages index")
+	}
+
+	// Sanity-check that we don't return the starting key.
+	if len(keysFound) > 0 && bytes.Equal(startKey, keysFound[0]) {
+		// We will fetch one more key after the last key found and append it to the list of the keys found, with the first element removed.
+		additionalKeys, additionalVals, err := _enumerateLimitedKeysReversedForPrefixAndStartingKeyWithTxn(
+			txn, prefix, keysFound[len(keysFound)-1], 2)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetPaginatedGroupChatMessageEntryWithTxn: Problem getting group chat messages index")
+		}
+		keysFound = append(keysFound[1:], additionalKeys[1:]...)
+		valsFound = append(valsFound[1:], additionalVals[1:]...)
+	}
+
+	// Turn all fetched values into new message entries.
+	for ii, val := range valsFound {
+		groupChatMessage := &NewMessageEntry{}
+		rr := bytes.NewReader(val)
+		if exists, err := DecodeFromBytes(groupChatMessage, rr); !exists || err != nil {
+			return nil, errors.Wrapf(err, "DBGetPaginatedGroupChatMessageEntryWithTxn: "+
+				"Problem decoding group chat messages index with key: %v and value: %v", keysFound[ii], val)
+		}
+		messageEntries = append(messageEntries, groupChatMessage)
+	}
+
+	// Sanity-check that the keys are sorted.
+	for ii := 1; ii < len(messageEntries); ii++ {
+		if messageEntries[ii-1].TimestampNanos < messageEntries[ii].TimestampNanos {
+			return nil, fmt.Errorf("DBGetPaginatedGroupChatMessageEntryWithTxn: "+
+				"Keys are not sorted in descending order: %v, %v", messageEntries[ii-1], messageEntries[ii])
+		}
+	}
+
+	return messageEntries, nil
 }
 
 func DBPutGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,

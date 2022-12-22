@@ -1269,6 +1269,7 @@ const (
 	MaxAccessGroupKeyNameCharacters = 32
 	// Access group enumeration max recursion depth.
 	MaxAccessGroupMemberEnumerationRecursionDepth = 10
-	// Dm message entries paginated fetch max recursion depth
-	MaxDmMessageRecursionDepth = 10
+	// Dm and group chat message entries paginated fetch max recursion depth
+	MaxDmMessageRecursionDepth        = 10
+	MaxGroupChatMessageRecursionDepth = 10
 )

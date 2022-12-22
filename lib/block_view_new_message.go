@@ -30,6 +30,138 @@ func (bav *UtxoView) getGroupChatMessagesIndex(groupChatMessageKey GroupChatMess
 	return dbMessageEntry, nil
 }
 
+func (bav *UtxoView) GetPaginatedMessageEntriesForGroupChatThread(groupChatThread AccessGroupId, startingTimestamp uint64,
+	maxMessagesToFetch uint64) (_messageEntries []*NewMessageEntry, _err error) {
+
+	return bav._getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(groupChatThread, startingTimestamp,
+		maxMessagesToFetch, MaxGroupChatMessageRecursionDepth)
+}
+
+func (bav *UtxoView) _getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(groupChatThread AccessGroupId,
+	startingTimestamp uint64, maxMessagesToFetch uint64, maxDepth uint32) (_messageEntries []*NewMessageEntry, _err error) {
+
+	if maxMessagesToFetch == 0 {
+		return nil, nil
+	}
+	// This function can make recursive calls to itself. We use a depth counter to prevent infinite recursion
+	// (which shouldn't happen anyway, but better safe than sorry, right?).
+	if maxDepth == 0 {
+		return nil, errors.Wrapf(RuleErrorNewMessageGetGroupMessagesRecursionLimit,
+			"_getPaginatedMessageEntriesForGroupChatThreadRecursionSafe: maxDepth == 0")
+	}
+
+	// Fetch the message entries from db.
+	dbAdapter := bav.GetDbAdapter()
+	dbMessageEntries, err := dbAdapter.GetPaginatedMessageEntriesForGroupChatThread(groupChatThread, startingTimestamp, maxMessagesToFetch)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_getPaginatedMessageEntriesForGroupChatThreadRecursionSafe: "+
+			"Problem gettign message entries from db for groupChatThread (%v), startingTimestamp (%v), maxMessagesToFetch (%v)",
+			groupChatThread, startingTimestamp, maxMessagesToFetch)
+	}
+
+	// We define a predicate that check whether we fetched maximum number of message entries. We might drop some entries later
+	// when we combine the db message entries with the ones fetched from the UtxoView.
+	isListFilled := uint64(len(dbMessageEntries)) >= maxMessagesToFetch
+	var lastKnownDbTimestamp uint64
+	if len(dbMessageEntries) > 0 {
+		lastKnownDbTimestamp = dbMessageEntries[len(dbMessageEntries)-1].TimestampNanos
+	}
+
+	// Finally, there is a possibility that there have been additional messages send during the current block,
+	// and we need to make sure we include them in the list of messages we return. We do this by iterating over all
+	// the members in the current UtxoView and inserting them into the list of members we return.
+	existingMessagesMap := make(map[AccessGroupId]*NewMessageEntry)
+	for _, message := range dbMessageEntries {
+		messageKey := NewAccessGroupId(message.RecipientAccessGroupOwnerPublicKey, message.RecipientAccessGroupKeyName.ToBytes())
+		messageCopy := *message
+		existingMessagesMap[*messageKey] = &messageCopy
+	}
+
+	filteredUtxoViewMessages := make(map[AccessGroupId]*NewMessageEntry)
+	for messageKeyIter, messageEntryIter := range bav.GroupChatMessagesIndex {
+
+		// Make sure the utxoView message matches our current thread.
+		isValidThread := bytes.Equal(messageKeyIter.GroupOwnerPublicKey.ToBytes(), groupChatThread.AccessGroupOwnerPublicKey.ToBytes()) &&
+			bytes.Equal(messageKeyIter.GroupKeyName.ToBytes(), groupChatThread.AccessGroupKeyName.ToBytes())
+		if !isValidThread {
+			continue
+		}
+
+		// Make sure the message has a timestamp that is smaller than our starting timestamp.
+		isValidTimestamp := startingTimestamp >= messageKeyIter.TimestampNanos
+		if !isValidTimestamp {
+			continue
+		}
+
+		// In case we already fetched the maximum number of messages, we just need to check whether the current message
+		// timestamp is greater or equal to the last message we fetched from the DB. If it isn't, we can skip. The reason is that
+		// if we added a message with smaller timestamp, there is a chance there might be some messages with smaller
+		// timestamp still present in the db, which we shouldn't skip.
+		var isGreaterOrEqualThanEndTimestamp bool
+		if isListFilled {
+			isGreaterOrEqualThanEndTimestamp = messageKeyIter.TimestampNanos >= lastKnownDbTimestamp
+			if !isGreaterOrEqualThanEndTimestamp {
+				continue
+			}
+		}
+
+		messageEntry := *messageEntryIter
+		groupOwnerPublicKey := messageKeyIter.GroupOwnerPublicKey
+		messageKey := NewAccessGroupId(&groupOwnerPublicKey, messageKeyIter.GroupKeyName.ToBytes())
+		filteredUtxoViewMessages[*messageKey] = &messageEntry
+	}
+
+	finalMessageEntries := []*NewMessageEntry{}
+	for messageKeyIter, messageEntryIter := range existingMessagesMap {
+		copyMessageEntry := *messageEntryIter
+		if utxoMessage, exists := filteredUtxoViewMessages[messageKeyIter]; exists {
+			if utxoMessage.isDeleted {
+				continue
+			} else {
+				copyMessageEntry = *utxoMessage
+			}
+		}
+		finalMessageEntries = append(finalMessageEntries, &copyMessageEntry)
+	}
+	for utxoMessageKeyIter, utxoMessageEntry := range filteredUtxoViewMessages {
+		if _, exists := existingMessagesMap[utxoMessageKeyIter]; exists {
+			continue
+		}
+		if utxoMessageEntry.isDeleted {
+			continue
+		}
+		copyUtxoMessage := *utxoMessageEntry
+		finalMessageEntries = append(finalMessageEntries, &copyUtxoMessage)
+	}
+	sort.Slice(finalMessageEntries, func(ii, jj int) bool {
+		return finalMessageEntries[ii].TimestampNanos < finalMessageEntries[jj].TimestampNanos
+	})
+
+	// After iterating over all the messages in the current UtxoView, there is a possibility that we now have less messages
+	// than the maxMessagesToFetch, due to deleted messages. In this case, we need to fetch more members from the DB,
+	// which we will do with the magic of recursion.
+	if isListFilled && len(finalMessageEntries) < int(maxMessagesToFetch) &&
+		lastKnownDbTimestamp > startingTimestamp {
+
+		// Note this recursive call will never lead to an infinite loop because the startingTimestamp
+		// will be growing with each recursive call, and because we are checking for isListFilled with
+		// maxMessagesToFetch > 0. But just in case we add a sanity-check parameter maxDepth to break long recursive calls.
+		remainingMessages, err := bav._getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(
+			groupChatThread, lastKnownDbTimestamp, maxMessagesToFetch-uint64(len(finalMessageEntries)), maxDepth-1)
+		if err != nil {
+			return nil, errors.Wrapf(err, "_getPaginatedMessageEntriesForGroupChatThreadRecursionSafe: "+
+				"Problem getting recursion message entries for the next message with "+
+				"groupChatThread (%v), startingTimestamp (%v)", groupChatThread, startingTimestamp)
+		}
+		finalMessageEntries = append(finalMessageEntries, remainingMessages...)
+	}
+
+	if len(finalMessageEntries) > int(maxMessagesToFetch) {
+		finalMessageEntries = finalMessageEntries[:maxMessagesToFetch]
+	}
+	return finalMessageEntries, nil
+}
+
 func (bav *UtxoView) setGroupChatMessagesIndex(messageEntry *NewMessageEntry) error {
 	if messageEntry == nil {
 		return fmt.Errorf("setGroupChatMessagesIndex: called with nil messageEntry")

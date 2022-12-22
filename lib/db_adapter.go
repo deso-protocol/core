@@ -368,3 +368,19 @@ func (adapter *DbAdapter) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmTh
 			dmThreadKey, startingTimestamp, maxMessagesToFetch)
 	}
 }
+
+func (adapter *DbAdapter) GetPaginatedMessageEntriesForGroupChatThread(groupChatThread AccessGroupId, startingTimestamp uint64,
+	maxMessagesToFetch uint64) (_messageEntries []*NewMessageEntry, _err error) {
+
+	if maxMessagesToFetch == 0 {
+		return nil, nil
+	}
+
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetPaginatedMessageEntriesForGroupChatThread(
+			groupChatThread, startingTimestamp, maxMessagesToFetch)
+	} else {
+		return DBGetPaginatedGroupChatMessageEntry(adapter.badgerDb, adapter.snapshot,
+			groupChatThread, startingTimestamp, maxMessagesToFetch)
+	}
+}
