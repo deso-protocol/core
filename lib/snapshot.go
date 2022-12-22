@@ -73,15 +73,15 @@ var (
 // So, in order to allow nodes to reliably and robustly download the full db state from one
 // another, we created the concept of a "snapshot." This works as follows:
 //
-//  1. Ever 1,000 blocks, nodes will save a "snapshot" of the current DB state, and keep it
-//     around. Imagine, for now, that this snapshot is just a FULL COPY of the db state at
-//     each 1,000 block interval...
+//  1. Ever 1,000 blocks, or every "snapshot epoch", nodes will save a "snapshot" of the current
+//     DB state, and keep it around. Imagine, for now, that this snapshot is just a FULL COPY of
+//     the db state at each 1,000 block interval...
 //
 //  2. Whenever one node wants to hypersync from another node, it downloads this snapshot,
-//     which should remain static for about a thousand blocks or so. Then, once the node has
-//     successfully synced the snapshot, it can download the blocks from the snapshot height,
-//     which remember is a multiple of 1,000, up to the tip and just apply them like normal
-//     block sync.
+//     which should remain static throughout the snapshot epoch, for about a thousand blocks or so.
+//     Then, once the node has successfully synced the snapshot, it can download the blocks from
+//     the snapshot height, which remember is a multiple of 1,000, up to the tip and just apply
+//     them like normal block sync.
 //
 // This process is *much* faster than applying all blocks from the beginning of time because
 // we don't need to validate transactions when downloading a snapshot *and* because a lot of
@@ -109,8 +109,12 @@ var (
 //     the key-value (K1 -> V1) exists at the snapshot height, and then we modify it in
 //     the main DB to (K1 -> V2) at some block *after* the snapshot. In that case, the
 //     Ancestral Records DB would contain (K1 -> V1), i.e. the old value corresponding to
-//     K1. And if we were to *delete* a key-value pair from the main DB, then the Ancestral
-//     record would represent this too as basically (K1 -> x).
+//     K1. And if we were to *add* a new key-value pair (Knew -> Vnew) to the main DB,
+//     Ancestral Records would indicate that this record hasn't existed before by storing
+//     a special (Knew -> X) record, where X is a fixed value telling us that 'Knew' didn't
+//     exist at the snapshot. Finally, when we *delete* a key-value pair (K1 -> V1) from the
+//     main DB, then the Ancestral Records would represent this as basically (K1 -> V1),
+//     since that's the old value -- so identically to how we handled record modifications.
 //
 // The key thing to understand is that if you take the MainDB and "merge" it with the
 // Ancestral Records DB, modifying and deleting keys accordingly, then you can compute
@@ -177,7 +181,7 @@ var (
 //     *BROKEN* and needs to be recomputed from scratch. Right now, the only way to do this is to
 //     roll back the blocks to the snapshot height and re-apply them, which is not a robust process.
 //
-// I want to personally apologize for the complexity around the MainDBSempahore and the
+// I want to personally apologize for the complexity around the MainDBSemaphore and the
 // AncestralDBSemaphore. It's all in the name of making the snapshot flushing capable of operating
 // fully in parallel with the "main" consensus thread, without slowing it down. In hindsight, it may
 // have been worth side-stepping this complexity in favor of a slower and atomic flow, whereby we
@@ -185,6 +189,7 @@ var (
 // allowing forward progress. Doing it this way would also have avoided situations in which a
 // snapshot can break, thus eliminating any reliance on block disconnecting in our codebase.
 // But we live and learn.
+//  ---@petern: Fear not the complexity. Embrace it, and the parity semaphores will love you back.
 //
 // In addition to all of the above, there is one more cool thing that a snapshot does, which is that
 // it keeps track of an "online" checksum of all keys and values in the snapshot. This is done using
@@ -1912,10 +1917,14 @@ type SnapshotOperationChannel struct {
 	OperationChannel chan *SnapshotOperation
 
 	// Every time we enqueue a snapshot operation, this semaphore is incremented in
-	// order to indicate how many operations we have yet to process. When this value
-	// hits zero, it means we've finished processing all snapshot operations.
+	// order to indicate how many operations we have yet to process. When an operation
+	// is dequeued, this semaphore is decremented. When the semaphore value hits zero,
+	// it means we've finished processing all snapshot operations.
 	//
-	// TODO: Is this redundant? It feels like IsFlushing() already covers this case.
+	// Note that this semaphore keeps track of snapshot operations, which include
+	// but are not limited to ancestral record flushes. As such it is different
+	// from the MainDBSemaphore and the AncestralDBSemaphore which manage concurrency
+	// around flushes only.
 	StateSemaphore     int32
 	StateSemaphoreLock sync.Mutex
 
