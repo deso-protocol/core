@@ -3869,7 +3869,7 @@ func (postgres *Postgres) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmTh
 		Where("minor_access_group_key_name = ?", dmMessageKey.MinorGroupKeyName).
 		Where("major_access_group_owner_public_key = ?", dmMessageKey.MajorGroupOwnerPublicKey).
 		Where("major_access_group_key_name = ?", dmMessageKey.MajorGroupKeyName).
-		Order("timestamp_nanos DSC").
+		Order("timestamp_nanos DESC").
 		Limit(int(maxMessagesToFetch)).
 		Select()
 	if err != nil {
@@ -3955,7 +3955,7 @@ func (postgres *Postgres) GetPaginatedMessageEntriesForGroupChatThread(groupChat
 	err := postgres.db.Model(&pgNewMessageGroupChatEntries).
 		Where("access_group_owner_public_key = ?", groupChatThread.AccessGroupOwnerPublicKey).
 		Where("access_group_key_name = ?", groupChatThread.AccessGroupKeyName).
-		Order("timestamp_nanos DSC").
+		Order("timestamp_nanos DESC").
 		Limit(int(maxMessagesToFetch)).
 		Select()
 	if err != nil {

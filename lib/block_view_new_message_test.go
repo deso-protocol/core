@@ -5,6 +5,8 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+	"math"
+	"sort"
 	"testing"
 )
 
@@ -96,24 +98,21 @@ func TestNewMessage(t *testing.T) {
 	groupNameBytes1 := []byte("group1")
 	groupName1 := NewGroupKeyName(groupNameBytes1)
 
+	tv1MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
+		*m1PublicKey, *BaseGroupKeyName(), *m1PublicKey, []byte{1, 2, 3}, 1, nil)
 	tv1 := _createNewMessageTestVector("TEST 1: (FAIL) Try connecting new message create transaction for a DM "+
 		"sent from (m0, baseGroup) to (m1, baseGroup) before fork height", m0Priv, m0PubBytes,
-		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, *m1PublicKey, *BaseGroupKeyName(), *m1PublicKey,
-		[]byte{1, 2, 3}, 1, NewMessageTypeDm, NewMessageOperationCreate, nil,
+		tv1MessageEntry, NewMessageTypeDm, NewMessageOperationCreate,
 		RuleErrorNewMessageBeforeDeSoAccessGroups)
 	tv1.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
 	}
 	// Send and update a dm message from (m0, baseGroup) to (m1, baseGroup)
+	tv2MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
+		*m1PublicKey, *BaseGroupKeyName(), *m1PublicKey, []byte{1, 2, 3}, 1, nil)
 	tv2 := _createNewMessageTestVector("TEST 2: (PASS) Try connecting new message create transaction for a DM "+
 		"sent from (m0, baseGroup) to (m1, baseGroup)", m0Priv, m0PubBytes,
-		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, *m1PublicKey, *BaseGroupKeyName(), *m1PublicKey,
-		[]byte{1, 2, 3}, 1, NewMessageTypeDm, NewMessageOperationCreate, nil,
-		nil)
-	updatedDmMessage := []byte("updated dm message")
-	updatedDmExtraData := map[string][]byte{
-		"some random value": []byte("even more random value"),
-	}
+		tv2MessageEntry, NewMessageTypeDm, NewMessageOperationCreate, nil)
 	groupIdM0B := *NewAccessGroupId(m0PublicKey, BaseGroupKeyName().ToBytes())
 	groupIdM1B := *NewAccessGroupId(m1PublicKey, BaseGroupKeyName().ToBytes())
 	dmM0BM1B := _createDmThreadKey(groupIdM0B, groupIdM1B)
@@ -121,17 +120,22 @@ func TestNewMessage(t *testing.T) {
 	tv2.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, dmThreads2)
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, dmThreads2)
+		_verifyDmMessageEntries(t, utxoView, dmM0BM1B, []*NewMessageEntry{tv2MessageEntry})
 	}
 	tv2.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, []*DmThreadKey{})
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, []*DmThreadKey{})
 	}
 
+	updatedDmMessage := []byte("updated dm message")
+	updatedDmExtraData := map[string][]byte{
+		"some random value": []byte("even more random value"),
+	}
+	tv3MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
+		*m1PublicKey, *BaseGroupKeyName(), *m1PublicKey, updatedDmMessage, 1, updatedDmExtraData)
 	tv3 := _createNewMessageTestVector("TEST 3: (PASS) Try connecting new message update transaction for a DM "+
 		"sent from (m0, baseGroup) to (m1, baseGroup)", m0Priv, m0PubBytes,
-		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, *m1PublicKey, *BaseGroupKeyName(), *m1PublicKey,
-		updatedDmMessage, 1, NewMessageTypeDm, NewMessageOperationUpdate, updatedDmExtraData,
-		nil)
+		tv3MessageEntry, NewMessageTypeDm, NewMessageOperationUpdate, nil)
 	dmThreads3 := dmThreads2
 	tv3.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, dmThreads3)
@@ -155,11 +159,11 @@ func TestNewMessage(t *testing.T) {
 		"(m1, groupName1) to add (m1, groupName1) as member", m1Priv, m1PubBytes, groupNameBytes1, tv5Members,
 		AccessGroupMemberOperationTypeAdd, nil)
 	// Send and update a group chat message from (m0, baseGroup) to (m1, groupName1)
+	tv6MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
+		*m1PublicKey, *groupName1, *m1PublicKey, []byte{4, 5, 6}, 2, nil)
 	tv6 := _createNewMessageTestVector("TEST 6: (PASS) Try connecting new message create transaction for a group chat "+
 		"sent from (m0, baseGroup) to (m1, groupName1)", m0Priv, m0PubBytes,
-		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, *m1PublicKey, *groupName1, *NewPublicKey(groupPk1),
-		[]byte{4, 5, 6}, 2, NewMessageTypeGroupChat, NewMessageOperationCreate, nil,
-		nil)
+		tv6MessageEntry, NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
 	groupChatThreads6 := []*AccessGroupId{groupM1N1}
 	_ = groupChatThreads6
 	tv6.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
@@ -173,11 +177,11 @@ func TestNewMessage(t *testing.T) {
 		"some random group value": []byte("we are what we repeatedly do. Excellence, then, is not an act but a habit " +
 			"- Aristotle & Durant"),
 	}
+	tv7MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
+		*m1PublicKey, *groupName1, *m1PublicKey, updateGroupMessage, 2, updateGroupExtraData)
 	tv7 := _createNewMessageTestVector("TEST 7: (PASS) Try connecting new message update transaction for a group chat "+
 		"sent from (m0, baseGroup) to (m1, groupName1)", m0Priv, m0PubBytes,
-		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, *m1PublicKey, *groupName1, *m1PublicKey,
-		updateGroupMessage, 2, NewMessageTypeGroupChat, NewMessageOperationUpdate, updateGroupExtraData,
-		nil)
+		tv7MessageEntry, NewMessageTypeGroupChat, NewMessageOperationUpdate, nil)
 	tv7.connectCallback = tv6.connectCallback
 	tv7.disconnectCallback = tv6.connectCallback
 	// TODO: Test owner sending group chat, test minor / major for the same public key.
@@ -198,21 +202,19 @@ func TestNewMessage(t *testing.T) {
 	tes.Run()
 }
 
-func _createNewMessageTestVector(id string, userPrivateKey string, userPublicKey []byte, senderAccessGroupOwnerPublicKey PublicKey,
-	senderAccessGroupKeyName GroupKeyName, senderAccessPublicKey PublicKey, recipientAccessGroupOwnerPublicKey PublicKey,
-	recipientAccessGroupKeyName GroupKeyName, recipientAccessPublicKey PublicKey, encryptedText []byte, timestampNanos uint64,
-	messageType NewMessageType, messageOperation NewMessageOperation, extraData map[string][]byte, expectedConnectError error) (
+func _createNewMessageTestVector(id string, userPrivateKey string, userPublicKey []byte, messageEntry *NewMessageEntry,
+	messageType NewMessageType, messageOperation NewMessageOperation, expectedConnectError error) (
 	_tv *transactionTestVector) {
 
 	txnMeta := NewMessageMetadata{
-		SenderAccessGroupOwnerPublicKey:    senderAccessGroupOwnerPublicKey,
-		SenderAccessGroupKeyName:           senderAccessGroupKeyName,
-		SenderAccessGroupPublicKey:         senderAccessPublicKey,
-		RecipientAccessGroupOwnerPublicKey: recipientAccessGroupOwnerPublicKey,
-		RecipientAccessGroupKeyName:        recipientAccessGroupKeyName,
-		RecipientAccessGroupPublicKey:      recipientAccessPublicKey,
-		EncryptedText:                      encryptedText,
-		TimestampNanos:                     timestampNanos,
+		SenderAccessGroupOwnerPublicKey:    *messageEntry.SenderAccessGroupOwnerPublicKey,
+		SenderAccessGroupKeyName:           *messageEntry.SenderAccessGroupKeyName,
+		SenderAccessGroupPublicKey:         *messageEntry.SenderAccessGroupPublicKey,
+		RecipientAccessGroupOwnerPublicKey: *messageEntry.RecipientAccessGroupOwnerPublicKey,
+		RecipientAccessGroupKeyName:        *messageEntry.RecipientAccessGroupKeyName,
+		RecipientAccessGroupPublicKey:      *messageEntry.RecipientAccessGroupPublicKey,
+		EncryptedText:                      messageEntry.EncryptedText,
+		TimestampNanos:                     messageEntry.TimestampNanos,
 		NewMessageType:                     messageType,
 		NewMessageOperation:                messageOperation,
 	}
@@ -220,7 +222,7 @@ func _createNewMessageTestVector(id string, userPrivateKey string, userPublicKey
 		userPrivateKey:       userPrivateKey,
 		userPublicKey:        userPublicKey,
 		expectedConnectError: expectedConnectError,
-		extraData:            extraData,
+		extraData:            messageEntry.ExtraData,
 		NewMessageMetadata:   txnMeta,
 	}
 	return &transactionTestVector{
@@ -415,6 +417,23 @@ func _createDmThreadKey(userAccessGroupId AccessGroupId, partyAccessGroupId Acce
 	}
 }
 
+func _createMessageEntry(senderAccessGroupOwnerPublicKey PublicKey, senderAccessGroupKeyName GroupKeyName,
+	senderAccessPublicKey PublicKey, recipientAccessGroupOwnerPublicKey PublicKey, recipientAccessGroupKeyName GroupKeyName,
+	recipientAccessPublicKey PublicKey, encryptedText []byte, timestampNanos uint64, extraData map[string][]byte) *NewMessageEntry {
+
+	return &NewMessageEntry{
+		SenderAccessGroupOwnerPublicKey:    &senderAccessGroupOwnerPublicKey,
+		SenderAccessGroupKeyName:           &senderAccessGroupKeyName,
+		SenderAccessGroupPublicKey:         &senderAccessPublicKey,
+		RecipientAccessGroupOwnerPublicKey: &recipientAccessGroupOwnerPublicKey,
+		RecipientAccessGroupKeyName:        &recipientAccessGroupKeyName,
+		RecipientAccessGroupPublicKey:      &recipientAccessPublicKey,
+		EncryptedText:                      encryptedText,
+		TimestampNanos:                     timestampNanos,
+		ExtraData:                          extraData,
+	}
+}
+
 func _verifyDmThreadKeysWithUtxoView(t *testing.T, utxoView *UtxoView, userAccessGroupOwnerPublicKey PublicKey,
 	expectedDmThreadKeys []*DmThreadKey) {
 
@@ -493,4 +512,30 @@ func _verifyGroupChatThreads(t *testing.T, groupChatThreads []*AccessGroupId, ex
 			t.Fatalf("Group chat thread %v does not exist in expected group chat threads", groupChatThread)
 		}
 	}
+}
+
+func _verifyDmMessageEntries(t *testing.T, utxoView *UtxoView, dmThreadKey DmThreadKey, expectedMessageEntries []*NewMessageEntry) {
+	require := require.New(t)
+	messageEntries, err := utxoView.GetPaginatedMessageEntriesForDmThread(dmThreadKey, math.MaxUint64, 100)
+	require.NoError(err)
+	require.Equal(len(expectedMessageEntries), len(messageEntries))
+	sort.Slice(expectedMessageEntries, func(ii, jj int) bool {
+		return expectedMessageEntries[ii].TimestampNanos < expectedMessageEntries[jj].TimestampNanos
+	})
+	for ii, expectedMessageEntry := range expectedMessageEntries {
+		_verifyEqualMessageEntries(t, expectedMessageEntry, messageEntries[ii])
+	}
+}
+
+func _verifyEqualMessageEntries(t *testing.T, messageEntryA *NewMessageEntry, messageEntryB *NewMessageEntry) {
+	require := require.New(t)
+	require.Equal(true, bytes.Equal(messageEntryA.SenderAccessGroupOwnerPublicKey.ToBytes(), messageEntryB.SenderAccessGroupOwnerPublicKey.ToBytes()))
+	require.Equal(true, bytes.Equal(messageEntryA.SenderAccessGroupKeyName.ToBytes(), messageEntryB.SenderAccessGroupKeyName.ToBytes()))
+	require.Equal(true, bytes.Equal(messageEntryA.SenderAccessGroupPublicKey.ToBytes(), messageEntryB.SenderAccessGroupPublicKey.ToBytes()))
+	require.Equal(true, bytes.Equal(messageEntryA.RecipientAccessGroupOwnerPublicKey.ToBytes(), messageEntryB.RecipientAccessGroupOwnerPublicKey.ToBytes()))
+	require.Equal(true, bytes.Equal(messageEntryA.RecipientAccessGroupKeyName.ToBytes(), messageEntryB.RecipientAccessGroupKeyName.ToBytes()))
+	require.Equal(true, bytes.Equal(messageEntryA.RecipientAccessGroupPublicKey.ToBytes(), messageEntryB.RecipientAccessGroupPublicKey.ToBytes()))
+	require.Equal(true, bytes.Equal(messageEntryA.EncryptedText, messageEntryB.EncryptedText))
+	require.Equal(true, messageEntryA.TimestampNanos == messageEntryB.TimestampNanos)
+	require.Equal(true, bytes.Equal(EncodeExtraData(messageEntryA.ExtraData), EncodeExtraData(messageEntryB.ExtraData)))
 }
