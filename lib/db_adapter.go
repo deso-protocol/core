@@ -1,6 +1,8 @@
 package lib
 
 import (
+	"fmt"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
 )
 
@@ -130,4 +132,39 @@ func (adapter *DbAdapter) GetPKIDForPublicKey(pkBytes []byte) *PKID {
 	}
 
 	return DBGetPKIDEntryForPublicKey(adapter.badgerDb, adapter.snapshot, pkBytes).PKID
+}
+
+//
+// Reactions
+//
+func (adapter *DbAdapter) GetReactionsForPost(postHash *BlockHash, reactionEmoji rune) ([]*ReactionEntry, error) {
+	var reactionEntries []*ReactionEntry
+	if adapter.postgresDb != nil {
+		reactions := adapter.postgresDb.GetReactionsForPost(postHash, reactionEmoji)
+		for _, reaction := range reactions {
+			reactionEntries = append(reactionEntries, reaction.NewReactionEntry())
+		}
+	} else {
+		handle := adapter.badgerDb
+		dbPrefix := append([]byte{}, Prefixes.PrefixPostHashToReactorPubKey...)
+		dbPrefix = append(dbPrefix, postHash[:]...)
+		keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
+
+		// Iterate over all the db keys & values and load them into the view.
+		expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
+		for _, key := range keysFound {
+			// Sanity check that this is a reasonable key.
+			if len(key) != expectedKeyLength {
+				return nil, fmt.Errorf("DbAdapter.GetReactionsForPost: Invalid key length found: %d", len(key))
+			}
+			reactorPubKey := key[1+HashSizeBytes:]
+			reactionEntry := &ReactionEntry{
+				ReactorPubKey:   reactorPubKey,
+				ReactedPostHash: postHash,
+				ReactEmoji:      reactionEmoji,
+			}
+			reactionEntries = append(reactionEntries, reactionEntry)
+		}
+	}
+	return reactionEntries, nil
 }

@@ -114,6 +114,10 @@ const (
 	RuleErrorCannotLikeNonexistentPost         RuleError = "RuleErrorCannotLikeNonexistentPost"
 	RuleErrorCannotUnlikeWithoutAnExistingLike RuleError = "RuleErrorCannotUnlikeWithoutAnExistingLike"
 
+	RuleErrorReactEntryAlreadyExists                       RuleError = "RuleErrorReactEntryAlreadyExists"
+	RuleErrorCannotReactNonexistentPost                    RuleError = "RuleErrorCannotReactNonexistentPost"
+	RuleErrorCannotRemoveReactionWithoutAnExistingReaction RuleError = "RuleErrorCannotRemoveReactionWithoutAnExistingReaction"
+
 	RuleErrorProfileUsernameTooShort            RuleError = "RuleErrorProfileUsernameTooShort"
 	RuleErrorProfileDescriptionTooShort         RuleError = "RuleErrorProfileDescriptionTooShort"
 	RuleErrorProfileUsernameTooLong             RuleError = "RuleErrorProfileUsernameTooLong"
