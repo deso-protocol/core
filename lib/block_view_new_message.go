@@ -70,14 +70,13 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(
 	// Finally, there is a possibility that there have been additional messages send during the current block,
 	// and we need to make sure we include them in the list of messages we return. We do this by iterating over all
 	// the members in the current UtxoView and inserting them into the list of members we return.
-	existingMessagesMap := make(map[AccessGroupId]*NewMessageEntry)
+	existingMessagesMap := make(map[uint64]*NewMessageEntry)
 	for _, message := range dbMessageEntries {
-		messageKey := NewAccessGroupId(message.RecipientAccessGroupOwnerPublicKey, message.RecipientAccessGroupKeyName.ToBytes())
 		messageCopy := *message
-		existingMessagesMap[*messageKey] = &messageCopy
+		existingMessagesMap[message.TimestampNanos] = &messageCopy
 	}
 
-	filteredUtxoViewMessages := make(map[AccessGroupId]*NewMessageEntry)
+	filteredUtxoViewMessages := make(map[uint64]*NewMessageEntry)
 	for messageKeyIter, messageEntryIter := range bav.GroupChatMessagesIndex {
 
 		// Make sure the utxoView message matches our current thread.
@@ -106,9 +105,7 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(
 		}
 
 		messageEntry := *messageEntryIter
-		groupOwnerPublicKey := messageKeyIter.GroupOwnerPublicKey
-		messageKey := NewAccessGroupId(&groupOwnerPublicKey, messageKeyIter.GroupKeyName.ToBytes())
-		filteredUtxoViewMessages[*messageKey] = &messageEntry
+		filteredUtxoViewMessages[messageEntry.TimestampNanos] = &messageEntry
 	}
 
 	finalMessageEntries := []*NewMessageEntry{}
