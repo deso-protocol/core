@@ -626,6 +626,10 @@ func (bav *UtxoView) _connectNewMessage(
 	case NewMessageOperationCreate:
 		switch txMeta.NewMessageType {
 		case NewMessageTypeDm:
+			if bytes.Equal(txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txMeta.RecipientAccessGroupOwnerPublicKey.ToBytes()) {
+				return 0, 0, nil, RuleErrorNewMessageDmSenderAndRecipientCannotBeTheSame
+			}
+
 			dmMessageKey := MakeDmMessageKeyForSenderRecipient(txMeta.SenderAccessGroupOwnerPublicKey, txMeta.SenderAccessGroupKeyName,
 				txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName, txMeta.TimestampNanos)
 
@@ -722,6 +726,10 @@ func (bav *UtxoView) _connectNewMessage(
 	case NewMessageOperationUpdate:
 		switch txMeta.NewMessageType {
 		case NewMessageTypeDm:
+			if bytes.Equal(txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txMeta.RecipientAccessGroupOwnerPublicKey.ToBytes()) {
+				return 0, 0, nil, RuleErrorNewMessageDmSenderAndRecipientCannotBeTheSame
+			}
+
 			dmMessageKey := MakeDmMessageKeyForSenderRecipient(txMeta.SenderAccessGroupOwnerPublicKey, txMeta.SenderAccessGroupKeyName,
 				txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName, txMeta.TimestampNanos)
 

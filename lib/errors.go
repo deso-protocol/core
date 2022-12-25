@@ -130,6 +130,7 @@ const (
 
 	RuleErrorNewMessageEncryptedTextLengthExceedsMax         RuleError = "RuleErrorNewMessageEncryptedTextLengthExceedsMax"
 	RuleErrorNewMessageTimestampNanosCannotBeZero            RuleError = "RuleErrorNewMessageTimestampNanosCannotBeZero"
+	RuleErrorNewMessageDmSenderAndRecipientCannotBeTheSame   RuleError = "RuleErrorNewMessageDmSenderAndRecipientCannotBeTheSame"
 	RuleErrorNewMessageDmMessageAlreadyExists                RuleError = "RuleErrorNewMessageDmMessageAlreadyExists"
 	RuleErrorNewMessageDmMessageDoesNotExist                 RuleError = "RuleErrorNewMessageDmMessageDoesNotExist"
 	RuleErrorNewMessageDmMessageTimestampMismatch            RuleError = "RuleErrorNewMessageDmMessageTimestampMismatch"

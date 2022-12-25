@@ -98,6 +98,9 @@ func TestNewMessage(t *testing.T) {
 	groupNameBytes1 := []byte("group1")
 	groupName1 := NewGroupKeyName(groupNameBytes1)
 
+	// -------------------------------------------------------------------------------------
+	// Basic DM and Group Chat Validation Tests.
+	// -------------------------------------------------------------------------------------
 	tv1MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
 		*m1PublicKey, *BaseGroupKeyName(), *m1PublicKey, []byte{1, 2, 3}, 1, nil)
 	tv1 := _createNewMessageTestVector("TEST 1: (FAIL) Try connecting new message create transaction for a DM "+
@@ -125,6 +128,7 @@ func TestNewMessage(t *testing.T) {
 	tv2.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, []*DmThreadKey{})
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, []*DmThreadKey{})
+		_verifyDmMessageEntries(t, utxoView, dmM0BM1B, []*NewMessageEntry{})
 	}
 
 	updatedDmMessage := []byte("updated dm message")
@@ -140,6 +144,7 @@ func TestNewMessage(t *testing.T) {
 	tv3.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, dmThreads3)
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, dmThreads3)
+		_verifyDmMessageEntries(t, utxoView, dmM0BM1B, []*NewMessageEntry{tv3MessageEntry})
 	}
 	tv3.disconnectCallback = tv2.connectCallback
 
@@ -151,7 +156,7 @@ func TestNewMessage(t *testing.T) {
 	tv4 := _createAccessGroupTestVector("TEST 4: (PASS) Try connecting an access group create transaction for "+
 		"group (m1, groupName1)", m1Priv, m1PubBytes, m1PubBytes, groupPk1, groupNameBytes1, AccessGroupOperationTypeCreate,
 		nil, nil)
-	groupM1N1 := NewAccessGroupId(m1PublicKey, groupName1.ToBytes())
+	groupIdM1N1 := *NewAccessGroupId(m1PublicKey, groupName1.ToBytes())
 	tv5Members := []*AccessGroupMember{
 		{AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{5, 6, 7}, ExtraData: nil},
 	}
@@ -164,13 +169,16 @@ func TestNewMessage(t *testing.T) {
 	tv6 := _createNewMessageTestVector("TEST 6: (PASS) Try connecting new message create transaction for a group chat "+
 		"sent from (m0, baseGroup) to (m1, groupName1)", m0Priv, m0PubBytes,
 		tv6MessageEntry, NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
-	groupChatThreads6 := []*AccessGroupId{groupM1N1}
-	_ = groupChatThreads6
+	groupChatThreads6 := []*AccessGroupId{&groupIdM1N1}
 	tv6.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m0PublicKey, groupChatThreads6)
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m1PublicKey, groupChatThreads6)
+		_verifyGroupMessageEntries(t, utxoView, groupIdM1N1, []*NewMessageEntry{tv6MessageEntry})
 	}
 	tv6.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m0PublicKey, []*AccessGroupId{})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m1PublicKey, []*AccessGroupId{})
+		_verifyGroupMessageEntries(t, utxoView, groupIdM1N1, []*NewMessageEntry{})
 	}
 	updateGroupMessage := []byte("updated group message")
 	updateGroupExtraData := map[string][]byte{
@@ -182,12 +190,12 @@ func TestNewMessage(t *testing.T) {
 	tv7 := _createNewMessageTestVector("TEST 7: (PASS) Try connecting new message update transaction for a group chat "+
 		"sent from (m0, baseGroup) to (m1, groupName1)", m0Priv, m0PubBytes,
 		tv7MessageEntry, NewMessageTypeGroupChat, NewMessageOperationUpdate, nil)
-	tv7.connectCallback = tv6.connectCallback
+	tv7.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m0PublicKey, groupChatThreads6)
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m1PublicKey, groupChatThreads6)
+		_verifyGroupMessageEntries(t, utxoView, groupIdM1N1, []*NewMessageEntry{tv7MessageEntry})
+	}
 	tv7.disconnectCallback = tv6.connectCallback
-	// TODO: Test owner sending group chat, test minor / major for the same public key.
-	// TODO: Test that only group members can send group chat messages.
-	// TODO: Re-read your old messaging group tests.
-	// TODO: Make sure group id cant send a message to itself.
 
 	// Add the above transactions to a block.
 	tvv1 := []*transactionTestVector{tv1, tv2, tv3, tv4, tv5, tv6, tv7}
@@ -196,7 +204,28 @@ func TestNewMessage(t *testing.T) {
 	}
 	tvb1 := NewTransactionTestVectorBlock(tvv1, nil, tvb1DisconnectCallback)
 
-	tvbb := []*transactionTestVectorBlock{tvb1}
+	// -------------------------------------------------------------------------------------
+	// More DM and Group Chat Tests.
+	// -------------------------------------------------------------------------------------
+
+	// TODO: Test owner sending group chat, test minor / major for the same public key.
+	// TODO: Test that only group members can send group chat messages.
+	// TODO: Re-read your old messaging group tests.
+	// TODO: Make sure group id cant send a message to itself.
+	tv8MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
+		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, []byte{1, 2, 3}, 5, nil)
+	tv8 := _createNewMessageTestVector("TEST 8: (FAIL) Try connecting new message create transaction sent to "+
+		"yourself from (m0, baseGroup) to (m0, baseGroup)", m0Priv, m0PubBytes, tv8MessageEntry, NewMessageTypeDm,
+		NewMessageOperationCreate, RuleErrorNewMessageDmSenderAndRecipientCannotBeTheSame)
+	tv9MessageEntry := _createMessageEntry(*m1PublicKey, *BaseGroupKeyName(), *m1PublicKey,
+		*m1PublicKey, *BaseGroupKeyName(), *m1PublicKey, []byte{1, 2, 3}, 6, nil)
+	tv9 := _createNewMessageTestVector("TEST 9: (FAIL) Try connecting new message create transaction sent to "+
+		"another user from (m1, baseGroup) to (m1, groupName1)", m1Priv, m1PubBytes, tv9MessageEntry, NewMessageTypeDm,
+		NewMessageOperationCreate, RuleErrorNewMessageDmSenderAndRecipientCannotBeTheSame)
+	tvv2 := []*transactionTestVector{tv8, tv9}
+	tvb2 := NewTransactionTestVectorBlock(tvv2, nil, nil)
+
+	tvbb := []*transactionTestVectorBlock{tvb1, tvb2}
 
 	tes := NewTransactionTestSuite(t, tvbb, tConfig)
 	tes.Run()
@@ -517,6 +546,19 @@ func _verifyGroupChatThreads(t *testing.T, groupChatThreads []*AccessGroupId, ex
 func _verifyDmMessageEntries(t *testing.T, utxoView *UtxoView, dmThreadKey DmThreadKey, expectedMessageEntries []*NewMessageEntry) {
 	require := require.New(t)
 	messageEntries, err := utxoView.GetPaginatedMessageEntriesForDmThread(dmThreadKey, math.MaxUint64, 100)
+	require.NoError(err)
+	require.Equal(len(expectedMessageEntries), len(messageEntries))
+	sort.Slice(expectedMessageEntries, func(ii, jj int) bool {
+		return expectedMessageEntries[ii].TimestampNanos < expectedMessageEntries[jj].TimestampNanos
+	})
+	for ii, expectedMessageEntry := range expectedMessageEntries {
+		_verifyEqualMessageEntries(t, expectedMessageEntry, messageEntries[ii])
+	}
+}
+
+func _verifyGroupMessageEntries(t *testing.T, utxoView *UtxoView, groupChatThreadKey AccessGroupId, expectedMessageEntries []*NewMessageEntry) {
+	require := require.New(t)
+	messageEntries, err := utxoView.GetPaginatedMessageEntriesForGroupChatThread(groupChatThreadKey, math.MaxUint64, 100)
 	require.NoError(err)
 	require.Equal(len(expectedMessageEntries), len(messageEntries))
 	sort.Slice(expectedMessageEntries, func(ii, jj int) bool {
