@@ -193,6 +193,20 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
 	}
 	{
+		// RuleErrorAssociationInvalidType: AssociationType contains null terminator byte
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AppPublicKey:        &ZeroPublicKey,
+			AssociationType:     append([]byte("ENDORSEMENT"), AssociationNullTerminator),
+			AssociationValue:    []byte("SQL"),
+		}
+		_, _, _, err = _submitAssociationTxn(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
+	}
+	{
 		// RuleErrorAssociationTypeInvalidValue: AssociationValue is empty
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
@@ -219,6 +233,20 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			AppPublicKey:        &ZeroPublicKey,
 			AssociationType:     []byte("ENDORSEMENT"),
 			AssociationValue:    associationValue,
+		}
+		_, _, _, err = _submitAssociationTxn(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
+	}
+	{
+		// RuleErrorAssociationInvalidValue: AssociationValue contains null terminator byte
+		createUserAssociationMetadata = &CreateUserAssociationMetadata{
+			TargetUserPublicKey: NewPublicKey(m1PkBytes),
+			AppPublicKey:        &ZeroPublicKey,
+			AssociationType:     []byte("ENDORSEMENT"),
+			AssociationValue:    append([]byte("SQL"), AssociationNullTerminator),
 		}
 		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createUserAssociationMetadata}, flushToDB,
@@ -475,6 +503,20 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
 	}
 	{
+		// RuleErrorAssociationInvalidType: AssociationType contains null terminator byte
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AppPublicKey:     &ZeroPublicKey,
+			AssociationType:  append([]byte("REACTION"), AssociationNullTerminator),
+			AssociationValue: []byte("HEART"),
+		}
+		_, _, _, err = _submitAssociationTxn(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidType)
+	}
+	{
 		// RuleErrorAssociationTypeInvalidValue: AssociationValue is empty
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
@@ -501,6 +543,20 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 			AppPublicKey:     &ZeroPublicKey,
 			AssociationType:  []byte("REACTION"),
 			AssociationValue: associationValue,
+		}
+		_, _, _, err = _submitAssociationTxn(
+			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAssociationInvalidValue)
+	}
+	{
+		// RuleErrorAssociationInvalidValue: AssociationValue contains null terminator byte
+		createPostAssociationMetadata = &CreatePostAssociationMetadata{
+			PostHash:         postHash,
+			AppPublicKey:     &ZeroPublicKey,
+			AssociationType:  []byte("REACTION"),
+			AssociationValue: append([]byte("HEART"), AssociationNullTerminator),
 		}
 		_, _, _, err = _submitAssociationTxn(
 			testMeta, m0Pub, m0Priv, MsgDeSoTxn{TxnMeta: createPostAssociationMetadata}, flushToDB,
