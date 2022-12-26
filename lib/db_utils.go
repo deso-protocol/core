@@ -8383,9 +8383,9 @@ func DBKeyForUserAssociationByTransactor(associationEntry *UserAssociationEntry)
 	key = append(key, Prefixes.PrefixUserAssociationByTransactor...)
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
 	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
-	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
-	key = append(key, []byte(associationEntry.AssociationValue)...)
-	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
 	key = append(key, associationEntry.AppPKID.ToBytes()...)
 	return key
@@ -8397,9 +8397,9 @@ func DBKeyForUserAssociationByTargetUser(associationEntry *UserAssociationEntry)
 	key = append(key, Prefixes.PrefixUserAssociationByTargetUser...)
 	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
 	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
-	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
-	key = append(key, []byte(associationEntry.AssociationValue)...)
-	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
 	key = append(key, associationEntry.AppPKID.ToBytes()...)
 	return key
@@ -8412,9 +8412,9 @@ func DBKeyForUserAssociationByUsers(associationEntry *UserAssociationEntry) []by
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
 	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
 	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
-	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
-	key = append(key, []byte(associationEntry.AssociationValue)...)
-	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.AppPKID.ToBytes()...)
 	return key
 }
@@ -8449,9 +8449,9 @@ func DBKeyForPostAssociationByTransactor(associationEntry *PostAssociationEntry)
 	key = append(key, Prefixes.PrefixPostAssociationByTransactor...)
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
 	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
-	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
-	key = append(key, []byte(associationEntry.AssociationValue)...)
-	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.PostHash.ToBytes()...)
 	key = append(key, associationEntry.AppPKID.ToBytes()...)
 	return key
@@ -8463,9 +8463,9 @@ func DBKeyForPostAssociationByPost(associationEntry *PostAssociationEntry) []byt
 	key = append(key, Prefixes.PrefixPostAssociationByPost...)
 	key = append(key, associationEntry.PostHash.ToBytes()...)
 	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
-	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
-	key = append(key, []byte(associationEntry.AssociationValue)...)
-	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
 	key = append(key, associationEntry.AppPKID.ToBytes()...)
 	return key
@@ -8476,9 +8476,9 @@ func DBKeyForPostAssociationByType(associationEntry *PostAssociationEntry) []byt
 	var key []byte
 	key = append(key, Prefixes.PrefixPostAssociationByType...)
 	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
-	key = append(key, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
-	key = append(key, []byte(associationEntry.AssociationValue)...)
-	key = append(key, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
 	key = append(key, associationEntry.PostHash.ToBytes()...)
 	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
 	key = append(key, associationEntry.AppPKID.ToBytes()...)
@@ -8676,7 +8676,7 @@ func DBGetUserAssociationIdsByAttributes(
 	// AssociationType
 	if len(associationQuery.AssociationType) > 0 {
 		keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationType)...)
-		keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+		keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
 	} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
 		// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
 		return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params: missing AssociationType")
@@ -8687,7 +8687,7 @@ func DBGetUserAssociationIdsByAttributes(
 	// AssociationValue
 	if len(associationQuery.AssociationValue) > 0 {
 		keyPrefix = append(keyPrefix, associationQuery.AssociationValue...)
-		keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+		keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
 	} else if len(associationQuery.AssociationValuePrefix) > 0 {
 		keyPrefix = append(keyPrefix, associationQuery.AssociationValuePrefix...)
 	}
@@ -8799,7 +8799,7 @@ func DBGetPostAssociationIdsByAttributes(
 		// AssociationType
 		if len(associationQuery.AssociationType) > 0 {
 			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationType)...)
-			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
 		} else if len(associationQuery.AssociationValue) > 0 ||
 			len(associationQuery.AssociationValuePrefix) > 0 ||
 			associationQuery.PostHash != nil {
@@ -8812,7 +8812,7 @@ func DBGetPostAssociationIdsByAttributes(
 		// AssociationValue
 		if len(associationQuery.AssociationValue) > 0 {
 			keyPrefix = append(keyPrefix, associationQuery.AssociationValue...)
-			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
 		} else if associationQuery.PostHash != nil {
 			// AssociationValue == "", PostHash != nil
 			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationValue")
@@ -8837,7 +8837,7 @@ func DBGetPostAssociationIdsByAttributes(
 		// AssociationType
 		if len(associationQuery.AssociationType) > 0 {
 			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationType)...)
-			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
 		} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
 			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationType")
@@ -8848,7 +8848,7 @@ func DBGetPostAssociationIdsByAttributes(
 		// AssociationValue
 		if len(associationQuery.AssociationValue) > 0 {
 			keyPrefix = append(keyPrefix, associationQuery.AssociationValue...)
-			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
 		} else if len(associationQuery.AssociationValuePrefix) > 0 {
 			keyPrefix = append(keyPrefix, []byte(associationQuery.AssociationValuePrefix)...)
 		}
@@ -8862,7 +8862,7 @@ func DBGetPostAssociationIdsByAttributes(
 		// AssociationType
 		if len(associationQuery.AssociationType) > 0 {
 			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationType)...)
-			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationType which can vary in length
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
 		} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
 			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
 			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationType")
@@ -8873,7 +8873,7 @@ func DBGetPostAssociationIdsByAttributes(
 		// AssociationValue
 		if len(associationQuery.AssociationValue) > 0 {
 			keyPrefix = append(keyPrefix, associationQuery.AssociationValue...)
-			keyPrefix = append(keyPrefix, []byte{0}...) // Null terminator byte for AssociationValue which can vary in length
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
 		} else if len(associationQuery.AssociationValuePrefix) > 0 {
 			keyPrefix = append(keyPrefix, associationQuery.AssociationValuePrefix...)
 		}

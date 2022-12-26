@@ -473,6 +473,25 @@ func (bav *UtxoView) _disconnectDeletePostAssociation(
 // ## VALIDATIONS
 // ###########################
 
+func isValidAssociationType(associationType []byte) error {
+	if len(associationType) == 0 ||
+		len(associationType) > MaxAssociationTypeByteLength ||
+		bytes.HasPrefix(associationType, []byte(AssociationTypeReservedPrefix)) ||
+		bytes.IndexByte(associationType, AssociationNullTerminator) != -1 {
+		return RuleErrorAssociationInvalidType
+	}
+	return nil
+}
+
+func isValidAssociationValue(associationValue []byte) error {
+	if len(associationValue) == 0 ||
+		len(associationValue) > MaxAssociationValueByteLength ||
+		bytes.IndexByte(associationValue, AssociationNullTerminator) != -1 {
+		return RuleErrorAssociationInvalidValue
+	}
+	return nil
+}
+
 func (bav *UtxoView) IsValidCreateUserAssociationMetadata(transactorPK []byte, metadata *CreateUserAssociationMetadata) error {
 	// Returns an error if the input metadata is invalid. Otherwise, returns nil.
 
@@ -506,15 +525,12 @@ func (bav *UtxoView) IsValidCreateUserAssociationMetadata(transactorPK []byte, m
 	}
 
 	// Validate AssociationType.
-	if len(metadata.AssociationType) == 0 ||
-		len(metadata.AssociationType) > MaxAssociationTypeByteLength ||
-		bytes.HasPrefix(metadata.AssociationType, []byte(AssociationTypeReservedPrefix)) {
+	if err := isValidAssociationType(metadata.AssociationType); err != nil {
 		return RuleErrorAssociationInvalidType
 	}
 
 	// Validate AssociationValue.
-	if len(metadata.AssociationValue) == 0 ||
-		len(metadata.AssociationValue) > MaxAssociationValueByteLength {
+	if err := isValidAssociationValue(metadata.AssociationValue); err != nil {
 		return RuleErrorAssociationInvalidValue
 	}
 	return nil
@@ -585,15 +601,12 @@ func (bav *UtxoView) IsValidCreatePostAssociationMetadata(transactorPK []byte, m
 	}
 
 	// Validate AssociationType.
-	if len(metadata.AssociationType) == 0 ||
-		len(metadata.AssociationType) > MaxAssociationTypeByteLength ||
-		bytes.HasPrefix(metadata.AssociationType, []byte(AssociationTypeReservedPrefix)) {
+	if err := isValidAssociationType(metadata.AssociationType); err != nil {
 		return RuleErrorAssociationInvalidType
 	}
 
 	// Validate AssociationValue.
-	if len(metadata.AssociationValue) == 0 ||
-		len(metadata.AssociationValue) > MaxAssociationValueByteLength {
+	if err := isValidAssociationValue(metadata.AssociationValue); err != nil {
 		return RuleErrorAssociationInvalidValue
 	}
 	return nil
