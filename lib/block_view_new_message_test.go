@@ -317,14 +317,10 @@ func TestNewMessage(t *testing.T) {
 		*m2PublicKey, *groupName2, *m2PublicKey, []byte{19, 20, 21}, 17, nil)
 	tv20 := _createNewMessageTestVector("TEST 20: (FAIL) Try connecting new message group chat create transaction "+
 		"sent from non-member (m1, baseGroup) to (m2, groupName2)", m1Priv, m1PubBytes,
-		tv20MessageEntry, NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
-	// TODO: THIS SHOULD FAIL, GROUP CHATS DON'T VERIFY MEMBERSHIP
+		tv20MessageEntry, NewMessageTypeGroupChat, NewMessageOperationCreate, RuleErrorNewMessageGroupChatMemberEntryDoesntExist)
 	tvv3 := []*transactionTestVector{tv13, tv14, tv15, tv16, tv17, tv18, tv19, tv20}
 	tvb3 := NewTransactionTestVectorBlock(tvv3, nil, nil)
 
-	// TODO: Test owner sending group chat, test minor / major for the same public key.
-	// TODO: Test that only group members can send group chat messages.
-	// TODO: Make sure group id cant send a message to itself. Or can it?
 	tvbb := []*transactionTestVectorBlock{tvb1, tvb2, tvb3}
 
 	tes := NewTransactionTestSuite(t, tvbb, tConfig)

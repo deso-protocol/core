@@ -694,6 +694,22 @@ func (bav *UtxoView) _connectNewMessage(
 					"_connectNewMessage: Group chat thread already exists for recipient (%v)",
 					txMeta.RecipientAccessGroupOwnerPublicKey)
 			}
+			// We have previously verified the existence of access groups both for the sender and the recipient.
+			// If the sender is not the owner of the group chat, we need to verify that they are a member of the group.
+			if !bytes.Equal(txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txMeta.RecipientAccessGroupOwnerPublicKey.ToBytes()) {
+				groupMemberEntry, err := bav.GetAccessGroupMemberEntry(&txMeta.SenderAccessGroupOwnerPublicKey,
+					&txMeta.RecipientAccessGroupOwnerPublicKey, &txMeta.RecipientAccessGroupKeyName)
+				if err != nil {
+					return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: Problem "+
+						"getting group member entry for sender public key (%v) and recipient public key (%v) and recipient group name (%v)",
+						txMeta.SenderAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName)
+				}
+				if groupMemberEntry == nil || groupMemberEntry.isDeleted {
+					return 0, 0, nil, errors.Wrapf(RuleErrorNewMessageGroupChatMemberEntryDoesntExist,
+						"_connectNewMessage: Sender (%v) is not a member of the group chat with ownerPublicKey (%v), groupKeyName (%v)",
+						txMeta.SenderAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName)
+				}
+			}
 
 			// Fetch the group chat thread existence entry, which is indexed by the recipient's access group.
 			groupChatAccessGroupId := NewAccessGroupId(&txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName.ToBytes())
