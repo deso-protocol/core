@@ -490,15 +490,52 @@ func (bav *UtxoView) _disconnectDeletePostAssociation(
 // ## VALIDATIONS
 // ###########################
 
+func isValidAssociationType(associationType []byte) error {
+	if len(associationType) == 0 ||
+		len(associationType) > MaxAssociationTypeByteLength ||
+		bytes.HasPrefix(associationType, []byte(AssociationTypeReservedPrefix)) ||
+		bytes.IndexByte(associationType, AssociationNullTerminator) != -1 {
+		return RuleErrorAssociationInvalidType
+	}
+	return nil
+}
+
+func isValidAssociationValue(associationValue []byte) error {
+	if len(associationValue) == 0 ||
+		len(associationValue) > MaxAssociationValueByteLength ||
+		bytes.IndexByte(associationValue, AssociationNullTerminator) != -1 {
+		return RuleErrorAssociationInvalidValue
+	}
+	return nil
+}
+
+func (bav *UtxoView) isValidAppPublicKey(appPublicKey *PublicKey) error {
+	// Validate AppPKID.
+	if appPublicKey == nil {
+		return RuleErrorAssociationInvalidApp
+	}
+	if !appPublicKey.IsZeroPublicKey() {
+		return bav.existsAssociationPublicKeyBytes(appPublicKey.ToBytes())
+	}
+	return nil
+}
+
+func (bav *UtxoView) existsAssociationPublicKeyBytes(publicKey []byte) error {
+	if publicKey == nil {
+		return errors.New("public key provided is nil")
+	}
+	pkidEntry := bav.GetPKIDForPublicKey(publicKey)
+	if pkidEntry == nil || pkidEntry.isDeleted {
+		return errors.New("pkid entry not found")
+	}
+	return nil
+}
+
 func (bav *UtxoView) IsValidCreateUserAssociationMetadata(transactorPK []byte, metadata *CreateUserAssociationMetadata) error {
 	// Returns an error if the input metadata is invalid. Otherwise, returns nil.
 
 	// Validate TransactorPKID.
-	if transactorPK == nil {
-		return RuleErrorAssociationInvalidTransactor // This should never happen.
-	}
-	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPK)
-	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+	if err := bav.existsAssociationPublicKeyBytes(transactorPK); err != nil {
 		return RuleErrorAssociationInvalidTransactor
 	}
 
@@ -506,32 +543,22 @@ func (bav *UtxoView) IsValidCreateUserAssociationMetadata(transactorPK []byte, m
 	if metadata.TargetUserPublicKey == nil {
 		return RuleErrorUserAssociationInvalidTargetUser
 	}
-	targetUserPKIDEntry := bav.GetPKIDForPublicKey(metadata.TargetUserPublicKey.ToBytes())
-	if targetUserPKIDEntry == nil || targetUserPKIDEntry.isDeleted {
+	if err := bav.existsAssociationPublicKeyBytes(metadata.TargetUserPublicKey.ToBytes()); err != nil {
 		return RuleErrorUserAssociationInvalidTargetUser
 	}
 
 	// Validate AppPKID.
-	if metadata.AppPublicKey == nil {
+	if err := bav.isValidAppPublicKey(metadata.AppPublicKey); err != nil {
 		return RuleErrorAssociationInvalidApp
-	}
-	if !metadata.AppPublicKey.IsZeroPublicKey() {
-		appPKIDEntry := bav.GetPKIDForPublicKey(metadata.AppPublicKey.ToBytes())
-		if appPKIDEntry == nil || appPKIDEntry.isDeleted {
-			return RuleErrorAssociationInvalidApp
-		}
 	}
 
 	// Validate AssociationType.
-	if len(metadata.AssociationType) == 0 ||
-		len(metadata.AssociationType) > MaxAssociationTypeByteLength ||
-		bytes.HasPrefix(metadata.AssociationType, []byte(AssociationTypeReservedPrefix)) {
+	if err := isValidAssociationType(metadata.AssociationType); err != nil {
 		return RuleErrorAssociationInvalidType
 	}
 
 	// Validate AssociationValue.
-	if len(metadata.AssociationValue) == 0 ||
-		len(metadata.AssociationValue) > MaxAssociationValueByteLength {
+	if err := isValidAssociationValue(metadata.AssociationValue); err != nil {
 		return RuleErrorAssociationInvalidValue
 	}
 	return nil
@@ -573,11 +600,7 @@ func (bav *UtxoView) IsValidCreatePostAssociationMetadata(transactorPK []byte, m
 	// Returns an error if the input metadata is invalid. Otherwise, returns nil.
 
 	// Validate TransactorPKID.
-	if transactorPK == nil {
-		return RuleErrorAssociationInvalidTransactor // This should never happen.
-	}
-	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPK)
-	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+	if err := bav.existsAssociationPublicKeyBytes(transactorPK); err != nil {
 		return RuleErrorAssociationInvalidTransactor
 	}
 
@@ -591,26 +614,17 @@ func (bav *UtxoView) IsValidCreatePostAssociationMetadata(transactorPK []byte, m
 	}
 
 	// Validate AppPKID.
-	if metadata.AppPublicKey == nil {
+	if err := bav.isValidAppPublicKey(metadata.AppPublicKey); err != nil {
 		return RuleErrorAssociationInvalidApp
-	}
-	if !metadata.AppPublicKey.IsZeroPublicKey() {
-		appPKIDEntry := bav.GetPKIDForPublicKey(metadata.AppPublicKey.ToBytes())
-		if appPKIDEntry == nil || appPKIDEntry.isDeleted {
-			return RuleErrorAssociationInvalidApp
-		}
 	}
 
 	// Validate AssociationType.
-	if len(metadata.AssociationType) == 0 ||
-		len(metadata.AssociationType) > MaxAssociationTypeByteLength ||
-		bytes.HasPrefix(metadata.AssociationType, []byte(AssociationTypeReservedPrefix)) {
+	if err := isValidAssociationType(metadata.AssociationType); err != nil {
 		return RuleErrorAssociationInvalidType
 	}
 
 	// Validate AssociationValue.
-	if len(metadata.AssociationValue) == 0 ||
-		len(metadata.AssociationValue) > MaxAssociationValueByteLength {
+	if err := isValidAssociationValue(metadata.AssociationValue); err != nil {
 		return RuleErrorAssociationInvalidValue
 	}
 	return nil
