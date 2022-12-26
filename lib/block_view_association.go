@@ -498,10 +498,18 @@ func (bav *UtxoView) isValidAppPublicKey(appPublicKey *PublicKey) error {
 		return RuleErrorAssociationInvalidApp
 	}
 	if !appPublicKey.IsZeroPublicKey() {
-		appPKIDEntry := bav.GetPKIDForPublicKey(appPublicKey.ToBytes())
-		if appPKIDEntry == nil || appPKIDEntry.isDeleted {
-			return RuleErrorAssociationInvalidApp
-		}
+		return bav.existsAssociationPublicKeyBytes(appPublicKey.ToBytes())
+	}
+	return nil
+}
+
+func (bav *UtxoView) existsAssociationPublicKeyBytes(publicKey []byte) error {
+	if publicKey == nil {
+		return errors.New("public key provided is nil")
+	}
+	pkidEntry := bav.GetPKIDForPublicKey(publicKey)
+	if pkidEntry == nil || pkidEntry.isDeleted {
+		return errors.New("pkid entry not found")
 	}
 	return nil
 }
@@ -510,11 +518,7 @@ func (bav *UtxoView) IsValidCreateUserAssociationMetadata(transactorPK []byte, m
 	// Returns an error if the input metadata is invalid. Otherwise, returns nil.
 
 	// Validate TransactorPKID.
-	if transactorPK == nil {
-		return RuleErrorAssociationInvalidTransactor // This should never happen.
-	}
-	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPK)
-	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+	if err := bav.existsAssociationPublicKeyBytes(transactorPK); err != nil {
 		return RuleErrorAssociationInvalidTransactor
 	}
 
@@ -522,8 +526,7 @@ func (bav *UtxoView) IsValidCreateUserAssociationMetadata(transactorPK []byte, m
 	if metadata.TargetUserPublicKey == nil {
 		return RuleErrorUserAssociationInvalidTargetUser
 	}
-	targetUserPKIDEntry := bav.GetPKIDForPublicKey(metadata.TargetUserPublicKey.ToBytes())
-	if targetUserPKIDEntry == nil || targetUserPKIDEntry.isDeleted {
+	if err := bav.existsAssociationPublicKeyBytes(metadata.TargetUserPublicKey.ToBytes()); err != nil {
 		return RuleErrorUserAssociationInvalidTargetUser
 	}
 
@@ -580,11 +583,7 @@ func (bav *UtxoView) IsValidCreatePostAssociationMetadata(transactorPK []byte, m
 	// Returns an error if the input metadata is invalid. Otherwise, returns nil.
 
 	// Validate TransactorPKID.
-	if transactorPK == nil {
-		return RuleErrorAssociationInvalidTransactor // This should never happen.
-	}
-	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPK)
-	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+	if err := bav.existsAssociationPublicKeyBytes(transactorPK); err != nil {
 		return RuleErrorAssociationInvalidTransactor
 	}
 
