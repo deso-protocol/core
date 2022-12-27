@@ -48,6 +48,9 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 	txMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
 
 	// Validate the txn metadata.
+	//
+	// Additionally, note that, because we index associations by the transactorPKID,
+	// it is impossible for someone to create an association on someone else's behalf.
 	if err := bav.IsValidCreateUserAssociationMetadata(txn.PublicKey, txMeta); err != nil {
 		return 0, 0, nil, err
 	}
@@ -62,12 +65,14 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreateUserAssociation: ")
 	}
 	// Delete the existing association entry, if exists.
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true
 	if prevAssociationEntry != nil {
 		bav._deleteUserAssociationEntryMappings(prevAssociationEntry)
 	}
 
 	// Retrieve existing ExtraData to merge with any new ExtraData.
 	var prevExtraData map[string][]byte
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true
 	if prevAssociationEntry != nil {
 		prevExtraData = prevAssociationEntry.ExtraData
 	}
@@ -143,12 +148,14 @@ func (bav *UtxoView) _connectDeleteUserAssociation(
 	// association ID is non-null and the association entry exists.
 
 	// Delete the association.
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true
 	prevAssociationEntry, err := bav.GetUserAssociationByID(txMeta.AssociationID)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDeleteUserAssociation: error fetching association %s", txMeta.AssociationID.String(),
 		)
 	}
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true
 	if prevAssociationEntry == nil {
 		// This should never happen as we validate the association
 		// exists when we validate the txn metadata.
@@ -205,6 +212,9 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 	txMeta := txn.TxnMeta.(*CreatePostAssociationMetadata)
 
 	// Validate the txn metadata.
+	//
+	// Additionally, note that, because we index associations by the transactorPKID,
+	// it is impossible for someone to create an association on someone else's behalf.
 	if err := bav.IsValidCreatePostAssociationMetadata(txn.PublicKey, txMeta); err != nil {
 		return 0, 0, nil, err
 	}
@@ -219,11 +229,13 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreatePostAssociation: ")
 	}
 	// Delete the existing association entry, if exists.
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true
 	if prevAssociationEntry != nil {
 		bav._deletePostAssociationEntryMappings(prevAssociationEntry)
 	}
 
 	// Retrieve existing ExtraData to merge with any new ExtraData.
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true
 	var prevExtraData map[string][]byte
 	if prevAssociationEntry != nil {
 		prevExtraData = prevAssociationEntry.ExtraData
@@ -306,6 +318,7 @@ func (bav *UtxoView) _connectDeletePostAssociation(
 			"_connectDeletePostAssociation: error fetching association %s", txMeta.AssociationID.String(),
 		)
 	}
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true
 	if prevAssociationEntry == nil {
 		// This should never happen as we validate the association
 		// exists when we validate the txn metadata.
@@ -353,6 +366,7 @@ func (bav *UtxoView) _disconnectCreateUserAssociation(
 	bav._deleteUserAssociationEntryMappings(currentAssociationEntry)
 
 	// Set the prev association entry, if exists.
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true
 	if operationData.PrevUserAssociationEntry != nil {
 		bav._setUserAssociationEntryMappings(operationData.PrevUserAssociationEntry)
 	}
@@ -384,6 +398,7 @@ func (bav *UtxoView) _disconnectDeleteUserAssociation(
 	operationData := utxoOpsForTxn[operationIndex]
 
 	// Set the prev association entry. Error if doesn't exist.
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true
 	if operationData.PrevUserAssociationEntry == nil {
 		return fmt.Errorf("_disconnectDeleteUserAssociation: no deleted association entry found")
 	}
@@ -427,6 +442,7 @@ func (bav *UtxoView) _disconnectCreatePostAssociation(
 	bav._deletePostAssociationEntryMappings(currentAssociationEntry)
 
 	// Set the prev association entry, if exists.
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true
 	if operationData.PrevPostAssociationEntry != nil {
 		bav._setPostAssociationEntryMappings(operationData.PrevPostAssociationEntry)
 	}
@@ -458,6 +474,7 @@ func (bav *UtxoView) _disconnectDeletePostAssociation(
 	operationData := utxoOpsForTxn[operationIndex]
 
 	// Set the prev association entry. Error if doesn't exist.
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true
 	if operationData.PrevPostAssociationEntry == nil {
 		return fmt.Errorf("_disconnectDeletePostAssociation: no deleted association entry found")
 	}
