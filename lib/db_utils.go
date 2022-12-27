@@ -324,24 +324,78 @@ type DBPrefixes struct {
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
 
 	// User Association prefixes
-	// PrefixUserAssociationByID:         AssociationID
-	// PrefixUserAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID, AppPKID
-	// PrefixUserAssociationByTargetUser: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID, AppPKID
-	// PrefixUserAssociationByUsers:      TransactorPKID, TargetUserPKID, AssociationType, AssociationValue, AppPKID
-	PrefixUserAssociationByID         []byte `prefix_id:"[63]" is_state:"true"`
+	// PrefixUserAssociationByID:
+	//  <
+	//   PrefixUserAssociationByID
+	//   AssociationID [32]byte
+	//  > -> < UserAssociationEntry >
+	PrefixUserAssociationByID []byte `prefix_id:"[63]" is_state:"true"`
+	// PrefixUserAssociationByTransactor:
+	//  <
+	//   PrefixUserAssociationByTransactor
+	//   TransactorPKID [33]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   TargetUserPKID [33]byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: AssociationID is a BlockHash type
 	PrefixUserAssociationByTransactor []byte `prefix_id:"[64]" is_state:"true"`
+	// PrefixUserAssociationByUsers:
+	//  <
+	//   PrefixUserAssociationByUsers
+	//   TransactorPKID [33]byte
+	//   TargetUserPKID [33]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: AssociationID is a BlockHash type
 	PrefixUserAssociationByTargetUser []byte `prefix_id:"[65]" is_state:"true"`
-	PrefixUserAssociationByUsers      []byte `prefix_id:"[66]" is_state:"true"`
+	// PrefixUserAssociationByTargetUser
+	//  <
+	//   PrefixUserAssociationByTargerUser
+	//   TargetUserPKID [33]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   TransactorPKID [33]byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: Association is a BlockHash type
+	PrefixUserAssociationByUsers []byte `prefix_id:"[66]" is_state:"true"`
 
 	// Post Association prefixes
-	// PrefixPostAssociationByID:         AssociationID
-	// PrefixPostAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, PostHash, AppPKID
-	// PrefixPostAssociationByPost:       PostHash, AssociationType, AssociationValue, TransactorPKID, AppPKID
-	// PrefixPostAssociationByType:       AssociationType, AssociationValue, PostHash, TransactorPKID, AppPKID
-	PrefixPostAssociationByID         []byte `prefix_id:"[67]" is_state:"true"`
+	// PrefixPostAssociationByID
+	//  <
+	//   PrefixPostAssociationByID
+	//   AssociationID [32]byte
+	//  > -> < PostAssociationEntry >
+	PrefixPostAssociationByID []byte `prefix_id:"[67]" is_state:"true"`
+	// PrefixPostAssociationByTransactor
+	//  <
+	//   PrefixPostAssociationByTransactor
+	//   TransactorPKID [33]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   PostHash [32]byte
+	//   AppPKID [33]byte
+	// > -> < AssociationID > # note: AssociationID is a BlockHash type
 	PrefixPostAssociationByTransactor []byte `prefix_id:"[68]" is_state:"true"`
-	PrefixPostAssociationByPost       []byte `prefix_id:"[69]" is_state:"true"`
-	PrefixPostAssociationByType       []byte `prefix_id:"[70]" is_state:"true"`
+	// PrefixPostAssociationByPost
+	//  <
+	//   PostHash [32]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   TransactorPKID [33]byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: AssociationID is a BlockHash type
+	PrefixPostAssociationByPost []byte `prefix_id:"[69]" is_state:"true"`
+	// PrefixPostAssociationByType
+	//  <
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   PostHash [32]byte
+	//   TransactorPKID [33]byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: AssociationID is a BlockHash type
+	PrefixPostAssociationByType []byte `prefix_id:"[70]" is_state:"true"`
 
 	// NEXT_TAG: 71
 }
@@ -3692,8 +3746,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -7718,7 +7772,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -7845,7 +7899,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
