@@ -1271,4 +1271,3 @@ const MaxAssociationTypeByteLength int = 64
 const MaxAssociationValueByteLength int = 256
 const AssociationTypeReservedPrefix = "DESO"
 const AssociationNullTerminator = byte(0)
- 
