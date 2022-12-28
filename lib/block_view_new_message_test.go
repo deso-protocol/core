@@ -67,7 +67,7 @@ func TestNewMessage(t *testing.T) {
 
 	fundPublicKeysWithNanosMap := make(map[PublicKey]uint64)
 	fundPublicKeysWithNanosMap[*m0PublicKey] = 1000
-	fundPublicKeysWithNanosMap[*m1PublicKey] = 100
+	fundPublicKeysWithNanosMap[*m1PublicKey] = 1000
 	fundPublicKeysWithNanosMap[*m2PublicKey] = 100
 	fundPublicKeysWithNanosMap[*m3PublicKey] = 100
 	initChainCallback := func(tm *transactionTestMeta) {
@@ -591,7 +591,68 @@ func TestNewMessage(t *testing.T) {
 	}
 	tvb4 := NewTransactionTestVectorBlock(tvv4, tvb4ConnectCallback, nil)
 
-	tvbb := []*transactionTestVectorBlock{tvb1, tvb2, tvb3, tvb4}
+	// Now update some dm enumeration messages to make sure combining db and utxoView entries works in the paginated call.
+	var dmEnumerationUpdateMessages []*NewMessageEntry
+	var dmEnumerationUpdateTestVectors []*transactionTestVector
+	for ii := 0; ii < DmEnumerationMsgCount; ii++ {
+		// If ii % 2 == 0 then we do nothing to the message; otherwise we update it.
+		if ii%2 == 0 {
+			dmEnumerationUpdateMessages = append(dmEnumerationUpdateMessages, dmEnumerationMessages[ii])
+		} else {
+			originalMsg := dmEnumerationMessages[ii]
+			randomExtraData := map[string][]byte{
+				"random": []byte(fmt.Sprintf("random data %d", ii)),
+			}
+			msg := _createMessageEntry(*originalMsg.SenderAccessGroupOwnerPublicKey, *originalMsg.SenderAccessGroupKeyName,
+				*originalMsg.SenderAccessGroupPublicKey, *originalMsg.RecipientAccessGroupOwnerPublicKey,
+				*originalMsg.RecipientAccessGroupKeyName, *originalMsg.RecipientAccessGroupPublicKey,
+				[]byte(fmt.Sprintf("message %d updated", ii)), originalMsg.TimestampNanos, randomExtraData)
+			dmEnumerationUpdateMessages = append(dmEnumerationUpdateMessages, msg)
+			// We use m1 to update the message as it was previously used in the ii%2 == 1 case.
+			tv := _createNewMessageTestVector(fmt.Sprintf("TEST 35.%d: (PASS) Try connecting new message DM update transaction "+
+				"sent from (m1, enumerationRecipient) to (m0, enumerationSender)", ii), m1Priv, m1PubBytes,
+				msg, NewMessageTypeDm, NewMessageOperationUpdate, nil)
+			dmEnumerationUpdateTestVectors = append(dmEnumerationUpdateTestVectors, tv)
+		}
+	}
+	tvv5 := dmEnumerationUpdateTestVectors
+	// Now update some group chat enumeration entries to make sure combining db and utxoView entries works in the paginated call.
+	var groupChatEnumerationUpdateMessages []*NewMessageEntry
+	var groupChatEnumerationUpdateTestVectors []*transactionTestVector
+	for ii := 0; ii < GroupChatEnumerationMsgCount; ii++ {
+		// If ii % 2 == 0 then we do nothing to the message; otherwise we update it.
+		if ii%2 == 0 {
+			groupChatEnumerationUpdateMessages = append(groupChatEnumerationUpdateMessages, groupChatEnumerationMessages[ii])
+		} else {
+			originalMsg := groupChatEnumerationMessages[ii]
+			randomExtraData := map[string][]byte{
+				"random": []byte(fmt.Sprintf("random data %d", ii)),
+			}
+			msg := _createMessageEntry(*originalMsg.SenderAccessGroupOwnerPublicKey, *originalMsg.SenderAccessGroupKeyName,
+				*originalMsg.SenderAccessGroupPublicKey, *originalMsg.RecipientAccessGroupOwnerPublicKey,
+				*originalMsg.RecipientAccessGroupKeyName, *originalMsg.RecipientAccessGroupPublicKey,
+				[]byte(fmt.Sprintf("message %d updated", ii)), originalMsg.TimestampNanos, randomExtraData)
+			groupChatEnumerationUpdateMessages = append(groupChatEnumerationUpdateMessages, msg)
+			// We use m1 to update the message as it was previously used in the ii%2 == 1 case.
+			tv := _createNewMessageTestVector(fmt.Sprintf("TEST 36.%d: (PASS) Try connecting new message group chat update transaction "+
+				"sent from (m0, enumerationGroup) to (m0, enumerationGroup)", ii), m0Priv, m0PubBytes,
+				msg, NewMessageTypeGroupChat, NewMessageOperationUpdate, nil)
+			groupChatEnumerationUpdateTestVectors = append(groupChatEnumerationUpdateTestVectors, tv)
+		}
+	}
+	tvv5 = append(tvv5, groupChatEnumerationUpdateTestVectors...)
+
+	tvb5ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, dmThreads31M0)
+		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, dmThreads31M1)
+		_verifyDmMessageEntries(t, utxoView, dmThreadEnumeration, dmEnumerationUpdateMessages)
+		_verifyGroupMessageEntries(t, utxoView, groupIdM0Eg, groupChatEnumerationUpdateMessages)
+	}
+	tvb5 := NewTransactionTestVectorBlock(tvv5, tvb5ConnectCallback, tvb4ConnectCallback)
+
+	tvbb := []*transactionTestVectorBlock{tvb1, tvb2, tvb3, tvb4, tvb5}
 
 	tes := NewTransactionTestSuite(t, tvbb, tConfig)
 	tes.Run()
