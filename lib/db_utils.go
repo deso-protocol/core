@@ -2121,7 +2121,7 @@ func DBGetPaginatedDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 		messageEntries = append(messageEntries, dmMessage)
 	}
 
-	// Sanity-check that the timestamps we found are sorted.
+	// Sanity-check that the timestamps we found are sorted in descending order.
 	for ii := 1; ii < len(messageEntries); ii++ {
 		if messageEntries[ii-1].TimestampNanos < messageEntries[ii].TimestampNanos {
 			return nil, fmt.Errorf("DBGetPaginatedDmMessageEntryWithTxn: "+

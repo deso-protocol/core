@@ -421,7 +421,7 @@ func TestNewMessage(t *testing.T) {
 		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m3PublicKey, m3DefaultKeyPriv.Serialize(), [][]byte{})
 	}
 	messages25GroupM3N3 := []*NewMessageEntry{tv24MessageEntry, tv25MessageEntry}
-	plainTexts25GroupM3N3 := [][]byte{plainText2, plainText1}
+	plainTexts25GroupM3N3 := [][]byte{plainText1, plainText2}
 	tv25 := _createNewMessageTestVector("TEST 25: (PASS) Try connecting a message transaction for "+
 		"group (m3, groupName3)", m0Priv, m0PubBytes, tv25MessageEntry,
 		NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
@@ -435,7 +435,7 @@ func TestNewMessage(t *testing.T) {
 	}
 	tv25.disconnectCallback = tv24.connectCallback
 	messages26GroupM3N3 := []*NewMessageEntry{tv24MessageEntry, tv25MessageEntry, tv26MessageEntry}
-	plainTexts26GroupM3N3 := [][]byte{plainText2, plainText1, plainText3}
+	plainTexts26GroupM3N3 := [][]byte{plainText3, plainText1, plainText2}
 	tv26 := _createNewMessageTestVector("TEST 26: (PASS) Try connecting a message transaction for "+
 		"group (m3, groupName3)", m0Priv, m0PubBytes, tv26MessageEntry,
 		NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
@@ -497,7 +497,7 @@ func TestNewMessage(t *testing.T) {
 		"sent from (m1, defaultKey) to (m3, groupName3)", m1Priv, m1PubBytes,
 		tv27MessageEntry, NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
 	messages29GroupM3N3 := []*NewMessageEntry{tv24MessageEntry, tv25MessageEntry, tv26MessageEntry, tv27MessageEntry}
-	plainTexts29GroupM3N3 := [][]byte{plainText2, plainText1, plainText3, plainText4}
+	plainTexts29GroupM3N3 := [][]byte{plainText4, plainText3, plainText1, plainText2}
 	tv29.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m3PublicKey, []*AccessGroupId{&groupIdM3N3})
 		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m0PublicKey, []*AccessGroupId{&groupIdM1N1, &groupIdM3N3})
@@ -559,12 +559,35 @@ func TestNewMessage(t *testing.T) {
 	tvv4 := []*transactionTestVector{tv30, tv31}
 	tvv4 = append(tvv4, dmEnumerationTestVectors...)
 
+	// Create a bunch of messages that will be sent within the same group chat thread.
+	groupChatEnumerationKeyNameBytes := []byte("enumeration-group")
+	groupChatEnumerationKeyName := NewGroupKeyName(groupChatEnumerationKeyNameBytes)
+	tv33 := _createAccessGroupTestVector("TEST 33: (PASS) Try connecting access group create transaction "+
+		"for group (m0, enumerationGroup)", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupChatEnumerationKeyName.ToBytes(),
+		AccessGroupOperationTypeCreate, nil, nil)
+	groupIdM0Eg := *NewAccessGroupId(m0PublicKey, groupChatEnumerationKeyNameBytes)
+	var groupChatEnumerationMessages []*NewMessageEntry
+	var groupChatEnumerationTestVectors []*transactionTestVector
+	for ii := 0; ii < GroupChatEnumerationMsgCount; ii++ {
+		msg := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
+			*m0PublicKey, *groupChatEnumerationKeyName, *m0PublicKey, []byte(fmt.Sprintf("message %d", ii)),
+			uint64(ii+1), nil)
+		tv := _createNewMessageTestVector(fmt.Sprintf("TEST 34.%d: (PASS) Try connecting new message group chat transaction "+
+			"sent from (m0, baseGroup) to (m0, enumerationGroup)", ii), m0Priv, m0PubBytes,
+			msg, NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
+		groupChatEnumerationMessages = append(groupChatEnumerationMessages, msg)
+		groupChatEnumerationTestVectors = append(groupChatEnumerationTestVectors, tv)
+	}
+	tvv4 = append(tvv4, tv33)
+	tvv4 = append(tvv4, groupChatEnumerationTestVectors...)
+
 	tvb4ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
 		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
 		require.NoError(err)
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, dmThreads31M0)
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, dmThreads31M1)
 		_verifyDmMessageEntries(t, utxoView, dmThreadEnumeration, dmEnumerationMessages)
+		_verifyGroupMessageEntries(t, utxoView, groupIdM0Eg, groupChatEnumerationMessages)
 	}
 	tvb4 := NewTransactionTestVectorBlock(tvv4, tvb4ConnectCallback, nil)
 
@@ -890,7 +913,7 @@ func _verifyDmMessageEntries(t *testing.T, utxoView *UtxoView, dmThreadKey DmThr
 	require := require.New(t)
 
 	sort.Slice(expectedMessageEntries, func(ii, jj int) bool {
-		return expectedMessageEntries[ii].TimestampNanos < expectedMessageEntries[jj].TimestampNanos
+		return expectedMessageEntries[ii].TimestampNanos > expectedMessageEntries[jj].TimestampNanos
 	})
 	_verify := func(messageEntries []*NewMessageEntry) {
 		require.Equal(len(expectedMessageEntries), len(messageEntries))
@@ -911,8 +934,8 @@ func _verifyDmMessageEntries(t *testing.T, utxoView *UtxoView, dmThreadKey DmThr
 				break
 			}
 			require.Equal(true, uint64(len(messageEntriesPage)) <= maxMessagesToFetch)
-			messageEntries = append(messageEntriesPage, messageEntries...)
-			startTimestamp = messageEntriesPage[0].TimestampNanos
+			messageEntries = append(messageEntries, messageEntriesPage...)
+			startTimestamp = messageEntriesPage[len(messageEntriesPage)-1].TimestampNanos
 			if uint64(len(messageEntriesPage)) < maxMessagesToFetch {
 				break
 			}
@@ -931,15 +954,46 @@ func _verifyDmMessageEntries(t *testing.T, utxoView *UtxoView, dmThreadKey DmThr
 
 func _verifyGroupMessageEntries(t *testing.T, utxoView *UtxoView, groupChatThreadKey AccessGroupId, expectedMessageEntries []*NewMessageEntry) {
 	require := require.New(t)
-	messageEntries, err := utxoView.GetPaginatedMessageEntriesForGroupChatThread(groupChatThreadKey, math.MaxUint64, 100)
-	require.NoError(err)
-	require.Equal(len(expectedMessageEntries), len(messageEntries))
+
 	sort.Slice(expectedMessageEntries, func(ii, jj int) bool {
-		return expectedMessageEntries[ii].TimestampNanos < expectedMessageEntries[jj].TimestampNanos
+		return expectedMessageEntries[ii].TimestampNanos > expectedMessageEntries[jj].TimestampNanos
 	})
-	for ii, expectedMessageEntry := range expectedMessageEntries {
-		_verifyEqualMessageEntries(t, expectedMessageEntry, messageEntries[ii])
+	_verify := func(messageEntries []*NewMessageEntry) {
+		require.Equal(len(expectedMessageEntries), len(messageEntries))
+		for ii, expectedMessageEntry := range expectedMessageEntries {
+			_verifyEqualMessageEntries(t, expectedMessageEntry, messageEntries[ii])
+		}
 	}
+
+	loopWithPaginatedCall := func(maxMessagesToFetch uint64) {
+		var startTimestamp uint64
+		startTimestamp = math.MaxUint64
+		messageEntries := []*NewMessageEntry{}
+		for {
+			// Fetch the next page of messages.
+			messageEntriesPage, err := utxoView.GetPaginatedMessageEntriesForGroupChatThread(groupChatThreadKey, startTimestamp, maxMessagesToFetch)
+			require.NoError(err)
+			if len(messageEntriesPage) == 0 {
+				break
+			}
+			require.Equal(true, uint64(len(messageEntriesPage)) <= maxMessagesToFetch)
+			messageEntries = append(messageEntries, messageEntriesPage...)
+			startTimestamp = messageEntriesPage[len(messageEntriesPage)-1].TimestampNanos
+			if uint64(len(messageEntriesPage)) < maxMessagesToFetch {
+				break
+			}
+		}
+		_verify(messageEntries)
+	}
+
+	// Check a couple of different page sizes.
+	loopWithPaginatedCall(math.MaxUint32)
+	loopWithPaginatedCall(1)
+	loopWithPaginatedCall(2)
+	loopWithPaginatedCall(3)
+	loopWithPaginatedCall(5)
+	loopWithPaginatedCall(10)
+
 }
 
 func _verifyGroupMessageEntriesDecryption(t *testing.T, utxoView *UtxoView, groupChatThreadKey AccessGroupId,

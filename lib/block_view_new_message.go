@@ -87,7 +87,7 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(
 		}
 
 		// Make sure the message has a timestamp that is smaller than our starting timestamp.
-		isValidTimestamp := startingTimestamp >= messageKeyIter.TimestampNanos
+		isValidTimestamp := startingTimestamp > messageKeyIter.TimestampNanos
 		if !isValidTimestamp {
 			continue
 		}
@@ -130,15 +130,16 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(
 		copyUtxoMessage := *utxoMessageEntry
 		finalMessageEntries = append(finalMessageEntries, &copyUtxoMessage)
 	}
+	// Sort messages by timestamp in descending order.
 	sort.Slice(finalMessageEntries, func(ii, jj int) bool {
-		return finalMessageEntries[ii].TimestampNanos < finalMessageEntries[jj].TimestampNanos
+		return finalMessageEntries[ii].TimestampNanos > finalMessageEntries[jj].TimestampNanos
 	})
 
 	// After iterating over all the messages in the current UtxoView, there is a possibility that we now have less messages
 	// than the maxMessagesToFetch, due to deleted messages. In this case, we need to fetch more members from the DB,
 	// which we will do with the magic of recursion.
 	if isListFilled && len(finalMessageEntries) < int(maxMessagesToFetch) &&
-		lastKnownDbTimestamp > startingTimestamp {
+		lastKnownDbTimestamp < startingTimestamp {
 
 		// Note this recursive call will never lead to an infinite loop because the startingTimestamp
 		// will be growing with each recursive call, and because we are checking for isListFilled with
@@ -154,6 +155,7 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(
 	}
 
 	if len(finalMessageEntries) > int(maxMessagesToFetch) {
+		// Timestamps will be in ascending order, so we slice the smallest timestamps.
 		finalMessageEntries = finalMessageEntries[:maxMessagesToFetch]
 	}
 	return finalMessageEntries, nil
@@ -506,15 +508,16 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForDmThreadRecursionSafe(dmThrea
 		copyUtxoMessage := *utxoMessageEntry
 		finalMessageEntries = append(finalMessageEntries, &copyUtxoMessage)
 	}
+	// Sort messages by timestamp in descending order.
 	sort.Slice(finalMessageEntries, func(ii, jj int) bool {
-		return finalMessageEntries[ii].TimestampNanos < finalMessageEntries[jj].TimestampNanos
+		return finalMessageEntries[ii].TimestampNanos > finalMessageEntries[jj].TimestampNanos
 	})
 
 	// After iterating over all the messages in the current UtxoView, there is a possibility that we now have less messages
 	// than the maxMessagesToFetch, due to deleted messages. In this case, we need to fetch more members from the DB,
 	// which we will do with the magic of recursion.
 	if isListFilled && len(finalMessageEntries) < int(maxMessagesToFetch) &&
-		lastKnownDbTimestamp > startingTimestamp {
+		lastKnownDbTimestamp < startingTimestamp {
 
 		// Note this recursive call will never lead to an infinite loop because the startingTimestamp
 		// will be growing with each recursive call, and because we are checking for isListFilled with
