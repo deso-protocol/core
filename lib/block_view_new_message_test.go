@@ -529,9 +529,9 @@ func TestNewMessage(t *testing.T) {
 		AccessGroupOperationTypeCreate, nil, nil)
 	groupIdM0Es := *NewAccessGroupId(m0PublicKey, dmEnumerationSenderKeyNameBytes)
 	groupIdM1Er := *NewAccessGroupId(m1PublicKey, dmEnumerationRecipientKeyNameBytes)
-	dmThreadDmEnumeration := _createDmThreadKey(groupIdM0Es, groupIdM1Er)
-	dmThreads31M0 := append(dmThreads13M0, &dmThreadDmEnumeration)
-	dmThreads31M1 := append(dmThreads3M1, &dmThreadDmEnumeration)
+	dmThreadEnumeration := _createDmThreadKey(groupIdM0Es, groupIdM1Er)
+	dmThreads31M0 := append(dmThreads13M0, &dmThreadEnumeration)
+	dmThreads31M1 := append(dmThreads3M1, &dmThreadEnumeration)
 	var dmEnumerationMessages []*NewMessageEntry
 	var dmEnumerationTestVectors []*transactionTestVector
 	for ii := 0; ii < DmEnumerationMsgCount; ii++ {
@@ -564,6 +564,7 @@ func TestNewMessage(t *testing.T) {
 		require.NoError(err)
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, dmThreads31M0)
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, dmThreads31M1)
+		_verifyDmMessageEntries(t, utxoView, dmThreadEnumeration, dmEnumerationMessages)
 	}
 	tvb4 := NewTransactionTestVectorBlock(tvv4, tvb4ConnectCallback, nil)
 
@@ -887,15 +888,45 @@ func _verifyGroupChatThreads(t *testing.T, groupChatThreads []*AccessGroupId, ex
 
 func _verifyDmMessageEntries(t *testing.T, utxoView *UtxoView, dmThreadKey DmThreadKey, expectedMessageEntries []*NewMessageEntry) {
 	require := require.New(t)
-	messageEntries, err := utxoView.GetPaginatedMessageEntriesForDmThread(dmThreadKey, math.MaxUint64, 100)
-	require.NoError(err)
-	require.Equal(len(expectedMessageEntries), len(messageEntries))
+
 	sort.Slice(expectedMessageEntries, func(ii, jj int) bool {
 		return expectedMessageEntries[ii].TimestampNanos < expectedMessageEntries[jj].TimestampNanos
 	})
-	for ii, expectedMessageEntry := range expectedMessageEntries {
-		_verifyEqualMessageEntries(t, expectedMessageEntry, messageEntries[ii])
+	_verify := func(messageEntries []*NewMessageEntry) {
+		require.Equal(len(expectedMessageEntries), len(messageEntries))
+		for ii, expectedMessageEntry := range expectedMessageEntries {
+			_verifyEqualMessageEntries(t, expectedMessageEntry, messageEntries[ii])
+		}
 	}
+
+	loopWithPaginatedCall := func(maxMessagesToFetch uint64) {
+		var startTimestamp uint64
+		startTimestamp = math.MaxUint64
+		messageEntries := []*NewMessageEntry{}
+		for {
+			// Fetch the next page of messages.
+			messageEntriesPage, err := utxoView.GetPaginatedMessageEntriesForDmThread(dmThreadKey, startTimestamp, maxMessagesToFetch)
+			require.NoError(err)
+			if len(messageEntriesPage) == 0 {
+				break
+			}
+			require.Equal(true, uint64(len(messageEntriesPage)) <= maxMessagesToFetch)
+			messageEntries = append(messageEntriesPage, messageEntries...)
+			startTimestamp = messageEntriesPage[0].TimestampNanos
+			if uint64(len(messageEntriesPage)) < maxMessagesToFetch {
+				break
+			}
+		}
+		_verify(messageEntries)
+	}
+
+	// Check a couple of different page sizes.
+	loopWithPaginatedCall(1)
+	loopWithPaginatedCall(2)
+	loopWithPaginatedCall(3)
+	loopWithPaginatedCall(5)
+	loopWithPaginatedCall(10)
+	loopWithPaginatedCall(math.MaxUint32)
 }
 
 func _verifyGroupMessageEntries(t *testing.T, utxoView *UtxoView, groupChatThreadKey AccessGroupId, expectedMessageEntries []*NewMessageEntry) {

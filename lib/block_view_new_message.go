@@ -462,7 +462,7 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForDmThreadRecursionSafe(dmThrea
 		}
 
 		// Make sure the message has a timestamp that is smaller than our starting timestamp.
-		isValidTimestamp := startingTimestamp >= dmMessageKeyIter.TimestampNanos
+		isValidTimestamp := startingTimestamp > dmMessageKeyIter.TimestampNanos
 		if !isValidTimestamp {
 			continue
 		}
