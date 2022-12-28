@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -99,7 +100,9 @@ func TestNewMessage(t *testing.T) {
 	groupName1 := NewGroupKeyName(groupNameBytes1)
 	groupNameBytes2 := []byte("group2")
 	groupName2 := NewGroupKeyName(groupNameBytes2)
-	_ = groupName2
+	groupNameBytes3 := []byte("gang-gang")
+	groupName3 := NewGroupKeyName(groupNameBytes3)
+	_ = groupName3
 
 	// -------------------------------------------------------------------------------------
 	// Basic DM and Group Chat Validation Tests.
@@ -313,13 +316,202 @@ func TestNewMessage(t *testing.T) {
 		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m2PublicKey, []*AccessGroupId{&groupIdM2N2})
 		_verifyGroupMessageEntries(t, utxoView, groupIdM2N2, []*NewMessageEntry{tv18MessageEntry, tv19MessageEntry})
 	}
-	tv20MessageEntry := _createMessageEntry(*m1PublicKey, *BaseGroupKeyName(), *m1PublicKey,
-		*m2PublicKey, *groupName2, *m2PublicKey, []byte{19, 20, 21}, 17, nil)
-	tv20 := _createNewMessageTestVector("TEST 20: (FAIL) Try connecting new message group chat create transaction "+
-		"sent from non-member (m1, baseGroup) to (m2, groupName2)", m1Priv, m1PubBytes,
-		tv20MessageEntry, NewMessageTypeGroupChat, NewMessageOperationCreate, RuleErrorNewMessageGroupChatMemberEntryDoesntExist)
-	tvv3 := []*transactionTestVector{tv13, tv14, tv15, tv16, tv17, tv18, tv19, tv20}
+	// -------------------------------------------------------------------------------------
+	// Verify Group Chat With Encryption/Decryption aka. Gang-Gang test.
+	// -------------------------------------------------------------------------------------
+	// Create access groups (m0, defaultKey) and (m3, defaultKey).
+	// Membership:
+	// (m1, groupName1) ->
+	// 		(m0, baseGroup)
+	// (m2, groupName2) ->
+	// (m0, defaultKey) ->
+	// (m1, defaultKey) ->
+	// (m3, defaultKey) ->
+	m0DefaultKeyPriv, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	m0DefaultKeyPk := NewPublicKey(m0DefaultKeyPriv.PubKey().SerializeCompressed())
+	m1DefaultKeyPriv, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	m1DefaultKeyPk := NewPublicKey(m1DefaultKeyPriv.PubKey().SerializeCompressed())
+	m3DefaultKeyPriv, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	m3DefaultKeyPk := NewPublicKey(m3DefaultKeyPriv.PubKey().SerializeCompressed())
+
+	tv20 := _createAccessGroupTestVector("TEST 20: (PASS) Try connecting an access group create transaction for "+
+		"group (m0, defaultKey)", m0Priv, m0PubBytes, m0PubBytes, m0DefaultKeyPk.ToBytes(), DefaultGroupKeyName().ToBytes(), AccessGroupOperationTypeCreate,
+		nil, nil)
+	tv20p5 := _createAccessGroupTestVector("TEST 20.5: (PASS) Try connecting an access group create transaction for "+
+		"group (m1, defaultKey)", m1Priv, m1PubBytes, m1PubBytes, m1DefaultKeyPk.ToBytes(), DefaultGroupKeyName().ToBytes(), AccessGroupOperationTypeCreate,
+		nil, nil)
+	tv21 := _createAccessGroupTestVector("TEST 21: (PASS) Try connecting an access group create transaction for "+
+		"group (m3, defaultKey)", m3Priv, m3PubBytes, m3PubBytes, m3DefaultKeyPk.ToBytes(), DefaultGroupKeyName().ToBytes(), AccessGroupOperationTypeCreate,
+		nil, nil)
+
+	// Create access group (m3, groupName3) and add members (m3, defaultKey), (m0, defaultKey).
+	// Membership:
+	// (m1, groupName1) ->
+	// 		(m0, baseGroup)
+	// (m2, groupName2) ->
+	// (m0, defaultKey) ->
+	// (m3, defaultKey) ->
+	// (m3, groupName3) ->
+	//      (m3, defaultKey)
+	// 		(m0, defaultKey)
+	groupName3SharedPriv, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	groupName3SharedPk := NewPublicKey(groupName3SharedPriv.PubKey().SerializeCompressed())
+	groupName3SharedPk_EncryptedTo_m0DefaultPk := _encryptBytes(groupName3SharedPriv.Serialize(), *m0DefaultKeyPk)
+	groupName3SharedPk_EncryptedTo_m1DefaultPk := _encryptBytes(groupName3SharedPriv.Serialize(), *m1DefaultKeyPk)
+	groupName3SharedPk_EncryptedTo_m3DefaultPk := _encryptBytes(groupName3SharedPriv.Serialize(), *m3DefaultKeyPk)
+
+	tv22 := _createAccessGroupTestVector("TEST 22: (PASS) Try connecting an access group create transaction for "+
+		"group (m3, groupName3)", m3Priv, m3PubBytes, m3PubBytes, groupName3SharedPk.ToBytes(), groupNameBytes3, AccessGroupOperationTypeCreate,
+		nil, nil)
+	groupIdM3N3 := *NewAccessGroupId(m3PublicKey, groupName3.ToBytes())
+	tv23Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m3PublicKey.ToBytes(), AccessGroupMemberKeyName: DefaultGroupKeyName().ToBytes(),
+			EncryptedKey: groupName3SharedPk_EncryptedTo_m3DefaultPk, ExtraData: nil},
+		{AccessGroupMemberPublicKey: m0PublicKey.ToBytes(), AccessGroupMemberKeyName: DefaultGroupKeyName().ToBytes(),
+			EncryptedKey: groupName3SharedPk_EncryptedTo_m0DefaultPk, ExtraData: nil},
+	}
+	tv23 := _createAccessGroupMembersTestVector("TEST 23: (PASS) Try connecting an access group members transaction for "+
+		"group (m3, groupName3) adding (m3, defaultKey) and (m0, defaultKey)", m3Priv, m3PubBytes, groupName3.ToBytes(),
+		tv23Members, AccessGroupMemberOperationTypeAdd, nil)
+
+	// We will send a couple messages to the group (m3, groupName3) and verify that everyone can decrypt them.
+	// Messages
+	// (m3, groupName3) ->
+	// 		(m3, defaultKey | m3, groupName3 | {"hello world", 17})
+	// 		(m0, defaultKey | m3, groupName3 | {"hello world too", 15})
+	//      (m0, defaultKey | m3, groupName3 | {"hello world three", 20})
+	plainText1 := []byte("hello world")
+	plainText2 := []byte("hello world too")
+	plainText3 := []byte("hello world three")
+	groupName3Message1 := _encryptBytes(plainText1, *groupName3SharedPk)
+	groupName3Message2 := _encryptBytes(plainText2, *groupName3SharedPk)
+	groupName3Message3 := _encryptBytes(plainText3, *groupName3SharedPk)
+	tv24MessageEntry := _createMessageEntry(*m3PublicKey, *DefaultGroupKeyName(), *m3DefaultKeyPk,
+		*m3PublicKey, *groupName3, *groupName3SharedPk, groupName3Message1, 17, nil)
+	tv25MessageEntry := _createMessageEntry(*m0PublicKey, *DefaultGroupKeyName(), *m0DefaultKeyPk,
+		*m3PublicKey, *groupName3, *groupName3SharedPk, groupName3Message2, 15, nil)
+	tv26MessageEntry := _createMessageEntry(*m0PublicKey, *DefaultGroupKeyName(), *m0DefaultKeyPk,
+		*m3PublicKey, *groupName3, *groupName3SharedPk, groupName3Message3, 20, nil)
+	tv24 := _createNewMessageTestVector("TEST 24: (PASS) Try connecting a message transaction for "+
+		"group (m3, groupName3)", m3Priv, m3PubBytes, tv24MessageEntry,
+		NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
+	messages24GroupM3N3 := []*NewMessageEntry{tv24MessageEntry}
+	plainTexts24GroupM3N3 := [][]byte{plainText1}
+	tv24.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m3PublicKey, []*AccessGroupId{&groupIdM3N3})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m0PublicKey, []*AccessGroupId{&groupIdM1N1, &groupIdM3N3})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m1PublicKey, []*AccessGroupId{&groupIdM1N1})
+		_verifyGroupMessageEntries(t, utxoView, groupIdM3N3, messages24GroupM3N3)
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m0PublicKey, m0DefaultKeyPriv.Serialize(), plainTexts24GroupM3N3)
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m3PublicKey, m3DefaultKeyPriv.Serialize(), plainTexts24GroupM3N3)
+	}
+	tv24.disconnectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m3PublicKey, []*AccessGroupId{})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m0PublicKey, []*AccessGroupId{&groupIdM1N1})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m1PublicKey, []*AccessGroupId{&groupIdM1N1})
+		_verifyGroupMessageEntries(t, utxoView, groupIdM3N3, []*NewMessageEntry{})
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m0PublicKey, m0DefaultKeyPriv.Serialize(), [][]byte{})
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m3PublicKey, m3DefaultKeyPriv.Serialize(), [][]byte{})
+	}
+	messages25GroupM3N3 := []*NewMessageEntry{tv24MessageEntry, tv25MessageEntry}
+	plainTexts25GroupM3N3 := [][]byte{plainText2, plainText1}
+	tv25 := _createNewMessageTestVector("TEST 25: (PASS) Try connecting a message transaction for "+
+		"group (m3, groupName3)", m0Priv, m0PubBytes, tv25MessageEntry,
+		NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
+	tv25.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m3PublicKey, []*AccessGroupId{&groupIdM3N3})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m0PublicKey, []*AccessGroupId{&groupIdM1N1, &groupIdM3N3})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m1PublicKey, []*AccessGroupId{&groupIdM1N1})
+		_verifyGroupMessageEntries(t, utxoView, groupIdM3N3, messages25GroupM3N3)
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m0PublicKey, m0DefaultKeyPriv.Serialize(), plainTexts25GroupM3N3)
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m3PublicKey, m3DefaultKeyPriv.Serialize(), plainTexts25GroupM3N3)
+	}
+	tv25.disconnectCallback = tv24.connectCallback
+	messages26GroupM3N3 := []*NewMessageEntry{tv24MessageEntry, tv25MessageEntry, tv26MessageEntry}
+	plainTexts26GroupM3N3 := [][]byte{plainText2, plainText1, plainText3}
+	tv26 := _createNewMessageTestVector("TEST 26: (PASS) Try connecting a message transaction for "+
+		"group (m3, groupName3)", m0Priv, m0PubBytes, tv26MessageEntry,
+		NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
+	tv26.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m3PublicKey, []*AccessGroupId{&groupIdM3N3})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m0PublicKey, []*AccessGroupId{&groupIdM1N1, &groupIdM3N3})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m1PublicKey, []*AccessGroupId{&groupIdM1N1})
+		_verifyGroupMessageEntries(t, utxoView, groupIdM3N3, messages26GroupM3N3)
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m0PublicKey, m0DefaultKeyPriv.Serialize(), plainTexts26GroupM3N3)
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m3PublicKey, m3DefaultKeyPriv.Serialize(), plainTexts26GroupM3N3)
+	}
+	tv26.disconnectCallback = tv25.connectCallback
+
+	// Now let's try sending a message from non-existing member (m1, defaultKey) to (m3, groupName3).
+	plainText4 := []byte("Hello world four")
+	groupName3Message4 := _encryptBytes(plainText4, *groupName3SharedPk)
+	tv27MessageEntry := _createMessageEntry(*m1PublicKey, *DefaultGroupKeyName(), *m1DefaultKeyPk,
+		*m3PublicKey, *groupName3, *groupName3SharedPk, groupName3Message4, 25, nil)
+	tv27 := _createNewMessageTestVector("TEST 27: (FAIL) Try connecting new message group chat create transaction "+
+		"sent from non-member (m1, defaultKey) to (m2, groupName2)", m1Priv, m1PubBytes,
+		tv27MessageEntry, NewMessageTypeGroupChat, NewMessageOperationCreate, RuleErrorNewMessageGroupChatMemberEntryDoesntExist)
+
+	// We will add (m1, defaultKey) to the group (m3, groupName3) and try sending the message again. It should pass.
+	// Membership:
+	// (m1, groupName1) ->
+	// 		(m0, baseGroup)
+	// (m2, groupName2) ->
+	// (m0, defaultKey) ->
+	// (m3, defaultKey) ->
+	// (m3, groupName3) ->
+	//      (m3, defaultKey)
+	// 		(m0, defaultKey)
+	//      (m1, defaultKey)
+	//
+	// Messages:
+	// (m3, groupName3) ->
+	// 		(m3, defaultKey | m3, groupName3 | {"hello world", 17})
+	// 		(m0, defaultKey | m3, groupName3 | {"hello world too", 15})
+	//      (m0, defaultKey | m3, groupName3 | {"hello world three", 20})
+	// 		(m1, defaultKey | m3, groupName3 | {"hello world four", 25})
+	tv28Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m1PublicKey.ToBytes(), AccessGroupMemberKeyName: DefaultGroupKeyName().ToBytes(),
+			EncryptedKey: groupName3SharedPk_EncryptedTo_m1DefaultPk, ExtraData: nil},
+	}
+	tv28 := _createAccessGroupMembersTestVector("TEST 28: (PASS) Try connecting an access group members transaction for "+
+		"group (m3, groupName3) adding (m1, defaultKey)", m3Priv, m3PubBytes, groupName3.ToBytes(),
+		tv28Members, AccessGroupMemberOperationTypeAdd, nil)
+	tv28.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m3PublicKey, []*AccessGroupId{&groupIdM3N3})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m0PublicKey, []*AccessGroupId{&groupIdM1N1, &groupIdM3N3})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m1PublicKey, []*AccessGroupId{&groupIdM1N1, &groupIdM3N3})
+		_verifyGroupMessageEntries(t, utxoView, groupIdM3N3, messages26GroupM3N3)
+		// Make sure m1pub can now also decrypt messages.
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m0PublicKey, m0DefaultKeyPriv.Serialize(), plainTexts26GroupM3N3)
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m3PublicKey, m3DefaultKeyPriv.Serialize(), plainTexts26GroupM3N3)
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m1PublicKey, m1DefaultKeyPriv.Serialize(), plainTexts26GroupM3N3)
+	}
+	tv29 := _createNewMessageTestVector("TEST 29: (PASS) Try connecting new message group chat create transaction "+
+		"sent from (m1, defaultKey) to (m3, groupName3)", m1Priv, m1PubBytes,
+		tv27MessageEntry, NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
+	messages29GroupM3N3 := []*NewMessageEntry{tv24MessageEntry, tv25MessageEntry, tv26MessageEntry, tv27MessageEntry}
+	plainTexts29GroupM3N3 := [][]byte{plainText2, plainText1, plainText3, plainText4}
+	tv29.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m3PublicKey, []*AccessGroupId{&groupIdM3N3})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m0PublicKey, []*AccessGroupId{&groupIdM1N1, &groupIdM3N3})
+		_verifyGroupChatThreadsWithUtxoView(t, utxoView, *m1PublicKey, []*AccessGroupId{&groupIdM1N1, &groupIdM3N3})
+		_verifyGroupMessageEntries(t, utxoView, groupIdM3N3, messages29GroupM3N3)
+		// Sanity-check that everyone can decrypt the new message.
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m0PublicKey, m0DefaultKeyPriv.Serialize(), plainTexts29GroupM3N3)
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m3PublicKey, m3DefaultKeyPriv.Serialize(), plainTexts29GroupM3N3)
+		_verifyGroupMessageEntriesDecryption(t, utxoView, groupIdM3N3, *m1PublicKey, m1DefaultKeyPriv.Serialize(), plainTexts29GroupM3N3)
+	}
+	tvv3 := []*transactionTestVector{tv13, tv14, tv15, tv16, tv17, tv18, tv19, tv20, tv20p5, tv21, tv22, tv23, tv24,
+		tv25, tv26, tv27, tv28, tv29}
 	tvb3 := NewTransactionTestVectorBlock(tvv3, nil, nil)
+
+	// -------------------------------------------------------------------------------------
+	// Enumeration tests. Add a bunch of threads and messages and make sure we can enumerate them properly.
+	// -------------------------------------------------------------------------------------
 
 	tvbb := []*transactionTestVectorBlock{tvb1, tvb2, tvb3}
 
@@ -665,6 +857,41 @@ func _verifyGroupMessageEntries(t *testing.T, utxoView *UtxoView, groupChatThrea
 	}
 }
 
+func _verifyGroupMessageEntriesDecryption(t *testing.T, utxoView *UtxoView, groupChatThreadKey AccessGroupId,
+	memberAccessGroupOwnerPublicKey PublicKey, memberAccessGroupPrivateKey []byte, expectedPlainTextsInOrder [][]byte, ) {
+
+	require := require.New(t)
+	// Make sure the group chat access group exists.
+	groupChatAccessGroupEntry, err := utxoView.GetAccessGroupEntryWithAccessGroupId(&groupChatThreadKey)
+	require.NoError(err)
+	require.NotNil(groupChatAccessGroupEntry)
+	require.Equal(false, groupChatAccessGroupEntry.isDeleted)
+	// Fetch messages for the group chat.
+	messageEntries, err := utxoView.GetPaginatedMessageEntriesForGroupChatThread(groupChatThreadKey, math.MaxUint64, 100)
+	require.NoError(err)
+	require.Equal(len(expectedPlainTextsInOrder), len(messageEntries))
+	// Verify that the member entry exists
+	memberEntry, err := utxoView.GetAccessGroupMemberEntry(&memberAccessGroupOwnerPublicKey,
+		&groupChatThreadKey.AccessGroupOwnerPublicKey, &groupChatThreadKey.AccessGroupKeyName)
+	require.NoError(err)
+	require.NotNil(memberEntry)
+	require.Equal(false, memberEntry.isDeleted)
+	// Fetch the access group corresponding to the member entry we've found and make sure its access group public key
+	// matches the private key provided through the params.
+	memberAccessGroupEntry, err := utxoView.GetAccessGroupEntry(&memberAccessGroupOwnerPublicKey, memberEntry.AccessGroupMemberKeyName)
+	require.NoError(err)
+	require.NotNil(memberAccessGroupEntry)
+	require.Equal(false, memberAccessGroupEntry.isDeleted)
+	_, memberAccessGroupPublicKeyFromPriv := btcec.PrivKeyFromBytes(btcec.S256(), memberAccessGroupPrivateKey)
+	require.Equal(true, bytes.Equal(memberAccessGroupEntry.AccessGroupPublicKey.ToBytes(), memberAccessGroupPublicKeyFromPriv.SerializeCompressed()))
+	// Decrypt the EncryptedKey present in the memberEntry to get the message encryption/decryption key.
+	decryptionKey := _decryptBytes(memberEntry.EncryptedKey, memberAccessGroupPrivateKey)
+	for ii, messageEntry := range messageEntries {
+		plainText := _decryptBytes(messageEntry.EncryptedText, decryptionKey)
+		require.Equal(true, bytes.Equal(plainText, expectedPlainTextsInOrder[ii]))
+	}
+}
+
 func _verifyEqualMessageEntries(t *testing.T, messageEntryA *NewMessageEntry, messageEntryB *NewMessageEntry) {
 	require := require.New(t)
 	require.Equal(true, bytes.Equal(messageEntryA.SenderAccessGroupOwnerPublicKey.ToBytes(), messageEntryB.SenderAccessGroupOwnerPublicKey.ToBytes()))
@@ -676,4 +903,27 @@ func _verifyEqualMessageEntries(t *testing.T, messageEntryA *NewMessageEntry, me
 	require.Equal(true, bytes.Equal(messageEntryA.EncryptedText, messageEntryB.EncryptedText))
 	require.Equal(true, messageEntryA.TimestampNanos == messageEntryB.TimestampNanos)
 	require.Equal(true, bytes.Equal(EncodeExtraData(messageEntryA.ExtraData), EncodeExtraData(messageEntryB.ExtraData)))
+}
+
+func _encryptBytes(plainText []byte, publicKey PublicKey) []byte {
+	pk, err := btcec.ParsePubKey(publicKey.ToBytes(), btcec.S256())
+	if err != nil {
+		return nil
+	}
+	encryptedMessageBytes, err := EncryptBytesWithPublicKey(
+		plainText, pk.ToECDSA())
+	if err != nil {
+		return nil
+	}
+	return encryptedMessageBytes
+}
+
+func _decryptBytes(cipherText []byte, privateKey []byte) []byte {
+	recipientPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), privateKey)
+	plain, err := DecryptBytesWithPrivateKey(cipherText, recipientPriv.ToECDSA())
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+	return plain
 }

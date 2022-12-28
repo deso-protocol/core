@@ -10,8 +10,7 @@ import (
 // <groupOwnerPublicKey, groupKeyName>. Based on the blockheight, we fetch the full group or we fetch
 // the simplified message group entry from the membership index. forceFullEntry is an optional parameter that
 // will force us to always fetch the full group entry.
-func (bav *UtxoView) GetAccessGroupEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
-	blockHeight uint32) (*AccessGroupEntry, error) {
+func (bav *UtxoView) GetAccessGroupEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) (*AccessGroupEntry, error) {
 
 	// If either of the provided parameters is nil, we return.
 	if groupOwnerPublicKey == nil || groupKeyName == nil {
