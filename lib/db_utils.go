@@ -2180,10 +2180,17 @@ func _dbKeyForPrefixDmThreadIndex(key DmThreadKey) []byte {
 	return prefixCopy
 }
 
-func _dbSeekPrefixForPrefixDmThreadIndex(userGroupOwnerPublicKey PublicKey, userGroupKeyName GroupKeyName) []byte {
+func _dbSeekPrefixForDmThreadIndexWithUserPublicKey(userGroupOwnerPublicKey PublicKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixDmThreadIndex...)
 	prefixCopy = append(prefixCopy, userGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, userGroupKeyName.ToBytes()...)
+	return prefixCopy
+}
+
+func _dbSeekPrefixForDmThreadIndexWithAccessGroupId(accessGroupId AccessGroupId) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixDmThreadIndex...)
+	prefixCopy = append(prefixCopy, accessGroupId.AccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, accessGroupId.AccessGroupKeyName.ToBytes()...)
+
 	return prefixCopy
 }
 
@@ -2239,12 +2246,12 @@ func DBCheckDmThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, key DmThre
 	return &dmThreadExists, nil
 }
 
-func DBGetAllUserDmThreadsByGroupKeyName(db *badger.DB, snap *Snapshot,
+func DBGetAllUserDmThreadsByAccessGroupId(db *badger.DB, snap *Snapshot,
 	userGroupOwnerPublicKey PublicKey, userGroupKeyName GroupKeyName) ([]*DmThreadKey, error) {
 	var ret []*DmThreadKey
 	var err error
 	err = db.View(func(txn *badger.Txn) error {
-		ret, err = DBGetAllUserDmThreadsByGroupKeyNameWithTxn(txn, snap, userGroupOwnerPublicKey, userGroupKeyName)
+		ret, err = DBGetAllUserDmThreadsByAccessGroupIdWithTxn(txn, snap, userGroupOwnerPublicKey, userGroupKeyName)
 		return err
 	})
 	if err != nil {
@@ -2254,10 +2261,11 @@ func DBGetAllUserDmThreadsByGroupKeyName(db *badger.DB, snap *Snapshot,
 	return ret, nil
 }
 
-func DBGetAllUserDmThreadsByGroupKeyNameWithTxn(txn *badger.Txn, snap *Snapshot,
+func DBGetAllUserDmThreadsByAccessGroupIdWithTxn(txn *badger.Txn, snap *Snapshot,
 	userGroupOwnerPublicKey PublicKey, userGroupKeyName GroupKeyName) ([]*DmThreadKey, error) {
 
-	prefix := _dbSeekPrefixForPrefixDmThreadIndex(userGroupOwnerPublicKey, userGroupKeyName)
+	accessGroupId := NewAccessGroupId(&userGroupOwnerPublicKey, userGroupKeyName.ToBytes())
+	prefix := _dbSeekPrefixForDmThreadIndexWithAccessGroupId(*accessGroupId)
 	keysFound := _enumerateKeysOnlyForPrefixWithTxn(txn, prefix)
 
 	// Decode found keys.
@@ -2300,7 +2308,7 @@ func DBGetAllUserDmThreads(db *badger.DB, snap *Snapshot, userGroupOwnerPublicKe
 func DBGetAllUserDmThreadsWithTxn(txn *badger.Txn, snap *Snapshot,
 	userGroupOwnerPublicKey PublicKey) ([]*DmThreadKey, error) {
 
-	prefix := _dbSeekPrefixForPrefixDmThreadIndex(userGroupOwnerPublicKey, GroupKeyName{})
+	prefix := _dbSeekPrefixForDmThreadIndexWithUserPublicKey(userGroupOwnerPublicKey)
 	keysFound := _enumerateKeysOnlyForPrefixWithTxn(txn, prefix)
 
 	// Decode found keys.

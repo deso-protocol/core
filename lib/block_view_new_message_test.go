@@ -53,6 +53,9 @@ func TestNewMessage(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
+	const DmEnumerationMsgCount = 50
+	const GroupChatEnumerationMsgCount = 50
+
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m0PublicKey := NewPublicKey(m0PubBytes)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
@@ -259,10 +262,10 @@ func TestNewMessage(t *testing.T) {
 	groupIdM2B := *NewAccessGroupId(m2PublicKey, BaseGroupKeyName().ToBytes())
 	dmM0BM2B := _createDmThreadKey(groupIdM0B, groupIdM2B)
 	dmThreads13M0 := append(dmThreads3M0, &dmM0BM2B)
-	dmThreads13M1 := []*DmThreadKey{&dmM0BM2B}
+	dmThreads13M2 := []*DmThreadKey{&dmM0BM2B}
 	tv13.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, dmThreads13M0)
-		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m2PublicKey, dmThreads13M1)
+		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m2PublicKey, dmThreads13M2)
 		_verifyDmMessageEntries(t, utxoView, dmM0BM2B, []*NewMessageEntry{tv13MessageEntry})
 	}
 	tv14MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
@@ -512,8 +515,59 @@ func TestNewMessage(t *testing.T) {
 	// -------------------------------------------------------------------------------------
 	// Enumeration tests. Add a bunch of threads and messages and make sure we can enumerate them properly.
 	// -------------------------------------------------------------------------------------
+	// Create a bunch of messages that will be sent within the same DM thread.
+	// We will send them from (m0, "enumeration-sender") to (m1, "enumeration-recipient"), or other way round.
+	dmEnumerationSenderKeyNameBytes := []byte("enumeration-sender")
+	dmEnumerationSenderKeyName := NewGroupKeyName(dmEnumerationSenderKeyNameBytes)
+	dmEnumerationRecipientKeyNameBytes := []byte("enumeration-recipient")
+	dmEnumerationRecipientKeyName := NewGroupKeyName(dmEnumerationRecipientKeyNameBytes)
+	tv30 := _createAccessGroupTestVector("TEST 30: (PASS) Try connecting access group create transaction "+
+		"for group (m0, enumerationSender)", m0Priv, m0PubBytes, m0PubBytes, groupPk1, dmEnumerationSenderKeyName.ToBytes(),
+		AccessGroupOperationTypeCreate, nil, nil)
+	tv31 := _createAccessGroupTestVector("TEST 31: (PASS) Try connecting access group create transaction "+
+		"for group (m1, enumerationRecipient)", m1Priv, m1PubBytes, m1PubBytes, groupPk2, dmEnumerationRecipientKeyName.ToBytes(),
+		AccessGroupOperationTypeCreate, nil, nil)
+	groupIdM0Es := *NewAccessGroupId(m0PublicKey, dmEnumerationSenderKeyNameBytes)
+	groupIdM1Er := *NewAccessGroupId(m1PublicKey, dmEnumerationRecipientKeyNameBytes)
+	dmThreadDmEnumeration := _createDmThreadKey(groupIdM0Es, groupIdM1Er)
+	dmThreads31M0 := append(dmThreads13M0, &dmThreadDmEnumeration)
+	dmThreads31M1 := append(dmThreads3M1, &dmThreadDmEnumeration)
+	var dmEnumerationMessages []*NewMessageEntry
+	var dmEnumerationTestVectors []*transactionTestVector
+	for ii := 0; ii < DmEnumerationMsgCount; ii++ {
+		var msg *NewMessageEntry
+		var tv *transactionTestVector
+		// If ii % 2 == 0, we will send the message from the sender; otherwise we will use the recipient.
+		if ii%2 == 0 {
+			msg = _createMessageEntry(*m0PublicKey, *dmEnumerationSenderKeyName, *m0PublicKey,
+				*m1PublicKey, *dmEnumerationRecipientKeyName, *m1PublicKey, []byte(fmt.Sprintf("message %d", ii)),
+				uint64(ii+1), nil)
+			tv = _createNewMessageTestVector(fmt.Sprintf("TEST 32.%d: (PASS) Try connecting new message DM transaction "+
+				"sent from (m0, enumerationSender) to (m1, enumerationRecipient)", ii), m0Priv, m0PubBytes,
+				msg, NewMessageTypeDm, NewMessageOperationCreate, nil)
+		} else {
+			msg = _createMessageEntry(*m1PublicKey, *dmEnumerationRecipientKeyName, *m1PublicKey,
+				*m0PublicKey, *dmEnumerationSenderKeyName, *m0PublicKey, []byte(fmt.Sprintf("message %d", ii)),
+				uint64(ii+1), nil)
+			tv = _createNewMessageTestVector(fmt.Sprintf("TEST 32.%d: (PASS) Try connecting new message DM transaction "+
+				"sent from (m1, enumerationRecipient) to (m0, enumerationSender)", ii), m1Priv, m1PubBytes,
+				msg, NewMessageTypeDm, NewMessageOperationCreate, nil)
+		}
+		dmEnumerationMessages = append(dmEnumerationMessages, msg)
+		dmEnumerationTestVectors = append(dmEnumerationTestVectors, tv)
+	}
+	tvv4 := []*transactionTestVector{tv30, tv31}
+	tvv4 = append(tvv4, dmEnumerationTestVectors...)
 
-	tvbb := []*transactionTestVectorBlock{tvb1, tvb2, tvb3}
+	tvb4ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, dmThreads31M0)
+		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, dmThreads31M1)
+	}
+	tvb4 := NewTransactionTestVectorBlock(tvv4, tvb4ConnectCallback, nil)
+
+	tvbb := []*transactionTestVectorBlock{tvb1, tvb2, tvb3, tvb4}
 
 	tes := NewTransactionTestSuite(t, tvbb, tConfig)
 	tes.Run()
