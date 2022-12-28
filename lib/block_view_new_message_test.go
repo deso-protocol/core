@@ -858,7 +858,7 @@ func _verifyGroupMessageEntries(t *testing.T, utxoView *UtxoView, groupChatThrea
 }
 
 func _verifyGroupMessageEntriesDecryption(t *testing.T, utxoView *UtxoView, groupChatThreadKey AccessGroupId,
-	memberAccessGroupOwnerPublicKey PublicKey, memberAccessGroupPrivateKey []byte, expectedPlainTextsInOrder [][]byte, ) {
+	memberAccessGroupOwnerPublicKey PublicKey, memberAccessGroupPrivateKey []byte, expectedPlainTextsInOrder [][]byte) {
 
 	require := require.New(t)
 	// Make sure the group chat access group exists.
