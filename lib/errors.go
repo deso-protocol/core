@@ -128,6 +128,8 @@ const (
 	RuleErrorAccessGroupMemberEnumerationRecursionLimit  RuleError = "RuleErrorAccessGroupMemberEnumerationRecursionLimit"
 	RuleErrorAccessGroupMemberPublicKeyMismatch          RuleError = "RuleErrorAccessGroupMemberPublicKeyMismatch"
 	RuleErrorAccessGroupCreateRequiresNonZeroInput       RuleError = "RuleErrorAccessGroupCreateRequiresNonZeroInput"
+	RuleErrorAccessGroupTransactionSpendingLimitInvalid  RuleError = "RuleErrorAccessGroupTransactionSpendingLimitInvalid"
+	RuleErrorAccessGroupMemberSpendingLimitInvalid       RuleError = "RuleErrorAccessGroupMemberSpendingLimitInvalid"
 
 	RuleErrorNewMessageEncryptedTextLengthExceedsMax         RuleError = "RuleErrorNewMessageEncryptedTextLengthExceedsMax"
 	RuleErrorNewMessageTimestampNanosCannotBeZero            RuleError = "RuleErrorNewMessageTimestampNanosCannotBeZero"

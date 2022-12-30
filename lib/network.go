@@ -5062,6 +5062,16 @@ type TransactionSpendingLimit struct {
 	// transactions
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
 
+	// AccessGroupMap is a map with keys composed of
+	// AccessGroupId || AccessGroupOperationType
+	// to number of transactions.
+	AccessGroupMap map[AccessGroupLimitKey]uint64
+
+	// AccessGroupMemberMap is a map with keys composed of
+	// AccessGroupId || AccessGroupMemberOperationType
+	// to number of transactions.
+	AccessGroupMemberMap map[AccessGroupMemberLimitKey]uint64
+
 	// ===== ENCODER MIGRATION UnlimitedDerivedKeysMigration =====
 	// IsUnlimited field determines whether this derived key has no spending limit.
 	IsUnlimited bool
@@ -5215,6 +5225,10 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 		str += "Unlimited"
 	}
 
+	// AccessGroupLimitMap
+	// AccessGroupMemberLimitMap
+	// TODO: We need to pass blockheight here to support access group spending limit
+
 	return str
 }
 
@@ -5341,6 +5355,46 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 	// IsUnlimited, gated by the encoder migration.
 	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
 		data = append(data, BoolToByte(tsl.IsUnlimited))
+	}
+
+	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		accessGroupLimitMapLength := uint64(len(tsl.AccessGroupMap))
+		data = append(data, UintToBuf(accessGroupLimitMapLength)...)
+		if accessGroupLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[AccessGroupLimitKey](0, accessGroupLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.AccessGroupMap {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.AccessGroupMap[key])...)
+			}
+		}
+
+		accessGroupMemberLimitMapLength := uint64(len(tsl.AccessGroupMemberMap))
+		data = append(data, UintToBuf(accessGroupMemberLimitMapLength)...)
+		if accessGroupMemberLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[AccessGroupMemberLimitKey](0, accessGroupMemberLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.AccessGroupMemberMap {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.AccessGroupMemberMap[key])...)
+			}
+		}
 	}
 
 	return data, nil
@@ -5475,6 +5529,52 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
+	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		// Access Group Map
+		accessGroupLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.AccessGroupMap = make(map[AccessGroupLimitKey]uint64)
+		if accessGroupLimitMapLen > 0 {
+			for ii := uint64(0); ii < accessGroupLimitMapLen; ii++ {
+				accessGroupLimitKey := &AccessGroupLimitKey{}
+				if err = accessGroupLimitKey.Decode(rr); err != nil {
+					return errors.Wrapf(err, "Error decoding access group limit key")
+				}
+				var operationCount uint64
+				operationCount, err = ReadUvarint(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.AccessGroupMap[*accessGroupLimitKey]; exists {
+					return fmt.Errorf("Access group limit key already exists")
+				}
+				tsl.AccessGroupMap[*accessGroupLimitKey] = operationCount
+			}
+		}
+
+		// Access Group Member Map
+		tsl.AccessGroupMemberMap = make(map[AccessGroupMemberLimitKey]uint64)
+		if accessGroupLimitMapLen > 0 {
+			for ii := uint64(0); ii < accessGroupLimitMapLen; ii++ {
+				accessGroupMemberLimitKey := &AccessGroupMemberLimitKey{}
+				if err = accessGroupMemberLimitKey.Decode(rr); err != nil {
+					return errors.Wrapf(err, "Error decoding access group member limit key")
+				}
+				var operationCount uint64
+				operationCount, err = ReadUvarint(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.AccessGroupMemberMap[*accessGroupMemberLimitKey]; exists {
+					return fmt.Errorf("Access group member limit key already exists")
+				}
+				tsl.AccessGroupMemberMap[*accessGroupMemberLimitKey] = operationCount
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -5486,6 +5586,8 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
+		AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
+		AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
 		IsUnlimited:                  tsl.IsUnlimited,
 	}
 
@@ -5509,22 +5611,33 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		copyTSL.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = daoCoinLimitOrderCount
 	}
 
+	for accessGroupLimitKey, accessGroupCount := range tsl.AccessGroupMap {
+		copyTSL.AccessGroupMap[accessGroupLimitKey] = accessGroupCount
+	}
+
+	for accessGroupMemberLimitKey, accessGroupMemberCount := range tsl.AccessGroupMemberMap {
+		copyTSL.AccessGroupMemberMap[accessGroupMemberLimitKey] = accessGroupMemberCount
+	}
+
 	return copyTSL
 }
 
 func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpendingLimit, blockHeight uint32) (_isUnlimited bool, _err error) {
-	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 7)
+	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 9)
 
 	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight {
 		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
 	}
 
+	// TODO: Do we need another blockheight for access group spending limits?
 	if tsl.IsUnlimited && (tsl.GlobalDESOLimit > 0 ||
 		len(tsl.TransactionCountLimitMap) > 0 ||
 		len(tsl.CreatorCoinOperationLimitMap) > 0 ||
 		len(tsl.DAOCoinOperationLimitMap) > 0 ||
 		len(tsl.NFTOperationLimitMap) > 0 ||
-		len(tsl.DAOCoinLimitOrderLimitMap) > 0) {
+		len(tsl.DAOCoinLimitOrderLimitMap) > 0 ||
+		len(tsl.AccessGroupMap) > 0 ||
+		len(tsl.AccessGroupMemberMap) > 0) {
 
 		return tsl.IsUnlimited, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
 	}
@@ -5919,6 +6032,78 @@ func MakeDAOCoinLimitOrderLimitKey(buyingDAOCoinCreatorPKID PKID, sellingDAOCoin
 	return DAOCoinLimitOrderLimitKey{
 		BuyingDAOCoinCreatorPKID:  buyingDAOCoinCreatorPKID,
 		SellingDAOCoinCreatorPKID: sellingDAOCoinCreatorPKID,
+	}
+}
+
+type AccessGroupLimitKey struct {
+	// AccessGroupId is the id of the group for which we want to apply the spending limit
+	AccessGroupId AccessGroupId
+
+	// OperationType is the type of operation for which the spending limit count will apply
+	OperationType AccessGroupOperationType
+}
+
+func (accessGroupLimitKey *AccessGroupLimitKey) Encode() []byte {
+	var data []byte
+	data = append(data, accessGroupLimitKey.AccessGroupId.ToBytes()...)
+	data = append(data, UintToBuf(uint64(accessGroupLimitKey.OperationType))...)
+	return data
+}
+
+func (accessGroupLimitKey *AccessGroupLimitKey) Decode(rr *bytes.Reader) error {
+	accessGroupLimitKey.AccessGroupId = AccessGroupId{}
+	if err := accessGroupLimitKey.AccessGroupId.FromBytes(rr); err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: Problem reading AccessGroupId")
+	}
+
+	operationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: Problem decoding OperationType")
+	}
+	accessGroupLimitKey.OperationType = AccessGroupOperationType(operationType)
+	return nil
+}
+
+func MakeAccessGroupLimitKey(accessGroupId AccessGroupId, operationType AccessGroupOperationType) AccessGroupLimitKey {
+	return AccessGroupLimitKey{
+		AccessGroupId: accessGroupId,
+		OperationType: operationType,
+	}
+}
+
+type AccessGroupMemberLimitKey struct {
+	// AccessGroupId is the id of the group for which we want to apply the member spending limit.
+	AccessGroupId AccessGroupId
+
+	// OperationType is the type of operation for which the spending limit count will apply to.
+	OperationType AccessGroupMemberOperationType
+}
+
+func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Encode() []byte {
+	var data []byte
+	data = append(data, accessGroupMemberLimitKey.AccessGroupId.ToBytes()...)
+	data = append(data, UintToBuf(uint64(accessGroupMemberLimitKey.OperationType))...)
+	return data
+}
+
+func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Decode(rr *bytes.Reader) error {
+	accessGroupMemberLimitKey.AccessGroupId = AccessGroupId{}
+	if err := accessGroupMemberLimitKey.AccessGroupId.FromBytes(rr); err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: Problem reading AccessGroupId")
+	}
+
+	operationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: Problem reading operation type")
+	}
+	accessGroupMemberLimitKey.OperationType = AccessGroupMemberOperationType(operationType)
+	return nil
+}
+
+func MakeAccessGroupMemberLimitKey(accessGroupId AccessGroupId, operationType AccessGroupMemberOperationType) AccessGroupMemberLimitKey {
+	return AccessGroupMemberLimitKey{
+		AccessGroupId: accessGroupId,
+		OperationType: operationType,
 	}
 }
 

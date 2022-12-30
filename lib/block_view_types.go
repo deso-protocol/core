@@ -2399,6 +2399,31 @@ func (key *AccessGroupId) String() string {
 		key.AccessGroupOwnerPublicKey, key.AccessGroupKeyName)
 }
 
+func (key *AccessGroupId) ToBytes() []byte {
+	var data []byte
+	data = append(data, EncodeByteArray(key.AccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(key.AccessGroupKeyName.ToBytes())...)
+	return data
+}
+
+func (key *AccessGroupId) FromBytes(rr *bytes.Reader) error {
+	accessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading AccessGroupOwnerPublicKey")
+	}
+	key.AccessGroupOwnerPublicKey = *NewPublicKey(accessGroupOwnerPublicKeyBytes)
+
+	accessGroupKeyNameBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading AccessGroupKeyName")
+	}
+	key.AccessGroupKeyName = *NewGroupKeyName(accessGroupKeyNameBytes)
+
+	return nil
+}
+
 // AccessGroupMembershipKey is used to index group memberships for a user.
 type AccessGroupMembershipKey struct {
 	AccessGroupMemberPublicKey PublicKey
