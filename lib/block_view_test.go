@@ -156,7 +156,7 @@ type derivedKeyTestTxn struct {
 	senderPublicKey          string
 }
 
-func (txn derivedKeyTestTxn) doDerivedKeyTransaction(t *testing.T, tb *TestBlockChain) (derivedKeyTxn *MsgDeSoTxn,
+func (txn *derivedKeyTestTxn) doDerivedKeyTransaction(t *testing.T, tb *TestBlockChain) (derivedKeyTxn *MsgDeSoTxn,
 	derivedPrivateKey *btcec.PrivateKey) {
 
 	t.Helper()
@@ -166,7 +166,7 @@ func (txn derivedKeyTestTxn) doDerivedKeyTransaction(t *testing.T, tb *TestBlock
 	blockHeight, err := GetBlockTipHeight(tb.db, false)
 	require.NoError(err)
 
-	senderPkBytes, _, err := Base58CheckDecode(txn.senderPublicKey)
+	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
 	require.NoError(err)
 	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
 	require.NoError(err)
@@ -198,15 +198,14 @@ func (txn derivedKeyTestTxn) doDerivedKeyTransaction(t *testing.T, tb *TestBlock
 	return derivedKeyTxn, derivedPriv
 }
 
-func (txn derivedKeyTestTxn) generateTxn(t *testing.T, tb *TestBlockChain) *MsgDeSoTxn {
+func (txn *derivedKeyTestTxn) generateTxn(t *testing.T, tb *TestBlockChain) *MsgDeSoTxn {
 	t.Helper()
 	derivedKeyTxn, derivedPrivKey := txn.doDerivedKeyTransaction(t, tb)
-
 	txn.derivedPrivKey = derivedPrivKey
 	return derivedKeyTxn
 }
 
-func (txn derivedKeyTestTxn) getDerivedPrivKey(t *testing.T) *btcec.PrivateKey {
+func (txn *derivedKeyTestTxn) getDerivedPrivKey(t *testing.T) *btcec.PrivateKey {
 	t.Helper()
 	return txn.derivedPrivKey
 }
@@ -1387,6 +1386,7 @@ func NewTestBlockChain(t *testing.T) *TestBlockChain {
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	return &TestBlockChain{
+		t:        t,
 		chain:    chain,
 		db:       db,
 		mempool:  mempool,
@@ -1797,6 +1797,8 @@ func TestMempoolProcessError(t *testing.T) {
 	require := require.New(t)
 
 	tb := NewTestBlockChain(t)
+	tb.mineBlock()
+	tb.mineBlock()
 
 	senderPkBytes := ProcessKeyBytes(t, senderPkString)
 	recipientPkBytes := ProcessKeyBytes(t, recipientPkString)
@@ -1849,6 +1851,7 @@ func TestMempoolProcessError(t *testing.T) {
 		txnGen := basicTestTxn{senderPublicKeyBytes: senderPkBytes,
 			receiverPublicKeyBytes: recipientPkBytes, amountNanos: 1}
 		txn := txnGen.generateTxn(t, tb)
+		tb.chain.AddInputsAndChangeToTransaction(txn, 10, nil)
 		signTransaction(tb.t, txn, tc.signType, tc.signaturePrivateKeyBase58)
 
 		_, err := tb.mempool.processTransaction(txn, true, true, 0, true)
@@ -1862,6 +1865,8 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 	require := require.New(t)
 
 	tb := NewTestBlockChain(t)
+	tb.mineBlock()
+	tb.mineBlock()
 
 	transactionSpendingLimit := &TransactionSpendingLimit{
 		GlobalDESOLimit:              100,
@@ -1880,8 +1885,9 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 	}
 
-	dkTxn := derivedKeyTestTxn{
+	dkTxn := &derivedKeyTestTxn{
 		transactionSpendingLimit: transactionSpendingLimitWithDerivedKeyEntry,
+		senderPublicKey:          senderPkString,
 	}
 
 	derivedKeyTxn := dkTxn.generateTxn(t, tb)
@@ -1998,7 +2004,7 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 	}
 
 	for i := 0; i < len(testCases); i++ {
-		dKeytxn := derivedKeyTestTxn{transactionSpendingLimit: testCases[i].transactionSpendingLimit,
+		dKeytxn := &derivedKeyTestTxn{transactionSpendingLimit: testCases[i].transactionSpendingLimit,
 			senderPublicKey: senderPkString}
 
 		signaturePrivateKeyBase58 := testCases[i].signaturePrivateKeyBase58
@@ -2038,6 +2044,8 @@ func TestBasicTransferSignatures(t *testing.T) {
 	require := require.New(t)
 
 	tb := NewTestBlockChain(t)
+	tb.mineBlock()
+	tb.mineBlock()
 
 	tb.params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 	tb.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
@@ -2104,7 +2112,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 	}
 
-	dkTxn := derivedKeyTestTxn{
+	dkTxn := &derivedKeyTestTxn{
 		transactionSpendingLimit: transactionSpendingLimitWithDerivedKeyEntry,
 	}
 
@@ -2130,7 +2138,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 			signingKeyBase58: senderPrivString,
 		},
 		{
-			transactionGen: derivedKeyTestTxn{
+			transactionGen: &derivedKeyTestTxn{
 				transactionSpendingLimit: &TransactionSpendingLimit{
 					GlobalDESOLimit:              100,
 					TransactionCountLimitMap:     map[TxnType]uint64{TxnTypeAuthorizeDerivedKey: 1},
@@ -2143,7 +2151,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 			signingKeyBase58: "",
 		},
 		{
-			transactionGen: derivedKeyTestTxn{
+			transactionGen: &derivedKeyTestTxn{
 				transactionSpendingLimit: &TransactionSpendingLimit{
 					GlobalDESOLimit:              100,
 					TransactionCountLimitMap:     map[TxnType]uint64{TxnTypeAuthorizeDerivedKey: 1},
@@ -2156,7 +2164,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 			signingKeyBase58: "",
 		},
 		{
-			transactionGen: derivedKeyTestTxn{
+			transactionGen: &derivedKeyTestTxn{
 				transactionSpendingLimit: &TransactionSpendingLimit{
 					GlobalDESOLimit:              100,
 					TransactionCountLimitMap:     map[TxnType]uint64{TxnTypeAuthorizeDerivedKey: 1},
@@ -2170,21 +2178,21 @@ func TestBasicTransferSignatures(t *testing.T) {
 		},
 
 		{
-			transactionGen: derivedKeyTestTxn{
+			transactionGen: &derivedKeyTestTxn{
 				transactionSpendingLimit: nil,
 			},
 			signType:         ECDSA,
 			signingKeyBase58: senderPrivString,
 		},
 		{
-			transactionGen: derivedKeyTestTxn{
+			transactionGen: &derivedKeyTestTxn{
 				transactionSpendingLimit: nil,
 			},
 			signType:         STANDARD_DER,
 			signingKeyBase58: derivedPrivBase58CheckWithEntry,
 		},
 		{
-			transactionGen: derivedKeyTestTxn{
+			transactionGen: &derivedKeyTestTxn{
 				transactionSpendingLimit: nil,
 			},
 			signType:         DESO_DER,
@@ -2202,7 +2210,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 		case basicTestTxn:
 			signingKeyBase58 = tc.signingKeyBase58
 			tb.addTxnInputs(txn)
-		case derivedKeyTestTxn:
+		case *derivedKeyTestTxn:
 			derivedKey := v.getDerivedPrivKey(t)
 			if tc.signingKeyBase58 == "" {
 				signingKeyBase58 = Base58CheckEncode(derivedKey.Serialize(), true, tb.params)

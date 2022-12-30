@@ -1,12 +1,13 @@
 package lib
 
 import (
-	"github.com/dgraph-io/badger/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"math"
 	"reflect"
 	"testing"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func _createNFTWithAdditionalRoyalties(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
@@ -187,13 +188,13 @@ func _createNFTWithAdditionalRoyaltiesAndExtraDataWithTestMeta(
 	extraData map[string][]byte,
 ) {
 	// Sanity check: the number of NFT entries before should be 0.
-	dbNFTEntries := DBGetNFTEntriesForPostHash(testMeta.db, postHashToModify)
+	dbNFTEntries := DBGetNFTEntriesForPostHash(testMeta.tbc.db, postHashToModify)
 	require.Equal(testMeta.t, 0, len(dbNFTEntries))
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, updaterPkBase58Check))
 	currentOps, currentTxn, _, err := _createNFTWithExtraData(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params, feeRateNanosPerKB,
 		updaterPkBase58Check,
 		updaterPrivBase58Check,
 		postHashToModify,
@@ -213,7 +214,7 @@ func _createNFTWithAdditionalRoyaltiesAndExtraDataWithTestMeta(
 	require.NoError(testMeta.t, err)
 
 	// Sanity check: the number of NFT entries after should be numCopies.
-	dbNFTEntries = DBGetNFTEntriesForPostHash(testMeta.db, postHashToModify)
+	dbNFTEntries = DBGetNFTEntriesForPostHash(testMeta.tbc.db, postHashToModify)
 	require.Equal(testMeta.t, int(numCopies), len(dbNFTEntries))
 
 	// Sanity check that the first entry has serial number 1.
@@ -324,9 +325,9 @@ func _createNFTBidWithTestMeta(
 	bidAmountNanos uint64,
 ) {
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, updaterPkBase58Check))
 	currentOps, currentTxn, _, err := _createNFTBid(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params, feeRateNanosPerKB,
 		updaterPkBase58Check,
 		updaterPrivBase58Check,
 		postHash,
@@ -430,9 +431,9 @@ func _acceptNFTBidWithTestMeta(
 	unencryptedUnlockableText string,
 ) {
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, updaterPkBase58Check))
 	currentOps, currentTxn, _, err := _acceptNFTBid(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params, feeRateNanosPerKB,
 		updaterPkBase58Check,
 		updaterPrivBase58Check,
 		postHash,
@@ -521,9 +522,9 @@ func _updateNFTWithTestMeta(
 	buyNowPriceNanos uint64,
 ) {
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, updaterPkBase58Check))
 	currentOps, currentTxn, _, err := _updateNFT(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params, feeRateNanosPerKB,
 		updaterPkBase58Check,
 		updaterPrivBase58Check,
 		postHash,
@@ -611,9 +612,9 @@ func _transferNFTWithTestMeta(
 	unlockableText string,
 ) {
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, senderPkBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, senderPkBase58Check))
 	currentOps, currentTxn, _, err := _transferNFT(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params, feeRateNanosPerKB,
 		senderPkBase58Check,
 		senderPrivBase58Check,
 		receiverPkBase58Check,
@@ -692,9 +693,9 @@ func _acceptNFTTransferWithTestMeta(
 	serialNumber uint64,
 ) {
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, updaterPkBase58Check))
 	currentOps, currentTxn, _, err := _acceptNFTTransfer(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params, feeRateNanosPerKB,
 		updaterPkBase58Check,
 		updaterPrivBase58Check,
 		postHash,
@@ -771,9 +772,9 @@ func _burnNFTWithTestMeta(
 	serialNumber uint64,
 ) {
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, updaterPkBase58Check))
 	currentOps, currentTxn, _, err := _burnNFT(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params, feeRateNanosPerKB,
 		updaterPkBase58Check,
 		updaterPrivBase58Check,
 		postHash,
@@ -812,12 +813,14 @@ func TestNFTBasic(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -1069,7 +1072,7 @@ func TestNFTBasic(t *testing.T) {
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
-		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(27), m0BalAfterNFT)
 	}
 
@@ -1097,7 +1100,7 @@ func TestNFTBasic(t *testing.T) {
 	// Error case: cannot modify a post after it is NFTed.
 	{
 		_, _, _, err := _submitPost(
-			testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+			testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params,
 			10,
 			m0Pub,
 			m0Priv,
@@ -1173,7 +1176,7 @@ func TestNFTBasic(t *testing.T) {
 		numCopies := uint64(10)
 		nftFee := utxoView.GlobalParamsEntry.CreateNFTFeeNanos * numCopies
 
-		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(26), m0BalBeforeNFT)
 
 		extraData := map[string][]byte{
@@ -1200,7 +1203,7 @@ func TestNFTBasic(t *testing.T) {
 		)
 
 		// Check that m0 was charged the correct nftFee.
-		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(25)-nftFee, m0BalAfterNFT)
 
 		nftEntry := DBGetNFTEntryByPostHashSerialNumber(db, chain.snapshot, post2Hash, 1)
@@ -1667,12 +1670,14 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -1742,7 +1747,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			10, /*MinCreatorCoinExpectedNanos*/
 		)
 
-		m0Bal := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		m0Bal := _getBalance(testMeta.t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(30), m0Bal)
 	}
 	// Initial deso locked before royalties.
@@ -1833,7 +1838,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
-		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(29), m0BalAfterNFT)
 	}
 
@@ -2202,12 +2207,14 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -2318,7 +2325,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
-		m0BalAfterNFTs := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		m0BalAfterNFTs := _getBalance(testMeta.t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(m0BalBeforeNFTs-uint64(2), m0BalAfterNFTs)
 	}
 
@@ -2530,12 +2537,14 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -2614,7 +2623,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
-		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(14959), m0BalAfterNFT)
 	}
 
@@ -2782,12 +2791,14 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -2866,7 +2877,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
-		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(14959), m0BalAfterNFT)
 	}
 
@@ -2998,12 +3009,14 @@ func TestNFTMoreErrorCases(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -3142,7 +3155,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
-		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(29), m0BalAfterNFT)
 	}
 
@@ -3346,12 +3359,14 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -3632,12 +3647,14 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -3923,12 +3940,14 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -4109,7 +4128,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 		require.Equal(10000, MaxMaxCopiesPerNFT)
 
 		_, _, _, err := _updateGlobalParamsEntry(
-			testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+			testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params,
 			10, /*FeeRateNanosPerKB*/
 			m3Pub,
 			m3Priv,
@@ -4120,7 +4139,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorMaxCopiesPerNFTTooHigh)
 
 		_, _, _, err = _updateGlobalParamsEntry(
-			testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+			testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params,
 			10, /*FeeRateNanosPerKB*/
 			m3Pub,
 			m3Priv,
@@ -4237,12 +4256,14 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -4533,12 +4554,14 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -4667,7 +4690,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
-		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
+		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(957), m0BalAfterNFT)
 	}
 
@@ -5038,12 +5061,14 @@ func TestBidAmountZero(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -5249,12 +5274,14 @@ func TestNFTBuyNow(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -5325,7 +5352,7 @@ func TestNFTBuyNow(t *testing.T) {
 			10, /*MinCreatorCoinExpectedNanos*/
 		)
 
-		m0Bal := _getBalance(t, testMeta.chain, nil, m0Pub)
+		m0Bal := _getBalance(t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(930), m0Bal)
 	}
 	// Initial deso locked before royalties.
@@ -5400,7 +5427,7 @@ func TestNFTBuyNow(t *testing.T) {
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
-		m0BalAfterNFT := _getBalance(t, testMeta.chain, nil, m0Pub)
+		m0BalAfterNFT := _getBalance(t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(928), m0BalAfterNFT)
 	}
 
@@ -5440,11 +5467,11 @@ func TestNFTBuyNow(t *testing.T) {
 		require.Equal(nftEntry.OwnerPKID, m1PKID.PKID)
 
 		// Balance after. M0's balance should increase by the bid amount (100) less coin royalties (20)
-		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
+		m0BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(1008), m0BalAfter)
 
 		// Balance after. m1 should pay for the bid amount + cover the transaction fee.
-		m1BalAfter := _getBalance(t, testMeta.chain, nil, m1Pub)
+		m1BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m1Pub)
 		require.Equal(uint64(899), m1BalAfter)
 
 		// Make sure royalties to creator and to coin are paid out correctly.
@@ -5532,17 +5559,17 @@ func TestNFTBuyNow(t *testing.T) {
 		require.Equal(nftEntry.OwnerPKID, m2PKID.PKID)
 
 		// Creator Balance after. M0's balance should increase by the creator royalties (15)
-		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
+		m0BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(1023), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore+15)
 
 		// Seller Balance after. M1's balance should increase by the bid amount (150) less coin royalties (30) and creator royalties (15)
-		m1BalAfter := _getBalance(t, testMeta.chain, nil, m1Pub)
+		m1BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m1Pub)
 		require.Equal(uint64(1002), m1BalAfter)
 		require.Equal(m1BalAfter, m1BalBefore+bidAmountNanos-30-15)
 
 		// Bidder Balance after. m2 should pay for the bid amount (150) + cover the transaction fee (1).
-		m2BalAfter := _getBalance(t, testMeta.chain, nil, m2Pub)
+		m2BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m2Pub)
 		require.Equal(uint64(849), m2BalAfter)
 		require.Equal(m2BalAfter, m2BalBefore-bidAmountNanos-1)
 
@@ -5670,17 +5697,17 @@ func TestNFTBuyNow(t *testing.T) {
 		require.Equal(nftEntry.OwnerPKID, m3PKID.PKID)
 
 		// Creator Balance after. M0's balance should increase by the creator royalties (2)
-		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
+		m0BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(1024), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore+2)
 
 		// Bidder Balance after. M3's balance should decrease by the bid amount (20)
-		m3BalAfter := _getBalance(t, testMeta.chain, nil, m3Pub)
+		m3BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m3Pub)
 		require.Equal(uint64(979), m3BalAfter)
 		require.Equal(m3BalAfter, m3BalBefore-20)
 
 		// Seller Balance after. m2's balance should increase by the bid amount (20) less creator royalties (2), coin royalties (4) and the transaction fee (2).
-		m2BalAfter := _getBalance(t, testMeta.chain, nil, m2Pub)
+		m2BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m2Pub)
 		require.Equal(uint64(860), m2BalAfter)
 		require.Equal(m2BalAfter, m2BalBefore+20-4-2-2)
 
@@ -5792,17 +5819,17 @@ func TestNFTBuyNow(t *testing.T) {
 		require.Equal(nftEntry.OwnerPKID, m2PKID.PKID)
 
 		// Creator Balance after. M0's balance should increase by the creator royalties (3)
-		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
+		m0BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(1027), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore+3)
 
 		// Bidder Balance after. M2's balance should decrease by the bid amount (30)
-		m2BalAfter := _getBalance(t, testMeta.chain, nil, m2Pub)
+		m2BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m2Pub)
 		require.Equal(uint64(829), m2BalAfter)
 		require.Equal(m2BalAfter, m2BalBefore-30)
 
 		// Seller Balance after. m3's balance should increase by the bid amount (30) less creator royalties (3), coin royalties (6) and the transaction fee (2).
-		m3BalAfter := _getBalance(t, testMeta.chain, nil, m3Pub)
+		m3BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m3Pub)
 		require.Equal(uint64(996), m3BalAfter)
 		require.Equal(m3BalAfter, m3BalBefore+30-6-3-2)
 
@@ -5908,12 +5935,12 @@ func TestNFTBuyNow(t *testing.T) {
 		require.Equal(nftEntry.OwnerPKID, m0PKID.PKID)
 
 		// Creator & Buyer Balance after. M0's balance should increase by the creator royalties (10) minus the bid amount (100) and the transaction fee (3)
-		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
+		m0BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(934), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore+10-100-3)
 
 		// Seller Balance after. m2's balance should increase by the bid amount (100) less creator royalties (10), coin royalties (20).
-		m2BalAfter := _getBalance(t, testMeta.chain, nil, m2Pub)
+		m2BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m2Pub)
 		require.Equal(uint64(897), m2BalAfter)
 		require.Equal(m2BalAfter, m2BalBefore+100-20-10)
 
@@ -5983,12 +6010,12 @@ func TestNFTBuyNow(t *testing.T) {
 		require.Equal(nftEntry.OwnerPKID, m1PKID.PKID)
 
 		// Creator & Seller Balance after. M0's balance should increase by the bid amount (60) minus the creator coin royalties (12)
-		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
+		m0BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(980), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore+60-12)
 
 		// Buyer's Balance after. m1's balance should decrease by the bid amount (60) plus transaction fee (1).
-		m1BalAfter := _getBalance(t, testMeta.chain, nil, m1Pub)
+		m1BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m1Pub)
 		require.Equal(uint64(938), m1BalAfter)
 		require.Equal(m1BalAfter, m1BalBefore-60-1)
 
@@ -6078,17 +6105,17 @@ func TestNFTBuyNow(t *testing.T) {
 		require.Equal(nftEntry.OwnerPKID, m2PKID.PKID)
 
 		// Creator & Seller Balance after. M0's balance won't increase all, since the creator royalties are 0 (10% of 5 is less than 1).
-		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
+		m0BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(980), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore)
 
 		// Seller's Balance after. m1's balance should increase by the bid amount (5) minus coin royalties (1). There are no creator royalties here.
-		m1BalAfter := _getBalance(t, testMeta.chain, nil, m1Pub)
+		m1BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m1Pub)
 		require.Equal(uint64(940), m1BalAfter)
 		require.Equal(m1BalAfter, m1BalBefore+5-1)
 
 		// Buyer's Balance after. m2's balance should decrease by the bid amount (5) and the transaction fee (1).
-		m2BalAfter := _getBalance(t, testMeta.chain, nil, m2Pub)
+		m2BalAfter := _getBalance(t, testMeta.tbc.chain, nil, m2Pub)
 		require.Equal(uint64(890), m2BalAfter)
 		require.Equal(m2BalAfter, m2BalBefore-5-1)
 
@@ -6266,12 +6293,14 @@ func TestNFTSplits(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -6374,7 +6403,7 @@ func TestNFTSplits(t *testing.T) {
 			10, /*MinCreatorCoinExpectedNanos*/
 		)
 
-		m0Bal := _getBalance(t, testMeta.chain, nil, m0Pub)
+		m0Bal := _getBalance(t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(uint64(930), m0Bal)
 
 		_creatorCoinTxnWithTestMeta(
@@ -6391,7 +6420,7 @@ func TestNFTSplits(t *testing.T) {
 			10, /*MinCreatorCoinExpectedNanos*/
 		)
 
-		m1Bal := _getBalance(t, testMeta.chain, nil, m1Pub)
+		m1Bal := _getBalance(t, testMeta.tbc.chain, nil, m1Pub)
 		require.Equal(uint64(931), m1Bal)
 	}
 	// Initial deso locked before royalties.
@@ -6696,7 +6725,7 @@ func TestNFTSplits(t *testing.T) {
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
-		m0BalAfterNFT := _getBalance(t, testMeta.chain, nil, m0Pub)
+		m0BalAfterNFT := _getBalance(t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(int64(928), int64(m0BalAfterNFT))
 	}
 
@@ -7001,7 +7030,7 @@ func TestNFTSplits(t *testing.T) {
 		)
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
-		m0BalAfterNFT := _getBalance(t, testMeta.chain, nil, m0Pub)
+		m0BalAfterNFT := _getBalance(t, testMeta.tbc.chain, nil, m0Pub)
 		require.Equal(int64(565), int64(m0BalAfterNFT))
 	}
 
@@ -7084,7 +7113,7 @@ func TestNFTSplits(t *testing.T) {
 			10, /*MinCreatorCoinExpectedNanos*/
 		)
 
-		m2Bal := _getBalance(t, testMeta.chain, nil, m2Pub)
+		m2Bal := _getBalance(t, testMeta.tbc.chain, nil, m2Pub)
 		require.Equal(int64(1054), int64(m2Bal))
 	}
 
@@ -7243,12 +7272,14 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 

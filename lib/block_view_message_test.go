@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/dgraph-io/badger/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBasePointSignature(t *testing.T) {
@@ -677,10 +678,10 @@ func _messagingKeyWithExtraDataWithTestMeta(testMeta *TestMeta, senderPk []byte,
 	require := require.New(testMeta.t)
 	assert := assert.New(testMeta.t)
 
-	senderPkBase58Check := Base58CheckEncode(senderPk, false, testMeta.params)
-	balance := _getBalance(testMeta.t, testMeta.chain, nil, senderPkBase58Check)
+	senderPkBase58Check := Base58CheckEncode(senderPk, false, testMeta.tbc.params)
+	balance := _getBalance(testMeta.t, testMeta.tbc.chain, nil, senderPkBase58Check)
 
-	utxoOps, txn, err := _messagingKeyWithExtraData(testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+	utxoOps, txn, err := _messagingKeyWithExtraData(testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params,
 		senderPk, signerPriv, messagingPublicKey, messagingKeyName, keySignature, recipients, extraData)
 
 	if expectedError != nil {
@@ -702,7 +703,7 @@ func _verifyMessagingKey(testMeta *TestMeta, publicKey *PublicKey, entry *Messag
 
 	require := require.New(testMeta.t)
 	messagingKey := NewMessagingGroupKey(publicKey, entry.MessagingGroupKeyName[:])
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot)
+	utxoView, err := NewUtxoView(testMeta.tbc.db, testMeta.tbc.params, nil, testMeta.tbc.chain.snapshot)
 	require.NoError(err)
 	utxoMessagingEntry = utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingKey)
 
@@ -718,7 +719,7 @@ func _verifyAddedMessagingKeys(testMeta *TestMeta, publicKey []byte, expectedEnt
 	require := require.New(testMeta.t)
 	assert := assert.New(testMeta.t)
 
-	require.NoError(testMeta.chain.db.View(func(txn *badger.Txn) error {
+	require.NoError(testMeta.tbc.chain.db.View(func(txn *badger.Txn) error {
 		// Get the DB record.
 		entries, err := DBGetAllUserGroupEntiresWithTxn(txn, publicKey)
 		require.NoError(err)
@@ -770,12 +771,14 @@ func TestMessagingKeys(t *testing.T) {
 	require.NoError(err)
 
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -1648,11 +1651,11 @@ func _connectPrivateMessageWithPartyWithExtraData(testMeta *TestMeta, senderPkBy
 	require := require.New(testMeta.t)
 	assert := assert.New(testMeta.t)
 
-	senderPkBase58Check := Base58CheckEncode(senderPkBytes, false, testMeta.params)
-	balance := _getBalance(testMeta.t, testMeta.chain, nil, senderPkBase58Check)
+	senderPkBase58Check := Base58CheckEncode(senderPkBytes, false, testMeta.tbc.params)
+	balance := _getBalance(testMeta.t, testMeta.tbc.chain, nil, senderPkBase58Check)
 
 	// Create a private message transaction with the sender and recipient messaging keys.
-	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.chain.CreatePrivateMessageTxn(
+	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.tbc.chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, "", encryptedMessageText,
 		senderMessagingPublicKey, senderMessagingKeyName, recipientMessagingPublicKey,
 		recipientMessagingKeyName, tstampNanos, extraData, 10, nil, []*DeSoOutput{})
@@ -1666,8 +1669,8 @@ func _connectPrivateMessageWithPartyWithExtraData(testMeta *TestMeta, senderPkBy
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot)
-	blockHeight := testMeta.chain.blockTip().Height + 1
+	utxoView, err := NewUtxoView(testMeta.tbc.db, testMeta.tbc.params, nil, testMeta.tbc.chain.snapshot)
+	blockHeight := testMeta.tbc.chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	// ConnectTransaction should treat the amount locked as contributing to the output.
@@ -1710,7 +1713,7 @@ func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKe
 	require := require.New(testMeta.t)
 
 	// First validate that the expected entry was properly added to the UtxoView.
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot)
+	utxoView, err := NewUtxoView(testMeta.tbc.db, testMeta.tbc.params, nil, testMeta.tbc.chain.snapshot)
 	require.NoError(err)
 	messageKey := MakeMessageKey(expectedEntry.SenderMessagingPublicKey[:], expectedEntry.TstampNanos)
 	messageEntrySender := utxoView._getMessageEntryForMessageKey(&messageKey)
@@ -1763,7 +1766,7 @@ func _verifyMessages(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]
 	require := require.New(testMeta.t)
 	assert := assert.New(testMeta.t)
 
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot)
+	utxoView, err := NewUtxoView(testMeta.tbc.db, testMeta.tbc.params, nil, testMeta.tbc.chain.snapshot)
 	require.NoError(err)
 
 	for key, messageEntries := range expectedMessageEntries {
@@ -1807,12 +1810,14 @@ func TestGroupMessages(t *testing.T) {
 	require.NoError(err)
 
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 

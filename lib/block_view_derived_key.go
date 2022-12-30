@@ -3,10 +3,11 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/pkg/errors"
 	"reflect"
 	"strconv"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/pkg/errors"
 )
 
 // _verifyAccessSignature verifies if the accessSignature is correct. Valid
