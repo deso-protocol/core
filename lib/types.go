@@ -149,6 +149,10 @@ func (publicKey *PublicKey) IsZeroPublicKey() bool {
 	return bytes.Equal(publicKey.ToBytes(), ZeroPublicKey.ToBytes())
 }
 
+func (publicKey *PublicKey) Equal(other PublicKey) bool {
+	return bytes.Equal(publicKey.ToBytes(), other.ToBytes())
+}
+
 func PublicKeyToPKID(publicKey []byte) *PKID {
 	if len(publicKey) == 0 {
 		return nil

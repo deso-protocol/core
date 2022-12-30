@@ -2482,6 +2482,13 @@ func (entry *AccessGroupEntry) IsDeleted() bool {
 	return entry.isDeleted
 }
 
+func (entry *AccessGroupEntry) GetAccessGroupId() AccessGroupId {
+	return AccessGroupId{
+		AccessGroupOwnerPublicKey: *entry.AccessGroupOwnerPublicKey,
+		AccessGroupKeyName:        *entry.AccessGroupKeyName,
+	}
+}
+
 func (entry *AccessGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
