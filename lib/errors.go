@@ -127,6 +127,7 @@ const (
 	RuleErrorAccessGroupPrevMembersListIsIncorrect       RuleError = "RuleErrorAccessGroupPrevMembersListIsIncorrect"
 	RuleErrorAccessGroupMemberEnumerationRecursionLimit  RuleError = "RuleErrorAccessGroupMemberEnumerationRecursionLimit"
 	RuleErrorAccessGroupMemberPublicKeyMismatch          RuleError = "RuleErrorAccessGroupMemberPublicKeyMismatch"
+	RuleErrorAccessGroupCreateRequiresNonZeroInput       RuleError = "RuleErrorAccessGroupCreateRequiresNonZeroInput"
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"

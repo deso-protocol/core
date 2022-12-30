@@ -8,8 +8,7 @@ import (
 
 // GetAccessGroupEntry will check the membership index for membership of memberPublicKey in the group
 // <groupOwnerPublicKey, groupKeyName>. Based on the blockheight, we fetch the full group or we fetch
-// the simplified message group entry from the membership index. forceFullEntry is an optional parameter that
-// will force us to always fetch the full group entry.
+// the simplified message group entry from the membership index.
 func (bav *UtxoView) GetAccessGroupEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
 	blockHeight uint32) (*AccessGroupEntry, error) {
 
@@ -17,21 +16,14 @@ func (bav *UtxoView) GetAccessGroupEntry(groupOwnerPublicKey *PublicKey, groupKe
 	if groupOwnerPublicKey == nil || groupKeyName == nil {
 		return nil, fmt.Errorf("GetAccessGroupEntry: Called with nil parameter(s)")
 	}
-
 	accessGroupKey := NewAccessGroupId(groupOwnerPublicKey, groupKeyName[:])
 
-	// If the group has already been fetched in this utxoView, then we get it directly from there.
-	if mapValue, exists := bav.AccessGroupIdToAccessGroupEntry[*accessGroupKey]; exists {
-		return mapValue, nil
-	}
-
-	// In case the group entry was not in utxo_view, nor was it in the membership index, we fetch the full group directly.
+	// We delegate the work to another variation of this function.
 	return bav.GetAccessGroupEntryWithAccessGroupId(accessGroupKey)
 }
 
 // GetAccessGroupForAccessGroupKeyExistence will check if the group with key accessGroupKey exists, if so it will fetch
-// the simplified group entry from the membership index. If the forceFullEntry is set or if we're not past the membership
-// index block height, then we will fetch the entire group entry from the db (provided it exists).
+// the simplified group entry from the membership index.
 func (bav *UtxoView) GetAccessGroupForAccessGroupKeyExistence(accessGroupId *AccessGroupId) (bool, error) {
 
 	if accessGroupId == nil {
@@ -120,10 +112,7 @@ func (bav *UtxoView) _setAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntr
 
 	// Create a key for the UtxoView mapping. We always put user's owner public key as part of the map key.
 	// Note that this is different from message entries, which are indexed by access public keys.
-	accessKey := AccessGroupId{
-		AccessGroupOwnerPublicKey: *accessGroupEntry.AccessGroupOwnerPublicKey,
-		AccessGroupKeyName:        *accessGroupEntry.AccessGroupKeyName,
-	}
+	accessKey := accessGroupEntry.GetAccessGroupId()
 	bav.AccessGroupIdToAccessGroupEntry[accessKey] = accessGroupEntry
 	return nil
 }
@@ -251,12 +240,8 @@ func (bav *UtxoView) GetAccessGroupIdsForMember(memberPublicKey []byte) (_access
 		accessGroupIdsForMemberMap[*accessGroupId] = struct{}{}
 	}
 
-	accessGroupIds := []*AccessGroupId{}
-	for accessGroupId := range accessGroupIdsForMemberMap {
-		accessGroupIdCopy := accessGroupId
-		accessGroupIds = append(accessGroupIds, &accessGroupIdCopy)
-	}
-	return accessGroupIds, nil
+	return MapKeysToNonDeterministicPointerSlice[AccessGroupId, struct{}](
+		accessGroupIdsForMemberMap), nil
 }
 
 func ValidateAccessGroupPublicKeyAndName(accessGroupOwnerPublicKey, keyName []byte) error {
@@ -320,13 +305,11 @@ func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 // access group metadata. The purpose of the _connectAccessGroup function and the AccessGroup transaction
 // is to register this metadata.
 //
-// Aside from metadata, access groups also have members with whom the private key of the accessGrouPublicKey is shared.
+// Aside from metadata, access groups also have members with whom the private key of the accessGroupPublicKey is shared.
 // Access group members are added or updated in a separate transaction called AccessGroupMembers, which has its own connect
 // function, namely _connectAccessGroupMembers. In addition, access group can have attributes, which are key-value pairs
-// that are used to store additional information about the access group. Attributes are added or updated in a separate
-// transaction called AccessGroupAttributes, which has its own connect function, namely _connectAccessGroupAttributes.
-// Access group attributes are the main venue for utilizing the generality of access groups, ranging from on-chain private
-// group chats, to private content.
+// that are used to store additional information about the access group. Access group attributes are the main venue for
+// utilizing the generality of access groups, ranging from on-chain private group chats, to private content.
 func (bav *UtxoView) _connectAccessGroup(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
@@ -356,7 +339,7 @@ func (bav *UtxoView) _connectAccessGroup(
 	// Make sure that the access public key and the group key name have the correct format.
 	if err := ValidateAccessGroupPublicKeyAndName(txMeta.AccessGroupPublicKey, txMeta.AccessGroupKeyName); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroup: "+
-			"Problem parsing public key: %v", txMeta.AccessGroupPublicKey)
+			"Problem parsing public key: %v and group key name %v", txMeta.AccessGroupPublicKey, txMeta.AccessGroupKeyName)
 	}
 
 	// Sanity-check that we're not trying to add an access public key identical to the ownerPublicKey. This is reserved
@@ -423,6 +406,10 @@ func (bav *UtxoView) _connectAccessGroup(
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroup: ")
 	}
+	// Force the input to be non-zero so that we can prevent replay attacks.
+	if totalInput == 0 {
+		return 0, 0, nil, RuleErrorAccessGroupCreateRequiresNonZeroInput
+	}
 
 	// Create an AccessGroupEntry, so we can add the entry to UtxoView.
 	accessGroupEntry := &AccessGroupEntry{
@@ -450,6 +437,13 @@ func (bav *UtxoView) _connectAccessGroup(
 func (bav *UtxoView) _disconnectAccessGroup(
 	operationType OperationType, currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+
+	// Make sure access groups are live.
+	if blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
+		return errors.Wrapf(
+			RuleErrorAccessGroupsBeforeBlockHeight, "_disconnectAccessGroup: "+
+				"Problem disconnecting access group txn, too early block height")
+	}
 
 	// Verify that the last operation is an AccessGroup operation.
 	if len(utxoOpsForTxn) == 0 {
