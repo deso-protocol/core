@@ -5,14 +5,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"math/rand"
-	"testing"
-	"time"
 )
 
 const (
@@ -151,9 +151,9 @@ func _doTxnWithBlockHeight(
 	transactorPublicKey, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err := NewUtxoView(testMeta.tbc.db, testMeta.tbc.params, testMeta.tbc.chain.postgres, testMeta.tbc.chain.snapshot)
 	require.NoError(err)
-	chain := testMeta.chain
+	chain := testMeta.tbc.chain
 
 	var txn *MsgDeSoTxn
 	var totalInputMake uint64
@@ -507,7 +507,7 @@ func _doTxnWithBlockHeight(
 	// for each output, and one operation that corresponds to the txn type at the end.
 	// TODO: generalize?
 	utxoOpExpectation := len(txn.TxInputs) + len(txn.TxOutputs) + 1
-	if isDerivedTransactor && blockHeight >= testMeta.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
+	if isDerivedTransactor && blockHeight >= testMeta.tbc.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		// If we got an unlimited derived key, we will not have an additional spending limit utxoop.
 		transactorPrivBytes, _, err := Base58CheckDecode(TransactorPrivKeyBase58Check)
 		_, transactorPub := btcec.PrivKeyFromBytes(btcec.S256(), transactorPrivBytes)
@@ -571,7 +571,7 @@ func _doTxnWithTestMetaWithBlockHeight(
 	TxnMeta DeSoTxnMetadata,
 	ExtraData map[string]interface{},
 	encoderBlockHeight uint64) {
-	testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, TransactorPublicKeyBase58Check))
+	testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, TransactorPublicKeyBase58Check))
 
 	currentOps, currentTxn, _, err := _doTxnWithBlockHeight(testMeta,
 		feeRateNanosPerKB, TransactorPublicKeyBase58Check, TransactorPrivateKeyBase58Check, IsDerivedTransactor,
@@ -592,7 +592,7 @@ func _doTxnWithTextMetaWithBlockHeightWithError(
 	ExtraData map[string]interface{},
 	encoderBlockHeight uint64) error {
 
-	initialBalance := _getBalance(testMeta.t, testMeta.chain, nil, TransactorPublicKeyBase58Check)
+	initialBalance := _getBalance(testMeta.t, testMeta.tbc.chain, nil, TransactorPublicKeyBase58Check)
 
 	currentOps, currentTxn, _, err := _doTxnWithBlockHeight(testMeta,
 		feeRateNanosPerKB, TransactorPublicKeyBase58Check, TransactorPrivateKeyBase58Check, IsDerivedTransactor,
@@ -665,20 +665,10 @@ func _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
 
 	// We randomly use standard or the metamask derived key access signature.
 	var accessBytes []byte
-	accessBytesEncodingType := rand.Int() % 2
-	if accessBytesEncodingType == 0 {
-		// Create access signature
-		expirationBlockByte := EncodeUint64(expirationBlock)
-		accessBytes = append(derivedPublicKey, expirationBlockByte[:]...)
+	// Create access signature
+	expirationBlockByte := EncodeUint64(expirationBlock)
+	accessBytes = append(derivedPublicKey, expirationBlockByte[:]...)
 
-		var transactionSpendingLimitBytes []byte
-		transactionSpendingLimitBytes, err = transactionSpendingLimit.ToBytes(blockHeight)
-		require.NoError(err, "_getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit: Error in transaction spending limit to bytes")
-		accessBytes = append(accessBytes, transactionSpendingLimitBytes[:]...)
-	} else {
-		accessBytes = AssembleAccessBytesWithMetamaskStrings(derivedPublicKey, expirationBlock,
-			transactionSpendingLimit, &DeSoTestnetParams)
-	}
 	signature, err := ownerPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
 	accessSignature := signature.Serialize()
 	require.NoError(err, "_getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit: Error creating access signature")
@@ -2634,12 +2624,14 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	// We take the block tip to be the blockchain height rather than the header chain height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -3879,7 +3871,7 @@ REPEAT:
 	_applyTestMetaTxnsToMempool(testMeta)
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_, err = testMeta.miner.MineAndProcessSingleBlock(0 /*threadIndex*/, testMeta.mempool)
+	_, err = testMeta.tbc.miner.MineAndProcessSingleBlock(0 /*threadIndex*/, testMeta.tbc.mempool)
 	require.NoError(err)
 
 	testMeta.txnOps = [][]*UtxoOperation{}
@@ -3888,13 +3880,13 @@ REPEAT:
 	if testStage == TestStageBeforeUnlimitedDerivedBlockHeight {
 		// Mine block until we reach the unlimited spending limit block height.
 		for chain.blockTip().Height+1 < unlimitedDerivedKeysBlockHeight {
-			_, err = testMeta.miner.MineAndProcessSingleBlock(0 /*threadIndex*/, testMeta.mempool)
+			_, err = testMeta.tbc.miner.MineAndProcessSingleBlock(0 /*threadIndex*/, testMeta.tbc.mempool)
 			require.NoError(err)
 		}
 		testStage = TestStageAtUnlimitedDerivedBlockHeight
 	} else if testStage == TestStageAtUnlimitedDerivedBlockHeight {
 		// Mine a block to be above the unlimited derived keys block height.
-		_, err = testMeta.miner.MineAndProcessSingleBlock(0 /*threadIndex*/, testMeta.mempool)
+		_, err = testMeta.tbc.miner.MineAndProcessSingleBlock(0 /*threadIndex*/, testMeta.tbc.mempool)
 		require.NoError(err)
 		testStage = TestStageAfterUnlimitedDerivedBlockHeight
 	}
