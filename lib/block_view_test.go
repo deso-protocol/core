@@ -160,7 +160,6 @@ func (txn *derivedKeyTestTxn) doDerivedKeyTransaction(t *testing.T, tb *TestBloc
 	derivedPrivateKey *btcec.PrivateKey) {
 
 	t.Helper()
-	t.Logf("++++txnSL %v+++\n", txn.transactionSpendingLimit)
 	require := require.New(t)
 	extraData := make(map[string]interface{})
 	extraData[TransactionSpendingLimitKey] = txn.transactionSpendingLimit
@@ -177,7 +176,6 @@ func (txn *derivedKeyTestTxn) doDerivedKeyTransaction(t *testing.T, tb *TestBloc
 		t, senderPrivKey, 10, txn.transactionSpendingLimit, false, blockHeight+1)
 	transactionSpendingLimitBytes, err := txn.transactionSpendingLimit.ToBytes(blockHeight + 1)
 	require.NoError(err)
-	t.Logf("+++++Transaction spending bytes: %v+++++", len(transactionSpendingLimitBytes))
 	derivedKeyTxn, totalInput, changeAmount, fees, err := tb.chain.CreateAuthorizeDerivedKeyTxn(
 		senderPkBytes,
 		authTxnMeta.DerivedPublicKey,
@@ -1082,7 +1080,7 @@ func (tb *TestBlockChain) addTxnInputs(txn *MsgDeSoTxn) {
 	require := require.New(tb.t)
 	// testChain.buildTransaction(txn, recipientPrivString)
 	totalInput, spendAmount, changeAmount, fees, err :=
-		tb.chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+		tb.chain.AddInputsAndChangeToTransaction(txn, 10, tb.mempool)
 	require.NoError(err)
 	require.Equal(totalInput, spendAmount+changeAmount+fees)
 	require.Greater(totalInput, uint64(0))
@@ -2025,7 +2023,6 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 		signTransaction(t, derivedKeyTxn, testCases[i].signType, signerPrivBase58)
 		_, err := tb.mempool.processTransaction(derivedKeyTxn, true, true, 0, true)
 		require.Error(err)
-		t.Logf("====case no %v========", i+1)
 		require.Contains(err.Error(), testCases[i].expectedError.Error())
 	}
 }
@@ -2080,6 +2077,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 	// Mine block with the latest mempool. Validate that the persisted transaction signatures match original transactions.
 	mineBlockAndVerifySignatures := func(allTxns []*MsgDeSoTxn) {
 		block, err := tb.miner.MineAndProcessSingleBlock(0, tb.mempool)
+		require.NoError(err)
 		blockHash, err := block.Hash()
 		require.NoError(err)
 		require.NoError(err)
@@ -2129,6 +2127,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 	signTransaction(t, derivedKeyTxn, ECDSA, senderPrivString)
 	_, err := tb.mempoolProcessTransaction(derivedKeyTxn)
 	require.NoError(err)
+	allTxns = append(allTxns, derivedKeyTxn)
 
 	testCases := []struct {
 		transactionGen   testTxn
@@ -2187,18 +2186,22 @@ func TestBasicTransferSignatures(t *testing.T) {
 			signType:         ECDSA,
 			signingKeyBase58: senderPrivString,
 		},
-		// test case 6
+		// test case 5
 		{
-			transactionGen: &derivedKeyTestTxn{
-				transactionSpendingLimit: nil,
+			transactionGen: basicTestTxn{
+				senderPublicKeyBytes:   senderPkBytes,
+				receiverPublicKeyBytes: recipientPkBytes,
+				amountNanos:            1,
 			},
 			signType:         STANDARD_DER,
 			signingKeyBase58: derivedPrivBase58CheckWithEntry,
 		},
-		// test case 7
+		// test case 6
 		{
-			transactionGen: &derivedKeyTestTxn{
-				transactionSpendingLimit: nil,
+			transactionGen: basicTestTxn{
+				senderPublicKeyBytes:   senderPkBytes,
+				receiverPublicKeyBytes: recipientPkBytes,
+				amountNanos:            1,
 			},
 			signType:         DESO_DER,
 			signingKeyBase58: derivedPrivBase58CheckWithEntry,
@@ -2208,7 +2211,6 @@ func TestBasicTransferSignatures(t *testing.T) {
 	var signingKeyBase58 string
 	// Go through the test cases, add and process the transaction to the mempool
 	for i := 0; i < len(testCases); i++ {
-		t.Logf("test case: %v-----------", i+1)
 		tc := testCases[i]
 		txn := tc.transactionGen.generateTxn(t, tb)
 		switch v := tc.transactionGen.(type) {
