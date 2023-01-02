@@ -114,10 +114,48 @@ const (
 	transactionTestInputTypeAccessGroupMembers
 )
 
+type TestBlockChain struct {
+	t        *testing.T
+	chain    *Blockchain
+	db       *badger.DB
+	mempool  *DeSoMempool
+	miner    *DeSoMiner
+	params   *DeSoParams
+	postgres *Postgres
+}
+
+// Returns a test blockchain (block with testing parameters), with two blocks mined.
+func NewTestBlockChain(t *testing.T) *TestBlockChain {
+	t.Helper()
+
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+
+	return &TestBlockChain{
+		t:        t,
+		chain:    chain,
+		db:       db,
+		mempool:  mempool,
+		miner:    miner,
+		params:   params,
+		postgres: chain.postgres,
+	}
+}
+
+// Processes the key string into byte array.
+func ProcessKeyBytes(t *testing.T, keyString string) []byte {
+	t.Helper()
+	require := require.New(t)
+	keyBytes, _, err := Base58CheckDecode(keyString)
+	require.NoError(err)
+	return keyBytes
+}
+
 type testTxn interface {
 	generateTxn(t *testing.T, tb *TestBlockChain) *MsgDeSoTxn
 }
 
+// data structure and methods for generating basic transactions.
 type basicTestTxn struct {
 	senderPublicKeyBytes   []byte
 	receiverPublicKeyBytes []byte
@@ -150,6 +188,7 @@ func (bt basicTestTxn) generateTxn(t *testing.T, tb *TestBlockChain) *MsgDeSoTxn
 	return txn
 }
 
+// data structure and methods for generating transaction with derived key
 type derivedKeyTestTxn struct {
 	transactionSpendingLimit *TransactionSpendingLimit
 	derivedPrivKey           *btcec.PrivateKey
@@ -974,16 +1013,6 @@ func _updateGlobalParamsEntryWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-type TestBlockChain struct {
-	t        *testing.T
-	chain    *Blockchain
-	db       *badger.DB
-	mempool  *DeSoMempool
-	miner    *DeSoMiner
-	params   *DeSoParams
-	postgres *Postgres
-}
-
 // Sign the transaciton based on the signature type.
 func signTransaction(t *testing.T, txn *MsgDeSoTxn, signType signatureType, privKeyBase58Check string) *MsgDeSoTxn {
 	t.Helper()
@@ -1378,33 +1407,6 @@ func TestUpdateGlobalParams(t *testing.T) {
 	}
 }
 
-// Returns a test blockchain (block with testing parameters), with two blocks mined.
-func NewTestBlockChain(t *testing.T) *TestBlockChain {
-	t.Helper()
-
-	chain, params, db := NewLowDifficultyBlockchain()
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-
-	return &TestBlockChain{
-		t:        t,
-		chain:    chain,
-		db:       db,
-		mempool:  mempool,
-		miner:    miner,
-		params:   params,
-		postgres: chain.postgres,
-	}
-}
-
-// Processes the key string into byte array.
-func ProcessKeyBytes(t *testing.T, keyString string) []byte {
-	t.Helper()
-	require := require.New(t)
-	keyBytes, _, err := Base58CheckDecode(keyString)
-	require.NoError(err)
-	return keyBytes
-}
-
 // validates totalInput, spendAmount, changeAmount, fees and error result
 // from chain.AddInputsAndChangeToTransaction
 func TestVerifyInputFeeSpendValues(t *testing.T) {
@@ -1412,6 +1414,7 @@ func TestVerifyInputFeeSpendValues(t *testing.T) {
 	require := require.New(t)
 
 	tb := NewTestBlockChain(t)
+	// mine two blocks for the sender to have some balance.
 	tb.mineBlock()
 	tb.mineBlock()
 
@@ -1796,7 +1799,9 @@ func TestBasicTransfer(t *testing.T) {
 func TestMempoolProcessError(t *testing.T) {
 	require := require.New(t)
 
+	// create a new test blockchain.
 	tb := NewTestBlockChain(t)
+	// mine two blocks for the sender to have some balance.
 	tb.mineBlock()
 	tb.mineBlock()
 
@@ -1804,12 +1809,17 @@ func TestMempoolProcessError(t *testing.T) {
 	recipientPkBytes := ProcessKeyBytes(t, recipientPkString)
 
 	testCases := []struct {
-		signType                  signatureType
+		// Indicates the signature scheme for the transaction.
+		// Transactions can be signed using one of the three signature schemes.
+		// ECDSA, Standard DER or DESO DER.
+		signType signatureType
+		// Key to sign the transaction.
 		signaturePrivateKeyBase58 string
 		expectedError             RuleError
 	}{
-		// Try signing the basic transfer with the owner's private key.
 		// Test case 1
+		// Signing transaction using the STANDARD_DER signature scheme using the owner's private key should
+		// result in RuleErrorDerivedKeyNotAuthorized.
 		{
 
 			signType:                  STANDARD_DER,
@@ -1817,6 +1827,8 @@ func TestMempoolProcessError(t *testing.T) {
 			signaturePrivateKeyBase58: senderPrivString,
 		},
 		// Test case 2
+		// Signing transaction using the DESO_DER signature scheme using the owner's private key should
+		// result in RuleErrorDerivedKeyNotAuthorized.
 		{
 
 			signType:                  DESO_DER,
@@ -1824,7 +1836,7 @@ func TestMempoolProcessError(t *testing.T) {
 			signaturePrivateKeyBase58: senderPrivString,
 		},
 		// Test case 3
-		// Try signing the basic transfer with a random private key.
+		// Try signing a transaction using the basic ECDSA signature scheme with a random private key.
 		{
 
 			signType:                  ECDSA,
@@ -1832,6 +1844,7 @@ func TestMempoolProcessError(t *testing.T) {
 			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 		},
 		// Test case 4
+		// Try signing a transaction using the STANDARD_DER signature scheme with a random private key.
 		{
 
 			signType:                  STANDARD_DER,
@@ -1839,6 +1852,7 @@ func TestMempoolProcessError(t *testing.T) {
 			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 		},
 		// Test case 5
+		// Try signing a transaction using the DESO_DER signature scheme with a random private key.
 		{
 			signType:                  DESO_DER,
 			expectedError:             RuleErrorDerivedKeyNotAuthorized,
@@ -1848,13 +1862,17 @@ func TestMempoolProcessError(t *testing.T) {
 
 	for i := 0; i < len(testCases); i++ {
 		tc := testCases[i]
+		// create a transaction
 		txnGen := basicTestTxn{senderPublicKeyBytes: senderPkBytes,
 			receiverPublicKeyBytes: recipientPkBytes, amountNanos: 1}
 		txn := txnGen.generateTxn(t, tb)
+		// add inputs and change for the outputs in the transaction.
 		tb.chain.AddInputsAndChangeToTransaction(txn, 10, nil)
 		signTransaction(tb.t, txn, tc.signType, tc.signaturePrivateKeyBase58)
-
+		// Process the transaction in mempool
 		_, err := tb.mempool.processTransaction(txn, true, true, 0, true)
+		// All the test cases should result in an error.
+		// Validate the expected error.
 		require.Error(err)
 		require.Contains(err.Error(), testCases[i].expectedError.Error())
 	}
@@ -1893,48 +1911,63 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 		transactionSpendingLimit: transactionSpendingLimitWithDerivedKeyEntry,
 		senderPublicKey:          senderPkString,
 	}
-
+	// Perform a derived key based transaction.
 	derivedKeyTxn := dkTxn.generateTxn(t, tb)
 
 	derivedPrivBase58CheckWithEntry := Base58CheckEncode(dkTxn.getDerivedPrivKey(t).Serialize(),
 		true, tb.params)
 	signTransaction(t, derivedKeyTxn, ECDSA, senderPrivString)
+	// Process the transaction in mempool.
 	_, err := tb.mempoolProcessTransaction(derivedKeyTxn)
 	require.NoError(err)
 
 	testCases := []struct {
-		signType                  signatureType
+		// Indicates the signature scheme for the transaction.
+		// Transactions can be signed using one of the three signature schemes.
+		// ECDSA, Standard DER or DESO DER.
+		signType signatureType
+		// Key to sign the transaction.
+		// A newly generated derived key is used to sign the transaction if this value is empty.
 		signaturePrivateKeyBase58 string
-		transactionSpendingLimit  *TransactionSpendingLimit
-		expectedError             RuleError
+		// This datastucture is important for creating derived key based transactions.
+		// The signature could use the bytes generated from this data structure as part of the access signature.
+		transactionSpendingLimit *TransactionSpendingLimit
+		expectedError            RuleError
 	}{
-		// Try signing the basic transfer with the owner's private key.
 		// Test case 1
+		// Try signing the basic transfer with using the derived key generated for the transaciton.
+		// ECDSA signing of the transaction using the derived key should result in
+		// TestBasicTransferSignatures error.
 		{
 
 			signType:                  ECDSA,
 			transactionSpendingLimit:  transactionSpendingLimit,
-			expectedError:             RuleErrorInvalidTransactionSignature,
 			signaturePrivateKeyBase58: "",
+			expectedError:             RuleErrorInvalidTransactionSignature,
 		},
 		// Test case 2
+		// DESO_DER signing using the senders private key should result in
+		// RuleErrorDerivedKeyNotAuthorized error.
 		{
 
 			signType:                  DESO_DER,
 			transactionSpendingLimit:  transactionSpendingLimit,
-			expectedError:             RuleErrorDerivedKeyNotAuthorized,
 			signaturePrivateKeyBase58: senderPrivString,
+			expectedError:             RuleErrorDerivedKeyNotAuthorized,
 		},
 		// Test case 3
-		// Try signing the basic transfer with a random private key.
+		// STANDARD_DER signing using the senders private key should result in
+		// RuleErrorDerivedKeyNotAuthorized error.
 		{
 
 			signType:                  STANDARD_DER,
 			transactionSpendingLimit:  transactionSpendingLimit,
-			expectedError:             RuleErrorDerivedKeyNotAuthorized,
 			signaturePrivateKeyBase58: senderPrivString,
+			expectedError:             RuleErrorDerivedKeyNotAuthorized,
 		},
 		// Test case 4
+		// Well, it's a dooms day for a blockchain if a random signature works :D
+		// Use a random key with all the three available signature schemes in the next three test cases.
 		{
 
 			signType:                  ECDSA,
@@ -1942,6 +1975,7 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 			expectedError:             RuleErrorInvalidTransactionSignature,
 			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 		},
+		// Test case 5
 		{
 
 			signType:                  STANDARD_DER,
@@ -1949,7 +1983,7 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 			expectedError:             RuleErrorDerivedKeyNotAuthorized,
 			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 		},
-		// Test case 5
+		// Test case 6
 		{
 			signType:                  DESO_DER,
 			transactionSpendingLimit:  transactionSpendingLimit,
@@ -1957,53 +1991,13 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
 		},
 		// Third scenario, there exists an authorize derived key entry
-		// and we're signing a basic transfer.
-		// Sign the basic transfer with the sender's private key.
+		// and we're signing a basic transfer using it.
 		// Test case 6
-		{
-
-			signType:                  STANDARD_DER,
-			transactionSpendingLimit:  transactionSpendingLimit,
-			signaturePrivateKeyBase58: senderPrivString,
-			expectedError:             RuleErrorDerivedKeyNotAuthorized,
-		},
-		// Test case 7
-		{
-			signType:                  DESO_DER,
-			transactionSpendingLimit:  transactionSpendingLimit,
-			signaturePrivateKeyBase58: senderPrivString,
-			expectedError:             RuleErrorDerivedKeyNotAuthorized,
-		},
-		// Test case 8
 		{
 			signType:                  ECDSA,
 			transactionSpendingLimit:  transactionSpendingLimit,
 			signaturePrivateKeyBase58: derivedPrivBase58CheckWithEntry,
 			expectedError:             RuleErrorInvalidTransactionSignature,
-		},
-		// sign using random private key
-		// Test case 9
-		{
-
-			signType:                  ECDSA,
-			transactionSpendingLimit:  transactionSpendingLimit,
-			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
-			expectedError:             RuleErrorInvalidTransactionSignature,
-		},
-		// Test case 10
-		{
-
-			signType:                  STANDARD_DER,
-			transactionSpendingLimit:  transactionSpendingLimit,
-			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
-			expectedError:             RuleErrorDerivedKeyNotAuthorized,
-		},
-		// Test case 11
-		{
-			signType:                  DESO_DER,
-			transactionSpendingLimit:  transactionSpendingLimit,
-			signaturePrivateKeyBase58: generateRandomPrivateKeyBase58(t, tb),
-			expectedError:             RuleErrorDerivedKeyNotAuthorized,
 		},
 	}
 
@@ -2076,17 +2070,21 @@ func TestBasicTransferSignatures(t *testing.T) {
 	// Add a transaction to the mempool.
 	// Mine block with the latest mempool. Validate that the persisted transaction signatures match original transactions.
 	mineBlockAndVerifySignatures := func(allTxns []*MsgDeSoTxn) {
+		// Mine the transactions into one block.
 		block, err := tb.miner.MineAndProcessSingleBlock(0, tb.mempool)
 		require.NoError(err)
 		blockHash, err := block.Hash()
 		require.NoError(err)
-		require.NoError(err)
+		// Total blocks mined should be one more than the transaction we added in tests.
+		// The extra block is the reward block.
 		require.Equal(1+len(allTxns), len(block.Txns))
 		for ii := 1; ii < len(block.Txns); ii++ {
 			txn := allTxns[ii-1]
 			transactionHash := allTxns[ii-1].Hash()
+			// Verify that the hash of the mined blocks are same as the transactions we submitted to the mempool.
 			require.Equal(true, reflect.DeepEqual(transactionHash.ToBytes(), block.Txns[ii].Hash().ToBytes()))
 
+			// After mining the transactions are persisted into the database.
 			// Now fetch all transactions from the db and verify their signatures have been properly persisted.
 			if tb.postgres != nil {
 				pgTxn := tb.postgres.GetTransactionByHash(transactionHash)
@@ -2109,6 +2107,8 @@ func TestBasicTransferSignatures(t *testing.T) {
 		}
 	}
 
+	// Create a new transaction using derived key, later use the generated derived key
+	// to sign and validate new transactions (Check test cases 5 and 6).
 	transactionSpendingLimitWithDerivedKeyEntry := &TransactionSpendingLimit{
 		GlobalDESOLimit:              100,
 		TransactionCountLimitMap:     map[TxnType]uint64{TxnTypeAuthorizeDerivedKey: 1, TxnTypeBasicTransfer: 2},
@@ -2135,6 +2135,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 		signingKeyBase58 string
 	}{
 		// test case 1
+		// just signing a basic transfer with the owner's private key.
 		{
 			transactionGen: basicTestTxn{
 				senderPublicKeyBytes:   senderPkBytes,
@@ -2145,6 +2146,9 @@ func TestBasicTransferSignatures(t *testing.T) {
 			signingKeyBase58: senderPrivString,
 		},
 		// test case 2
+		// For case 2 and 3 try signing the authorize derived key transaction with the derived key itself.
+		// If the signingKeyBase58 in the test case is empty, the generated derived key will be
+		// used to sign the transaction.
 		{
 			transactionGen: &derivedKeyTestTxn{
 				transactionSpendingLimit: &TransactionSpendingLimit{
@@ -2186,7 +2190,10 @@ func TestBasicTransferSignatures(t *testing.T) {
 			signType:         ECDSA,
 			signingKeyBase58: senderPrivString,
 		},
+		// For case 5 and 6 sign the basic transfer with the derived key
+		// which was generated in the beginning of the test.
 		// test case 5
+
 		{
 			transactionGen: basicTestTxn{
 				senderPublicKeyBytes:   senderPkBytes,
@@ -2212,11 +2219,17 @@ func TestBasicTransferSignatures(t *testing.T) {
 	// Go through the test cases, add and process the transaction to the mempool
 	for i := 0; i < len(testCases); i++ {
 		tc := testCases[i]
+		// generates either basic or a derived key transaction.
 		txn := tc.transactionGen.generateTxn(t, tb)
+
 		switch v := tc.transactionGen.(type) {
+		// Compute transaction input and change for a basic transaciton
 		case basicTestTxn:
 			signingKeyBase58 = tc.signingKeyBase58
 			tb.addTxnInputs(txn)
+		// generateTxn method when called on a derivedKey transaction,
+		// also generates a new derived key. Use this key for signing if
+		// signingKeyBase58 field in the test case is empty.
 		case *derivedKeyTestTxn:
 			derivedKey := v.getDerivedPrivKey(t)
 			if tc.signingKeyBase58 == "" {
@@ -2225,7 +2238,11 @@ func TestBasicTransferSignatures(t *testing.T) {
 				signingKeyBase58 = tc.signingKeyBase58
 			}
 		}
+
 		signTransaction(tb.t, txn, tc.signType, signingKeyBase58)
+		// Add the transaction to the mempool.
+		// Later we'll mine these transactions from the mempool. The mining results in adding
+		// transactions to a block and persisting them to the database.
 		tb.mempoolProcessTransaction(txn)
 		allTxns = append(allTxns, txn)
 	}
