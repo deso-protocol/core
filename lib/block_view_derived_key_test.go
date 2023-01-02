@@ -663,11 +663,16 @@ func _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
 		operationType = AuthorizeDerivedKeyOperationValid
 	}
 
-	// We randomly use standard or the metamask derived key access signature.
 	var accessBytes []byte
+	var transactionSpendingLimitBytes []byte
+	transactionSpendingLimitBytes, err = transactionSpendingLimit.ToBytes(blockHeight)
+	require.NoError(err, "_getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit: Error in transaction spending limit to bytes")
 	// Create access signature
+	// accessSignature is the signed hash of (derivedPublicKey + expirationBlock + transaction spending limit)
+	// in DER format, made with the ownerPublicKey.
 	expirationBlockByte := EncodeUint64(expirationBlock)
 	accessBytes = append(derivedPublicKey, expirationBlockByte[:]...)
+	accessBytes = append(accessBytes, transactionSpendingLimitBytes[:]...)
 
 	signature, err := ownerPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
 	accessSignature := signature.Serialize()

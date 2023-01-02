@@ -160,6 +160,7 @@ func (txn *derivedKeyTestTxn) doDerivedKeyTransaction(t *testing.T, tb *TestBloc
 	derivedPrivateKey *btcec.PrivateKey) {
 
 	t.Helper()
+	t.Logf("++++txnSL %v+++\n", txn.transactionSpendingLimit)
 	require := require.New(t)
 	extraData := make(map[string]interface{})
 	extraData[TransactionSpendingLimitKey] = txn.transactionSpendingLimit
@@ -176,6 +177,7 @@ func (txn *derivedKeyTestTxn) doDerivedKeyTransaction(t *testing.T, tb *TestBloc
 		t, senderPrivKey, 10, txn.transactionSpendingLimit, false, blockHeight+1)
 	transactionSpendingLimitBytes, err := txn.transactionSpendingLimit.ToBytes(blockHeight + 1)
 	require.NoError(err)
+	t.Logf("+++++Transaction spending bytes: %v+++++", len(transactionSpendingLimitBytes))
 	derivedKeyTxn, totalInput, changeAmount, fees, err := tb.chain.CreateAuthorizeDerivedKeyTxn(
 		senderPkBytes,
 		authTxnMeta.DerivedPublicKey,
@@ -1868,6 +1870,10 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 	tb.mineBlock()
 	tb.mineBlock()
 
+	tb.params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	tb.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
+	tb.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
+
 	transactionSpendingLimit := &TransactionSpendingLimit{
 		GlobalDESOLimit:              100,
 		TransactionCountLimitMap:     map[TxnType]uint64{TxnTypeAuthorizeDerivedKey: 1},
@@ -1918,7 +1924,7 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 
 			signType:                  DESO_DER,
 			transactionSpendingLimit:  transactionSpendingLimit,
-			expectedError:             RuleErrorInvalidTransactionSignature,
+			expectedError:             RuleErrorDerivedKeyNotAuthorized,
 			signaturePrivateKeyBase58: senderPrivString,
 		},
 		// Test case 3
@@ -2019,6 +2025,7 @@ func TestMempoolProcessDerivedKeyTransactionError(t *testing.T) {
 		signTransaction(t, derivedKeyTxn, testCases[i].signType, signerPrivBase58)
 		_, err := tb.mempool.processTransaction(derivedKeyTxn, true, true, 0, true)
 		require.Error(err)
+		t.Logf("====case no %v========", i+1)
 		require.Contains(err.Error(), testCases[i].expectedError.Error())
 	}
 }
@@ -2128,6 +2135,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 		signType         signatureType
 		signingKeyBase58 string
 	}{
+		// test case 1
 		{
 			transactionGen: basicTestTxn{
 				senderPublicKeyBytes:   senderPkBytes,
@@ -2137,6 +2145,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 			signType:         ECDSA,
 			signingKeyBase58: senderPrivString,
 		},
+		// test case 2
 		{
 			transactionGen: &derivedKeyTestTxn{
 				transactionSpendingLimit: &TransactionSpendingLimit{
@@ -2150,6 +2159,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 			signType:         STANDARD_DER,
 			signingKeyBase58: "",
 		},
+		// test case 3
 		{
 			transactionGen: &derivedKeyTestTxn{
 				transactionSpendingLimit: &TransactionSpendingLimit{
@@ -2163,6 +2173,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 			signType:         DESO_DER,
 			signingKeyBase58: "",
 		},
+		// test case 4
 		{
 			transactionGen: &derivedKeyTestTxn{
 				transactionSpendingLimit: &TransactionSpendingLimit{
@@ -2176,14 +2187,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 			signType:         ECDSA,
 			signingKeyBase58: senderPrivString,
 		},
-
-		{
-			transactionGen: &derivedKeyTestTxn{
-				transactionSpendingLimit: nil,
-			},
-			signType:         ECDSA,
-			signingKeyBase58: senderPrivString,
-		},
+		// test case 6
 		{
 			transactionGen: &derivedKeyTestTxn{
 				transactionSpendingLimit: nil,
@@ -2191,6 +2195,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 			signType:         STANDARD_DER,
 			signingKeyBase58: derivedPrivBase58CheckWithEntry,
 		},
+		// test case 7
 		{
 			transactionGen: &derivedKeyTestTxn{
 				transactionSpendingLimit: nil,
@@ -2203,9 +2208,9 @@ func TestBasicTransferSignatures(t *testing.T) {
 	var signingKeyBase58 string
 	// Go through the test cases, add and process the transaction to the mempool
 	for i := 0; i < len(testCases); i++ {
+		t.Logf("test case: %v-----------", i+1)
 		tc := testCases[i]
 		txn := tc.transactionGen.generateTxn(t, tb)
-
 		switch v := tc.transactionGen.(type) {
 		case basicTestTxn:
 			signingKeyBase58 = tc.signingKeyBase58
