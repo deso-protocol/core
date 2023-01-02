@@ -1,13 +1,14 @@
 package lib
 
 import (
+	"reflect"
+	"testing"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"reflect"
-	"testing"
 )
 
 func _daoCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -79,9 +80,9 @@ func _daoCoinTxnWithTestMeta(
 	metadata DAOCoinMetadata) {
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, TransactorPublicKeyBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, TransactorPublicKeyBase58Check))
 
-	currentOps, currentTxn, _, err := _daoCoinTxn(testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+	currentOps, currentTxn, _, err := _daoCoinTxn(testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params,
 		feeRateNanosPerKB, TransactorPublicKeyBase58Check, TransactorPrivateKeyBase58Check, metadata)
 
 	require.NoError(testMeta.t, err)
@@ -155,9 +156,9 @@ func _daoCoinTransferTxnWithTestMeta(
 	metadata DAOCoinTransferMetadata) {
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, TransactorPublicKeyBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, TransactorPublicKeyBase58Check))
 
-	currentOps, currentTxn, _, err := _daoCoinTransferTxn(testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+	currentOps, currentTxn, _, err := _daoCoinTransferTxn(testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params,
 		feeRateNanosPerKB, TransactorPublicKeyBase58Check, TransactorPrivateKeyBase58Check, metadata)
 
 	require.NoError(testMeta.t, err)
@@ -192,12 +193,13 @@ func TestDAOCoinBasic(t *testing.T) {
 	savedHeight := chain.blockTip().Height + 1
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{chain: chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: savedHeight,
 	}
 

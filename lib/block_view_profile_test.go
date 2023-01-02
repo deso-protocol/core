@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"log"
 	"os"
 	"runtime/pprof"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func _swapIdentityWithTestMeta(
@@ -21,10 +22,11 @@ func _swapIdentityWithTestMeta(
 	UpdaterPrivKeyBase58Check string,
 	fromPublicKey []byte,
 	toPublicKey []byte) {
-	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, UpdaterPublicKeyBase58Check))
 
-	currentOps, currentTxn, _, err := _swapIdentity(testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, UpdaterPublicKeyBase58Check))
+
+	currentOps, currentTxn, _, err := _swapIdentity(testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params,
 		feeRateNanosPerKB, UpdaterPublicKeyBase58Check, UpdaterPrivKeyBase58Check, fromPublicKey, toPublicKey)
 
 	require.NoError(testMeta.t, err)
@@ -184,10 +186,10 @@ func _updateProfileWithTestMeta(
 	isHidden bool) {
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, updaterPkBase58Check))
 
 	currentOps, currentTxn, _, err := _updateProfile(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params,
 		feeRateNanosPerKB, updaterPkBase58Check,
 		updaterPrivBase58Check, profilePubKey, newUsername,
 		newDescription, newProfilePic, newCreatorBasisPoints,

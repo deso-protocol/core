@@ -4,14 +4,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -105,10 +106,10 @@ func _submitPostWithTestMeta(
 	isHidden bool) {
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, updaterPkBase58Check))
 
 	currentOps, currentTxn, _, err := _submitPost(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params, feeRateNanosPerKB,
 		updaterPkBase58Check,
 		updaterPrivBase58Check,
 		postHashToModify,
@@ -191,9 +192,9 @@ func _giveDeSoDiamondsWithTestMeta(
 ) {
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, senderPkBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, senderPkBase58Check))
 	currentOps, currentTxn, _, err := _giveDeSoDiamonds(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params, feeRateNanosPerKB,
 		senderPkBase58Check,
 		senderPrivBase58Check,
 		postHashToModify,
@@ -1668,12 +1669,14 @@ func TestDeSoDiamonds(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 
@@ -1876,12 +1879,14 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 

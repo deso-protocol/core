@@ -4,14 +4,15 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
-	"github.com/go-pg/pg/v10"
 	"log"
 	"math/big"
 	"math/rand"
 	"os"
 	"testing"
 	"time"
+
+	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
+	"github.com/go-pg/pg/v10"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
@@ -33,6 +34,21 @@ const (
 
 	blockSignerSeed = "essence camp ghost remove document vault ladder swim pupil index apart ring"
 	blockSignerPk   = "BC1YLiQ86kwXUy3nfK391xht7N72UmbFY6bGrUsds1A7QKZrs4jJsxo"
+)
+
+type signatureType int
+
+// Enums for the representing signature type
+// Status should be retrieved using the helper functions *Node.GetStatus()
+const (
+	// Default signature type.
+	ECDSA signatureType = iota // 0
+	// Signature type with STANDARD DER algorithm with extra data
+	STANDARD_DER // 1
+	// sign type for DESO-DER encoding
+	DESO_DER // 2
+	// Randomly picks either the STANDARD_DER or the DESO_DER sign
+	RANDOM_DERIVED_SIGN
 )
 
 func TestProcessBlock(t *testing.T) {

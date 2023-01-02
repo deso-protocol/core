@@ -3,12 +3,13 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/holiman/uint256"
-	"github.com/stretchr/testify/require"
 	"math"
 	"math/big"
 	"testing"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/require"
 )
 
 func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
@@ -47,12 +48,14 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: savedHeight,
 	}
 
@@ -631,12 +634,14 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: savedHeight,
 	}
 
@@ -4042,7 +4047,7 @@ func _createDAOCoinLimitOrderTxn(
 	require := require.New(testMeta.t)
 	transactorPkBytes, _, err := Base58CheckDecode(publicKey)
 	require.NoError(err)
-	txn, totalInput, changeAmount, fees, err := testMeta.chain.CreateDAOCoinLimitOrderTxn(
+	txn, totalInput, changeAmount, fees, err := testMeta.tbc.chain.CreateDAOCoinLimitOrderTxn(
 		transactorPkBytes, &metadata, feeRateNanosPerKb, nil, []*DeSoOutput{})
 	require.NoError(err)
 	// There is some spend amount that may go to matching orders.
@@ -4057,8 +4062,8 @@ func _connectDAOCoinLimitOrderTxn(
 
 	require := require.New(testMeta.t)
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, publicKey))
-	currentUtxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, publicKey))
+	currentUtxoView, err := NewUtxoView(testMeta.tbc.db, testMeta.tbc.params, testMeta.tbc.chain.postgres, testMeta.tbc.chain.snapshot)
 	require.NoError(err)
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(testMeta.t, txn, privateKey)
@@ -4090,9 +4095,9 @@ func _doDAOCoinLimitOrderTxnWithTestMeta(
 	metadata DAOCoinLimitOrderMetadata) {
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, TransactorPublicKeyBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, TransactorPublicKeyBase58Check))
 
-	currentOps, currentTxn, _, err := _doDAOCoinLimitOrderTxn(testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+	currentOps, currentTxn, _, err := _doDAOCoinLimitOrderTxn(testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params,
 		feeRateNanosPerKB, TransactorPublicKeyBase58Check, TransactorPrivateKeyBase58Check, metadata)
 
 	require.NoError(testMeta.t, err)
@@ -4214,12 +4219,14 @@ func TestFlushingDAOCoinLimitOrders(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	testMeta := &TestMeta{
-		t:           t,
-		chain:       chain,
-		params:      params,
-		db:          db,
-		mempool:     mempool,
-		miner:       miner,
+		t: t,
+		tbc: &TestBlockChain{
+			chain:   chain,
+			params:  params,
+			db:      db,
+			mempool: mempool,
+			miner:   miner,
+		},
 		savedHeight: chain.blockTip().Height + 1,
 	}
 

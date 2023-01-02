@@ -2,10 +2,11 @@ package lib
 
 import (
 	"fmt"
+	"testing"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 type _CreatorCoinTestData struct {
@@ -4111,10 +4112,10 @@ func _creatorCoinTxnWithTestMeta(
 	MinCreatorCoinExpectedNanos uint64) {
 
 	testMeta.expectedSenderBalances = append(
-		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, UpdaterPublicKeyBase58Check))
+		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.tbc.chain, nil, UpdaterPublicKeyBase58Check))
 
 	currentOps, currentTxn, _, err := _creatorCoinTxn(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.t, testMeta.tbc.chain, testMeta.tbc.db, testMeta.tbc.params,
 		feeRateNanosPerKB, UpdaterPublicKeyBase58Check,
 		UpdaterPrivateKeyBase58Check, ProfilePublicKeyBase58Check, OperationType,
 		DeSoToSellNanos, CreatorCoinToSellNanos, DeSoToAddNanos,
@@ -4191,7 +4192,7 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string, UpdaterPrivateKeyBase58Check string,
-	// See CreatorCoinTransferMetadataa for an explanation of these fields.
+	// See CreatorCoinTransferMetadata for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
 	ReceiverPublicKeyBase58Check string,
 	CreatorCoinToTransferNanos uint64) (
