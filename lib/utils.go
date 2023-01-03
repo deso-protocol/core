@@ -206,7 +206,8 @@ func SafeMakeRecover(outputError *error) {
 func MapKeysToNonDeterministicPointerSlice[K comparable, V any](inputMap map[K]V) []*K {
 	outputSlice := []*K{}
 	for k := range inputMap {
-		outputSlice = append(outputSlice, &k)
+		kCopy := k
+		outputSlice = append(outputSlice, &kCopy)
 	}
 	return outputSlice
 }
