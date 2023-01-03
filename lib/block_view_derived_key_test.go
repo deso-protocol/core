@@ -1692,8 +1692,15 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
-	params.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
-	GlobalDeSoParams.EncoderMigrationHeights.DeSoAccessGroups.Height = 10
+	params.EncoderMigrationHeights.DeSoAccessGroups.Height = 100
+	params.ForkHeights.DeSoAccessGroupsBlockHeight = 100
+	GlobalDeSoParams.EncoderMigrationHeights.DeSoAccessGroups.Height = 100
+	GlobalDeSoParams.ForkHeights.DeSoAccessGroupsBlockHeight = 100
+	for ii := 0; ii < len(GlobalDeSoParams.EncoderMigrationHeightsList); ii++ {
+		if GlobalDeSoParams.EncoderMigrationHeightsList[ii].Name == DeSoAccessGroupsMigration {
+			GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 100
+		}
+	}
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)

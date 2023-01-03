@@ -130,6 +130,7 @@ const (
 	RuleErrorAccessGroupCreateRequiresNonZeroInput       RuleError = "RuleErrorAccessGroupCreateRequiresNonZeroInput"
 	RuleErrorAccessGroupTransactionSpendingLimitInvalid  RuleError = "RuleErrorAccessGroupTransactionSpendingLimitInvalid"
 	RuleErrorAccessGroupMemberSpendingLimitInvalid       RuleError = "RuleErrorAccessGroupMemberSpendingLimitInvalid"
+	RuleErrorAccessGroupMemberPublicKeyCannotBeDifferent RuleError = "RuleErrorAccessGroupMemberPublicKeyCannotBeDifferent"
 
 	RuleErrorNewMessageEncryptedTextLengthExceedsMax         RuleError = "RuleErrorNewMessageEncryptedTextLengthExceedsMax"
 	RuleErrorNewMessageTimestampNanosCannotBeZero            RuleError = "RuleErrorNewMessageTimestampNanosCannotBeZero"
@@ -145,6 +146,8 @@ const (
 	RuleErrorNewMessageGetDmMessagesRecursionLimit           RuleError = "RuleErrorNewMessageGetDmMessagesRecursionLimit"
 	RuleErrorNewMessageGetGroupMessagesRecursionLimit        RuleError = "RuleErrorNewMessageGetGroupMessagesRecursionLimit"
 	RuleErrorNewMessageGroupChatMemberEntryDoesntExist       RuleError = "RuleErrorNewMessageGroupChatMemberEntryDoesntExist"
+	RuleErrorNewMessageUnknownMessageType                    RuleError = "RuleErrorNewMessageUnknownMessageType"
+	RuleErrorNewMessageUnknownOperationType                  RuleError = "RuleErrorNewMessageUnknownOperationType"
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"

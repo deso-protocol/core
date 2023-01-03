@@ -738,6 +738,9 @@ func (bav *UtxoView) _connectNewMessage(
 					"setting group chat message in index with group chat message key %v: ", groupChatMessageKey)
 			}
 			bav.setGroupChatThreadIndex(*groupChatAccessGroupId, MakeGroupChatThreadExistence())
+		default:
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorNewMessageUnknownMessageType, "_connectNewMessage: unknown message type")
 		}
 	case NewMessageOperationUpdate:
 		switch txMeta.NewMessageType {
@@ -816,7 +819,13 @@ func (bav *UtxoView) _connectNewMessage(
 			// We should set the prevGroupChatThreadExistence to exists for the UtxoOperation.
 			groupChatThreadExists := MakeGroupChatThreadExistence()
 			prevGroupChatThreadExistence = &groupChatThreadExists
+		default:
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorNewMessageUnknownMessageType, "_connectNewMessage: unknown message type")
 		}
+	default:
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorNewMessageUnknownOperationType, "_connectNewMessage: unknown new message operation type")
 	}
 
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{

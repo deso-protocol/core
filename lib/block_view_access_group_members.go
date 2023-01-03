@@ -375,6 +375,12 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	// Now we know txn.TxnMeta is AccessGroupMembersMetadata
 	txMeta := txn.TxnMeta.(*AccessGroupMembersMetadata)
 
+	if !bytes.Equal(txn.PublicKey, txMeta.AccessGroupOwnerPublicKey) {
+		return 0, 0, nil, errors.Wrapf(
+			RuleErrorAccessGroupMemberPublicKeyCannotBeDifferent, "_connectAccessGroupMembers: Problem connecting "+
+				"access group members: access group owner public key and transaction public key cannot be different")
+	}
+
 	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
 	if EqualGroupKeyName(NewGroupKeyName(txMeta.AccessGroupKeyName), BaseGroupKeyName()) {
 		return 0, 0, nil, errors.Wrapf(
