@@ -1810,6 +1810,18 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			derivedKeyEntry, txnMeta.NFTPostHash, txnMeta.SerialNumber, BurnNFTOperation); err != nil {
 			return utxoOpsForTxn, err
 		}
+	case TxnTypeAccessGroup:
+		txnMeta := txn.TxnMeta.(*AccessGroupMetadata)
+		if derivedKeyEntry, err = bav._checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(
+			derivedKeyEntry, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeAccessGroupMembers:
+		txnMeta := txn.TxnMeta.(*AccessGroupMembersMetadata)
+		if derivedKeyEntry, err = bav._checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry(
+			derivedKeyEntry, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
 	default:
 		// If we get here, it means we're dealing with a txn that doesn't have any special
 		// granular limits to deal with. This means we just check whether we have
@@ -2118,6 +2130,90 @@ func (bav *UtxoView) _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
 
 	return derivedKeyEntry, errors.Wrapf(RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized,
 		"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntr: DAO Coin limit order not authorized: ")
+}
+
+func (bav *UtxoView) _checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(derivedKeyEntry DerivedKeyEntry,
+	accessGroupMetadata *AccessGroupMetadata) (_derivedKeyEntry DerivedKeyEntry, _err error) {
+
+	if accessGroupMetadata == nil {
+		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: " +
+			"transaction metadata is empty")
+	}
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap == nil {
+		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: " +
+			"TransactionSpendingLimitTracker or TransactionSpendingLimitTracker.AccessGroupMap are empty")
+	}
+	accessGroupId := *NewAccessGroupId(
+		NewPublicKey(accessGroupMetadata.AccessGroupOwnerPublicKey), accessGroupMetadata.AccessGroupKeyName)
+	var accessGroupLimitKey AccessGroupLimitKey
+
+	switch accessGroupMetadata.AccessGroupOperationType {
+	case AccessGroupOperationTypeCreate:
+		accessGroupLimitKey = MakeAccessGroupLimitKey(accessGroupId, AccessGroupOperationTypeCreate)
+	case AccessGroupOperationTypeUpdate:
+		accessGroupLimitKey = MakeAccessGroupLimitKey(accessGroupId, AccessGroupOperationTypeUpdate)
+	default:
+		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: Unknown access group "+
+			"operation type (%v)", accessGroupMetadata.AccessGroupOperationType)
+	}
+
+	spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap[accessGroupLimitKey]
+	if !exists || spendingLimit <= 0 {
+		return derivedKeyEntry, errors.Wrapf(RuleErrorAccessGroupTransactionSpendingLimitInvalid,
+			"_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: "+
+				"No corresponding access group operation spending limit exists")
+	}
+
+	if spendingLimit == 1 {
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap, accessGroupLimitKey)
+	} else {
+		derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap[accessGroupLimitKey]--
+	}
+	return derivedKeyEntry, nil
+}
+
+func (bav *UtxoView) _checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry(derivedKeyEntry DerivedKeyEntry,
+	accessGroupMembersMetadata *AccessGroupMembersMetadata) (_derivedKeyEntry DerivedKeyEntry, _err error) {
+
+	if accessGroupMembersMetadata == nil {
+		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: " +
+			"transaction metadata is empty")
+	}
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap == nil {
+		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: " +
+			"TransactionSpendingLimitTracker or TransactionSpendingLimitTracker.AccessGroupMemberMap are empty")
+	}
+	accessGroupId := *NewAccessGroupId(
+		NewPublicKey(accessGroupMembersMetadata.AccessGroupOwnerPublicKey), accessGroupMembersMetadata.AccessGroupKeyName)
+	var accessGroupMembersLimitKey AccessGroupMemberLimitKey
+
+	switch accessGroupMembersMetadata.AccessGroupMemberOperationType {
+	case AccessGroupMemberOperationTypeAdd:
+		accessGroupMembersLimitKey = MakeAccessGroupMemberLimitKey(accessGroupId, AccessGroupMemberOperationTypeAdd)
+	case AccessGroupMemberOperationTypeUpdate:
+		accessGroupMembersLimitKey = MakeAccessGroupMemberLimitKey(accessGroupId, AccessGroupMemberOperationTypeUpdate)
+	case AccessGroupMemberOperationTypeRemove:
+		accessGroupMembersLimitKey = MakeAccessGroupMemberLimitKey(accessGroupId, AccessGroupMemberOperationTypeRemove)
+	default:
+		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: "+
+			"operation type (%v)", accessGroupMembersMetadata.AccessGroupMemberOperationType)
+	}
+
+	spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap[accessGroupMembersLimitKey]
+	if !exists || spendingLimit <= 0 {
+		return derivedKeyEntry, errors.Wrapf(RuleErrorAccessGroupMemberSpendingLimitInvalid,
+			"_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: "+
+				"No corresponding access group operation spending limit exists")
+	}
+
+	if spendingLimit == 1 {
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap, accessGroupMembersLimitKey)
+	} else {
+		derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap[accessGroupMembersLimitKey]--
+	}
+	return derivedKeyEntry, nil
 }
 
 func (bav *UtxoView) _connectUpdateGlobalParams(

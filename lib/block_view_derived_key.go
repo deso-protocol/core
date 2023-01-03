@@ -167,6 +167,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	// defined in extra data
 	var newTransactionSpendingLimit *TransactionSpendingLimit
 	var memo []byte
+	// TODO: Do we need a new blockheight for the access group spending limits.
 	if blockHeight >= bav.Params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
 		// Extract TransactionSpendingLimit from extra data
 		// We need to merge the new transaction spending limit struct into the old one
@@ -178,6 +179,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 			NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 			DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
+			AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
+			AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
 		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 			newTransactionSpendingLimit = prevDerivedKeyEntry.TransactionSpendingLimitTracker
@@ -250,6 +253,20 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 							delete(newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap, daoCoinLimitOrderLimitKey)
 						} else {
 							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
+						}
+					}
+					for accessGroupLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMap {
+						if transactionCount == 0 {
+							delete(newTransactionSpendingLimit.AccessGroupMap, accessGroupLimitKey)
+						} else {
+							newTransactionSpendingLimit.AccessGroupMap[accessGroupLimitKey] = transactionCount
+						}
+					}
+					for accessGroupMemberLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMemberMap {
+						if transactionCount == 0 {
+							delete(newTransactionSpendingLimit.AccessGroupMemberMap, accessGroupMemberLimitKey)
+						} else {
+							newTransactionSpendingLimit.AccessGroupMemberMap[accessGroupMemberLimitKey] = transactionCount
 						}
 					}
 				}
