@@ -2328,6 +2328,27 @@ func NewGroupKeyName(groupKeyName []byte) *GroupKeyName {
 	}
 }
 
+// Decode filled message key of length MaxMessagingKeyNameCharacters array.
+func MessagingKeyNameDecode(name *GroupKeyName) []byte {
+
+	bytes := make([]byte, MaxMessagingKeyNameCharacters)
+	copy(bytes, name[:])
+
+	// Return empty byte array if we have a non-existent key.
+	if reflect.DeepEqual(bytes, (*NewGroupKeyName([]byte{}))[:]) {
+		return []byte{}
+	}
+
+	// Remove trailing 0s from the encoded message key.
+	for {
+		if len(bytes) > MinMessagingKeyNameCharacters && bytes[len(bytes)-1] == byte(0) {
+			bytes = bytes[:len(bytes)-1]
+		} else {
+			return bytes
+		}
+	}
+}
+
 // Decode filled message key of length MaxAccessKeyNameCharacters array.
 func AccessKeyNameDecode(name *GroupKeyName) []byte {
 
