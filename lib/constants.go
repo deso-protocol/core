@@ -1034,7 +1034,7 @@ var DeSoTestnetParams = DeSoParams{
 
 	// TODO: Set to one day when we launch the testnet. In the meantime this value
 	// is more useful for local testing.
-	MaxTipAge: time.Hour * 180,
+	MaxTipAge: time.Hour * 24 * 180,
 
 	// Difficulty can't decrease to below 50% of its previous value or increase
 	// to above 200% of its previous value.
