@@ -342,7 +342,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
-func _copySpendingLimitMap [K comparable](input map[K]uint64, newMap map[K]uint64) {
+func _copySpendingLimitMap[K comparable](input map[K]uint64, newMap map[K]uint64) {
 	for k, v := range input {
 		if v == 0 {
 			delete(newMap, k)
