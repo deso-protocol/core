@@ -217,41 +217,26 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 					// Always overwrite the global DESO limit...
 					newTransactionSpendingLimit.GlobalDESOLimit = transactionSpendingLimit.GlobalDESOLimit
 					// Iterate over transaction types and update the counts. Delete keys if the transaction count is zero.
-					for txnType, transactionCount := range transactionSpendingLimit.TransactionCountLimitMap {
-						if transactionCount == 0 {
-							delete(newTransactionSpendingLimit.TransactionCountLimitMap, txnType)
-						} else {
-							newTransactionSpendingLimit.TransactionCountLimitMap[txnType] = transactionCount
-						}
-					}
-					for ccLimitKey, transactionCount := range transactionSpendingLimit.CreatorCoinOperationLimitMap {
-						if transactionCount == 0 {
-							delete(newTransactionSpendingLimit.CreatorCoinOperationLimitMap, ccLimitKey)
-						} else {
-							newTransactionSpendingLimit.CreatorCoinOperationLimitMap[ccLimitKey] = transactionCount
-						}
-					}
-					for daoCoinLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinOperationLimitMap {
-						if transactionCount == 0 {
-							delete(newTransactionSpendingLimit.DAOCoinOperationLimitMap, daoCoinLimitKey)
-						} else {
-							newTransactionSpendingLimit.DAOCoinOperationLimitMap[daoCoinLimitKey] = transactionCount
-						}
-					}
-					for nftLimitKey, transactionCount := range transactionSpendingLimit.NFTOperationLimitMap {
-						if transactionCount == 0 {
-							delete(newTransactionSpendingLimit.NFTOperationLimitMap, nftLimitKey)
-						} else {
-							newTransactionSpendingLimit.NFTOperationLimitMap[nftLimitKey] = transactionCount
-						}
-					}
-					for daoCoinLimitOrderLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinLimitOrderLimitMap {
-						if transactionCount == 0 {
-							delete(newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap, daoCoinLimitOrderLimitKey)
-						} else {
-							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
-						}
-					}
+					_copySpendingLimitMap(
+						transactionSpendingLimit.TransactionCountLimitMap,
+						newTransactionSpendingLimit.TransactionCountLimitMap,
+					)
+					_copySpendingLimitMap(
+						transactionSpendingLimit.CreatorCoinOperationLimitMap,
+						newTransactionSpendingLimit.CreatorCoinOperationLimitMap,
+					)
+					_copySpendingLimitMap(
+						transactionSpendingLimit.DAOCoinOperationLimitMap,
+						newTransactionSpendingLimit.DAOCoinOperationLimitMap,
+					)
+					_copySpendingLimitMap(
+						transactionSpendingLimit.NFTOperationLimitMap,
+						newTransactionSpendingLimit.NFTOperationLimitMap,
+					)
+					_copySpendingLimitMap(
+						transactionSpendingLimit.DAOCoinLimitOrderLimitMap,
+						newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap,
+					)
 				}
 			}
 		}
@@ -355,6 +340,16 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func _copySpendingLimitMap [K comparable](input map[K]uint64, newMap map[K]uint64) {
+	for k, v := range input {
+		if v == 0 {
+			delete(newMap, k)
+		} else {
+			newMap[k] = v
+		}
+	}
 }
 
 func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
