@@ -1,3 +1,6 @@
+go-fmt:
+	@gofmt -s -w .
+
 postgres-start:
 	@docker-compose --file docker-compose.test.yml up --detach
 	@sleep 3

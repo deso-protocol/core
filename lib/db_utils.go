@@ -322,7 +322,82 @@ type DBPrefixes struct {
 	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
-	// NEXT_TAG: 63
+
+	// User Association prefixes
+	// PrefixUserAssociationByID:
+	//  <
+	//   PrefixUserAssociationByID
+	//   AssociationID [32]byte
+	//  > -> < UserAssociationEntry >
+	PrefixUserAssociationByID []byte `prefix_id:"[63]" is_state:"true"`
+	// PrefixUserAssociationByTransactor:
+	//  <
+	//   PrefixUserAssociationByTransactor
+	//   TransactorPKID [33]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   TargetUserPKID [33]byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: AssociationID is a BlockHash type
+	PrefixUserAssociationByTransactor []byte `prefix_id:"[64]" is_state:"true"`
+	// PrefixUserAssociationByUsers:
+	//  <
+	//   PrefixUserAssociationByUsers
+	//   TransactorPKID [33]byte
+	//   TargetUserPKID [33]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: AssociationID is a BlockHash type
+	PrefixUserAssociationByTargetUser []byte `prefix_id:"[65]" is_state:"true"`
+	// PrefixUserAssociationByTargetUser
+	//  <
+	//   PrefixUserAssociationByTargerUser
+	//   TargetUserPKID [33]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   TransactorPKID [33]byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: Association is a BlockHash type
+	PrefixUserAssociationByUsers []byte `prefix_id:"[66]" is_state:"true"`
+
+	// Post Association prefixes
+	// PrefixPostAssociationByID
+	//  <
+	//   PrefixPostAssociationByID
+	//   AssociationID [32]byte
+	//  > -> < PostAssociationEntry >
+	PrefixPostAssociationByID []byte `prefix_id:"[67]" is_state:"true"`
+	// PrefixPostAssociationByTransactor
+	//  <
+	//   PrefixPostAssociationByTransactor
+	//   TransactorPKID [33]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   PostHash [32]byte
+	//   AppPKID [33]byte
+	// > -> < AssociationID > # note: AssociationID is a BlockHash type
+	PrefixPostAssociationByTransactor []byte `prefix_id:"[68]" is_state:"true"`
+	// PrefixPostAssociationByPost
+	//  <
+	//   PostHash [32]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   TransactorPKID [33]byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: AssociationID is a BlockHash type
+	PrefixPostAssociationByPost []byte `prefix_id:"[69]" is_state:"true"`
+	// PrefixPostAssociationByType
+	//  <
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   PostHash [32]byte
+	//   TransactorPKID [33]byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: AssociationID is a BlockHash type
+	PrefixPostAssociationByType []byte `prefix_id:"[70]" is_state:"true"`
+
+	// NEXT_TAG: 71
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -479,6 +554,30 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixDAOCoinLimitOrderByOrderID) {
 		// prefix_id:"[62]"
 		return true, &DAOCoinLimitOrderEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByID) {
+		// prefix_id:"[63]"
+		return true, &UserAssociationEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByTransactor) {
+		// prefix_id:"[64]"
+		return true, &BlockHash{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByTargetUser) {
+		// prefix_id:"[65]"
+		return true, &BlockHash{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByUsers) {
+		// prefix_id:"[66]"
+		return true, &BlockHash{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByID) {
+		// prefix_id:"[67]"
+		return true, &PostAssociationEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByTransactor) {
+		// prefix_id:"[68]"
+		return true, &BlockHash{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByPost) {
+		// prefix_id:"[69]"
+		return true, &BlockHash{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByType) {
+		// prefix_id:"[70]"
+		return true, &BlockHash{}
 	}
 
 	return true, nil
@@ -5383,26 +5482,30 @@ type TransactionMetadata struct {
 	// when looking up output amounts
 	TxnOutputs []*DeSoOutput
 
-	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata       `json:",omitempty"`
-	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata     `json:",omitempty"`
-	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata         `json:",omitempty"`
-	CreatorCoinTransferTxindexMetadata *CreatorCoinTransferTxindexMetadata `json:",omitempty"`
-	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata       `json:",omitempty"`
-	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata          `json:",omitempty"`
-	LikeTxindexMetadata                *LikeTxindexMetadata                `json:",omitempty"`
-	FollowTxindexMetadata              *FollowTxindexMetadata              `json:",omitempty"`
-	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata      `json:",omitempty"`
-	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata        `json:",omitempty"`
-	NFTBidTxindexMetadata              *NFTBidTxindexMetadata              `json:",omitempty"`
-	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
-	NFTTransferTxindexMetadata         *NFTTransferTxindexMetadata         `json:",omitempty"`
-	AcceptNFTTransferTxindexMetadata   *AcceptNFTTransferTxindexMetadata   `json:",omitempty"`
-	BurnNFTTxindexMetadata             *BurnNFTTxindexMetadata             `json:",omitempty"`
-	DAOCoinTxindexMetadata             *DAOCoinTxindexMetadata             `json:",omitempty"`
-	DAOCoinTransferTxindexMetadata     *DAOCoinTransferTxindexMetadata     `json:",omitempty"`
-	CreateNFTTxindexMetadata           *CreateNFTTxindexMetadata           `json:",omitempty"`
-	UpdateNFTTxindexMetadata           *UpdateNFTTxindexMetadata           `json:",omitempty"`
-	DAOCoinLimitOrderTxindexMetadata   *DAOCoinLimitOrderTxindexMetadata   `json:",omitempty"`
+	BasicTransferTxindexMetadata         *BasicTransferTxindexMetadata         `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata       *BitcoinExchangeTxindexMetadata       `json:",omitempty"`
+	CreatorCoinTxindexMetadata           *CreatorCoinTxindexMetadata           `json:",omitempty"`
+	CreatorCoinTransferTxindexMetadata   *CreatorCoinTransferTxindexMetadata   `json:",omitempty"`
+	UpdateProfileTxindexMetadata         *UpdateProfileTxindexMetadata         `json:",omitempty"`
+	SubmitPostTxindexMetadata            *SubmitPostTxindexMetadata            `json:",omitempty"`
+	LikeTxindexMetadata                  *LikeTxindexMetadata                  `json:",omitempty"`
+	FollowTxindexMetadata                *FollowTxindexMetadata                `json:",omitempty"`
+	PrivateMessageTxindexMetadata        *PrivateMessageTxindexMetadata        `json:",omitempty"`
+	SwapIdentityTxindexMetadata          *SwapIdentityTxindexMetadata          `json:",omitempty"`
+	NFTBidTxindexMetadata                *NFTBidTxindexMetadata                `json:",omitempty"`
+	AcceptNFTBidTxindexMetadata          *AcceptNFTBidTxindexMetadata          `json:",omitempty"`
+	NFTTransferTxindexMetadata           *NFTTransferTxindexMetadata           `json:",omitempty"`
+	AcceptNFTTransferTxindexMetadata     *AcceptNFTTransferTxindexMetadata     `json:",omitempty"`
+	BurnNFTTxindexMetadata               *BurnNFTTxindexMetadata               `json:",omitempty"`
+	DAOCoinTxindexMetadata               *DAOCoinTxindexMetadata               `json:",omitempty"`
+	DAOCoinTransferTxindexMetadata       *DAOCoinTransferTxindexMetadata       `json:",omitempty"`
+	CreateNFTTxindexMetadata             *CreateNFTTxindexMetadata             `json:",omitempty"`
+	UpdateNFTTxindexMetadata             *UpdateNFTTxindexMetadata             `json:",omitempty"`
+	DAOCoinLimitOrderTxindexMetadata     *DAOCoinLimitOrderTxindexMetadata     `json:",omitempty"`
+	CreateUserAssociationTxindexMetadata *CreateUserAssociationTxindexMetadata `json:",omitempty"`
+	DeleteUserAssociationTxindexMetadata *DeleteUserAssociationTxindexMetadata `json:",omitempty"`
+	CreatePostAssociationTxindexMetadata *CreatePostAssociationTxindexMetadata `json:",omitempty"`
+	DeletePostAssociationTxindexMetadata *DeletePostAssociationTxindexMetadata `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -5463,6 +5566,18 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.UpdateNFTTxindexMetadata, skipMetadata...)...)
 	// encoding DAOCoinLimitOrderTxindexMetadata
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinLimitOrderTxindexMetadata, skipMetadata...)...)
+
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		// encoding CreateUserAssociationTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.CreateUserAssociationTxindexMetadata, skipMetadata...)...)
+		// encoding DeleteUserAssociationTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.DeleteUserAssociationTxindexMetadata, skipMetadata...)...)
+		// encoding CreatePostAssociationTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.CreatePostAssociationTxindexMetadata, skipMetadata...)...)
+		// encoding DeletePostAssociationTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.DeletePostAssociationTxindexMetadata, skipMetadata...)...)
+	}
+
 	return data
 }
 
@@ -5656,11 +5771,43 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinLimitOrderTxindexMetadata")
 	}
+
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		// decoding CreateUserAssociationTxindexMetadata
+		CopyCreateUserAssociationTxindexMetadata := &CreateUserAssociationTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyCreateUserAssociationTxindexMetadata, rr); exist && err == nil {
+			txnMeta.CreateUserAssociationTxindexMetadata = CopyCreateUserAssociationTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreateUserAssociationTxindexMetadata")
+		}
+		// decoding DeleteUserAssociationTxindexMetadata
+		CopyDeleteUserAssociationTxindexMetadata := &DeleteUserAssociationTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyDeleteUserAssociationTxindexMetadata, rr); exist && err == nil {
+			txnMeta.DeleteUserAssociationTxindexMetadata = CopyDeleteUserAssociationTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeleteUserAssociationTxindexMetadata")
+		}
+		// decoding CreatePostAssociationTxindexMetadata
+		CopyCreatePostAssociationTxindexMetadata := &CreatePostAssociationTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyCreatePostAssociationTxindexMetadata, rr); exist && err == nil {
+			txnMeta.CreatePostAssociationTxindexMetadata = CopyCreatePostAssociationTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreatePostAssociationTxindexMetadata")
+		}
+		// decoding DeletePostAssociationTxindexMetadata
+		CopyDeletePostAssociationTxindexMetadata := &DeletePostAssociationTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyDeletePostAssociationTxindexMetadata, rr); exist && err == nil {
+			txnMeta.DeletePostAssociationTxindexMetadata = CopyDeletePostAssociationTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeletePostAssociationTxindexMetadata")
+		}
+	}
+
 	return nil
 }
 
 func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, AssociationsMigration)
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {
@@ -8044,7 +8191,7 @@ func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DA
 		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
 	}
 
-	// Store in index: PrefixDAOCoinLimitOrderByOrderID
+	// Delete from index: PrefixDAOCoinLimitOrderByOrderID
 	key = DBKeyForDAOCoinLimitOrderByOrderID(order)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting order from index PrefixDAOCoinLimitOrderByOrderID")
@@ -8254,4 +8401,894 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 	opts.ValueLogFileSize = PerformanceLogValueSize
 
 	return opts
+}
+
+// ---------------------------------------------
+// Associations
+// ---------------------------------------------
+
+func DBKeyForUserAssociationByPrefix(associationEntry *UserAssociationEntry, prefixType []byte) ([]byte, error) {
+	if bytes.Equal(prefixType, Prefixes.PrefixUserAssociationByID) {
+		return DBKeyForUserAssociationByID(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixUserAssociationByTransactor) {
+		return DBKeyForUserAssociationByTransactor(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixUserAssociationByTargetUser) {
+		return DBKeyForUserAssociationByTargetUser(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixUserAssociationByUsers) {
+		return DBKeyForUserAssociationByUsers(associationEntry), nil
+	}
+	return nil, errors.New("invalid user association prefix type")
+}
+
+func DBKeyForUserAssociationByID(associationEntry *UserAssociationEntry) []byte {
+	// AssociationID
+	var key []byte
+	key = append(key, Prefixes.PrefixUserAssociationByID...)
+	key = append(key, associationEntry.AssociationID.ToBytes()...)
+	return key
+}
+
+func DBKeyForUserAssociationByTransactor(associationEntry *UserAssociationEntry) []byte {
+	// TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
+	var key []byte
+	key = append(key, Prefixes.PrefixUserAssociationByTransactor...)
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
+	return key
+}
+
+func DBKeyForUserAssociationByTargetUser(associationEntry *UserAssociationEntry) []byte {
+	// TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
+	var key []byte
+	key = append(key, Prefixes.PrefixUserAssociationByTargetUser...)
+	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
+	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
+	return key
+}
+
+func DBKeyForUserAssociationByUsers(associationEntry *UserAssociationEntry) []byte {
+	// TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
+	var key []byte
+	key = append(key, Prefixes.PrefixUserAssociationByUsers...)
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
+	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
+	return key
+}
+
+func DBKeyForPostAssociationByPrefix(associationEntry *PostAssociationEntry, prefixType []byte) ([]byte, error) {
+	if bytes.Equal(prefixType, Prefixes.PrefixPostAssociationByID) {
+		return DBKeyForPostAssociationByID(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixPostAssociationByTransactor) {
+		return DBKeyForPostAssociationByTransactor(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixPostAssociationByPost) {
+		return DBKeyForPostAssociationByPost(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixPostAssociationByType) {
+		return DBKeyForPostAssociationByType(associationEntry), nil
+	}
+	return nil, errors.New("invalid post association prefix type")
+}
+
+func DBKeyForPostAssociationByID(associationEntry *PostAssociationEntry) []byte {
+	// AssociationID
+	var key []byte
+	key = append(key, Prefixes.PrefixPostAssociationByID...)
+	key = append(key, associationEntry.AssociationID.ToBytes()...)
+	return key
+}
+
+func DBKeyForPostAssociationByTransactor(associationEntry *PostAssociationEntry) []byte {
+	// TransactorPKID, AssociationType, AssociationValue, PostHash
+	var key []byte
+	key = append(key, Prefixes.PrefixPostAssociationByTransactor...)
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.PostHash.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
+	return key
+}
+
+func DBKeyForPostAssociationByPost(associationEntry *PostAssociationEntry) []byte {
+	// PostHash, AssociationType, AssociationValue, TransactorPKID
+	var key []byte
+	key = append(key, Prefixes.PrefixPostAssociationByPost...)
+	key = append(key, associationEntry.PostHash.ToBytes()...)
+	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
+	return key
+}
+
+func DBKeyForPostAssociationByType(associationEntry *PostAssociationEntry) []byte {
+	// AssociationType, AssociationValue, PostHash, TransactorPKID
+	var key []byte
+	key = append(key, Prefixes.PrefixPostAssociationByType...)
+	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.PostHash.ToBytes()...)
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
+	return key
+}
+
+func DBGetUserAssociationByID(handle *badger.DB, snap *Snapshot, associationID *BlockHash) (*UserAssociationEntry, error) {
+	var ret *UserAssociationEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetUserAssociationByIDWithTxn(txn, snap, associationID)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetUserAssociationByIDWithTxn(txn *badger.Txn, snap *Snapshot, associationID *BlockHash) (*UserAssociationEntry, error) {
+	// Retrieve association entry from db.
+	key := DBKeyForUserAssociationByID(&UserAssociationEntry{AssociationID: associationID})
+	associationBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetUserAssociationByID: problem retrieving association entry")
+	}
+
+	// Decode association entry from bytes.
+	associationEntry := &UserAssociationEntry{}
+	rr := bytes.NewReader(associationBytes)
+	if exist, err := DecodeFromBytes(associationEntry, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetUserAssociationByID: problem decoding association entry")
+	}
+	return associationEntry, nil
+}
+
+func DBGetPostAssociationByID(handle *badger.DB, snap *Snapshot, associationID *BlockHash) (*PostAssociationEntry, error) {
+	var ret *PostAssociationEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetPostAssociationByIDWithTxn(txn, snap, associationID)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetPostAssociationByIDWithTxn(txn *badger.Txn, snap *Snapshot, associationID *BlockHash) (*PostAssociationEntry, error) {
+	// Retrieve association entry from db.
+	key := DBKeyForPostAssociationByID(&PostAssociationEntry{AssociationID: associationID})
+	associationBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetPostAssociationByID: problem retrieving association entry")
+	}
+
+	// Decode association entry from bytes.
+	associationEntry := &PostAssociationEntry{}
+	rr := bytes.NewReader(associationBytes)
+	if exist, err := DecodeFromBytes(associationEntry, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetPostAssociationByID: problem decoding association entry")
+	}
+	return associationEntry, nil
+}
+
+func DBGetUserAssociationByAttributes(handle *badger.DB, snap *Snapshot, queryEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
+	var ret *UserAssociationEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetUserAssociationByAttributesWithTxn(txn, snap, queryEntry)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetUserAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, queryEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
+	// Retrieve association ID from db.
+	key := DBKeyForUserAssociationByTransactor(queryEntry)
+	associationBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetUserAssociationByAttributes: problem retrieving association ID")
+	}
+
+	// Decode ID.
+	associationID := &BlockHash{}
+	rr := bytes.NewReader(associationBytes)
+	if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetUserAssociationByAttributes: problem decoding association ID")
+	}
+
+	// Retrieve association entry from db by ID.
+	return DBGetUserAssociationByIDWithTxn(txn, snap, associationID)
+}
+
+func DBGetPostAssociationByAttributes(handle *badger.DB, snap *Snapshot, queryEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
+	var ret *PostAssociationEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetPostAssociationByAttributesWithTxn(txn, snap, queryEntry)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetPostAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, queryEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
+	// Retrieve association ID from db.
+	key := DBKeyForPostAssociationByTransactor(queryEntry)
+	associationBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetPostAssociationByAttributes: problem retrieving association ID")
+	}
+
+	// Decode ID.
+	associationID := &BlockHash{}
+	rr := bytes.NewReader(associationBytes)
+	if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetPostAssociationByAttributes: problem decoding association ID")
+	}
+
+	// Retrieve association entry from db by ID.
+	return DBGetPostAssociationByIDWithTxn(txn, snap, associationID)
+}
+
+func DBGetUserAssociationsByAttributes(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationQuery *UserAssociationQuery,
+	utxoViewAssociationIds *Set[BlockHash],
+) ([]*UserAssociationEntry, []byte, error) {
+	// Query for association IDs by input query params.
+	associationIds, prefixType, err := DBGetUserAssociationIdsByAttributes(
+		handle, snap, associationQuery, utxoViewAssociationIds,
+	)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: ")
+	}
+
+	// Map from association IDs to association entries.
+	associationEntries, err := MapSet(associationIds, func(associationID BlockHash) (*UserAssociationEntry, error) {
+		// Retrieve association entry from db by ID.
+		return DBGetUserAssociationByID(handle, snap, &associationID)
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
+	}
+	return associationEntries, prefixType, nil
+}
+
+func DBGetUserAssociationIdsByAttributes(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationQuery *UserAssociationQuery,
+	utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
+	// Construct key based on input query params.
+	var prefixType []byte
+	var keyPrefix []byte
+	var err error
+
+	// TransactorPKID + TargetUserPKID
+	if associationQuery.TransactorPKID != nil {
+		if associationQuery.TargetUserPKID != nil {
+			// PrefixUserAssociationByUsers: TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
+			prefixType = Prefixes.PrefixUserAssociationByUsers
+			keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByUsers...)
+			keyPrefix = append(keyPrefix, associationQuery.TransactorPKID.ToBytes()...)
+			keyPrefix = append(keyPrefix, associationQuery.TargetUserPKID.ToBytes()...)
+		} else {
+			// PrefixUserAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
+			prefixType = Prefixes.PrefixUserAssociationByTransactor
+			keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByTransactor...)
+			keyPrefix = append(keyPrefix, associationQuery.TransactorPKID.ToBytes()...)
+		}
+	} else if associationQuery.TargetUserPKID != nil {
+		// PrefixUserAssociationByTargetUser: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
+		prefixType = Prefixes.PrefixUserAssociationByTargetUser
+		keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByTargetUser...)
+		keyPrefix = append(keyPrefix, associationQuery.TargetUserPKID.ToBytes()...)
+	} else {
+		// TransactorPKID == nil, TargetUserPKID == nil
+		return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params: missing Transactor or TargetUser")
+	}
+
+	// AssociationType
+	if len(associationQuery.AssociationType) > 0 {
+		keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationType)...)
+		keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
+		// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
+		return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params: missing AssociationType")
+	} else if len(associationQuery.AssociationTypePrefix) > 0 {
+		keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
+	}
+
+	// AssociationValue
+	if len(associationQuery.AssociationValue) > 0 {
+		keyPrefix = append(keyPrefix, associationQuery.AssociationValue...)
+		keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	} else if len(associationQuery.AssociationValuePrefix) > 0 {
+		keyPrefix = append(keyPrefix, associationQuery.AssociationValuePrefix...)
+	}
+
+	// AppPKID
+	if associationQuery.AppPKID != nil {
+		if associationQuery.TransactorPKID == nil ||
+			associationQuery.TargetUserPKID == nil ||
+			len(associationQuery.AssociationType) == 0 ||
+			len(associationQuery.AssociationValue) == 0 {
+			return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params: querying by App requires all other parameters")
+		}
+		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
+	}
+
+	// Convert LastSeenAssociationID to LastSeenKey.
+	var lastSeenKey []byte
+	if associationQuery.LastSeenAssociationID != nil {
+		lastSeenKey, err = _dbUserAssociationIdToKey(handle, snap, associationQuery.LastSeenAssociationID, prefixType)
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
+		}
+	}
+
+	// Map UTXO view AssociationIDs to keys.
+	utxoViewAssociationKeys := NewSet([]string{})
+	err = utxoViewAssociationIds.ForEach(func(associationID BlockHash) error {
+		utxoViewAssociationKey, innerErr := _dbUserAssociationIdToKey(handle, snap, &associationID, prefixType)
+		if innerErr != nil {
+			return innerErr
+		}
+		if utxoViewAssociationKey != nil {
+			utxoViewAssociationKeys.Add(string(utxoViewAssociationKey))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
+	}
+
+	// Scan for all association IDs with the given key prefix.
+	_, valsFound, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+		handle,
+		keyPrefix,
+		associationQuery.Limit,
+		lastSeenKey,
+		associationQuery.SortDescending,
+		utxoViewAssociationKeys,
+	)
+
+	// Cast resulting values from bytes to association IDs.
+	associationIds := NewSet([]BlockHash{})
+	for _, valBytes := range valsFound {
+		associationID := &BlockHash{}
+		rr := bytes.NewReader(valBytes)
+		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
+			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: problem decoding association id: ")
+		}
+		associationIds.Add(*associationID)
+	}
+	return associationIds, prefixType, nil
+}
+
+func DBGetPostAssociationsByAttributes(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationQuery *PostAssociationQuery,
+	utxoViewAssociationIds *Set[BlockHash],
+) ([]*PostAssociationEntry, []byte, error) {
+	// Query for association IDs by input query params.
+	associationIds, prefixType, err := DBGetPostAssociationIdsByAttributes(
+		handle, snap, associationQuery, utxoViewAssociationIds,
+	)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationsByAttributes: ")
+	}
+
+	// Map from association IDs to association entries.
+	associationEntries, err := MapSet(associationIds, func(associationID BlockHash) (*PostAssociationEntry, error) {
+		// Retrieve association entry from db by ID.
+		return DBGetPostAssociationByID(handle, snap, &associationID)
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationsByAttributes: problem retrieving association entry by ID: ")
+	}
+	return associationEntries, prefixType, nil
+}
+
+func DBGetPostAssociationIdsByAttributes(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationQuery *PostAssociationQuery,
+	utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
+	// Construct key based on input query params.
+	var prefixType []byte
+	var keyPrefix []byte
+	var err error
+
+	if associationQuery.TransactorPKID != nil {
+		// PrefixPostAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, PostHash
+		// TransactorPKID != nil
+		prefixType = Prefixes.PrefixPostAssociationByTransactor
+
+		// TransactorPKID
+		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByTransactor...)
+		keyPrefix = append(keyPrefix, associationQuery.TransactorPKID.ToBytes()...)
+
+		// AssociationType
+		if len(associationQuery.AssociationType) > 0 {
+			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationType)...)
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+		} else if len(associationQuery.AssociationValue) > 0 ||
+			len(associationQuery.AssociationValuePrefix) > 0 ||
+			associationQuery.PostHash != nil {
+			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "" || PostHash != nil)
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationType")
+		} else if len(associationQuery.AssociationTypePrefix) > 0 {
+			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
+		}
+
+		// AssociationValue
+		if len(associationQuery.AssociationValue) > 0 {
+			keyPrefix = append(keyPrefix, associationQuery.AssociationValue...)
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+		} else if associationQuery.PostHash != nil {
+			// AssociationValue == "", PostHash != nil
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationValue")
+		} else if len(associationQuery.AssociationValuePrefix) > 0 {
+			keyPrefix = append(keyPrefix, associationQuery.AssociationValuePrefix...)
+		}
+
+		// PostHash
+		if associationQuery.PostHash != nil {
+			keyPrefix = append(keyPrefix, associationQuery.PostHash.ToBytes()...)
+		}
+
+	} else if associationQuery.PostHash != nil {
+		// PrefixPostAssociationByPost: PostHash, AssociationType, AssociationValue, TransactorPKID
+		// TransactorPKID == nil, PostHash != nil
+		prefixType = Prefixes.PrefixPostAssociationByPost
+
+		// PostHash
+		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByPost...)
+		keyPrefix = append(keyPrefix, associationQuery.PostHash.ToBytes()...)
+
+		// AssociationType
+		if len(associationQuery.AssociationType) > 0 {
+			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationType)...)
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+		} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
+			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationType")
+		} else if len(associationQuery.AssociationTypePrefix) > 0 {
+			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
+		}
+
+		// AssociationValue
+		if len(associationQuery.AssociationValue) > 0 {
+			keyPrefix = append(keyPrefix, associationQuery.AssociationValue...)
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+		} else if len(associationQuery.AssociationValuePrefix) > 0 {
+			keyPrefix = append(keyPrefix, []byte(associationQuery.AssociationValuePrefix)...)
+		}
+
+	} else {
+		// PrefixPostAssociationByType: AssociationType, AssociationValue, PostHash, TransactorPKID
+		// TransactorPKID == nil, PostHash == nil
+		prefixType = Prefixes.PrefixPostAssociationByType
+		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByType...)
+
+		// AssociationType
+		if len(associationQuery.AssociationType) > 0 {
+			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationType)...)
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+		} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
+			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationType")
+		} else if len(associationQuery.AssociationTypePrefix) > 0 {
+			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
+		}
+
+		// AssociationValue
+		if len(associationQuery.AssociationValue) > 0 {
+			keyPrefix = append(keyPrefix, associationQuery.AssociationValue...)
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+		} else if len(associationQuery.AssociationValuePrefix) > 0 {
+			keyPrefix = append(keyPrefix, associationQuery.AssociationValuePrefix...)
+		}
+	}
+
+	// AppPKID
+	if associationQuery.AppPKID != nil {
+		if associationQuery.TransactorPKID == nil ||
+			associationQuery.PostHash == nil ||
+			len(associationQuery.AssociationType) == 0 ||
+			len(associationQuery.AssociationValue) == 0 {
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: querying by App requires all other parameters")
+		}
+		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
+	}
+
+	// Convert LastSeenAssociationID to LastSeenKey.
+	var lastSeenKey []byte
+	if associationQuery.LastSeenAssociationID != nil {
+		lastSeenKey, err = _dbPostAssociationIdToKey(handle, snap, associationQuery.LastSeenAssociationID, prefixType)
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
+		}
+	}
+
+	// Map UTXO view AssociationIDs to keys.
+	utxoViewAssociationKeys := NewSet([]string{})
+	err = utxoViewAssociationIds.ForEach(func(associationID BlockHash) error {
+		utxoViewAssociationKey, innerErr := _dbPostAssociationIdToKey(handle, snap, &associationID, prefixType)
+		if innerErr != nil {
+			return innerErr
+		}
+		if utxoViewAssociationKey != nil {
+			utxoViewAssociationKeys.Add(string(utxoViewAssociationKey))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
+	}
+
+	// Scan for all association IDs with the given key prefix.
+	_, valsFound, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+		handle,
+		keyPrefix,
+		associationQuery.Limit,
+		lastSeenKey,
+		associationQuery.SortDescending,
+		utxoViewAssociationKeys,
+	)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationsIdsByAttributes: ")
+	}
+
+	// Cast resulting values from bytes to association IDs.
+	associationIds := NewSet([]BlockHash{})
+	for _, valBytes := range valsFound {
+		associationID := &BlockHash{}
+		rr := bytes.NewReader(valBytes)
+		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
+			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: problem decoding association id: ")
+		}
+		associationIds.Add(*associationID)
+	}
+	return associationIds, prefixType, nil
+}
+
+func _dbUserAssociationIdToKey(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationID *BlockHash,
+	prefixType []byte,
+) ([]byte, error) {
+	// Converts a UserAssociationID to a db key.
+	associationEntry, err := DBGetUserAssociationByID(handle, snap, associationID)
+	if err != nil {
+		return nil, err
+	}
+	if associationEntry == nil {
+		return nil, nil
+	}
+	return DBKeyForUserAssociationByPrefix(associationEntry, prefixType)
+}
+
+func _dbPostAssociationIdToKey(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationID *BlockHash,
+	prefixType []byte,
+) ([]byte, error) {
+	// Converts a PostAssociationID to a db key.
+	associationEntry, err := DBGetPostAssociationByID(handle, snap, associationID)
+	if err != nil {
+		return nil, err
+	}
+	if associationEntry == nil {
+		return nil, nil
+	}
+	return DBKeyForPostAssociationByPrefix(associationEntry, prefixType)
+}
+
+func DBPutUserAssociationWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	associationEntry *UserAssociationEntry,
+	blockHeight uint64,
+) error {
+	if associationEntry == nil {
+		return nil
+	}
+	associationEntryBytes := EncodeToBytes(blockHeight, associationEntry)
+	associationIDBytes := EncodeToBytes(blockHeight, associationEntry.AssociationID)
+
+	// Store entry in index: PrefixUserAssociationByID.
+	key := DBKeyForUserAssociationByID(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationEntryBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByID",
+		)
+	}
+
+	// Store ID in index: PrefixUserAssociationByTransactor.
+	key = DBKeyForUserAssociationByTransactor(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTransactor",
+		)
+	}
+
+	// Store ID in index: PrefixUserAssociationByTargetUser.
+	key = DBKeyForUserAssociationByTargetUser(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTargetUser",
+		)
+	}
+
+	// Store ID in index: PrefixUserAssociationByUsers.
+	key = DBKeyForUserAssociationByUsers(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByUsers")
+	}
+	return nil
+}
+
+func DBDeleteUserAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *UserAssociationEntry) error {
+	if associationEntry == nil {
+		return nil
+	}
+
+	// Delete from index: PrefixUserAssociationByID.
+	key := DBKeyForUserAssociationByID(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByID",
+		)
+	}
+
+	// Delete from index: PrefixUserAssociationByTransactor.
+	key = DBKeyForUserAssociationByTransactor(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTransactor",
+		)
+	}
+
+	// Delete from index: PrefixUserAssociationByTargetUser.
+	key = DBKeyForUserAssociationByTargetUser(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTargetUser",
+		)
+	}
+
+	// Delete from index: PrefixUserAssociationByUsers.
+	key = DBKeyForUserAssociationByUsers(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByUsers",
+		)
+	}
+	return nil
+}
+
+func DBPutPostAssociationWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	associationEntry *PostAssociationEntry,
+	blockHeight uint64,
+) error {
+	if associationEntry == nil {
+		return nil
+	}
+	associationEntryBytes := EncodeToBytes(blockHeight, associationEntry)
+	associationIDBytes := EncodeToBytes(blockHeight, associationEntry.AssociationID)
+
+	// Store entry in index: PrefixPostAssociationByID.
+	key := DBKeyForPostAssociationByID(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationEntryBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByID",
+		)
+	}
+
+	// Store ID in index: PrefixPostAssociationByTransactor.
+	key = DBKeyForPostAssociationByTransactor(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByTransactor",
+		)
+	}
+
+	// Store ID in index: PrefixPostAssociationByPost.
+	key = DBKeyForPostAssociationByPost(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByPost",
+		)
+	}
+
+	// Store ID in index: PrefixPostAssociationByType.
+	key = DBKeyForPostAssociationByType(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByType",
+		)
+	}
+	return nil
+}
+
+func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *PostAssociationEntry) error {
+	if associationEntry == nil {
+		return nil
+	}
+
+	// Delete from index: PrefixPostAssociationByID.
+	key := DBKeyForPostAssociationByID(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByID",
+		)
+	}
+
+	// Delete from index: PrefixPostAssociationByTransactor.
+	key = DBKeyForPostAssociationByTransactor(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByTransactor",
+		)
+	}
+
+	// Delete from index: PrefixPostAssociationByPost.
+	key = DBKeyForPostAssociationByPost(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByPost",
+		)
+	}
+
+	// Delete from index: PrefixPostAssociationByType.
+	key = DBKeyForPostAssociationByType(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByType",
+		)
+	}
+	return nil
+}
+
+func EnumerateKeysForPrefixWithLimitOffsetOrder(
+	db *badger.DB,
+	prefix []byte,
+	limit int,
+	lastSeenKey []byte,
+	sortDescending bool,
+	skipKeys *Set[string],
+) ([][]byte, [][]byte, error) {
+	keysFound := [][]byte{}
+	valsFound := [][]byte{}
+
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		keysFound, valsFound, err = _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
+			txn, prefix, limit, lastSeenKey, sortDescending, skipKeys,
+		)
+		return err
+	})
+	if dbErr != nil {
+		return nil, nil, errors.Wrapf(
+			dbErr,
+			"EnumerateKeysForPrefixWithLimitOffsetOrder: problem fetching keys and values from db: ",
+		)
+	}
+
+	return keysFound, valsFound, nil
+}
+
+func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
+	txn *badger.Txn,
+	prefix []byte,
+	limit int,
+	lastSeenKey []byte,
+	sortDescending bool,
+	skipKeys *Set[string],
+) ([][]byte, [][]byte, error) {
+	keysFound := [][]byte{}
+	valsFound := [][]byte{}
+
+	// If provided, start at the last seen key.
+	startingKey := prefix
+	haveSeenLastSeenKey := true
+	if lastSeenKey != nil {
+		startingKey = lastSeenKey
+		haveSeenLastSeenKey = false
+		if limit > 0 {
+			// Need to increment limit by one (if non-zero) since
+			// we include the lastSeenKey/lastSeenValue.
+			limit += 1
+		}
+	}
+
+	opts := badger.DefaultIteratorOptions
+	// Search keys in reverse order if sort DESC.
+	if sortDescending {
+		opts.Reverse = true
+		startingKey = append(startingKey, 0xff)
+	}
+	nodeIterator := txn.NewIterator(opts)
+	defer nodeIterator.Close()
+
+	for nodeIterator.Seek(startingKey); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+		// Break if at or beyond limit.
+		if limit > 0 && len(keysFound) >= limit {
+			break
+		}
+		key := nodeIterator.Item().Key()
+		// Skip if key is before the last seen key. The caller
+		// needs to filter out the lastSeenKey in the view as
+		// we return any key >= the lastSeenKey.
+		if !haveSeenLastSeenKey {
+			if !bytes.Equal(key, lastSeenKey) {
+				continue
+			}
+			haveSeenLastSeenKey = true
+		}
+		// Skip if key is included in the set of skipKeys.
+		if skipKeys.Includes(string(key)) {
+			continue
+		}
+		// Copy key.
+		keyCopy := make([]byte, len(key))
+		copy(keyCopy[:], key[:])
+		// Copy value.
+		valCopy, err := nodeIterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		// Append found entry to return slices.
+		keysFound = append(keysFound, keyCopy)
+		valsFound = append(valsFound, valCopy)
+	}
+	return keysFound, valsFound, nil
 }
