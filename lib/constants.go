@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -251,6 +252,10 @@ type ForkHeights struct {
 	// DeSoUnlimitedDerivedKeysBlockHeight defines the height at which
 	// we introduce derived keys without a spending limit.
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
+
+	// AllowUpdatingNFTPostsBlockHeight defines the height at which we began
+	// allowing post-owners to update the underlying post of an NFT.
+	AllowUpdatingNFTPostsBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -574,6 +579,7 @@ var RegtestForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
+	AllowUpdatingNFTPostsBlockHeight:                     uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -716,6 +722,9 @@ var MainnetForkHeights = ForkHeights{
 
 	// Mon Sept 19 @ 12pm PST
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
+
+	// FIXME: Set to real block height when we're ready.
+	AllowUpdatingNFTPostsBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -966,6 +975,9 @@ var TestnetForkHeights = ForkHeights{
 
 	// Tues Sept 13 @ 10am PT
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
+
+	// FIXME: Set to real block height when we're ready.
+	AllowUpdatingNFTPostsBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.

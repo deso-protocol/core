@@ -801,8 +801,8 @@ func (bav *UtxoView) _connectSubmitPost(
 				PkToStringBoth(txn.PublicKey), spew.Sdump(GetParamUpdaterPublicKeys(blockHeight, bav.Params)))
 		}
 
-		// Modification of an NFT is not allowed.
-		if existingPostEntryy.IsNFT {
+		// Modification of an NFT is not allowed (before the specified block height).
+		if existingPostEntryy.IsNFT && blockHeight < bav.Params.ForkHeights.AllowUpdatingNFTPostsBlockHeight {
 			return 0, 0, nil, errors.Wrapf(RuleErrorSubmitPostCannotUpdateNFT, "_connectSubmitPost: ")
 		}
 
