@@ -3,13 +3,14 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"math"
+	"sort"
+	"testing"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"math"
-	"sort"
-	"testing"
 )
 
 type accessGroupMembersTestData struct {
@@ -76,6 +77,7 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	m2PublicKey := NewPublicKey(m2PubBytes)
 	m3PubBytes, _, _ := Base58CheckDecode(m3Pub)
 	m3PublicKey := NewPublicKey(m3PubBytes)
+	m5PubBytes, _, _ := Base58CheckDecode(m5Pub)
 
 	fundPublicKeysWithNanosMap := make(map[PublicKey]uint64)
 	fundPublicKeysWithNanosMap[*m0PublicKey] = 200
@@ -283,8 +285,37 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{})
 	}
 
+	// Try adding (member0, groupName1) &  (member1, groupName3) again!
+	// Should result in RuleErrorAccessMemberAlreadyExists.
+	tv17Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupName1, EncryptedKey: []byte{1}, ExtraData: nil},
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: groupName3, EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv17 := _createAccessGroupMembersTestVector("TEST 17: (FAIL) Connect access group members transaction to the "+
+		"access group made by (pk2, groupName4), adding as member (pk0, groupName1), (pk1, groupName3)",
+		m2Priv, m2PubBytes, groupName4, tv17Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessMemberAlreadyExists)
+
+	// Test to verify that only group owners can add members.
+	// Though groupName4 has existing members m0, m1 and m2, only m2 being the group owner can add a member.
+	// Any attempt by members m0 and m1 to add a new member to groupName4 should fail.
+	tv18Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m5PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName()[:], EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv18 := _createAccessGroupMembersTestVector("TEST 18: (FAIL) Connect access group members transaction to the "+
+		"access group made by (pk2, groupName4), adding as member (pk0, groupName1), (pk1, groupName3), and (pk2, baseGroup)",
+		m1Priv, m1PubBytes, groupName4, tv18Members, AccessGroupMemberOperationTypeAdd,
+		errors.New("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: non-existent access key entry for groupOwnerPublicKey"))
+
+	tv19Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m5PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName()[:], EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv19 := _createAccessGroupMembersTestVector("TEST 19: (FAIL) Connect access group members transaction to the "+
+		"access group made by (pk2, groupName4), adding as member (pk0, groupName1), (pk1, groupName3), and (pk2, baseGroup)",
+		m0Priv, m0PubBytes, groupName4, tv19Members, AccessGroupMemberOperationTypeAdd,
+		errors.New("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: non-existent access key entry for groupOwnerPublicKey"))
+
 	// Mine all the above transactions into a new block.
-	tvv2 := []*transactionTestVector{tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14, tv15, tv16}
+	tvv2 := []*transactionTestVector{tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14, tv15, tv16, tv17, tv18, tv19}
 	block2ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
 		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
 		require.NoError(err)
