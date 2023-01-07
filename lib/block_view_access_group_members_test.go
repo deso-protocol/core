@@ -302,7 +302,7 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 		{AccessGroupMemberPublicKey: m5PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName()[:], EncryptedKey: []byte{1}, ExtraData: nil},
 	}
 	tv18 := _createAccessGroupMembersTestVector("TEST 18: (FAIL) Connect access group members transaction to the "+
-		"access group made by (pk2, groupName4), adding as member (pk0, groupName1), (pk1, groupName3), and (pk2, baseGroup)",
+		"access group made by (pk2, groupName4),but using m1Priv as an owner to add (pk5, BaseGroupKeyName) as member",
 		m1Priv, m1PubBytes, groupName4, tv18Members, AccessGroupMemberOperationTypeAdd,
 		errors.New("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: non-existent access key entry for groupOwnerPublicKey"))
 
@@ -310,7 +310,7 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 		{AccessGroupMemberPublicKey: m5PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName()[:], EncryptedKey: []byte{1}, ExtraData: nil},
 	}
 	tv19 := _createAccessGroupMembersTestVector("TEST 19: (FAIL) Connect access group members transaction to the "+
-		"access group made by (pk2, groupName4), adding as member (pk0, groupName1), (pk1, groupName3), and (pk2, baseGroup)",
+		"access group made by (pk2, groupName4),but using m0Priv as an owner to add (pk5, BaseGroupKeyName) as member",
 		m0Priv, m0PubBytes, groupName4, tv19Members, AccessGroupMemberOperationTypeAdd,
 		errors.New("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: non-existent access key entry for groupOwnerPublicKey"))
 
