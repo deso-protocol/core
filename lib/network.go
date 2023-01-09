@@ -6029,20 +6029,125 @@ type AssociationLimitKey struct {
 }
 
 type AssociationClass uint8
+type AssociationClassString string
 type AssociationAppScopeType uint8
+type AssociationAppScopeTypeString string
 type AssociationOperation uint8
+type AssociationOperationString string
+const (
+	UserAssociationClassString AssociationClassString = "user"
+	PostAssociationClassString AssociationClassString = "post"
+	UndefinedAssociationClassString AssociationClassString = "undefined"
+)
 
+func (associationClass AssociationClass) ToString() string {
+	return string(associationClass.ToAssociationClassString())
+}
+
+func (associationClass AssociationClass) ToAssociationClassString() AssociationClassString {
+	switch associationClass {
+	case AssociationClassUser:
+		return UserAssociationClassString
+	case AssociationClassPost:
+		return PostAssociationClassString
+	default:
+		return UndefinedAssociationClassString
+	}
+}
+
+func (associationClassString AssociationClassString) ToAssociationClass() AssociationClass {
+	switch associationClassString {
+	case UserAssociationClassString:
+		return AssociationClassUser
+	case PostAssociationClassString:
+		return AssociationClassPost
+	default:
+		return AssociationClassUndefined
+	}
+}
+
+const (
+	AnyAssociationAppScopeTypeString AssociationAppScopeTypeString = "any"
+	ScopedAssociationAppScopeTypeString AssociationAppScopeTypeString = "scoped"
+	UndefinedAssociationAppScopeTypeString AssociationAppScopeTypeString = "undefined"
+)
+
+func (associationAppScopeType AssociationAppScopeType) ToString() string {
+	return string(associationAppScopeType.ToAssociationAppScopeTypeString())
+}
+
+func (associationAppScopeType AssociationAppScopeType) ToAssociationAppScopeTypeString() AssociationAppScopeTypeString {
+	switch associationAppScopeType {
+	case AssociationAppScopeTypeAny:
+		return AnyAssociationAppScopeTypeString
+	case AssociationAppScopeTypeScoped:
+		return ScopedAssociationAppScopeTypeString
+	default:
+		return UndefinedAssociationAppScopeTypeString
+	}
+}
+
+func (associationAppScopeTypeString AssociationAppScopeTypeString) ToAssociationAppScopeType() AssociationAppScopeType {
+	switch associationAppScopeTypeString {
+	case AnyAssociationAppScopeTypeString:
+		return AssociationAppScopeTypeAny
+	case ScopedAssociationAppScopeTypeString:
+		return AssociationAppScopeTypeScoped
+	default:
+		return AssociationAppScopeTypeUndefined
+	}
+}
+
+const (
+	AnyAssociationOperation    AssociationOperationString = "any"
+	CreateAssociationOperation AssociationOperationString = "create"
+	DeleteAssociationOperation AssociationOperationString = "delete"
+	UndefinedAssociationOperation AssociationOperationString = "undefined"
+)
+
+func (associationOperation AssociationOperation) ToString() string {
+	return string(associationOperation.ToAssociationOperationString())
+}
+
+func (associationOperation AssociationOperation) ToAssociationOperationString() AssociationOperationString {
+	switch associationOperation {
+	case AssociationOperationAny:
+		return AnyAssociationOperation
+	case AssociationOperationCreate:
+		return CreateAssociationOperation
+	case AssociationOperationDelete:
+		return DeleteAssociationOperation
+	default:
+		return UndefinedAssociationOperation
+	}
+}
+
+func (associationOperationString AssociationOperationString) ToAssociationOperation() AssociationOperation {
+	switch associationOperationString {
+	case AnyAssociationOperation:
+		return AssociationOperationAny
+	case CreateAssociationOperation:
+		return AssociationOperationCreate
+	case DeleteAssociationOperation:
+		return AssociationOperationDelete
+	default:
+		return AssociationOperationUndefined
+	}
+}
 const (
 	// AssociationClass: User || Post
 	AssociationClassUser AssociationClass = 0
 	AssociationClassPost AssociationClass = 1
+	AssociationClassUndefined AssociationClass = 2
 	// AssociationScope: Any || Scoped
 	AssociationAppScopeTypeAny    AssociationAppScopeType = 0
-	AssociationAppScopeTypeScoped AssociationAppScopeType = 2
+	AssociationAppScopeTypeScoped AssociationAppScopeType = 1
+	AssociationAppScopeTypeUndefined AssociationAppScopeType = 2
 	// AssociationOperation: Any || Create || Delete
 	AssociationOperationAny    AssociationOperation = 0
 	AssociationOperationCreate AssociationOperation = 1
 	AssociationOperationDelete AssociationOperation = 2
+	AssociationOperationUndefined AssociationOperation = 3
 )
 
 func (associationLimitKey AssociationLimitKey) Encode() []byte {
@@ -6105,29 +6210,6 @@ func MakeAssociationLimitKey(
 		AppScopeType:     appScopeType,
 		Operation:        operation,
 	}
-}
-
-func (associationClass AssociationClass) ToString() string {
-	if associationClass == AssociationClassUser {
-		return "User"
-	}
-	if associationClass == AssociationClassPost {
-		return "Post"
-	}
-	return ""
-}
-
-func (associationOperation AssociationOperation) ToString() string {
-	if associationOperation == AssociationOperationAny {
-		return "Any"
-	}
-	if associationOperation == AssociationOperationCreate {
-		return "Create"
-	}
-	if associationOperation == AssociationOperationDelete {
-		return "Delete"
-	}
-	return ""
 }
 
 func (txnData *AuthorizeDerivedKeyMetadata) GetTxnType() TxnType {
