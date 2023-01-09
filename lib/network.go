@@ -6034,9 +6034,10 @@ type AssociationAppScopeType uint8
 type AssociationAppScopeTypeString string
 type AssociationOperation uint8
 type AssociationOperationString string
+
 const (
-	UserAssociationClassString AssociationClassString = "user"
-	PostAssociationClassString AssociationClassString = "post"
+	UserAssociationClassString      AssociationClassString = "user"
+	PostAssociationClassString      AssociationClassString = "post"
 	UndefinedAssociationClassString AssociationClassString = "undefined"
 )
 
@@ -6067,8 +6068,8 @@ func (associationClassString AssociationClassString) ToAssociationClass() Associ
 }
 
 const (
-	AnyAssociationAppScopeTypeString AssociationAppScopeTypeString = "any"
-	ScopedAssociationAppScopeTypeString AssociationAppScopeTypeString = "scoped"
+	AnyAssociationAppScopeTypeString       AssociationAppScopeTypeString = "any"
+	ScopedAssociationAppScopeTypeString    AssociationAppScopeTypeString = "scoped"
 	UndefinedAssociationAppScopeTypeString AssociationAppScopeTypeString = "undefined"
 )
 
@@ -6099,9 +6100,9 @@ func (associationAppScopeTypeString AssociationAppScopeTypeString) ToAssociation
 }
 
 const (
-	AnyAssociationOperation    AssociationOperationString = "any"
-	CreateAssociationOperation AssociationOperationString = "create"
-	DeleteAssociationOperation AssociationOperationString = "delete"
+	AnyAssociationOperation       AssociationOperationString = "any"
+	CreateAssociationOperation    AssociationOperationString = "create"
+	DeleteAssociationOperation    AssociationOperationString = "delete"
 	UndefinedAssociationOperation AssociationOperationString = "undefined"
 )
 
@@ -6134,19 +6135,20 @@ func (associationOperationString AssociationOperationString) ToAssociationOperat
 		return AssociationOperationUndefined
 	}
 }
+
 const (
 	// AssociationClass: User || Post
-	AssociationClassUser AssociationClass = 0
-	AssociationClassPost AssociationClass = 1
+	AssociationClassUser      AssociationClass = 0
+	AssociationClassPost      AssociationClass = 1
 	AssociationClassUndefined AssociationClass = 2
 	// AssociationScope: Any || Scoped
-	AssociationAppScopeTypeAny    AssociationAppScopeType = 0
-	AssociationAppScopeTypeScoped AssociationAppScopeType = 1
+	AssociationAppScopeTypeAny       AssociationAppScopeType = 0
+	AssociationAppScopeTypeScoped    AssociationAppScopeType = 1
 	AssociationAppScopeTypeUndefined AssociationAppScopeType = 2
 	// AssociationOperation: Any || Create || Delete
-	AssociationOperationAny    AssociationOperation = 0
-	AssociationOperationCreate AssociationOperation = 1
-	AssociationOperationDelete AssociationOperation = 2
+	AssociationOperationAny       AssociationOperation = 0
+	AssociationOperationCreate    AssociationOperation = 1
+	AssociationOperationDelete    AssociationOperation = 2
 	AssociationOperationUndefined AssociationOperation = 3
 )
 
