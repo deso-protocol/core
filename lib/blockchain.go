@@ -4893,3 +4893,193 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 	}
 	return allFeesNanosPerKB[medianPos]
 }
+
+//
+// Associations
+//
+
+func (bc *Blockchain) CreateCreateUserAssociationTxn(
+	transactorPublicKey []byte,
+	metadata *CreateUserAssociationMetadata,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a transaction containing the association fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+	return bc._createAssociationTxn(
+		"Blockchain.CreateCreateUserAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+	)
+}
+
+func (bc *Blockchain) CreateDeleteUserAssociationTxn(
+	transactorPublicKey []byte,
+	metadata *DeleteUserAssociationMetadata,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a transaction containing the association fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+	return bc._createAssociationTxn(
+		"Blockchain.CreateDeleteUserAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+	)
+}
+
+func (bc *Blockchain) CreateCreatePostAssociationTxn(
+	transactorPublicKey []byte,
+	metadata *CreatePostAssociationMetadata,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a transaction containing the association fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+	return bc._createAssociationTxn(
+		"Blockchain.CreateCreatePostAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+	)
+}
+
+func (bc *Blockchain) CreateDeletePostAssociationTxn(
+	transactorPublicKey []byte,
+	metadata *DeletePostAssociationMetadata,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a transaction containing the association fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+	return bc._createAssociationTxn(
+		"Blockchain.CreateDeletePostAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+	)
+}
+
+func (bc *Blockchain) _createAssociationTxn(
+	callingFuncName string,
+	txn *MsgDeSoTxn,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a new UtxoView. If we have access to a mempool object, use
+	// it to get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"%s: problem creating new utxo view: %v", callingFuncName, err,
+		)
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, fmt.Errorf(
+				"%s: problem getting augmented utxo view from mempool: %v", callingFuncName, err,
+			)
+		}
+	}
+
+	// Validate transaction metadata.
+	switch txn.TxnMeta.GetTxnType() {
+	case TxnTypeCreateUserAssociation:
+		err = utxoView.IsValidCreateUserAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*CreateUserAssociationMetadata))
+	case TxnTypeDeleteUserAssociation:
+		err = utxoView.IsValidDeleteUserAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*DeleteUserAssociationMetadata))
+	case TxnTypeCreatePostAssociation:
+		err = utxoView.IsValidCreatePostAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*CreatePostAssociationMetadata))
+	case TxnTypeDeletePostAssociation:
+		err = utxoView.IsValidDeletePostAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*DeletePostAssociationMetadata))
+	default:
+		err = errors.New("invalid txn type")
+	}
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("%s: %v", callingFuncName, err)
+	}
+
+	// We don't need to make any tweaks to the amount because
+	// it's basically a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
+		txn, minFeeRateNanosPerKB, mempool,
+	)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"%s: problem adding inputs: %v", callingFuncName, err,
+		)
+	}
+
+	// Validate that the transaction has at least one input, even if it all goes
+	// to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"%s: txn has zero inputs, try increasing the fee rate", callingFuncName,
+		)
+	}
+
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"%s: spend amount is non-zero: %d", callingFuncName, spendAmount,
+		)
+	}
+	return txn, totalInput, changeAmount, fees, nil
+}

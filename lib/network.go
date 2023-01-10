@@ -227,8 +227,12 @@ const (
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
 	TxnTypeDAOCoinLimitOrder            TxnType = 26
+	TxnTypeCreateUserAssociation        TxnType = 27
+	TxnTypeDeleteUserAssociation        TxnType = 28
+	TxnTypeCreatePostAssociation        TxnType = 29
+	TxnTypeDeletePostAssociation        TxnType = 30
 
-	// NEXT_ID = 27
+	// NEXT_ID = 31
 )
 
 type TxnString string
@@ -260,6 +264,10 @@ const (
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
 	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
+	TxnStringCreateUserAssociation        TxnString = "CREATE_USER_ASSOCIATION"
+	TxnStringDeleteUserAssociation        TxnString = "DELETE_USER_ASSOCIATION"
+	TxnStringCreatePostAssociation        TxnString = "CREATE_POST_ASSOCIATION"
+	TxnStringDeletePostAssociation        TxnString = "DELETE_POST_ASSOCIATION"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -270,7 +278,8 @@ var (
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
-		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeCreateUserAssociation,
+		TxnTypeDeleteUserAssociation, TxnTypeCreatePostAssociation, TxnTypeDeletePostAssociation,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -278,7 +287,8 @@ var (
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
-		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringCreateUserAssociation,
+		TxnStringDeleteUserAssociation, TxnStringCreatePostAssociation, TxnStringDeletePostAssociation,
 	}
 )
 
@@ -344,6 +354,14 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringDAOCoinTransfer
 	case TxnTypeDAOCoinLimitOrder:
 		return TxnStringDAOCoinLimitOrder
+	case TxnTypeCreateUserAssociation:
+		return TxnStringCreateUserAssociation
+	case TxnTypeDeleteUserAssociation:
+		return TxnStringDeleteUserAssociation
+	case TxnTypeCreatePostAssociation:
+		return TxnStringCreatePostAssociation
+	case TxnTypeDeletePostAssociation:
+		return TxnStringDeletePostAssociation
 	default:
 		return TxnStringUndefined
 	}
@@ -403,6 +421,14 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeDAOCoinTransfer
 	case TxnStringDAOCoinLimitOrder:
 		return TxnTypeDAOCoinLimitOrder
+	case TxnStringCreateUserAssociation:
+		return TxnTypeCreateUserAssociation
+	case TxnStringDeleteUserAssociation:
+		return TxnTypeDeleteUserAssociation
+	case TxnStringCreatePostAssociation:
+		return TxnTypeCreatePostAssociation
+	case TxnStringDeletePostAssociation:
+		return TxnTypeDeletePostAssociation
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -470,6 +496,14 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinTransferMetadata{}).New(), nil
 	case TxnTypeDAOCoinLimitOrder:
 		return (&DAOCoinLimitOrderMetadata{}).New(), nil
+	case TxnTypeCreateUserAssociation:
+		return (&CreateUserAssociationMetadata{}).New(), nil
+	case TxnTypeDeleteUserAssociation:
+		return (&DeleteUserAssociationMetadata{}).New(), nil
+	case TxnTypeCreatePostAssociation:
+		return (&CreatePostAssociationMetadata{}).New(), nil
+	case TxnTypeDeletePostAssociation:
+		return (&DeletePostAssociationMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -5033,6 +5067,16 @@ type TransactionSpendingLimit struct {
 	// ===== ENCODER MIGRATION UnlimitedDerivedKeysMigration =====
 	// IsUnlimited field determines whether this derived key has no spending limit.
 	IsUnlimited bool
+
+	// ===== ENCODER MIGRATION AssociationsMigration =====
+	// AssociationClass || AssociationType || AppPKID || AppScopeType || AssociationOperation
+	// to number of transactions
+	//   - AssociationClass: one of { User, Post }
+	//   - AssociationType: a byte slice to scope by AssociationType or an empty byte slice to signify Any
+	//   - AppPKID: a PKID to scope by App, if AppScopeType == Any then AppPKID has to be the ZeroPKID
+	//   - AppScopeType: one of { Any, Scoped }
+	//   - AssociationOperation: one of { Any, Create, Delete }
+	AssociationLimitMap map[AssociationLimitKey]uint64
 }
 
 // ToMetamaskString encodes the TransactionSpendingLimit into a Metamask-compatible string. The encoded string will
@@ -5178,6 +5222,35 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 		indentationCounter--
 	}
 
+	// AssociationLimitMap
+	if len(tsl.AssociationLimitMap) > 0 {
+		var associationLimitStr []string
+		str += _indt(indentationCounter) + "Association Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.AssociationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Association Class: " +
+				limitKey.AssociationClass.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Association Type: " +
+				limitKey.AssociationType + "\n"
+			opString += _indt(indentationCounter) + "App PKID: " +
+				Base58CheckEncode(limitKey.AppPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			associationLimitStr = append(associationLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(associationLimitStr)
+		indentationCounter--
+	}
+
 	// IsUnlimited
 	if tsl.IsUnlimited {
 		str += "Unlimited"
@@ -5309,6 +5382,28 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 	// IsUnlimited, gated by the encoder migration.
 	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
 		data = append(data, BoolToByte(tsl.IsUnlimited))
+	}
+
+	// AssociationLimitMap, gated by the encoder migration
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		associationLimitMapLength := uint64(len(tsl.AssociationLimitMap))
+		data = append(data, UintToBuf(associationLimitMapLength)...)
+		if associationLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[AssociationLimitKey](0, associationLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.AssociationLimitMap {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.AssociationLimitMap[key])...)
+			}
+		}
 	}
 
 	return data, nil
@@ -5443,6 +5538,31 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		associationMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
+		if associationMapLen > 0 {
+			for ii := uint64(0); ii < associationMapLen; ii++ {
+				associationLimitKey := &AssociationLimitKey{}
+				if err = associationLimitKey.Decode(rr); err != nil {
+					return errors.Wrap(err, "Error decoding Association Key")
+				}
+				var operationCount uint64
+				operationCount, err = ReadUvarint(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.AssociationLimitMap[*associationLimitKey]; exists {
+					return errors.New("Association Key already exists in map")
+				}
+				tsl.AssociationLimitMap[*associationLimitKey] = operationCount
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -5477,11 +5597,20 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		copyTSL.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = daoCoinLimitOrderCount
 	}
 
+	if tsl.AssociationLimitMap != nil {
+		// Before the AssociationsBlockHeight, this map will be null.
+		// So we should ensure this is the case in the copy too.
+		copyTSL.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
+		for associationLimitKey, associationCount := range tsl.AssociationLimitMap {
+			copyTSL.AssociationLimitMap[associationLimitKey] = associationCount
+		}
+	}
+
 	return copyTSL
 }
 
 func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpendingLimit, blockHeight uint32) (_isUnlimited bool, _err error) {
-	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 7)
+	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 8)
 
 	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight {
 		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
@@ -5492,7 +5621,8 @@ func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpending
 		len(tsl.CreatorCoinOperationLimitMap) > 0 ||
 		len(tsl.DAOCoinOperationLimitMap) > 0 ||
 		len(tsl.NFTOperationLimitMap) > 0 ||
-		len(tsl.DAOCoinLimitOrderLimitMap) > 0) {
+		len(tsl.DAOCoinLimitOrderLimitMap) > 0 ||
+		len(tsl.AssociationLimitMap) > 0) {
 
 		return tsl.IsUnlimited, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
 	}
@@ -5888,6 +6018,116 @@ func MakeDAOCoinLimitOrderLimitKey(buyingDAOCoinCreatorPKID PKID, sellingDAOCoin
 		BuyingDAOCoinCreatorPKID:  buyingDAOCoinCreatorPKID,
 		SellingDAOCoinCreatorPKID: sellingDAOCoinCreatorPKID,
 	}
+}
+
+type AssociationLimitKey struct {
+	AssociationClass AssociationClass // User || Post
+	AssociationType  string
+	AppPKID          PKID
+	AppScopeType     AssociationAppScopeType // Any || Scoped
+	Operation        AssociationOperation    // Any || Create || Delete
+}
+
+type AssociationClass uint8
+type AssociationAppScopeType uint8
+type AssociationOperation uint8
+
+const (
+	// AssociationClass: User || Post
+	AssociationClassUser AssociationClass = 0
+	AssociationClassPost AssociationClass = 1
+	// AssociationScope: Any || Scoped
+	AssociationAppScopeTypeAny    AssociationAppScopeType = 0
+	AssociationAppScopeTypeScoped AssociationAppScopeType = 2
+	// AssociationOperation: Any || Create || Delete
+	AssociationOperationAny    AssociationOperation = 0
+	AssociationOperationCreate AssociationOperation = 1
+	AssociationOperationDelete AssociationOperation = 2
+)
+
+func (associationLimitKey AssociationLimitKey) Encode() []byte {
+	var data []byte
+	data = append(data, UintToBuf(uint64(associationLimitKey.AssociationClass))...)
+	data = append(data, EncodeByteArray([]byte(associationLimitKey.AssociationType))...)
+	data = append(data, associationLimitKey.AppPKID.ToBytes()...)
+	data = append(data, UintToBuf(uint64(associationLimitKey.AppScopeType))...)
+	data = append(data, UintToBuf(uint64(associationLimitKey.Operation))...)
+	return data
+}
+
+func (associationLimitKey *AssociationLimitKey) Decode(rr *bytes.Reader) error {
+	var err error
+	// AssociationClass: User || Post
+	associationClass, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AssociationLimitKey.Decode: Problem reading AssociationClass: ")
+	}
+	associationLimitKey.AssociationClass = AssociationClass(associationClass)
+	// AssociationType
+	associationType, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AssociationType: ")
+	}
+	associationLimitKey.AssociationType = string(associationType)
+	// AppPKID
+	appPKID := &PKID{}
+	if err = appPKID.FromBytes(rr); err != nil {
+		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AppPKID: ")
+	}
+	associationLimitKey.AppPKID = *appPKID
+	// AppScopeType: Any || Scoped
+	appScopeType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AppScopeType: ")
+	}
+	associationLimitKey.AppScopeType = AssociationAppScopeType(appScopeType)
+	// Operation: Any || Create || Delete
+	operation, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AssociationLimitKey.Decode: Problem reading Operation: ")
+	}
+	associationLimitKey.Operation = AssociationOperation(operation)
+	return nil
+}
+
+func MakeAssociationLimitKey(
+	associationClass AssociationClass,
+	associationType []byte,
+	appPKID PKID,
+	appScopeType AssociationAppScopeType,
+	operation AssociationOperation,
+) AssociationLimitKey {
+	// Note: AssociationType is case-insensitive.
+	return AssociationLimitKey{
+		AssociationClass: associationClass,
+		AssociationType:  string(bytes.ToLower(associationType)),
+		AppPKID:          appPKID,
+		AppScopeType:     appScopeType,
+		Operation:        operation,
+	}
+}
+
+func (associationClass AssociationClass) ToString() string {
+	if associationClass == AssociationClassUser {
+		return "User"
+	}
+	if associationClass == AssociationClassPost {
+		return "Post"
+	}
+	return ""
+}
+
+func (associationOperation AssociationOperation) ToString() string {
+	if associationOperation == AssociationOperationAny {
+		return "Any"
+	}
+	if associationOperation == AssociationOperationCreate {
+		return "Create"
+	}
+	if associationOperation == AssociationOperationDelete {
+		return "Delete"
+	}
+	return ""
 }
 
 func (txnData *AuthorizeDerivedKeyMetadata) GetTxnType() TxnType {
@@ -6557,4 +6797,208 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 
 func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 	return &MessagingGroupMetadata{}
+}
+
+// ==================================================================
+// Associations Metadata
+// ==================================================================
+
+type CreateUserAssociationMetadata struct {
+	TargetUserPublicKey *PublicKey
+	AppPublicKey        *PublicKey
+	AssociationType     []byte
+	AssociationValue    []byte
+}
+
+type DeleteUserAssociationMetadata struct {
+	AssociationID *BlockHash
+}
+
+type CreatePostAssociationMetadata struct {
+	PostHash         *BlockHash
+	AppPublicKey     *PublicKey
+	AssociationType  []byte
+	AssociationValue []byte
+}
+
+type DeletePostAssociationMetadata struct {
+	AssociationID *BlockHash
+}
+
+func (txnData *CreateUserAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeCreateUserAssociation
+}
+
+func (txnData *DeleteUserAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeDeleteUserAssociation
+}
+
+func (txnData *CreatePostAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeCreatePostAssociation
+}
+
+func (txnData *DeletePostAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeDeletePostAssociation
+}
+
+func (txnData *CreateUserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.TargetUserPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AppPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AssociationType)...)
+	data = append(data, EncodeByteArray(txnData.AssociationValue)...)
+	return data, nil
+}
+
+func (txnData *DeleteUserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.AssociationID.ToBytes())...)
+	return data, nil
+}
+
+func (txnData *CreatePostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.PostHash.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AppPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AssociationType)...)
+	data = append(data, EncodeByteArray(txnData.AssociationValue)...)
+	return data, nil
+}
+
+func (txnData *DeletePostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.AssociationID.ToBytes())...)
+	return data, nil
+}
+
+func (txnData *CreateUserAssociationMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// TargetUserPublicKey
+	targetUserPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading TargetUserPublicKey: ")
+	}
+	txnData.TargetUserPublicKey = NewPublicKey(targetUserPublicKeyBytes)
+
+	// AppPublicKey
+	appPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AppPublicKey: ")
+	}
+	txnData.AppPublicKey = NewPublicKey(appPublicKeyBytes)
+
+	// AssociationType
+	txnData.AssociationType, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AssociationType: ")
+	}
+
+	// AssociationValue
+	txnData.AssociationValue, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AssociationValue: ")
+	}
+
+	return nil
+}
+
+func (txnData *DeleteUserAssociationMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// AssociationID
+	associationIDBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationMetadata.FromBytes: Problem reading AssociationID: ")
+	}
+	txnData.AssociationID = NewBlockHash(associationIDBytes)
+
+	return nil
+}
+
+func (txnData *CreatePostAssociationMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// PostHash
+	postHashBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading PostHash: ")
+	}
+	txnData.PostHash = NewBlockHash(postHashBytes)
+
+	// AppPublicKey
+	appPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AppPublicKey: ")
+	}
+	txnData.AppPublicKey = NewPublicKey(appPublicKeyBytes)
+
+	// AssociationType
+	txnData.AssociationType, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AssociationType: ")
+	}
+
+	// AssociationValue
+	txnData.AssociationValue, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AssociationValue: ")
+	}
+
+	return nil
+}
+
+func (txnData *DeletePostAssociationMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// AssociationID
+	associationIDBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationMetadata.FromBytes: Problem reading AssociationID: ")
+	}
+	txnData.AssociationID = NewBlockHash(associationIDBytes)
+
+	return nil
+}
+
+func (txnData *CreateUserAssociationMetadata) New() DeSoTxnMetadata {
+	return &CreateUserAssociationMetadata{}
+}
+
+func (txnData *DeleteUserAssociationMetadata) New() DeSoTxnMetadata {
+	return &DeleteUserAssociationMetadata{}
+}
+
+func (txnData *CreatePostAssociationMetadata) New() DeSoTxnMetadata {
+	return &CreatePostAssociationMetadata{}
+}
+
+func (txnData *DeletePostAssociationMetadata) New() DeSoTxnMetadata {
+	return &DeletePostAssociationMetadata{}
+}
+
+type UserAssociationQuery struct {
+	TransactorPKID         *PKID
+	TargetUserPKID         *PKID
+	AppPKID                *PKID
+	AssociationType        []byte
+	AssociationTypePrefix  []byte
+	AssociationValue       []byte
+	AssociationValuePrefix []byte
+	Limit                  int
+	LastSeenAssociationID  *BlockHash
+	SortDescending         bool
+}
+
+type PostAssociationQuery struct {
+	TransactorPKID         *PKID
+	PostHash               *BlockHash
+	AppPKID                *PKID
+	AssociationType        []byte
+	AssociationTypePrefix  []byte
+	AssociationValue       []byte
+	AssociationValuePrefix []byte
+	Limit                  int
+	LastSeenAssociationID  *BlockHash
+	SortDescending         bool
 }

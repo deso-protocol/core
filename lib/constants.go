@@ -253,6 +253,10 @@ type ForkHeights struct {
 	// we introduce derived keys without a spending limit.
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
+	// AssociationsBlockHeight defines the height at which
+	// we introduce UserAssociations and PostAssociations.
+	AssociationsBlockHeight uint32
+
 	// AllowUpdatingNFTPostsBlockHeight defines the height at which we began
 	// allowing post-owners to update the underlying post of an NFT.
 	AllowUpdatingNFTPostsBlockHeight uint32
@@ -319,6 +323,7 @@ type MigrationHeight struct {
 const (
 	DefaultMigration              MigrationName = "DefaultMigration"
 	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
+	AssociationsMigration         MigrationName = "AssociationsMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -326,6 +331,9 @@ type EncoderMigrationHeights struct {
 
 	// DeSoUnlimitedDerivedKeys coincides with the DeSoUnlimitedDerivedKeysBlockHeight block
 	DeSoUnlimitedDerivedKeys MigrationHeight
+
+	// DeSoAssociations coincides with the AssociationsBlockHeight block
+	DeSoAssociations MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -339,6 +347,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 1,
 			Height:  uint64(forkHeights.DeSoUnlimitedDerivedKeysBlockHeight),
 			Name:    UnlimitedDerivedKeysMigration,
+		},
+		DeSoAssociations: MigrationHeight{
+			Version: 2,
+			Height:  uint64(forkHeights.AssociationsBlockHeight),
+			Name:    AssociationsMigration,
 		},
 	}
 }
@@ -579,6 +592,7 @@ var RegtestForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
+	AssociationsBlockHeight:                              uint32(0),
 	AllowUpdatingNFTPostsBlockHeight:                     uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -724,6 +738,7 @@ var MainnetForkHeights = ForkHeights{
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
 
 	// FIXME: Set to real block height when we're ready.
+	AssociationsBlockHeight:          math.MaxUint32,
 	AllowUpdatingNFTPostsBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -977,6 +992,7 @@ var TestnetForkHeights = ForkHeights{
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
 
 	// FIXME: Set to real block height when we're ready.
+	AssociationsBlockHeight:          math.MaxUint32,
 	AllowUpdatingNFTPostsBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -1256,3 +1272,9 @@ const (
 	MinMessagingKeyNameCharacters = 1
 	MaxMessagingKeyNameCharacters = 32
 )
+
+// Constants for UserAssociation and PostAssociation txn types.
+const MaxAssociationTypeByteLength int = 64
+const MaxAssociationValueByteLength int = 256
+const AssociationTypeReservedPrefix = "DESO"
+const AssociationNullTerminator = byte(0)

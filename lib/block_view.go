@@ -89,6 +89,10 @@ type UtxoView struct {
 	// DAO coin limit order entry mapping.
 	DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry
 
+	// Association mappings
+	AssociationMapKeyToUserAssociationEntry map[AssociationMapKey]*UserAssociationEntry
+	AssociationMapKeyToPostAssociationEntry map[AssociationMapKey]*PostAssociationEntry
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -159,6 +163,10 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// DAO Coin Limit Order Entries
 	bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry = make(map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry)
+
+	// Association entries
+	bav.AssociationMapKeyToUserAssociationEntry = make(map[AssociationMapKey]*UserAssociationEntry)
+	bav.AssociationMapKeyToPostAssociationEntry = make(map[AssociationMapKey]*PostAssociationEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -352,6 +360,18 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for entryKey, entry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
 		newEntry := *entry
 		newView.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[entryKey] = &newEntry
+	}
+
+	// Copy the Association entries
+	newView.AssociationMapKeyToUserAssociationEntry = make(map[AssociationMapKey]*UserAssociationEntry, len(bav.AssociationMapKeyToUserAssociationEntry))
+	for entryKey, entry := range bav.AssociationMapKeyToUserAssociationEntry {
+		newEntry := *entry
+		newView.AssociationMapKeyToUserAssociationEntry[entryKey] = &newEntry
+	}
+	newView.AssociationMapKeyToPostAssociationEntry = make(map[AssociationMapKey]*PostAssociationEntry, len(bav.AssociationMapKeyToPostAssociationEntry))
+	for entryKey, entry := range bav.AssociationMapKeyToPostAssociationEntry {
+		newEntry := *entry
+		newView.AssociationMapKeyToPostAssociationEntry[entryKey] = &newEntry
 	}
 	return newView, nil
 }
@@ -1003,6 +1023,22 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
 		return bav._disconnectAuthorizeDerivedKey(
 			OperationTypeAuthorizeDerivedKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreateUserAssociation {
+		return bav._disconnectCreateUserAssociation(
+			OperationTypeCreateUserAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDeleteUserAssociation {
+		return bav._disconnectDeleteUserAssociation(
+			OperationTypeDeleteUserAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreatePostAssociation {
+		return bav._disconnectCreatePostAssociation(
+			OperationTypeCreatePostAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDeletePostAssociation {
+		return bav._disconnectDeletePostAssociation(
+			OperationTypeDeletePostAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	}
 
@@ -1716,6 +1752,64 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			derivedKeyEntry, txnMeta.NFTPostHash, txnMeta.SerialNumber, BurnNFTOperation); err != nil {
 			return utxoOpsForTxn, err
 		}
+	case TxnTypeCreateUserAssociation:
+		txnMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
+		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
+			derivedKeyEntry,
+			AssociationClassUser,
+			txnMeta.AssociationType,
+			txnMeta.AppPublicKey,
+			AssociationOperationCreate,
+		); err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+	case TxnTypeDeleteUserAssociation:
+		txnMeta := txn.TxnMeta.(*DeleteUserAssociationMetadata)
+		associationEntry, err := bav.GetUserAssociationByID(txnMeta.AssociationID)
+		if err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+		if associationEntry == nil {
+			return utxoOpsForTxn, errors.New("_checkDerivedKeySpendingLimit: association to delete not found")
+		}
+		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
+			derivedKeyEntry,
+			AssociationClassUser,
+			associationEntry.AssociationType,
+			NewPublicKey(bav.GetPublicKeyForPKID(associationEntry.AppPKID)),
+			AssociationOperationDelete,
+		); err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+	case TxnTypeCreatePostAssociation:
+		txnMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
+		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
+			derivedKeyEntry,
+			AssociationClassPost,
+			txnMeta.AssociationType,
+			txnMeta.AppPublicKey,
+			AssociationOperationCreate,
+		); err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+	case TxnTypeDeletePostAssociation:
+		txnMeta := txn.TxnMeta.(*DeletePostAssociationMetadata)
+		associationEntry, err := bav.GetPostAssociationByID(txnMeta.AssociationID)
+		if err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+		if associationEntry == nil {
+			return utxoOpsForTxn, errors.New("_checkDerivedKeySpendingLimit: association to delete not found")
+		}
+		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
+			derivedKeyEntry,
+			AssociationClassPost,
+			associationEntry.AssociationType,
+			NewPublicKey(bav.GetPublicKeyForPKID(associationEntry.AppPKID)),
+			AssociationOperationDelete,
+		); err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
 	default:
 		// If we get here, it means we're dealing with a txn that doesn't have any special
 		// granular limits to deal with. This means we just check whether we have
@@ -2024,6 +2118,74 @@ func (bav *UtxoView) _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
 
 	return derivedKeyEntry, errors.Wrapf(RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized,
 		"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntr: DAO Coin limit order not authorized: ")
+}
+
+func (bav *UtxoView) _checkAssociationLimitAndUpdateDerivedKey(
+	derivedKeyEntry DerivedKeyEntry,
+	associationClass AssociationClass,
+	associationType []byte,
+	appPublicKey *PublicKey,
+	operation AssociationOperation,
+) (DerivedKeyEntry, error) {
+	// Convert AppPublicKey to AppPKID
+	appPKID := bav._associationAppPublicKeyToPKID(appPublicKey)
+	// Construct AssociationLimitKey.
+	var associationLimitKey AssociationLimitKey
+	// Check for applicable spending limit matching:
+	//   - Scoped AppScopeType else any AppScopeType
+	//   - Scoped AssociationType else any AssociationType
+	//   - Scoped OperationType else any OperationType
+	for _, spendingLimitScopeType := range []AssociationAppScopeType{AssociationAppScopeTypeScoped, AssociationAppScopeTypeAny} {
+		spendingLimitAppPKID := *appPKID
+		if spendingLimitScopeType == AssociationAppScopeTypeAny {
+			spendingLimitAppPKID = ZeroPKID
+		}
+		for _, spendingLimitAssociationType := range [][]byte{associationType, []byte("")} {
+			for _, spendingLimitOperationType := range []AssociationOperation{operation, AssociationOperationAny} {
+				associationLimitKey = MakeAssociationLimitKey(
+					associationClass,
+					spendingLimitAssociationType,
+					spendingLimitAppPKID,
+					spendingLimitScopeType,
+					spendingLimitOperationType,
+				)
+				updatedDerivedKeyEntry, err := _checkAssociationLimitAndUpdateDerivedKey(derivedKeyEntry, associationLimitKey)
+				if err == nil {
+					return updatedDerivedKeyEntry, nil
+				}
+			}
+		}
+	}
+	// If we get to this point, then no authorized spending limits
+	// were found and the association is not authorized.
+	return derivedKeyEntry, errors.New("_checkAssociationLimitAndUpdateDerivedKey: association not authorized for derived key")
+}
+
+func _checkAssociationLimitAndUpdateDerivedKey(
+	derivedKeyEntry DerivedKeyEntry, associationLimitKey AssociationLimitKey,
+) (DerivedKeyEntry, error) {
+	errMsg := errors.New("_checkAssociationLimitAndUpdateDerivedKey: association not authorized for derived key")
+	// If derived key spending limit is missing, return unauthorized.
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap == nil {
+		return derivedKeyEntry, errMsg
+	}
+	// Check if the key is present in the AssociationLimitMap.
+	associationLimit, associationLimitExists :=
+		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap[associationLimitKey]
+	// If the key doesn't exist or the value is <= 0, return unauthorized.
+	if !associationLimitExists || associationLimit <= 0 {
+		return derivedKeyEntry, errMsg
+	}
+	// If this is the last operation allowed for this key, we delete the key from the map.
+	if associationLimit == 1 {
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap, associationLimitKey)
+	} else {
+		// Otherwise, we decrement the number of operations remaining for this key.
+		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap[associationLimitKey]--
+	}
+	// Happy path: we found the key and decremented the remaining operations.
+	return derivedKeyEntry, nil
 }
 
 func (bav *UtxoView) _connectUpdateGlobalParams(
@@ -2379,6 +2541,18 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAuthorizeDerivedKey(
 				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateUserAssociation {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCreateUserAssociation(txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeDeleteUserAssociation {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeleteUserAssociation(txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatePostAssociation {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCreatePostAssociation(txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeDeletePostAssociation {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeletePostAssociation(txn, txHash, blockHeight, verifySignatures)
 
 	} else {
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())

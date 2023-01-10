@@ -168,6 +168,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	var newTransactionSpendingLimit *TransactionSpendingLimit
 	var memo []byte
 	if blockHeight >= bav.Params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
+		// TODO: Break the logic in this if out into its own function at some point.
+
 		// Extract TransactionSpendingLimit from extra data
 		// We need to merge the new transaction spending limit struct into the old one
 		//
@@ -178,6 +180,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 			NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 			DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
+		}
+		if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+			newTransactionSpendingLimit.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
 		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 			newTransactionSpendingLimit = prevDerivedKeyEntry.TransactionSpendingLimitTracker
@@ -250,6 +255,15 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 							delete(newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap, daoCoinLimitOrderLimitKey)
 						} else {
 							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
+						}
+					}
+					if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+						for associationLimitKey, transactionCount := range transactionSpendingLimit.AssociationLimitMap {
+							if transactionCount == 0 {
+								delete(newTransactionSpendingLimit.AssociationLimitMap, associationLimitKey)
+							} else {
+								newTransactionSpendingLimit.AssociationLimitMap[associationLimitKey] = transactionCount
+							}
 						}
 					}
 				}
