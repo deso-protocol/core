@@ -2623,6 +2623,16 @@ func (desoSign *DeSoSignature) Verify(hash []byte, pubKey *btcec.PublicKey) bool
 	return desoSign.Sign.Verify(hash, pubKey)
 }
 
+// HasHighS returns true if the signature has a high S value, which is non-standard
+func (desoSign *DeSoSignature) HasHighS() bool {
+	if desoSign == nil || desoSign.Sign == nil {
+		return false
+	}
+	// We reject high-S signatures as they lead to inconsistent public key recovery
+	// https://github.com/indutny/elliptic/blob/master/lib/elliptic/ec/index.js#L147
+	return desoSign.Sign.S.Cmp(big.NewInt(0).Rsh(secp256k1.Params().N, 1)) != -1
+}
+
 // ToBytes encodes the signature in accordance to the DeSo-DER ECDSA format.
 // <0x30 + optionally (0x01 + recoveryId)> <length of whole message> <0x02> <length of R> <R> 0x2 <length of S> <S>.
 func (desoSign *DeSoSignature) ToBytes() []byte {
