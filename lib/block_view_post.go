@@ -758,9 +758,9 @@ func (bav *UtxoView) _connectSubmitPost(
 	}
 	isFrozen := false
 	if blockHeight >= bav.Params.ForkHeights.AccessGroupsAndAssociationsBlockHeight {
-		if extraDataIsFrozen, exists := extraData[IsFrozen]; exists {
+		if extraDataIsFrozen, exists := extraData[IsFrozenKey]; exists {
 			isFrozen = bytes.Equal(extraDataIsFrozen, IsFrozenPostVal)
-			delete(extraData, IsFrozen)
+			delete(extraData, IsFrozenKey)
 		}
 	}
 

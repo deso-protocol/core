@@ -1166,7 +1166,7 @@ const (
 	// Key in transaction's extra map -- The presence of this key indicates that this post is a repost with a quote.
 	IsQuotedRepostKey = "IsQuotedReclout"
 	// Key in transaction's extra data map that freezes a post rendering it immutable.
-	IsFrozen = "IsFrozen"
+	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
 	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"

@@ -2126,7 +2126,7 @@ func TestFreezingPosts(t *testing.T) {
 			postHashToModify,
 			nil,
 			"test post #1",
-			map[string][]byte{IsFrozen: {isFrozen}},
+			map[string][]byte{IsFrozenKey: {isFrozen}},
 			false,
 		)
 		if err != nil {
