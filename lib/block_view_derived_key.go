@@ -181,7 +181,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 			DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
 		}
-		if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+		if blockHeight >= bav.Params.ForkHeights.AccessGroupsAndAssociationsBlockHeight {
 			newTransactionSpendingLimit.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
 		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
@@ -257,7 +257,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
 						}
 					}
-					if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+					if blockHeight >= bav.Params.ForkHeights.AccessGroupsAndAssociationsBlockHeight {
 						for associationLimitKey, transactionCount := range transactionSpendingLimit.AssociationLimitMap {
 							if transactionCount == 0 {
 								delete(newTransactionSpendingLimit.AssociationLimitMap, associationLimitKey)

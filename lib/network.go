@@ -5385,7 +5385,7 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 	}
 
 	// AssociationLimitMap, gated by the encoder migration
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AccessGroupsAndAssociationsMigration) {
 		associationLimitMapLength := uint64(len(tsl.AssociationLimitMap))
 		data = append(data, UintToBuf(associationLimitMapLength)...)
 		if associationLimitMapLength > 0 {
@@ -5538,7 +5538,7 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AccessGroupsAndAssociationsMigration) {
 		associationMapLen, err := ReadUvarint(rr)
 		if err != nil {
 			return err

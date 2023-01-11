@@ -1096,7 +1096,7 @@ func TestNFTBasic(t *testing.T) {
 
 	// Error case: cannot modify a post after it is NFTed (if below specified block height).
 	{
-		params.ForkHeights.AllowUpdatingNFTPostsBlockHeight = math.MaxUint32
+		params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = math.MaxUint32
 		_, _, _, err := _submitPost(
 			testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
 			10,
@@ -1115,7 +1115,7 @@ func TestNFTBasic(t *testing.T) {
 
 	// Happy path: can modify a post after it is NFTed (if above specified block height).
 	{
-		params.ForkHeights.AllowUpdatingNFTPostsBlockHeight = 0
+		params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = 0
 		testMeta.expectedSenderBalances = append(
 			testMeta.expectedSenderBalances,
 			_getBalance(testMeta.t, testMeta.chain, nil, m0Pub),

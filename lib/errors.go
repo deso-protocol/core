@@ -147,6 +147,7 @@ const (
 	RuleErrorSubmitPostUpdateRepostHash              RuleError = "RuleErrorSubmitPostUpdateRepostHash"
 	RuleErrorSubmitPostUpdateIsQuotedRepost          RuleError = "RuleErrorSubmitPostUpdateIsQuotedRepost"
 	RuleErrorSubmitPostCannotUpdateNFT               RuleError = "RuleErrorSubmitPostCannotUpdateNFT"
+	RuleErrorSubmitPostModifyingFrozenPost           RuleError = "RuleErrorSubmitPostModifyingFrozenPost"
 
 	RuleErrorInvalidStakeID                      RuleError = "RuleErrorInvalidStakeID"
 	RuleErrorInvalidStakeIDSize                  RuleError = "RuleErrorInvalidStakeIDSize"

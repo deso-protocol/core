@@ -253,13 +253,12 @@ type ForkHeights struct {
 	// we introduce derived keys without a spending limit.
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
-	// AssociationsBlockHeight defines the height at which
-	// we introduce UserAssociations and PostAssociations.
-	AssociationsBlockHeight uint32
-
-	// AllowUpdatingNFTPostsBlockHeight defines the height at which we began
-	// allowing post-owners to update the underlying post of an NFT.
-	AllowUpdatingNFTPostsBlockHeight uint32
+	// AccessGroupsAndAssociationsBlockHeight defines the height at which we introduced:
+	//   - Access Groups
+	//   - User and Post Associations
+	//   - Editable NFT posts
+	//   - Frozen posts
+	AccessGroupsAndAssociationsBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -321,9 +320,9 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration              MigrationName = "DefaultMigration"
-	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
-	AssociationsMigration         MigrationName = "AssociationsMigration"
+	DefaultMigration                     MigrationName = "DefaultMigration"
+	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
+	AccessGroupsAndAssociationsMigration MigrationName = "AccessGroupsAndAssociationsMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -332,8 +331,8 @@ type EncoderMigrationHeights struct {
 	// DeSoUnlimitedDerivedKeys coincides with the DeSoUnlimitedDerivedKeysBlockHeight block
 	DeSoUnlimitedDerivedKeys MigrationHeight
 
-	// DeSoAssociations coincides with the AssociationsBlockHeight block
-	DeSoAssociations MigrationHeight
+	// DeSoAccessGroupsAndAssociations coincides with the AccessGroupsAndAssociationsBlockHeight block
+	DeSoAccessGroupsAndAssociations MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -348,10 +347,10 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Height:  uint64(forkHeights.DeSoUnlimitedDerivedKeysBlockHeight),
 			Name:    UnlimitedDerivedKeysMigration,
 		},
-		DeSoAssociations: MigrationHeight{
+		DeSoAccessGroupsAndAssociations: MigrationHeight{
 			Version: 2,
-			Height:  uint64(forkHeights.AssociationsBlockHeight),
-			Name:    AssociationsMigration,
+			Height:  uint64(forkHeights.AccessGroupsAndAssociationsBlockHeight),
+			Name:    AccessGroupsAndAssociationsMigration,
 		},
 	}
 }
@@ -592,8 +591,7 @@ var RegtestForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
-	AssociationsBlockHeight:                              uint32(0),
-	AllowUpdatingNFTPostsBlockHeight:                     uint32(0),
+	AccessGroupsAndAssociationsBlockHeight:               uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -738,8 +736,7 @@ var MainnetForkHeights = ForkHeights{
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
 
 	// FIXME: Set to real block height when we're ready.
-	AssociationsBlockHeight:          math.MaxUint32,
-	AllowUpdatingNFTPostsBlockHeight: math.MaxUint32,
+	AccessGroupsAndAssociationsBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -992,8 +989,7 @@ var TestnetForkHeights = ForkHeights{
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
 
 	// FIXME: Set to real block height when we're ready.
-	AssociationsBlockHeight:          math.MaxUint32,
-	AllowUpdatingNFTPostsBlockHeight: math.MaxUint32,
+	AccessGroupsAndAssociationsBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1169,6 +1165,8 @@ const (
 	RepostedPostHash = "RecloutedPostHash"
 	// Key in transaction's extra map -- The presence of this key indicates that this post is a repost with a quote.
 	IsQuotedRepostKey = "IsQuotedReclout"
+	// Key in transaction's extra data map that freezes a post rendering it immutable.
+	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
 	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"
@@ -1228,6 +1226,7 @@ var (
 var (
 	QuotedRepostVal    = []byte{1}
 	NotQuotedRepostVal = []byte{0}
+	IsFrozenPostVal    = []byte{1}
 )
 
 var (
