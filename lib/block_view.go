@@ -53,10 +53,6 @@ type UtxoView struct {
 	// Group Memberships
 	AccessGroupMembershipKeyToAccessGroupMember map[AccessGroupMembershipKey]*AccessGroupMemberEntry
 
-	// Group Membership Enumeration Index.
-	// The member PublicKeys are sorted lexicographically.
-	AccessGroupIdToSortedGroupMemberPublicKeys map[AccessGroupId][]*PublicKey
-
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
 
@@ -151,7 +147,6 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Access group entries
 	bav.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry)
 	bav.AccessGroupMembershipKeyToAccessGroupMember = make(map[AccessGroupMembershipKey]*AccessGroupMemberEntry)
-	bav.AccessGroupIdToSortedGroupMemberPublicKeys = make(map[AccessGroupId][]*PublicKey)
 
 	// DM and Group chats
 	bav.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*NewMessageEntry)
@@ -286,17 +281,6 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for key, member := range bav.AccessGroupMembershipKeyToAccessGroupMember {
 		newMember := *member
 		newView.AccessGroupMembershipKeyToAccessGroupMember[key] = &newMember
-	}
-
-	// Copy access group id to sorted member public keys
-	newView.AccessGroupIdToSortedGroupMemberPublicKeys = make(map[AccessGroupId][]*PublicKey, len(bav.AccessGroupIdToSortedGroupMemberPublicKeys))
-	for key, members := range bav.AccessGroupIdToSortedGroupMemberPublicKeys {
-		newMembers := make([]*PublicKey, len(members))
-		for ii, member := range members {
-			newMember := *member
-			newMembers[ii] = &newMember
-		}
-		newView.AccessGroupIdToSortedGroupMemberPublicKeys[key] = newMembers
 	}
 
 	// Copy postgres message map

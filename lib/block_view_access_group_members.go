@@ -46,35 +46,59 @@ func (bav *UtxoView) GetAccessGroupMemberEntry(memberPublicKey *PublicKey, group
 //  2. _accessGroupMembers[0] > startingAccessGroupMemberPublicKey
 //  3. \forall i, j: i < j => _accessGroupMembers[i] < _accessGroupMembers[j]
 func (bav *UtxoView) GetPaginatedAccessGroupMembersEnumerationEntries(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
-	startingAccessGroupMemberPublicKey []byte, maxMembersToFetch uint32) (_accessGroupMembers []*PublicKey, _err error) {
+	startingAccessGroupMemberPublicKey []byte, maxMembersToFetch uint32) (
+	_accessGroupMembers []*PublicKey, _err error) {
 
-	return bav._getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(groupOwnerPublicKey, groupKeyName,
-		startingAccessGroupMemberPublicKey, maxMembersToFetch, MaxAccessGroupMemberEnumerationRecursionDepth)
+	accessGroupMembers, _, err := bav._getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(groupOwnerPublicKey, groupKeyName,
+		startingAccessGroupMemberPublicKey, maxMembersToFetch, MaxAccessGroupMemberEnumerationRecursionDepth,
+		nil, false)
+	return accessGroupMembers, err
 }
 
 func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
-	startingAccessGroupMemberPublicKey []byte, maxMembersToFetch uint32, maxDepth uint32) (_accessGroupMembers []*PublicKey, _err error) {
+	startingAccessGroupMemberPublicKey []byte, maxMembersToFetch uint32, maxDepth uint32,
+	accessGroupIdToSortedGroupMemberPublicKeysIter map[AccessGroupId][]*PublicKey, deepCopySortedMap bool) (
+	_accessGroupMembers []*PublicKey, _accessGroupIdToSortedGroupMemberPublicKeys map[AccessGroupId][]*PublicKey, _err error) {
+
+	// Deep-copy accessGroupIdToSortedGroupMemberPublicKeysIter so that we don't modify the original map.
+	accessGroupIdToSortedGroupMemberPublicKeys := make(map[AccessGroupId][]*PublicKey)
+	if deepCopySortedMap {
+		for accessGroupIdIter, sortedGroupMemberPublicKeysIter := range accessGroupIdToSortedGroupMemberPublicKeysIter {
+			accessGroupId := accessGroupIdIter
+			var sortedGroupMemberPublicKeys []*PublicKey
+			for _, sortedGroupMemberPublicKeyIter := range sortedGroupMemberPublicKeysIter {
+				sortedGroupMemberPublicKey := *sortedGroupMemberPublicKeyIter
+				sortedGroupMemberPublicKeys = append(sortedGroupMemberPublicKeys, &sortedGroupMemberPublicKey)
+			}
+			accessGroupIdToSortedGroupMemberPublicKeys[accessGroupId] = sortedGroupMemberPublicKeys
+		}
+	} else {
+		if accessGroupIdToSortedGroupMemberPublicKeysIter != nil {
+			accessGroupIdToSortedGroupMemberPublicKeys = accessGroupIdToSortedGroupMemberPublicKeysIter
+		}
+	}
 
 	var cachedSortedAccessGroupMembersFromDb []*PublicKey
 	if maxMembersToFetch == 0 {
-		return cachedSortedAccessGroupMembersFromDb, nil
+		return cachedSortedAccessGroupMembersFromDb, accessGroupIdToSortedGroupMemberPublicKeys, nil
 	}
 	// This function can make recursive calls to itself. We use a depth counter to prevent infinite recursion
 	// (which shouldn't happen anyway, but better safe than sorry, right?).
 	if maxDepth == 0 {
-		return nil, errors.Wrapf(RuleErrorAccessGroupMemberEnumerationRecursionLimit,
+		return nil, nil, errors.Wrapf(RuleErrorAccessGroupMemberEnumerationRecursionLimit,
 			"_getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe: maxDepth == 0")
 	}
 
 	// If either of the provided parameters is nil, we return.
 	if groupOwnerPublicKey == nil || groupKeyName == nil {
-		return cachedSortedAccessGroupMembersFromDb, fmt.Errorf("GetAccessGroupMembersEnumerationEntries: Called with nil groupOwnerPublicKey or groupKeyName")
+		return nil, nil,
+			fmt.Errorf("GetAccessGroupMembersEnumerationEntries: Called with nil groupOwnerPublicKey or groupKeyName")
 	}
 
 	accessGroupId := NewAccessGroupId(groupOwnerPublicKey, groupKeyName.ToBytes())
 
 	// If the group membership map has already been fetched in this utxoView, then we get it directly from there.
-	membersList, exists := bav.AccessGroupIdToSortedGroupMemberPublicKeys[*accessGroupId]
+	membersList, exists := accessGroupIdToSortedGroupMemberPublicKeys[*accessGroupId]
 
 	// If there already is enough members in the UtxoView, we just go through them and return.
 	// The UtxoView entries are sorted by memberPublicKey, so we can just go through them in order.
@@ -100,9 +124,9 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 	accessGroupMembersFromDb, err := dbAdapter.GetPaginatedAccessGroupMembersEnumerationEntries(*groupOwnerPublicKey, *groupKeyName,
 		paginationStartKey, maxMembersToFetch-uint32(len(cachedSortedAccessGroupMembersFromDb)))
 	if err != nil {
-		return accessGroupMembersFromDb, errors.Wrapf(err, "GetAccessGroupMembersEnumerationEntries: "+
-			"Problem fetching access group members enumeration entries for single member with "+
-			"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
+		return nil, nil, errors.Wrapf(err,
+			"GetAccessGroupMembersEnumerationEntries: Problem fetching access group members enumeration entries "+
+				"for single member with accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
 			groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
 	}
 	//cachedSortedAccessGroupMembersFromDb = append(cachedSortedAccessGroupMembersFromDb, accessGroupMembersFromDb...)
@@ -120,9 +144,9 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 		firstMemberEntryFromDb, err := dbAdapter.GetPaginatedAccessGroupMembersEnumerationEntries(
 			*groupOwnerPublicKey, *groupKeyName, []byte{}, 1)
 		if err != nil {
-			return accessGroupMembersFromDb, errors.Wrapf(err, "GetAccessGroupMembersEnumerationEntries: "+
-				"Problem fetching access group members enumeration entries for single member with "+
-				"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
+			return nil, nil, errors.Wrapf(err,
+				"GetAccessGroupMembersEnumerationEntries: Problem fetching access group members enumeration entries for "+
+					"single member with accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
 				groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
 		}
 		// If the smallest lexicographic member public key is equal to the first member public key in the DB,
@@ -132,10 +156,11 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 		if len(firstMemberEntryFromDb) > 0 && len(accessGroupMembersFromDb) > 0 &&
 			bytes.Equal(firstMemberEntryFromDb[0].ToBytes(), accessGroupMembersFromDb[0].ToBytes()) {
 
-			if err := bav._setAccessGroupIdToSortedGroupMemberPublicKeys(*groupOwnerPublicKey, *groupKeyName, accessGroupMembersFromDb); err != nil {
-				return accessGroupMembersFromDb, errors.Wrapf(err, "GetAccessGroupMembersEnumerationEntries: "+
-					"Problem setting access group members enumeration entries for single member with "+
-					"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
+			if accessGroupIdToSortedGroupMemberPublicKeys, err = _setAccessGroupIdToSortedGroupMemberPublicKeys(*groupOwnerPublicKey, *groupKeyName,
+				accessGroupMembersFromDb, accessGroupIdToSortedGroupMemberPublicKeys); err != nil {
+				return nil, nil, errors.Wrapf(err,
+					"GetAccessGroupMembersEnumerationEntries: Problem setting access group members enumeration "+
+						"entries for single member with accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
 					groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
 			}
 		}
@@ -150,10 +175,11 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 		if len(cachedSortedAccessGroupMembersFromDb) > 0 && len(accessGroupMembersFromDb) > 0 {
 			// We now extend the mapping in the UtxoView with the entries fetched from the DB.
 			newSortedGroupMemberPublicKeys := append(membersList, accessGroupMembersFromDb...)
-			if err := bav._setAccessGroupIdToSortedGroupMemberPublicKeys(*groupOwnerPublicKey, *groupKeyName, newSortedGroupMemberPublicKeys); err != nil {
-				return accessGroupMembersFromDb, errors.Wrapf(err, "GetAccessGroupMembersEnumerationEntries: "+
-					"Problem setting access group members enumeration entries for single member with "+
-					"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
+			if accessGroupIdToSortedGroupMemberPublicKeys, err = _setAccessGroupIdToSortedGroupMemberPublicKeys(
+				*groupOwnerPublicKey, *groupKeyName, newSortedGroupMemberPublicKeys, accessGroupIdToSortedGroupMemberPublicKeys); err != nil {
+				return nil, nil, errors.Wrapf(err,
+					"GetAccessGroupMembersEnumerationEntries: Problem setting access group members enumeration "+
+						"entries for single member with accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
 					groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
 			}
 		}
@@ -246,21 +272,23 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 		// Note this recursive call will never lead to an infinite loop because the startingAccessGroupMemberPublicKey
 		// will be growing with each recursive call, and because we are checking for isListFilled with
 		// maxMembersToFetch > 0. But just in case we add a sanity-check parameter maxDepth to break long recursive calls.
-		remainingMembers, err := bav._getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(
-			groupOwnerPublicKey, groupKeyName, lastKnownDbPublicKey, maxMembersToFetch-uint32(len(finalMemberPublicKeys)), maxDepth-1)
+		remainingMembers, newAccessGroupIdToSortedGroupMemberPublicKeys, err := bav._getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(
+			groupOwnerPublicKey, groupKeyName, lastKnownDbPublicKey, maxMembersToFetch-uint32(len(finalMemberPublicKeys)),
+			maxDepth-1, accessGroupIdToSortedGroupMemberPublicKeys, false)
 		if err != nil {
-			return nil, errors.Wrapf(err, "GetPaginatedAccessGroupMembersEnumerationEntries: "+
+			return nil, nil, errors.Wrapf(err, "GetPaginatedAccessGroupMembersEnumerationEntries: "+
 				"Problem fetching recursion access group members enumeration entries for next member with "+
 				"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
 				groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
 		}
 		finalMemberPublicKeys = append(finalMemberPublicKeys, remainingMembers...)
+		accessGroupIdToSortedGroupMemberPublicKeys = newAccessGroupIdToSortedGroupMemberPublicKeys
 	}
 
 	if len(finalMemberPublicKeys) > int(maxMembersToFetch) {
 		finalMemberPublicKeys = finalMemberPublicKeys[:maxMembersToFetch]
 	}
-	return finalMemberPublicKeys, nil
+	return finalMemberPublicKeys, accessGroupIdToSortedGroupMemberPublicKeys, nil
 }
 
 // _setAccessGroupMemberEntry will set the membership mapping of AccessGroupMember.
@@ -322,14 +350,15 @@ func (bav *UtxoView) _setGroupMembershipKeyToAccessGroupMemberMapping(accessGrou
 	return nil
 }
 
-func (bav *UtxoView) _setAccessGroupIdToSortedGroupMemberPublicKeys(accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName,
-	accessGroupMemberPublicKeys []*PublicKey) error {
+func _setAccessGroupIdToSortedGroupMemberPublicKeys(accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName,
+	accessGroupMemberPublicKeys []*PublicKey, accessGroupIdToSortedGroupMemberPublicKeys map[AccessGroupId][]*PublicKey) (
+	_accessGroupIdToSortedGroupMemberPublicKeys map[AccessGroupId][]*PublicKey, _err error) {
 
 	// Sanity-check that we're not setting any duplicate public keys in the accessGroupMemberPublicKeys array.
 	membersMap := make(map[PublicKey]struct{})
 	for _, accessGroupMemberPublicKey := range accessGroupMemberPublicKeys {
 		if _, exists := membersMap[*accessGroupMemberPublicKey]; exists {
-			return fmt.Errorf("_setAccessGroupIdToSortedGroupMemberPublicKeys: " +
+			return accessGroupIdToSortedGroupMemberPublicKeys, fmt.Errorf("_setAccessGroupIdToSortedGroupMemberPublicKeys: " +
 				"accessGroupMemberPublicKeys contains duplicate entries")
 		}
 	}
@@ -340,8 +369,8 @@ func (bav *UtxoView) _setAccessGroupIdToSortedGroupMemberPublicKeys(accessGroupO
 		AccessGroupKeyName:        accessGroupKeyName,
 	}
 	// Set the mapping.
-	bav.AccessGroupIdToSortedGroupMemberPublicKeys[accessGroupId] = accessGroupMemberPublicKeys
-	return nil
+	accessGroupIdToSortedGroupMemberPublicKeys[accessGroupId] = accessGroupMemberPublicKeys
+	return accessGroupIdToSortedGroupMemberPublicKeys, nil
 }
 
 // _connectAccessGroupMembers is used to connect an AccessGroupMembers transaction to the UtxoView. This transaction

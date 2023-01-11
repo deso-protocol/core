@@ -1465,8 +1465,8 @@ func _verifyMembersList(tm *transactionTestMeta, utxoView *UtxoView, accessGroup
 			if err != nil {
 				glog.Errorf(CLog(Red, "Error fetching paginated access group members: %v. Re-trying with higher "+
 					"recursion depth."), err)
-				accessGroupMembersPage, err = utxoView._getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(
-					accessGroupOwnerPublicKey, accessGroupKeyName, startKey, uint32(maxMembersToFetch), 100)
+				accessGroupMembersPage, _, err = utxoView._getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(
+					accessGroupOwnerPublicKey, accessGroupKeyName, startKey, uint32(maxMembersToFetch), 100, nil, true)
 			}
 			if len(accessGroupMembersPage) == 0 {
 				break
