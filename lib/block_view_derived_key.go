@@ -173,6 +173,11 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		// We need to merge the new transaction spending limit struct into the old one
 		//
 		// This will get overwritten if there's an existing spending limit struct.
+		//
+		// ====== Access Group Fork ======
+		// We set the mappings for access group map and access group member map to avoid nil pointer reference in
+		// validation checks such as unlimited spending limit. This won't affect the spending limit prior to the fork
+		// block height.
 		newTransactionSpendingLimit = &TransactionSpendingLimit{
 			TransactionCountLimitMap:     make(map[TxnType]uint64),
 			CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
@@ -183,7 +188,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
 		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
-			newTransactionSpendingLimit = prevDerivedKeyEntry.TransactionSpendingLimitTracker
+			newTransactionSpendingLimitCopy := *prevDerivedKeyEntry.TransactionSpendingLimitTracker
+			newTransactionSpendingLimit = &newTransactionSpendingLimitCopy
 			memo = prevDerivedKeyEntry.Memo
 		}
 		// This is the transaction spending limit object passed in the extra data field. This is required for verifying the
@@ -199,6 +205,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			// If the transaction spending limit key exists, parse it and merge it into the existing transaction
 			// spending limit tracker.
 			if transactionSpendingLimitBytes, exists = txn.ExtraData[TransactionSpendingLimitKey]; exists {
+				// ====== Access Group Fork ======
+				// We've previously set access group mappings; however, to/from byte encoding/decoding will never overwrite these
+				// mappings prior to the fork blockheight.
 				transactionSpendingLimit = &TransactionSpendingLimit{}
 				rr := bytes.NewReader(transactionSpendingLimitBytes)
 				if err := transactionSpendingLimit.FromBytes(uint64(blockHeight), rr); err != nil {
@@ -255,6 +264,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
 						}
 					}
+					// ====== Access Group Fork ======
+					// Note that we don't need to gate this logic by the blockheight becuase the to/from bytes
+					// encoding/decoding will never overwrite these maps prior to the fork blockheight.
 					for accessGroupLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMap {
 						if transactionCount == 0 {
 							delete(newTransactionSpendingLimit.AccessGroupMap, accessGroupLimitKey)

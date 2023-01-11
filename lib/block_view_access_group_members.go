@@ -470,10 +470,6 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 			// We have previously validated that the accessMember public key and access key name are valid, and point to
 			// an existing access group. We should now validate that the access member hasn't already been added
 			// to this group in the past.
-			if len(accessMember.EncryptedKey) == 0 {
-				return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupMemberEncryptedKeyCannotBeEmpty,
-					"_connectAccessGroupMembers: EncryptedKey for access member (%v) cannot be empty.", accessMember)
-			}
 			memberGroupEntry, err := bav.GetAccessGroupMemberEntry(NewPublicKey(accessMember.AccessGroupMemberPublicKey),
 				NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
 			if err != nil {

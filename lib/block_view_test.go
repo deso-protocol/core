@@ -111,6 +111,7 @@ const (
 	transactionTestInputTypeAccessGroup transactionTestInputType = iota
 	transactionTestInputTypeAccessGroupMembers
 	transactionTestInputTypeNewMessage
+	transactionTestInputTypeDerivedKey
 )
 
 type transactionTestInputSpace interface {
@@ -195,6 +196,7 @@ type transactionTestVector struct {
 	verifyDbEntry                 func(tv *transactionTestVector, tm *transactionTestMeta, dbAdapter *DbAdapter)
 	connectCallback               func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView)
 	disconnectCallback            func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView)
+	getDerivedPrivateKey          func(tv *transactionTestVector, tm *transactionTestMeta) (_derivedPriv *btcec.PrivateKey, _signatureType int)
 }
 
 type transactionTestVectorBlock struct {
@@ -281,11 +283,13 @@ func (tes *transactionTestSuite) RunBadgerTest() {
 
 	for _, testVectorBlock := range tes.testVectorBlocks {
 		// Run all the test vectors for this block.
-		dbEntriesBefore := tes.GetAllStateDbEntries(tm)
+		beforeConnectBlockHeight := tm.chain.blockTip().Height
+		dbEntriesBefore := tes.GetAllStateDbEntries(tm, beforeConnectBlockHeight)
 		tes.testConnectBlock(tm, testVectorBlock)
+		afterConnectBlockHeight := tm.chain.blockTip().Height
 		tes.testDisconnectBlock(tm, testVectorBlock)
-		dbEntriesAfter := tes.GetAllStateDbEntries(tm)
-		tes.compareBeforeAfterDbEntries(dbEntriesBefore, dbEntriesAfter)
+		dbEntriesAfter := tes.GetAllStateDbEntries(tm, beforeConnectBlockHeight)
+		tes.compareBeforeAfterDbEntries(dbEntriesBefore, dbEntriesAfter, afterConnectBlockHeight)
 		glog.Infof(CLog(Yellow, "RunBadgerTest: successfully connected/disconnected block and verified db state"))
 		tes.testConnectBlock(tm, testVectorBlock)
 		glog.Infof(CLog(Yellow, "RunBadgerTest: successfully connected block"))
@@ -391,7 +395,7 @@ func (tes *transactionTestSuite) fundPublicKey(tm *transactionTestMeta, publicKe
 		senderPrivString, amountNanos, 11)
 }
 
-func (tes *transactionTestSuite) GetAllStateDbEntries(tm *transactionTestMeta) (_dbEntries []*DBEntry) {
+func (tes *transactionTestSuite) GetAllStateDbEntries(tm *transactionTestMeta, blockHeight uint32) (_dbEntries []*DBEntry) {
 	var dbEntries []*DBEntry
 	require := require.New(tes.t)
 
@@ -416,10 +420,11 @@ func (tes *transactionTestSuite) GetAllStateDbEntries(tm *transactionTestMeta) (
 				item := it.Item()
 				key := item.Key()
 				err := item.Value(func(value []byte) error {
-					dbEntries = append(dbEntries, &DBEntry{
-						Key:   key,
-						Value: value,
-					})
+					dbEntryCopy := DBEntry{
+						Key:   append([]byte{}, key...),
+						Value: append([]byte{}, value...),
+					}
+					dbEntries = append(dbEntries, &dbEntryCopy)
 					return nil
 				})
 				if err != nil {
@@ -434,26 +439,47 @@ func (tes *transactionTestSuite) GetAllStateDbEntries(tm *transactionTestMeta) (
 	return dbEntries
 }
 
-func (tes *transactionTestSuite) compareBeforeAfterDbEntries(beforeDbEntries []*DBEntry, afterDbEntries []*DBEntry) {
-	beforeDbEntriesMap := make(map[string]*DBEntry)
-	afterDbEntriesMap := make(map[string]*DBEntry)
+func (tes *transactionTestSuite) compareBeforeAfterDbEntries(beforeDbEntries []*DBEntry, afterDbEntries []*DBEntry,
+	afterConnectBlockHeight uint32) {
+	beforeDbEntriesMap := make(map[string]DBEntry)
+	afterDbEntriesMap := make(map[string]DBEntry)
 	for _, dbEntry := range beforeDbEntries {
-		beforeDbEntriesMap[string(dbEntry.Key)] = dbEntry
+		beforeDbEntryCopy := *dbEntry
+		beforeDbEntriesMap[string(beforeDbEntryCopy.Key)] = beforeDbEntryCopy
 	}
 	for _, dbEntry := range afterDbEntries {
-		afterDbEntriesMap[string(dbEntry.Key)] = dbEntry
+		afterDbEntryCopy := *dbEntry
+		afterDbEntriesMap[string(afterDbEntryCopy.Key)] = afterDbEntryCopy
 	}
 
 	// Check for db entries present in the beforeDbEntries state. Look for missing entries.
-	for key, beforeDbEntry := range beforeDbEntriesMap {
-		afterDbEntry, ok := afterDbEntriesMap[key]
+	for keyIter, beforeDbEntryIter := range beforeDbEntriesMap {
+		key := keyIter
+		beforeDbEntry := beforeDbEntryIter
+		afterDbEntryIter, ok := afterDbEntriesMap[key]
+		afterDbEntry := afterDbEntryIter
 		if !ok {
 			tes.t.Errorf("compareBeforeAfterDbEntries: Key %v is missing in the db after connect and a disconnect", []byte(key))
 			continue
 		}
-		if !reflect.DeepEqual(beforeDbEntry, afterDbEntry) {
+
+		// Make sure either both entries are nil or both are non-nil.
+		if (beforeDbEntry.Value != nil) != (afterDbEntry.Value != nil) {
+			tes.t.Errorf("compareBeforeAfterDbEntries: Key %v has an uneven non-nil XOR for before and after value: "+
+				"before (%v) (blockheight: %v), after (%v) (blockheight: %v)", []byte(key), beforeDbEntry.Value, afterDbEntry.Value,
+				afterConnectBlockHeight-1, afterConnectBlockHeight)
+		}
+		// Make sure to compare db entries using the same migration if entries are non-nil.
+		var beforeChecksumEncodedEntry, afterChecksumEncodedEntry []byte
+		if beforeDbEntry.Value != nil && afterDbEntry.Value != nil {
+			beforeChecksumEncodedEntry = EncodeKeyAndValueForChecksum(beforeDbEntry.Key, beforeDbEntry.Value, uint64(afterConnectBlockHeight))
+			afterChecksumEncodedEntry = EncodeKeyAndValueForChecksum(afterDbEntry.Key, afterDbEntry.Value, uint64(afterConnectBlockHeight))
+		}
+
+		if !bytes.Equal(beforeChecksumEncodedEntry, afterChecksumEncodedEntry) {
 			tes.t.Errorf("compareBeforeAfterDbEntries: Key %v has different values before and after connect and a disconnect: "+
-				"before (%v), after (%v)", []byte(key), beforeDbEntry.Value, afterDbEntry.Value)
+				"before (%v) (blockheight: %v), after (%v) (blockheight: %v)", []byte(key), beforeDbEntry.Value, afterConnectBlockHeight-1,
+				afterDbEntry.Value, afterConnectBlockHeight)
 		}
 	}
 
@@ -475,6 +501,11 @@ func (tes *transactionTestSuite) testConnectBlock(tm *transactionTestMeta, testV
 	for ii, tv := range testVectors {
 		glog.Infof("Running test vector: %v", tv.id)
 		txn, _expectedErr := tv.getTransaction(tv, tm)
+		if tv.getDerivedPrivateKey != nil {
+			derivedPriv, signatureType := tv.getDerivedPrivateKey(tv, tm)
+			derivedPrivString := Base58CheckEncode(derivedPriv.Serialize(), true, tm.params)
+			_signTxnWithDerivedKeyAndType(tm.t, txn, derivedPrivString, signatureType)
+		}
 		_, err := tm.mempool.ProcessTransaction(txn, false, false, 0, true)
 		utxoView, _err := tm.mempool.GetAugmentedUniversalView()
 		require.NoError(_err)
@@ -487,7 +518,9 @@ func (tes *transactionTestSuite) testConnectBlock(tm *transactionTestMeta, testV
 		} else {
 			require.NoError(err)
 			glog.Infof("Verifying UtxoView entry for test vector: %v", tv.id)
-			tv.verifyConnectUtxoViewEntry(tv, tm, utxoView)
+			if tv.verifyConnectUtxoViewEntry != nil {
+				tv.verifyConnectUtxoViewEntry(tv, tm, utxoView)
+			}
 			validTransactions[ii] = true
 		}
 		if tv.connectCallback != nil {
@@ -515,7 +548,9 @@ func (tes *transactionTestSuite) testConnectBlock(tm *transactionTestMeta, testV
 		// Verify db entries for testVectors that have no later dependencies.
 		if _, exists := idsToSkip[tv.id]; !exists {
 			glog.Infof("Verifying db entries for test vector: %v", tv.id)
-			tv.verifyDbEntry(tv, tm, dbAdapter)
+			if tv.verifyDbEntry != nil {
+				tv.verifyDbEntry(tv, tm, dbAdapter)
+			}
 		} else {
 			glog.Infof("Skipping verifying db entries for test vector %v because it has later dependencies", tv.id)
 		}
@@ -537,6 +572,11 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 	expectedTxns := []*MsgDeSoTxn{}
 	for _, tv := range testVectorBlock.testVectors {
 		txn, err := tv.getTransaction(tv, tm)
+		if tv.getDerivedPrivateKey != nil {
+			derivedPriv, signatureType := tv.getDerivedPrivateKey(tv, tm)
+			derivedPrivString := Base58CheckEncode(derivedPriv.Serialize(), true, tm.params)
+			_signTxnWithDerivedKeyAndType(tm.t, txn, derivedPrivString, signatureType)
+		}
 		if err != nil {
 			if tv.disconnectCallback != nil {
 				glog.Fatalf("testDisconnectBlock: disconnectCallback should be nil for test vectors that fail on connecting")
@@ -600,7 +640,9 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 		// Verify that the UtxoView is correct after disconnecting each transaction. Skip block reward txn.
 		if ii > 0 {
 			expectedTv := expectedTvs[ii-1]
-			expectedTv.verifyDisconnectUtxoViewEntry(expectedTv, tm, utxoView, utxoOpsForTxn)
+			if expectedTv.verifyDisconnectUtxoViewEntry != nil {
+				expectedTv.verifyDisconnectUtxoViewEntry(expectedTv, tm, utxoView, utxoOpsForTxn)
+			}
 			if expectedTv.disconnectCallback != nil {
 				expectedTv.disconnectCallback(expectedTv, tm, utxoView)
 			}
@@ -716,7 +758,9 @@ func (tes *transactionTestSuite) moveTestVectorsFromDbToMempoolForDisconnect(tvb
 			}
 		}
 	}
-	tes._testVectorsInDb = tes._testVectorsInDb[:smallestIndex]
+	if smallestIndex != -1 {
+		tes._testVectorsInDb = tes._testVectorsInDb[:smallestIndex]
+	}
 }
 
 func (tes *transactionTestSuite) removeTestVectorsInMempool() {

@@ -230,9 +230,8 @@ const (
 	TxnTypeAccessGroup                  TxnType = 27
 	TxnTypeAccessGroupMembers           TxnType = 28
 	TxnTypeNewMessage                   TxnType = 29
-	TxnTypeUpdateMessage                TxnType = 30
 
-	// NEXT_ID = 31
+	// NEXT_ID = 30
 )
 
 type TxnString string
@@ -267,7 +266,6 @@ const (
 	TxnStringAccessGroup                  TxnString = "ACCESS_GROUP_CREATE"
 	TxnStringAccessGroupMembers           TxnString = "ACCESS_GROUP_MEMBERS"
 	TxnStringNewMessage                   TxnString = "NEW_MESSAGE"
-	TxnStringUpdateMessage                TxnString = "UPDATE_MESSAGE"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -279,7 +277,7 @@ var (
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
 		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeAccessGroup,
-		TxnTypeAccessGroupMembers, TxnTypeNewMessage, TxnTypeUpdateMessage,
+		TxnTypeAccessGroupMembers, TxnTypeNewMessage,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -288,7 +286,7 @@ var (
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
 		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringAccessGroup,
-		TxnStringAccessGroupMembers, TxnStringNewMessage, TxnStringUpdateMessage,
+		TxnStringAccessGroupMembers, TxnStringNewMessage,
 	}
 )
 
@@ -360,8 +358,6 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringAccessGroupMembers
 	case TxnTypeNewMessage:
 		return TxnStringNewMessage
-	case TxnTypeUpdateMessage:
-		return TxnStringUpdateMessage
 	default:
 		return TxnStringUndefined
 	}
@@ -427,8 +423,6 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeAccessGroupMembers
 	case TxnStringNewMessage:
 		return TxnTypeNewMessage
-	case TxnStringUpdateMessage:
-		return TxnTypeUpdateMessage
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -5063,12 +5057,12 @@ type TransactionSpendingLimit struct {
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
 
 	// AccessGroupMap is a map with keys composed of
-	// AccessGroupId || AccessGroupOperationType
+	// AccessGroupOwnerPublicKey || AccessGroupKeyName || AccessGroupOperationType
 	// to number of transactions.
 	AccessGroupMap map[AccessGroupLimitKey]uint64
 
 	// AccessGroupMemberMap is a map with keys composed of
-	// AccessGroupId || AccessGroupMemberOperationType
+	// AccessGroupOwnerPublicKey || AccessGroupKeyName || AccessGroupMemberOperationType
 	// to number of transactions.
 	AccessGroupMemberMap map[AccessGroupMemberLimitKey]uint64
 
@@ -5220,14 +5214,56 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 		indentationCounter--
 	}
 
+	// AccessGroupMap
+	if len(tsl.AccessGroupMap) > 0 {
+		var accessGroupStr []string
+		str += _indt(indentationCounter) + "Access Groups:\n"
+		indentationCounter++
+		for accessGroupKey, limit := range tsl.AccessGroupMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
+				Base58CheckEncode(accessGroupKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Access Group Key Name: " +
+				hex.EncodeToString(accessGroupKey.AccessGroupKeyName.ToBytes()) + "\n"
+			opString += _indt(indentationCounter) + "Access Group Operation: " +
+				accessGroupKey.OperationType.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+
+			indentationCounter--
+			opString += _indt(indentationCounter) + "]\n"
+			accessGroupStr = append(accessGroupStr, opString)
+		}
+	}
+
+	// AccessGroupMemberMap
+	if len(tsl.AccessGroupMemberMap) > 0 {
+		var accessGroupMemberStr []string
+		for accessGroupMemberKey, limit := range tsl.AccessGroupMemberMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
+				Base58CheckEncode(accessGroupMemberKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Access Group Key Name: " +
+				hex.EncodeToString(accessGroupMemberKey.AccessGroupKeyName.ToBytes()) + "\n"
+			opString += _indt(indentationCounter) + "Access Group Member Operation Type: " +
+				accessGroupMemberKey.OperationType.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+
+			indentationCounter--
+			opString += _indt(indentationCounter) + "]\n"
+			accessGroupMemberStr = append(accessGroupMemberStr, opString)
+		}
+	}
+
 	// IsUnlimited
 	if tsl.IsUnlimited {
 		str += "Unlimited"
 	}
-
-	// AccessGroupLimitMap
-	// AccessGroupMemberLimitMap
-	// TODO: We need to pass blockheight here to support access group spending limit
 
 	return str
 }
@@ -5555,9 +5591,13 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 
 		// Access Group Member Map
+		accessGroupMemberLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
 		tsl.AccessGroupMemberMap = make(map[AccessGroupMemberLimitKey]uint64)
-		if accessGroupLimitMapLen > 0 {
-			for ii := uint64(0); ii < accessGroupLimitMapLen; ii++ {
+		if accessGroupMemberLimitMapLen > 0 {
+			for ii := uint64(0); ii < accessGroupMemberLimitMapLen; ii++ {
 				accessGroupMemberLimitKey := &AccessGroupMemberLimitKey{}
 				if err = accessGroupMemberLimitKey.Decode(rr); err != nil {
 					return errors.Wrapf(err, "Error decoding access group member limit key")
@@ -5629,7 +5669,8 @@ func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpending
 		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
 	}
 
-	// TODO: Do we need another blockheight for access group spending limits?
+	// Note: We don't need a blockheight here to gate access group nor access group member maps. They will always be
+	// empty prior to the fork block height, and should be empty after the blockheight for the unlimited spending limit.
 	if tsl.IsUnlimited && (tsl.GlobalDESOLimit > 0 ||
 		len(tsl.TransactionCountLimitMap) > 0 ||
 		len(tsl.CreatorCoinOperationLimitMap) > 0 ||
@@ -6036,8 +6077,11 @@ func MakeDAOCoinLimitOrderLimitKey(buyingDAOCoinCreatorPKID PKID, sellingDAOCoin
 }
 
 type AccessGroupLimitKey struct {
-	// AccessGroupId is the id of the group for which we want to apply the spending limit
-	AccessGroupId AccessGroupId
+	// AccessGroupOwnerPublicKey is the public key of the owner of the access group.
+	AccessGroupOwnerPublicKey PublicKey
+
+	// AccessGroupKeyName is the name of the access group.
+	AccessGroupKeyName GroupKeyName
 
 	// OperationType is the type of operation for which the spending limit count will apply
 	OperationType AccessGroupOperationType
@@ -6045,16 +6089,26 @@ type AccessGroupLimitKey struct {
 
 func (accessGroupLimitKey *AccessGroupLimitKey) Encode() []byte {
 	var data []byte
-	data = append(data, accessGroupLimitKey.AccessGroupId.ToBytes()...)
+	data = append(data, EncodeByteArray(accessGroupLimitKey.AccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(accessGroupLimitKey.AccessGroupKeyName.ToBytes())...)
 	data = append(data, UintToBuf(uint64(accessGroupLimitKey.OperationType))...)
 	return data
 }
 
 func (accessGroupLimitKey *AccessGroupLimitKey) Decode(rr *bytes.Reader) error {
-	accessGroupLimitKey.AccessGroupId = AccessGroupId{}
-	if err := accessGroupLimitKey.AccessGroupId.FromBytes(rr); err != nil {
-		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: Problem reading AccessGroupId")
+	accessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: "+
+			"Problem reading AccessGroupOwnerPublicKey")
 	}
+	accessGroupLimitKey.AccessGroupOwnerPublicKey = *NewPublicKey(accessGroupOwnerPublicKeyBytes)
+
+	accessGroupKeyNameBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: "+
+			"Problem reading AccessGroupKeyName")
+	}
+	accessGroupLimitKey.AccessGroupKeyName = *NewGroupKeyName(accessGroupKeyNameBytes)
 
 	operationType, err := ReadUvarint(rr)
 	if err != nil {
@@ -6064,16 +6118,22 @@ func (accessGroupLimitKey *AccessGroupLimitKey) Decode(rr *bytes.Reader) error {
 	return nil
 }
 
-func MakeAccessGroupLimitKey(accessGroupId AccessGroupId, operationType AccessGroupOperationType) AccessGroupLimitKey {
+func MakeAccessGroupLimitKey(accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName,
+	operationType AccessGroupOperationType) AccessGroupLimitKey {
+
 	return AccessGroupLimitKey{
-		AccessGroupId: accessGroupId,
-		OperationType: operationType,
+		AccessGroupOwnerPublicKey: accessGroupOwnerPublicKey,
+		AccessGroupKeyName:        accessGroupKeyName,
+		OperationType:             operationType,
 	}
 }
 
 type AccessGroupMemberLimitKey struct {
-	// AccessGroupId is the id of the group for which we want to apply the member spending limit.
-	AccessGroupId AccessGroupId
+	// AccessGroupOwnerPublicKey is the public key of the owner of the access group.
+	AccessGroupOwnerPublicKey PublicKey
+
+	// AccessGroupKeyName is the name of the access group.
+	AccessGroupKeyName GroupKeyName
 
 	// OperationType is the type of operation for which the spending limit count will apply to.
 	OperationType AccessGroupMemberOperationType
@@ -6081,16 +6141,26 @@ type AccessGroupMemberLimitKey struct {
 
 func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Encode() []byte {
 	var data []byte
-	data = append(data, accessGroupMemberLimitKey.AccessGroupId.ToBytes()...)
+	data = append(data, EncodeByteArray(accessGroupMemberLimitKey.AccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(accessGroupMemberLimitKey.AccessGroupKeyName.ToBytes())...)
 	data = append(data, UintToBuf(uint64(accessGroupMemberLimitKey.OperationType))...)
 	return data
 }
 
 func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Decode(rr *bytes.Reader) error {
-	accessGroupMemberLimitKey.AccessGroupId = AccessGroupId{}
-	if err := accessGroupMemberLimitKey.AccessGroupId.FromBytes(rr); err != nil {
-		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: Problem reading AccessGroupId")
+	accessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMemberLimitKey.Decode: "+
+			"Problem reading AccessGroupOwnerPublicKey")
 	}
+	accessGroupMemberLimitKey.AccessGroupOwnerPublicKey = *NewPublicKey(accessGroupOwnerPublicKeyBytes)
+
+	accessGroupKeyNameBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMemberLimitKey.Decode: "+
+			"Problem reading AccessGroupKeyName")
+	}
+	accessGroupMemberLimitKey.AccessGroupKeyName = *NewGroupKeyName(accessGroupKeyNameBytes)
 
 	operationType, err := ReadUvarint(rr)
 	if err != nil {
@@ -6100,10 +6170,12 @@ func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Decode(rr *bytes.Rea
 	return nil
 }
 
-func MakeAccessGroupMemberLimitKey(accessGroupId AccessGroupId, operationType AccessGroupMemberOperationType) AccessGroupMemberLimitKey {
+func MakeAccessGroupMemberLimitKey(accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName,
+	operationType AccessGroupMemberOperationType) AccessGroupMemberLimitKey {
 	return AccessGroupMemberLimitKey{
-		AccessGroupId: accessGroupId,
-		OperationType: operationType,
+		AccessGroupOwnerPublicKey: accessGroupOwnerPublicKey,
+		AccessGroupKeyName:        accessGroupKeyName,
+		OperationType:             operationType,
 	}
 }
 
@@ -6787,6 +6859,17 @@ const (
 	AccessGroupOperationTypeUpdate AccessGroupOperationType = 1
 )
 
+func (groupOp *AccessGroupOperationType) ToString() string {
+	switch *groupOp {
+	case AccessGroupOperationTypeCreate:
+		return "AccessGroupOperationTypeCreate"
+	case AccessGroupOperationTypeUpdate:
+		return "AccessGroupOperationTypeUpdate"
+	default:
+		return ""
+	}
+}
+
 type AccessGroupMetadata struct {
 	AccessGroupOwnerPublicKey []byte
 	AccessGroupPublicKey      []byte
@@ -6857,6 +6940,19 @@ const (
 	AccessGroupMemberOperationTypeRemove AccessGroupMemberOperationType = 1
 	AccessGroupMemberOperationTypeUpdate AccessGroupMemberOperationType = 2
 )
+
+func (groupOp *AccessGroupMemberOperationType) ToString() string {
+	switch *groupOp {
+	case AccessGroupMemberOperationTypeAdd:
+		return "AccessGroupMemberOperationTypeAdd"
+	case AccessGroupMemberOperationTypeRemove:
+		return "AccessGroupMemberOperationTypeRemove"
+	case AccessGroupMemberOperationTypeUpdate:
+		return "AccessGroupMemberOperationTypeUpdate"
+	default:
+		return ""
+	}
+}
 
 // AccessGroupMembersMetadata is the metadata for a transaction to update the members of an access group.
 type AccessGroupMembersMetadata struct {

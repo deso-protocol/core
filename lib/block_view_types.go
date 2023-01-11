@@ -3375,7 +3375,7 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration)
+	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration, DeSoAccessGroupsMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {

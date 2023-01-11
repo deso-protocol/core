@@ -1623,8 +1623,12 @@ func (bav *UtxoView) _connectBasicTransfer(
 				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: "+
 					"It looks like this transaction was signed with a derived key, but the signature is malformed: ")
 			}
-			// Now we check the transaction limits on the derived key
-			utxoOpsForTxn, err = bav._checkDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn)
+			// Now we check the transaction limits on the derived key.
+			// At this point we know that the transaction was signed by a derived key and the signature passes validation
+			// against the provided derived key. We will now verify that the spending limit for this derived key allows for
+			// this transaction, and error otherwise. If everything checks out, we will update the spending limit for this
+			// derived key to reflect the new spending limit after the transaction has been performed.
+			utxoOpsForTxn, err = bav._checkAndUpdateDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn)
 			if err != nil {
 				return 0, 0, nil, err
 			}
@@ -1636,14 +1640,14 @@ func (bav *UtxoView) _connectBasicTransfer(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
-func (bav *UtxoView) _checkDerivedKeySpendingLimit(
+func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 	txn *MsgDeSoTxn, derivedPkBytes []byte, totalInput uint64, utxoOpsForTxn []*UtxoOperation) (
 	_utxoOpsForTxn []*UtxoOperation, _err error) {
 
 	// Get the derived key entry
 	prevDerivedKeyEntry := bav.GetDerivedKeyMappingForOwner(txn.PublicKey, derivedPkBytes)
 	if prevDerivedKeyEntry == nil || prevDerivedKeyEntry.isDeleted {
-		return utxoOpsForTxn, fmt.Errorf("_checkDerivedKeySpendingLimit: No derived key entry found")
+		return utxoOpsForTxn, fmt.Errorf("_checkAndUpdateDerivedKeySpendingLimit: No derived key entry found")
 	}
 
 	// Create a copy of the prevDerivedKeyEntry so we can safely modify the new entry
@@ -1651,9 +1655,9 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 	// Make sure spending limit is not nil.
 	if derivedKeyEntry.TransactionSpendingLimitTracker == nil {
 		return utxoOpsForTxn, errors.Wrap(RuleErrorDerivedKeyNotAuthorized,
-			"_checkDerivedKeySpendingLimit: TransactionSpendingLimitTracker is nil")
+			"_checkAndUpdateDerivedKeySpendingLimit: TransactionSpendingLimitTracker is nil")
 	}
-	// If the derived key is an unlimited key, we don't need to check spending limits whatsoever.
+	// If the derived key is an unlimited key, we don't need to further check nor update the spending limits whatsoever.
 	if derivedKeyEntry.TransactionSpendingLimitTracker.IsUnlimited {
 		return utxoOpsForTxn, nil
 	}
@@ -1679,7 +1683,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		if utxoOp.Type == OperationTypeAddUtxo && utxoOp.Entry.UtxoType == UtxoTypeOutput &&
 			reflect.DeepEqual(utxoOp.Entry.PublicKey, txn.PublicKey) {
 			if utxoOp.Entry.AmountNanos > spendAmount {
-				return utxoOpsForTxn, fmt.Errorf("_checkDerivedKeySpendingLimit: Underflow on spend amount")
+				return utxoOpsForTxn, fmt.Errorf("_checkAndUpdateDerivedKeySpendingLimit: Underflow on spend amount")
 			}
 			spendAmount -= utxoOp.Entry.AmountNanos
 		}
@@ -1688,7 +1692,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 	// If the spend amount exceeds the Global DESO limit, this derived key is not authorized to spend this DESO.
 	if spendAmount > derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit {
 		return utxoOpsForTxn, errors.Wrapf(RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit,
-			"_checkDerivedKeySpendingLimit: Spend Amount %v Exceeds Global DESO Limit %v for Derived Key",
+			"_checkAndUpdateDerivedKeySpendingLimit: Spend Amount %v Exceeds Global DESO Limit %v for Derived Key",
 			spendAmount, spew.Sdump(derivedKeyEntry.TransactionSpendingLimitTracker))
 	}
 
@@ -1711,7 +1715,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		default:
 			return utxoOpsForTxn, errors.Wrapf(
 				RuleErrorDerivedKeyInvalidCreatorCoinLimitOperation,
-				"_checkDerivedKeySpendingLimit: Invalid creator coin limit operation %v",
+				"_checkAndUpdateDerivedKeySpendingLimit: Invalid creator coin limit operation %v",
 				txnMeta.OperationType)
 		}
 		if derivedKeyEntry, err = bav._checkCreatorCoinLimitAndUpdateDerivedKeyEntry(
@@ -1739,7 +1743,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		default:
 			return utxoOpsForTxn, errors.Wrapf(
 				RuleErrorDerivedKeyInvalidDAOCoinLimitOperation,
-				"_checkDerivedKeySpendingLimit: Invalid DAO coin limit operation %v",
+				"_checkAndUpdateDerivedKeySpendingLimit: Invalid DAO coin limit operation %v",
 				txnMeta.OperationType)
 		}
 		if derivedKeyEntry, err = bav._checkDAOCoinLimitAndUpdateDerivedKeyEntry(
@@ -1761,7 +1765,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			if err != nil || orderEntry == nil {
 				return utxoOpsForTxn, errors.Wrapf(
 					RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID,
-					"_checkDerivedKeySpendingLimit: Invalid DAO coin limit order ID %v",
+					"_checkAndUpdateDerivedKeySpendingLimit: Invalid DAO coin limit order ID %v",
 					txnMeta.CancelOrderID)
 			}
 			buyingCoinPublicKey = bav.GetPublicKeyForPKID(orderEntry.BuyingDAOCoinCreatorPKID)
@@ -1828,7 +1832,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		// quota to execute this particular TxnType.
 		if derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap == nil {
 			return utxoOpsForTxn, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized,
-				"_checkDerivedKeySpendingLimit: TransactionCountLimitMap is nil")
+				"_checkAndUpdateDerivedKeySpendingLimit: TransactionCountLimitMap is nil")
 		}
 		// If the transaction limit is not specified or equal to 0, this derived
 		// key is not authorized to perform this transaction.
@@ -1837,7 +1841,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		if !transactionLimitExists || transactionLimit == 0 {
 			return utxoOpsForTxn, errors.Wrapf(
 				RuleErrorDerivedKeyTxnTypeNotAuthorized,
-				"_checkDerivedKeySpendingLimit: No more transactions of type %v are allowed on this Derived Key",
+				"_checkAndUpdateDerivedKeySpendingLimit: No more transactions of type %v are allowed on this Derived Key",
 				txnType.String())
 		}
 		// Otherwise, this derived key is authorized to perform this operation. Delete the key if this is the last
@@ -2144,19 +2148,18 @@ func (bav *UtxoView) _checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(deri
 		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: " +
 			"TransactionSpendingLimitTracker or TransactionSpendingLimitTracker.AccessGroupMap are empty")
 	}
-	accessGroupId := *NewAccessGroupId(
-		NewPublicKey(accessGroupMetadata.AccessGroupOwnerPublicKey), accessGroupMetadata.AccessGroupKeyName)
-	var accessGroupLimitKey AccessGroupLimitKey
-
+	var operationType AccessGroupOperationType
 	switch accessGroupMetadata.AccessGroupOperationType {
 	case AccessGroupOperationTypeCreate:
-		accessGroupLimitKey = MakeAccessGroupLimitKey(accessGroupId, AccessGroupOperationTypeCreate)
+		operationType = AccessGroupOperationTypeCreate
 	case AccessGroupOperationTypeUpdate:
-		accessGroupLimitKey = MakeAccessGroupLimitKey(accessGroupId, AccessGroupOperationTypeUpdate)
+		operationType = AccessGroupOperationTypeUpdate
 	default:
 		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: Unknown access group "+
 			"operation type (%v)", accessGroupMetadata.AccessGroupOperationType)
 	}
+	accessGroupLimitKey := MakeAccessGroupLimitKey(*NewPublicKey(accessGroupMetadata.AccessGroupOwnerPublicKey),
+		*NewGroupKeyName(accessGroupMetadata.AccessGroupKeyName), operationType)
 
 	spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap[accessGroupLimitKey]
 	if !exists || spendingLimit <= 0 {
@@ -2185,21 +2188,20 @@ func (bav *UtxoView) _checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEnt
 		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: " +
 			"TransactionSpendingLimitTracker or TransactionSpendingLimitTracker.AccessGroupMemberMap are empty")
 	}
-	accessGroupId := *NewAccessGroupId(
-		NewPublicKey(accessGroupMembersMetadata.AccessGroupOwnerPublicKey), accessGroupMembersMetadata.AccessGroupKeyName)
-	var accessGroupMembersLimitKey AccessGroupMemberLimitKey
-
+	var operationType AccessGroupMemberOperationType
 	switch accessGroupMembersMetadata.AccessGroupMemberOperationType {
 	case AccessGroupMemberOperationTypeAdd:
-		accessGroupMembersLimitKey = MakeAccessGroupMemberLimitKey(accessGroupId, AccessGroupMemberOperationTypeAdd)
+		operationType = AccessGroupMemberOperationTypeAdd
 	case AccessGroupMemberOperationTypeUpdate:
-		accessGroupMembersLimitKey = MakeAccessGroupMemberLimitKey(accessGroupId, AccessGroupMemberOperationTypeUpdate)
+		operationType = AccessGroupMemberOperationTypeUpdate
 	case AccessGroupMemberOperationTypeRemove:
-		accessGroupMembersLimitKey = MakeAccessGroupMemberLimitKey(accessGroupId, AccessGroupMemberOperationTypeRemove)
+		operationType = AccessGroupMemberOperationTypeRemove
 	default:
 		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: "+
 			"operation type (%v)", accessGroupMembersMetadata.AccessGroupMemberOperationType)
 	}
+	accessGroupMembersLimitKey := MakeAccessGroupMemberLimitKey(*NewPublicKey(accessGroupMembersMetadata.AccessGroupOwnerPublicKey),
+		*NewGroupKeyName(accessGroupMembersMetadata.AccessGroupKeyName), operationType)
 
 	spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap[accessGroupMembersLimitKey]
 	if !exists || spendingLimit <= 0 {
