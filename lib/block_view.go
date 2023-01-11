@@ -696,7 +696,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 		if len(utxoOpsForTxn) > 0 && utxoOpsForTxn[operationIndex].Type == OperationTypeSpendingLimitAccounting {
 			currentOperation := utxoOpsForTxn[operationIndex]
 			// Get the current derived key entry
-			derivedPkBytes, isDerived, err := IsDerivedSignature(currentTxn)
+			derivedPkBytes, isDerived, err := IsDerivedSignature(currentTxn, blockHeight)
 			if !isDerived || err != nil {
 				return fmt.Errorf("_disconnectBasicTransfer: Found Spending Limit Accounting op with non-derived "+
 					"key signature or got an error %v", err)
@@ -1154,6 +1154,11 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	if txn.Signature.Sign == nil {
 		return nil, fmt.Errorf("_verifySignature: Transaction signature is empty")
 	}
+	if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+		if txn.Signature.HasHighS() {
+			return nil, errors.Wrapf(RuleErrorTxnSigHasHighS, "_verifySignature: high-S deteceted")
+		}
+	}
 	// Compute a hash of the transaction.
 	txBytes, err := txn.ToBytes(true /*preSignature*/)
 	if err != nil {
@@ -1166,7 +1171,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	// if the signature uses DeSo-DER encoding, meaning we can recover the derived public key from
 	// the signature.
 	var derivedPk *btcec.PublicKey
-	derivedPkBytes, isDerived, err := IsDerivedSignature(txn)
+	derivedPkBytes, isDerived, err := IsDerivedSignature(txn, blockHeight)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_verifySignature: Something went wrong while checking for "+
 			"derived key signature")
@@ -1245,7 +1250,14 @@ func (bav *UtxoView) ValidateDerivedKey(ownerPkBytes []byte, derivedPkBytes []by
 // to sign the transaction. There are two possible ways to serialize transaction's ECDSA signature for a derived key.
 // Either to use the DER encoding and place the derived public key in transaction's ExtraData, or to use DeSo-DER signature
 // encoding and pass a special recovery ID into the signature's bytes. However, both encodings can't be used at the same time.
-func IsDerivedSignature(txn *MsgDeSoTxn) (_derivedPkBytes []byte, _isDerived bool, _err error) {
+func IsDerivedSignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _isDerived bool, _err error) {
+	if MigrationTriggered(uint64(blockHeight), AssociationsMigration) {
+		if txn.Signature.HasHighS() {
+			return nil, false, errors.Wrapf(
+				RuleErrorTxnSigHasHighS,
+				"IsDerivedSignature: signature has high s")
+		}
+	}
 	// If transaction contains ExtraData, then check if the DerivedPublicKey was passed along.
 	if txn.ExtraData != nil {
 		derivedPkBytes, isDerived := txn.ExtraData[DerivedPublicKey]
@@ -1560,7 +1572,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 	}
 
 	if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
-		if derivedPkBytes, isDerivedSig, err := IsDerivedSignature(txn); isDerivedSig {
+		if derivedPkBytes, isDerivedSig, err := IsDerivedSignature(txn, blockHeight); isDerivedSig {
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: "+
 					"It looks like this transaction was signed with a derived key, but the signature is malformed: ")
