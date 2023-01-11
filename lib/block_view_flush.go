@@ -1233,7 +1233,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 			if existence.isDeleted {
 				numDeleted++
 			} else {
-				if err := DBPutDmThreadIndexWithTxn(txn, bav.Snapshot, dmThreadKey); err != nil {
+				if err := DBPutDmThreadIndexWithTxn(txn, bav.Snapshot, blockHeight, dmThreadKey); err != nil {
 					return errors.Wrapf(
 						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting DmThreadKey: %v", dmThreadKey)
 				}

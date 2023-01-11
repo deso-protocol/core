@@ -368,16 +368,18 @@ type DBPrefixes struct {
 	// Prefix for enumerating all the members of a group. Note that the previous index allows us to
 	// answer the question, "what groups is this person a member of?" while this index allows us to
 	// answer "who are the members of this particular group?"
-	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, AccessGroupMemberPublicKey [33]byte> -> <>
+	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, AccessGroupMemberPublicKey [33]byte>
+	//		-> <AccessGroupMemberEnumerationEntry>
 	PrefixAccessGroupMemberEnumerationIndex []byte `prefix_id:"[65]" is_state:"true"`
 
 	// <groupOwnerPublicKey, groupKeyName, timestamp> -> <MessageEntry>
 	PrefixGroupChatMessagesIndex []byte `prefix_id:"[66]" is_state:"true"`
-	// <groupOwnerPublicKey, groupKeyName> -> <>
+	// <groupOwnerPublicKey, groupKeyName> -> <GroupChatThreadExistence>
 	PrefixGroupChatThreadIndex []byte `prefix_id:"[67]" is_state:"true"`
 	// <minorGroupOwnerPublicKey, minorGroupKeyName, majorGroupOwnerPublicKey, majorGroupKeyName, timestamp> -> <MessageEntry>
 	PrefixDmMessageIndex []byte `prefix_id:"[68]" is_state:"true"`
-	// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName, partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName> -> <>
+	// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName, partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName>
+	//		-> <DmThreadExistence>
 	PrefixDmThreadIndex []byte `prefix_id:"[69]" is_state:"true"`
 
 	// NEXT_TAG: 69
@@ -545,19 +547,19 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 		return true, &AccessGroupMemberEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixAccessGroupMemberEnumerationIndex) {
 		// prefix_id:"[65]"
-		return false, nil
+		return true, &AccessGroupMemberEnumerationEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatMessagesIndex) {
 		// prefix_id:"[66]"
 		return true, &NewMessageEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatThreadIndex) {
 		// prefix_id:"[67]"
-		return false, nil
+		return true, &GroupChatThreadExistence{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessageIndex) {
 		// prefix_id:"[68]"
 		return true, &NewMessageEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
 		// prefix_id:"[69]"
-		return false, nil
+		return true, &DmThreadExistence{}
 	}
 
 	return true, nil
@@ -1925,7 +1927,7 @@ func DBDeleteGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key G
 
 // -------------------------------------------------------------------------------------
 // PrefixGroupChatThreadIndex
-// <groupOwnerPublicKey, groupKeyName> -> <>
+// <groupOwnerPublicKey, groupKeyName> -> <GroupChatThreadExistence>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForGroupChatThreadIndex(key AccessGroupId) []byte {
@@ -1951,15 +1953,21 @@ func DBCheckGroupChatThreadExistence(db *badger.DB, snap *Snapshot, groupId Acce
 func DBCheckGroupChatThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, groupId AccessGroupId) (*GroupChatThreadExistence, error) {
 
 	prefix := _dbKeyForGroupChatThreadIndex(groupId)
-	_, err := DBGetWithTxn(txn, snap, prefix)
+	groupChatThreadExistenceBytes, err := DBGetWithTxn(txn, snap, prefix)
 	if err == badger.ErrKeyNotFound {
 		return nil, nil
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "DBCheckGroupChatThreadExistenceWithTxn: Problem getting group chat thread index")
 	}
 
-	groupChatThreadExistence := MakeGroupChatThreadExistence()
-	return &groupChatThreadExistence, nil
+	groupChatThreadExistence := &GroupChatThreadExistence{}
+	rr := bytes.NewReader(groupChatThreadExistenceBytes)
+	if exists, err := DecodeFromBytes(groupChatThreadExistence, rr); !exists || err != nil {
+		return nil, errors.Wrapf(err, "DBCheckGroupChatThreadExistenceWithTxn: "+
+			"Problem decoding group chat thread index with key: %v and value: %v", prefix, groupChatThreadExistenceBytes)
+	}
+
+	return groupChatThreadExistence, nil
 }
 
 func DBPutGroupChatThreadIndex(db *badger.DB, snap *Snapshot, blockHeight uint64, groupId AccessGroupId) error {
@@ -1976,7 +1984,10 @@ func DBPutGroupChatThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 	groupId AccessGroupId) error {
 
 	prefix := _dbKeyForGroupChatThreadIndex(groupId)
-	if err := DBSetWithTxn(txn, snap, prefix, []byte{}); err != nil {
+	// We don't store any data under this index for now. For forward-compatibility we store a dummy
+	// DeSoEncoder to allow for encoder migrations, should they ever be useful.
+	groupChatThreadExistence := MakeGroupChatThreadExistence()
+	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, &groupChatThreadExistence)); err != nil {
 		return errors.Wrapf(err, "DBPutGroupChatThreadExistenceWithTxn: Problem setting group chat thread index "+
 			"with key (%v) in the db", prefix)
 	}
@@ -2235,15 +2246,20 @@ func DBCheckDmThreadExistence(db *badger.DB, snap *Snapshot, key DmThreadKey) (*
 func DBCheckDmThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, key DmThreadKey) (*DmThreadExistence, error) {
 
 	prefix := _dbKeyForPrefixDmThreadIndex(key)
-	_, err := DBGetWithTxn(txn, snap, prefix)
+	dmThreadExistenceBytes, err := DBGetWithTxn(txn, snap, prefix)
 	if err == badger.ErrKeyNotFound {
 		return nil, nil
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "DBCheckDmThreadExistenceWithTxn: Problem checking dm thread existence with key: %v", key)
 	}
 
-	dmThreadExists := MakeDmThreadExistence()
-	return &dmThreadExists, nil
+	dmThreadExistence := &DmThreadExistence{}
+	rr := bytes.NewReader(dmThreadExistenceBytes)
+	if exists, err := DecodeFromBytes(dmThreadExistence, rr); !exists || err != nil {
+		return nil, errors.Wrapf(err, "DBCheckDmThreadExistenceWithTxn: Problem decoding dm thread existence"+
+			"with key: %v", key)
+	}
+	return dmThreadExistence, nil
 }
 
 func DBGetAllUserDmThreadsByAccessGroupId(db *badger.DB, snap *Snapshot,
@@ -2330,9 +2346,9 @@ func DBGetAllUserDmThreadsWithTxn(txn *badger.Txn, snap *Snapshot,
 	return userDmThreads, nil
 }
 
-func DBPutDmThreadIndex(db *badger.DB, snap *Snapshot, dmThreadKey DmThreadKey) error {
+func DBPutDmThreadIndex(db *badger.DB, snap *Snapshot, blockHeight uint64, dmThreadKey DmThreadKey) error {
 	err := db.Update(func(txn *badger.Txn) error {
-		return DBPutDmThreadIndexWithTxn(txn, snap, dmThreadKey)
+		return DBPutDmThreadIndexWithTxn(txn, snap, blockHeight, dmThreadKey)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "DBPutDmThreadIndex: Problem putting dm thread index with key: %v", dmThreadKey)
@@ -2340,9 +2356,12 @@ func DBPutDmThreadIndex(db *badger.DB, snap *Snapshot, dmThreadKey DmThreadKey) 
 	return nil
 }
 
-func DBPutDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, dmThreadKey DmThreadKey) error {
+func DBPutDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, dmThreadKey DmThreadKey) error {
 	prefix := _dbKeyForPrefixDmThreadIndex(dmThreadKey)
-	if err := DBSetWithTxn(txn, snap, prefix, []byte{}); err != nil {
+	// We don't store any data under this index for now. For forward-compatibility we store a dummy
+	// DeSoEncoder to allow for encoder migrations, should they ever be useful.
+	dmThreadExistence := MakeDmThreadExistence()
+	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, &dmThreadExistence)); err != nil {
 		return errors.Wrapf(err, "DBPutDmThreadIndex: Problem putting dm thread index with key: %v", dmThreadKey)
 	}
 	return nil
@@ -2738,7 +2757,7 @@ func DBDeleteAccessGroupMemberEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 // -------------------------------------------------------------------------------------
 // Enumerate over group members of an access group
 // PrefixGroupMemberEnumerationIndex
-// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, AccessGroupMemberPublicKey> -> <>
+// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, AccessGroupMemberPublicKey> -> <AccessGroupMemberEnumerationEntry>
 // -------------------------------------------------------------------------------------
 
 // _dbKeyForAccessGroupMemberEnumerationIndex returns the key for a group enumeration index.
@@ -2783,12 +2802,18 @@ func DBGetGroupMemberExistenceFromEnumerationIndexWithTxn(txn *badger.Txn, snap 
 
 	prefix := _dbKeyForAccessGroupMemberEnumerationIndex(groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
 
-	_, err := DBGetWithTxn(txn, snap, prefix)
+	accessGroupMemberEnumerationEntryBytes, err := DBGetWithTxn(txn, snap, prefix)
 	if err == badger.ErrKeyNotFound {
 		return false, nil
 	} else if err != nil {
 		return false, errors.Wrapf(err, "DBGetGroupMemberForAccessGroupWithTxn: Problem getting group member for access group"+
 			" groupOwnerPublicKey: %v, groupKeyName: %v, groupMemberPublicKey: %v", groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
+	}
+	accessGroupMemberEnumerationEntry := &AccessGroupMemberEnumerationEntry{}
+	rr := bytes.NewReader(accessGroupMemberEnumerationEntryBytes)
+	if exists, err := DecodeFromBytes(accessGroupMemberEnumerationEntry, rr); err != nil || !exists {
+		return false, errors.Wrapf(err, "DBGetGroupMemberForAccessGroupWithTxn: Problem getting group member existence "+
+			"for access group groupOwnerPublicKey: %v, groupKeyName: %v, groupMemberPublicKey: %v", groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
 	}
 
 	return true, nil
@@ -2868,8 +2893,11 @@ func DBPutAccessGroupMemberEnumerationIndex(handle *badger.DB, snap *Snapshot, b
 func DBPutAccessGroupMemberEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
 	groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, accessGroupMemberPublicKey PublicKey) error {
 
+	// We don't store any data under this index for now. For forward-compatibility we store a dummy
+	// DeSoEncoder to allow for encoder migrations, should they ever be useful.
+	accessGroupMemberEnumerationEntry := MakeAccessGroupMemberEnumerationEntry()
 	if err := DBSetWithTxn(txn, snap, _dbKeyForAccessGroupMemberEnumerationIndex(
-		groupOwnerPublicKey, groupKeyName, accessGroupMemberPublicKey), []byte{}); err != nil {
+		groupOwnerPublicKey, groupKeyName, accessGroupMemberPublicKey), EncodeToBytes(blockHeight, &accessGroupMemberEnumerationEntry)); err != nil {
 
 		return errors.Wrapf(err, "DBPutAccessGroupMemberInMembershipIndexWithTxn: Problem setting access "+
 			"recipient with groupOwnerPublicKey %v, groupKeyName %v, accessGroupMemberPublicKey %v",

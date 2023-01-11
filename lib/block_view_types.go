@@ -104,6 +104,7 @@ const (
 	EncoderTypeAccessGroupMemberEntry
 	EncoderTypeGroupMembershipKey
 	EncoderTypeNewMessageEntry
+	EncoderTypeAccessGroupMemberEnumerationEntry
 	EncoderTypeDmThreadExistence
 	EncoderTypeGroupChatThreadExistence
 
@@ -213,6 +214,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMembershipKey{}
 	case EncoderTypeNewMessageEntry:
 		return &NewMessageEntry{}
+	case EncoderTypeAccessGroupMemberEnumerationEntry:
+		return &AccessGroupMemberEnumerationEntry{}
 	case EncoderTypeDmThreadExistence:
 		return &DmThreadExistence{}
 	case EncoderTypeGroupChatThreadExistence:
@@ -2227,6 +2230,33 @@ func MakeDmThreadKeyFromMessageEntry(messageEntry *NewMessageEntry, shouldUseRec
 			*messageEntry.SenderAccessGroupOwnerPublicKey, *messageEntry.SenderAccessGroupKeyName,
 			*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName), nil
 	}
+}
+
+// AccessGroupMemberEnumerationEntry
+type AccessGroupMemberEnumerationEntry struct {
+	isDeleted bool
+}
+
+func MakeAccessGroupMemberEnumerationEntry() AccessGroupMemberEnumerationEntry {
+	return AccessGroupMemberEnumerationEntry{
+		isDeleted: false,
+	}
+}
+
+func (entry *AccessGroupMemberEnumerationEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	return []byte{}
+}
+
+func (entry *AccessGroupMemberEnumerationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	return nil
+}
+
+func (entry *AccessGroupMemberEnumerationEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (entry *AccessGroupMemberEnumerationEntry) GetEncoderType() EncoderType {
+	return EncoderTypeAccessGroupMemberEnumerationEntry
 }
 
 // DmThreadExistence

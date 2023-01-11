@@ -3974,7 +3974,7 @@ func TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing
 	tv1SpendingLimit := TransactionSpendingLimit{
 		GlobalDESOLimit: 10,
 		AccessGroupMap: map[AccessGroupLimitKey]uint64{
-			AccessGroupLimitKey{
+			{
 				AccessGroupOwnerPublicKey: *m0PublicKey,
 				AccessGroupKeyName:        *groupKeyName1,
 				OperationType:             AccessGroupOperationTypeCreate,
@@ -3989,7 +3989,7 @@ func TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing
 	tv2SpendingLimit := TransactionSpendingLimit{
 		GlobalDESOLimit: 10,
 		AccessGroupMemberMap: map[AccessGroupMemberLimitKey]uint64{
-			AccessGroupMemberLimitKey{
+			{
 				AccessGroupOwnerPublicKey: *m0PublicKey,
 				AccessGroupKeyName:        *groupKeyName1,
 				OperationType:             AccessGroupMemberOperationTypeAdd,
