@@ -376,14 +376,12 @@ func DecodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool
 // MigrationTriggered is a suggested conditional check to be called within RawEncodeWithoutMetadata and
 // RawDecodeWithoutMetadata when defining the encoding migrations for DeSoEncoders. Consult constants.go for more info.
 func MigrationTriggered(blockHeight uint64, migrationName MigrationName) bool {
-	for _, migration := range GlobalDeSoParams.EncoderMigrationHeightsList {
-		if migration.Name == migrationName {
-			return blockHeight >= migration.Height
-		}
+	migration, exists := GlobalDeSoParams.EncoderMigrationHeightMap[migrationName]
+	if !exists || migration == nil {
+		panic(any(fmt.Sprintf("Problem finding a migration corresponding to migrationName (%v) "+
+			"check your code!", migrationName)))
 	}
-
-	panic(any(fmt.Sprintf("Problem finding a migration corresponding to migrationName (%v) "+
-		"check your code!", migrationName)))
+	return blockHeight >= migration.Height
 }
 
 // GetMigrationVersion can be returned in GetVersionByte when implementing DeSoEncoders. The way to do it is simply

@@ -373,6 +373,20 @@ func GetEncoderMigrationHeightsList(forkHeights *ForkHeights) (
 	return migrationHeightsList
 }
 
+func GetEncoderMigrationHeightsMap(forkHeights *ForkHeights) map[MigrationName]*MigrationHeight {
+	migrationHeights := GetEncoderMigrationHeights(forkHeights)
+	migrationHeightsMap := make(map[MigrationName]*MigrationHeight)
+	elements := reflect.ValueOf(migrationHeights).Elem()
+	structFields := elements.Type()
+	for ii := 0; ii < structFields.NumField(); ii++ {
+		elementField := elements.Field(ii)
+		mig := elementField.Interface().(MigrationHeight)
+		migCopy := mig
+		migrationHeightsMap[migCopy.Name] = &migCopy
+	}
+	return migrationHeightsMap
+}
+
 // DeSoParams defines the full list of possible parameters for the
 // DeSo network.
 type DeSoParams struct {
@@ -564,6 +578,7 @@ type DeSoParams struct {
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
 	EncoderMigrationHeightsList []*MigrationHeight
+	EncoderMigrationHeightMap   map[MigrationName]*MigrationHeight
 }
 
 var RegtestForkHeights = ForkHeights{
@@ -625,6 +640,7 @@ func (params *DeSoParams) EnableRegtest() {
 	params.ForkHeights = RegtestForkHeights
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	params.EncoderMigrationHeightMap = GetEncoderMigrationHeightsMap(&params.ForkHeights)
 }
 
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
@@ -917,6 +933,7 @@ var DeSoMainnetParams = DeSoParams{
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
+	EncoderMigrationHeightMap:   GetEncoderMigrationHeightsMap(&MainnetForkHeights),
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -1132,6 +1149,7 @@ var DeSoTestnetParams = DeSoParams{
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
+	EncoderMigrationHeightMap:   GetEncoderMigrationHeightsMap(&TestnetForkHeights),
 }
 
 // GetDataDir gets the user data directory where we store files
