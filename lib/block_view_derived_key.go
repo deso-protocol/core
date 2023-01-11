@@ -270,7 +270,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			}
 		}
 		// We skip verifying the access signature if the transaction is signed by the owner.
-		_, isDerived, err := IsDerivedSignature(txn)
+		_, isDerived, err := IsDerivedSignature(txn, blockHeight)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAuthorizeDerivedKey: "+
 				"It looks like this transaction was signed with a derived key, but the signature is malformed: ")
