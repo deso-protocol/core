@@ -2625,6 +2625,9 @@ func (desoSign *DeSoSignature) Verify(hash []byte, pubKey *btcec.PublicKey) bool
 
 // HasHighS returns true if the signature has a high S value, which is non-standard
 func (desoSign *DeSoSignature) HasHighS() bool {
+	if desoSign == nil || desoSign.Sign == nil {
+		return false
+	}
 	// We reject high-S signatures as they lead to inconsistent public key recovery
 	// https://github.com/indutny/elliptic/blob/master/lib/elliptic/ec/index.js#L147
 	return desoSign.Sign.S.Cmp(big.NewInt(0).Rsh(secp256k1.Params().N, 1)) != -1
