@@ -2080,8 +2080,6 @@ func TestFreezingPosts(t *testing.T) {
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	mempool, miner := NewTestMiner(t, chain, params, true)
-	utxoView, err := mempool.GetAugmentedUniversalView()
-	require.NoError(t, err)
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -2101,76 +2099,53 @@ func TestFreezingPosts(t *testing.T) {
 		feeRateNanosPerKb: 100,
 	}
 
-	// Fund users.
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e9)
+	// Fund m0.
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1e9)
 
-	// Helper function.
-	submitPost := func(isFrozen byte, postHashToModify []byte) ([]byte, error) {
-		// Create txn.
-		bodyObj, err := json.Marshal(&DeSoBodySchema{Body: "test post #1"})
+	// Helper functions.
+	utxoView := func() *UtxoView {
+		// The UTXO view in these tests differs from the UTXO view used to connect
+		// transactions. To avoid retrieving stale data in the UTXO view used in
+		// these tests, we re-create a new UTXO view each time we need one.
+		newUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
-		txn, _, _, _, err := chain.CreateSubmitPostTxn(
-			m0PkBytes,
+		return newUtxoView
+	}
+
+	submitPost := func(isFrozen byte, postHashToModify []byte) ([]byte, error) {
+		// Wrapper for constructing and connecting a SubmitPost transaction.
+		originalBalance := _getBalance(t, chain, mempool, m0Pub)
+		utxoOps, txn, _, err := _doSubmitPostTxn(
+			t,
+			chain,
+			db,
+			params,
+			testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
 			postHashToModify,
 			nil,
-			bodyObj,
-			nil,
-			false,
-			1502947049*1e9,
+			"test post #1",
 			map[string][]byte{IsFrozen: {isFrozen}},
-			false,
-			testMeta.feeRateNanosPerKb,
-			mempool,
-			[]*DeSoOutput{},
-		)
-
-		// Sign txn.
-		_signTxn(t, txn, m0Priv)
-
-		// Connect txn.
-		testMeta.expectedSenderBalances = append(
-			testMeta.expectedSenderBalances, _getBalance(t, chain, mempool, m0Pub),
-		)
-		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
-			txn,
-			txn.Hash(),
-			getTxnSize(*txn),
-			testMeta.savedHeight,
-			true,
 			false,
 		)
 		if err != nil {
 			return nil, err
 		}
+		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, originalBalance)
 		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 		testMeta.txns = append(testMeta.txns, txn)
-		require.NoError(t, utxoView.FlushToDb(0))
 		return txn.Hash().ToBytes(), nil
-	}
-	{
-		// ParamUpdater set min fee rate
-		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			paramUpdaterPub,
-			paramUpdaterPriv,
-			-1,
-			1,
-			-1,
-			-1,
-			-1,
-		)
 	}
 
 	// Tests
 	var postHash []byte
+	var err error
 	{
 		// Happy path: creating a frozen post should succeed.
 		postHash, err = submitPost(1, nil)
 		require.NoError(t, err)
-		postEntry := utxoView.GetPostEntryForPostHash(NewBlockHash(postHash))
+		postEntry := utxoView().GetPostEntryForPostHash(NewBlockHash(postHash))
 		require.True(t, postEntry.IsFrozen)
 	}
 	{
@@ -2183,14 +2158,14 @@ func TestFreezingPosts(t *testing.T) {
 		// Happy path: creating an unfrozen post should succeed.
 		postHash, err = submitPost(0, nil)
 		require.NoError(t, err)
-		postEntry := utxoView.GetPostEntryForPostHash(NewBlockHash(postHash))
+		postEntry := utxoView().GetPostEntryForPostHash(NewBlockHash(postHash))
 		require.False(t, postEntry.IsFrozen)
 	}
 	{
 		// Happy path: updating a post to be frozen should succeed.
 		_, err = submitPost(1, postHash)
 		require.NoError(t, err)
-		postEntry := utxoView.GetPostEntryForPostHash(NewBlockHash(postHash))
+		postEntry := utxoView().GetPostEntryForPostHash(NewBlockHash(postHash))
 		require.True(t, postEntry.IsFrozen)
 	}
 	{
@@ -2199,11 +2174,5 @@ func TestFreezingPosts(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorSubmitPostModifyingFrozenPost)
 	}
-
-	// Roll successful txns through connect and disconnect loops to make sure nothing breaks.
-	_rollBackTestMetaTxnsAndFlush(testMeta)
-	_applyTestMetaTxnsToMempool(testMeta)
-	_applyTestMetaTxnsToViewAndFlush(testMeta)
-	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
-	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+	_executeAllTestRollbackAndFlush(testMeta)
 }
