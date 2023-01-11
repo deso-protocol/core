@@ -3118,6 +3118,10 @@ type PostEntry struct {
 	// encoders/decoders, but for now doing so would mess up GOB encoding so we'll
 	// wait.
 	PostExtraData map[string][]byte
+
+	// If a PostEntry is frozen then it can no longer be updated.
+	// That includes unfreezing the post.
+	IsFrozen bool
 }
 
 func (pe *PostEntry) IsDeleted() bool {
@@ -3174,6 +3178,11 @@ func (pe *PostEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata .
 	data = append(data, EncodePKIDuint64Map(pe.AdditionalNFTRoyaltiesToCreatorsBasisPoints)...)
 	data = append(data, EncodePKIDuint64Map(pe.AdditionalNFTRoyaltiesToCoinsBasisPoints)...)
 	data = append(data, EncodeExtraData(pe.PostExtraData)...)
+
+	if MigrationTriggered(blockHeight, FrozenPostsMigration) {
+		data = append(data, BoolToByte(pe.IsFrozen))
+	}
+
 	return data
 }
 
@@ -3298,11 +3307,18 @@ func (pe *PostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 		return errors.Wrapf(err, "PostEntry.Decode: Problem reading PostExtraData")
 	}
 
+	if MigrationTriggered(blockHeight, FrozenPostsMigration) {
+		pe.IsFrozen, err = ReadBoolByte(rr)
+		if err != nil {
+			return errors.Wrap(err, "PostEntry.Decode: Problem reading IsFrozen")
+		}
+	}
+
 	return nil
 }
 
 func (pe *PostEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, FrozenPostsMigration)
 }
 
 func (pe *PostEntry) GetEncoderType() EncoderType {

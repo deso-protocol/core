@@ -324,6 +324,7 @@ const (
 	DefaultMigration              MigrationName = "DefaultMigration"
 	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
 	AssociationsMigration         MigrationName = "AssociationsMigration"
+	FrozenPostsMigration          MigrationName = "FrozenPostsMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -334,6 +335,9 @@ type EncoderMigrationHeights struct {
 
 	// DeSoAssociations coincides with the AssociationsBlockHeight block
 	DeSoAssociations MigrationHeight
+
+	// DeSoFrozenPosts coincides with the AllowUpdatingNFTPostsBlockHeight block
+	DeSoFrozenPosts MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -352,6 +356,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 2,
 			Height:  uint64(forkHeights.AssociationsBlockHeight),
 			Name:    AssociationsMigration,
+		},
+		DeSoFrozenPosts: MigrationHeight{
+			Version: 3,
+			Height:  uint64(forkHeights.AllowUpdatingNFTPostsBlockHeight),
+			Name:    FrozenPostsMigration,
 		},
 	}
 }
@@ -1169,6 +1178,8 @@ const (
 	RepostedPostHash = "RecloutedPostHash"
 	// Key in transaction's extra map -- The presence of this key indicates that this post is a repost with a quote.
 	IsQuotedRepostKey = "IsQuotedReclout"
+	// Key in transaction's extra data map that freezes a post rendering it immutable.
+	IsFrozen = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
 	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"

@@ -526,6 +526,7 @@ type PGPost struct {
 	AdditionalNFTRoyaltiesToCoinsBasisPoints    map[string]uint64 `pg:"additional_nft_royalties_to_coins_basis_points"`
 	AdditionalNFTRoyaltiesToCreatorsBasisPoints map[string]uint64 `pg:"additional_nft_royalties_to_creators_basis_points"`
 	ExtraData                                   map[string][]byte
+	IsFrozen                                    bool `pg:",use_zero"`
 }
 
 func (post *PGPost) NewPostEntry() *PostEntry {
@@ -551,6 +552,7 @@ func (post *PGPost) NewPostEntry() *PostEntry {
 		NFTRoyaltyToCoinBasisPoints:    post.CoinRoyaltyBasisPoints,
 		NFTRoyaltyToCreatorBasisPoints: post.CreatorRoyaltyBasisPoints,
 		PostExtraData:                  post.ExtraData,
+		IsFrozen:                       post.IsFrozen,
 	}
 
 	if len(post.AdditionalNFTRoyaltiesToCoinsBasisPoints) > 0 {
@@ -1796,6 +1798,7 @@ func (postgres *Postgres) flushPosts(tx *pg.Tx, view *UtxoView) error {
 			CreatorRoyaltyBasisPoints: postEntry.NFTRoyaltyToCreatorBasisPoints,
 			CoinRoyaltyBasisPoints:    postEntry.NFTRoyaltyToCoinBasisPoints,
 			ExtraData:                 postEntry.PostExtraData,
+			IsFrozen:                  postEntry.IsFrozen,
 		}
 
 		if len(postEntry.ParentStakeID) > 0 {

@@ -2072,3 +2072,100 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorBasicTransferInsufficientDeSoForDiamondLevel)
 	}
 }
+
+func TestFreezingPost(t *testing.T) {
+	// Initialize blockchain.
+	chain, params, db := NewLowDifficultyBlockchain()
+	params.ForkHeights.AllowUpdatingNFTPostsBlockHeight = 0
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	require.NoError(t, err)
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err := miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: chain.blockTip().Height + 1,
+	}
+
+	// Fund m0.
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1000000000)
+
+	// Helper function.
+	submitPost := func(body string, postHashToModify []byte) ([]byte, error) {
+		// Create txn.
+		bodyObj, err := json.Marshal(&DeSoBodySchema{Body: body})
+		require.NoError(t, err)
+		txn, _, _, _, err := chain.CreateSubmitPostTxn(
+			m0PkBytes,
+			postHashToModify,
+			nil,
+			bodyObj,
+			nil,
+			false,
+			1502947049*1e9,
+			map[string][]byte{IsFrozen: {1}},
+			false,
+			100,
+			nil,
+			[]*DeSoOutput{},
+		)
+
+		// Sign txn.
+		_signTxn(t, txn, m0Priv)
+
+		// Connect txn.
+		testMeta.expectedSenderBalances = append(
+			testMeta.expectedSenderBalances, _getBalance(t, chain, nil, m0Pub),
+		)
+		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
+			txn,
+			txn.Hash(),
+			getTxnSize(*txn),
+			chain.blockTip().Height+1,
+			true,
+			false,
+		)
+		if err != nil {
+			return nil, err
+		}
+		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+		testMeta.txns = append(testMeta.txns, txn)
+		require.NoError(t, utxoView.FlushToDb(0))
+		return txn.Hash().ToBytes(), nil
+	}
+
+	var postHash []byte
+	{
+		// Happy path: creating a frozen post should succeed.
+		postHash, err = submitPost("frozen post!", nil)
+		require.NoError(t, err)
+		postEntry := utxoView.GetPostEntryForPostHash(NewBlockHash(postHash))
+		require.True(t, postEntry.IsFrozen)
+	}
+	{
+		// Sad path: trying to modify a frozen post should fail.
+		_, err = submitPost("oops!", postHash)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorSubmitPostModifyingFrozenPost)
+	}
+
+	// Roll successful txns through connect and disconnect loops to make sure nothing breaks.
+	_rollBackTestMetaTxnsAndFlush(testMeta)
+	_applyTestMetaTxnsToMempool(testMeta)
+	_applyTestMetaTxnsToViewAndFlush(testMeta)
+	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
+	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+}
