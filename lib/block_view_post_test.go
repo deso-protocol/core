@@ -2076,7 +2076,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 func TestFreezingPosts(t *testing.T) {
 	// Initialize blockchain.
 	chain, params, db := NewLowDifficultyBlockchain()
-	params.ForkHeights.AllowUpdatingNFTPostsBlockHeight = 0
+	params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = 0
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	mempool, miner := NewTestMiner(t, chain, params, true)

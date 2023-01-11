@@ -1116,7 +1116,7 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
 	}
 
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AccessGroupsAndAssociationsMigration) {
 		// PrevUserAssociationEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevUserAssociationEntry, skipMetadata...)...)
 
@@ -1658,7 +1658,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FilledDAOCoinLimitOrder")
 	}
 
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AccessGroupsAndAssociationsMigration) {
 		// PrevUserAssociationEntry
 		prevUserAssociationEntry := &UserAssociationEntry{}
 		if exist, err := DecodeFromBytes(prevUserAssociationEntry, rr); exist && err == nil {
@@ -1680,7 +1680,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 }
 
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsMigration)
+	return GetMigrationVersion(blockHeight, AccessGroupsAndAssociationsMigration)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {
@@ -3179,7 +3179,7 @@ func (pe *PostEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata .
 	data = append(data, EncodePKIDuint64Map(pe.AdditionalNFTRoyaltiesToCoinsBasisPoints)...)
 	data = append(data, EncodeExtraData(pe.PostExtraData)...)
 
-	if MigrationTriggered(blockHeight, FrozenPostsMigration) {
+	if MigrationTriggered(blockHeight, AccessGroupsAndAssociationsMigration) {
 		data = append(data, BoolToByte(pe.IsFrozen))
 	}
 
@@ -3307,7 +3307,7 @@ func (pe *PostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 		return errors.Wrapf(err, "PostEntry.Decode: Problem reading PostExtraData")
 	}
 
-	if MigrationTriggered(blockHeight, FrozenPostsMigration) {
+	if MigrationTriggered(blockHeight, AccessGroupsAndAssociationsMigration) {
 		pe.IsFrozen, err = ReadBoolByte(rr)
 		if err != nil {
 			return errors.Wrap(err, "PostEntry.Decode: Problem reading IsFrozen")
@@ -3318,7 +3318,7 @@ func (pe *PostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 }
 
 func (pe *PostEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, FrozenPostsMigration)
+	return GetMigrationVersion(blockHeight, AccessGroupsAndAssociationsMigration)
 }
 
 func (pe *PostEntry) GetEncoderType() EncoderType {

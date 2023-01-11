@@ -41,7 +41,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true)
-	params.ForkHeights.AssociationsBlockHeight = uint32(0)
+	params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = 0
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -104,7 +104,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	// -------------------------------
 	{
 		// RuleErrorAssociationBeforeBlockHeight
-		params.ForkHeights.AssociationsBlockHeight = math.MaxUint32
+		params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = math.MaxUint32
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
@@ -116,7 +116,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationBeforeBlockHeight)
-		params.ForkHeights.AssociationsBlockHeight = uint32(0)
+		params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = 0
 	}
 	{
 		// RuleErrorUserAssociationInvalidTargetUser
@@ -413,7 +413,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	}
 	{
 		// RuleErrorAssociationBeforeBlockHeight
-		params.ForkHeights.AssociationsBlockHeight = math.MaxUint32
+		params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = math.MaxUint32
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
@@ -425,7 +425,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationBeforeBlockHeight)
-		params.ForkHeights.AssociationsBlockHeight = uint32(0)
+		params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = 0
 	}
 	{
 		// RuleErrorPostAssociationInvalidPost
@@ -2200,12 +2200,12 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Initialize fork heights.
-	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
-	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
-	params.ForkHeights.AssociationsBlockHeight = uint32(0)
+	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = 0
+	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = 0
+	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = 0
+	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = 0
+	params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
+	params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = 0
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 

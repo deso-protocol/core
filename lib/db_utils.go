@@ -5567,7 +5567,7 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 	// encoding DAOCoinLimitOrderTxindexMetadata
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinLimitOrderTxindexMetadata, skipMetadata...)...)
 
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AccessGroupsAndAssociationsMigration) {
 		// encoding CreateUserAssociationTxindexMetadata
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.CreateUserAssociationTxindexMetadata, skipMetadata...)...)
 		// encoding DeleteUserAssociationTxindexMetadata
@@ -5772,7 +5772,7 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinLimitOrderTxindexMetadata")
 	}
 
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AccessGroupsAndAssociationsMigration) {
 		// decoding CreateUserAssociationTxindexMetadata
 		CopyCreateUserAssociationTxindexMetadata := &CreateUserAssociationTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyCreateUserAssociationTxindexMetadata, rr); exist && err == nil {
@@ -5807,7 +5807,7 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 }
 
 func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsMigration)
+	return GetMigrationVersion(blockHeight, AccessGroupsAndAssociationsMigration)
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {

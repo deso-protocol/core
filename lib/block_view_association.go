@@ -19,7 +19,7 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.AssociationsBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.AccessGroupsAndAssociationsBlockHeight {
 		return 0, 0, nil, RuleErrorAssociationBeforeBlockHeight
 	}
 
@@ -111,7 +111,7 @@ func (bav *UtxoView) _connectDeleteUserAssociation(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.AssociationsBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.AccessGroupsAndAssociationsBlockHeight {
 		return 0, 0, nil, RuleErrorAssociationBeforeBlockHeight
 	}
 
@@ -183,7 +183,7 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.AssociationsBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.AccessGroupsAndAssociationsBlockHeight {
 		return 0, 0, nil, RuleErrorAssociationBeforeBlockHeight
 	}
 
@@ -275,7 +275,7 @@ func (bav *UtxoView) _connectDeletePostAssociation(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.AssociationsBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.AccessGroupsAndAssociationsBlockHeight {
 		return 0, 0, nil, RuleErrorAssociationBeforeBlockHeight
 	}
 
