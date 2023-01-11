@@ -2080,8 +2080,6 @@ func TestFreezingPosts(t *testing.T) {
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	mempool, miner := NewTestMiner(t, chain, params, true)
-	utxoView, err := mempool.GetAugmentedUniversalView()
-	require.NoError(t, err)
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -2101,43 +2099,27 @@ func TestFreezingPosts(t *testing.T) {
 		feeRateNanosPerKb: 100,
 	}
 
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	require.NoError(t, err)
+
 	// Fund users.
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e9)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1e9)
 
 	// Helper function.
 	submitPost := func(isFrozen byte, postHashToModify []byte) ([]byte, error) {
-		// Create txn.
-		bodyObj, err := json.Marshal(&DeSoBodySchema{Body: "test post #1"})
-		require.NoError(t, err)
-		txn, _, _, _, err := chain.CreateSubmitPostTxn(
-			m0PkBytes,
-			postHashToModify,
-			nil,
-			bodyObj,
-			nil,
-			false,
-			1502947049*1e9,
-			map[string][]byte{IsFrozen: {isFrozen}},
-			false,
-			testMeta.feeRateNanosPerKb,
-			mempool,
-			[]*DeSoOutput{},
-		)
-
-		// Sign txn.
-		_signTxn(t, txn, m0Priv)
-
 		// Connect txn.
 		testMeta.expectedSenderBalances = append(
 			testMeta.expectedSenderBalances, _getBalance(t, chain, mempool, m0Pub),
 		)
-		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
-			txn,
-			txn.Hash(),
-			getTxnSize(*txn),
-			testMeta.savedHeight,
-			true,
+		utxoOps, txn, _, err := _doSubmitPostTxn(
+			testMeta.t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			postHashToModify,
+			nil,
+			"test post #1",
+			map[string][]byte{IsFrozen: {isFrozen}},
 			false,
 		)
 		if err != nil {
