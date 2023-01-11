@@ -1239,6 +1239,7 @@ var (
 var (
 	QuotedRepostVal    = []byte{1}
 	NotQuotedRepostVal = []byte{0}
+	IsFrozenPostVal    = []byte{1}
 )
 
 var (

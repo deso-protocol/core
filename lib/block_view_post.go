@@ -759,7 +759,7 @@ func (bav *UtxoView) _connectSubmitPost(
 	isFrozen := false
 	if blockHeight >= bav.Params.ForkHeights.AllowUpdatingNFTPostsBlockHeight {
 		if extraDataIsFrozen, exists := extraData[IsFrozen]; exists {
-			isFrozen = bytes.Equal(extraDataIsFrozen, []byte{1})
+			isFrozen = bytes.Equal(extraDataIsFrozen, IsFrozenPostVal)
 			delete(extraData, IsFrozen)
 		}
 	}
@@ -870,6 +870,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		// which seems like undesired behavior if a paramUpdater is trying to reduce
 		// spam
 		newPostEntry.IsHidden = txMeta.IsHidden
+		newPostEntry.IsFrozen = isFrozen && blockHeight >= bav.Params.ForkHeights.AllowUpdatingNFTPostsBlockHeight
 
 		// Obtain the parent posts
 		newParentPostEntry, newGrandparentPostEntry, err = bav._getParentAndGrandparentPostEntry(newPostEntry)
