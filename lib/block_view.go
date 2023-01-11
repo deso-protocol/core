@@ -1154,7 +1154,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	if txn.Signature.Sign == nil {
 		return nil, fmt.Errorf("_verifySignature: Transaction signature is empty")
 	}
-	if MigrationTriggered(uint64(blockHeight), AssociationsMigration) {
+	if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
 		if txn.Signature.HasHighS() {
 			return nil, errors.Wrapf(RuleErrorTxnSigHasHighS, "_verifySignature: high-S deteceted")
 		}
