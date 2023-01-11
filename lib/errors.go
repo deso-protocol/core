@@ -87,6 +87,7 @@ const (
 	RuleErrorBitcoinExchangeTotalOutputLessThanOrEqualZero      RuleError = "RuleErrorBitcoinExchangeTotalOutputLessThanOrEqualZero"
 	RuleErrorTxnSanity                                          RuleError = "RuleErrorTxnSanity"
 	RuleErrorTxnTooBig                                          RuleError = "RuleErrorTxnTooBig"
+	RuleErrorTxnSigHasHighS                                     RuleError = "RuleErrorTxnSigHasHighS"
 
 	RuleErrorPrivateMessageEncryptedTextLengthExceedsMax           RuleError = "RuleErrorPrivateMessageEncryptedTextLengthExceedsMax"
 	RuleErrorPrivateMessageRecipientPubKeyLen                      RuleError = "RuleErrorPrivateMessageRecipientPubKeyLen"

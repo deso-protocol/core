@@ -4,9 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"math"
-	"math/big"
 	"reflect"
 	"strings"
 	"time"
@@ -1156,6 +1154,11 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	if txn.Signature.Sign == nil {
 		return nil, fmt.Errorf("_verifySignature: Transaction signature is empty")
 	}
+	if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+		if txn.Signature.HasHighS() {
+			return nil, errors.Wrapf(RuleErrorTxnSigHasHighS, "_verifySignature: high-S deteceted")
+		}
+	}
 	// Compute a hash of the transaction.
 	txBytes, err := txn.ToBytes(true /*preSignature*/)
 	if err != nil {
@@ -1248,6 +1251,13 @@ func (bav *UtxoView) ValidateDerivedKey(ownerPkBytes []byte, derivedPkBytes []by
 // Either to use the DER encoding and place the derived public key in transaction's ExtraData, or to use DeSo-DER signature
 // encoding and pass a special recovery ID into the signature's bytes. However, both encodings can't be used at the same time.
 func IsDerivedSignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _isDerived bool, _err error) {
+	if MigrationTriggered(uint64(blockHeight), AssociationsMigration) {
+		if txn.Signature.HasHighS() {
+			return nil, false, errors.Wrapf(
+				RuleErrorTxnSigHasHighS,
+				"IsDerivedSignature: signature has high s")
+		}
+	}
 	// If transaction contains ExtraData, then check if the DerivedPublicKey was passed along.
 	if txn.ExtraData != nil {
 		derivedPkBytes, isDerived := txn.ExtraData[DerivedPublicKey]
@@ -1264,15 +1274,6 @@ func IsDerivedSignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []
 
 	// If transaction doesn't contain a derived key in ExtraData, then check if it contains the recovery ID.
 	if txn.Signature.IsRecoverable {
-		if MigrationTriggered(uint64(blockHeight), AssociationsMigration) {
-			// We reject high-S signatures as they lead to inconsistent public key recovery
-			// https://github.com/indutny/elliptic/blob/master/lib/elliptic/ec/index.js#L147
-			isLowS := txn.Signature.Sign.S.Cmp(big.NewInt(0).Rsh(secp256k1.Params().N, 1)) == -1
-			if !isLowS {
-				return nil, false, fmt.Errorf("IsDerivedSignature: high-S deteceted")
-			}
-		}
-
 		// Assemble the transaction hash; we need it in order to recover the public key.
 		txBytes, err := txn.ToBytes(true /*preSignature*/)
 		if err != nil {
