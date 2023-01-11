@@ -1040,35 +1040,33 @@ func (bav *UtxoView) _flushAccessGroupEntriesToDbWithTxn(txn *badger.Txn, blockH
 
 	// Go through all entries in AccessGroupIdToAccessGroupEntry and add them to the DB.
 	// These records are part of the DeSo V3 Messages.
-	for accessGroupKey, accessGroupEntry := range bav.AccessGroupIdToAccessGroupEntry {
+	for accessGroupKeyIter, accessGroupEntryIter := range bav.AccessGroupIdToAccessGroupEntry {
 		// Delete the existing mapping in the DB for this map key, this will be re-added
 		// later if isDeleted=false. Access entries can have a list of members, and
 		// we store these members under a separate prefix. To delete an access group
 		// we also have to go delete all of the recipients.
-		//
-		// TODO: We should have a single DeleteMappings function in db_utils.go that we push this
-		// complexity into.
-		if accessGroupEntry == nil {
-			return fmt.Errorf("UtxoView._flushAccessGroupEntriesToDbWithTxn: accessGroupEntry is nil")
+		accessGroupKey := accessGroupKeyIter
+		if accessGroupEntryIter == nil {
+			return fmt.Errorf("UtxoView._flushAccessGroupEntriesToDbWithTxn: accessGroupEntryIter is nil")
 		}
-		copyAccessGroupEntry := *accessGroupEntry
+		accessGroupEntry := *accessGroupEntryIter
 
 		if err := DBDeleteAccessGroupEntryWithTxn(txn, bav.Snapshot,
 			accessGroupKey.AccessGroupOwnerPublicKey, accessGroupKey.AccessGroupKeyName); err != nil {
 
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
 				"Problem deleting accessGroupKey %v and accessGroupEntry %v from db",
-				accessGroupKey, copyAccessGroupEntry)
+				accessGroupKey, accessGroupEntry)
 		}
 
-		if copyAccessGroupEntry.isDeleted {
+		if accessGroupEntry.isDeleted {
 			numDeleted++
 		} else {
-			if err := DBPutAccessGroupEntryWithTxn(txn, bav.Snapshot, blockHeight, &copyAccessGroupEntry); err != nil {
+			if err := DBPutAccessGroupEntryWithTxn(txn, bav.Snapshot, blockHeight, &accessGroupEntry); err != nil {
 
 				return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
 					"Problem putting accessGroupKey %v and accessGroupEntry %v to db",
-					accessGroupKey, copyAccessGroupEntry)
+					accessGroupKey, accessGroupEntry)
 			}
 			numPut++
 		}
@@ -1083,12 +1081,13 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 	numPut := 0
 
 	// Flush group members to db.
-	for groupMembershipKey, accessGroupMember := range bav.AccessGroupMembershipKeyToAccessGroupMember {
-		if accessGroupMember == nil {
+	for groupMembershipKeyIter, accessGroupMemberIter := range bav.AccessGroupMembershipKeyToAccessGroupMember {
+		groupMembershipKey := groupMembershipKeyIter
+		if accessGroupMemberIter == nil {
 			return fmt.Errorf("UtxoView._flushAccessGroupMembersToDbWithTxn:"+
 				" groupMembershipKey: %v, is nil", groupMembershipKey)
 		}
-		copyAccessGroupMember := *accessGroupMember
+		accessGroupMember := *accessGroupMemberIter
 
 		// add group member to membership index
 		if err := DBDeleteAccessGroupMemberEntryWithTxn(txn, bav.Snapshot,
@@ -1096,7 +1095,7 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 				"Fail while putting new membership index. Problem putting access group member entry with "+
 				"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
-				groupMembershipKey, copyAccessGroupMember)
+				groupMembershipKey, accessGroupMember)
 		}
 		if err := DBDeleteAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot,
 			groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName, groupMembershipKey.AccessGroupMemberPublicKey); err != nil {
@@ -1104,27 +1103,27 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 				"Fail while putting new membership index. Problem putting access group member entry with "+
 				"AccessGroupMembershipKey %v and AccessGroupMember %v to db",
-				groupMembershipKey, copyAccessGroupMember)
+				groupMembershipKey, accessGroupMember)
 		}
 
 		// add group member to enumeration index
-		if copyAccessGroupMember.isDeleted {
+		if accessGroupMember.isDeleted {
 			numDeleted++
 		} else {
 			if err := DBPutAccessGroupMemberEntryWithTxn(txn, bav.Snapshot, blockHeight,
-				&copyAccessGroupMember, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
+				&accessGroupMember, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
 
 				return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 					"Fail while putting new membership index. Problem putting access group member entry with "+
 					"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
-					groupMembershipKey, copyAccessGroupMember)
+					groupMembershipKey, accessGroupMember)
 			}
 			if err := DBPutAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot, blockHeight,
 				groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName, groupMembershipKey.AccessGroupMemberPublicKey); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 					"Fail while putting new enumeration index. Problem putting access group member entry with "+
 					"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
-					groupMembershipKey, copyAccessGroupMember)
+					groupMembershipKey, accessGroupMember)
 			}
 			numPut++
 		}
@@ -1142,8 +1141,13 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 	{
 		numDeleted := 0
 		numPut := 0
-		for groupChatMessageKeyIter, messageEntry := range bav.GroupChatMessagesIndex {
+		for groupChatMessageKeyIter, messageEntryIter := range bav.GroupChatMessagesIndex {
 			groupChatMessageKey := groupChatMessageKeyIter
+			if messageEntryIter == nil {
+				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
+					"groupChatMessageKey: %v, is nil", groupChatMessageKey)
+			}
+			messageEntry := *messageEntryIter
 
 			if err := DBDeleteGroupChatMessageEntryWithTxn(txn, bav.Snapshot, groupChatMessageKey); err != nil {
 				return errors.Wrapf(
@@ -1155,7 +1159,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 				numDeleted++
 			} else {
 				if err := DBPutGroupChatMessageEntryWithTxn(txn, bav.Snapshot, blockHeight,
-					groupChatMessageKey, messageEntry); err != nil {
+					groupChatMessageKey, &messageEntry); err != nil {
 					return errors.Wrapf(
 						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry into "+
 							"group chat message index with key %v and value %v", groupChatMessageKey, messageEntry)
@@ -1169,8 +1173,13 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 	{
 		numDeleted := 0
 		numPut := 0
-		for groupChatThreadKeyIter, existence := range bav.GroupChatThreadIndex {
+		for groupChatThreadKeyIter, existenceIter := range bav.GroupChatThreadIndex {
 			groupChatThreadKey := groupChatThreadKeyIter
+			if existenceIter == nil {
+				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
+					"groupChatThreadKey: %v, is nil", groupChatThreadKey)
+			}
+			existence := *existenceIter
 
 			if err := DBDeleteGroupChatThreadIndexWithTxn(txn, bav.Snapshot, groupChatThreadKey); err != nil {
 				return errors.Wrapf(
@@ -1196,8 +1205,13 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 	{
 		numDeleted := 0
 		numPut := 0
-		for dmMessageKeyIter, messageEntry := range bav.DmMessagesIndex {
+		for dmMessageKeyIter, messageEntryIter := range bav.DmMessagesIndex {
 			dmMessageKey := dmMessageKeyIter
+			if messageEntryIter == nil {
+				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
+					"dmMessageKey: %v, is nil", dmMessageKey)
+			}
+			messageEntry := *messageEntryIter
 
 			if err := DBDeleteDmMessageEntryWithTxn(txn, bav.Snapshot, dmMessageKey); err != nil {
 				return errors.Wrapf(
@@ -1208,7 +1222,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 			if messageEntry.isDeleted {
 				numDeleted++
 			} else {
-				if err := DBPutDmMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, dmMessageKey, messageEntry); err != nil {
+				if err := DBPutDmMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, dmMessageKey, &messageEntry); err != nil {
 					return errors.Wrapf(
 						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry "+
 							"into dm message index with key %v and value %v", dmMessageKey, messageEntry)
@@ -1222,8 +1236,13 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 	{
 		numDeleted := 0
 		numPut := 0
-		for dmThreadKeyIter, existence := range bav.DmThreadIndex {
+		for dmThreadKeyIter, existenceIter := range bav.DmThreadIndex {
 			dmThreadKey := dmThreadKeyIter
+			if existenceIter == nil {
+				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
+					"dmThreadKey: %v, is nil", dmThreadKey)
+			}
+			existence := *existenceIter
 
 			if err := DBDeleteDmThreadIndexWithTxn(txn, bav.Snapshot, dmThreadKey); err != nil {
 				return errors.Wrapf(
