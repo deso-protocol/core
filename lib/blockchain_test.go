@@ -199,8 +199,11 @@ func NewLowDifficultyBlockchainWithParamsAndDb(params *DeSoParams, usePostgres b
 			if len(os.Getenv("POSTGRES_URI")) > 0 {
 				pgOptions = ParsePostgresURI(os.Getenv("POSTGRES_URI"))
 				db := pg.Connect(pgOptions)
-
-				err := migrations.Run(db, "migrate", os.Args)
+				_, err := db.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+				if err != nil {
+					log.Fatal(err, "DeletePostgresDatabase: Problem executing the query")
+				}
+				err = migrations.Run(db, "migrate", os.Args)
 				if err != nil {
 					log.Fatalln(err)
 				}
@@ -292,7 +295,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 
 	mempool := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0 /* minFeeRateNanosPerKB */, "", true,
+		0  /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	minerPubKeys := []string{}
 	if isSender {
