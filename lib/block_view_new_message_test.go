@@ -247,7 +247,26 @@ func TestNewMessage(t *testing.T) {
 	tv12 := _createNewMessageTestVector("TEST 12: (FAIL) Try connecting new message dm create transaction with a "+
 		"timestamp of 0 sent by (m0, baseGroup) to (m1, groupName1)", m0Priv, m0PubBytes,
 		tv12MessageEntry, NewMessageTypeDm, NewMessageOperationCreate, RuleErrorNewMessageTimestampNanosCannotBeZero)
-	tvv2 := []*transactionTestVector{tv8, tv9, tv10, tv11, tv12}
+	tv12p2MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
+		*m3PublicKey, *groupName3, *m3PublicKey, []byte{1, 2, 3}, 5, nil)
+	tv12p2 := _createNewMessageTestVector("TEST 12.2: (FAIL) Try connecting new message dm create transaction sent from"+
+		" (m0, baseGroup) to a non-existent group (m3, groupName3)", m0Priv, m0PubBytes, tv12p2MessageEntry,
+		NewMessageTypeDm, NewMessageOperationCreate, fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView"))
+	tv12p4MessageEntry := tv12p2MessageEntry
+	tv12p4 := _createNewMessageTestVector("TEST 12.4: (FAIL) Try connecting new message dm create transaction sent from"+
+		" (m0, baseGroup) to a non-existent group (m3, groupName3)", m0Priv, m0PubBytes, tv12p4MessageEntry,
+		NewMessageTypeGroupChat, NewMessageOperationCreate, fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView"))
+	tv12p6MessageEntry := _createMessageEntry(*m3PublicKey, *groupName3, *m3PublicKey,
+		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, []byte{1, 2, 3}, 5, nil)
+	tv12p6 := _createNewMessageTestVector("TEST 12.6: (FAIL) Try connecting new message dm create transaction sent from"+
+		" non-existent group (m3, groupName3) to (m0, baseGroup)", m3Priv, m3PubBytes, tv12p6MessageEntry,
+		NewMessageTypeDm, NewMessageOperationCreate, fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView"))
+	tv12p8MessageEntry := tv12p6MessageEntry
+	tv12p8 := _createNewMessageTestVector("TEST 12.8: (FAIL) Try connecting new message group chat create transaction sent from"+
+		" non-existent group (m3, groupName3) to (m0, baseGroup)", m3Priv, m3PubBytes, tv12p8MessageEntry,
+		NewMessageTypeGroupChat, NewMessageOperationCreate, fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView"))
+
+	tvv2 := []*transactionTestVector{tv8, tv9, tv10, tv11, tv12, tv12p2, tv12p4, tv12p6, tv12p8}
 	tvb2 := NewTransactionTestVectorBlock(tvv2, nil, nil)
 
 	// -------------------------------------------------------------------------------------
