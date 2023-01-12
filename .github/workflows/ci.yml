@@ -70,6 +70,7 @@ jobs:
 
       # Install dependencies if not found in cache.
       - name: Install dependencies
+
         if: steps.cache-dependencies.outputs.cache-hit != 'true'
         run: go mod download && go install
 
@@ -80,7 +81,10 @@ jobs:
         run: go run scripts/migrate.go migrate
 
       - name: Run go test
-        run: go test -run TestDAOCoinLimitOrder -v ./lib
+        run: >-
+          go test -run TestDAOCoinLimitOrder -v ./lib &&
+          go test -run TestAccessGroup -v ./lib &&
+          go test -run TestNewMessage -v ./lib
 
       - name: Rollback migrations
         run: go run scripts/migrate.go rollback

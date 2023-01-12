@@ -10,6 +10,7 @@ import (
 	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
+	"os"
 	"testing"
 )
 
@@ -34,9 +35,11 @@ func TestParsePostgresURI(t *testing.T) {
 }
 
 func TestEmbedPg(t *testing.T) {
+	// If we're using an external Postgres service, no need to test embed pg
+	if len(os.Getenv("POSTGRES_URI")) > 0 {
+		return
+	}
 	require := require.New(t)
-	return
-
 	_, embpg, err := StartTestEmbeddedPostgresDB("", 5433)
 	require.NoError(err)
 	fmt.Println("Started embedded postgres")
