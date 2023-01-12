@@ -167,7 +167,6 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	// defined in extra data
 	var newTransactionSpendingLimit *TransactionSpendingLimit
 	var memo []byte
-	// TODO: Do we need a new blockheight for the access group spending limits.
 	if blockHeight >= bav.Params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
 		// Extract TransactionSpendingLimit from extra data
 		// We need to merge the new transaction spending limit struct into the old one

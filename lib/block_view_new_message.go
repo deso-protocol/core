@@ -858,6 +858,13 @@ func (bav *UtxoView) _setUtxoViewMappingsForNewMessageOperationCreateTypeDm(
 	}
 	txMeta := txn.TxnMeta.(*NewMessageMetadata)
 
+	// Check that the message type is DM and operation create.
+	if txMeta.NewMessageType != NewMessageTypeDm || txMeta.NewMessageOperation != NewMessageOperationCreate {
+		return nil, fmt.Errorf("_setUtxoViewMappingsForNewMessageOperationCreateTypeDm: "+
+			"called with bad NewMessageType (%v) or bad NewMessageOperation (%v)",
+			txMeta.NewMessageType, txMeta.NewMessageOperation)
+	}
+
 	var prevDmThreadExistence *DmThreadExistence
 	if bytes.Equal(txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txMeta.RecipientAccessGroupOwnerPublicKey.ToBytes()) {
 		return nil, RuleErrorNewMessageDmSenderAndRecipientCannotBeTheSame
@@ -931,6 +938,13 @@ func (bav *UtxoView) _setUtxoViewMappingsForNewMessageOperationCreateTypeGroupCh
 	}
 	txMeta := txn.TxnMeta.(*NewMessageMetadata)
 
+	// Check that the message type is group chat and operation create.
+	if txMeta.NewMessageType != NewMessageTypeGroupChat || txMeta.NewMessageOperation != NewMessageOperationCreate {
+		return nil, fmt.Errorf("_setUtxoViewMappingsForNewMessageOperationCreateTypeGroupChat: "+
+			"called with bad NewMessageType (%v) or bad NewMessageOperation (%v)",
+			txMeta.NewMessageType, txMeta.NewMessageOperation)
+	}
+
 	var prevGroupChatThreadExistence *GroupChatThreadExistence
 	// Fetch the group chat entry, which is indexed by the recipient's access group.
 	groupChatMessageKey := MakeGroupChatMessageKey(
@@ -1001,6 +1015,13 @@ func (bav *UtxoView) _setUtxoViewMappingsForNewMessageOperationUpdateTypeDm(
 	}
 	txMeta := txn.TxnMeta.(*NewMessageMetadata)
 
+	// Check that the message type is DM and operation update.
+	if txMeta.NewMessageType != NewMessageTypeDm || txMeta.NewMessageOperation != NewMessageOperationUpdate {
+		return nil, nil, fmt.Errorf("_setUtxoViewMappingsForNewMessageOperationUpdateTypeDm: "+
+			"called with bad NewMessageType (%v) or bad NewMessageOperation (%v)",
+			txMeta.NewMessageType, txMeta.NewMessageOperation)
+	}
+
 	var prevNewMessageEntry *NewMessageEntry
 	var prevDmThreadExistence *DmThreadExistence
 
@@ -1055,6 +1076,13 @@ func (bav *UtxoView) _setUtxoViewMappingsForNewMessageOperationUpdateTypeGroupCh
 			txn.TxnMeta.GetTxnType().String())
 	}
 	txMeta := txn.TxnMeta.(*NewMessageMetadata)
+
+	// Check that the message type is group chat and operation update.
+	if txMeta.NewMessageType != NewMessageTypeGroupChat || txMeta.NewMessageOperation != NewMessageOperationUpdate {
+		return nil, nil, fmt.Errorf("_setUtxoViewMappingsForNewMessageOperationUpdateTypeGroupChat: "+
+			"called with bad NewMessageType (%v) or bad NewMessageOperation (%v)",
+			txMeta.NewMessageType, txMeta.NewMessageOperation)
+	}
 
 	var prevNewMessageEntry *NewMessageEntry
 	var prevGroupChatThreadExistence *GroupChatThreadExistence

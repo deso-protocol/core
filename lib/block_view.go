@@ -56,12 +56,13 @@ type UtxoView struct {
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
 
-	// DMs and Group Chats
+	// Group Chat and Dm messages.
 	GroupChatMessagesIndex map[GroupChatMessageKey]*NewMessageEntry
 	DmMessagesIndex        map[DmMessageKey]*NewMessageEntry
-	// The bool type indicates whether the thread should be deleted, it works similarly to isDeleted.
-	DmThreadIndex        map[DmThreadKey]*DmThreadExistence
+
+	// Group Chat and Dm threads.
 	GroupChatThreadIndex map[AccessGroupId]*GroupChatThreadExistence
+	DmThreadIndex        map[DmThreadKey]*DmThreadExistence
 
 	// Follow data
 	FollowKeyToFollowEntry map[FollowKey]*FollowEntry
@@ -148,11 +149,13 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry)
 	bav.AccessGroupMembershipKeyToAccessGroupMember = make(map[AccessGroupMembershipKey]*AccessGroupMemberEntry)
 
-	// DM and Group chats
+	// Group chat and Dm messages.
 	bav.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*NewMessageEntry)
 	bav.DmMessagesIndex = make(map[DmMessageKey]*NewMessageEntry)
-	bav.DmThreadIndex = make(map[DmThreadKey]*DmThreadExistence)
+
+	// Group chat and Dm threads.
 	bav.GroupChatThreadIndex = make(map[AccessGroupId]*GroupChatThreadExistence)
+	bav.DmThreadIndex = make(map[DmThreadKey]*DmThreadExistence)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -2120,9 +2123,13 @@ func (bav *UtxoView) _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
 		"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntr: DAO Coin limit order not authorized: ")
 }
 
+// _checkAccessGroupSpendingLimitKeyAndUpdateDerivedKeyEntry checks that the access group spending limit is sufficient
+// to cover an accessGroup transaction. If the spending limit is present, we decrement the number of remaining operations
+// for the corresponding spending limit entry and return the new derived key entry with the updated spending limit.
 func (bav *UtxoView) _checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(derivedKeyEntry DerivedKeyEntry,
 	accessGroupMetadata *AccessGroupMetadata) (_derivedKeyEntry DerivedKeyEntry, _err error) {
 
+	// Make sure input data is valid.
 	if accessGroupMetadata == nil {
 		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: " +
 			"transaction metadata is empty")
@@ -2132,6 +2139,8 @@ func (bav *UtxoView) _checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(deri
 		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: " +
 			"TransactionSpendingLimitTracker or TransactionSpendingLimitTracker.AccessGroupMap are empty")
 	}
+
+	// Validate the access group operation type.
 	var operationType AccessGroupOperationType
 	switch accessGroupMetadata.AccessGroupOperationType {
 	case AccessGroupOperationTypeCreate:
@@ -2142,16 +2151,19 @@ func (bav *UtxoView) _checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(deri
 		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: Unknown access group "+
 			"operation type (%v)", accessGroupMetadata.AccessGroupOperationType)
 	}
+
+	// Look for the spending limit corresponding to this accessGroupMetadata.
 	accessGroupLimitKey := MakeAccessGroupLimitKey(*NewPublicKey(accessGroupMetadata.AccessGroupOwnerPublicKey),
 		*NewGroupKeyName(accessGroupMetadata.AccessGroupKeyName), operationType)
-
 	spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap[accessGroupLimitKey]
+	// If spending limit is non-positive, then we return an error.
 	if !exists || spendingLimit <= 0 {
 		return derivedKeyEntry, errors.Wrapf(RuleErrorAccessGroupTransactionSpendingLimitInvalid,
 			"_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: "+
 				"No corresponding access group operation spending limit exists")
 	}
 
+	// Delete the spending limit entry if we've exhausted the spending limit for this key, otherwise decrement it by 1.
 	if spendingLimit == 1 {
 		delete(derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap, accessGroupLimitKey)
 	} else {
@@ -2160,9 +2172,13 @@ func (bav *UtxoView) _checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(deri
 	return derivedKeyEntry, nil
 }
 
+// _checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry checks that the access group members spending limit is sufficient
+// to cover an accessGroupMembers transaction. If the spending limit is present, we decrement the number of remaining operations
+// for the corresponding spending limit entry and return the new derived key entry with the updated spending limit.
 func (bav *UtxoView) _checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry(derivedKeyEntry DerivedKeyEntry,
 	accessGroupMembersMetadata *AccessGroupMembersMetadata) (_derivedKeyEntry DerivedKeyEntry, _err error) {
 
+	// Make sure input data is valid.
 	if accessGroupMembersMetadata == nil {
 		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: " +
 			"transaction metadata is empty")
@@ -2172,6 +2188,7 @@ func (bav *UtxoView) _checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEnt
 		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: " +
 			"TransactionSpendingLimitTracker or TransactionSpendingLimitTracker.AccessGroupMemberMap are empty")
 	}
+
 	var operationType AccessGroupMemberOperationType
 	switch accessGroupMembersMetadata.AccessGroupMemberOperationType {
 	case AccessGroupMemberOperationTypeAdd:
@@ -2184,16 +2201,19 @@ func (bav *UtxoView) _checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEnt
 		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: "+
 			"operation type (%v)", accessGroupMembersMetadata.AccessGroupMemberOperationType)
 	}
+
+	// Look for the spending limit corresponding to this accessGroupMembersMetadata.
 	accessGroupMembersLimitKey := MakeAccessGroupMemberLimitKey(*NewPublicKey(accessGroupMembersMetadata.AccessGroupOwnerPublicKey),
 		*NewGroupKeyName(accessGroupMembersMetadata.AccessGroupKeyName), operationType)
-
 	spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap[accessGroupMembersLimitKey]
+	// If spending limit is non-positive, then we return an error.
 	if !exists || spendingLimit <= 0 {
 		return derivedKeyEntry, errors.Wrapf(RuleErrorAccessGroupMemberSpendingLimitInvalid,
 			"_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: "+
 				"No corresponding access group operation spending limit exists")
 	}
 
+	// Delete the spending limit entry if we've exhausted the spending limit for this key, otherwise decrement it by 1.
 	if spendingLimit == 1 {
 		delete(derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap, accessGroupMembersLimitKey)
 	} else {
