@@ -6,6 +6,7 @@ import (
 	"fmt"
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/go-pg/pg/v10"
+	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
 	"log"
 	"math/big"
 	"math/rand"
@@ -193,10 +194,24 @@ func NewLowDifficultyBlockchainWithParamsAndDb(params *DeSoParams, usePostgres b
 			postgresDb = NewPostgres(pg.Connect(ParsePostgresURI(os.Getenv("POSTGRES_URI"))))
 		} else {
 			glog.Infof("NewLowDifficultyBlockchainWithParamsAndDb: Using Postgres DB from embedded postgres")
-			postgresDb, embpg, err = StartTestEmbeddedPostgresDB("", postgresPort)
-			if err != nil {
-				log.Fatal(err, " | If the error says that a process is already listening on the port, go into task manager "+
-					"and kill the postgres process listening to said port. Otherwise remove the /tmp/pg_bin directory, or similar.")
+			var pgOptions *pg.Options
+			// If set, use custom postgres connection options.
+			if len(os.Getenv("POSTGRES_URI")) > 0 {
+				pgOptions = ParsePostgresURI(os.Getenv("POSTGRES_URI"))
+				db := pg.Connect(pgOptions)
+
+				err := migrations.Run(db, "migrate", os.Args)
+				if err != nil {
+					log.Fatalln(err)
+				}
+				postgresDb = NewPostgres(db)
+				embpg = nil
+			} else {
+				postgresDb, embpg, err = StartTestEmbeddedPostgresDB("", postgresPort)
+				if err != nil {
+					log.Fatal(err, " | If the error says that a process is already listening on the port, go into task manager "+
+						"and kill the postgres process listening to said port. Otherwise remove the /tmp/pg_bin directory, or similar.")
+				}
 			}
 		}
 	}

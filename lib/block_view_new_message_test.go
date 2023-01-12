@@ -77,7 +77,7 @@ func TestNewMessage(t *testing.T) {
 	tConfig := &transactionTestConfig{
 		t:                          t,
 		testBadger:                 true,
-		testPostgres:               false,
+		testPostgres:               true,
 		testPostgresPort:           5433,
 		disableLogging:             true,
 		initialBlocksMined:         4,

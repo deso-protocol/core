@@ -310,7 +310,9 @@ func (tes *transactionTestSuite) RunPostgresTest() {
 	defer func() {
 		// Note that deferred function will be called even if the rest of the function panics.
 		glog.Infof("RunPostgresTest: Got into deferred cleanup function")
-		require.NoError(StopTestEmbeddedPostgresDB(tm.embpg))
+		if tm.embpg != nil {
+			require.NoError(StopTestEmbeddedPostgresDB(tm.embpg))
+		}
 		glog.Infof(CLog(Yellow, "RunPostgresTest: successfully stopped embedded postgres db"))
 	}()
 
