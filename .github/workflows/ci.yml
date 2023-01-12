@@ -70,7 +70,6 @@ jobs:
 
       # Install dependencies if not found in cache.
       - name: Install dependencies
-
         if: steps.cache-dependencies.outputs.cache-hit != 'true'
         run: go mod download && go install
 
