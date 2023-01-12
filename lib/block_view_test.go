@@ -166,6 +166,7 @@ type transactionTestConfig struct {
 	testBadger                 bool
 	testPostgres               bool
 	testPostgresPort           uint32
+	disableLogging             bool
 	initialBlocksMined         int
 	fundPublicKeysWithNanosMap map[PublicKey]uint64
 	initChainCallback          func(tm *transactionTestMeta)
@@ -499,7 +500,9 @@ func (tes *transactionTestSuite) testConnectBlock(tm *transactionTestMeta, testV
 	testVectors := testVectorBlock.testVectors
 	validTransactions := make([]bool, len(testVectors))
 	for ii, tv := range testVectors {
-		glog.Infof("Running test vector: %v", tv.id)
+		if !tes.config.disableLogging {
+			glog.Infof("Running test vector: %v", tv.id)
+		}
 		txn, _expectedErr := tv.getTransaction(tv, tm)
 		if tv.getDerivedPrivateKey != nil {
 			derivedPriv, signatureType := tv.getDerivedPrivateKey(tv, tm)
@@ -517,7 +520,9 @@ func (tes *transactionTestSuite) testConnectBlock(tm *transactionTestMeta, testV
 			validTransactions[ii] = false
 		} else {
 			require.NoError(err)
-			glog.Infof("Verifying UtxoView entry for test vector: %v", tv.id)
+			if !tes.config.disableLogging {
+				glog.Infof("Verifying UtxoView entry for test vector: %v", tv.id)
+			}
 			if tv.verifyConnectUtxoViewEntry != nil {
 				tv.verifyConnectUtxoViewEntry(tv, tm, utxoView)
 			}
@@ -547,12 +552,16 @@ func (tes *transactionTestSuite) testConnectBlock(tm *transactionTestMeta, testV
 		}
 		// Verify db entries for testVectors that have no later dependencies.
 		if _, exists := idsToSkip[tv.id]; !exists {
-			glog.Infof("Verifying db entries for test vector: %v", tv.id)
+			if !tes.config.disableLogging {
+				glog.Infof("Verifying db entries for test vector: %v", tv.id)
+			}
 			if tv.verifyDbEntry != nil {
 				tv.verifyDbEntry(tv, tm, dbAdapter)
 			}
 		} else {
-			glog.Infof("Skipping verifying db entries for test vector %v because it has later dependencies", tv.id)
+			if !tes.config.disableLogging {
+				glog.Infof("Skipping verifying db entries for test vector %v because it has later dependencies", tv.id)
+			}
 		}
 	}
 	if testVectorBlock.connectCallback != nil {

@@ -176,7 +176,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		// ====== Access Group Fork ======
 		// We set the mappings for access group map and access group member map to avoid nil pointer reference in
 		// validation checks such as unlimited spending limit. This won't affect the spending limit prior to the fork
-		// block height.
+		// block height because the entry will always be encoded based on the current block height.
 		newTransactionSpendingLimit = &TransactionSpendingLimit{
 			TransactionCountLimitMap:     make(map[TxnType]uint64),
 			CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
@@ -187,6 +187,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
 		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
+			// Copy the existing transaction spending limit.
 			newTransactionSpendingLimitCopy := *prevDerivedKeyEntry.TransactionSpendingLimitTracker
 			newTransactionSpendingLimit = &newTransactionSpendingLimitCopy
 			memo = prevDerivedKeyEntry.Memo
@@ -264,20 +265,23 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						}
 					}
 					// ====== Access Group Fork ======
-					// Note that we don't need to gate this logic by the blockheight becuase the to/from bytes
-					// encoding/decoding will never overwrite these maps prior to the fork blockheight.
-					for accessGroupLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMap {
-						if transactionCount == 0 {
-							delete(newTransactionSpendingLimit.AccessGroupMap, accessGroupLimitKey)
-						} else {
-							newTransactionSpendingLimit.AccessGroupMap[accessGroupLimitKey] = transactionCount
+					// Note that we don't really need to gate this logic by the blockheight because the to/from bytes
+					// encoding/decoding will never overwrite these maps prior to the fork blockheight. We do it
+					// anyway as a sanity-check.
+					if blockHeight >= bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
+						for accessGroupLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMap {
+							if transactionCount == 0 {
+								delete(newTransactionSpendingLimit.AccessGroupMap, accessGroupLimitKey)
+							} else {
+								newTransactionSpendingLimit.AccessGroupMap[accessGroupLimitKey] = transactionCount
+							}
 						}
-					}
-					for accessGroupMemberLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMemberMap {
-						if transactionCount == 0 {
-							delete(newTransactionSpendingLimit.AccessGroupMemberMap, accessGroupMemberLimitKey)
-						} else {
-							newTransactionSpendingLimit.AccessGroupMemberMap[accessGroupMemberLimitKey] = transactionCount
+						for accessGroupMemberLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMemberMap {
+							if transactionCount == 0 {
+								delete(newTransactionSpendingLimit.AccessGroupMemberMap, accessGroupMemberLimitKey)
+							} else {
+								newTransactionSpendingLimit.AccessGroupMemberMap[accessGroupMemberLimitKey] = transactionCount
+							}
 						}
 					}
 				}

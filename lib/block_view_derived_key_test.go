@@ -3950,18 +3950,20 @@ func TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing
 		testBadger:                 true,
 		testPostgres:               false,
 		testPostgresPort:           5433,
+		disableLogging:             true,
 		initialBlocksMined:         4,
 		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
 		initChainCallback:          initChainCallback,
 	}
-	// Submit the following txns:
-	// - authorize derived key with access group spending limits prior to block height
-	// - authorize derived key with access group spending limits after to block height
-	// - 3x create access group with derived pk
-	// - 3x update access group with derived pk
-	// - 3x add members to access group with derived pk
-	// - 3x update member to access group with derived pk
-	// - 3x delete member from access group with derived pk
+	// Test the following spending limits:
+	// - spending limit for AccessGroupLimit
+	// - spending limit for AccessGroupMemberLimit
+	// - spending limit for AccessGroupLimit & AccessGroupMemberLimit
+	// - spending limit for new message txns
+	// - unlimited spending limit
+	//
+	// For each spending limit, we will submit a bunch of txns to make sure the limit works properly.
+	// We will also try updating a spending limit.
 	groupPriv1, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
 	groupPk1 := groupPriv1.PubKey().SerializeCompressed()
@@ -4140,6 +4142,7 @@ func TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing
 	tv15 := _createAccessGroupMembersTestVector("TEST 15: (PASS) Try connecting an access group member transaction made by "+
 		"m0 adding member (m0, groupName1) to group (m0, groupName3) signed by a derived key derivedPriv3", m0Priv, m0PubBytes,
 		groupKeyName3.ToBytes(), tv15Members, AccessGroupMemberOperationTypeAdd, nil)
+	tv15.getDerivedPrivateKey = tv14.getDerivedPrivateKey
 
 	tvv4 := []*transactionTestVector{tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14, tv15}
 	tvb4 := NewTransactionTestVectorBlock(tvv4, nil, nil)
