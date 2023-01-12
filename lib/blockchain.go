@@ -2021,6 +2021,17 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		if err = bc.postgres.UpsertBlock(nodeToValidate); err != nil {
 			err = errors.Wrapf(err, "ProcessBlock: Problem saving block with StatusBlockStored")
 		}
+
+		// We're not storing blocks in postgres, so we should store the actual blocks in the badgerdb.
+		// This is needed for disconnects, otherwise GetBlock() will fail (e.g. when we reorg).
+		if err == nil {
+			err = bc.db.Update(func(txn *badger.Txn) error {
+				if err := PutBlockWithTxn(txn, nil, desoBlock); err != nil {
+					return errors.Wrapf(err, "ProcessBlock: Problem putting block with txns")
+				}
+				return nil
+			})
+		}
 	} else {
 		err = bc.db.Update(func(txn *badger.Txn) error {
 			if bc.snapshot != nil {
@@ -2259,6 +2270,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// to the database.
 
 		// Find the common ancestor of this block and the main chain.
+		// TODO: Reorgs with postgres?
 		commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(currentTip, nodeToValidate)
 		// Log a warning if the reorg is going to be a big one.
 		numBlocks := currentTip.Height - commonAncestor.Height
@@ -2543,7 +2555,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 // DisconnectBlocksToHeight will rollback blocks from the db and blockchain structs until block tip reaches the provided
 // blockHeight parameter.
-func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
+func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapshot) error {
 	// Roll back the block and make sure we don't hit any errors.
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
@@ -2565,13 +2577,13 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 		if node.Height > blockTipHeight {
 			glog.V(1).Info(CLog(Yellow, fmt.Sprintf("DisconnectBlocksToHeight: Found node in blockIndex with "+
 				"larger height than the current block tip. Deleting the corresponding block reward. Node: (%v)", node)))
-			blockToDetach, err := GetBlock(hash, bc.db, nil)
+			blockToDetach, err := GetBlock(hash, bc.db, snap)
 			if err != nil && err != badger.ErrKeyNotFound {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem getting block with hash: (%v) and "+
 					"at height: (%v)", hash, node.Height)
 			}
 			if blockToDetach != nil {
-				if err = DeleteBlockReward(bc.db, nil, blockToDetach); err != nil {
+				if err = DeleteBlockReward(bc.db, snap, blockToDetach); err != nil {
 					return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward with hash: "+
 						"(%v) and at height: (%v)", hash, node.Height)
 				}
@@ -2585,7 +2597,8 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 		hash := *bc.bestChain[ii].Hash
 		height := uint64(bc.bestChain[ii].Height)
 		err := bc.db.Update(func(txn *badger.Txn) error {
-			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, nil)
+
+			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, snap)
 			if err != nil {
 				return err
 			}
@@ -2595,13 +2608,13 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 			}
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
-			utxoOps, err := GetUtxoOperationsForBlock(bc.db, nil, &hash)
+			utxoOps, err := GetUtxoOperationsForBlock(bc.db, snap, &hash)
 			if err != nil {
 				return err
 			}
 
 			// Compute the hashes for all the transactions.
-			blockToDetach, err := GetBlock(&hash, bc.db, nil)
+			blockToDetach, err := GetBlock(&hash, bc.db, snap)
 			if err != nil {
 				return err
 			}
@@ -2621,23 +2634,39 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 			}
 
 			// Set the best node hash to the new tip.
-			if err := PutBestHashWithTxn(txn, nil, &prevHash, ChainTypeDeSoBlock); err != nil {
-				return err
+			if bc.postgres != nil {
+				if err := bc.postgres.UpsertChain(MAIN_CHAIN, &prevHash); err != nil {
+					return err
+				}
+			} else {
+				if err := PutBestHashWithTxn(txn, snap, &prevHash, ChainTypeDeSoBlock); err != nil {
+					return err
+				}
 			}
 
 			// Delete the utxo operations for the blocks we're detaching since we don't need
 			// them anymore.
-			if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, &hash); err != nil {
+			if err := DeleteUtxoOperationsForBlockWithTxn(txn, snap, &hash); err != nil {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting utxo operations for block")
 			}
 
-			if err := DeleteBlockRewardWithTxn(txn, nil, blockToDetach); err != nil {
+			if err := DeleteBlockRewardWithTxn(txn, snap, blockToDetach); err != nil {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward")
 			}
 
+			// Revert the detached block's status to StatusHeaderValidated and save the blockNode to the db.
 			node.Status = StatusHeaderValidated
-			if err := PutHeightHashToNodeInfoWithTxn(txn, nil, node, false); err != nil {
-				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting height hash to node info")
+			if bc.postgres != nil {
+				if err := bc.postgres.DeleteTransactionsForBlock(blockToDetach, node); err != nil {
+					return err
+				}
+				if err := bc.postgres.UpsertBlock(node); err != nil {
+					return err
+				}
+			} else {
+				if err := PutHeightHashToNodeInfoWithTxn(txn, snap, node, false); err != nil {
+					return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting height hash to node info")
+				}
 			}
 
 			// If we have a Server object then call its function

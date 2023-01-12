@@ -1023,8 +1023,14 @@ func (postgres *Postgres) UpsertChainTx(tx *pg.Tx, name string, tipHash *BlockHa
 	return err
 }
 
+func (postgres *Postgres) DeleteTransactionsForBlock(block *MsgDeSoBlock, blockNode *BlockNode) error {
+	return postgres.db.RunInTransaction(postgres.db.Context(), func(tx *pg.Tx) error {
+		return postgres.InsertTransactionsTx(tx, block.Txns, blockNode, true)
+	})
+}
+
 // InsertTransactionsTx inserts all the transactions from a block in a bulk query
-func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn, blockNode *BlockNode) error {
+func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn, blockNode *BlockNode, delete bool) error {
 	var transactions []*PGTransaction
 	var transactionOutputs []*PGTransactionOutput
 	var transactionInputs []*PGTransactionOutput
@@ -1081,24 +1087,64 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		transactions = append(transactions, transaction)
 
 		for ii, input := range txn.TxInputs {
-			transactionInputs = append(transactionInputs, &PGTransactionOutput{
-				OutputHash:  &input.TxID,
-				OutputIndex: input.Index,
-				Height:      blockNode.Height,
-				InputHash:   txnHash,
-				InputIndex:  uint32(ii),
-				Spent:       true,
-			})
+			if !delete {
+				transactionInputs = append(transactionInputs, &PGTransactionOutput{
+					OutputHash:  &input.TxID,
+					OutputIndex: input.Index,
+					Height:      blockNode.Height,
+					InputHash:   txnHash,
+					InputIndex:  uint32(ii),
+					Spent:       true,
+				})
+			} else {
+				// This is dirty and sad but we need to turn all of the current inputs into outputs. The only way to do
+				// this is "hack" the input into what will look like an output with the additional info from the currently
+				// stored UtxoEntry. I think the only field that will be broken is the "height" field, though idt it matters.
+				utxoKey := &UtxoKey{
+					TxID:  input.TxID,
+					Index: input.Index,
+				}
+				utxoEntry := postgres.GetUtxoEntryForUtxoKey(utxoKey)
+				// Do some sanity-checks to make sure the UTXO entry is valid.
+				if utxoEntry == nil {
+					return fmt.Errorf("InsertTransactionsTx: Trying to revert UtxoEntry for UtxoKey %v, but not found", utxoKey)
+				}
+				if !bytes.Equal(utxoEntry.PublicKey, txn.PublicKey) {
+					return fmt.Errorf("InsertTransactionsTx: Trying to revert UtxoEntry for UtxoKey %v, but public key doesn't match", utxoKey)
+				}
+				transactionOutputs = append(transactionOutputs, &PGTransactionOutput{
+					OutputHash:  &input.TxID,
+					OutputIndex: input.Index,
+					OutputType:  utxoEntry.UtxoType,
+					InputHash:   nil,
+					InputIndex:  0,
+					Spent:       false,
+					PublicKey:   txn.PublicKey,
+					AmountNanos: utxoEntry.AmountNanos,
+					Height:      utxoEntry.BlockHeight,
+				})
+			}
 		}
 
 		for ii, output := range txn.TxOutputs {
-			transactionOutputs = append(transactionOutputs, &PGTransactionOutput{
-				OutputHash:  txnHash,
-				OutputIndex: uint32(ii),
-				OutputType:  0, // TODO
-				PublicKey:   output.PublicKey,
-				AmountNanos: output.AmountNanos,
-			})
+			if !delete {
+				transactionOutputs = append(transactionOutputs, &PGTransactionOutput{
+					OutputHash:  txnHash,
+					OutputIndex: uint32(ii),
+					OutputType:  0, // TODO
+					PublicKey:   output.PublicKey,
+					AmountNanos: output.AmountNanos,
+				})
+			} else {
+				// Again, dirty and sad, but we need to get rid of all the outputs from the connected transactions.
+				// Since we reserved transactionOutputs for "hacked" reverted outputs, we use transactionInputs for
+				// the output UtxoEntries that we want to delete.
+				transactionInputs = append(transactionInputs, &PGTransactionOutput{
+					OutputHash:  txnHash,
+					OutputIndex: uint32(ii),
+					PublicKey:   output.PublicKey,
+				})
+			}
 		}
 
 		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
@@ -1406,164 +1452,328 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	// Insert the block and all of its data in bulk
 
 	if len(transactions) > 0 {
-		if _, err := tx.Model(&transactions).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			// For deletes, alternatively, we could add "OnConflict" everywhere; however, this way if there is a bug
+			// in the disconnect logic, we would not be able to catch it. If we instead explicitly delete records,
+			// then postgres will throw an error whenever there is a stale record. The alternative is shown below:
+			// tx.Model(&transactions).Returning("NULL").OnConflict("(hash) DO UPDATE").Insert()
+			if _, err := tx.Model(&transactions).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&transactions).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(transactionOutputs) > 0 {
+		// When we delete, we revert existing UtxoEntries to the "hacked" unspent utxos, so we just overwrite instead of deleting,
+		// as transactionOutputs stores these hacked UtxoEntries.
 		if _, err := tx.Model(&transactionOutputs).Returning("NULL").OnConflict("(output_hash, output_index) DO UPDATE").Insert(); err != nil {
 			return err
 		}
 	}
 
 	if len(transactionInputs) > 0 {
-		if _, err := tx.Model(&transactionInputs).WherePK().Column("input_hash", "input_index", "spent").Update(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&transactionInputs).WherePK().Column("input_hash", "input_index", "spent").Update(); err != nil {
+				return err
+			}
+		} else {
+			// In this case the transactionInputs store the transaction outputs that we should delete, as the transactions
+			// are being reverted.
+			if _, err := tx.Model(&transactionInputs).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataBlockRewards) > 0 {
-		if _, err := tx.Model(&metadataBlockRewards).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataBlockRewards).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataBlockRewards).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataBitcoinExchanges) > 0 {
-		if _, err := tx.Model(&metadataBitcoinExchanges).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataBitcoinExchanges).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataBitcoinExchanges).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataPrivateMessages) > 0 {
-		if _, err := tx.Model(&metadataPrivateMessages).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataPrivateMessages).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataPrivateMessages).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataSubmitPosts) > 0 {
-		if _, err := tx.Model(&metadataSubmitPosts).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataSubmitPosts).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataSubmitPosts).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataUpdateProfiles) > 0 {
-		if _, err := tx.Model(&metadataUpdateProfiles).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataUpdateProfiles).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataUpdateProfiles).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataExchangeRates) > 0 {
-		if _, err := tx.Model(&metadataExchangeRates).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataExchangeRates).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataExchangeRates).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataFollows) > 0 {
-		if _, err := tx.Model(&metadataFollows).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataFollows).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataFollows).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataLikes) > 0 {
-		if _, err := tx.Model(&metadataLikes).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataLikes).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataLikes).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataCreatorCoins) > 0 {
-		if _, err := tx.Model(&metadataCreatorCoins).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataCreatorCoins).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataCreatorCoins).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataSwapIdentities) > 0 {
-		if _, err := tx.Model(&metadataSwapIdentities).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataSwapIdentities).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataSwapIdentities).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataCreatorCoinTransfers) > 0 {
-		if _, err := tx.Model(&metadataCreatorCoinTransfers).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataCreatorCoinTransfers).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataCreatorCoinTransfers).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataCreateNFTs) > 0 {
-		if _, err := tx.Model(&metadataCreateNFTs).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataCreateNFTs).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataCreateNFTs).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataUpdateNFTs) > 0 {
-		if _, err := tx.Model(&metadataUpdateNFTs).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataUpdateNFTs).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataUpdateNFTs).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataAcceptNFTBids) > 0 {
-		if _, err := tx.Model(&metadataAcceptNFTBids).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataAcceptNFTBids).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataAcceptNFTBids).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataBidInputs) > 0 {
-		if _, err := tx.Model(&metadataBidInputs).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataBidInputs).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataBidInputs).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataNFTBids) > 0 {
-		if _, err := tx.Model(&metadataNFTBids).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataNFTBids).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataNFTBids).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataNFTTransfer) > 0 {
-		if _, err := tx.Model(&metadataNFTTransfer).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataNFTTransfer).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataNFTTransfer).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataAcceptNFTTransfer) > 0 {
-		if _, err := tx.Model(&metadataAcceptNFTTransfer).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataAcceptNFTTransfer).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataAcceptNFTTransfer).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataBurnNFT) > 0 {
-		if _, err := tx.Model(&metadataBurnNFT).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataBurnNFT).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataBurnNFT).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataDerivedKey) > 0 {
-		if _, err := tx.Model(&metadataDerivedKey).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataDerivedKey).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataDerivedKey).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataDAOCoin) > 0 {
-		if _, err := tx.Model(&metadataDAOCoin).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataDAOCoin).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataDAOCoin).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataDAOCoinTransfer) > 0 {
-		if _, err := tx.Model(&metadataDAOCoinTransfer).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataDAOCoinTransfer).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataDAOCoinTransfer).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataDAOCoinLimitOrder) > 0 {
-		if _, err := tx.Model(&metadataDAOCoinLimitOrder).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataDAOCoinLimitOrder).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataDAOCoinLimitOrder).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(metadataDAOCoinLimitOrderBidderInputs) > 0 {
-		if _, err := tx.Model(&metadataDAOCoinLimitOrderBidderInputs).Returning("NULL").Insert(); err != nil {
-			return err
+		if !delete {
+			if _, err := tx.Model(&metadataDAOCoinLimitOrderBidderInputs).Returning("NULL").Insert(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Model(&metadataDAOCoinLimitOrderBidderInputs).Returning("NULL").Delete(); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -1607,7 +1817,7 @@ func (postgres *Postgres) UpsertBlockAndTransactions(blockNode *BlockNode, desoB
 			return err
 		}
 
-		err = postgres.InsertTransactionsTx(tx, desoBlock.Txns, blockNode)
+		err = postgres.InsertTransactionsTx(tx, desoBlock.Txns, blockNode, false)
 		if err != nil {
 			return err
 		}
