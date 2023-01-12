@@ -1,7 +1,10 @@
 package lib
 
 import (
+	"bytes"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/pkg/errors"
+	"sort"
 )
 
 type DbAdapter struct {
@@ -28,6 +31,164 @@ func (bav *UtxoView) GetDbAdapter() *DbAdapter {
 		postgresDb: bav.Postgres,
 		snapshot:   snap,
 	}
+}
+
+//
+// Associations
+//
+
+func (adapter *DbAdapter) GetUserAssociationByID(associationID *BlockHash) (*UserAssociationEntry, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetUserAssociationByID(associationID)
+	}
+	return DBGetUserAssociationByID(adapter.badgerDb, adapter.snapshot, associationID)
+}
+
+func (adapter *DbAdapter) GetPostAssociationByID(associationID *BlockHash) (*PostAssociationEntry, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetPostAssociationByID(associationID)
+	}
+	return DBGetPostAssociationByID(adapter.badgerDb, adapter.snapshot, associationID)
+}
+
+func (adapter *DbAdapter) GetUserAssociationByAttributes(associationEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetUserAssociationByAttributes(associationEntry)
+	}
+	return DBGetUserAssociationByAttributes(adapter.badgerDb, adapter.snapshot, associationEntry)
+}
+
+func (adapter *DbAdapter) GetPostAssociationByAttributes(associationEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetPostAssociationByAttributes(associationEntry)
+	}
+	return DBGetPostAssociationByAttributes(adapter.badgerDb, adapter.snapshot, associationEntry)
+}
+
+func (adapter *DbAdapter) GetUserAssociationsByAttributes(
+	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) ([]*UserAssociationEntry, []byte, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetUserAssociationsByAttributes(associationQuery, utxoViewAssociationIds)
+	}
+	return DBGetUserAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, utxoViewAssociationIds)
+}
+
+func (adapter *DbAdapter) GetPostAssociationsByAttributes(
+	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) ([]*PostAssociationEntry, []byte, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetPostAssociationsByAttributes(associationQuery, utxoViewAssociationIds)
+	}
+	return DBGetPostAssociationsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, utxoViewAssociationIds)
+}
+
+func (adapter *DbAdapter) GetUserAssociationIdsByAttributes(
+	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetUserAssociationIdsByAttributes(associationQuery, utxoViewAssociationIds)
+	}
+	return DBGetUserAssociationIdsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, utxoViewAssociationIds)
+}
+
+func (adapter *DbAdapter) GetPostAssociationIdsByAttributes(
+	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetPostAssociationIdsByAttributes(associationQuery, utxoViewAssociationIds)
+	}
+	return DBGetPostAssociationIdsByAttributes(adapter.badgerDb, adapter.snapshot, associationQuery, utxoViewAssociationIds)
+}
+
+func (adapter *DbAdapter) SortUserAssociationEntriesByPrefix(
+	associationEntries []*UserAssociationEntry,
+	prefixType []byte,
+	sortDescending bool,
+) ([]*UserAssociationEntry, error) {
+	// Postgres sorts results by AssociationID.
+	if adapter.postgresDb != nil {
+		sort.Slice(associationEntries, func(ii int, jj int) bool {
+			byteComparison := bytes.Compare(
+				associationEntries[ii].AssociationID.ToBytes(),
+				associationEntries[jj].AssociationID.ToBytes(),
+			)
+			if sortDescending {
+				return byteComparison > 0
+			}
+			return byteComparison <= 0
+		})
+		return associationEntries, nil
+	}
+
+	// Badger sorts results by the key prefix.
+	var innerErr error
+	sort.Slice(associationEntries, func(ii int, jj int) bool {
+		keyII, err := DBKeyForUserAssociationByPrefix(associationEntries[ii], prefixType)
+		if err != nil {
+			innerErr = err
+			return false
+		}
+		keyJJ, err := DBKeyForUserAssociationByPrefix(associationEntries[jj], prefixType)
+		if err != nil {
+			innerErr = err
+			return false
+		}
+		byteComparison := bytes.Compare(keyII, keyJJ)
+		if sortDescending {
+			return byteComparison > 0
+		}
+		return byteComparison <= 0
+	})
+	if innerErr != nil {
+		return nil, errors.Wrapf(innerErr, "SortUserAssociationEntriesByPrefix: ")
+	}
+	return associationEntries, nil
+}
+
+func (adapter *DbAdapter) SortPostAssociationEntriesByPrefix(
+	associationEntries []*PostAssociationEntry,
+	prefixType []byte,
+	sortDescending bool,
+) ([]*PostAssociationEntry, error) {
+	// Postgres sorts results by AssociationID.
+	if adapter.postgresDb != nil {
+		sort.Slice(associationEntries, func(ii int, jj int) bool {
+			byteComparison := bytes.Compare(
+				associationEntries[ii].AssociationID.ToBytes(),
+				associationEntries[jj].AssociationID.ToBytes(),
+			)
+			if sortDescending {
+				return byteComparison > 0
+			}
+			return byteComparison <= 0
+		})
+		return associationEntries, nil
+	}
+
+	// Badger sorts results by the key prefix.
+	var innerErr error
+	sort.Slice(associationEntries, func(ii int, jj int) bool {
+		keyII, err := DBKeyForPostAssociationByPrefix(associationEntries[ii], prefixType)
+		if err != nil {
+			innerErr = err
+			return false
+		}
+		keyJJ, err := DBKeyForPostAssociationByPrefix(associationEntries[jj], prefixType)
+		if err != nil {
+			innerErr = err
+			return false
+		}
+		byteComparison := bytes.Compare(keyII, keyJJ)
+		if sortDescending {
+			return byteComparison > 0
+		}
+		return byteComparison <= 0
+	})
+	if innerErr != nil {
+		return nil, errors.Wrapf(innerErr, "SortPostAssociationEntriesByPrefix: ")
+	}
+	return associationEntries, nil
 }
 
 //

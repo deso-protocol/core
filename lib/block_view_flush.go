@@ -100,6 +100,12 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		//if err := bav._flushDAOCoinLimitOrderEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		//	return err
 		//}
+		if err := bav._flushUserAssociationEntriesToDbWithTxn(txn, blockHeight); err != nil {
+			return err
+		}
+		if err := bav._flushPostAssociationEntriesToDbWithTxn(txn, blockHeight); err != nil {
+			return err
+		}
 	}
 
 	// Always flush to BadgerDB.
@@ -1074,5 +1080,97 @@ func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, 
 	glog.V(2).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// At this point all of the DAO coin limit order mappings in the db should be up-to-date.
+	return nil
+}
+
+func (bav *UtxoView) _flushUserAssociationEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Go through all the entries in the AssociationMapKeyToUserAssociationEntry map.
+	for associationMapKeyIter, associationEntryIter := range bav.AssociationMapKeyToUserAssociationEntry {
+		// Make a copy of the iterator since we make references to it below.
+		associationMapKey := associationMapKeyIter
+		associationEntry := *associationEntryIter
+
+		// Sanity-check that the AssociationMapKey computed from the AssociationEntry
+		// is equal to the AssociationMapKey that maps to that entry.
+		mapKeyInEntry := associationEntry.ToMapKey()
+		if mapKeyInEntry != associationMapKey {
+			return fmt.Errorf(
+				"_flushUserAssociationEntriesToDbWithTxn: association entry key %v doesn't match the map key %v",
+				&mapKeyInEntry,
+				&associationMapKey,
+			)
+		}
+
+		// Delete the existing mappings in the db for this AssociationMapKey. They
+		// will be re-added if the corresponding entry in memory has isDeleted=false.
+		if err := DBDeleteUserAssociationWithTxn(txn, bav.Snapshot, &associationEntry); err != nil {
+			return fmt.Errorf(
+				"_flushUserAssociationEntriesToDbWithTxn: problem deleting association mappings for map key %v: %v",
+				&associationMapKey,
+				err,
+			)
+		}
+	}
+
+	// Go through all the entries in the AssociationMapKeyToUserAssociationEntry map.
+	for _, associationEntryIter := range bav.AssociationMapKeyToUserAssociationEntry {
+		associationEntry := *associationEntryIter
+		if associationEntry.isDeleted {
+			// If the AssociationEntry has isDeleted=true then there's
+			// nothing to do because we already deleted the entry above.
+		} else {
+			// If the AssociationEntry has isDeleted=false then we
+			// put the corresponding mappings for it into the db.
+			if err := DBPutUserAssociationWithTxn(txn, bav.Snapshot, &associationEntry, blockHeight); err != nil {
+				return fmt.Errorf("_flushUserAssociationEntriesToDbWithTxn: %v", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (bav *UtxoView) _flushPostAssociationEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Go through all the entries in the AssociationMapKeyToPostAssociationEntry map.
+	for associationMapKeyIter, associationEntryIter := range bav.AssociationMapKeyToPostAssociationEntry {
+		// Make a copy of the iterator since we make references to it below.
+		associationMapKey := associationMapKeyIter
+		associationEntry := *associationEntryIter
+
+		// Sanity-check that the AssociationMapKey computed from the AssociationEntry
+		// is equal to the AssociationMapKey that maps to that entry.
+		mapKeyInEntry := associationEntry.ToMapKey()
+		if mapKeyInEntry != associationMapKey {
+			return fmt.Errorf(
+				"_flushPostAssociationEntriesToDbWithTxn: association entry key %v doesn't match the map key %v",
+				&mapKeyInEntry,
+				&associationMapKey,
+			)
+		}
+
+		// Delete the existing mappings in the db for this AssociationMapKey. They
+		// will be re-added if the corresponding entry in memory has isDeleted=false.
+		if err := DBDeletePostAssociationWithTxn(txn, bav.Snapshot, &associationEntry); err != nil {
+			return fmt.Errorf(
+				"_flushPostAssociationEntriesToDbWithTxn: problem deleting association mappings for map key %v: %v",
+				&associationMapKey,
+				err,
+			)
+		}
+	}
+
+	// Go through all the entries in the AssociationMapKeyToPostAssociationEntry map.
+	for _, associationEntryIter := range bav.AssociationMapKeyToPostAssociationEntry {
+		associationEntry := *associationEntryIter
+		if associationEntry.isDeleted {
+			// If the AssociationEntry has isDeleted=true then there's
+			// nothing to do because we already deleted the entry above.
+		} else {
+			// If the AssociationEntry has isDeleted=false then we
+			// put the corresponding mappings for it into the db.
+			if err := DBPutPostAssociationWithTxn(txn, bav.Snapshot, &associationEntry, blockHeight); err != nil {
+				return fmt.Errorf("_flushPostAssociationEntriesToDbWithTxn: %v", err)
+			}
+		}
+	}
 	return nil
 }
