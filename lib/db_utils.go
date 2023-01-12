@@ -263,7 +263,7 @@ type DBPrefixes struct {
 	//   to make it so that messages can be decrypted on mobile devices, where apps do not have
 	//   easy access to the owner key for decrypting messages.
 	//
-	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <MessagingGroupEntry>
+	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <MessagingGroupEntry>
 	PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName []byte `prefix_id:"[57]" is_state:"true"`
 
 	// Prefix for Message MessagingGroupMembers:
@@ -281,7 +281,7 @@ type DBPrefixes struct {
 	//   because we wanted to store additional information that "back-references" the
 	//   MessagingGroupEntry for this group.
 	//
-	// * Note that GroupMessagingPublicKey != GroupOwnerPublicKey. For this index
+	// * Note that GroupMessagingPublicKey != AccessGroupOwnerPublicKey. For this index
 	//   it was convenient for various reasons to put the messaging public key into
 	//   the index rather than the group owner's public key. This becomes clear if
 	//   you read all the fetching code around this index.
@@ -1775,8 +1775,8 @@ func DBGetAllUserGroupEntries(handle *badger.DB, ownerPublicKey []byte) ([]*Mess
 // _dbSeekPrefixForGroupMemberAttributesIndex returns prefix to enumerate over the given member's attributes.
 func _dbKeyForGroupChatMessagesIndex(key GroupChatMessageKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixGroupChatMessagesIndex...)
-	prefixCopy = append(prefixCopy, key.GroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.GroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.AccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.AccessGroupKeyName.ToBytes()...)
 	prefixCopy = append(prefixCopy, EncodeUint64(key.TimestampNanos)...)
 	return prefixCopy
 }

@@ -3886,8 +3886,8 @@ func (postgres *Postgres) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmTh
 func (postgres *Postgres) GetNewMessageGroupChatEntry(groupChatMessageKey GroupChatMessageKey) *PGNewMessageGroupChatEntry {
 
 	newMessageGroupChatEntry := &PGNewMessageGroupChatEntry{
-		AccessGroupOwnerPublicKey: &groupChatMessageKey.GroupOwnerPublicKey,
-		AccessGroupKeyName:        &groupChatMessageKey.GroupKeyName,
+		AccessGroupOwnerPublicKey: &groupChatMessageKey.AccessGroupOwnerPublicKey,
+		AccessGroupKeyName:        &groupChatMessageKey.AccessGroupKeyName,
 		TimestampNanos:            groupChatMessageKey.TimestampNanos,
 	}
 	err := postgres.db.Model(newMessageGroupChatEntry).WherePK().First()

@@ -6766,7 +6766,7 @@ type MessagingGroupMetadata struct {
 	MessagingPublicKey    []byte
 	MessagingGroupKeyName []byte
 	// This value is the signature of the following using the private key
-	// of the GroupOwnerPublicKey (aka txn.PublicKey):
+	// of the AccessGroupOwnerPublicKey (aka txn.PublicKey):
 	// - Sha256DoubleHash(MessagingPublicKey || MessagingGroupKeyName)
 	//
 	// This signature is only required when setting up a group where

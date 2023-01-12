@@ -2128,16 +2128,16 @@ func (message *NewMessageEntry) GetEncoderType() EncoderType {
 }
 
 type GroupChatMessageKey struct {
-	GroupOwnerPublicKey PublicKey
-	GroupKeyName        GroupKeyName
-	TimestampNanos      uint64
+	AccessGroupOwnerPublicKey PublicKey
+	AccessGroupKeyName        GroupKeyName
+	TimestampNanos            uint64
 }
 
 func MakeGroupChatMessageKey(groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, tstampNanos uint64) GroupChatMessageKey {
 	return GroupChatMessageKey{
-		GroupOwnerPublicKey: groupOwnerPublicKey,
-		GroupKeyName:        groupKeyName,
-		TimestampNanos:      tstampNanos,
+		AccessGroupOwnerPublicKey: groupOwnerPublicKey,
+		AccessGroupKeyName:        groupKeyName,
+		TimestampNanos:            tstampNanos,
 	}
 }
 
@@ -2426,7 +2426,7 @@ func NewMessagingGroupKey(ownerPublicKey *PublicKey, groupKeyName []byte) *Messa
 }
 
 func (key *MessagingGroupKey) String() string {
-	return fmt.Sprintf("<OwnerPublicKey: %v, GroupKeyName: %v",
+	return fmt.Sprintf("<OwnerPublicKey: %v, AccessGroupKeyName: %v",
 		key.OwnerPublicKey, key.GroupKeyName)
 }
 

@@ -11,7 +11,11 @@ import (
 // GroupChatMessagesIndex
 // ==================================================================
 
+// getGroupChatMessagesIndex returns the NewMessageEntry for the given group chat message key.
+// The messages are indexed by the access group id of the group chat with a timestamp, i.e.:
+// 	<AccessGroupOwnerPublicKey, GroupKeyName, TimestampNanos> -> NewMessageEntry
 func (bav *UtxoView) getGroupChatMessagesIndex(groupChatMessageKey GroupChatMessageKey) (*NewMessageEntry, error) {
+
 	mapValue, existsMapValue := bav.GroupChatMessagesIndex[groupChatMessageKey]
 	if existsMapValue {
 		return mapValue, nil
@@ -80,8 +84,8 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(
 	for messageKeyIter, messageEntryIter := range bav.GroupChatMessagesIndex {
 
 		// Make sure the utxoView message matches our current thread.
-		isValidThread := bytes.Equal(messageKeyIter.GroupOwnerPublicKey.ToBytes(), groupChatThread.AccessGroupOwnerPublicKey.ToBytes()) &&
-			bytes.Equal(messageKeyIter.GroupKeyName.ToBytes(), groupChatThread.AccessGroupKeyName.ToBytes())
+		isValidThread := bytes.Equal(messageKeyIter.AccessGroupOwnerPublicKey.ToBytes(), groupChatThread.AccessGroupOwnerPublicKey.ToBytes()) &&
+			bytes.Equal(messageKeyIter.AccessGroupKeyName.ToBytes(), groupChatThread.AccessGroupKeyName.ToBytes())
 		if !isValidThread {
 			continue
 		}
@@ -548,6 +552,10 @@ func (bav *UtxoView) deleteDmThreadIndex(dmThreadKey DmThreadKey) {
 	existence.isDeleted = true
 	bav.setDmThreadIndex(dmThreadKey, existence)
 }
+
+// ==================================================================
+// TxnTypeNewMessage connect/disconnect logic.
+// ==================================================================
 
 func (bav *UtxoView) _connectNewMessage(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
