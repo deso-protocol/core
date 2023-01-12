@@ -199,11 +199,11 @@ func NewLowDifficultyBlockchainWithParamsAndDb(params *DeSoParams, usePostgres b
 			if len(os.Getenv("POSTGRES_URI")) > 0 {
 				pgOptions = ParsePostgresURI(os.Getenv("POSTGRES_URI"))
 				db := pg.Connect(pgOptions)
-				_, err := db.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+				err := migrations.Run(db, "migrate", []string{"", "rollback"})
 				if err != nil {
-					log.Fatal(err, "DeletePostgresDatabase: Problem executing the query")
+					log.Fatalln(err)
 				}
-				err = migrations.Run(db, "migrate", os.Args)
+				err = migrations.Run(db, "migrate", []string{"", "migrate"})
 				if err != nil {
 					log.Fatalln(err)
 				}
