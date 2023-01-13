@@ -168,6 +168,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	var newTransactionSpendingLimit *TransactionSpendingLimit
 	var memo []byte
 	if blockHeight >= bav.Params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
+		// TODO: Break the logic in this if out into its own function at some point.
+
 		// Extract TransactionSpendingLimit from extra data
 		// We need to merge the new transaction spending limit struct into the old one
 		//
@@ -185,6 +187,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
 			AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
 			AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
+		}
+		if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+			newTransactionSpendingLimit.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
 		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 			// Copy the existing transaction spending limit.
@@ -264,6 +269,15 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
 						}
 					}
+					if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+						for associationLimitKey, transactionCount := range transactionSpendingLimit.AssociationLimitMap {
+							if transactionCount == 0 {
+								delete(newTransactionSpendingLimit.AssociationLimitMap, associationLimitKey)
+							} else {
+								newTransactionSpendingLimit.AssociationLimitMap[associationLimitKey] = transactionCount
+							}
+						}
+					}
 					// ====== Access Group Fork ======
 					// Note that we don't really need to gate this logic by the blockheight because the to/from bytes
 					// encoding/decoding will never overwrite these maps prior to the fork blockheight. We do it
@@ -288,7 +302,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			}
 		}
 		// We skip verifying the access signature if the transaction is signed by the owner.
-		_, isDerived, err := IsDerivedSignature(txn)
+		_, isDerived, err := IsDerivedSignature(txn, blockHeight)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAuthorizeDerivedKey: "+
 				"It looks like this transaction was signed with a derived key, but the signature is malformed: ")

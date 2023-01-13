@@ -417,6 +417,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		glog.V(1).Infof("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v"+
 			"because he already requested a GetSnapshot", pp)
 		pp.Disconnect()
+		return
 	}
 	pp.snapshotChunkRequestInFlight = true
 	defer func(pp *Peer) { pp.snapshotChunkRequestInFlight = false }(pp)
@@ -426,6 +427,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		glog.Errorf("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
 			"and disconnecting because node doesn't support HyperSync", pp)
 		pp.Disconnect()
+		return
 	}
 
 	// Ignore GetSnapshot requests if we're still syncing. We will only serve snapshot chunk when our
@@ -461,31 +463,20 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	var err error
 
 	snapshotDataMsg := &MsgDeSoSnapshotData{
-		Prefix: msg.GetPrefix(),
+		Prefix:           msg.GetPrefix(),
+		SnapshotMetadata: pp.srv.snapshot.CurrentEpochSnapshotMetadata,
 	}
 	if isStateKey(msg.GetPrefix()) {
 		snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
 			pp.srv.snapshot.GetSnapshotChunk(pp.srv.blockchain.db, msg.GetPrefix(), msg.SnapshotStartKey)
-
-		snapshotDataMsg.SnapshotMetadata = pp.srv.snapshot.CurrentEpochSnapshotMetadata
-	} else if isTxIndexKey(msg.GetPrefix()) {
-		if pp.srv.TxIndex != nil && pp.srv.TxIndex.FinishedSyncing() {
-			snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
-				pp.srv.TxIndex.TXIndexChain.snapshot.GetSnapshotChunk(
-					pp.srv.TxIndex.TXIndexChain.db, msg.GetPrefix(), msg.SnapshotStartKey)
-
-			snapshotDataMsg.SnapshotMetadata = pp.srv.TxIndex.TXIndexChain.snapshot.CurrentEpochSnapshotMetadata
-		} else {
-			glog.V(1).Infof("Peer.HandleGetSnapshot: Received a TxIndex prefix but ignoring "+
-				"GetSnapshot from Peer %v because node is still syncing or doesn't support TxIndex", pp)
-			pp.AddDeSoMessage(&MsgDeSoSnapshotData{
-				SnapshotMetadata:  nil,
-				SnapshotChunk:     nil,
-				SnapshotChunkFull: false,
-				Prefix:            msg.GetPrefix(),
-			}, false)
-			return
-		}
+	} else {
+		// If the received prefix is not a state key, then it is likely that the peer has newer code.
+		// A peer would be requesting state data for the newly added state prefix, though this node
+		// doesn't recognize the prefix yet. We respond to the peer with an empty snapshot chunk,
+		// since we don't have any data for the prefix yet. Even if the peer was misbehaving and
+		// intentionally requesting non-existing prefix data, it doesn't really matter.
+		snapshotDataMsg.SnapshotChunk = []*DBEntry{EmptyDBEntry()}
+		snapshotDataMsg.SnapshotChunkFull = false
 	}
 	if err != nil {
 		glog.Errorf("Peer.HandleGetSnapshot: something went wrong during fetching "+
