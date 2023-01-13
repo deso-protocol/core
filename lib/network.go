@@ -7181,6 +7181,7 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 	return &MessagingGroupMetadata{}
 }
+
 // ==================================================================
 // Associations Metadata
 // ==================================================================

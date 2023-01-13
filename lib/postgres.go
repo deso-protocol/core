@@ -156,9 +156,9 @@ type PGTransaction struct {
 	MetadataDeleteUserAssociation *PGMetadataDeleteUserAssociation `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataCreatePostAssociation *PGMetadataCreatePostAssociation `pg:"rel:belongs-to,join_fk:transaction_hash"`
 	MetadataDeletePostAssociation *PGMetadataDeletePostAssociation `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataAccessGroup         *PGMetadataAccessGroup         `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataAccessGroupMembers  *PGMetadataAccessGroupMembers  `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataNewMessage          *PGMetadataNewMessage          `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAccessGroup           *PGMetadataAccessGroup           `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAccessGroupMembers    *PGMetadataAccessGroupMembers    `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataNewMessage            *PGMetadataNewMessage            `pg:"rel:belongs-to,join_fk:transaction_hash"`
 }
 
 // PGTransactionOutput represents DeSoOutput, DeSoInput, and UtxoEntry

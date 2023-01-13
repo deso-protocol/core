@@ -1177,7 +1177,6 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
 	}
 
-
 	// TODO: merge associations and access group migrations
 	if MigrationTriggered(blockHeight, AssociationsMigration) {
 		// PrevUserAssociationEntry
@@ -1186,7 +1185,6 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		// PrevPostAssociationEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevPostAssociationEntry, skipMetadata...)...)
 	}
-
 
 	//
 	// DeSoAccessGroupsMigration Encoder Migration

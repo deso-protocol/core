@@ -324,8 +324,8 @@ const (
 	DefaultMigration              MigrationName = "DefaultMigration"
 	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
 	// TODO: merge these migrations into one
-	DeSoAccessGroupsMigration     MigrationName = "DeSoAccessGroupsMigration"
-	AssociationsMigration         MigrationName = "AssociationsMigration"
+	DeSoAccessGroupsMigration MigrationName = "DeSoAccessGroupsMigration"
+	AssociationsMigration     MigrationName = "AssociationsMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -605,8 +605,8 @@ var RegtestForkHeights = ForkHeights{
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
 	// TODO: merge these into one height
-	DeSoAccessGroupsBlockHeight:                          uint32(0),
-	AssociationsBlockHeight:                              uint32(0),
+	DeSoAccessGroupsBlockHeight: uint32(0),
+	AssociationsBlockHeight:     uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
