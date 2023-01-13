@@ -6853,14 +6853,44 @@ func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 // =======================================================================================
 
 type AccessGroupOperationType uint8
+type AccessGroupOperationString string
 
 const (
-	AccessGroupOperationTypeCreate AccessGroupOperationType = 0
-	AccessGroupOperationTypeUpdate AccessGroupOperationType = 1
+	AccessGroupOperationTypeCreate  AccessGroupOperationType = 0
+	AccessGroupOperationTypeUpdate  AccessGroupOperationType = 1
+	AccessGroupOperationTypeUnknown AccessGroupOperationType = 2
 )
 
-func (groupOp *AccessGroupOperationType) ToString() string {
-	switch *groupOp {
+const (
+	AccessGroupOperationStringCreate  AccessGroupOperationString = "create"
+	AccessGroupOperationStringUpdate  AccessGroupOperationString = "update"
+	AccessGroupOperationStringUnknown AccessGroupOperationString = "unknown"
+)
+
+func (groupOp AccessGroupOperationType) ToAccessGroupOperationString() AccessGroupOperationString {
+	switch groupOp {
+	case AccessGroupOperationTypeCreate:
+		return AccessGroupOperationStringCreate
+	case AccessGroupOperationTypeUpdate:
+		return AccessGroupOperationStringUpdate
+	default:
+		return AccessGroupOperationStringUnknown
+	}
+}
+
+func (opString AccessGroupOperationString) ToAccessGroupOperationType() AccessGroupOperationType {
+	switch opString {
+	case AccessGroupOperationStringCreate:
+		return AccessGroupOperationTypeCreate
+	case AccessGroupOperationStringUpdate:
+		return AccessGroupOperationTypeUpdate
+	default:
+		return AccessGroupOperationTypeUnknown
+	}
+}
+
+func (groupOp AccessGroupOperationType) ToString() string {
+	switch groupOp {
 	case AccessGroupOperationTypeCreate:
 		return "AccessGroupOperationTypeCreate"
 	case AccessGroupOperationTypeUpdate:
@@ -6934,15 +6964,50 @@ func (txnData *AccessGroupMetadata) New() DeSoTxnMetadata {
 // =======================================================================================
 
 type AccessGroupMemberOperationType uint8
+type AccessGroupMemberOperationString string
 
 const (
-	AccessGroupMemberOperationTypeAdd    AccessGroupMemberOperationType = 0
-	AccessGroupMemberOperationTypeRemove AccessGroupMemberOperationType = 1
-	AccessGroupMemberOperationTypeUpdate AccessGroupMemberOperationType = 2
+	AccessGroupMemberOperationTypeAdd     AccessGroupMemberOperationType = 0
+	AccessGroupMemberOperationTypeRemove  AccessGroupMemberOperationType = 1
+	AccessGroupMemberOperationTypeUpdate  AccessGroupMemberOperationType = 2
+	AccessGroupMemberOperationTypeUnknown AccessGroupMemberOperationType = 3
 )
 
-func (groupOp *AccessGroupMemberOperationType) ToString() string {
-	switch *groupOp {
+const (
+	AccessGroupMemberOperationStringAdd     AccessGroupMemberOperationString = "add"
+	AccessGroupMemberOperationStringRemove  AccessGroupMemberOperationString = "remove"
+	AccessGroupMemberOperationStringUpdate  AccessGroupMemberOperationString = "update"
+	AccessGroupMemberOperationStringUnknown AccessGroupMemberOperationString = "unknown"
+)
+
+func (groupOp AccessGroupMemberOperationType) ToAccessGroupMemberOperationString() AccessGroupMemberOperationString {
+	switch groupOp {
+	case AccessGroupMemberOperationTypeAdd:
+		return AccessGroupMemberOperationStringAdd
+	case AccessGroupMemberOperationTypeRemove:
+		return AccessGroupMemberOperationStringRemove
+	case AccessGroupMemberOperationTypeUpdate:
+		return AccessGroupMemberOperationStringUpdate
+	default:
+		return AccessGroupMemberOperationStringUnknown
+	}
+}
+
+func (opString AccessGroupMemberOperationString) ToAccessGroupMemberOperation() AccessGroupMemberOperationType {
+	switch opString {
+	case AccessGroupMemberOperationStringAdd:
+		return AccessGroupMemberOperationTypeAdd
+	case AccessGroupMemberOperationStringRemove:
+		return AccessGroupMemberOperationTypeRemove
+	case AccessGroupMemberOperationStringUpdate:
+		return AccessGroupMemberOperationTypeUpdate
+	default:
+		return AccessGroupMemberOperationTypeUnknown
+	}
+}
+
+func (groupOp AccessGroupMemberOperationType) ToString() string {
+	switch groupOp {
 	case AccessGroupMemberOperationTypeAdd:
 		return "AccessGroupMemberOperationTypeAdd"
 	case AccessGroupMemberOperationTypeRemove:
