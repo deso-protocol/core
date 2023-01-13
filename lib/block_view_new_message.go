@@ -16,16 +16,19 @@ import (
 // 	<AccessGroupOwnerPublicKey, GroupKeyName, TimestampNanos> -> NewMessageEntry
 func (bav *UtxoView) getGroupChatMessagesIndex(groupChatMessageKey GroupChatMessageKey) (*NewMessageEntry, error) {
 
+	// First, check the in-memory index.
 	mapValue, existsMapValue := bav.GroupChatMessagesIndex[groupChatMessageKey]
 	if existsMapValue {
 		return mapValue, nil
 	}
 
+	// If we didn't find it in the in-memory index, check the database.
 	dbAdapter := bav.GetDbAdapter()
 	dbMessageEntry, err := dbAdapter.GetGroupChatMessageEntry(groupChatMessageKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getGroupChatMessagesIndex: ")
 	}
+	// If we found it in the database, add it to the in-memory index.
 	if dbMessageEntry != nil {
 		if err := bav.setGroupChatMessagesIndex(dbMessageEntry); err != nil {
 			return nil, errors.Wrapf(err, "getGroupChatMessagesIndex: ")
@@ -34,13 +37,29 @@ func (bav *UtxoView) getGroupChatMessagesIndex(groupChatMessageKey GroupChatMess
 	return dbMessageEntry, nil
 }
 
-func (bav *UtxoView) GetPaginatedMessageEntriesForGroupChatThread(groupChatThread AccessGroupId, startingTimestamp uint64,
+// GetPaginatedMessageEntriesForGroupChatThread returns a list of paginated message entries for a given group chat thread.
+// The following constraints are applied:
+// (1.) The startingTimestamp is the largest timestamp that we want to include in the results
+// (2.) Fetch at most maxMessagesToFetch messages.
+// (3.) _messageEntries are sorted by timestamp in descending order. That is, the most recent message is at index [0].
+//
+// In other words, the returned _messageEntries will follow these constraints:
+// 1. _messageEntries[0].TimestampNanos <= startingMaxTimestamp
+// 2. len(_messageEntries) <= maxMessagesToFetch
+// 3. _messageEntries[i].TimestampNanos > _messageEntries[i+1].TimestampNanos
+func (bav *UtxoView) GetPaginatedMessageEntriesForGroupChatThread(groupChatThread AccessGroupId, startingMaxTimestamp uint64,
 	maxMessagesToFetch uint64) (_messageEntries []*NewMessageEntry, _err error) {
 
-	return bav._getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(groupChatThread, startingTimestamp,
+	return bav._getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(groupChatThread, startingMaxTimestamp,
 		maxMessagesToFetch, MaxGroupChatMessageRecursionDepth)
 }
 
+// _getPaginatedMessageEntriesForGroupChatThreadRecursionSafe is a helper function for GetPaginatedMessageEntriesForGroupChatThread.
+// It adds a recursion depth counter to prevent infinite recursion. This paginated fetch will first fetch entries from the
+// db and then combine them with the in-memory map of group chat message entries. If the in-memory map indicates that some
+// db entries were deleted in this view, we might need to fetch more entries from the db to fill in the gaps.
+// This is where we will make a recursive call to this function. The maxDepth parameter makes sure we don't recurse forever
+// in case there is a bug in the code (though there isn't one).
 func (bav *UtxoView) _getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(groupChatThread AccessGroupId,
 	startingTimestamp uint64, maxMessagesToFetch uint64, maxDepth uint32) (_messageEntries []*NewMessageEntry, _err error) {
 
@@ -112,10 +131,13 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(
 		filteredUtxoViewMessages[messageEntry.TimestampNanos] = &messageEntry
 	}
 
+	// Now that we have all the messages db and utxoView, we need to combine them and sort them by timestamp.
 	finalMessageEntries := []*NewMessageEntry{}
 	for messageKeyIter, messageEntryIter := range existingMessagesMap {
 		copyMessageEntry := *messageEntryIter
 		if utxoMessage, exists := filteredUtxoViewMessages[messageKeyIter]; exists {
+			// If the message exists in the utxoView, we need to check whether it was deleted. If it was deleted,
+			// we need to skip it.
 			if utxoMessage.isDeleted {
 				continue
 			} else {
@@ -159,28 +181,38 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForGroupChatThreadRecursionSafe(
 	}
 
 	if len(finalMessageEntries) > int(maxMessagesToFetch) {
-		// Timestamps will be in ascending order, so we slice the smallest timestamps.
+		// Timestamps will be in descending order, so we slice the smallest timestamps.
 		finalMessageEntries = finalMessageEntries[:maxMessagesToFetch]
 	}
 	return finalMessageEntries, nil
 }
 
+// setGroupChatMessagesIndex sets the GroupChatMessagesIndex for the given messageKey to the given messageEntry.
 func (bav *UtxoView) setGroupChatMessagesIndex(messageEntry *NewMessageEntry) error {
+	// Sanity check that the messageEntry is not nil.
 	if messageEntry == nil {
 		return fmt.Errorf("setGroupChatMessagesIndex: called with nil messageEntry")
 	}
 
+	// Sanity check that the messageEntry fields are not nil.
 	if messageEntry.RecipientAccessGroupOwnerPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil {
 		return fmt.Errorf("setGroupChatMessagesIndex: called with nil recipient data")
 	}
 
+	// Set the GroupChatMessagesIndex with the provided messageEntry.
 	groupChatMessageKey := MakeGroupChatMessageKey(
 		*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName, messageEntry.TimestampNanos)
 	bav.GroupChatMessagesIndex[groupChatMessageKey] = messageEntry
 	return nil
 }
 
+// deleteGroupChatMessagesIndex deletes the GroupChatMessagesIndex for the given messageKey.
 func (bav *UtxoView) deleteGroupChatMessagesIndex(messageEntry *NewMessageEntry) error {
+
+	// Sanity check that the messageEntry is not nil.
+	if messageEntry == nil {
+		return fmt.Errorf("deleteGroupChatMessagesIndex: called with nil messageEntry")
+	}
 
 	// Create a tombstone entry.
 	tombstoneMessageEntry := *messageEntry
@@ -199,27 +231,34 @@ func (bav *UtxoView) deleteGroupChatMessagesIndex(messageEntry *NewMessageEntry)
 // GroupChatThreadIndex
 // ==================================================================
 
+// getGroupChatThreadExistence returns the GroupChatThreadExistence entry for the given groupKey AccessGroupId.
 func (bav *UtxoView) getGroupChatThreadExistence(groupKey AccessGroupId) (*GroupChatThreadExistence, error) {
+	// Fetch the GroupChatThreadExistence entry from the UtxoView.
 	mapValue, existsMapValue := bav.GroupChatThreadIndex[groupKey]
 	if existsMapValue {
 		return mapValue, nil
 	}
-
+	// If the GroupChatThreadExistence entry does not exist in the UtxoView, fetch it from the DB.
 	dbAdapter := bav.GetDbAdapter()
 	dbThreadExists, err := dbAdapter.CheckGroupChatThreadExistence(groupKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getGroupChatThreadExistence: ")
 	}
 
+	// If the GroupChatThreadExistence entry exists, update the UtxoView with the entry.
 	if dbThreadExists != nil {
 		bav.GroupChatThreadIndex[groupKey] = dbThreadExists
 	}
 	return dbThreadExists, nil
 }
 
+// GetAllUserGroupChatThreads returns all the group chat threads that the user is a participant of, this includes potentially
+// both access group registered by the user, and access groups that the user is a member of.
 func (bav *UtxoView) GetAllUserGroupChatThreads(userAccessGroupOwnerPublicKey PublicKey) (
 	_groupChatThreads []*AccessGroupId, _err error) {
 
+	// We will fetch all access groups that the user registered, and all access groups that the user is a member of.
+	// We will then filter out the access groups for which there is no existing group chat thread existence entry.
 	accessGroupIdsOwned, accessGroupIdsMember, err := bav.GetAllAccessGroupIdsForUser(userAccessGroupOwnerPublicKey.ToBytes())
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetAllUserGroupChatThreads: Problem getting all "+
@@ -279,11 +318,13 @@ func (bav *UtxoView) GetAllUserGroupChatThreads(userAccessGroupOwnerPublicKey Pu
 	return groupChatsFound, nil
 }
 
+// setGroupChatThreadExistence sets the GroupChatThreadExistence entry for the given groupKey AccessGroupId.
 func (bav *UtxoView) setGroupChatThreadIndex(groupKey AccessGroupId, existence GroupChatThreadExistence) {
 	existenceCopy := existence
 	bav.GroupChatThreadIndex[groupKey] = &existenceCopy
 }
 
+// deleteGroupChatThreadExistence deletes the GroupChatThreadExistence entry for the given groupKey AccessGroupId.
 func (bav *UtxoView) deleteGroupChatThreadIndex(groupKey AccessGroupId) {
 	existence := MakeGroupChatThreadExistence()
 	existence.isDeleted = true
@@ -294,17 +335,22 @@ func (bav *UtxoView) deleteGroupChatThreadIndex(groupKey AccessGroupId) {
 // DmMessagesIndex
 // ==================================================================
 
+// getDmMessagesIndex returns the DmMessagesIndex entry for the given DmMessageKey.
 func (bav *UtxoView) getDmMessagesIndex(dmMessageKey DmMessageKey) (*NewMessageEntry, error) {
+	// Fetch the DmMessagesIndex entry from the UtxoView.
 	mapValue, existsMapValue := bav.DmMessagesIndex[dmMessageKey]
 	if existsMapValue {
 		return mapValue, nil
 	}
 
+	// If the DmMessagesIndex entry does not exist in the UtxoView, fetch it from the DB.
 	dbAdapter := bav.GetDbAdapter()
 	dbMessageEntry, err := dbAdapter.GetDmMessageEntry(dmMessageKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getDmMessagesIndex: ")
 	}
+
+	// If the DmMessagesIndex entry exists, update the UtxoView with the entry.
 	if dbMessageEntry != nil {
 		if err := bav.setDmMessagesIndex(dbMessageEntry); err != nil {
 			return nil, errors.Wrapf(err, "getDmMessagesIndex: ")
@@ -313,17 +359,21 @@ func (bav *UtxoView) getDmMessagesIndex(dmMessageKey DmMessageKey) (*NewMessageE
 	return dbMessageEntry, nil
 }
 
+// setDmMessagesIndex sets the DmMessagesIndex entry for the given NewMessageEntry.
 func (bav *UtxoView) setDmMessagesIndex(messageEntry *NewMessageEntry) error {
+	// Sanity check that the message entry is not nil.
 	if messageEntry == nil {
 		return fmt.Errorf("setDmMessagesIndex: called with nil messageEntry")
 	}
 
+	// Sanity check that the message entry fields are not nil in the DM message.
 	if messageEntry.SenderAccessGroupOwnerPublicKey == nil || messageEntry.SenderAccessGroupKeyName == nil ||
 		messageEntry.RecipientAccessGroupOwnerPublicKey == nil || messageEntry.RecipientAccessGroupKeyName == nil {
 
 		return fmt.Errorf("setDmMessagesIndex: called with nil sender or recipient data")
 	}
 
+	// Set the DmMessagesIndex entry in the UtxoView.
 	dmMessageKey := MakeDmMessageKeyForSenderRecipient(*messageEntry.SenderAccessGroupOwnerPublicKey, *messageEntry.SenderAccessGroupKeyName,
 		*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName, messageEntry.TimestampNanos)
 
@@ -331,6 +381,7 @@ func (bav *UtxoView) setDmMessagesIndex(messageEntry *NewMessageEntry) error {
 	return nil
 }
 
+// deleteDmMessagesIndex deletes the DmMessagesIndex entry for the given DmMessageKey.
 func (bav *UtxoView) deleteDmMessagesIndex(messageEntry *NewMessageEntry) error {
 
 	// Create a tombstone entry.
@@ -350,25 +401,32 @@ func (bav *UtxoView) deleteDmMessagesIndex(messageEntry *NewMessageEntry) error 
 // DmThreadIndex
 // ==================================================================
 
+// getDmThreadIndex returns the DmThreadExistence entry for the given DmThreadKey.
 func (bav *UtxoView) getDmThreadExistence(dmThreadKey DmThreadKey) (*DmThreadExistence, error) {
+	// Fetch the DmThreadExistence entry from the UtxoView.
 	mapValue, existsMapValue := bav.DmThreadIndex[dmThreadKey]
 	if existsMapValue {
 		return mapValue, nil
 	}
 
+	// If the DmThreadExistence entry does not exist in the UtxoView, fetch it from the DB.
 	dbAdapter := bav.GetDbAdapter()
 	dbThreadExists, err := dbAdapter.CheckDmThreadExistence(dmThreadKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getDmThreadExistence: ")
 	}
 
+	// If the DmThreadExistence entry exists, update the UtxoView with the entry.
 	if dbThreadExists != nil {
 		bav.DmThreadIndex[dmThreadKey] = dbThreadExists
 	}
 	return dbThreadExists, nil
 }
 
+// GetAllUserDmThreads returns all the DM threads that the user is a part of. This is done by looking up all of the
+// DM threads that the user has in the db in DmThreadIndex.
 func (bav *UtxoView) GetAllUserDmThreads(userAccessGroupOwnerPublicKey PublicKey) (_dmThreads []*DmThreadKey, _err error) {
+	// First, get all the DM threads that the user is a part of from db.
 	dbAdapter := bav.GetDbAdapter()
 	dmThreads, err := dbAdapter.GetAllUserDmThreads(userAccessGroupOwnerPublicKey)
 	if err != nil {
@@ -376,27 +434,30 @@ func (bav *UtxoView) GetAllUserDmThreads(userAccessGroupOwnerPublicKey PublicKey
 			"for user: %v", userAccessGroupOwnerPublicKey)
 	}
 
-	// Get UtxoView entries
+	// Add all the db DM threads to a map so we can later easily compare them to the DM threads in the UtxoView.
 	dmThreadKeyMap := make(map[DmThreadKey]struct{})
 	for _, dmThreadKey := range dmThreads {
 		dmThreadKeyMap[*dmThreadKey] = struct{}{}
 	}
 
-	// Iterate over UtxoView mappings
-	for dmThreadKeyIter, dmThreadExistence := range bav.DmThreadIndex {
+	// Iterate over DmThreadIndex mappings. We will eliminate any mappings that are deleted in the DmThreadIndex, and
+	// add any mappings that are not in the db but are in the UtxoView.
+	for dmThreadKeyIter, dmThreadExistenceIter := range bav.DmThreadIndex {
 		if !bytes.Equal(dmThreadKeyIter.userGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()) {
 			continue
 		}
 
 		dmThreadKey := dmThreadKeyIter
-		if dmThreadExistence.isDeleted {
+		// If the mapping is deleted, remove it from the map.
+		if dmThreadExistenceIter.isDeleted {
 			delete(dmThreadKeyMap, dmThreadKey)
 			continue
 		}
+		// If the mapping is not in the db, add it to the map.
 		dmThreadKeyMap[dmThreadKey] = struct{}{}
 	}
 
-	// Convert map to slice
+	// Convert the dmThreadKeys, now final, map to a slice
 	dmThreadKeys := []*DmThreadKey{}
 	for dmThreadKey := range dmThreadKeyMap {
 		dmThreadKeyCopy := dmThreadKey
@@ -406,6 +467,16 @@ func (bav *UtxoView) GetAllUserDmThreads(userAccessGroupOwnerPublicKey PublicKey
 	return dmThreadKeys, nil
 }
 
+// GetPaginatedMessageEntriesForDmThread returns a list of paginated message entries for a given dm thread. The following
+// constraints are applied:
+// (1.) The startingTimestamp is the largest timestamp that we want to include in the results
+// (2.) Fetch at most maxMessagesToFetch messages.
+// (3.) _messageEntries are sorted by timestamp in descending order. That is, the most recent message is at index [0].
+//
+// In other words, the returned _messageEntries will follow these constraints:
+// 1. _messageEntries[0].TimestampNanos <= startingMaxTimestamp
+// 2. len(_messageEntries) <= maxMessagesToFetch
+// 3. _messageEntries[i].TimestampNanos > _messageEntries[i+1].TimestampNanos
 func (bav *UtxoView) GetPaginatedMessageEntriesForDmThread(dmThread DmThreadKey, startingTimestamp uint64,
 	maxMessagesToFetch uint64) (_messageEntries []*NewMessageEntry, _err error) {
 
@@ -413,6 +484,12 @@ func (bav *UtxoView) GetPaginatedMessageEntriesForDmThread(dmThread DmThreadKey,
 		maxMessagesToFetch, MaxDmMessageRecursionDepth)
 }
 
+// _getPaginatedMessageEntriesForDmThreadRecursionSafe is a helper function for GetPaginatedMessageEntriesForDmThread. It
+// adds a recursion depth parameter to prevent infinite recursion. This paginated fetch will first fetch entries from the
+// db and then combine them with the in-memory map of group chat message entries. If the in-memory map indicates that some
+// db entries were deleted in this view, we might need to fetch more entries from the db to fill in the gaps.
+// This is where we will make a recursive call to this function. The maxDepth parameter makes sure we don't recurse forever
+// in case there is a bug in the code (though there isn't one).
 func (bav *UtxoView) _getPaginatedMessageEntriesForDmThreadRecursionSafe(dmThread DmThreadKey, startingTimestamp uint64,
 	maxMessagesToFetch uint64, maxDepth uint32) (_messageEntries []*NewMessageEntry, _err error) {
 
@@ -490,6 +567,7 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForDmThreadRecursionSafe(dmThrea
 		filteredUtxoViewMessages[dmMessageKey] = &messageEntry
 	}
 
+	// Now that we have all the messages db and utxoView, we need to combine them and sort them by timestamp.
 	finalMessageEntries := []*NewMessageEntry{}
 	for messageKeyIter, messageEntryIter := range existingMessagesMap {
 		copyMessageEntry := *messageEntryIter
@@ -542,11 +620,13 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForDmThreadRecursionSafe(dmThrea
 	return finalMessageEntries, nil
 }
 
+// setDmThreadIndex sets the DmThreadExistence index for a given DmThreadKey key, and DmThreadExistence entry.
 func (bav *UtxoView) setDmThreadIndex(dmThreadKey DmThreadKey, existence DmThreadExistence) {
 	existenceCopy := existence
 	bav.DmThreadIndex[dmThreadKey] = &existenceCopy
 }
 
+// setDmThreadIndex deletes from the DmThreadExistence index for a given DmThreadKey.
 func (bav *UtxoView) deleteDmThreadIndex(dmThreadKey DmThreadKey) {
 	existence := MakeDmThreadExistence()
 	existence.isDeleted = true
@@ -554,12 +634,68 @@ func (bav *UtxoView) deleteDmThreadIndex(dmThreadKey DmThreadKey) {
 }
 
 // ==================================================================
-// TxnTypeNewMessage connect/disconnect logic.
+// NewMessage transaction connect/disconnect logic.
 // ==================================================================
 
+// _connectNewMessage is used to connect a NewMessage transaction to the UtxoView. Most common uses of this transaction
+// include sending dm messages between two users, or group chat messages in a multi-party chat. The NewMessage transaction
+// also allows for updating existing messages in both dm threads and group chat threads. Moreover, NewMessage transaction
+// can be used to accept invitation requests to participate in a dm thread or group chat thread.
+//
+// Relationally, all messages sent via the NewMessage transaction are identified as a pair of two AccessGroupId's, along
+// with an uint64 unix timestamp in nanoseconds TimestampNanos. The first AccessGroupId identifies the sender of the message,
+// and the second AccessGroupId identifies the recipient of the message, i.e. we have the following basic index structure:
+//
+//	NewMessageEntry indexing:
+//  	<SenderAccessGroupOwnerPublicKey, SenderAccessGroupKeyName,
+//  	RecipientAccessGroupOwnerPublicKey, RecipientAccessGroupKeyName, TimestampNanos> -> NewMessageEntry
+//
+// Depending on the type of the thread, this message will be indexed in different ways. For example, if the thread is a
+// dm thread, then we will store a single NewMessageEntry for each message sent, and two DmThreadExistence entries for
+// each thread. The NewMessageEntry will be stored in the DmMessagesIndex index. The index deterministically orders the
+// sender and recipient AccessGroupIds from the NewMessageEntry index by sorting them. And the DmThreadExistence entries
+// allow for finding the sorted order of these AccessGroupIds. The idea is to first lookup the DmThreadExistence entry for
+// the thread, and then order the AccessGroupIds to enumerate the NewMessageEntries, that we can for example sort by timestamp.
+// With this in mind, we use the following index structure for dm messages:
+// 	DmMessagesIndex:
+//  	<MinorGroupOwnerPublicKey, MinorGroupKeyName,
+// 		MajorGroupOwnerPublicKey, MajorGroupKeyName, TimestampNanos> -> NewMessageEntry
+// 	DmThreadIndex:
+//  	<UserGroupOwnerPublicKey, UserGroupKeyName,
+//  	PartyUserGroupOwnerPublicKey, PartyUserGroupKeyName> -> DmThreadExistence
+//
+// The Minor, Major pair refers to a lexicographically smaller and greater byte encodings of the <AccessGroupOwnerPublicKey,
+// AccessGroupKeyName> pair from (User, PartyUser) or (PartyUser, User).
+//
+// If the message type is a group chat message, then we will store a single NewMessageEntry for each message sent, and a
+// single GroupChatThreadExistence entry for each group chat. The NewMessageEntry will be stored in the GroupChatMessagesIndex,
+// and the DmThreadExistence entry will be stored in the GroupChatThreadIndex. Similarly to dm messages, the idea
+// is to first lookup the GroupChatThreadExistence entry for the thread, and enumerate messages in the GroupChatMessagesIndex.
+// We then use the following index structure for group chat messages:
+// 	GroupChatMessagesIndex:
+//  	<AccessGroupOwnerPublicKey, AccessGroupKeyName, TimestampNanos> -> NewMessageEntry
+// 	GroupChatThreadIndex:
+//  	<AccessGroupOwnerPublicKey, AccessGroupKeyName> -> GroupChatThreadExistence
+//
+// An interesting sub-problem arises from the choice of indexing messages by TimestampNanos, rather than by a logical index such as
+// an incrementing counter. The question being, how do we prevent TimestampNanos spoofing? The answer is that we don't. We
+// assume that the client will be responsible for setting the TimestampNanos to a reasonable value, and that the client
+// will not attempt to spoof TimestampNanos. Transactions are always sequentially ordered in the blocks, so it's possible
+// to detect whether some user is attempting to overwrite a message thread history by using old timestamps. Such behavior
+// could potentially be "auto-banned" in larger group chats implementing fair use policy. If a user is attempting to
+// send messages to appear in the future with larger TimestampNanos values than the current unix timestamp, then we're
+// okay with that. Consider this to be a "deliver in the future" feature. The index structure of messages in both the
+// dm and group chat threads allows for an efficient enumeration of messages up until the current unix timestamp,
+// and the future messages can be discarded.
+// TODO: Add info about the NewMessage transaction being used to accept invitations to dm threads and group chats.
 func (bav *UtxoView) _connectNewMessage(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+
+	// Make sure access groups are live.
+	if blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
+		return 0, 0, nil, RuleErrorNewMessageBeforeDeSoAccessGroups
+	}
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeNewMessage {
@@ -568,25 +704,18 @@ func (bav *UtxoView) _connectNewMessage(
 	}
 	txMeta := txn.TxnMeta.(*NewMessageMetadata)
 
-	if blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
-		return 0, 0, nil, RuleErrorNewMessageBeforeDeSoAccessGroups
-	}
-
-	// Check the length of the EncryptedText
-	if uint64(len(txMeta.EncryptedText)) > bav.Params.MaxPrivateMessageLengthBytes {
+	// Check the length of the EncryptedText, we don't allow messages to have more bytes than MaxNewMessageLengthBytes.
+	if uint64(len(txMeta.EncryptedText)) > bav.Params.MaxNewMessageLengthBytes {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorNewMessageEncryptedTextLengthExceedsMax, "_connectNewMessage: "+
 				"EncryptedText length (%d) exceeds max length (%d)",
-			len(txMeta.EncryptedText), bav.Params.MaxPrivateMessageLengthBytes)
+			len(txMeta.EncryptedText), bav.Params.MaxNewMessageLengthBytes)
 	}
 
-	// Validate sender's access group.
-	if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
-		txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txMeta.SenderAccessGroupKeyName.ToBytes(), blockHeight); err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: "+
-			"SenderAccessGroupOwnerPublicKey and SenderAccessGroupKeyName are invalid")
-	}
-
+	// Verify that the sender of the message is the transactor. This constraint ensures authenticity of messages
+	// sent via the NewMessage transaction. Basically, all NewMessageEntries stored will be certified sent by the
+	// user specified as the message sender.
+	// TODO: Do we want to allow group chat owners to update messages of group chat members? E.g. spam messages can be deleted.
 	if !bytes.Equal(txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txn.PublicKey) {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorNewMessageMessageSenderDoesNotMatchTxnPublicKey, "_connectNewMessage: "+
@@ -595,15 +724,23 @@ func (bav *UtxoView) _connectNewMessage(
 			PkToString(txn.PublicKey, bav.Params))
 	}
 
-	// Validate recipient's access group.
+	// Validate that no message has a zero timestamp.
+	if txMeta.TimestampNanos == 0 {
+		return 0, 0, nil, RuleErrorNewMessageTimestampNanosCannotBeZero
+	}
+
+	// Validate sender's access group id, verifying that the access group exists based on the UtxoView.
+	if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
+		txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txMeta.SenderAccessGroupKeyName.ToBytes(), blockHeight); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: "+
+			"SenderAccessGroupOwnerPublicKey and SenderAccessGroupKeyName are invalid")
+	}
+
+	// Validate recipient's access group id, verifying that the access group exists based on the UtxoView.
 	if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 		txMeta.RecipientAccessGroupOwnerPublicKey.ToBytes(), txMeta.RecipientAccessGroupKeyName.ToBytes(), blockHeight); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: "+
 			"RecipientAccessGroupOwnerPublicKey and RecipientAccessGroupKeyName are invalid")
-	}
-
-	if txMeta.TimestampNanos == 0 {
-		return 0, 0, nil, RuleErrorNewMessageTimestampNanosCannotBeZero
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -699,7 +836,6 @@ func (bav *UtxoView) _disconnectNewMessage(
 	}
 	prevUtxoOp := utxoOpsForTxn[operationIndex]
 
-	// TODO: Add some sanity-check validation
 	txMeta := currentTxn.TxnMeta.(*NewMessageMetadata)
 
 	switch txMeta.NewMessageOperation {

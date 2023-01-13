@@ -377,7 +377,7 @@ type DBPrefixes struct {
 	// <groupOwnerPublicKey, groupKeyName> -> <GroupChatThreadExistence>
 	PrefixGroupChatThreadIndex []byte `prefix_id:"[67]" is_state:"true"`
 	// <minorGroupOwnerPublicKey, minorGroupKeyName, majorGroupOwnerPublicKey, majorGroupKeyName, timestamp> -> <MessageEntry>
-	PrefixDmMessageIndex []byte `prefix_id:"[68]" is_state:"true"`
+	PrefixDmMessagesIndex []byte `prefix_id:"[68]" is_state:"true"`
 	// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName, partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName>
 	//		-> <DmThreadExistence>
 	PrefixDmThreadIndex []byte `prefix_id:"[69]" is_state:"true"`
@@ -554,7 +554,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatThreadIndex) {
 		// prefix_id:"[67]"
 		return true, &GroupChatThreadExistence{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessageIndex) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessagesIndex) {
 		// prefix_id:"[68]"
 		return true, &NewMessageEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
@@ -1769,7 +1769,7 @@ func DBGetAllUserGroupEntries(handle *badger.DB, ownerPublicKey []byte) ([]*Mess
 
 // -------------------------------------------------------------------------------------
 // PrefixGroupChatMessagesIndex
-// <groupOwnerPublicKey, groupKeyName, timestamp> -> <MessageEntry>
+// <AccessGroupOwnerPublicKey, AccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
 // -------------------------------------------------------------------------------------
 
 // _dbSeekPrefixForGroupMemberAttributesIndex returns prefix to enumerate over the given member's attributes.
@@ -1927,7 +1927,7 @@ func DBDeleteGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key G
 
 // -------------------------------------------------------------------------------------
 // PrefixGroupChatThreadIndex
-// <groupOwnerPublicKey, groupKeyName> -> <GroupChatThreadExistence>
+// <AccessGroupOwnerPublicKey, AccessGroupKeyName> -> <GroupChatThreadExistence>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForGroupChatThreadIndex(key AccessGroupId) []byte {
@@ -2016,12 +2016,13 @@ func DBDeleteGroupChatThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, groupI
 }
 
 // -------------------------------------------------------------------------------------
-// PrefixDmMessageIndex
-// <minorGroupOwnerPublicKey, minorGroupKeyName, majorGroupOwnerPublicKey, majorGroupKeyName, timestamp> -> <MessageEntry>
+// PrefixDmMessagesIndex
+// <MinorGroupOwnerPublicKey, MinorGroupKeyName,
+//	MajorGroupOwnerPublicKey, MajorGroupKeyName, TimestampNanos> -> <NewMessageEntry>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForPrefixDmMessageIndex(key DmMessageKey) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessageIndex...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessagesIndex...)
 	prefixCopy = append(prefixCopy, key.MinorGroupOwnerPublicKey.ToBytes()...)
 	prefixCopy = append(prefixCopy, key.MinorGroupKeyName.ToBytes()...)
 	prefixCopy = append(prefixCopy, key.MajorGroupOwnerPublicKey.ToBytes()...)
@@ -2032,7 +2033,7 @@ func _dbKeyForPrefixDmMessageIndex(key DmMessageKey) []byte {
 
 func _dbSeekPrefixForPrefixDmMessageIndex(minorGroupOwnerPublicKey PublicKey, minorGroupKeyName GroupKeyName,
 	majorGroupOwnerPublicKey PublicKey, majorGroupKeyName GroupKeyName) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessageIndex...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessagesIndex...)
 	prefixCopy = append(prefixCopy, minorGroupOwnerPublicKey.ToBytes()...)
 	prefixCopy = append(prefixCopy, minorGroupKeyName.ToBytes()...)
 	prefixCopy = append(prefixCopy, majorGroupOwnerPublicKey.ToBytes()...)

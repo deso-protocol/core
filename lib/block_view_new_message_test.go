@@ -230,7 +230,7 @@ func TestNewMessage(t *testing.T) {
 		"another user from (m1, baseGroup) to (m1, groupName1)", m1Priv, m1PubBytes, tv9MessageEntry, NewMessageTypeDm,
 		NewMessageOperationCreate, RuleErrorNewMessageDmSenderAndRecipientCannotBeTheSame)
 	tooLongMessage := []byte{}
-	for ii := 0; ii < int(DeSoTestnetParams.MaxPrivateMessageLengthBytes)+10; ii++ {
+	for ii := 0; ii < int(DeSoTestnetParams.MaxNewMessageLengthBytes)+10; ii++ {
 		tooLongMessage = append(tooLongMessage, byte(10))
 	}
 	tv10MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
