@@ -107,6 +107,7 @@ const (
 	EncoderTypeAccessGroupMemberEnumerationEntry
 	EncoderTypeDmThreadExistence
 	EncoderTypeGroupChatThreadExistence
+	EncoderTypeThreadAttributesEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -220,6 +221,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &DmThreadExistence{}
 	case EncoderTypeGroupChatThreadExistence:
 		return &GroupChatThreadExistence{}
+	case EncoderTypeThreadAttributesEntry:
+		return &ThreadAttributesEntry{}
 	}
 
 	// Txindex encoder types
@@ -845,6 +848,8 @@ type UtxoOperation struct {
 	PrevDmThreadExistence *DmThreadExistence
 	// PrevGroupChatThreadExistence is used for disconnecting Group chat threads.
 	PrevGroupChatThreadExistence *GroupChatThreadExistence
+	// PrevThreadAttributesEntry is used for disconnecting thread attributes.
+	PrevThreadAttributesEntry *ThreadAttributesEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1151,6 +1156,9 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// PrevGroupChatThreadExistence
 		data = append(data, EncodeToBytes(blockHeight, op.PrevGroupChatThreadExistence, skipMetadata...)...)
+
+		// PrevThreadAttributesEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevThreadAttributesEntry, skipMetadata...)...)
 	}
 
 	return data
@@ -1737,6 +1745,14 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		} else if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGroupChatThreadExistence")
 		}
+
+		// PrevThreadAttributesEntry
+		threadAttributesEntry := &ThreadAttributesEntry{}
+		if exist, err := DecodeFromBytes(threadAttributesEntry, rr); exist && err == nil {
+			op.PrevThreadAttributesEntry = threadAttributesEntry
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevThreadAttributesEntry")
+		}
 	}
 
 	return nil
@@ -2183,8 +2199,8 @@ func MakeDmMessageKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName
 }
 
 func MakeDmMessageKeyFromDmThreadKey(dmThreadKey DmThreadKey) DmMessageKey {
-	return MakeDmMessageKeyForSenderRecipient(dmThreadKey.userGroupOwnerPublicKey, dmThreadKey.userGroupKeyName,
-		dmThreadKey.partyGroupOwnerPublicKey, dmThreadKey.partyGroupKeyName, 0)
+	return MakeDmMessageKeyForSenderRecipient(dmThreadKey.UserAccessGroupOwnerPublicKey, dmThreadKey.UserAccessGroupKeyName,
+		dmThreadKey.PartyAccessGroupOwnerPublicKey, dmThreadKey.PartyAccessGroupKeyName, 0)
 }
 
 func MakeDmMessageKeyForSenderRecipient(senderAccessGroupOwnerPublicKey PublicKey, senderAccessGroupKeyName GroupKeyName,
@@ -2197,19 +2213,19 @@ func MakeDmMessageKeyForSenderRecipient(senderAccessGroupOwnerPublicKey PublicKe
 }
 
 type DmThreadKey struct {
-	userGroupOwnerPublicKey  PublicKey
-	userGroupKeyName         GroupKeyName
-	partyGroupOwnerPublicKey PublicKey
-	partyGroupKeyName        GroupKeyName
+	UserAccessGroupOwnerPublicKey  PublicKey
+	UserAccessGroupKeyName         GroupKeyName
+	PartyAccessGroupOwnerPublicKey PublicKey
+	PartyAccessGroupKeyName        GroupKeyName
 }
 
 func MakeDmThreadKey(userGroupOwnerPublicKey PublicKey, userGroupKeyName GroupKeyName,
 	partyGroupOwnerPublicKey PublicKey, partyGroupKeyName GroupKeyName) DmThreadKey {
 	return DmThreadKey{
-		userGroupOwnerPublicKey:  userGroupOwnerPublicKey,
-		userGroupKeyName:         userGroupKeyName,
-		partyGroupOwnerPublicKey: partyGroupOwnerPublicKey,
-		partyGroupKeyName:        partyGroupKeyName,
+		UserAccessGroupOwnerPublicKey:  userGroupOwnerPublicKey,
+		UserAccessGroupKeyName:         userGroupKeyName,
+		PartyAccessGroupOwnerPublicKey: partyGroupOwnerPublicKey,
+		PartyAccessGroupKeyName:        partyGroupKeyName,
 	}
 }
 
@@ -2616,6 +2632,56 @@ func (entry *AccessGroupEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (entry *AccessGroupEntry) GetEncoderType() EncoderType {
 	return EncoderTypeAccessGroupEntry
+}
+
+type ThreadAttributesKey struct {
+	UserAccessGroupOwnerPublicKey  PublicKey
+	UserAccessGroupKeyName         GroupKeyName
+	PartyAccessGroupOwnerPublicKey PublicKey
+	PartyAccessGroupKeyName        GroupKeyName
+	NewMessageType
+}
+
+func MakeThreadAttributesKey(userAccessGroupOwnerPublicKey PublicKey, userAccessGroupKeyName GroupKeyName,
+	partyAccessGroupOwnerPublicKey PublicKey, partyAccessGroupKeyName GroupKeyName, newMessageType NewMessageType) *ThreadAttributesKey {
+	return &ThreadAttributesKey{
+		UserAccessGroupOwnerPublicKey:  userAccessGroupOwnerPublicKey,
+		UserAccessGroupKeyName:         userAccessGroupKeyName,
+		PartyAccessGroupOwnerPublicKey: partyAccessGroupOwnerPublicKey,
+		PartyAccessGroupKeyName:        partyAccessGroupKeyName,
+		NewMessageType:                 newMessageType,
+	}
+}
+
+type ThreadAttributesEntry struct {
+	AttributeData map[string][]byte
+
+	isDeleted bool
+}
+
+func (entry *ThreadAttributesEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeExtraData(entry.AttributeData)...)
+	return data
+}
+
+func (entry *ThreadAttributesEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	attributeData, err := DecodeExtraData(rr)
+	if err != nil {
+		return errors.Wrapf(err, "ThreadAttributesEntry.RawDecodeWithoutMetadata: Problem reading "+
+			"AttributeData")
+	}
+	entry.AttributeData = attributeData
+
+	return nil
+}
+
+func (entry *ThreadAttributesEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (entry *ThreadAttributesEntry) GetEncoderType() EncoderType {
+	return EncoderTypeThreadAttributesEntry
 }
 
 // AccessGroupEntry is used to update access keys for a user, this was added in

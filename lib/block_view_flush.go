@@ -1282,6 +1282,40 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 		}
 		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d dm threads, put %d dm threads", numDeleted, numPut)
 	}
+	// Flush thread attribute entries to db.
+	// Go through all entries in ThreadAttributeIndex and add them to the DB.
+	{
+		numDeleted := 0
+		numPut := 0
+		for threadAttributeKeyIter, threadAttributeEntryIter := range bav.ThreadAttributes {
+			threadAttributeKey := threadAttributeKeyIter
+			if threadAttributeEntryIter == nil {
+				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
+					"threadAttributeKey: %v, is nil", threadAttributeKey)
+			}
+			threadAttributeEntry := *threadAttributeEntryIter
+
+			// Delete the existing mapping in the DB for this map key, this will be re-added
+			// later if isDeleted=false.
+			if err := DBDeleteThreadAttributesEntryWithTxn(txn, bav.Snapshot, threadAttributeKey); err != nil {
+				return errors.Wrapf(
+					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
+						"for ThreadAttributeKey: %v: ", &threadAttributeKey)
+			}
+
+			if threadAttributeEntry.isDeleted {
+				numDeleted++
+			} else {
+				if err := DBPutThreadAttributesEntryWithTxn(txn, bav.Snapshot, blockHeight, threadAttributeKey, &threadAttributeEntry); err != nil {
+					return errors.Wrapf(
+						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting thread attribute entry "+
+							"into thread attribute index with key %v and value %v", threadAttributeKey, threadAttributeEntry)
+				}
+				numPut++
+			}
+		}
+		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d thread attributes, put %d thread attributes", numDeleted, numPut)
+	}
 
 	return nil
 }

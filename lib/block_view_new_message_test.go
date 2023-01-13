@@ -886,10 +886,10 @@ func _verifyEqualNewMessage(t *testing.T, newMessageEntry *NewMessageEntry, data
 
 func _createDmThreadKey(userAccessGroupId AccessGroupId, partyAccessGroupId AccessGroupId) DmThreadKey {
 	return DmThreadKey{
-		userGroupOwnerPublicKey:  userAccessGroupId.AccessGroupOwnerPublicKey,
-		userGroupKeyName:         userAccessGroupId.AccessGroupKeyName,
-		partyGroupOwnerPublicKey: partyAccessGroupId.AccessGroupOwnerPublicKey,
-		partyGroupKeyName:        partyAccessGroupId.AccessGroupKeyName,
+		UserAccessGroupOwnerPublicKey:  userAccessGroupId.AccessGroupOwnerPublicKey,
+		UserAccessGroupKeyName:         userAccessGroupId.AccessGroupKeyName,
+		PartyAccessGroupOwnerPublicKey: partyAccessGroupId.AccessGroupOwnerPublicKey,
+		PartyAccessGroupKeyName:        partyAccessGroupId.AccessGroupKeyName,
 	}
 }
 
@@ -926,15 +926,15 @@ func _verifyDmThreadKeys(t *testing.T, dmThreadKeys []*DmThreadKey, userAccessGr
 	require.Equal(len(expectedDmThreadKeys), len(dmThreadKeys))
 	expectedDmThreadKeysMap := make(map[DmThreadKey]struct{})
 	for _, dmThreadKey := range expectedDmThreadKeys {
-		if bytes.Equal(dmThreadKey.userGroupOwnerPublicKey.ToBytes(), dmThreadKey.partyGroupOwnerPublicKey.ToBytes()) {
-			t.Fatalf("userGroupOwnerPublicKey and partyGroupOwnerPublicKey should not be equal in these tests.")
+		if bytes.Equal(dmThreadKey.UserAccessGroupOwnerPublicKey.ToBytes(), dmThreadKey.PartyAccessGroupOwnerPublicKey.ToBytes()) {
+			t.Fatalf("UserAccessGroupOwnerPublicKey and PartyAccessGroupOwnerPublicKey should not be equal in these tests.")
 		}
-		if bytes.Equal(dmThreadKey.partyGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()) {
+		if bytes.Equal(dmThreadKey.PartyAccessGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()) {
 			swapDmThreadKey := DmThreadKey{
-				userGroupOwnerPublicKey:  dmThreadKey.partyGroupOwnerPublicKey,
-				userGroupKeyName:         dmThreadKey.partyGroupKeyName,
-				partyGroupOwnerPublicKey: dmThreadKey.userGroupOwnerPublicKey,
-				partyGroupKeyName:        dmThreadKey.userGroupKeyName,
+				UserAccessGroupOwnerPublicKey:  dmThreadKey.PartyAccessGroupOwnerPublicKey,
+				UserAccessGroupKeyName:         dmThreadKey.PartyAccessGroupKeyName,
+				PartyAccessGroupOwnerPublicKey: dmThreadKey.UserAccessGroupOwnerPublicKey,
+				PartyAccessGroupKeyName:        dmThreadKey.UserAccessGroupKeyName,
 			}
 			expectedDmThreadKeysMap[swapDmThreadKey] = struct{}{}
 		} else {
@@ -952,7 +952,7 @@ func _verifyDmThreadKeys(t *testing.T, dmThreadKeys []*DmThreadKey, userAccessGr
 
 	// Make sure expectedDmThreadKeys is identical to dmThreadKeys.
 	for _, dmThreadKey := range dmThreadKeys {
-		require.Equal(true, bytes.Equal(dmThreadKey.userGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()))
+		require.Equal(true, bytes.Equal(dmThreadKey.UserAccessGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()))
 		_, exists := expectedDmThreadKeysMap[*dmThreadKey]
 		require.Equal(true, exists)
 	}

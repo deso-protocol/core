@@ -384,3 +384,17 @@ func (adapter *DbAdapter) GetPaginatedMessageEntriesForGroupChatThread(groupChat
 			groupChatThread, startingTimestamp, maxMessagesToFetch)
 	}
 }
+
+func (adapter *DbAdapter) GetThreadAttributesEntry(threadKey ThreadAttributesKey) (*ThreadAttributesEntry, error) {
+
+	if adapter.postgresDb != nil {
+		pgThreadAttributesEntry := adapter.postgresDb.GetThreadAttributesEntry(threadKey)
+		if pgThreadAttributesEntry == nil {
+			return nil, nil
+		}
+		_, threadAttributesEntry := pgThreadAttributesEntry.ToThreadAttributesKeyAndThreadAttributesEntry()
+		return threadAttributesEntry, nil
+	} else {
+		return DBGetThreadAttributesEntry(adapter.badgerDb, adapter.snapshot, threadKey)
+	}
+}

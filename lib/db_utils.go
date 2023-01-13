@@ -381,8 +381,10 @@ type DBPrefixes struct {
 	// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName, partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName>
 	//		-> <DmThreadExistence>
 	PrefixDmThreadIndex []byte `prefix_id:"[69]" is_state:"true"`
-
-	// NEXT_TAG: 69
+	// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName,
+	//	partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName, newMessageType byte> -> <ThreadAttributesEntry>
+	PrefixThreadAttributesIndex []byte `prefix_id:"[70]" is_state:"true"`
+	// NEXT_TAG: 70
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -560,6 +562,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
 		// prefix_id:"[69]"
 		return true, &DmThreadExistence{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixThreadAttributesIndex) {
+		// prefix_id:"[70]"
+		return true, &ThreadAttributesEntry{}
 	}
 
 	return true, nil
@@ -2185,10 +2190,10 @@ func DBDeleteDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessag
 
 func _dbKeyForPrefixDmThreadIndex(key DmThreadKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixDmThreadIndex...)
-	prefixCopy = append(prefixCopy, key.userGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.userGroupKeyName.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.partyGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.partyGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.UserAccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.UserAccessGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.PartyAccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.PartyAccessGroupKeyName.ToBytes()...)
 	return prefixCopy
 }
 
@@ -2273,7 +2278,7 @@ func DBGetAllUserDmThreadsByAccessGroupId(db *badger.DB, snap *Snapshot,
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllUserDmThreads: Problem getting all user dm threads with "+
-			"userGroupOwnerPublicKey: %v, userGroupKeyName: %v", userGroupOwnerPublicKey, userGroupKeyName)
+			"UserAccessGroupOwnerPublicKey: %v, UserAccessGroupKeyName: %v", userGroupOwnerPublicKey, userGroupKeyName)
 	}
 	return ret, nil
 }
@@ -2317,7 +2322,7 @@ func DBGetAllUserDmThreads(db *badger.DB, snap *Snapshot, userGroupOwnerPublicKe
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllUserDmThreads: Problem getting all user dm threads with "+
-			"userGroupOwnerPublicKey: %v", userGroupOwnerPublicKey)
+			"UserAccessGroupOwnerPublicKey: %v", userGroupOwnerPublicKey)
 	}
 	return ret, nil
 }
@@ -2382,6 +2387,97 @@ func DBDeleteDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, dmThreadKey D
 	prefix := _dbKeyForPrefixDmThreadIndex(dmThreadKey)
 	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
 		return errors.Wrapf(err, "DBDeleteDmThreadIndex: Problem deleting dm thread index with key: %v", dmThreadKey)
+	}
+
+	return nil
+}
+
+// -------------------------------------------------------------------------------------
+// ThreadAttributesIndex
+// This prefix stores the thread attributes for a given thread. The key structure is the same as the
+// ThreadAttributesKey structure, i.e.:
+// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
+//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName, NewMessageType byte> -> <ThreadAttributesEntry>
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForPrefixThreadAttributesIndex(key ThreadAttributesKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixThreadAttributesIndex...)
+	prefixCopy = append(prefixCopy, key.UserAccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.UserAccessGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.PartyAccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.PartyAccessGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, byte(key.NewMessageType))
+	return prefixCopy
+}
+
+func DBGetThreadAttributesEntry(db *badger.DB, snap *Snapshot, key ThreadAttributesKey) (*ThreadAttributesEntry, error) {
+	var ret *ThreadAttributesEntry
+	var err error
+	err = db.View(func(txn *badger.Txn) error {
+		ret, err = DBGetThreadAttributesEntryWithTxn(txn, snap, key)
+		return err
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetThreadAttributesEntry: Problem getting thread attributes entry "+
+			"with key: %v", key)
+	}
+	return ret, nil
+}
+
+func DBGetThreadAttributesEntryWithTxn(txn *badger.Txn, snap *Snapshot, key ThreadAttributesKey) (*ThreadAttributesEntry, error) {
+
+	prefix := _dbKeyForPrefixThreadAttributesIndex(key)
+	threadAttributesEntryBytes, err := DBGetWithTxn(txn, snap, prefix)
+	if err == badger.ErrKeyNotFound {
+		return nil, nil
+	} else if err != nil {
+		return nil, errors.Wrapf(err, "DBGetThreadAttributesEntryWithTxn: Problem getting thread attributes "+
+			"entry with key: %v", key)
+	}
+
+	threadAttributesEntry := &ThreadAttributesEntry{}
+	rr := bytes.NewReader(threadAttributesEntryBytes)
+	if exists, err := DecodeFromBytes(threadAttributesEntry, rr); !exists || err != nil {
+		return nil, errors.Wrapf(err, "DBGetThreadAttributesEntryWithTxn: Problem decoding thread attributes "+
+			"entry with key: %v", key)
+	}
+	return threadAttributesEntry, nil
+}
+
+func DBPutThreadAttributesEntry(db *badger.DB, snap *Snapshot, blockHeight uint64, key ThreadAttributesKey, threadAttributesEntry *ThreadAttributesEntry) error {
+	err := db.Update(func(txn *badger.Txn) error {
+		return DBPutThreadAttributesEntryWithTxn(txn, snap, blockHeight, key, threadAttributesEntry)
+	})
+	if err != nil {
+		return errors.Wrapf(err, "DBPutThreadAttributesEntry: Problem putting thread attributes entry with key: %v", key)
+	}
+	return nil
+}
+
+func DBPutThreadAttributesEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, key ThreadAttributesKey, threadAttributesEntry *ThreadAttributesEntry) error {
+	prefix := _dbKeyForPrefixThreadAttributesIndex(key)
+	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, threadAttributesEntry)); err != nil {
+		return errors.Wrapf(err, "DBPutThreadAttributesEntryWithTxn: Problem putting thread attributes entry with key: %v", key)
+	}
+	return nil
+}
+
+func DBDeleteThreadAttributesEntry(db *badger.DB, snap *Snapshot, key ThreadAttributesKey) error {
+	err := db.Update(func(txn *badger.Txn) error {
+		return DBDeleteThreadAttributesEntryWithTxn(txn, snap, key)
+	})
+	if err != nil {
+		return errors.Wrapf(err, "DBDeleteThreadAttributesEntry: Problem deleting thread attributes entry with"+
+			" key: %v", key)
+	}
+	return nil
+}
+
+func DBDeleteThreadAttributesEntryWithTxn(txn *badger.Txn, snap *Snapshot, key ThreadAttributesKey) error {
+	prefix := _dbKeyForPrefixThreadAttributesIndex(key)
+	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
+		return errors.Wrapf(err, "DBDeleteThreadAttributesEntryWithTxn: Problem deleting thread attributes entry "+
+			"with key: %v", key)
 	}
 
 	return nil

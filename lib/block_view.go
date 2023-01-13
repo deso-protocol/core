@@ -64,6 +64,9 @@ type UtxoView struct {
 	GroupChatThreadIndex map[AccessGroupId]*GroupChatThreadExistence
 	DmThreadIndex        map[DmThreadKey]*DmThreadExistence
 
+	// Message Thread Attributes.
+	ThreadAttributes map[ThreadAttributesKey]*ThreadAttributesEntry
+
 	// Follow data
 	FollowKeyToFollowEntry map[FollowKey]*FollowEntry
 
@@ -156,6 +159,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Group chat and Dm threads.
 	bav.GroupChatThreadIndex = make(map[AccessGroupId]*GroupChatThreadExistence)
 	bav.DmThreadIndex = make(map[DmThreadKey]*DmThreadExistence)
+
+	// Message thread attributes.
+	bav.ThreadAttributes = make(map[ThreadAttributesKey]*ThreadAttributesEntry)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -327,6 +333,13 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for groupChatThreadKey, threadExistence := range bav.GroupChatThreadIndex {
 		newThreadExistence := *threadExistence
 		newView.GroupChatThreadIndex[groupChatThreadKey] = &newThreadExistence
+	}
+
+	// Copy thread attributes index
+	newView.ThreadAttributes = make(map[ThreadAttributesKey]*ThreadAttributesEntry)
+	for threadAttributesKey, threadAttributesEntry := range bav.ThreadAttributes {
+		newThreadAttributesEntry := *threadAttributesEntry
+		newView.ThreadAttributes[threadAttributesKey] = &newThreadAttributesEntry
 	}
 
 	// Copy the follow data

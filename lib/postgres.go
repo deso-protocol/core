@@ -1041,10 +1041,10 @@ type PGNewMessageDmThreadEntry struct {
 
 func (messageEntry *PGNewMessageDmThreadEntry) FromDmThreadKey(dmThreadKey *DmThreadKey) {
 	dmThreadKeyCopy := *dmThreadKey
-	messageEntry.UserAccessGroupOwnerPublicKey = &dmThreadKeyCopy.userGroupOwnerPublicKey
-	messageEntry.UserAccessGroupKeyName = &dmThreadKeyCopy.userGroupKeyName
-	messageEntry.PartyAccessGroupOwnerPublicKey = &dmThreadKeyCopy.partyGroupOwnerPublicKey
-	messageEntry.PartyAccessGroupKeyName = &dmThreadKeyCopy.partyGroupKeyName
+	messageEntry.UserAccessGroupOwnerPublicKey = &dmThreadKeyCopy.UserAccessGroupOwnerPublicKey
+	messageEntry.UserAccessGroupKeyName = &dmThreadKeyCopy.UserAccessGroupKeyName
+	messageEntry.PartyAccessGroupOwnerPublicKey = &dmThreadKeyCopy.PartyAccessGroupOwnerPublicKey
+	messageEntry.PartyAccessGroupKeyName = &dmThreadKeyCopy.PartyAccessGroupKeyName
 }
 
 func (messageEntry *PGNewMessageDmThreadEntry) ToDmThreadKey() *DmThreadKey {
@@ -1053,10 +1053,10 @@ func (messageEntry *PGNewMessageDmThreadEntry) ToDmThreadKey() *DmThreadKey {
 	partyAccessGroupOwnerPublicKeyCopy := *messageEntry.PartyAccessGroupOwnerPublicKey
 	partyAccessGroupKeyNameCopy := *messageEntry.PartyAccessGroupKeyName
 	return &DmThreadKey{
-		userGroupOwnerPublicKey:  userAccessGroupOwnerPublicKeyCopy,
-		userGroupKeyName:         userAccessGroupKeyNameCopy,
-		partyGroupOwnerPublicKey: partyAccessGroupOwnerPublicKeyCopy,
-		partyGroupKeyName:        partyAccessGroupKeyNameCopy,
+		UserAccessGroupOwnerPublicKey:  userAccessGroupOwnerPublicKeyCopy,
+		UserAccessGroupKeyName:         userAccessGroupKeyNameCopy,
+		PartyAccessGroupOwnerPublicKey: partyAccessGroupOwnerPublicKeyCopy,
+		PartyAccessGroupKeyName:        partyAccessGroupKeyNameCopy,
 	}
 }
 
@@ -1079,6 +1079,56 @@ func (messageEntry *PGNewMessageGroupChatThreadEntry) ToAccessGroupId() AccessGr
 		AccessGroupOwnerPublicKey: accessGroupOwnerPublicKeyCopy,
 		AccessGroupKeyName:        accessGroupKeyNameCopy,
 	}
+}
+
+type PGNewMessageThreadAttributesEntry struct {
+	tableName struct{} `pg:"pg_new_message_thread_attributes_entries"`
+
+	UserAccessGroupOwnerPublicKey  *PublicKey        `pg:",pk,type:bytea"`
+	UserAccessGroupKeyName         *GroupKeyName     `pg:",pk,type:bytea"`
+	PartyAccessGroupOwnerPublicKey *PublicKey        `pg:",pk,type:bytea"`
+	PartyAccessGroupKeyName        *GroupKeyName     `pg:",pk,type:bytea"`
+	NewMessageType                 uint8             `pg:",pk,use_zero"`
+	AttributeData                  map[string][]byte `pg:",type:jsonb"`
+}
+
+func (messageEntry *PGNewMessageThreadAttributesEntry) FromThreadAttributesKeyAndThreadAttributesEntry(
+	threadAttributesKey *ThreadAttributesKey, threadAttributesEntry *ThreadAttributesEntry) {
+
+	if threadAttributesKey == nil || threadAttributesEntry == nil {
+		return
+	}
+
+	threadAttributesKeyCopy := *threadAttributesKey
+	threadAttributesEntryCopy := *threadAttributesEntry
+	messageEntry.UserAccessGroupOwnerPublicKey = &threadAttributesKeyCopy.UserAccessGroupOwnerPublicKey
+	messageEntry.UserAccessGroupKeyName = &threadAttributesKeyCopy.UserAccessGroupKeyName
+	messageEntry.PartyAccessGroupOwnerPublicKey = &threadAttributesKeyCopy.PartyAccessGroupOwnerPublicKey
+	messageEntry.PartyAccessGroupKeyName = &threadAttributesKeyCopy.PartyAccessGroupKeyName
+	messageEntry.NewMessageType = uint8(threadAttributesKeyCopy.NewMessageType)
+	messageEntry.AttributeData = threadAttributesEntryCopy.AttributeData
+}
+
+func (messageEntry *PGNewMessageThreadAttributesEntry) ToThreadAttributesKeyAndThreadAttributesEntry() (*ThreadAttributesKey, *ThreadAttributesEntry) {
+	if messageEntry == nil {
+		return nil, nil
+	}
+	messageEntryCopy := *messageEntry
+	userAccessGroupOwnerPublicKeyCopy := *messageEntryCopy.UserAccessGroupOwnerPublicKey
+	userAccessGroupKeyNameCopy := *messageEntryCopy.UserAccessGroupKeyName
+	partyAccessGroupOwnerPublicKeyCopy := *messageEntryCopy.PartyAccessGroupOwnerPublicKey
+	partyAccessGroupKeyNameCopy := *messageEntryCopy.PartyAccessGroupKeyName
+	attributeDataCopy := messageEntryCopy.AttributeData
+
+	return &ThreadAttributesKey{
+			UserAccessGroupOwnerPublicKey:  userAccessGroupOwnerPublicKeyCopy,
+			UserAccessGroupKeyName:         userAccessGroupKeyNameCopy,
+			PartyAccessGroupOwnerPublicKey: partyAccessGroupOwnerPublicKeyCopy,
+			PartyAccessGroupKeyName:        partyAccessGroupKeyNameCopy,
+			NewMessageType:                 NewMessageType(messageEntryCopy.NewMessageType),
+		}, &ThreadAttributesEntry{
+			AttributeData: attributeDataCopy,
+		}
 }
 
 func HexToUint256(input string) *uint256.Int {
@@ -2889,19 +2939,21 @@ func (postgres *Postgres) flushAccessGroupEntries(tx *pg.Tx, view *UtxoView) err
 	var insertEntries []*PGAccessGroupEntry
 	var deleteEntries []*PGAccessGroupEntry
 
-	for id, entry := range view.AccessGroupIdToAccessGroupEntry {
-		if entry == nil {
-			glog.Errorf("Postgres.flushAccessGroupEntries: Skipping nil entry for id %v. This should never happen", id)
+	for accessGroupIdIter, accessGroupEntryIter := range view.AccessGroupIdToAccessGroupEntry {
+		if accessGroupEntryIter == nil {
+			glog.Errorf("Postgres.flushAccessGroupEntries: Skipping nil entry for id %v. "+
+				"This should never happen", accessGroupIdIter)
 			continue
 		}
 
-		accessGroupEntry := &PGAccessGroupEntry{}
-		accessGroupEntry.FromAccessGroupEntry(entry)
+		accessGroupEntry := *accessGroupEntryIter
+		pgAccessGroupEntry := &PGAccessGroupEntry{}
+		pgAccessGroupEntry.FromAccessGroupEntry(&accessGroupEntry)
 
-		if entry.isDeleted {
-			deleteEntries = append(deleteEntries, accessGroupEntry)
+		if accessGroupEntry.isDeleted {
+			deleteEntries = append(deleteEntries, pgAccessGroupEntry)
 		} else {
-			insertEntries = append(insertEntries, accessGroupEntry)
+			insertEntries = append(insertEntries, pgAccessGroupEntry)
 		}
 	}
 
@@ -2932,27 +2984,30 @@ func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoVie
 	var insertEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
 	var deleteEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
 
-	for id, entry := range view.AccessGroupMembershipKeyToAccessGroupMember {
+	for accessGroupMembershipKeyIter, accessGroupMemberEntryIter := range view.AccessGroupMembershipKeyToAccessGroupMember {
 		// copy the iterator just in case.
-		idCopy := id
-		if entry == nil {
-			glog.Errorf("Postgres.flushAccessGroupMemberEntries: Skipping nil entry for id %v. This should never happen", id)
+		if accessGroupMemberEntryIter == nil {
+			glog.Errorf("Postgres.flushAccessGroupMemberEntries: Skipping nil entry for id %v. "+
+				"This should never happen", accessGroupMembershipKeyIter)
 			continue
 		}
 
-		accessGroupMemberEntry := &PGAccessGroupMemberEntry{}
-		accessGroupMemberEntry.FromAccessGroupMemberEntry(idCopy.AccessGroupOwnerPublicKey, idCopy.AccessGroupKeyName, entry)
+		accessGroupMembershipKey := accessGroupMembershipKeyIter
+		accessGroupMemberEntry := *accessGroupMemberEntryIter
+		pgAccessGroupMemberEntry := &PGAccessGroupMemberEntry{}
+		pgAccessGroupMemberEntry.FromAccessGroupMemberEntry(accessGroupMembershipKey.AccessGroupOwnerPublicKey,
+			accessGroupMembershipKey.AccessGroupKeyName, &accessGroupMemberEntry)
 		accessGroupMemberEnumerationEntry := &PGAccessGroupMemberEnumerationEntry{
-			AccessGroupMemberPublicKey: accessGroupMemberEntry.AccessGroupMemberPublicKey,
-			AccessGroupOwnerPublicKey:  accessGroupMemberEntry.AccessGroupOwnerPublicKey,
-			AccessGroupKeyName:         accessGroupMemberEntry.AccessGroupKeyName,
+			AccessGroupMemberPublicKey: pgAccessGroupMemberEntry.AccessGroupMemberPublicKey,
+			AccessGroupOwnerPublicKey:  pgAccessGroupMemberEntry.AccessGroupOwnerPublicKey,
+			AccessGroupKeyName:         pgAccessGroupMemberEntry.AccessGroupKeyName,
 		}
 
-		if entry.isDeleted {
-			deleteEntries = append(deleteEntries, accessGroupMemberEntry)
+		if accessGroupMemberEntry.isDeleted {
+			deleteEntries = append(deleteEntries, pgAccessGroupMemberEntry)
 			deleteEnumerationEntries = append(deleteEnumerationEntries, accessGroupMemberEnumerationEntry)
 		} else {
-			insertEntries = append(insertEntries, accessGroupMemberEntry)
+			insertEntries = append(insertEntries, pgAccessGroupMemberEntry)
 			insertEnumerationEntries = append(insertEnumerationEntries, accessGroupMemberEnumerationEntry)
 		}
 	}
@@ -3001,62 +3056,87 @@ func (postgres *Postgres) flushNewMessageEntries(tx *pg.Tx, view *UtxoView) erro
 	var deleteNewMessageGroupEntries []*PGNewMessageGroupChatEntry
 	var insertNewMessageGroupThreadEntries []*PGNewMessageGroupChatThreadEntry
 	var deleteNewMessageGroupThreadEntries []*PGNewMessageGroupChatThreadEntry
+	var insertNewMessageThreadAttributesEntries []*PGNewMessageThreadAttributesEntry
+	var deleteNewMessageThreadAttributesEntries []*PGNewMessageThreadAttributesEntry
 
-	for id, entry := range view.DmMessagesIndex {
-		if entry == nil {
-			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for DmMessagesIndex id %v. This should never happen", id)
+	for dmMessageKeyIter, messageEntryIter := range view.DmMessagesIndex {
+		if messageEntryIter == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for DmMessagesIndex id %v. "+
+				"This should never happen", dmMessageKeyIter)
 			continue
 		}
 
+		messageEntry := *messageEntryIter
 		newMessageDmEntry := &PGNewMessageDmEntry{}
-		newMessageDmEntry.FromNewMessageEntry(entry)
-		if entry.isDeleted {
+		newMessageDmEntry.FromNewMessageEntry(&messageEntry)
+		if messageEntryIter.isDeleted {
 			deleteNewMessageDmEntries = append(deleteNewMessageDmEntries, newMessageDmEntry)
 		} else {
 			insertNewMessageDmEntries = append(insertNewMessageDmEntries, newMessageDmEntry)
 		}
 	}
-	for id, entry := range view.DmThreadIndex {
-		if entry == nil {
-			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for DmThreadIndex id %v. This should never happen", id)
+	for dmThreadKeyIter, dmThreadExistenceIter := range view.DmThreadIndex {
+		if dmThreadExistenceIter == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for DmThreadIndex id %v. "+
+				"This should never happen", dmThreadKeyIter)
 			continue
 		}
 
 		newMessageDmThreadEntry := &PGNewMessageDmThreadEntry{}
-		idCopy := id
-		newMessageDmThreadEntry.FromDmThreadKey(&idCopy)
-		if entry.isDeleted {
+		dmThreadKey := dmThreadKeyIter
+		newMessageDmThreadEntry.FromDmThreadKey(&dmThreadKey)
+		if dmThreadExistenceIter.isDeleted {
 			deleteNewMessageDmThreadEntries = append(deleteNewMessageDmThreadEntries, newMessageDmThreadEntry)
 		} else {
 			insertNewMessageDmThreadEntries = append(insertNewMessageDmThreadEntries, newMessageDmThreadEntry)
 		}
 	}
-	for id, entry := range view.GroupChatMessagesIndex {
-		if entry == nil {
-			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for GroupChatMessagesIndex id %v. This should never happen", id)
+	for groupChatMessageKeyIter, messageEntryIter := range view.GroupChatMessagesIndex {
+		if messageEntryIter == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for GroupChatMessagesIndex id %v. "+
+				"This should never happen", groupChatMessageKeyIter)
 			continue
 		}
-
+		messageEntry := *messageEntryIter
 		newMessageGroupEntry := &PGNewMessageGroupChatEntry{}
-		newMessageGroupEntry.FromNewMessageEntry(entry)
-		if entry.isDeleted {
+		newMessageGroupEntry.FromNewMessageEntry(&messageEntry)
+		if messageEntry.isDeleted {
 			deleteNewMessageGroupEntries = append(deleteNewMessageGroupEntries, newMessageGroupEntry)
 		} else {
 			insertNewMessageGroupEntries = append(insertNewMessageGroupEntries, newMessageGroupEntry)
 		}
 	}
-	for id, entry := range view.GroupChatThreadIndex {
-		if entry == nil {
-			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for GroupChatThreadIndex id %v. This should never happen", id)
+	for accessGroupIdIter, messageEntryIter := range view.GroupChatThreadIndex {
+		if messageEntryIter == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for GroupChatThreadIndex id %v. "+
+				"This should never happen", accessGroupIdIter)
 			continue
 		}
 
 		newMessageGroupThreadEntry := &PGNewMessageGroupChatThreadEntry{}
-		newMessageGroupThreadEntry.FromAccessGroupId(id)
-		if entry.isDeleted {
+		newMessageGroupThreadEntry.FromAccessGroupId(accessGroupIdIter)
+		if messageEntryIter.isDeleted {
 			deleteNewMessageGroupThreadEntries = append(deleteNewMessageGroupThreadEntries, newMessageGroupThreadEntry)
 		} else {
 			insertNewMessageGroupThreadEntries = append(insertNewMessageGroupThreadEntries, newMessageGroupThreadEntry)
+		}
+	}
+	for threadAttributesKeyIter, threadAttributesEntryIter := range view.ThreadAttributes {
+		if threadAttributesEntryIter == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for ThreadAttributes id %v. "+
+				"This should never happen", threadAttributesKeyIter)
+			continue
+		}
+
+		threadAttributesKey := threadAttributesKeyIter
+		threadAttributesEntry := *threadAttributesEntryIter
+		newMessageThreadAttributesEntry := &PGNewMessageThreadAttributesEntry{}
+		newMessageThreadAttributesEntry.FromThreadAttributesKeyAndThreadAttributesEntry(
+			&threadAttributesKey, &threadAttributesEntry)
+		if threadAttributesEntry.isDeleted {
+			deleteNewMessageThreadAttributesEntries = append(deleteNewMessageThreadAttributesEntries, newMessageThreadAttributesEntry)
+		} else {
+			insertNewMessageThreadAttributesEntries = append(insertNewMessageThreadAttributesEntries, newMessageThreadAttributesEntry)
 		}
 	}
 
@@ -3127,6 +3207,24 @@ func (postgres *Postgres) flushNewMessageEntries(tx *pg.Tx, view *UtxoView) erro
 		_, err := tx.Model(&deleteNewMessageGroupThreadEntries).Returning("NULL").Delete()
 		if err != nil {
 			return fmt.Errorf("Postgres.flushNewMessageEntries: deleteNewMessageGroupThreadEntries: %v", err)
+		}
+	}
+
+	if len(insertNewMessageThreadAttributesEntries) > 0 {
+		_, err := tx.Model(&insertNewMessageThreadAttributesEntries).
+			WherePK().
+			OnConflict("(user_access_group_owner_public_key, user_access_group_key_name, " +
+				"party_access_group_owner_public_key, party_access_group_key_name, new_message_type) DO UPDATE").
+			Returning("NULL").
+			Insert()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushNewMessageEntries: insertNewMessageThreadAttributesEntries: %v", err)
+		}
+	}
+	if len(deleteNewMessageThreadAttributesEntries) > 0 {
+		_, err := tx.Model(&deleteNewMessageThreadAttributesEntries).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushNewMessageEntries: deleteNewMessageThreadAttributesEntries: %v", err)
 		}
 	}
 
@@ -3900,10 +3998,10 @@ func (postgres *Postgres) GetNewMessageGroupChatEntry(groupChatMessageKey GroupC
 func (postgres *Postgres) CheckDmThreadExistence(dmThreadKey DmThreadKey) *DmThreadExistence {
 
 	newMessageDmThreadEntry := &PGNewMessageDmThreadEntry{
-		UserAccessGroupOwnerPublicKey:  &dmThreadKey.userGroupOwnerPublicKey,
-		UserAccessGroupKeyName:         &dmThreadKey.userGroupKeyName,
-		PartyAccessGroupOwnerPublicKey: &dmThreadKey.partyGroupOwnerPublicKey,
-		PartyAccessGroupKeyName:        &dmThreadKey.partyGroupKeyName,
+		UserAccessGroupOwnerPublicKey:  &dmThreadKey.UserAccessGroupOwnerPublicKey,
+		UserAccessGroupKeyName:         &dmThreadKey.UserAccessGroupKeyName,
+		PartyAccessGroupOwnerPublicKey: &dmThreadKey.PartyAccessGroupOwnerPublicKey,
+		PartyAccessGroupKeyName:        &dmThreadKey.PartyAccessGroupKeyName,
 	}
 	err := postgres.db.Model(newMessageDmThreadEntry).WherePK().First()
 	if err != nil {
@@ -3968,6 +4066,22 @@ func (postgres *Postgres) GetPaginatedMessageEntriesForGroupChatThread(groupChat
 		newMessageEntries = append(newMessageEntries, pgNewMessageEntry.ToNewMessageEntry())
 	}
 	return newMessageEntries, nil
+}
+
+func (postgres *Postgres) GetThreadAttributesEntry(threadAttributesKey ThreadAttributesKey) *PGNewMessageThreadAttributesEntry {
+
+	threadAttributesEntry := &PGNewMessageThreadAttributesEntry{
+		UserAccessGroupOwnerPublicKey:  &threadAttributesKey.UserAccessGroupOwnerPublicKey,
+		UserAccessGroupKeyName:         &threadAttributesKey.UserAccessGroupKeyName,
+		PartyAccessGroupOwnerPublicKey: &threadAttributesKey.PartyAccessGroupOwnerPublicKey,
+		PartyAccessGroupKeyName:        &threadAttributesKey.PartyAccessGroupKeyName,
+		NewMessageType:                 byte(threadAttributesKey.NewMessageType),
+	}
+	err := postgres.db.Model(threadAttributesEntry).WherePK().First()
+	if err != nil {
+		return nil
+	}
+	return threadAttributesEntry
 }
 
 //

@@ -115,7 +115,6 @@ const (
 	RuleErrorAccessGroupKeyNameTooShort                  RuleError = "RuleErrorAccessGroupKeyNameTooShort"
 	RuleErrorAccessGroupKeyNameTooLong                   RuleError = "RuleErrorAccessGroupKeyNameTooLong"
 	RuleErrorAccessGroupMembersListCannotBeEmpty         RuleError = "RuleErrorAccessGroupMembersListCannotBeEmpty"
-	RuleErrorAccessGroupMemberEncryptedKeyCannotBeEmpty  RuleError = "RuleErrorAccessGroupMemberEncryptedKeyCannotBeEmpty"
 	RuleErrorAccessMemberAlreadyExists                   RuleError = "RuleErrorAccessMemberAlreadyExists"
 	RuleErrorAccessGroupMemberOperationTypeNotSupported  RuleError = "RuleErrorAccessGroupMemberOperationTypeNotSupported"
 	RuleErrorAccessMemberDoesntExist                     RuleError = "RuleErrorAccessMemberDoesntExist"
@@ -148,6 +147,9 @@ const (
 	RuleErrorNewMessageGroupChatMemberEntryDoesntExist       RuleError = "RuleErrorNewMessageGroupChatMemberEntryDoesntExist"
 	RuleErrorNewMessageUnknownMessageType                    RuleError = "RuleErrorNewMessageUnknownMessageType"
 	RuleErrorNewMessageUnknownOperationType                  RuleError = "RuleErrorNewMessageUnknownOperationType"
+	RuleErrorNewMessageGroupChatThreadDoesNotExist           RuleError = "RuleErrorNewMessageGroupChatThreadDoesNotExist"
+	RuleErrorNewMessageDmThreadDoesNotExist                  RuleError = "RuleErrorNewMessageDmThreadDoesNotExist"
+	RuleErrorNewMessageAttributesDateExtraDataCannotBeEmpty  RuleError = "RuleErrorNewMessageAttributesDateExtraDataCannotBeEmpty"
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"

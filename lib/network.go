@@ -7122,8 +7122,9 @@ const (
 	NewMessageTypeGroupChat NewMessageType = 1
 
 	// Message Operations
-	NewMessageOperationCreate NewMessageOperation = 0
-	NewMessageOperationUpdate NewMessageOperation = 1
+	NewMessageOperationCreate           NewMessageOperation = 0
+	NewMessageOperationUpdate           NewMessageOperation = 1
+	NewMessageOperationThreadAttributes NewMessageOperation = 2
 )
 
 type NewMessageMetadata struct {
