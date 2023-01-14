@@ -769,11 +769,6 @@ func (bav *UtxoView) _connectNewMessage(
 			PkToString(txn.PublicKey, bav.Params))
 	}
 
-	// Validate that no message has a zero timestamp.
-	if txMeta.TimestampNanos == 0 {
-		return 0, 0, nil, RuleErrorNewMessageTimestampNanosCannotBeZero
-	}
-
 	// Validate sender's access group id, verifying that the access group exists based on the UtxoView.
 	if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 		txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txMeta.SenderAccessGroupKeyName.ToBytes(), blockHeight); err != nil {
@@ -815,6 +810,10 @@ func (bav *UtxoView) _connectNewMessage(
 
 	switch txMeta.NewMessageOperation {
 	case NewMessageOperationCreate:
+		// Validate that the message has a non-zero timestamp.
+		if txMeta.TimestampNanos == 0 {
+			return 0, 0, nil, RuleErrorNewMessageTimestampNanosCannotBeZero
+		}
 		switch txMeta.NewMessageType {
 		case NewMessageTypeDm:
 			prevDmThreadExistence, err = bav._setUtxoViewMappingsForNewMessageOperationCreateTypeDm(txn, blockHeight, messageEntry)
@@ -833,6 +832,10 @@ func (bav *UtxoView) _connectNewMessage(
 				RuleErrorNewMessageUnknownMessageType, "_connectNewMessage: unknown message type")
 		}
 	case NewMessageOperationUpdate:
+		// Validate that the message has a non-zero timestamp.
+		if txMeta.TimestampNanos == 0 {
+			return 0, 0, nil, RuleErrorNewMessageTimestampNanosCannotBeZero
+		}
 		switch txMeta.NewMessageType {
 		case NewMessageTypeDm:
 			prevNewMessageEntry, prevDmThreadExistence, err = bav._setUtxoViewMappingsForNewMessageOperationUpdateTypeDm(txn, blockHeight, messageEntry)
@@ -1060,7 +1063,7 @@ func (bav *UtxoView) _disconnectNewMessage(
 			return fmt.Errorf("_disconnectNewMessage: Invalid new message type %v", txMeta.NewMessageType)
 		}
 
-		threadAttributesKey := MakeThreadAttributesKey(
+		threadAttributesKey := NewThreadAttributesKey(
 			txMeta.SenderAccessGroupOwnerPublicKey, txMeta.SenderAccessGroupKeyName,
 			txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName, txMeta.NewMessageType)
 		threadAttributes, err := bav.getThreadAttributesForThreadAttributesKey(*threadAttributesKey)
@@ -1206,6 +1209,7 @@ func (bav *UtxoView) _setUtxoViewMappingsForNewMessageOperationCreateTypeGroupCh
 	}
 	// We have previously verified the existence of access groups both for the sender and the recipient.
 	// If the sender is not the owner of the group chat, we need to verify that they are a member of the group.
+	// Note: we allow the group chat owner to send messages to the group from any of their AccessGroupIds, registered or not.
 	if !bytes.Equal(txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txMeta.RecipientAccessGroupOwnerPublicKey.ToBytes()) {
 		groupMemberEntry, err := bav.GetAccessGroupMemberEntry(&txMeta.SenderAccessGroupOwnerPublicKey,
 			&txMeta.RecipientAccessGroupOwnerPublicKey, &txMeta.RecipientAccessGroupKeyName)
@@ -1386,9 +1390,21 @@ func (bav *UtxoView) _setUtxoViewMappingsForNewMessageOperationThreadAttributes(
 			"called with bad NewMessageType (%v)", txMeta.NewMessageType)
 	}
 
+	// messageEntry ExtraData serves as the thread attributes data, so it can't be nil.
 	if messageEntry.ExtraData == nil {
 		return nil, errors.Wrapf(RuleErrorNewMessageAttributesDateExtraDataCannotBeEmpty,
 			"_setUtxoViewMappingsForNewMessageOperationThreadAttributes: called with nil ExtraData")
+	}
+
+	// The timestamp should be set to 0 for thread attributes operation.
+	if txMeta.TimestampNanos != 0 {
+		return nil, errors.Wrapf(RuleErrorNewMessageAttributesDateTimestampCannotBeSet,
+			"_setUtxoViewMappingsForNewMessageOperationThreadAttributes: called with non-zero TimestampNanos")
+	}
+
+	if len(messageEntry.EncryptedText) != 0 {
+		return nil, errors.Wrapf(RuleErrorNewMessageAttributesDateEncryptedTextCannotBeSet,
+			"_setUtxoViewMappingsForNewMessageOperationThreadAttributes: called with non-zero EncryptedText")
 	}
 
 	var prevThreadAttributesEntry *ThreadAttributesEntry
@@ -1396,6 +1412,31 @@ func (bav *UtxoView) _setUtxoViewMappingsForNewMessageOperationThreadAttributes(
 	// Verify that the thread exists.
 	switch txMeta.NewMessageType {
 	case NewMessageTypeGroupChat:
+		// Make sure that the user is a member of the group chat.
+		if !bytes.Equal(txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txMeta.RecipientAccessGroupOwnerPublicKey.ToBytes()) {
+			groupMemberEntry, err := bav.GetAccessGroupMemberEntry(&txMeta.SenderAccessGroupOwnerPublicKey,
+				&txMeta.RecipientAccessGroupOwnerPublicKey, &txMeta.RecipientAccessGroupKeyName)
+			if err != nil {
+				return nil, errors.Wrapf(err, "_setUtxoViewMappingsForNewMessageOperationThreadAttributes: Problem "+
+					"getting group member entry for sender public key (%v) and recipient public key (%v) and recipient group name (%v)",
+					txMeta.SenderAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName)
+			}
+			if groupMemberEntry == nil || groupMemberEntry.isDeleted {
+				return nil, errors.Wrapf(RuleErrorNewMessageGroupChatMemberEntryDoesntExist,
+					"_setUtxoViewMappingsForNewMessageOperationCreateTypeGroupChat: Sender (%v) is not a member of the group chat with ownerPublicKey (%v), groupKeyName (%v)",
+					txMeta.SenderAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName)
+			}
+		} else {
+			// We enforce that for group chat owners attribute data is set under key:
+			//	<groupChatAccessGroupId, groupChatAccessGroupId, NewMessageTypeGroupChat>
+			if !bytes.Equal(txMeta.SenderAccessGroupKeyName.ToBytes(), txMeta.RecipientAccessGroupKeyName.ToBytes()) {
+				return nil, errors.Wrapf(RuleErrorNewMessageGroupChatMemberEntryDoesntExist,
+					"_setUtxoViewMappingsForNewMessageOperationThreadAttributes: Sender owner public key (%v) and key name (%v) "+
+						"is not the owner of the group chat with ownerPublicKey (%v), groupKeyName (%v)",
+					txMeta.SenderAccessGroupOwnerPublicKey, txMeta.SenderAccessGroupKeyName,
+					txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName)
+			}
+		}
 		// Fetch the thread for the group chat identified by the NewMessageEntry
 		groupChatThreadKey := NewAccessGroupId(&txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName.ToBytes())
 		groupChatThread, err := bav.getGroupChatThreadExistence(*groupChatThreadKey)
@@ -1433,7 +1474,7 @@ func (bav *UtxoView) _setUtxoViewMappingsForNewMessageOperationThreadAttributes(
 	}
 
 	// Fetch the thread attributes entry, which is indexed by the recipient's access group.
-	threadAttributesKey := MakeThreadAttributesKey(
+	threadAttributesKey := NewThreadAttributesKey(
 		txMeta.SenderAccessGroupOwnerPublicKey, txMeta.SenderAccessGroupKeyName,
 		txMeta.RecipientAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupKeyName, txMeta.NewMessageType)
 	existingThreadAttributesEntry, err := bav.getThreadAttributesForThreadAttributesKey(*threadAttributesKey)

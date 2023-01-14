@@ -90,7 +90,7 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 		testBadger:                 true,
 		testPostgres:               false,
 		testPostgresPort:           5433,
-		disableLogging:             true,
+		disableLogging:             false,
 		initialBlocksMined:         4,
 		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
 		initChainCallback:          initChainCallback,
@@ -146,12 +146,12 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	tv4 := _createAccessGroupMembersTestVector("TEST 4: (FAIL) Connect access group members transaction to the "+
 		"access group made by (pk0, groupName1), again adding as member (pk0, baseGroup)", m0Priv, m0PkBytes, groupName1,
 		tv4Members, AccessGroupMemberOperationTypeAdd, RuleErrorAccessMemberAlreadyExists)
-	tv4pMembers := []*AccessGroupMember{{
-		AccessGroupMemberPublicKey: m4PkBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil,
+	tv4p5Members := []*AccessGroupMember{{
+		AccessGroupMemberPublicKey: m4PkBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{}, ExtraData: nil,
 	}}
 	tv4p5 := _createAccessGroupMembersTestVector("TEST 4.5: (PASS) Access group members transaction to the "+
 		"access group made by (pk0, groupName1), adding as member (pk4, baseGroup) with nil encrypted key",
-		m0Priv, m0PkBytes, groupName1, tv4pMembers, AccessGroupMemberOperationTypeAdd, nil)
+		m0Priv, m0PkBytes, groupName1, tv4p5Members, AccessGroupMemberOperationTypeAdd, nil)
 
 	// Place the above transactions into a block.
 	tvv1 := []*transactionTestVector{tv1, tv2, tv3, tv4, tv4p5}
@@ -413,7 +413,7 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 		testBadger:                 true,
 		testPostgres:               false,
 		testPostgresPort:           5433,
-		disableLogging:             true,
+		disableLogging:             false,
 		initialBlocksMined:         4,
 		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
 		initChainCallback:          initChainCallback,
@@ -861,7 +861,7 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 		testBadger:                 true,
 		testPostgres:               false,
 		testPostgresPort:           5433,
-		disableLogging:             true,
+		disableLogging:             false,
 		initialBlocksMined:         4,
 		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
 		initChainCallback:          initChainCallback,
@@ -1466,7 +1466,7 @@ func _verifyMembersList(tm *transactionTestMeta, utxoView *UtxoView, accessGroup
 			// of members in the group. This isn't a bug, but rather a downside of using such small maxMembersToFetch,
 			// and in practice we should use a higher values e.g. maxMembersToFetch=25.
 			if err != nil {
-				glog.Errorf(CLog(Red, "Error fetching paginated access group members: %v. Re-trying with higher "+
+				glog.Errorf(CLog(Red, "Problem fetching paginated access group members: %v. Re-trying with higher "+
 					"recursion depth."), err)
 				accessGroupMembersPage, _, err = utxoView._getPaginatedAccessGroupMembersEnumerationEntriesRecursionSafe(
 					accessGroupOwnerPublicKey, accessGroupKeyName, startKey, uint32(maxMembersToFetch), 100, nil, true)

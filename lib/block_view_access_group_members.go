@@ -284,10 +284,7 @@ func (bav *UtxoView) _getPaginatedAccessGroupMembersEnumerationEntriesRecursionS
 			groupOwnerPublicKey, groupKeyName, lastKnownDbPublicKey, maxMembersToFetch-uint32(len(finalMemberPublicKeys)),
 			maxDepth-1, accessGroupIdToSortedGroupMemberPublicKeys, false)
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "GetPaginatedAccessGroupMembersEnumerationEntries: "+
-				"Problem fetching recursion access group members enumeration entries for next member with "+
-				"accessGroupOwnerPublicKey: %v, accessGroupKeyName: %v, startingAccessGroupMemberPublicKey: %v",
-				groupOwnerPublicKey, groupKeyName, startingAccessGroupMemberPublicKey)
+			return nil, nil, err
 		}
 		finalMemberPublicKeys = append(finalMemberPublicKeys, remainingMembers...)
 		accessGroupIdToSortedGroupMemberPublicKeys = newAccessGroupIdToSortedGroupMemberPublicKeys

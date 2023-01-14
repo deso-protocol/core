@@ -58,7 +58,7 @@ func TestAccessGroup(t *testing.T) {
 		testBadger:                 true,
 		testPostgres:               false,
 		testPostgresPort:           5433,
-		disableLogging:             true,
+		disableLogging:             false,
 		initialBlocksMined:         4,
 		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
 		initChainCallback:          initChainCallback,

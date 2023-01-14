@@ -163,7 +163,7 @@ func init() {
 				user_access_group_key_name          BYTEA NOT NULL,
 				party_access_group_owner_public_key BYTEA NOT NULL,
 				party_access_group_key_name         BYTEA NOT NULL,
-				new_message_type                    SMALLINT NOT NULL,
+				new_message_type                    SMALLINT,
 				attribute_data                      JSONB,
 
 				PRIMARY KEY (user_access_group_owner_public_key, user_access_group_key_name,

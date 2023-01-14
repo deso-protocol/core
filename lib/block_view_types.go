@@ -2642,7 +2642,7 @@ type ThreadAttributesKey struct {
 	NewMessageType
 }
 
-func MakeThreadAttributesKey(userAccessGroupOwnerPublicKey PublicKey, userAccessGroupKeyName GroupKeyName,
+func NewThreadAttributesKey(userAccessGroupOwnerPublicKey PublicKey, userAccessGroupKeyName GroupKeyName,
 	partyAccessGroupOwnerPublicKey PublicKey, partyAccessGroupKeyName GroupKeyName, newMessageType NewMessageType) *ThreadAttributesKey {
 	return &ThreadAttributesKey{
 		UserAccessGroupOwnerPublicKey:  userAccessGroupOwnerPublicKey,
