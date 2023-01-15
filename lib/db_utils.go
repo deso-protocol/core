@@ -6897,6 +6897,9 @@ type TransactionMetadata struct {
 	DeleteUserAssociationTxindexMetadata *DeleteUserAssociationTxindexMetadata `json:",omitempty"`
 	CreatePostAssociationTxindexMetadata *CreatePostAssociationTxindexMetadata `json:",omitempty"`
 	DeletePostAssociationTxindexMetadata *DeletePostAssociationTxindexMetadata `json:",omitempty"`
+	AccessGroupTxindexMetadata           *AccessGroupTxindexMetadata           `json:",omitempty"`
+	AccessGroupMembersTxindexMetadata    *AccessGroupMembersTxindexMetadata    `json:",omitempty"`
+	NewMessageTxindexMetadata            *NewMessageTxindexMetadata            `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -6967,6 +6970,15 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.CreatePostAssociationTxindexMetadata, skipMetadata...)...)
 		// encoding DeletePostAssociationTxindexMetadata
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.DeletePostAssociationTxindexMetadata, skipMetadata...)...)
+	}
+
+	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		// encoding AccessGroupTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.AccessGroupTxindexMetadata, skipMetadata...)...)
+		// encoding AccessGroupMembersTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.AccessGroupMembersTxindexMetadata, skipMetadata...)...)
+		// encoding NewMessageTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.NewMessageTxindexMetadata, skipMetadata...)...)
 	}
 
 	return data
@@ -7194,6 +7206,29 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		}
 	}
 
+	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		// decoding AccessGroupTxindexMetadata
+		CopyAccessGroupTxindexMetadata := &AccessGroupTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyAccessGroupTxindexMetadata, rr); exist && err == nil {
+			txnMeta.AccessGroupTxindexMetadata = CopyAccessGroupTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AccessGroupTxindexMetadata")
+		}
+		// decoding AccessGroupMembersTxindexMetadata
+		CopyAccessGroupMembersTxindexMetadata := &AccessGroupMembersTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyAccessGroupMembersTxindexMetadata, rr); exist && err == nil {
+			txnMeta.AccessGroupMembersTxindexMetadata = CopyAccessGroupMembersTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AccessGroupMembersTxindexMetadata")
+		}
+		// decoding NewMessageTxindexMetadata
+		CopyNewMessageTxindexMetadata := &NewMessageTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyNewMessageTxindexMetadata, rr); exist && err == nil {
+			txnMeta.NewMessageTxindexMetadata = CopyNewMessageTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading NewMessageTxindexMetadata")
+		}
+	}
 	return nil
 }
 
