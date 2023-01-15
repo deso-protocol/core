@@ -189,6 +189,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
 			AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
 		}
+		if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+			newTransactionSpendingLimit.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
+		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 			// Copy the existing transaction spending limit.
 			newTransactionSpendingLimitCopy := *prevDerivedKeyEntry.TransactionSpendingLimitTracker

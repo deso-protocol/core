@@ -1121,6 +1121,7 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDeletePostAssociation {
 		return bav._disconnectDeletePostAssociation(
 			OperationTypeDeletePostAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAccessGroup {
 		return bav._disconnectAccessGroup(
 			OperationTypeAccessGroup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
@@ -2771,6 +2772,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeDeletePostAssociation {
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeletePostAssociation(txn, txHash, blockHeight, verifySignatures)
+
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroup {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAccessGroup(
@@ -2785,6 +2787,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNewMessage(
 				txn, txHash, blockHeight, verifySignatures)
+
 	} else {
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}
