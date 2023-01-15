@@ -65,7 +65,7 @@ type UtxoView struct {
 	DmThreadIndex        map[DmThreadKey]*DmThreadExistence
 
 	// Message Thread Attributes.
-	ThreadAttributes map[ThreadAttributesKey]*ThreadAttributesEntry
+	ThreadAttributesIndex map[ThreadAttributesKey]*ThreadAttributesEntry
 
 	// Follow data
 	FollowKeyToFollowEntry map[FollowKey]*FollowEntry
@@ -165,7 +165,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.DmThreadIndex = make(map[DmThreadKey]*DmThreadExistence)
 
 	// Message thread attributes.
-	bav.ThreadAttributes = make(map[ThreadAttributesKey]*ThreadAttributesEntry)
+	bav.ThreadAttributesIndex = make(map[ThreadAttributesKey]*ThreadAttributesEntry)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -344,10 +344,10 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	}
 
 	// Copy thread attributes index
-	newView.ThreadAttributes = make(map[ThreadAttributesKey]*ThreadAttributesEntry)
-	for threadAttributesKey, threadAttributesEntry := range bav.ThreadAttributes {
+	newView.ThreadAttributesIndex = make(map[ThreadAttributesKey]*ThreadAttributesEntry)
+	for threadAttributesKey, threadAttributesEntry := range bav.ThreadAttributesIndex {
 		newThreadAttributesEntry := *threadAttributesEntry
-		newView.ThreadAttributes[threadAttributesKey] = &newThreadAttributesEntry
+		newView.ThreadAttributesIndex[threadAttributesKey] = &newThreadAttributesEntry
 	}
 
 	// Copy the follow data

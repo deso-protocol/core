@@ -1303,7 +1303,6 @@ func TestSpendingLimitMetamaskString(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	// TODO: Add determinism test for access group and access group members.
 	// Number of operations to choose from during tests. The following fields should reflect the upper bound on
 	// the corresponding TransactionSpendingLimit fields.
 	maxTxnType := 26

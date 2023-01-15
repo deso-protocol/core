@@ -1293,7 +1293,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 	{
 		numDeleted := 0
 		numPut := 0
-		for threadAttributeKeyIter, threadAttributeEntryIter := range bav.ThreadAttributes {
+		for threadAttributeKeyIter, threadAttributeEntryIter := range bav.ThreadAttributesIndex {
 			threadAttributeKey := threadAttributeKeyIter
 			if threadAttributeEntryIter == nil {
 				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+

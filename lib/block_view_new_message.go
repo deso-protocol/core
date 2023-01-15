@@ -537,10 +537,10 @@ func (bav *UtxoView) _getPaginatedMessageEntriesForDmThreadRecursionSafe(dmThrea
 		threadMessageKey := MakeDmMessageKeyFromDmThreadKey(dmThread)
 
 		// Make sure the utxoView message matches our current thread.
-		isValidThread := bytes.Equal(dmMessageKeyIter.MinorGroupOwnerPublicKey.ToBytes(), threadMessageKey.MinorGroupOwnerPublicKey.ToBytes()) &&
-			bytes.Equal(dmMessageKeyIter.MinorGroupKeyName.ToBytes(), threadMessageKey.MinorGroupKeyName.ToBytes()) &&
-			bytes.Equal(dmMessageKeyIter.MajorGroupOwnerPublicKey.ToBytes(), threadMessageKey.MajorGroupOwnerPublicKey.ToBytes()) &&
-			bytes.Equal(dmMessageKeyIter.MajorGroupKeyName.ToBytes(), threadMessageKey.MajorGroupKeyName.ToBytes())
+		isValidThread := bytes.Equal(dmMessageKeyIter.MinorAccessGroupOwnerPublicKey.ToBytes(), threadMessageKey.MinorAccessGroupOwnerPublicKey.ToBytes()) &&
+			bytes.Equal(dmMessageKeyIter.MinorAccessGroupKeyName.ToBytes(), threadMessageKey.MinorAccessGroupKeyName.ToBytes()) &&
+			bytes.Equal(dmMessageKeyIter.MajorAccessGroupOwnerPublicKey.ToBytes(), threadMessageKey.MajorAccessGroupOwnerPublicKey.ToBytes()) &&
+			bytes.Equal(dmMessageKeyIter.MajorAccessGroupKeyName.ToBytes(), threadMessageKey.MajorAccessGroupKeyName.ToBytes())
 		if !isValidThread {
 			continue
 		}
@@ -635,12 +635,12 @@ func (bav *UtxoView) deleteDmThreadIndex(dmThreadKey DmThreadKey) {
 }
 
 // ==================================================================
-// ThreadAttributes
+// ThreadAttributesIndex
 // ==================================================================
 
 func (bav *UtxoView) getThreadAttributesForThreadAttributesKey(key ThreadAttributesKey) (*ThreadAttributesEntry, error) {
 	// First, check if the thread attributes exist in the UtxoView.
-	if entry, exists := bav.ThreadAttributes[key]; exists {
+	if entry, exists := bav.ThreadAttributesIndex[key]; exists {
 		return entry, nil
 	}
 
@@ -653,23 +653,23 @@ func (bav *UtxoView) getThreadAttributesForThreadAttributesKey(key ThreadAttribu
 
 	// If the thread attributes exists in the DB, update the UtxoView with the entry.
 	if threadAttributes != nil {
-		bav.ThreadAttributes[key] = threadAttributes
+		bav.ThreadAttributesIndex[key] = threadAttributes
 	}
 	return threadAttributes, nil
 }
 
-// setThreadAttributesIndex sets the ThreadAttributes index for a given ThreadAttributesKey key, and ThreadAttributes entry.
+// setThreadAttributesIndex sets the ThreadAttributesIndex index for a given ThreadAttributesKey key, and ThreadAttributesIndex entry.
 func (bav *UtxoView) setThreadAttributesIndex(threadAttributesKey ThreadAttributesKey, threadAttributes *ThreadAttributesEntry) error {
 	if threadAttributes == nil {
 		return fmt.Errorf("setThreadAttributesIndex: threadAttributes cannot be nil")
 	}
 
 	threadAttributesCopy := *threadAttributes
-	bav.ThreadAttributes[threadAttributesKey] = &threadAttributesCopy
+	bav.ThreadAttributesIndex[threadAttributesKey] = &threadAttributesCopy
 	return nil
 }
 
-// setThreadAttributesIndex deletes from the ThreadAttributes index for a given ThreadAttributesKey.
+// setThreadAttributesIndex deletes from the ThreadAttributesIndex index for a given ThreadAttributesKey.
 func (bav *UtxoView) deleteThreadAttributesIndex(threadAttributesKey ThreadAttributesKey) {
 	threadAttributes := &ThreadAttributesEntry{}
 	threadAttributes.isDeleted = true
@@ -703,8 +703,8 @@ func (bav *UtxoView) deleteThreadAttributesIndex(threadAttributesKey ThreadAttri
 // the thread, and then order the AccessGroupIds to enumerate the NewMessageEntries, that we can for example sort by timestamp.
 // With this in mind, we use the following index structure for dm messages:
 // 	DmMessagesIndex:
-//  	<MinorGroupOwnerPublicKey, MinorGroupKeyName,
-// 		MajorGroupOwnerPublicKey, MajorGroupKeyName, TimestampNanos> -> NewMessageEntry
+//  	<MinorAccessGroupOwnerPublicKey, MinorAccessGroupKeyName,
+// 		MajorAccessGroupOwnerPublicKey, MajorAccessGroupKeyName, TimestampNanos> -> NewMessageEntry
 // 	DmThreadIndex:
 //  	<UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
 //  	PartyUserGroupOwnerPublicKey, PartyUserGroupKeyName> -> DmThreadExistence
@@ -732,7 +732,18 @@ func (bav *UtxoView) deleteThreadAttributesIndex(threadAttributesKey ThreadAttri
 // okay with that. Consider this to be a "deliver in the future" feature. The index structure of messages in both the
 // dm and group chat threads allows for an efficient enumeration of messages up until the current unix timestamp,
 // and the future messages can be discarded.
-// TODO: Add info about the NewMessage transaction being used to accept invitations to dm threads and group chats.
+//
+// NewMessage transaction also allows setting threadAttributes on dm and group chat threads. ThreadAttributesIndex is a
+// Key Value store (type map[string][]byte) that allows users to store authenticated data associated with a chat.
+// For instance, this can be used to implement thread invitations, where the user sets a flag:
+//		"request_accepted" : bool
+// whenever they want to accept the invitation. This could be particularly useful to deter spam thread requests.
+// In terms of indexing, we use a ThreadAttributesKey to associate a unique id for each dm and group chat thread.
+// The final db index will look as follows:
+// 	ThreadAttributesIndex:
+//		<UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
+//			PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName, NewMessageType> -> ThreadAttributesEntry
+//
 func (bav *UtxoView) _connectNewMessage(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
@@ -760,7 +771,6 @@ func (bav *UtxoView) _connectNewMessage(
 	// Verify that the sender of the message is the transactor. This constraint ensures authenticity of messages
 	// sent via the NewMessage transaction. Basically, all NewMessageEntries stored will be certified sent by the
 	// user specified as the message sender.
-	// TODO: Do we want to allow group chat owners to update messages of group chat members? E.g. spam messages can be deleted.
 	if !bytes.Equal(txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txn.PublicKey) {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorNewMessageMessageSenderDoesNotMatchTxnPublicKey, "_connectNewMessage: "+
@@ -791,6 +801,7 @@ func (bav *UtxoView) _connectNewMessage(
 		return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: ")
 	}
 
+	// Assemble the NewMessageEntry based on transaction's metadata.
 	messageEntry := &NewMessageEntry{
 		SenderAccessGroupOwnerPublicKey:    &txMeta.SenderAccessGroupOwnerPublicKey,
 		SenderAccessGroupKeyName:           &txMeta.SenderAccessGroupKeyName,
@@ -814,14 +825,17 @@ func (bav *UtxoView) _connectNewMessage(
 		if txMeta.TimestampNanos == 0 {
 			return 0, 0, nil, RuleErrorNewMessageTimestampNanosCannotBeZero
 		}
+		// We can either send a dm message or a group chat message, so we consider both cases below.
 		switch txMeta.NewMessageType {
 		case NewMessageTypeDm:
+			// Send a dm message: update appropriate utxo view mappings such as DmMessagesIndex and DmThreadIndex.
 			prevDmThreadExistence, err = bav._setUtxoViewMappingsForNewMessageOperationCreateTypeDm(txn, blockHeight, messageEntry)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: "+
 					"Problem setting utxo view mappings for NewMessageOperationCreateTypeDm")
 			}
 		case NewMessageTypeGroupChat:
+			// Send a group chat message: update appropriate utxo view mappings such as GroupChatMessagesIndex and GroupChatThreadIndex.
 			prevGroupChatThreadExistence, err = bav._setUtxoViewMappingsForNewMessageOperationCreateTypeGroupChat(txn, blockHeight, messageEntry)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: "+
@@ -836,14 +850,17 @@ func (bav *UtxoView) _connectNewMessage(
 		if txMeta.TimestampNanos == 0 {
 			return 0, 0, nil, RuleErrorNewMessageTimestampNanosCannotBeZero
 		}
+		// We can either update a dm message or a group chat message, so we consider both cases below.
 		switch txMeta.NewMessageType {
 		case NewMessageTypeDm:
+			// Update an existing dm message: update appropriate utxo view mappings such as DmMessagesIndex and DmThreadIndex.
 			prevNewMessageEntry, prevDmThreadExistence, err = bav._setUtxoViewMappingsForNewMessageOperationUpdateTypeDm(txn, blockHeight, messageEntry)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: "+
 					"Problem setting utxo view mappings for NewMessageOperationUpdateTypeDm")
 			}
 		case NewMessageTypeGroupChat:
+			// Update an existing group chat message: update appropriate utxo view mappings such as GroupChatMessagesIndex and GroupChatThreadIndex.
 			prevNewMessageEntry, prevGroupChatThreadExistence, err = bav._setUtxoViewMappingsForNewMessageOperationUpdateTypeGroupChat(txn, blockHeight, messageEntry)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: "+
@@ -860,7 +877,7 @@ func (bav *UtxoView) _connectNewMessage(
 				RuleErrorNewMessageUnknownMessageType, "_connectNewMessage: unknown message type"+
 					"for NewMessageOperationThreadAttributes")
 		}
-		// Need to make sure both user and sender access groups exist and there is a thread for them.
+		// Update appropriate mappings in ThreadAttributesIndex.
 		prevThreadAttributesEntry, err = bav._setUtxoViewMappingsForNewMessageOperationThreadAttributes(
 			txMeta, uint64(blockHeight), messageEntry)
 		if err != nil {
@@ -1113,6 +1130,7 @@ func (bav *UtxoView) _setUtxoViewMappingsForNewMessageOperationCreateTypeDm(
 			txMeta.NewMessageType, txMeta.NewMessageOperation)
 	}
 
+	// Make sure we're not sending a Dm to ourselves. Group chats can be used for self-messaging, but not Dms.
 	var prevDmThreadExistence *DmThreadExistence
 	if bytes.Equal(txMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), txMeta.RecipientAccessGroupOwnerPublicKey.ToBytes()) {
 		return nil, RuleErrorNewMessageDmSenderAndRecipientCannotBeTheSame
@@ -1131,7 +1149,7 @@ func (bav *UtxoView) _setUtxoViewMappingsForNewMessageOperationCreateTypeDm(
 			"_setUtxoViewMappingsForNewMessageOperationCreateTypeDm: DM thread already exists for sender (%v) and recipient (%v)",
 			txMeta.SenderAccessGroupOwnerPublicKey, txMeta.RecipientAccessGroupOwnerPublicKey)
 	}
-	// Because DM messages between two users are indexed by <AGroupId, BGroupId>, we need to store
+	// Because DM messages between two users are indexed by <AGroupId, BGroupId>, we end up storing
 	// mirror entries for both <AGroupId, BGroupId> and <BGroupId, AGroupId>. However, we don't
 	// necessarily need to store two messages for the same user. To store messages, it suffices
 	// to find lexicographical minimum of AGroupId.ToBytes(), BGroupId.ToBytes and store the message
@@ -1409,7 +1427,7 @@ func (bav *UtxoView) _setUtxoViewMappingsForNewMessageOperationThreadAttributes(
 
 	var prevThreadAttributesEntry *ThreadAttributesEntry
 
-	// Verify that the thread exists.
+	// Verify that the thread exists depending on whether the message is sent to a dm or group chat thread.
 	switch txMeta.NewMessageType {
 	case NewMessageTypeGroupChat:
 		// Make sure that the user is a member of the group chat.

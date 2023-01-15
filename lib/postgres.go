@@ -922,18 +922,18 @@ func (messageEntry *PGNewMessageDmEntry) FromNewMessageEntry(newMessageEntry *Ne
 	timestampNanosCopy := newMessageEntry.TimestampNanos
 	extraDataCopy, _ := DecodeExtraData(bytes.NewReader(EncodeExtraData(newMessageEntry.ExtraData)))
 
-	messageEntry.MinorAccessGroupOwnerPublicKey = &dmMessageKey.MinorGroupOwnerPublicKey
-	messageEntry.MinorAccessGroupKeyName = &dmMessageKey.MinorGroupKeyName
+	messageEntry.MinorAccessGroupOwnerPublicKey = &dmMessageKey.MinorAccessGroupOwnerPublicKey
+	messageEntry.MinorAccessGroupKeyName = &dmMessageKey.MinorAccessGroupKeyName
 	messageEntry.SenderAccessGroupPublicKey = &senderAccessGroupPublicKeyCopy
-	messageEntry.MajorAccessGroupOwnerPublicKey = &dmMessageKey.MajorGroupOwnerPublicKey
-	messageEntry.MajorAccessGroupKeyName = &dmMessageKey.MajorGroupKeyName
+	messageEntry.MajorAccessGroupOwnerPublicKey = &dmMessageKey.MajorAccessGroupOwnerPublicKey
+	messageEntry.MajorAccessGroupKeyName = &dmMessageKey.MajorAccessGroupKeyName
 	messageEntry.RecipientAccessGroupPublicKey = &recipientAccessGroupPublicKeyCopy
 	messageEntry.EncryptedText = encryptedTextCopy
 	messageEntry.TimestampNanos = timestampNanosCopy
 	messageEntry.ExtraData = extraDataCopy
 
-	if bytes.Equal(dmMessageKey.MinorGroupOwnerPublicKey.ToBytes(), newMessageEntry.SenderAccessGroupOwnerPublicKey.ToBytes()) &&
-		bytes.Equal(dmMessageKey.MinorGroupKeyName.ToBytes(), newMessageEntry.SenderAccessGroupKeyName.ToBytes()) {
+	if bytes.Equal(dmMessageKey.MinorAccessGroupOwnerPublicKey.ToBytes(), newMessageEntry.SenderAccessGroupOwnerPublicKey.ToBytes()) &&
+		bytes.Equal(dmMessageKey.MinorAccessGroupKeyName.ToBytes(), newMessageEntry.SenderAccessGroupKeyName.ToBytes()) {
 
 		messageEntry.IsSenderMinor = true
 	} else {
@@ -3193,9 +3193,9 @@ func (postgres *Postgres) flushNewMessageEntries(tx *pg.Tx, view *UtxoView) erro
 			insertNewMessageGroupThreadEntries = append(insertNewMessageGroupThreadEntries, newMessageGroupThreadEntry)
 		}
 	}
-	for threadAttributesKeyIter, threadAttributesEntryIter := range view.ThreadAttributes {
+	for threadAttributesKeyIter, threadAttributesEntryIter := range view.ThreadAttributesIndex {
 		if threadAttributesEntryIter == nil {
-			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for ThreadAttributes id %v. "+
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for ThreadAttributesIndex id %v. "+
 				"This should never happen", threadAttributesKeyIter)
 			continue
 		}
@@ -3782,8 +3782,8 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
-		Order("block_height ASC").                                        // Then oldest first (FIFO)
-		Order("order_id DESC").                                           // Then match BadgerDB ordering
+		Order("block_height ASC"). // Then oldest first (FIFO)
+		Order("order_id DESC"). // Then match BadgerDB ordering
 		Select()
 
 	if err != nil {
@@ -4014,10 +4014,10 @@ func (postgres *Postgres) GetAccessGroupEnumerationEntriesForMember(memberPublic
 
 func (postgres *Postgres) GetNewMessageDmEntry(dmMessageKey DmMessageKey) *PGNewMessageDmEntry {
 	newMessageDmEntry := &PGNewMessageDmEntry{
-		MinorAccessGroupOwnerPublicKey: &dmMessageKey.MinorGroupOwnerPublicKey,
-		MinorAccessGroupKeyName:        &dmMessageKey.MinorGroupKeyName,
-		MajorAccessGroupOwnerPublicKey: &dmMessageKey.MajorGroupOwnerPublicKey,
-		MajorAccessGroupKeyName:        &dmMessageKey.MajorGroupKeyName,
+		MinorAccessGroupOwnerPublicKey: &dmMessageKey.MinorAccessGroupOwnerPublicKey,
+		MinorAccessGroupKeyName:        &dmMessageKey.MinorAccessGroupKeyName,
+		MajorAccessGroupOwnerPublicKey: &dmMessageKey.MajorAccessGroupOwnerPublicKey,
+		MajorAccessGroupKeyName:        &dmMessageKey.MajorAccessGroupKeyName,
 		TimestampNanos:                 dmMessageKey.TimestampNanos,
 	}
 	err := postgres.db.Model(newMessageDmEntry).WherePK().First()
@@ -4027,7 +4027,7 @@ func (postgres *Postgres) GetNewMessageDmEntry(dmMessageKey DmMessageKey) *PGNew
 	return newMessageDmEntry
 }
 
-func (postgres *Postgres) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmThreadKey, startingTimestamp uint64,
+func (postgres *Postgres) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmThreadKey, maxTimestamp uint64,
 	maxMessagesToFetch uint64) (_messageEntries []*NewMessageEntry, _err error) {
 
 	var pgNewMessageDmEntries []*PGNewMessageDmEntry
@@ -4035,11 +4035,11 @@ func (postgres *Postgres) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmTh
 
 	dmMessageKey := MakeDmMessageKeyFromDmThreadKey(dmThreadKey)
 	err := postgres.db.Model(&pgNewMessageDmEntries).
-		Where("minor_access_group_owner_public_key = ?", dmMessageKey.MinorGroupOwnerPublicKey).
-		Where("minor_access_group_key_name = ?", dmMessageKey.MinorGroupKeyName).
-		Where("major_access_group_owner_public_key = ?", dmMessageKey.MajorGroupOwnerPublicKey).
-		Where("major_access_group_key_name = ?", dmMessageKey.MajorGroupKeyName).
-		Where("timestamp_nanos < ?", startingTimestamp).
+		Where("minor_access_group_owner_public_key = ?", dmMessageKey.MinorAccessGroupOwnerPublicKey).
+		Where("minor_access_group_key_name = ?", dmMessageKey.MinorAccessGroupKeyName).
+		Where("major_access_group_owner_public_key = ?", dmMessageKey.MajorAccessGroupOwnerPublicKey).
+		Where("major_access_group_key_name = ?", dmMessageKey.MajorAccessGroupKeyName).
+		Where("timestamp_nanos < ?", maxTimestamp).
 		Order("timestamp_nanos DESC").
 		Limit(int(maxMessagesToFetch)).
 		Select()

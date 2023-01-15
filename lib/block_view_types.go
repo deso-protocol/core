@@ -882,7 +882,7 @@ type UtxoOperation struct {
 	PrevPostAssociationEntry *PostAssociationEntry
 
 	//
-	// Access Group Soft-Fork fields
+	// Access Group Fork fields
 	//
 
 	// PrevAccessGroupEntry is the previous access group entry. It is used in
@@ -2237,11 +2237,11 @@ func MakeGroupChatMessageKey(groupOwnerPublicKey PublicKey, groupKeyName GroupKe
 }
 
 type DmMessageKey struct {
-	MinorGroupOwnerPublicKey PublicKey
-	MinorGroupKeyName        GroupKeyName
-	MajorGroupOwnerPublicKey PublicKey
-	MajorGroupKeyName        GroupKeyName
-	TimestampNanos           uint64
+	MinorAccessGroupOwnerPublicKey PublicKey
+	MinorAccessGroupKeyName        GroupKeyName
+	MajorAccessGroupOwnerPublicKey PublicKey
+	MajorAccessGroupKeyName        GroupKeyName
+	TimestampNanos                 uint64
 }
 
 func MakeDmMessageKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName,
@@ -2269,11 +2269,11 @@ func MakeDmMessageKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName
 	}
 
 	return DmMessageKey{
-		MinorGroupOwnerPublicKey: minorGroupOwnerPublicKey,
-		MinorGroupKeyName:        minorGroupKeyName,
-		MajorGroupOwnerPublicKey: majorGroupOwnerPublicKey,
-		MajorGroupKeyName:        majorGroupKeyName,
-		TimestampNanos:           tstampNanos,
+		MinorAccessGroupOwnerPublicKey: minorGroupOwnerPublicKey,
+		MinorAccessGroupKeyName:        minorGroupKeyName,
+		MajorAccessGroupOwnerPublicKey: majorGroupOwnerPublicKey,
+		MajorAccessGroupKeyName:        majorGroupKeyName,
+		TimestampNanos:                 tstampNanos,
 	}
 }
 

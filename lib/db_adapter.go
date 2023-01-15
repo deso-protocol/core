@@ -298,6 +298,7 @@ func (adapter *DbAdapter) GetPKIDForPublicKey(pkBytes []byte) *PKID {
 // AccessGroups
 //
 
+// GetAccessGroupEntryByAccessGroupId returns the AccessGroupEntry for the given AccessGroupId from db.
 func (adapter *DbAdapter) GetAccessGroupEntryByAccessGroupId(accessGroupId *AccessGroupId) (*AccessGroupEntry, error) {
 	if accessGroupId == nil {
 		glog.Errorf("GetAccessGroupEntryByAccessGroupId: Called with nil accessGroupId, this should never happen")
@@ -316,6 +317,7 @@ func (adapter *DbAdapter) GetAccessGroupEntryByAccessGroupId(accessGroupId *Acce
 	}
 }
 
+// GetAccessGroupExistenceByAccessGroupId returns true if the given AccessGroupId exists in db using optimized key-only lookup.
 func (adapter *DbAdapter) GetAccessGroupExistenceByAccessGroupId(accessGroupId *AccessGroupId) (bool, error) {
 	if accessGroupId == nil {
 		glog.Errorf("GetAccessGroupExistenceByAccessGroupId: Called with nil accessGroupId, this should never happen")
@@ -334,6 +336,7 @@ func (adapter *DbAdapter) GetAccessGroupExistenceByAccessGroupId(accessGroupId *
 	}
 }
 
+// GetAccessGroupIdsForOwner returns all the AccessGroupIds registered by given accessGroupOwnerPublicKey from db.
 func (adapter *DbAdapter) GetAccessGroupIdsForOwner(ownerPublicKey *PublicKey) (_accessGroupIdsOwned []*AccessGroupId, _err error) {
 	var accessGroupIds []*AccessGroupId
 	var err error
@@ -361,6 +364,7 @@ func (adapter *DbAdapter) GetAccessGroupIdsForOwner(ownerPublicKey *PublicKey) (
 	return accessGroupIds, nil
 }
 
+// GetAccessGroupIdsForMember returns all the AccessGroupIds that given memberPublicKey is a member of from db.
 func (adapter *DbAdapter) GetAccessGroupIdsForMember(memberPublicKey *PublicKey) (_accessGroupIdsMember []*AccessGroupId, _err error) {
 	var accessGroupIds []*AccessGroupId
 	var err error
@@ -394,6 +398,8 @@ func (adapter *DbAdapter) GetAccessGroupIdsForMember(memberPublicKey *PublicKey)
 // AccessGroupMembers
 //
 
+// GetAccessGroupMemberEntry returns the AccessGroupMemberEntry for the given accessGroupMemberPublicKey and
+// the group identified by <accessGroupOwnerPublicKey, accessGroupKeyName> from db.
 func (adapter *DbAdapter) GetAccessGroupMemberEntry(accessGroupMemberPublicKey PublicKey,
 	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) (*AccessGroupMemberEntry, error) {
 
@@ -411,6 +417,8 @@ func (adapter *DbAdapter) GetAccessGroupMemberEntry(accessGroupMemberPublicKey P
 	}
 }
 
+// GetAccessGroupMemberEnumerationEntry returns a bool indicating whether the given accessGroupMemberPublicKey is a member
+// of the group identified by <accessGroupOwnerPublicKey, accessGroupKeyName> from db, using optimized key-only lookup.
 func (adapter *DbAdapter) GetAccessGroupMemberEnumerationEntry(accessGroupMemberPublicKey PublicKey,
 	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) (_exists bool, _err error) {
 
@@ -424,6 +432,11 @@ func (adapter *DbAdapter) GetAccessGroupMemberEnumerationEntry(accessGroupMember
 	}
 }
 
+// GetPaginatedAccessGroupMembersEnumerationEntries returns a list of accessGroupMemberPublicKeys that are members of the group
+// identified by <accessGroupOwnerPublicKey, accessGroupKeyName> from db. The list is paginated by the given offset
+// startingGroupMemberPublicKeyBytes, so that each return publicKey is lexicographically greater than the offset.
+// The list is also limited to at most the given length of maxMembersToFetch. Returned public keys will be in
+// lexicographically ascending order.
 func (adapter *DbAdapter) GetPaginatedAccessGroupMembersEnumerationEntries(
 	accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName,
 	startingAccessGroupMemberPublicKeyBytes []byte, maxMembersToFetch uint32) (
@@ -434,7 +447,6 @@ func (adapter *DbAdapter) GetPaginatedAccessGroupMembersEnumerationEntries(
 	}
 
 	if adapter.postgresDb != nil {
-		// TODO: This might fail if keys don't exist, but it shouldn't.
 		return adapter.postgresDb.GetPaginatedAccessGroupMembersFromEnumerationIndex(
 			accessGroupOwnerPublicKey, accessGroupKeyName,
 			startingAccessGroupMemberPublicKeyBytes, maxMembersToFetch)
@@ -449,6 +461,7 @@ func (adapter *DbAdapter) GetPaginatedAccessGroupMembersEnumerationEntries(
 // NewMessage
 //
 
+// GetDmMessageEntry returns the NewMessageEntry for the given DmMessageKey from db.
 func (adapter *DbAdapter) GetDmMessageEntry(dmMessageKey DmMessageKey) (*NewMessageEntry, error) {
 
 	if adapter.postgresDb != nil {
@@ -463,6 +476,7 @@ func (adapter *DbAdapter) GetDmMessageEntry(dmMessageKey DmMessageKey) (*NewMess
 	}
 }
 
+// GetGroupChatMessageEntry returns the NewMessageEntry for the given GroupChatMessageKey from db.
 func (adapter *DbAdapter) GetGroupChatMessageEntry(groupChatMessageKey GroupChatMessageKey) (*NewMessageEntry, error) {
 
 	if adapter.postgresDb != nil {
@@ -477,6 +491,7 @@ func (adapter *DbAdapter) GetGroupChatMessageEntry(groupChatMessageKey GroupChat
 	}
 }
 
+// CheckDmThreadExistence returns a DmThreadExistence entry for the provided DmThreadKey from db.
 func (adapter *DbAdapter) CheckDmThreadExistence(dmThreadKey DmThreadKey) (*DmThreadExistence, error) {
 
 	if adapter.postgresDb != nil {
@@ -490,6 +505,7 @@ func (adapter *DbAdapter) CheckDmThreadExistence(dmThreadKey DmThreadKey) (*DmTh
 	}
 }
 
+// CheckGroupChatThreadExistence returns a GroupChatThreadExistence entry for the provided AccessGroupId from db.
 func (adapter *DbAdapter) CheckGroupChatThreadExistence(groupKey AccessGroupId) (*GroupChatThreadExistence, error) {
 
 	if adapter.postgresDb != nil {
@@ -503,6 +519,7 @@ func (adapter *DbAdapter) CheckGroupChatThreadExistence(groupKey AccessGroupId) 
 	}
 }
 
+// GetAllUserDmThreads returns a list of all the DmThreadKey entries associated with the given userAccessGroupOwnerPublicKey from db.
 func (adapter *DbAdapter) GetAllUserDmThreads(userAccessGroupOwnerPublicKey PublicKey) (
 	_dmThreadKeys []*DmThreadKey, _err error) {
 
@@ -514,7 +531,11 @@ func (adapter *DbAdapter) GetAllUserDmThreads(userAccessGroupOwnerPublicKey Publ
 	}
 }
 
-func (adapter *DbAdapter) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmThreadKey, startingTimestamp uint64,
+// GetPaginatedMessageEntriesForDmThread returns a list of NewMessageEntry entries for the given DmThreadKey from db.
+// The list is paginated by the given offset maxTimestamp (exclusive), so that each return message's timestamp is
+// less than the offset. The list is also limited to at most the given length of maxMessagesToFetch. Returned
+// messages will be in descending order by timestamp.
+func (adapter *DbAdapter) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmThreadKey, maxTimestamp uint64,
 	maxMessagesToFetch uint64) (_messageEntries []*NewMessageEntry, _err error) {
 
 	if maxMessagesToFetch == 0 {
@@ -523,13 +544,17 @@ func (adapter *DbAdapter) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmTh
 
 	if adapter.postgresDb != nil {
 		return adapter.postgresDb.GetPaginatedMessageEntriesForDmThread(
-			dmThreadKey, startingTimestamp, maxMessagesToFetch)
+			dmThreadKey, maxTimestamp, maxMessagesToFetch)
 	} else {
 		return DBGetPaginatedDmMessageEntry(adapter.badgerDb, adapter.snapshot,
-			dmThreadKey, startingTimestamp, maxMessagesToFetch)
+			dmThreadKey, maxTimestamp, maxMessagesToFetch)
 	}
 }
 
+// GetPaginatedMessageEntriesForGroupChatThread returns a list of NewMessageEntry entries for the given AccessGroupId from db.
+// The list is paginated by the given offset maxTimestamp (exclusive), so that each return message's timestamp is
+// less than the offset. The list is also limited to at most the given length of maxMessagesToFetch. Returned
+// messages will be in descending order by timestamp.
 func (adapter *DbAdapter) GetPaginatedMessageEntriesForGroupChatThread(groupChatThread AccessGroupId, startingTimestamp uint64,
 	maxMessagesToFetch uint64) (_messageEntries []*NewMessageEntry, _err error) {
 
@@ -546,6 +571,7 @@ func (adapter *DbAdapter) GetPaginatedMessageEntriesForGroupChatThread(groupChat
 	}
 }
 
+// GetThreadAttributesEntry returns the ThreadAttributesEntry for the given ThreadAttributesKey from db.
 func (adapter *DbAdapter) GetThreadAttributesEntry(threadKey ThreadAttributesKey) (*ThreadAttributesEntry, error) {
 
 	if adapter.postgresDb != nil {

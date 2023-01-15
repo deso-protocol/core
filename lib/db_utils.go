@@ -446,17 +446,36 @@ type DBPrefixes struct {
 	//		-> <AccessGroupMemberEnumerationEntry>
 	PrefixAccessGroupMemberEnumerationIndex []byte `prefix_id:"[73]" is_state:"true"`
 
-	// <groupOwnerPublicKey, groupKeyName, timestamp> -> <MessageEntry>
+	// PrefixGroupChatMessagesIndex is modified by the NewMessage transaction and is used to store group chat
+	// NewMessageEntry objects for each message sent to a group chat. The index has the following structure:
+	// 	<prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
 	PrefixGroupChatMessagesIndex []byte `prefix_id:"[74]" is_state:"true"`
-	// <groupOwnerPublicKey, groupKeyName> -> <GroupChatThreadExistence>
+
+	// PrefixGroupChatThreadIndex is modified by the NewMessage transaction and is used to store a GroupChatThreadExistence
+	// for each existing group chat thread. The index has the following structure:
+	// 	<prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName> -> <GroupChatThreadExistence>
 	PrefixGroupChatThreadIndex []byte `prefix_id:"[75]" is_state:"true"`
-	// <minorGroupOwnerPublicKey, minorGroupKeyName, majorGroupOwnerPublicKey, majorGroupKeyName, timestamp> -> <MessageEntry>
+
+	// PrefixDmMessagesIndex is modified by the NewMessage transaction and is used to store NewMessageEntry objects for
+	// each message sent to a Dm thread. The index has the following structure:
+	// 	<prefix, MinorAccessGroupOwnerPublicKey, MinorAccessGroupKeyName,
+	//		MajorAccessGroupOwnerPublicKey, MajorAccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
+	// The Minor/Major distinction is used to deterministically map the two accessGroupIds of message's sender/recipient
+	// into a single pair based on the lexicographical ordering of the two accessGroupIds. This is done to ensure that
+	// both sides of the conversation have the same key for the same conversation, and we can store just a single message.
 	PrefixDmMessagesIndex []byte `prefix_id:"[76]" is_state:"true"`
-	// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName, partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName>
-	//		-> <DmThreadExistence>
+
+	// PrefixDmThreadIndex is modified by the NewMessage transaction and is used to store a DmThreadExistence
+	// for each existing dm thread. The index has the following structure:
+	// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
+	//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName> -> <DmThreadExistence>
+	// It's worth noting that two of these entries are stored for each Dm thread, one being the inverse of the other.
 	PrefixDmThreadIndex []byte `prefix_id:"[77]" is_state:"true"`
-	// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName,
-	//	partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName, newMessageType byte> -> <ThreadAttributesEntry>
+
+	// PrefixThreadAttributesIndex is modified by the UpdateThread transaction and is used to store a ThreadAttributes
+	// for each existing thread. The index has the following structure:
+	// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
+	//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName, NewMessageType> -> <ThreadAttributesEntry>
 	PrefixThreadAttributesIndex []byte `prefix_id:"[78]" is_state:"true"`
 	// NEXT_TAG: 79
 
@@ -1873,7 +1892,7 @@ func DBGetAllUserGroupEntries(handle *badger.DB, ownerPublicKey []byte) ([]*Mess
 
 // -------------------------------------------------------------------------------------
 // PrefixGroupChatMessagesIndex
-// <AccessGroupOwnerPublicKey, AccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
+// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
 // -------------------------------------------------------------------------------------
 
 // _dbSeekPrefixForGroupMemberAttributesIndex returns prefix to enumerate over the given member's attributes.
@@ -2031,7 +2050,7 @@ func DBDeleteGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key G
 
 // -------------------------------------------------------------------------------------
 // PrefixGroupChatThreadIndex
-// <AccessGroupOwnerPublicKey, AccessGroupKeyName> -> <GroupChatThreadExistence>
+// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName> -> <GroupChatThreadExistence>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForGroupChatThreadIndex(key AccessGroupId) []byte {
@@ -2121,16 +2140,16 @@ func DBDeleteGroupChatThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, groupI
 
 // -------------------------------------------------------------------------------------
 // PrefixDmMessagesIndex
-// <MinorGroupOwnerPublicKey, MinorGroupKeyName,
-//	MajorGroupOwnerPublicKey, MajorGroupKeyName, TimestampNanos> -> <NewMessageEntry>
+// 	<prefix, MinorAccessGroupOwnerPublicKey, MinorAccessGroupKeyName,
+//		MajorAccessGroupOwnerPublicKey, MajorAccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForPrefixDmMessageIndex(key DmMessageKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessagesIndex...)
-	prefixCopy = append(prefixCopy, key.MinorGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.MinorGroupKeyName.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.MajorGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.MajorGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MinorAccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MinorAccessGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MajorAccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MajorAccessGroupKeyName.ToBytes()...)
 	prefixCopy = append(prefixCopy, EncodeUint64(key.TimestampNanos)...)
 	return prefixCopy
 }
@@ -2179,34 +2198,34 @@ func DBGetDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessageKe
 }
 
 func DBGetPaginatedDmMessageEntry(handle *badger.DB, snap *Snapshot,
-	dmThreadKey DmThreadKey, startingTimestamp uint64, maxMessagesToFetch uint64) (
+	dmThreadKey DmThreadKey, maxTimestamp uint64, maxMessagesToFetch uint64) (
 	_messageEntries []*NewMessageEntry, _err error) {
 
 	var err error
 	var messageEntries []*NewMessageEntry
 	err = handle.View(func(txn *badger.Txn) error {
 		messageEntries, err = DBGetPaginatedDmMessageEntryWithTxn(
-			txn, snap, dmThreadKey, startingTimestamp, maxMessagesToFetch)
+			txn, snap, dmThreadKey, maxTimestamp, maxMessagesToFetch)
 		return err
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetPaginatedDmMessageEntry: "+
-			"Problem getting paginated message entries with dmThreadKey (%v), startingTimestamp (%v), "+
-			"maxMessagesToFetch (%v)", dmThreadKey, startingTimestamp, maxMessagesToFetch)
+			"Problem getting paginated message entries with dmThreadKey (%v), maxTimestamp (%v), "+
+			"maxMessagesToFetch (%v)", dmThreadKey, maxTimestamp, maxMessagesToFetch)
 	}
 	return messageEntries, nil
 }
 
 func DBGetPaginatedDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
-	dmThreadKey DmThreadKey, startingTimestamp uint64, maxMessagesToFetch uint64) (
+	dmThreadKey DmThreadKey, maxTimestamp uint64, maxMessagesToFetch uint64) (
 	_messageEntries []*NewMessageEntry, _err error) {
 
 	var messageEntries []*NewMessageEntry
 	// Construct the seek key given the dm thread and the starting timestamp.
 	dmMessageKey := MakeDmMessageKeyFromDmThreadKey(dmThreadKey)
-	prefix := _dbSeekPrefixForPrefixDmMessageIndex(dmMessageKey.MinorGroupOwnerPublicKey, dmMessageKey.MinorGroupKeyName,
-		dmMessageKey.MajorGroupOwnerPublicKey, dmMessageKey.MajorGroupKeyName)
-	startKey := append(prefix, EncodeUint64(startingTimestamp)...)
+	prefix := _dbSeekPrefixForPrefixDmMessageIndex(dmMessageKey.MinorAccessGroupOwnerPublicKey, dmMessageKey.MinorAccessGroupKeyName,
+		dmMessageKey.MajorAccessGroupOwnerPublicKey, dmMessageKey.MajorAccessGroupKeyName)
+	startKey := append(prefix, EncodeUint64(maxTimestamp)...)
 
 	// Now fetch the messages from the Db
 	keysFound, valsFound, err := _enumerateLimitedKeysReversedForPrefixAndStartingKeyWithTxn(txn, prefix, startKey, maxMessagesToFetch)
@@ -2284,7 +2303,8 @@ func DBDeleteDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessag
 // PrefixDmThreadIndex
 // This prefix stores information about all the different DM threads that the user has participated in.
 // We store a duplicate entry for each thread, with the "user", "party" accessGroupIds flipped.
-// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName, partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName> -> <>
+// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
+//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName> -> <DmThreadExistence>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForPrefixDmThreadIndex(key DmThreadKey) []byte {
@@ -2496,7 +2516,7 @@ func DBDeleteDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, dmThreadKey D
 // This prefix stores the thread attributes for a given thread. The key structure is the same as the
 // ThreadAttributesKey structure, i.e.:
 // 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
-//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName, NewMessageType byte> -> <ThreadAttributesEntry>
+//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName, NewMessageType> -> <ThreadAttributesEntry>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForPrefixThreadAttributesIndex(key ThreadAttributesKey) []byte {
@@ -2957,11 +2977,12 @@ func DBDeleteAccessGroupMemberEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 // -------------------------------------------------------------------------------------
 
 // _dbKeyForAccessGroupMemberEnumerationIndex returns the key for a group enumeration index.
-func _dbKeyForAccessGroupMemberEnumerationIndex(groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, groupMemberPublicKey PublicKey) []byte {
+func _dbKeyForAccessGroupMemberEnumerationIndex(accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName,
+	accessGroupMemberPublicKey PublicKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixAccessGroupMemberEnumerationIndex...)
-	key := append(prefixCopy, groupOwnerPublicKey.ToBytes()...)
-	key = append(key, groupKeyName.ToBytes()...)
-	key = append(key, groupMemberPublicKey.ToBytes()...)
+	key := append(prefixCopy, accessGroupOwnerPublicKey.ToBytes()...)
+	key = append(key, accessGroupKeyName.ToBytes()...)
+	key = append(key, accessGroupMemberPublicKey.ToBytes()...)
 	return key
 }
 
@@ -3522,10 +3543,8 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 
 // -------------------------------------------------------------------------------------
 // Reposts mapping functions
-//
-//	<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
-//	<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
-//
+// 		<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
+// 		<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
 // -------------------------------------------------------------------------------------
 // PrefixReposterPubKeyRepostedPostHashToRepostPostHash
 func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash BlockHash, repostPostHash BlockHash) []byte {
@@ -5137,8 +5156,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -9198,7 +9217,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -9325,7 +9344,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
