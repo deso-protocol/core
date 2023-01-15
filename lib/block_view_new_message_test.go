@@ -79,6 +79,7 @@ func TestNewMessage(t *testing.T) {
 		testBadger:                 true,
 		testPostgres:               false,
 		testPostgresPort:           5433,
+		disableLogging:             false,
 		initialBlocksMined:         4,
 		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
 		initChainCallback:          initChainCallback,
@@ -229,7 +230,7 @@ func TestNewMessage(t *testing.T) {
 		"another user from (m1, baseGroup) to (m1, groupName1)", m1Priv, m1PubBytes, tv9MessageEntry, NewMessageTypeDm,
 		NewMessageOperationCreate, RuleErrorNewMessageDmSenderAndRecipientCannotBeTheSame)
 	tooLongMessage := []byte{}
-	for ii := 0; ii < int(DeSoTestnetParams.MaxPrivateMessageLengthBytes)+10; ii++ {
+	for ii := 0; ii < int(DeSoTestnetParams.MaxNewMessageLengthBytes)+10; ii++ {
 		tooLongMessage = append(tooLongMessage, byte(10))
 	}
 	tv10MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
@@ -247,7 +248,26 @@ func TestNewMessage(t *testing.T) {
 	tv12 := _createNewMessageTestVector("TEST 12: (FAIL) Try connecting new message dm create transaction with a "+
 		"timestamp of 0 sent by (m0, baseGroup) to (m1, groupName1)", m0Priv, m0PubBytes,
 		tv12MessageEntry, NewMessageTypeDm, NewMessageOperationCreate, RuleErrorNewMessageTimestampNanosCannotBeZero)
-	tvv2 := []*transactionTestVector{tv8, tv9, tv10, tv11, tv12}
+	tv12p2MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
+		*m3PublicKey, *groupName3, *m3PublicKey, []byte{1, 2, 3}, 5, nil)
+	tv12p2 := _createNewMessageTestVector("TEST 12.2: (FAIL) Try connecting new message dm create transaction sent from"+
+		" (m0, baseGroup) to a non-existent group (m3, groupName3)", m0Priv, m0PubBytes, tv12p2MessageEntry,
+		NewMessageTypeDm, NewMessageOperationCreate, fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView"))
+	tv12p4MessageEntry := tv12p2MessageEntry
+	tv12p4 := _createNewMessageTestVector("TEST 12.4: (FAIL) Try connecting new message dm create transaction sent from"+
+		" (m0, baseGroup) to a non-existent group (m3, groupName3)", m0Priv, m0PubBytes, tv12p4MessageEntry,
+		NewMessageTypeGroupChat, NewMessageOperationCreate, fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView"))
+	tv12p6MessageEntry := _createMessageEntry(*m3PublicKey, *groupName3, *m3PublicKey,
+		*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey, []byte{1, 2, 3}, 5, nil)
+	tv12p6 := _createNewMessageTestVector("TEST 12.6: (FAIL) Try connecting new message dm create transaction sent from"+
+		" non-existent group (m3, groupName3) to (m0, baseGroup)", m3Priv, m3PubBytes, tv12p6MessageEntry,
+		NewMessageTypeDm, NewMessageOperationCreate, fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView"))
+	tv12p8MessageEntry := tv12p6MessageEntry
+	tv12p8 := _createNewMessageTestVector("TEST 12.8: (FAIL) Try connecting new message group chat create transaction sent from"+
+		" non-existent group (m3, groupName3) to (m0, baseGroup)", m3Priv, m3PubBytes, tv12p8MessageEntry,
+		NewMessageTypeGroupChat, NewMessageOperationCreate, fmt.Errorf("ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView"))
+
+	tvv2 := []*transactionTestVector{tv8, tv9, tv10, tv11, tv12, tv12p2, tv12p4, tv12p6, tv12p8}
 	tvb2 := NewTransactionTestVectorBlock(tvv2, nil, nil)
 
 	// -------------------------------------------------------------------------------------
@@ -658,6 +678,358 @@ func TestNewMessage(t *testing.T) {
 	tes.Run()
 }
 
+func TestNewMessageThreadAttributes(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	m0PublicKey := NewPublicKey(m0PubBytes)
+	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
+	m1PublicKey := NewPublicKey(m1PubBytes)
+	m2PubBytes, _, _ := Base58CheckDecode(m2Pub)
+	m2PublicKey := NewPublicKey(m2PubBytes)
+	m3PubBytes, _, _ := Base58CheckDecode(m3Pub)
+	m3PublicKey := NewPublicKey(m3PubBytes)
+
+	fundPublicKeysWithNanosMap := make(map[PublicKey]uint64)
+	fundPublicKeysWithNanosMap[*m0PublicKey] = 1000
+	fundPublicKeysWithNanosMap[*m1PublicKey] = 1000
+	fundPublicKeysWithNanosMap[*m2PublicKey] = 100
+	fundPublicKeysWithNanosMap[*m3PublicKey] = 100
+	initChainCallback := func(tm *transactionTestMeta) {
+		_setAccessGroupParams(tm)
+		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
+	}
+	tConfig := &transactionTestConfig{
+		t:                          t,
+		testBadger:                 true,
+		testPostgres:               false,
+		testPostgresPort:           5433,
+		disableLogging:             false,
+		initialBlocksMined:         4,
+		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
+		initChainCallback:          initChainCallback,
+	}
+
+	groupPriv1, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	groupPk1 := groupPriv1.PubKey().SerializeCompressed()
+	_ = groupPk1
+
+	groupPriv2, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	groupPk2 := groupPriv2.PubKey().SerializeCompressed()
+	_ = groupPk2
+
+	groupPriv3, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	groupPk3 := groupPriv3.PubKey().SerializeCompressed()
+	_ = groupPk3
+
+	groupNameBytes1 := []byte("group1")
+	groupName1 := NewGroupKeyName(groupNameBytes1)
+	_ = groupName1
+	groupNameBytes2 := []byte("group2")
+	groupName2 := NewGroupKeyName(groupNameBytes2)
+	_ = groupName2
+	groupNameBytes3 := []byte("gang-gang")
+	groupName3 := NewGroupKeyName(groupNameBytes3)
+	_ = groupName3
+
+	// The test we run look something like this:
+	// + Test updating a dm thread for existing thread attributes.
+	// + Test adding dm thread attributes by other party.
+	// + Test adding dm thread attributes by a non-party in a dm thread
+	// + Test adding group chat thread attributes
+	// + Test adding group chat thread attributes for non-existing thread.
+	// + Test adding group chat thread attributes from every party
+	// + Test adding group chat thread attributes from non-member
+	// + Test updating group chat thread attributes
+	// + After a block is mined, test that the thread attributes are set correctly.
+	// + Test updating dm thread attributes for a mined thread
+	// + Test updating group chat thread attributes for a mined thread
+	// + Hit all basic validation errors with coverage test.
+	// =======
+
+	tv1MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1), []byte("message 1"), 2, nil)
+	tv1 := _createNewMessageTestVector("TEST 1: (PASS) Try connecting new message transaction sent from (m0, base) to (m1, base)",
+		m0Priv, m0PubBytes, tv1MessageEntry, NewMessageTypeDm, NewMessageOperationCreate, nil)
+	// Add DM thread attributes for this message.
+	tv2ThreadAttributes := map[string][]byte{
+		"thread_attributes2": []byte("thread_attributes2"),
+	}
+	tv2MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1), []byte{}, 0, tv2ThreadAttributes)
+	tv2 := _createNewMessageTestVector("TEST 2: (PASS) Try connecting new message transaction setting thread attributes"+
+		"on a Dm thread between (m0, base) and (m1, base)", m0Priv, m0PubBytes, tv2MessageEntry,
+		NewMessageTypeDm, NewMessageOperationThreadAttributes, nil)
+	threadDmM0BM1B := NewThreadAttributesKey(*m0PublicKey, *BaseGroupKeyName(), *m1PublicKey, *BaseGroupKeyName(), NewMessageTypeDm)
+	tv2.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadDmM0BM1B, tv2ThreadAttributes)
+	}
+	// Test that setting attributes data for non-existing dm thread fails.
+	tv3ThreadAttributes := map[string][]byte{
+		"thread_attributes3": []byte("thread_attributes3"),
+	}
+	tv3MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m2PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk2), []byte{}, 0, tv3ThreadAttributes)
+	tv3 := _createNewMessageTestVector("TEST 3: (FAIL) Try connecting new message transaction setting thread attributes"+
+		"on a Dm thread between (m0, base) and (m2, base) that does not exist", m0Priv, m0PubBytes, tv3MessageEntry,
+		NewMessageTypeDm, NewMessageOperationThreadAttributes, RuleErrorNewMessageDmThreadDoesNotExist)
+	// Test updating a dm thread for existing thread attributes.
+	tv4ThreadAttributes := tv3ThreadAttributes
+	tv4MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1), []byte{}, 0, tv4ThreadAttributes)
+	tv4 := _createNewMessageTestVector("TEST 4: (PASS) Try connecting new message transaction setting thread attributes"+
+		"on a Dm thread between (m0, base) and (m1, base)", m0Priv, m0PubBytes, tv4MessageEntry,
+		NewMessageTypeDm, NewMessageOperationThreadAttributes, nil)
+	tv4.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadDmM0BM1B, tv4ThreadAttributes)
+	}
+	// Test adding dm thread attributes by other party.
+	tv5ThreadAttributes := map[string][]byte{
+		"thread_attributes5": []byte("thread_attributes5"),
+	}
+	tv5MessageEntry := _createMessageEntry(*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1), []byte{}, 0, tv5ThreadAttributes)
+	tv5 := _createNewMessageTestVector("TEST 5: (PASS) Try connecting new message transaction setting thread attributes"+
+		"on a Dm thread between (m1, base) and (m0, base)", m1Priv, m1PubBytes, tv5MessageEntry,
+		NewMessageTypeDm, NewMessageOperationThreadAttributes, nil)
+	threadDmM1BM0B := NewThreadAttributesKey(*m1PublicKey, *BaseGroupKeyName(), *m0PublicKey, *BaseGroupKeyName(), NewMessageTypeDm)
+	tv5.connectCallback = func(tvb *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadDmM0BM1B, tv4ThreadAttributes)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadDmM1BM0B, tv5ThreadAttributes)
+	}
+	// Make sure (m1, base) can't add thread attributes to (m1, base).
+	tv5p5ThreadAttributes := map[string][]byte{
+		"thread_attributes5p5": []byte("thread_attributes5p5"),
+	}
+	tv5p5MessageEntry := _createMessageEntry(*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1), []byte{}, 0, tv5p5ThreadAttributes)
+	tv5p5 := _createNewMessageTestVector("TEST 5.5: (FAIL) Try connecting new message transaction setting thread attributes"+
+		"on a Dm thread between (m1, base) and (m1, base)", m1Priv, m1PubBytes, tv5p5MessageEntry,
+		NewMessageTypeDm, NewMessageOperationThreadAttributes, RuleErrorNewMessageDmThreadDoesNotExist)
+	// Test adding dm thread attributes by a non-party in a dm thread
+	tv6ThreadAttributes := map[string][]byte{
+		"thread_attributes6": []byte("thread_attributes6"),
+	}
+	tv6MessageEntry := _createMessageEntry(*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1), []byte{}, 0, tv6ThreadAttributes)
+	tv6 := _createNewMessageTestVector("TEST 6: (FAIL) Try connecting new message transaction setting thread attributes"+
+		"on a Dm thread between (m1, base) and (m0, base) by a non-party", m2Priv, m2PubBytes, tv6MessageEntry,
+		NewMessageTypeDm, NewMessageOperationThreadAttributes, RuleErrorNewMessageMessageSenderDoesNotMatchTxnPublicKey)
+	// Test adding group chat thread attributes
+	// First create an access group (m0, groupName1) and add m1 and m2 to it.
+	tv7 := _createAccessGroupTestVector("TEST 7: (PASS) Try connecting new group transaction", m0Priv, m0PubBytes,
+		m0PubBytes, groupPk1, groupName1.ToBytes(), AccessGroupOperationTypeCreate, nil, nil)
+	tv8Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{}, ExtraData: nil},
+		{AccessGroupMemberPublicKey: m2PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{}, ExtraData: nil},
+	}
+	tv8 := _createAccessGroupMembersTestVector("TEST 8: (PASS) Try connecting group member add transaction "+
+		"adding (m1, base) and (m2, base) to access group (m0, groupName1)", m0Priv, m0PubBytes, groupName1.ToBytes(),
+		tv8Members, AccessGroupMemberOperationTypeAdd, nil)
+	// Check if we can add thread attributes to access group (m0, groupName1) before group chat thread has been created.
+	tv9ThreadAttributes := map[string][]byte{
+		"thread_attributes9": []byte("thread_attributes9"),
+	}
+	tv9MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte{}, 0, tv9ThreadAttributes)
+	tv9 := _createNewMessageTestVector("TEST 9: (FAIL) Try connecting new message transaction setting thread attributes"+
+		"on a non-member group chat thread between (m0, base) and (m0, groupName1) before group chat thread has been created",
+		m0Priv, m0PubBytes, tv9MessageEntry, NewMessageTypeGroupChat, NewMessageOperationThreadAttributes,
+		RuleErrorNewMessageGroupChatMemberEntryDoesntExist)
+	tv10ThreadAttributes := map[string][]byte{
+		"thread_attributes10": []byte("thread_attributes10"),
+	}
+	tv10MessageEntry := _createMessageEntry(*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte{}, 0, tv10ThreadAttributes)
+	tv10 := _createNewMessageTestVector("TEST 10: (FAIL) Try connecting new message transaction setting thread attributes"+
+		"on a member group chat thread between (m1, base) and (m0, groupName1) before group chat thread has been created",
+		m1Priv, m1PubBytes, tv10MessageEntry, NewMessageTypeGroupChat, NewMessageOperationThreadAttributes,
+		RuleErrorNewMessageGroupChatThreadDoesNotExist)
+	// Send a message from m1 to the group chat (m0, groupName1).
+	tv11MessageEntry := _createMessageEntry(*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte("message11"), 5, nil)
+	tv11 := _createNewMessageTestVector("TEST 11: (PASS) Try connecting new message transaction sending a group chat "+
+		"message between (m1, base) and group chat (m0, groupName1)", m1Priv, m1PubBytes, tv11MessageEntry,
+		NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
+	// Check if we can add thread attributes to access group (m0, groupName1) after group chat thread has been created.
+	// First a failing test trying to add attributes from a non-member, (m0, base)
+	tv12ThreadAttributes := map[string][]byte{
+		"thread_attributes12": []byte("thread_attributes12"),
+	}
+	tv12MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte{}, 0, tv12ThreadAttributes)
+	tv12 := _createNewMessageTestVector("TEST 12: (FAIL) Try connecting new message transaction setting thread attributes"+
+		"on a non-member group chat thread between (m0, base) and (m0, groupName1) after group chat thread has been created",
+		m0Priv, m0PubBytes, tv12MessageEntry, NewMessageTypeGroupChat, NewMessageOperationThreadAttributes,
+		RuleErrorNewMessageGroupChatMemberEntryDoesntExist)
+	// Try adding attributes from a member (m1, base) to the group chat (m0, groupName1)
+	tv13ThreadAttributes := map[string][]byte{
+		"thread_attributes13": []byte("thread_attributes13"),
+	}
+	tv13MessageEntry := _createMessageEntry(*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte{}, 0, tv13ThreadAttributes)
+	tv13 := _createNewMessageTestVector("TEST 13: (PASS) Try connecting new message transaction setting thread attributes"+
+		"on a member group chat thread between (m1, base) and (m0, groupName1) after group chat thread has been created",
+		m1Priv, m1PubBytes, tv13MessageEntry, NewMessageTypeGroupChat, NewMessageOperationThreadAttributes,
+		nil)
+	threadGcM1BM0N1 := NewThreadAttributesKey(*m1PublicKey, *BaseGroupKeyName(), *m0PublicKey, *groupName1, NewMessageTypeGroupChat)
+	tv13.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		tv5.connectCallback(tv, tm, utxoView)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM1BM0N1, tv13ThreadAttributes)
+	}
+	// Try adding attributes from a member (m2, base) to the group chat (m0, groupName1)
+	tv14ThreadAttributes := map[string][]byte{
+		"thread_attributes14": []byte("thread_attributes14"),
+	}
+	tv14MessageEntry := _createMessageEntry(*m2PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte{}, 0, tv14ThreadAttributes)
+	tv14 := _createNewMessageTestVector("TEST 14: (PASS) Try connecting new message transaction setting thread attributes"+
+		"on a member group chat thread between (m2, base) and (m0, groupName1) after group chat thread has been created",
+		m2Priv, m2PubBytes, tv14MessageEntry, NewMessageTypeGroupChat, NewMessageOperationThreadAttributes,
+		nil)
+	threadGcM2BM0N1 := NewThreadAttributesKey(*m2PublicKey, *BaseGroupKeyName(), *m0PublicKey, *groupName1, NewMessageTypeGroupChat)
+	tv14.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		tv13.connectCallback(tv, tm, utxoView)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM2BM0N1, tv14ThreadAttributes)
+	}
+	// Try adding attributes from a member (m0, groupName1) to the group chat (m0, groupName1)
+	tv15ThreadAttributes := map[string][]byte{
+		"thread_attributes15": []byte("thread_attributes15"),
+	}
+	tv15MessageEntry := _createMessageEntry(*m0PublicKey, *groupName1, *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte{}, 0, tv15ThreadAttributes)
+	tv15 := _createNewMessageTestVector("TEST 15: (PASS) Try connecting new message transaction setting thread attributes"+
+		"on a member group chat thread between (m0, groupName1) and (m0, groupName1) after group chat thread has been created",
+		m0Priv, m0PubBytes, tv15MessageEntry, NewMessageTypeGroupChat, NewMessageOperationThreadAttributes,
+		nil)
+	threadGcM0N1M0N1 := NewThreadAttributesKey(*m0PublicKey, *groupName1, *m0PublicKey, *groupName1, NewMessageTypeGroupChat)
+	tv15.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		tv14.connectCallback(tv, tm, utxoView)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM0N1M0N1, tv15ThreadAttributes)
+	}
+	// Try adding attributes from another non-member (m3, Base) to the group chat (m0, groupName1)
+	tv16ThreadAttributes := map[string][]byte{
+		"thread_attributes16": []byte("thread_attributes16"),
+	}
+	tv16MessageEntry := _createMessageEntry(*m3PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte{}, 0, tv16ThreadAttributes)
+	tv16 := _createNewMessageTestVector("TEST 16: (FAIL) Try connecting new message transaction setting thread attributes"+
+		"on a non-member group chat thread between (m3, Base) and (m0, groupName1) after group chat thread has been created",
+		m3Priv, m3PubBytes, tv16MessageEntry, NewMessageTypeGroupChat, NewMessageOperationThreadAttributes,
+		RuleErrorNewMessageGroupChatMemberEntryDoesntExist)
+	// Test updating group chat thread attributes
+	// Try updating attributes from a member (m0, groupName1) to the group chat (m0, groupName1)
+	tv17ThreadAttributes := map[string][]byte{
+		"thread_attributes17": []byte("thread_attributes17"),
+	}
+	tv17MessageEntry := _createMessageEntry(*m0PublicKey, *groupName1, *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte{}, 0, tv17ThreadAttributes)
+	tv17 := _createNewMessageTestVector("TEST 17: (PASS) Try connecting new message transaction updating thread attributes"+
+		"on a member group chat thread between (m0, groupName1) and (m0, groupName1) after group chat thread has been created",
+		m0Priv, m0PubBytes, tv17MessageEntry, NewMessageTypeGroupChat, NewMessageOperationThreadAttributes,
+		nil)
+	tv17.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		tv14.connectCallback(tv, tm, utxoView)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM0N1M0N1, tv17ThreadAttributes)
+	}
+	tv17.disconnectCallback = tv15.connectCallback
+
+	tvv := []*transactionTestVector{tv1, tv2, tv3, tv4, tv5, tv5p5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13,
+		tv14, tv15, tv16, tv17}
+	tvb1ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadDmM0BM1B, tv4ThreadAttributes)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadDmM1BM0B, tv5ThreadAttributes)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM1BM0N1, tv13ThreadAttributes)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM2BM0N1, tv14ThreadAttributes)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM0N1M0N1, tv17ThreadAttributes)
+	}
+	tvb1 := NewTransactionTestVectorBlock(tvv, tvb1ConnectCallback, nil)
+
+	// Submit a dummy group chat message and use its connectCallback to verify that all the thread attributes are set correctly.
+	tv18MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte{}, 10, nil)
+	tv18 := _createNewMessageTestVector("TEST 19: (PASS) Try connecting new message transaction sending a message "+
+		"on a group chat between (m0, Base) and (m0, groupName1)", m0Priv, m0PubBytes, tv18MessageEntry,
+		NewMessageTypeGroupChat, NewMessageOperationCreate, nil)
+	tv18.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadDmM0BM1B, tv4ThreadAttributes)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadDmM1BM0B, tv5ThreadAttributes)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM1BM0N1, tv13ThreadAttributes)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM2BM0N1, tv14ThreadAttributes)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM0N1M0N1, tv17ThreadAttributes)
+	}
+	// Update thread attributes for a dm thread between (m0, Base) and (m1, Base)
+	tv19ThreadAttributes := map[string][]byte{
+		"thread_attributes19": []byte("thread_attributes19"),
+	}
+	tv19MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1), []byte{}, 0, tv19ThreadAttributes)
+	tv19 := _createNewMessageTestVector("TEST 19: (PASS) Try connecting new message transaction updating thread attributes "+
+		"on a dm thread between (m0, base) and (m1, base) after a block was mined", m0Priv, m0PubBytes, tv19MessageEntry,
+		NewMessageTypeDm, NewMessageOperationThreadAttributes, nil)
+	tv19.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadDmM0BM1B, tv19ThreadAttributes)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadDmM1BM0B, tv5ThreadAttributes)
+	}
+	// Update thread attributes for a group chat thread between (m1, Base) and (m0, groupName1)
+	tv20ThreadAttributes := map[string][]byte{
+		"thread_attributes20": []byte("thread_attributes20"),
+	}
+	tv20MessageEntry := _createMessageEntry(*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte{}, 0, tv20ThreadAttributes)
+	tv20 := _createNewMessageTestVector("TEST 20: (PASS) Try connecting new message transaction updating thread attributes "+
+		"on a group chat thread between (m1, base) and (m0, groupName1) after a block was mined", m1Priv, m1PubBytes,
+		tv20MessageEntry, NewMessageTypeGroupChat, NewMessageOperationThreadAttributes, nil)
+	tv20.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM1BM0N1, tv20ThreadAttributes)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM2BM0N1, tv14ThreadAttributes)
+		_verifyThreadAttributesDataForUtxoView(t, utxoView, *threadGcM0N1M0N1, tv17ThreadAttributes)
+	}
+	// Some failing tests
+	// Wrong message type
+	tv21 := _createNewMessageTestVector("TEST 21: (FAIL) Try connecting new message transaction updating thread attributes "+
+		"with a wrong message type", m1Priv, m1PubBytes, tv20MessageEntry,
+		NewMessageType(20), NewMessageOperationThreadAttributes, RuleErrorNewMessageUnknownMessageType)
+	// Nil extra data
+	tv22MessageEntry := _createMessageEntry(*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte{}, 0, nil)
+	tv22 := _createNewMessageTestVector("TEST 22: (FAIL) Try connecting new message transaction updating thread attributes "+
+		"with nil extra data", m1Priv, m1PubBytes, tv22MessageEntry,
+		NewMessageTypeGroupChat, NewMessageOperationThreadAttributes, RuleErrorNewMessageAttributesDateExtraDataCannotBeEmpty)
+	// Non-zero timestamp
+	tv23MessageEntry := _createMessageEntry(*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte{}, 10, tv20ThreadAttributes)
+	tv23 := _createNewMessageTestVector("TEST 23: (FAIL) Try connecting new message transaction updating thread attributes "+
+		"with a non-zero timestamp", m1Priv, m1PubBytes, tv23MessageEntry,
+		NewMessageTypeGroupChat, NewMessageOperationThreadAttributes, RuleErrorNewMessageAttributesDateTimestampCannotBeSet)
+	// Non-nil encrypted text
+	tv24MessageEntry := _createMessageEntry(*m1PublicKey, *BaseGroupKeyName(), *NewPublicKey(groupPk1),
+		*m0PublicKey, *groupName1, *NewPublicKey(groupPk1), []byte("encrypted text"), 0, tv20ThreadAttributes)
+	tv24 := _createNewMessageTestVector("TEST 24: (FAIL) Try connecting new message transaction updating thread attributes "+
+		"with a non-nil encrypted text", m1Priv, m1PubBytes, tv24MessageEntry,
+		NewMessageTypeGroupChat, NewMessageOperationThreadAttributes, RuleErrorNewMessageAttributesDateEncryptedTextCannotBeSet)
+
+	tvv2 := []*transactionTestVector{tv18, tv19, tv20, tv21, tv22, tv23, tv24}
+	tvb2ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+		require.NoError(err)
+		tv19.connectCallback(tv19, tm, utxoView)
+		tv20.connectCallback(tv20, tm, utxoView)
+	}
+	tvb2 := NewTransactionTestVectorBlock(tvv2, tvb2ConnectCallback, tvb1ConnectCallback)
+
+	tvbb := []*transactionTestVectorBlock{tvb1, tvb2}
+
+	tes := NewTransactionTestSuite(t, tvbb, tConfig)
+	tes.Run()
+}
+
 func _createNewMessageTestVector(id string, userPrivateKey string, userPublicKey []byte, messageEntry *NewMessageEntry,
 	messageType NewMessageType, messageOperation NewMessageOperation, expectedConnectError error) (
 	_tv *transactionTestVector) {
@@ -733,6 +1105,10 @@ func _createSignedNewMessageTransaction(t *testing.T, chain *Blockchain, mempool
 func _verifyConnectUtxoViewEntryForNewMessage(t *testing.T, utxoView *UtxoView, dataSpace *NewMessageTestData) {
 	require := require.New(t)
 
+	if dataSpace.NewMessageOperation == NewMessageOperationThreadAttributes {
+		return
+	}
+
 	// Verify that the UtxoView is correct.
 	var messageEntry *NewMessageEntry
 	var exists bool
@@ -796,15 +1172,20 @@ func _verifyDisconnectUtxoViewEntryForNewMessage(t *testing.T, utxoView *UtxoVie
 		require.NotNil(messageEntry)
 		require.Equal(false, messageEntry.isDeleted)
 		require.Equal(true, bytes.Equal(EncodeToBytes(blockHeight, messageEntry), EncodeToBytes(blockHeight, previousMessageEntry)))
+	case NewMessageOperationThreadAttributes:
+		break
 	}
 }
 
 func _verifyDbEntryForNewMessage(t *testing.T, dbAdapter *DbAdapter, dataSpace *NewMessageTestData) {
-
 	require := require.New(t)
+
+	if dataSpace.NewMessageOperation == NewMessageOperationThreadAttributes {
+		return
+	}
+
 	var messageEntry *NewMessageEntry
 	var err error
-
 	switch dataSpace.NewMessageType {
 	case NewMessageTypeDm:
 		dmMessageKey := MakeDmMessageKeyForSenderRecipient(dataSpace.SenderAccessGroupOwnerPublicKey, dataSpace.SenderAccessGroupKeyName,
@@ -866,10 +1247,10 @@ func _verifyEqualNewMessage(t *testing.T, newMessageEntry *NewMessageEntry, data
 
 func _createDmThreadKey(userAccessGroupId AccessGroupId, partyAccessGroupId AccessGroupId) DmThreadKey {
 	return DmThreadKey{
-		userGroupOwnerPublicKey:  userAccessGroupId.AccessGroupOwnerPublicKey,
-		userGroupKeyName:         userAccessGroupId.AccessGroupKeyName,
-		partyGroupOwnerPublicKey: partyAccessGroupId.AccessGroupOwnerPublicKey,
-		partyGroupKeyName:        partyAccessGroupId.AccessGroupKeyName,
+		UserAccessGroupOwnerPublicKey:  userAccessGroupId.AccessGroupOwnerPublicKey,
+		UserAccessGroupKeyName:         userAccessGroupId.AccessGroupKeyName,
+		PartyAccessGroupOwnerPublicKey: partyAccessGroupId.AccessGroupOwnerPublicKey,
+		PartyAccessGroupKeyName:        partyAccessGroupId.AccessGroupKeyName,
 	}
 }
 
@@ -906,15 +1287,15 @@ func _verifyDmThreadKeys(t *testing.T, dmThreadKeys []*DmThreadKey, userAccessGr
 	require.Equal(len(expectedDmThreadKeys), len(dmThreadKeys))
 	expectedDmThreadKeysMap := make(map[DmThreadKey]struct{})
 	for _, dmThreadKey := range expectedDmThreadKeys {
-		if bytes.Equal(dmThreadKey.userGroupOwnerPublicKey.ToBytes(), dmThreadKey.partyGroupOwnerPublicKey.ToBytes()) {
-			t.Fatalf("userGroupOwnerPublicKey and partyGroupOwnerPublicKey should not be equal in these tests.")
+		if bytes.Equal(dmThreadKey.UserAccessGroupOwnerPublicKey.ToBytes(), dmThreadKey.PartyAccessGroupOwnerPublicKey.ToBytes()) {
+			t.Fatalf("UserAccessGroupOwnerPublicKey and PartyAccessGroupOwnerPublicKey should not be equal in these tests.")
 		}
-		if bytes.Equal(dmThreadKey.partyGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()) {
+		if bytes.Equal(dmThreadKey.PartyAccessGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()) {
 			swapDmThreadKey := DmThreadKey{
-				userGroupOwnerPublicKey:  dmThreadKey.partyGroupOwnerPublicKey,
-				userGroupKeyName:         dmThreadKey.partyGroupKeyName,
-				partyGroupOwnerPublicKey: dmThreadKey.userGroupOwnerPublicKey,
-				partyGroupKeyName:        dmThreadKey.userGroupKeyName,
+				UserAccessGroupOwnerPublicKey:  dmThreadKey.PartyAccessGroupOwnerPublicKey,
+				UserAccessGroupKeyName:         dmThreadKey.PartyAccessGroupKeyName,
+				PartyAccessGroupOwnerPublicKey: dmThreadKey.UserAccessGroupOwnerPublicKey,
+				PartyAccessGroupKeyName:        dmThreadKey.UserAccessGroupKeyName,
 			}
 			expectedDmThreadKeysMap[swapDmThreadKey] = struct{}{}
 		} else {
@@ -932,7 +1313,7 @@ func _verifyDmThreadKeys(t *testing.T, dmThreadKeys []*DmThreadKey, userAccessGr
 
 	// Make sure expectedDmThreadKeys is identical to dmThreadKeys.
 	for _, dmThreadKey := range dmThreadKeys {
-		require.Equal(true, bytes.Equal(dmThreadKey.userGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()))
+		require.Equal(true, bytes.Equal(dmThreadKey.UserAccessGroupOwnerPublicKey.ToBytes(), userAccessGroupOwnerPublicKey.ToBytes()))
 		_, exists := expectedDmThreadKeysMap[*dmThreadKey]
 		require.Equal(true, exists)
 	}
@@ -1126,4 +1507,13 @@ func _decryptBytes(cipherText []byte, privateKey []byte) []byte {
 		return nil
 	}
 	return plain
+}
+
+func _verifyThreadAttributesDataForUtxoView(t *testing.T, utxoView *UtxoView, threadAttributesKey ThreadAttributesKey,
+	expectedAttributesData map[string][]byte) {
+
+	require := require.New(t)
+	threadAttributesEntry, err := utxoView.getThreadAttributesForThreadAttributesKey(threadAttributesKey)
+	require.NoError(err)
+	require.Equal(true, bytes.Equal(EncodeExtraData(expectedAttributesData), EncodeExtraData(threadAttributesEntry.AttributeData)))
 }

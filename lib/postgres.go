@@ -129,32 +129,36 @@ type PGTransaction struct {
 	IsRecoverable bool       `pg:",use_zero"`
 
 	// Relationships
-	Outputs                     []*PGTransactionOutput         `pg:"rel:has-many,join_fk:output_hash"`
-	MetadataBlockReward         *PGMetadataBlockReward         `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataBitcoinExchange     *PGMetadataBitcoinExchange     `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataPrivateMessage      *PGMetadataPrivateMessage      `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataSubmitPost          *PGMetadataSubmitPost          `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataUpdateExchangeRate  *PGMetadataUpdateExchangeRate  `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataUpdateProfile       *PGMetadataUpdateProfile       `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataFollow              *PGMetadataFollow              `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataLike                *PGMetadataLike                `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataCreatorCoin         *PGMetadataCreatorCoin         `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataCreatorCoinTransfer *PGMetadataCreatorCoinTransfer `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataSwapIdentity        *PGMetadataSwapIdentity        `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataCreateNFT           *PGMetadataCreateNFT           `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataUpdateNFT           *PGMetadataUpdateNFT           `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataAcceptNFTBid        *PGMetadataAcceptNFTBid        `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataNFTBid              *PGMetadataNFTBid              `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataNFTTransfer         *PGMetadataNFTTransfer         `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataAcceptNFTTransfer   *PGMetadataAcceptNFTTransfer   `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataBurnNFT             *PGMetadataBurnNFT             `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataDerivedKey          *PGMetadataDerivedKey          `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataDAOCoin             *PGMetadataDAOCoin             `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataDAOCoinTransfer     *PGMetadataDAOCoinTransfer     `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataDAOCoinLimitOrder   *PGMetadataDAOCoinLimitOrder   `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataAccessGroup         *PGMetadataAccessGroup         `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataAccessGroupMembers  *PGMetadataAccessGroupMembers  `pg:"rel:belongs-to,join_fk:transaction_hash"`
-	MetadataNewMessage          *PGMetadataNewMessage          `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	Outputs                       []*PGTransactionOutput           `pg:"rel:has-many,join_fk:output_hash"`
+	MetadataBlockReward           *PGMetadataBlockReward           `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataBitcoinExchange       *PGMetadataBitcoinExchange       `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataPrivateMessage        *PGMetadataPrivateMessage        `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataSubmitPost            *PGMetadataSubmitPost            `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataUpdateExchangeRate    *PGMetadataUpdateExchangeRate    `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataUpdateProfile         *PGMetadataUpdateProfile         `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataFollow                *PGMetadataFollow                `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataLike                  *PGMetadataLike                  `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataCreatorCoin           *PGMetadataCreatorCoin           `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataCreatorCoinTransfer   *PGMetadataCreatorCoinTransfer   `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataSwapIdentity          *PGMetadataSwapIdentity          `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataCreateNFT             *PGMetadataCreateNFT             `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataUpdateNFT             *PGMetadataUpdateNFT             `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAcceptNFTBid          *PGMetadataAcceptNFTBid          `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataNFTBid                *PGMetadataNFTBid                `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataNFTTransfer           *PGMetadataNFTTransfer           `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAcceptNFTTransfer     *PGMetadataAcceptNFTTransfer     `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataBurnNFT               *PGMetadataBurnNFT               `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDerivedKey            *PGMetadataDerivedKey            `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDAOCoin               *PGMetadataDAOCoin               `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDAOCoinTransfer       *PGMetadataDAOCoinTransfer       `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDAOCoinLimitOrder     *PGMetadataDAOCoinLimitOrder     `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataCreateUserAssociation *PGMetadataCreateUserAssociation `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDeleteUserAssociation *PGMetadataDeleteUserAssociation `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataCreatePostAssociation *PGMetadataCreatePostAssociation `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataDeletePostAssociation *PGMetadataDeletePostAssociation `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAccessGroup           *PGMetadataAccessGroup           `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataAccessGroupMembers    *PGMetadataAccessGroupMembers    `pg:"rel:belongs-to,join_fk:transaction_hash"`
+	MetadataNewMessage            *PGMetadataNewMessage            `pg:"rel:belongs-to,join_fk:transaction_hash"`
 }
 
 // PGTransactionOutput represents DeSoOutput, DeSoInput, and UtxoEntry
@@ -918,18 +922,18 @@ func (messageEntry *PGNewMessageDmEntry) FromNewMessageEntry(newMessageEntry *Ne
 	timestampNanosCopy := newMessageEntry.TimestampNanos
 	extraDataCopy, _ := DecodeExtraData(bytes.NewReader(EncodeExtraData(newMessageEntry.ExtraData)))
 
-	messageEntry.MinorAccessGroupOwnerPublicKey = &dmMessageKey.MinorGroupOwnerPublicKey
-	messageEntry.MinorAccessGroupKeyName = &dmMessageKey.MinorGroupKeyName
+	messageEntry.MinorAccessGroupOwnerPublicKey = &dmMessageKey.MinorAccessGroupOwnerPublicKey
+	messageEntry.MinorAccessGroupKeyName = &dmMessageKey.MinorAccessGroupKeyName
 	messageEntry.SenderAccessGroupPublicKey = &senderAccessGroupPublicKeyCopy
-	messageEntry.MajorAccessGroupOwnerPublicKey = &dmMessageKey.MajorGroupOwnerPublicKey
-	messageEntry.MajorAccessGroupKeyName = &dmMessageKey.MajorGroupKeyName
+	messageEntry.MajorAccessGroupOwnerPublicKey = &dmMessageKey.MajorAccessGroupOwnerPublicKey
+	messageEntry.MajorAccessGroupKeyName = &dmMessageKey.MajorAccessGroupKeyName
 	messageEntry.RecipientAccessGroupPublicKey = &recipientAccessGroupPublicKeyCopy
 	messageEntry.EncryptedText = encryptedTextCopy
 	messageEntry.TimestampNanos = timestampNanosCopy
 	messageEntry.ExtraData = extraDataCopy
 
-	if bytes.Equal(dmMessageKey.MinorGroupOwnerPublicKey.ToBytes(), newMessageEntry.SenderAccessGroupOwnerPublicKey.ToBytes()) &&
-		bytes.Equal(dmMessageKey.MinorGroupKeyName.ToBytes(), newMessageEntry.SenderAccessGroupKeyName.ToBytes()) {
+	if bytes.Equal(dmMessageKey.MinorAccessGroupOwnerPublicKey.ToBytes(), newMessageEntry.SenderAccessGroupOwnerPublicKey.ToBytes()) &&
+		bytes.Equal(dmMessageKey.MinorAccessGroupKeyName.ToBytes(), newMessageEntry.SenderAccessGroupKeyName.ToBytes()) {
 
 		messageEntry.IsSenderMinor = true
 	} else {
@@ -1041,10 +1045,10 @@ type PGNewMessageDmThreadEntry struct {
 
 func (messageEntry *PGNewMessageDmThreadEntry) FromDmThreadKey(dmThreadKey *DmThreadKey) {
 	dmThreadKeyCopy := *dmThreadKey
-	messageEntry.UserAccessGroupOwnerPublicKey = &dmThreadKeyCopy.userGroupOwnerPublicKey
-	messageEntry.UserAccessGroupKeyName = &dmThreadKeyCopy.userGroupKeyName
-	messageEntry.PartyAccessGroupOwnerPublicKey = &dmThreadKeyCopy.partyGroupOwnerPublicKey
-	messageEntry.PartyAccessGroupKeyName = &dmThreadKeyCopy.partyGroupKeyName
+	messageEntry.UserAccessGroupOwnerPublicKey = &dmThreadKeyCopy.UserAccessGroupOwnerPublicKey
+	messageEntry.UserAccessGroupKeyName = &dmThreadKeyCopy.UserAccessGroupKeyName
+	messageEntry.PartyAccessGroupOwnerPublicKey = &dmThreadKeyCopy.PartyAccessGroupOwnerPublicKey
+	messageEntry.PartyAccessGroupKeyName = &dmThreadKeyCopy.PartyAccessGroupKeyName
 }
 
 func (messageEntry *PGNewMessageDmThreadEntry) ToDmThreadKey() *DmThreadKey {
@@ -1053,10 +1057,10 @@ func (messageEntry *PGNewMessageDmThreadEntry) ToDmThreadKey() *DmThreadKey {
 	partyAccessGroupOwnerPublicKeyCopy := *messageEntry.PartyAccessGroupOwnerPublicKey
 	partyAccessGroupKeyNameCopy := *messageEntry.PartyAccessGroupKeyName
 	return &DmThreadKey{
-		userGroupOwnerPublicKey:  userAccessGroupOwnerPublicKeyCopy,
-		userGroupKeyName:         userAccessGroupKeyNameCopy,
-		partyGroupOwnerPublicKey: partyAccessGroupOwnerPublicKeyCopy,
-		partyGroupKeyName:        partyAccessGroupKeyNameCopy,
+		UserAccessGroupOwnerPublicKey:  userAccessGroupOwnerPublicKeyCopy,
+		UserAccessGroupKeyName:         userAccessGroupKeyNameCopy,
+		PartyAccessGroupOwnerPublicKey: partyAccessGroupOwnerPublicKeyCopy,
+		PartyAccessGroupKeyName:        partyAccessGroupKeyNameCopy,
 	}
 }
 
@@ -1079,6 +1083,56 @@ func (messageEntry *PGNewMessageGroupChatThreadEntry) ToAccessGroupId() AccessGr
 		AccessGroupOwnerPublicKey: accessGroupOwnerPublicKeyCopy,
 		AccessGroupKeyName:        accessGroupKeyNameCopy,
 	}
+}
+
+type PGNewMessageThreadAttributesEntry struct {
+	tableName struct{} `pg:"pg_new_message_thread_attributes_entries"`
+
+	UserAccessGroupOwnerPublicKey  *PublicKey        `pg:",pk,type:bytea"`
+	UserAccessGroupKeyName         *GroupKeyName     `pg:",pk,type:bytea"`
+	PartyAccessGroupOwnerPublicKey *PublicKey        `pg:",pk,type:bytea"`
+	PartyAccessGroupKeyName        *GroupKeyName     `pg:",pk,type:bytea"`
+	NewMessageType                 uint8             `pg:",pk,use_zero"`
+	AttributeData                  map[string][]byte `pg:",type:jsonb"`
+}
+
+func (messageEntry *PGNewMessageThreadAttributesEntry) FromThreadAttributesKeyAndThreadAttributesEntry(
+	threadAttributesKey *ThreadAttributesKey, threadAttributesEntry *ThreadAttributesEntry) {
+
+	if threadAttributesKey == nil || threadAttributesEntry == nil {
+		return
+	}
+
+	threadAttributesKeyCopy := *threadAttributesKey
+	threadAttributesEntryCopy := *threadAttributesEntry
+	messageEntry.UserAccessGroupOwnerPublicKey = &threadAttributesKeyCopy.UserAccessGroupOwnerPublicKey
+	messageEntry.UserAccessGroupKeyName = &threadAttributesKeyCopy.UserAccessGroupKeyName
+	messageEntry.PartyAccessGroupOwnerPublicKey = &threadAttributesKeyCopy.PartyAccessGroupOwnerPublicKey
+	messageEntry.PartyAccessGroupKeyName = &threadAttributesKeyCopy.PartyAccessGroupKeyName
+	messageEntry.NewMessageType = uint8(threadAttributesKeyCopy.NewMessageType)
+	messageEntry.AttributeData = threadAttributesEntryCopy.AttributeData
+}
+
+func (messageEntry *PGNewMessageThreadAttributesEntry) ToThreadAttributesKeyAndThreadAttributesEntry() (*ThreadAttributesKey, *ThreadAttributesEntry) {
+	if messageEntry == nil {
+		return nil, nil
+	}
+	messageEntryCopy := *messageEntry
+	userAccessGroupOwnerPublicKeyCopy := *messageEntryCopy.UserAccessGroupOwnerPublicKey
+	userAccessGroupKeyNameCopy := *messageEntryCopy.UserAccessGroupKeyName
+	partyAccessGroupOwnerPublicKeyCopy := *messageEntryCopy.PartyAccessGroupOwnerPublicKey
+	partyAccessGroupKeyNameCopy := *messageEntryCopy.PartyAccessGroupKeyName
+	attributeDataCopy := messageEntryCopy.AttributeData
+
+	return &ThreadAttributesKey{
+			UserAccessGroupOwnerPublicKey:  userAccessGroupOwnerPublicKeyCopy,
+			UserAccessGroupKeyName:         userAccessGroupKeyNameCopy,
+			PartyAccessGroupOwnerPublicKey: partyAccessGroupOwnerPublicKeyCopy,
+			PartyAccessGroupKeyName:        partyAccessGroupKeyNameCopy,
+			NewMessageType:                 NewMessageType(messageEntryCopy.NewMessageType),
+		}, &ThreadAttributesEntry{
+			AttributeData: attributeDataCopy,
+		}
 }
 
 func HexToUint256(input string) *uint256.Int {
@@ -1398,6 +1452,10 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	var metadataDAOCoinTransfer []*PGMetadataDAOCoinTransfer
 	var metadataDAOCoinLimitOrder []*PGMetadataDAOCoinLimitOrder
 	var metadataDAOCoinLimitOrderBidderInputs []*PGMetadataDAOCoinLimitOrderBidderInputs
+	var metadataCreateUserAssociations []*PGMetadataCreateUserAssociation
+	var metadataDeleteUserAssociations []*PGMetadataDeleteUserAssociation
+	var metadataCreatePostAssociations []*PGMetadataCreatePostAssociation
+	var metadataDeletePostAssociations []*PGMetadataDeletePostAssociation
 	var metadataAccessGroup []*PGMetadataAccessGroup
 	var metadataAccessGroupMembers []*PGMetadataAccessGroupMembers
 	var metadataNewMessage []*PGMetadataNewMessage
@@ -1743,6 +1801,40 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 						})
 				}
 			}
+
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateUserAssociation {
+			txMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
+			metadataCreateUserAssociations = append(metadataCreateUserAssociations, &PGMetadataCreateUserAssociation{
+				TransactionHash:     txnHash,
+				TargetUserPublicKey: txMeta.TargetUserPublicKey,
+				AppPublicKey:        txMeta.AppPublicKey,
+				AssociationType:     string(txMeta.AssociationType),
+				AssociationValue:    string(txMeta.AssociationValue),
+			})
+
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeDeleteUserAssociation {
+			txMeta := txn.TxnMeta.(*DeleteUserAssociationMetadata)
+			metadataDeleteUserAssociations = append(metadataDeleteUserAssociations, &PGMetadataDeleteUserAssociation{
+				TransactionHash: txnHash,
+				AssociationID:   txMeta.AssociationID,
+			})
+
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatePostAssociation {
+			txMeta := txn.TxnMeta.(*CreatePostAssociationMetadata)
+			metadataCreatePostAssociations = append(metadataCreatePostAssociations, &PGMetadataCreatePostAssociation{
+				TransactionHash:  txnHash,
+				PostHash:         txMeta.PostHash,
+				AppPublicKey:     txMeta.AppPublicKey,
+				AssociationType:  string(txMeta.AssociationType),
+				AssociationValue: string(txMeta.AssociationValue),
+			})
+
+		} else if txn.TxnMeta.GetTxnType() == TxnTypeDeletePostAssociation {
+			txMeta := txn.TxnMeta.(*DeletePostAssociationMetadata)
+			metadataDeletePostAssociations = append(metadataDeletePostAssociations, &PGMetadataDeletePostAssociation{
+				TransactionHash: txnHash,
+				AssociationID:   txMeta.AssociationID,
+			})
 
 		} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
 
@@ -2153,6 +2245,30 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		}
 	}
 
+	if len(metadataCreateUserAssociations) > 0 {
+		if _, err := tx.Model(&metadataCreateUserAssociations).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
+	if len(metadataDeleteUserAssociations) > 0 {
+		if _, err := tx.Model(&metadataDeleteUserAssociations).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
+	if len(metadataCreatePostAssociations) > 0 {
+		if _, err := tx.Model(&metadataCreatePostAssociations).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
+	if len(metadataDeletePostAssociations) > 0 {
+		if _, err := tx.Model(&metadataDeletePostAssociations).Returning("NULL").Insert(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -2250,6 +2366,12 @@ func (postgres *Postgres) FlushView(view *UtxoView, blockHeight uint64) error {
 		//if err := postgres.flushDAOCoinLimitOrders(tx, view); err != nil {
 		//	return err
 		//}
+		if err := postgres.flushUserAssociations(tx, view, blockHeight); err != nil {
+			return err
+		}
+		if err := postgres.flushPostAssociations(tx, view, blockHeight); err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -2889,19 +3011,21 @@ func (postgres *Postgres) flushAccessGroupEntries(tx *pg.Tx, view *UtxoView) err
 	var insertEntries []*PGAccessGroupEntry
 	var deleteEntries []*PGAccessGroupEntry
 
-	for id, entry := range view.AccessGroupIdToAccessGroupEntry {
-		if entry == nil {
-			glog.Errorf("Postgres.flushAccessGroupEntries: Skipping nil entry for id %v. This should never happen", id)
+	for accessGroupIdIter, accessGroupEntryIter := range view.AccessGroupIdToAccessGroupEntry {
+		if accessGroupEntryIter == nil {
+			glog.Errorf("Postgres.flushAccessGroupEntries: Skipping nil entry for id %v. "+
+				"This should never happen", accessGroupIdIter)
 			continue
 		}
 
-		accessGroupEntry := &PGAccessGroupEntry{}
-		accessGroupEntry.FromAccessGroupEntry(entry)
+		accessGroupEntry := *accessGroupEntryIter
+		pgAccessGroupEntry := &PGAccessGroupEntry{}
+		pgAccessGroupEntry.FromAccessGroupEntry(&accessGroupEntry)
 
-		if entry.isDeleted {
-			deleteEntries = append(deleteEntries, accessGroupEntry)
+		if accessGroupEntry.isDeleted {
+			deleteEntries = append(deleteEntries, pgAccessGroupEntry)
 		} else {
-			insertEntries = append(insertEntries, accessGroupEntry)
+			insertEntries = append(insertEntries, pgAccessGroupEntry)
 		}
 	}
 
@@ -2932,27 +3056,30 @@ func (postgres *Postgres) flushAccessGroupMemberEntries(tx *pg.Tx, view *UtxoVie
 	var insertEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
 	var deleteEnumerationEntries []*PGAccessGroupMemberEnumerationEntry
 
-	for id, entry := range view.AccessGroupMembershipKeyToAccessGroupMember {
+	for accessGroupMembershipKeyIter, accessGroupMemberEntryIter := range view.AccessGroupMembershipKeyToAccessGroupMember {
 		// copy the iterator just in case.
-		idCopy := id
-		if entry == nil {
-			glog.Errorf("Postgres.flushAccessGroupMemberEntries: Skipping nil entry for id %v. This should never happen", id)
+		if accessGroupMemberEntryIter == nil {
+			glog.Errorf("Postgres.flushAccessGroupMemberEntries: Skipping nil entry for id %v. "+
+				"This should never happen", accessGroupMembershipKeyIter)
 			continue
 		}
 
-		accessGroupMemberEntry := &PGAccessGroupMemberEntry{}
-		accessGroupMemberEntry.FromAccessGroupMemberEntry(idCopy.AccessGroupOwnerPublicKey, idCopy.AccessGroupKeyName, entry)
+		accessGroupMembershipKey := accessGroupMembershipKeyIter
+		accessGroupMemberEntry := *accessGroupMemberEntryIter
+		pgAccessGroupMemberEntry := &PGAccessGroupMemberEntry{}
+		pgAccessGroupMemberEntry.FromAccessGroupMemberEntry(accessGroupMembershipKey.AccessGroupOwnerPublicKey,
+			accessGroupMembershipKey.AccessGroupKeyName, &accessGroupMemberEntry)
 		accessGroupMemberEnumerationEntry := &PGAccessGroupMemberEnumerationEntry{
-			AccessGroupMemberPublicKey: accessGroupMemberEntry.AccessGroupMemberPublicKey,
-			AccessGroupOwnerPublicKey:  accessGroupMemberEntry.AccessGroupOwnerPublicKey,
-			AccessGroupKeyName:         accessGroupMemberEntry.AccessGroupKeyName,
+			AccessGroupMemberPublicKey: pgAccessGroupMemberEntry.AccessGroupMemberPublicKey,
+			AccessGroupOwnerPublicKey:  pgAccessGroupMemberEntry.AccessGroupOwnerPublicKey,
+			AccessGroupKeyName:         pgAccessGroupMemberEntry.AccessGroupKeyName,
 		}
 
-		if entry.isDeleted {
-			deleteEntries = append(deleteEntries, accessGroupMemberEntry)
+		if accessGroupMemberEntry.isDeleted {
+			deleteEntries = append(deleteEntries, pgAccessGroupMemberEntry)
 			deleteEnumerationEntries = append(deleteEnumerationEntries, accessGroupMemberEnumerationEntry)
 		} else {
-			insertEntries = append(insertEntries, accessGroupMemberEntry)
+			insertEntries = append(insertEntries, pgAccessGroupMemberEntry)
 			insertEnumerationEntries = append(insertEnumerationEntries, accessGroupMemberEnumerationEntry)
 		}
 	}
@@ -3001,62 +3128,87 @@ func (postgres *Postgres) flushNewMessageEntries(tx *pg.Tx, view *UtxoView) erro
 	var deleteNewMessageGroupEntries []*PGNewMessageGroupChatEntry
 	var insertNewMessageGroupThreadEntries []*PGNewMessageGroupChatThreadEntry
 	var deleteNewMessageGroupThreadEntries []*PGNewMessageGroupChatThreadEntry
+	var insertNewMessageThreadAttributesEntries []*PGNewMessageThreadAttributesEntry
+	var deleteNewMessageThreadAttributesEntries []*PGNewMessageThreadAttributesEntry
 
-	for id, entry := range view.DmMessagesIndex {
-		if entry == nil {
-			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for DmMessagesIndex id %v. This should never happen", id)
+	for dmMessageKeyIter, messageEntryIter := range view.DmMessagesIndex {
+		if messageEntryIter == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for DmMessagesIndex id %v. "+
+				"This should never happen", dmMessageKeyIter)
 			continue
 		}
 
+		messageEntry := *messageEntryIter
 		newMessageDmEntry := &PGNewMessageDmEntry{}
-		newMessageDmEntry.FromNewMessageEntry(entry)
-		if entry.isDeleted {
+		newMessageDmEntry.FromNewMessageEntry(&messageEntry)
+		if messageEntryIter.isDeleted {
 			deleteNewMessageDmEntries = append(deleteNewMessageDmEntries, newMessageDmEntry)
 		} else {
 			insertNewMessageDmEntries = append(insertNewMessageDmEntries, newMessageDmEntry)
 		}
 	}
-	for id, entry := range view.DmThreadIndex {
-		if entry == nil {
-			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for DmThreadIndex id %v. This should never happen", id)
+	for dmThreadKeyIter, dmThreadExistenceIter := range view.DmThreadIndex {
+		if dmThreadExistenceIter == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for DmThreadIndex id %v. "+
+				"This should never happen", dmThreadKeyIter)
 			continue
 		}
 
 		newMessageDmThreadEntry := &PGNewMessageDmThreadEntry{}
-		idCopy := id
-		newMessageDmThreadEntry.FromDmThreadKey(&idCopy)
-		if entry.isDeleted {
+		dmThreadKey := dmThreadKeyIter
+		newMessageDmThreadEntry.FromDmThreadKey(&dmThreadKey)
+		if dmThreadExistenceIter.isDeleted {
 			deleteNewMessageDmThreadEntries = append(deleteNewMessageDmThreadEntries, newMessageDmThreadEntry)
 		} else {
 			insertNewMessageDmThreadEntries = append(insertNewMessageDmThreadEntries, newMessageDmThreadEntry)
 		}
 	}
-	for id, entry := range view.GroupChatMessagesIndex {
-		if entry == nil {
-			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for GroupChatMessagesIndex id %v. This should never happen", id)
+	for groupChatMessageKeyIter, messageEntryIter := range view.GroupChatMessagesIndex {
+		if messageEntryIter == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for GroupChatMessagesIndex id %v. "+
+				"This should never happen", groupChatMessageKeyIter)
 			continue
 		}
-
+		messageEntry := *messageEntryIter
 		newMessageGroupEntry := &PGNewMessageGroupChatEntry{}
-		newMessageGroupEntry.FromNewMessageEntry(entry)
-		if entry.isDeleted {
+		newMessageGroupEntry.FromNewMessageEntry(&messageEntry)
+		if messageEntry.isDeleted {
 			deleteNewMessageGroupEntries = append(deleteNewMessageGroupEntries, newMessageGroupEntry)
 		} else {
 			insertNewMessageGroupEntries = append(insertNewMessageGroupEntries, newMessageGroupEntry)
 		}
 	}
-	for id, entry := range view.GroupChatThreadIndex {
-		if entry == nil {
-			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for GroupChatThreadIndex id %v. This should never happen", id)
+	for accessGroupIdIter, messageEntryIter := range view.GroupChatThreadIndex {
+		if messageEntryIter == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for GroupChatThreadIndex id %v. "+
+				"This should never happen", accessGroupIdIter)
 			continue
 		}
 
 		newMessageGroupThreadEntry := &PGNewMessageGroupChatThreadEntry{}
-		newMessageGroupThreadEntry.FromAccessGroupId(id)
-		if entry.isDeleted {
+		newMessageGroupThreadEntry.FromAccessGroupId(accessGroupIdIter)
+		if messageEntryIter.isDeleted {
 			deleteNewMessageGroupThreadEntries = append(deleteNewMessageGroupThreadEntries, newMessageGroupThreadEntry)
 		} else {
 			insertNewMessageGroupThreadEntries = append(insertNewMessageGroupThreadEntries, newMessageGroupThreadEntry)
+		}
+	}
+	for threadAttributesKeyIter, threadAttributesEntryIter := range view.ThreadAttributesIndex {
+		if threadAttributesEntryIter == nil {
+			glog.Errorf("Postgres.flushNewMessageEntries: Skipping nil entry for ThreadAttributesIndex id %v. "+
+				"This should never happen", threadAttributesKeyIter)
+			continue
+		}
+
+		threadAttributesKey := threadAttributesKeyIter
+		threadAttributesEntry := *threadAttributesEntryIter
+		newMessageThreadAttributesEntry := &PGNewMessageThreadAttributesEntry{}
+		newMessageThreadAttributesEntry.FromThreadAttributesKeyAndThreadAttributesEntry(
+			&threadAttributesKey, &threadAttributesEntry)
+		if threadAttributesEntry.isDeleted {
+			deleteNewMessageThreadAttributesEntries = append(deleteNewMessageThreadAttributesEntries, newMessageThreadAttributesEntry)
+		} else {
+			insertNewMessageThreadAttributesEntries = append(insertNewMessageThreadAttributesEntries, newMessageThreadAttributesEntry)
 		}
 	}
 
@@ -3127,6 +3279,24 @@ func (postgres *Postgres) flushNewMessageEntries(tx *pg.Tx, view *UtxoView) erro
 		_, err := tx.Model(&deleteNewMessageGroupThreadEntries).Returning("NULL").Delete()
 		if err != nil {
 			return fmt.Errorf("Postgres.flushNewMessageEntries: deleteNewMessageGroupThreadEntries: %v", err)
+		}
+	}
+
+	if len(insertNewMessageThreadAttributesEntries) > 0 {
+		_, err := tx.Model(&insertNewMessageThreadAttributesEntries).
+			WherePK().
+			OnConflict("(user_access_group_owner_public_key, user_access_group_key_name, " +
+				"party_access_group_owner_public_key, party_access_group_key_name, new_message_type) DO UPDATE").
+			Returning("NULL").
+			Insert()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushNewMessageEntries: insertNewMessageThreadAttributesEntries: %v", err)
+		}
+	}
+	if len(deleteNewMessageThreadAttributesEntries) > 0 {
+		_, err := tx.Model(&deleteNewMessageThreadAttributesEntries).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("Postgres.flushNewMessageEntries: deleteNewMessageThreadAttributesEntries: %v", err)
 		}
 	}
 
@@ -3612,8 +3782,8 @@ func (postgres *Postgres) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimit
 		Where("buying_dao_coin_creator_pkid = ?", inputOrder.SellingDAOCoinCreatorPKID).
 		Where("selling_dao_coin_creator_pkid = ?", inputOrder.BuyingDAOCoinCreatorPKID).
 		Order("scaled_exchange_rate_coins_to_sell_per_coin_to_buy DESC"). // Best-priced first
-		Order("block_height ASC").                                        // Then oldest first (FIFO)
-		Order("order_id DESC").                                           // Then match BadgerDB ordering
+		Order("block_height ASC"). // Then oldest first (FIFO)
+		Order("order_id DESC"). // Then match BadgerDB ordering
 		Select()
 
 	if err != nil {
@@ -3844,10 +4014,10 @@ func (postgres *Postgres) GetAccessGroupEnumerationEntriesForMember(memberPublic
 
 func (postgres *Postgres) GetNewMessageDmEntry(dmMessageKey DmMessageKey) *PGNewMessageDmEntry {
 	newMessageDmEntry := &PGNewMessageDmEntry{
-		MinorAccessGroupOwnerPublicKey: &dmMessageKey.MinorGroupOwnerPublicKey,
-		MinorAccessGroupKeyName:        &dmMessageKey.MinorGroupKeyName,
-		MajorAccessGroupOwnerPublicKey: &dmMessageKey.MajorGroupOwnerPublicKey,
-		MajorAccessGroupKeyName:        &dmMessageKey.MajorGroupKeyName,
+		MinorAccessGroupOwnerPublicKey: &dmMessageKey.MinorAccessGroupOwnerPublicKey,
+		MinorAccessGroupKeyName:        &dmMessageKey.MinorAccessGroupKeyName,
+		MajorAccessGroupOwnerPublicKey: &dmMessageKey.MajorAccessGroupOwnerPublicKey,
+		MajorAccessGroupKeyName:        &dmMessageKey.MajorAccessGroupKeyName,
 		TimestampNanos:                 dmMessageKey.TimestampNanos,
 	}
 	err := postgres.db.Model(newMessageDmEntry).WherePK().First()
@@ -3857,7 +4027,7 @@ func (postgres *Postgres) GetNewMessageDmEntry(dmMessageKey DmMessageKey) *PGNew
 	return newMessageDmEntry
 }
 
-func (postgres *Postgres) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmThreadKey, startingTimestamp uint64,
+func (postgres *Postgres) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmThreadKey, maxTimestamp uint64,
 	maxMessagesToFetch uint64) (_messageEntries []*NewMessageEntry, _err error) {
 
 	var pgNewMessageDmEntries []*PGNewMessageDmEntry
@@ -3865,11 +4035,11 @@ func (postgres *Postgres) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmTh
 
 	dmMessageKey := MakeDmMessageKeyFromDmThreadKey(dmThreadKey)
 	err := postgres.db.Model(&pgNewMessageDmEntries).
-		Where("minor_access_group_owner_public_key = ?", dmMessageKey.MinorGroupOwnerPublicKey).
-		Where("minor_access_group_key_name = ?", dmMessageKey.MinorGroupKeyName).
-		Where("major_access_group_owner_public_key = ?", dmMessageKey.MajorGroupOwnerPublicKey).
-		Where("major_access_group_key_name = ?", dmMessageKey.MajorGroupKeyName).
-		Where("timestamp_nanos < ?", startingTimestamp).
+		Where("minor_access_group_owner_public_key = ?", dmMessageKey.MinorAccessGroupOwnerPublicKey).
+		Where("minor_access_group_key_name = ?", dmMessageKey.MinorAccessGroupKeyName).
+		Where("major_access_group_owner_public_key = ?", dmMessageKey.MajorAccessGroupOwnerPublicKey).
+		Where("major_access_group_key_name = ?", dmMessageKey.MajorAccessGroupKeyName).
+		Where("timestamp_nanos < ?", maxTimestamp).
 		Order("timestamp_nanos DESC").
 		Limit(int(maxMessagesToFetch)).
 		Select()
@@ -3886,8 +4056,8 @@ func (postgres *Postgres) GetPaginatedMessageEntriesForDmThread(dmThreadKey DmTh
 func (postgres *Postgres) GetNewMessageGroupChatEntry(groupChatMessageKey GroupChatMessageKey) *PGNewMessageGroupChatEntry {
 
 	newMessageGroupChatEntry := &PGNewMessageGroupChatEntry{
-		AccessGroupOwnerPublicKey: &groupChatMessageKey.GroupOwnerPublicKey,
-		AccessGroupKeyName:        &groupChatMessageKey.GroupKeyName,
+		AccessGroupOwnerPublicKey: &groupChatMessageKey.AccessGroupOwnerPublicKey,
+		AccessGroupKeyName:        &groupChatMessageKey.AccessGroupKeyName,
 		TimestampNanos:            groupChatMessageKey.TimestampNanos,
 	}
 	err := postgres.db.Model(newMessageGroupChatEntry).WherePK().First()
@@ -3900,10 +4070,10 @@ func (postgres *Postgres) GetNewMessageGroupChatEntry(groupChatMessageKey GroupC
 func (postgres *Postgres) CheckDmThreadExistence(dmThreadKey DmThreadKey) *DmThreadExistence {
 
 	newMessageDmThreadEntry := &PGNewMessageDmThreadEntry{
-		UserAccessGroupOwnerPublicKey:  &dmThreadKey.userGroupOwnerPublicKey,
-		UserAccessGroupKeyName:         &dmThreadKey.userGroupKeyName,
-		PartyAccessGroupOwnerPublicKey: &dmThreadKey.partyGroupOwnerPublicKey,
-		PartyAccessGroupKeyName:        &dmThreadKey.partyGroupKeyName,
+		UserAccessGroupOwnerPublicKey:  &dmThreadKey.UserAccessGroupOwnerPublicKey,
+		UserAccessGroupKeyName:         &dmThreadKey.UserAccessGroupKeyName,
+		PartyAccessGroupOwnerPublicKey: &dmThreadKey.PartyAccessGroupOwnerPublicKey,
+		PartyAccessGroupKeyName:        &dmThreadKey.PartyAccessGroupKeyName,
 	}
 	err := postgres.db.Model(newMessageDmThreadEntry).WherePK().First()
 	if err != nil {
@@ -3968,6 +4138,22 @@ func (postgres *Postgres) GetPaginatedMessageEntriesForGroupChatThread(groupChat
 		newMessageEntries = append(newMessageEntries, pgNewMessageEntry.ToNewMessageEntry())
 	}
 	return newMessageEntries, nil
+}
+
+func (postgres *Postgres) GetThreadAttributesEntry(threadAttributesKey ThreadAttributesKey) *PGNewMessageThreadAttributesEntry {
+
+	threadAttributesEntry := &PGNewMessageThreadAttributesEntry{
+		UserAccessGroupOwnerPublicKey:  &threadAttributesKey.UserAccessGroupOwnerPublicKey,
+		UserAccessGroupKeyName:         &threadAttributesKey.UserAccessGroupKeyName,
+		PartyAccessGroupOwnerPublicKey: &threadAttributesKey.PartyAccessGroupOwnerPublicKey,
+		PartyAccessGroupKeyName:        &threadAttributesKey.PartyAccessGroupKeyName,
+		NewMessageType:                 byte(threadAttributesKey.NewMessageType),
+	}
+	err := postgres.db.Model(threadAttributesEntry).WherePK().First()
+	if err != nil {
+		return nil
+	}
+	return threadAttributesEntry
 }
 
 //
@@ -4052,4 +4238,435 @@ func (postgres *Postgres) GetNotifications(publicKey string) ([]*PGNotification,
 	}
 
 	return notifications, nil
+}
+
+//
+// Associations
+//
+
+// PGMetadataCreateUserAssociation represents CreateUserAssociationMetadata
+type PGMetadataCreateUserAssociation struct {
+	tableName struct{} `pg:"pg_metadata_create_user_association"`
+
+	TransactionHash     *BlockHash `pg:",pk,type:bytea"`
+	TargetUserPublicKey *PublicKey `pg:",type:bytea"`
+	AppPublicKey        *PublicKey `pg:",type:bytea"`
+	AssociationType     string     `pg:",use_zero"`
+	AssociationValue    string     `pg:",use_zero"`
+}
+
+// PGMetadataDeleteUserAssociation represents DeleteUserAssociationMetadata
+type PGMetadataDeleteUserAssociation struct {
+	tableName struct{} `pg:"pg_metadata_delete_user_association"`
+
+	TransactionHash *BlockHash `pg:",pk,type:bytea"`
+	AssociationID   *BlockHash `pg:",type:bytea"`
+}
+
+// PGMetadataCreatePostAssociation represents CreatePostAssociationMetadata
+type PGMetadataCreatePostAssociation struct {
+	tableName struct{} `pg:"pg_metadata_create_post_association"`
+
+	TransactionHash  *BlockHash `pg:",pk,type:bytea"`
+	PostHash         *BlockHash `pg:",type:bytea"`
+	AppPublicKey     *PublicKey `pg:",type:bytea"`
+	AssociationType  string     `pg:",use_zero"`
+	AssociationValue string     `pg:",use_zero"`
+}
+
+// PGMetadataDeletePostAssociation represents DeletePostAssociationMetadata
+type PGMetadataDeletePostAssociation struct {
+	tableName struct{} `pg:"pg_metadata_delete_post_association"`
+
+	TransactionHash *BlockHash `pg:",pk,type:bytea"`
+	AssociationID   *BlockHash `pg:",type:bytea"`
+}
+
+// PGUserAssociation represents UserAssociationEntry
+type PGUserAssociation struct {
+	tableName struct{} `pg:"pg_user_associations"`
+
+	AssociationID    *BlockHash `pg:",pk,type:bytea"`
+	TransactorPKID   *PKID      `pg:",type:bytea"`
+	TargetUserPKID   *PKID      `pg:",type:bytea"`
+	AppPKID          *PKID      `pg:",type:bytea"`
+	AssociationType  string     `pg:",use_zero"`
+	AssociationValue string     `pg:",use_zero"`
+	ExtraData        map[string][]byte
+	BlockHeight      uint32 `pg:",use_zero"`
+}
+
+// PGPostAssociation represents PostAssociationEntry
+type PGPostAssociation struct {
+	tableName struct{} `pg:"pg_post_associations"`
+
+	AssociationID    *BlockHash `pg:",pk,type:bytea"`
+	TransactorPKID   *PKID      `pg:",type:bytea"`
+	PostHash         *BlockHash `pg:",type:bytea"`
+	AppPKID          *PKID      `pg:",type:bytea"`
+	AssociationType  string     `pg:",use_zero"`
+	AssociationValue string     `pg:",use_zero"`
+	ExtraData        map[string][]byte
+	BlockHeight      uint32 `pg:",use_zero"`
+}
+
+func (userAssociation *PGUserAssociation) FromUserAssociationEntry(associationEntry *UserAssociationEntry) *PGUserAssociation {
+	userAssociation.AssociationID = associationEntry.AssociationID
+	userAssociation.TransactorPKID = associationEntry.TransactorPKID
+	userAssociation.TargetUserPKID = associationEntry.TargetUserPKID
+	userAssociation.AppPKID = associationEntry.AppPKID
+	userAssociation.AssociationType = string(associationEntry.AssociationType)
+	userAssociation.AssociationValue = string(associationEntry.AssociationValue)
+	userAssociation.ExtraData = associationEntry.ExtraData
+	userAssociation.BlockHeight = associationEntry.BlockHeight
+	return userAssociation
+}
+
+func (postAssociation *PGPostAssociation) FromPostAssociationEntry(associationEntry *PostAssociationEntry) *PGPostAssociation {
+	postAssociation.AssociationID = associationEntry.AssociationID
+	postAssociation.TransactorPKID = associationEntry.TransactorPKID
+	postAssociation.PostHash = associationEntry.PostHash
+	postAssociation.AppPKID = associationEntry.AppPKID
+	postAssociation.AssociationType = string(associationEntry.AssociationType)
+	postAssociation.AssociationValue = string(associationEntry.AssociationValue)
+	postAssociation.ExtraData = associationEntry.ExtraData
+	postAssociation.BlockHeight = associationEntry.BlockHeight
+	return postAssociation
+}
+
+func (userAssociation *PGUserAssociation) ToUserAssociationEntry() *UserAssociationEntry {
+	return &UserAssociationEntry{
+		AssociationID:    userAssociation.AssociationID,
+		TransactorPKID:   userAssociation.TransactorPKID,
+		TargetUserPKID:   userAssociation.TargetUserPKID,
+		AppPKID:          userAssociation.AppPKID,
+		AssociationType:  []byte(userAssociation.AssociationType),
+		AssociationValue: []byte(userAssociation.AssociationValue),
+		ExtraData:        userAssociation.ExtraData,
+		BlockHeight:      userAssociation.BlockHeight,
+	}
+}
+
+func (postAssociation *PGPostAssociation) ToPostAssociationEntry() *PostAssociationEntry {
+	return &PostAssociationEntry{
+		AssociationID:    postAssociation.AssociationID,
+		TransactorPKID:   postAssociation.TransactorPKID,
+		PostHash:         postAssociation.PostHash,
+		AppPKID:          postAssociation.AppPKID,
+		AssociationType:  []byte(postAssociation.AssociationType),
+		AssociationValue: []byte(postAssociation.AssociationValue),
+		ExtraData:        postAssociation.ExtraData,
+		BlockHeight:      postAssociation.BlockHeight,
+	}
+}
+
+func (postgres *Postgres) GetUserAssociationByID(associationID *BlockHash) (*UserAssociationEntry, error) {
+	pgAssociation := PGUserAssociation{AssociationID: associationID}
+	if err := postgres.db.Model(&pgAssociation).WherePK().First(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return pgAssociation.ToUserAssociationEntry(), nil
+}
+
+func (postgres *Postgres) GetPostAssociationByID(associationID *BlockHash) (*PostAssociationEntry, error) {
+	pgAssociation := PGPostAssociation{AssociationID: associationID}
+	if err := postgres.db.Model(&pgAssociation).WherePK().First(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return pgAssociation.ToPostAssociationEntry(), nil
+}
+
+func (postgres *Postgres) GetUserAssociationByAttributes(associationEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
+	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
+	pgAssociation := PGUserAssociation{}
+	if err := postgres.db.Model(&pgAssociation).
+		Where("transactor_pkid = ?", associationEntry.TransactorPKID).
+		Where("target_user_pkid = ?", associationEntry.TargetUserPKID).
+		Where("app_pkid = ?", associationEntry.AppPKID).
+		Where("LOWER(association_type) = ?", string(bytes.ToLower(associationEntry.AssociationType))).
+		Where("association_value = ?", string(associationEntry.AssociationValue)).
+		First(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return pgAssociation.ToUserAssociationEntry(), nil
+}
+
+func (postgres *Postgres) GetPostAssociationByAttributes(associationEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
+	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
+	pgAssociation := PGPostAssociation{}
+	if err := postgres.db.Model(&pgAssociation).
+		Where("transactor_pkid = ?", associationEntry.TransactorPKID).
+		Where("post_hash = ?", associationEntry.PostHash).
+		Where("app_pkid = ?", associationEntry.AppPKID).
+		Where("LOWER(association_type) = ?", string(bytes.ToLower(associationEntry.AssociationType))).
+		Where("association_value = ?", string(associationEntry.AssociationValue)).
+		First(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return pgAssociation.ToPostAssociationEntry(), nil
+}
+
+func (postgres *Postgres) GetUserAssociationsByAttributes(
+	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) ([]*UserAssociationEntry, []byte, error) {
+	// Construct SQL query.
+	var pgAssociations []PGUserAssociation
+	sqlQuery := postgres.db.Model(&pgAssociations)
+	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
+
+	// Execute SQL query.
+	if err := sqlQuery.Select(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+
+	// Map from PGAssociation to AssociationEntry.
+	var associationEntries []*UserAssociationEntry
+	for _, pgAssociation := range pgAssociations {
+		associationEntries = append(associationEntries, pgAssociation.ToUserAssociationEntry())
+	}
+	return associationEntries, nil, nil
+}
+
+func (postgres *Postgres) GetUserAssociationIdsByAttributes(
+	associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
+
+	// Construct SQL query.
+	sqlQuery := postgres.db.Model(&[]PGUserAssociation{}).Column("association_id")
+	_constructFilterUserAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
+
+	// Execute SQL query.
+	var associationIds []BlockHash
+	if err := sqlQuery.Select(&associationIds); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return NewSet([]BlockHash{}), nil, nil
+		}
+		return nil, nil, err
+	}
+	return NewSet(associationIds), nil, nil
+}
+
+func _constructFilterUserAssociationsByAttributesQuery(
+	sqlQuery *pg.Query, associationQuery *UserAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) {
+	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
+	if utxoViewAssociationIds.Size() > 0 {
+		sqlQuery.Where("association_id NOT IN (?)", utxoViewAssociationIds.ToSlice())
+	}
+	if associationQuery.TransactorPKID != nil {
+		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
+	}
+	if associationQuery.TargetUserPKID != nil {
+		sqlQuery.Where("target_user_pkid = ?", associationQuery.TargetUserPKID)
+	}
+	if associationQuery.AppPKID != nil {
+		sqlQuery.Where("app_pkid = ?", associationQuery.AppPKID)
+	}
+	if len(associationQuery.AssociationType) > 0 {
+		sqlQuery.Where("LOWER(association_type) = ?", string(bytes.ToLower(associationQuery.AssociationType)))
+	} else if len(associationQuery.AssociationTypePrefix) > 0 {
+		sqlQuery.Where("LOWER(association_type) LIKE ?", string(bytes.ToLower(associationQuery.AssociationTypePrefix))+"%")
+	}
+	if len(associationQuery.AssociationValue) > 0 {
+		sqlQuery.Where("association_value = ?", string(associationQuery.AssociationValue))
+	} else if len(associationQuery.AssociationValuePrefix) > 0 {
+		sqlQuery.Where("association_value LIKE ?", string(associationQuery.AssociationValuePrefix)+"%")
+	}
+	if associationQuery.Limit > 0 {
+		if associationQuery.LastSeenAssociationID != nil {
+			// We need to increase the limit by one since we
+			// are including the LastSeenAssociationEntry.
+			sqlQuery.Limit(associationQuery.Limit + 1)
+		} else {
+			sqlQuery.Limit(associationQuery.Limit)
+		}
+	}
+	if associationQuery.LastSeenAssociationID != nil {
+		if associationQuery.SortDescending {
+			sqlQuery.Where("association_id <= ?", associationQuery.LastSeenAssociationID)
+		} else {
+			sqlQuery.Where("association_id >= ?", associationQuery.LastSeenAssociationID)
+		}
+	}
+	if associationQuery.SortDescending {
+		sqlQuery.Order("association_id DESC")
+	} else {
+		sqlQuery.Order("association_id ASC")
+	}
+}
+
+func (postgres *Postgres) GetPostAssociationsByAttributes(
+	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) ([]*PostAssociationEntry, []byte, error) {
+	// Construct SQL query.
+	var pgAssociations []PGPostAssociation
+	sqlQuery := postgres.db.Model(&pgAssociations)
+	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
+
+	// Execute SQL query.
+	if err := sqlQuery.Select(); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+
+	// Map from PGAssociation to AssociationEntry.
+	associationEntries := []*PostAssociationEntry{}
+	for _, pgAssociation := range pgAssociations {
+		associationEntries = append(associationEntries, pgAssociation.ToPostAssociationEntry())
+	}
+	return associationEntries, nil, nil
+}
+
+func (postgres *Postgres) GetPostAssociationIdsByAttributes(
+	associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
+	// Construct SQL query.
+	sqlQuery := postgres.db.Model(&[]PGPostAssociation{}).Column("association_id")
+	_constructFilterPostAssociationsByAttributesQuery(sqlQuery, associationQuery, utxoViewAssociationIds)
+
+	// Execute SQL query.
+	var associationIds []BlockHash
+	if err := sqlQuery.Select(&associationIds); err != nil {
+		// If we don't find anything, don't error. Just return nil.
+		if err.Error() == "pg: no rows in result set" {
+			return NewSet([]BlockHash{}), nil, nil
+		}
+		return nil, nil, err
+	}
+	return NewSet(associationIds), nil, nil
+}
+
+func _constructFilterPostAssociationsByAttributesQuery(
+	sqlQuery *pg.Query, associationQuery *PostAssociationQuery, utxoViewAssociationIds *Set[BlockHash],
+) {
+	// Note: AssociationType is case-insensitive while AssociationValue is case-sensitive.
+	if utxoViewAssociationIds.Size() > 0 {
+		sqlQuery.Where("association_id NOT IN (?)", utxoViewAssociationIds.ToSlice())
+	}
+	if associationQuery.TransactorPKID != nil {
+		sqlQuery.Where("transactor_pkid = ?", associationQuery.TransactorPKID)
+	}
+	if associationQuery.PostHash != nil {
+		sqlQuery.Where("post_hash = ?", associationQuery.PostHash)
+	}
+	if associationQuery.AppPKID != nil {
+		sqlQuery.Where("app_pkid = ?", associationQuery.AppPKID)
+	}
+	if len(associationQuery.AssociationType) > 0 {
+		sqlQuery.Where("LOWER(association_type) = ?", string(bytes.ToLower(associationQuery.AssociationType)))
+	} else if len(associationQuery.AssociationTypePrefix) > 0 {
+		sqlQuery.Where("LOWER(association_type) LIKE ?", string(bytes.ToLower(associationQuery.AssociationTypePrefix))+"%")
+	}
+	if len(associationQuery.AssociationValue) > 0 {
+		sqlQuery.Where("association_value = ?", string(associationQuery.AssociationValue))
+	} else if len(associationQuery.AssociationValuePrefix) > 0 {
+		sqlQuery.Where("association_value LIKE ?", string(associationQuery.AssociationValuePrefix)+"%")
+	}
+	if associationQuery.Limit > 0 {
+		if associationQuery.LastSeenAssociationID != nil {
+			// We need to increase the limit by one since we
+			// are including the LastSeenAssociationEntry.
+			sqlQuery.Limit(associationQuery.Limit + 1)
+		} else {
+			sqlQuery.Limit(associationQuery.Limit)
+		}
+	}
+	if associationQuery.LastSeenAssociationID != nil {
+		if associationQuery.SortDescending {
+			sqlQuery.Where("association_id <= ?", associationQuery.LastSeenAssociationID)
+		} else {
+			sqlQuery.Where("association_id >= ?", associationQuery.LastSeenAssociationID)
+		}
+	}
+	if associationQuery.SortDescending {
+		sqlQuery.Order("association_id DESC")
+	} else {
+		sqlQuery.Order("association_id ASC")
+	}
+}
+
+func (postgres *Postgres) flushUserAssociations(tx *pg.Tx, view *UtxoView, blockHeight uint64) error {
+	var insertAssociations []*PGUserAssociation
+	var deleteAssociations []*PGUserAssociation
+
+	// Iterate through view for associations to flush to db.
+	for _, associationEntry := range view.AssociationMapKeyToUserAssociationEntry {
+		pgAssociation := (&PGUserAssociation{}).FromUserAssociationEntry(associationEntry)
+		if associationEntry.isDeleted {
+			deleteAssociations = append(deleteAssociations, pgAssociation)
+		} else {
+			insertAssociations = append(insertAssociations, pgAssociation)
+		}
+	}
+
+	// Insert new/modified associations.
+	if len(insertAssociations) > 0 {
+		_, err := tx.Model(&insertAssociations).WherePK().OnConflict("(association_id) DO UPDATE").Returning("NULL").Insert()
+		if err != nil {
+			return fmt.Errorf("flushUserAssociations: insert: %v", err)
+		}
+	}
+	// Delete isDeleted=true associations.
+	if len(deleteAssociations) > 0 {
+		_, err := tx.Model(&deleteAssociations).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("flushUserAssociations: delete: %v", err)
+		}
+	}
+	return nil
+}
+
+func (postgres *Postgres) flushPostAssociations(tx *pg.Tx, view *UtxoView, blockHeight uint64) error {
+	var insertAssociations []*PGPostAssociation
+	var deleteAssociations []*PGPostAssociation
+
+	// Iterate through view for associations to flush to db.
+	for _, associationEntry := range view.AssociationMapKeyToPostAssociationEntry {
+		pgAssociation := (&PGPostAssociation{}).FromPostAssociationEntry(associationEntry)
+		if associationEntry.isDeleted {
+			deleteAssociations = append(deleteAssociations, pgAssociation)
+		} else {
+			insertAssociations = append(insertAssociations, pgAssociation)
+		}
+	}
+
+	// Insert new/modified associations.
+	if len(insertAssociations) > 0 {
+		_, err := tx.Model(&insertAssociations).WherePK().OnConflict("(association_id) DO UPDATE").Returning("NULL").Insert()
+		if err != nil {
+			return fmt.Errorf("flushPostAssociations: insert: %v", err)
+		}
+	}
+	// Delete isDeleted=true associations.
+	if len(deleteAssociations) > 0 {
+		_, err := tx.Model(&deleteAssociations).Returning("NULL").Delete()
+		if err != nil {
+			return fmt.Errorf("flushPostAssociations: delete: %v", err)
+		}
+	}
+	return nil
 }

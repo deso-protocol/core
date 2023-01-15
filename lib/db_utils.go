@@ -263,7 +263,7 @@ type DBPrefixes struct {
 	//   to make it so that messages can be decrypted on mobile devices, where apps do not have
 	//   easy access to the owner key for decrypting messages.
 	//
-	// <prefix, GroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <MessagingGroupEntry>
+	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <MessagingGroupEntry>
 	PrefixMessagingGroupEntriesByOwnerPubKeyAndGroupKeyName []byte `prefix_id:"[57]" is_state:"true"`
 
 	// Prefix for Message MessagingGroupMembers:
@@ -281,7 +281,7 @@ type DBPrefixes struct {
 	//   because we wanted to store additional information that "back-references" the
 	//   MessagingGroupEntry for this group.
 	//
-	// * Note that GroupMessagingPublicKey != GroupOwnerPublicKey. For this index
+	// * Note that GroupMessagingPublicKey != AccessGroupOwnerPublicKey. For this index
 	//   it was convenient for various reasons to put the messaging public key into
 	//   the index rather than the group owner's public key. This becomes clear if
 	//   you read all the fetching code around this index.
@@ -323,6 +323,80 @@ type DBPrefixes struct {
 	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
 
+	// User Association prefixes
+	// PrefixUserAssociationByID:
+	//  <
+	//   PrefixUserAssociationByID
+	//   AssociationID [32]byte
+	//  > -> < UserAssociationEntry >
+	PrefixUserAssociationByID []byte `prefix_id:"[63]" is_state:"true"`
+	// PrefixUserAssociationByTransactor:
+	//  <
+	//   PrefixUserAssociationByTransactor
+	//   TransactorPKID [33]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   TargetUserPKID [33]byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: AssociationID is a BlockHash type
+	PrefixUserAssociationByTransactor []byte `prefix_id:"[64]" is_state:"true"`
+	// PrefixUserAssociationByUsers:
+	//  <
+	//   PrefixUserAssociationByUsers
+	//   TransactorPKID [33]byte
+	//   TargetUserPKID [33]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: AssociationID is a BlockHash type
+	PrefixUserAssociationByTargetUser []byte `prefix_id:"[65]" is_state:"true"`
+	// PrefixUserAssociationByTargetUser
+	//  <
+	//   PrefixUserAssociationByTargerUser
+	//   TargetUserPKID [33]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   TransactorPKID [33]byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: Association is a BlockHash type
+	PrefixUserAssociationByUsers []byte `prefix_id:"[66]" is_state:"true"`
+
+	// Post Association prefixes
+	// PrefixPostAssociationByID
+	//  <
+	//   PrefixPostAssociationByID
+	//   AssociationID [32]byte
+	//  > -> < PostAssociationEntry >
+	PrefixPostAssociationByID []byte `prefix_id:"[67]" is_state:"true"`
+	// PrefixPostAssociationByTransactor
+	//  <
+	//   PrefixPostAssociationByTransactor
+	//   TransactorPKID [33]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   PostHash [32]byte
+	//   AppPKID [33]byte
+	// > -> < AssociationID > # note: AssociationID is a BlockHash type
+	PrefixPostAssociationByTransactor []byte `prefix_id:"[68]" is_state:"true"`
+	// PrefixPostAssociationByPost
+	//  <
+	//   PostHash [32]byte
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   TransactorPKID [33]byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: AssociationID is a BlockHash type
+	PrefixPostAssociationByPost []byte `prefix_id:"[69]" is_state:"true"`
+	// PrefixPostAssociationByType
+	//  <
+	//   AssociationType + NULL TERMINATOR byte
+	//   AssociationValue + NULL TERMINATOR byte
+	//   PostHash [32]byte
+	//   TransactorPKID [33]byte
+	//   AppPKID [33]byte
+	//  > -> < AssociationID > # note: AssociationID is a BlockHash type
+	PrefixPostAssociationByType []byte `prefix_id:"[70]" is_state:"true"`
+
 	// Prefix for MessagingGroupEntries indexed by AccessGroupOwnerPublicKey and GroupKeyName:
 	//
 	// * This index is used to store information about messaging groups. A group is indexed
@@ -343,7 +417,7 @@ type DBPrefixes struct {
 	//   easy access to the owner key for decrypting messages.
 	//
 	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupEntry>
-	PrefixAccessGroupEntriesByAccessGroupId []byte `prefix_id:"[63]" is_state:"true"`
+	PrefixAccessGroupEntriesByAccessGroupId []byte `prefix_id:"[71]" is_state:"true"`
 
 	// This prefix is used to store all mappings for access group members. The group owner has a
 	// special-case mapping with <groupOwnerPk, groupOwnerPk, groupName> and then everybody else has
@@ -363,24 +437,48 @@ type DBPrefixes struct {
 	//
 	// New <GroupMembershipIndex> :
 	// <prefix, AccessGroupMemberPublicKey [33]byte, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupMemberEntry>
-	PrefixAccessGroupMembershipIndex []byte `prefix_id:"[64]" is_state:"true"`
+	PrefixAccessGroupMembershipIndex []byte `prefix_id:"[72]" is_state:"true"`
 
 	// Prefix for enumerating all the members of a group. Note that the previous index allows us to
 	// answer the question, "what groups is this person a member of?" while this index allows us to
 	// answer "who are the members of this particular group?"
-	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, AccessGroupMemberPublicKey [33]byte> -> <>
-	PrefixAccessGroupMemberEnumerationIndex []byte `prefix_id:"[65]" is_state:"true"`
+	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte, AccessGroupMemberPublicKey [33]byte>
+	//		-> <AccessGroupMemberEnumerationEntry>
+	PrefixAccessGroupMemberEnumerationIndex []byte `prefix_id:"[73]" is_state:"true"`
 
-	// <groupOwnerPublicKey, groupKeyName, timestamp> -> <MessageEntry>
-	PrefixGroupChatMessagesIndex []byte `prefix_id:"[66]" is_state:"true"`
-	// <groupOwnerPublicKey, groupKeyName> -> <>
-	PrefixGroupChatThreadIndex []byte `prefix_id:"[67]" is_state:"true"`
-	// <minorGroupOwnerPublicKey, minorGroupKeyName, majorGroupOwnerPublicKey, majorGroupKeyName, timestamp> -> <MessageEntry>
-	PrefixDmMessageIndex []byte `prefix_id:"[68]" is_state:"true"`
-	// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName, partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName> -> <>
-	PrefixDmThreadIndex []byte `prefix_id:"[69]" is_state:"true"`
+	// PrefixGroupChatMessagesIndex is modified by the NewMessage transaction and is used to store group chat
+	// NewMessageEntry objects for each message sent to a group chat. The index has the following structure:
+	// 	<prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
+	PrefixGroupChatMessagesIndex []byte `prefix_id:"[74]" is_state:"true"`
 
-	// NEXT_TAG: 69
+	// PrefixGroupChatThreadIndex is modified by the NewMessage transaction and is used to store a GroupChatThreadExistence
+	// for each existing group chat thread. The index has the following structure:
+	// 	<prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName> -> <GroupChatThreadExistence>
+	PrefixGroupChatThreadIndex []byte `prefix_id:"[75]" is_state:"true"`
+
+	// PrefixDmMessagesIndex is modified by the NewMessage transaction and is used to store NewMessageEntry objects for
+	// each message sent to a Dm thread. The index has the following structure:
+	// 	<prefix, MinorAccessGroupOwnerPublicKey, MinorAccessGroupKeyName,
+	//		MajorAccessGroupOwnerPublicKey, MajorAccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
+	// The Minor/Major distinction is used to deterministically map the two accessGroupIds of message's sender/recipient
+	// into a single pair based on the lexicographical ordering of the two accessGroupIds. This is done to ensure that
+	// both sides of the conversation have the same key for the same conversation, and we can store just a single message.
+	PrefixDmMessagesIndex []byte `prefix_id:"[76]" is_state:"true"`
+
+	// PrefixDmThreadIndex is modified by the NewMessage transaction and is used to store a DmThreadExistence
+	// for each existing dm thread. The index has the following structure:
+	// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
+	//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName> -> <DmThreadExistence>
+	// It's worth noting that two of these entries are stored for each Dm thread, one being the inverse of the other.
+	PrefixDmThreadIndex []byte `prefix_id:"[77]" is_state:"true"`
+
+	// PrefixThreadAttributesIndex is modified by the UpdateThread transaction and is used to store a ThreadAttributes
+	// for each existing thread. The index has the following structure:
+	// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
+	//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName, NewMessageType> -> <ThreadAttributesEntry>
+	PrefixThreadAttributesIndex []byte `prefix_id:"[78]" is_state:"true"`
+	// NEXT_TAG: 79
+
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -537,27 +635,54 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixDAOCoinLimitOrderByOrderID) {
 		// prefix_id:"[62]"
 		return true, &DAOCoinLimitOrderEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixAccessGroupEntriesByAccessGroupId) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByID) {
 		// prefix_id:"[63]"
+		return true, &UserAssociationEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByTransactor) {
+		// prefix_id:"[64]"
+		return true, &BlockHash{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByTargetUser) {
+		// prefix_id:"[65]"
+		return true, &BlockHash{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUserAssociationByUsers) {
+		// prefix_id:"[66]"
+		return true, &BlockHash{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByID) {
+		// prefix_id:"[67]"
+		return true, &PostAssociationEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByTransactor) {
+		// prefix_id:"[68]"
+		return true, &BlockHash{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByPost) {
+		// prefix_id:"[69]"
+		return true, &BlockHash{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostAssociationByType) {
+		// prefix_id:"[70]"
+		return true, &BlockHash{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixAccessGroupEntriesByAccessGroupId) {
+		// prefix_id:"[71]"
 		return true, &AccessGroupEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixAccessGroupMembershipIndex) {
-		// prefix_id:"[64]"
+		// prefix_id:"[72]"
 		return true, &AccessGroupMemberEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixAccessGroupMemberEnumerationIndex) {
-		// prefix_id:"[65]"
-		return false, nil
+		// prefix_id:"[73]"
+		return true, &AccessGroupMemberEnumerationEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatMessagesIndex) {
-		// prefix_id:"[66]"
+		// prefix_id:"[74]"
 		return true, &NewMessageEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatThreadIndex) {
-		// prefix_id:"[67]"
-		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessageIndex) {
-		// prefix_id:"[68]"
+		// prefix_id:"[75]"
+		return true, &GroupChatThreadExistence{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessagesIndex) {
+		// prefix_id:"[76]"
 		return true, &NewMessageEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
-		// prefix_id:"[69]"
-		return false, nil
+		// prefix_id:"[77]"
+		return true, &DmThreadExistence{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixThreadAttributesIndex) {
+		// prefix_id:"[78]"
+		return true, &ThreadAttributesEntry{}
 	}
 
 	return true, nil
@@ -1767,14 +1892,14 @@ func DBGetAllUserGroupEntries(handle *badger.DB, ownerPublicKey []byte) ([]*Mess
 
 // -------------------------------------------------------------------------------------
 // PrefixGroupChatMessagesIndex
-// <groupOwnerPublicKey, groupKeyName, timestamp> -> <MessageEntry>
+// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
 // -------------------------------------------------------------------------------------
 
 // _dbSeekPrefixForGroupMemberAttributesIndex returns prefix to enumerate over the given member's attributes.
 func _dbKeyForGroupChatMessagesIndex(key GroupChatMessageKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixGroupChatMessagesIndex...)
-	prefixCopy = append(prefixCopy, key.GroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.GroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.AccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.AccessGroupKeyName.ToBytes()...)
 	prefixCopy = append(prefixCopy, EncodeUint64(key.TimestampNanos)...)
 	return prefixCopy
 }
@@ -1925,7 +2050,7 @@ func DBDeleteGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key G
 
 // -------------------------------------------------------------------------------------
 // PrefixGroupChatThreadIndex
-// <groupOwnerPublicKey, groupKeyName> -> <>
+// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName> -> <GroupChatThreadExistence>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForGroupChatThreadIndex(key AccessGroupId) []byte {
@@ -1951,15 +2076,21 @@ func DBCheckGroupChatThreadExistence(db *badger.DB, snap *Snapshot, groupId Acce
 func DBCheckGroupChatThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, groupId AccessGroupId) (*GroupChatThreadExistence, error) {
 
 	prefix := _dbKeyForGroupChatThreadIndex(groupId)
-	_, err := DBGetWithTxn(txn, snap, prefix)
+	groupChatThreadExistenceBytes, err := DBGetWithTxn(txn, snap, prefix)
 	if err == badger.ErrKeyNotFound {
 		return nil, nil
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "DBCheckGroupChatThreadExistenceWithTxn: Problem getting group chat thread index")
 	}
 
-	groupChatThreadExistence := MakeGroupChatThreadExistence()
-	return &groupChatThreadExistence, nil
+	groupChatThreadExistence := &GroupChatThreadExistence{}
+	rr := bytes.NewReader(groupChatThreadExistenceBytes)
+	if exists, err := DecodeFromBytes(groupChatThreadExistence, rr); !exists || err != nil {
+		return nil, errors.Wrapf(err, "DBCheckGroupChatThreadExistenceWithTxn: "+
+			"Problem decoding group chat thread index with key: %v and value: %v", prefix, groupChatThreadExistenceBytes)
+	}
+
+	return groupChatThreadExistence, nil
 }
 
 func DBPutGroupChatThreadIndex(db *badger.DB, snap *Snapshot, blockHeight uint64, groupId AccessGroupId) error {
@@ -1976,7 +2107,10 @@ func DBPutGroupChatThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 	groupId AccessGroupId) error {
 
 	prefix := _dbKeyForGroupChatThreadIndex(groupId)
-	if err := DBSetWithTxn(txn, snap, prefix, []byte{}); err != nil {
+	// We don't store any data under this index for now. For forward-compatibility we store a dummy
+	// DeSoEncoder to allow for encoder migrations, should they ever be useful.
+	groupChatThreadExistence := MakeGroupChatThreadExistence()
+	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, &groupChatThreadExistence)); err != nil {
 		return errors.Wrapf(err, "DBPutGroupChatThreadExistenceWithTxn: Problem setting group chat thread index "+
 			"with key (%v) in the db", prefix)
 	}
@@ -2005,23 +2139,24 @@ func DBDeleteGroupChatThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, groupI
 }
 
 // -------------------------------------------------------------------------------------
-// PrefixDmMessageIndex
-// <minorGroupOwnerPublicKey, minorGroupKeyName, majorGroupOwnerPublicKey, majorGroupKeyName, timestamp> -> <MessageEntry>
+// PrefixDmMessagesIndex
+// 	<prefix, MinorAccessGroupOwnerPublicKey, MinorAccessGroupKeyName,
+//		MajorAccessGroupOwnerPublicKey, MajorAccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForPrefixDmMessageIndex(key DmMessageKey) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessageIndex...)
-	prefixCopy = append(prefixCopy, key.MinorGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.MinorGroupKeyName.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.MajorGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.MajorGroupKeyName.ToBytes()...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessagesIndex...)
+	prefixCopy = append(prefixCopy, key.MinorAccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MinorAccessGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MajorAccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.MajorAccessGroupKeyName.ToBytes()...)
 	prefixCopy = append(prefixCopy, EncodeUint64(key.TimestampNanos)...)
 	return prefixCopy
 }
 
 func _dbSeekPrefixForPrefixDmMessageIndex(minorGroupOwnerPublicKey PublicKey, minorGroupKeyName GroupKeyName,
 	majorGroupOwnerPublicKey PublicKey, majorGroupKeyName GroupKeyName) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessageIndex...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixDmMessagesIndex...)
 	prefixCopy = append(prefixCopy, minorGroupOwnerPublicKey.ToBytes()...)
 	prefixCopy = append(prefixCopy, minorGroupKeyName.ToBytes()...)
 	prefixCopy = append(prefixCopy, majorGroupOwnerPublicKey.ToBytes()...)
@@ -2063,34 +2198,34 @@ func DBGetDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessageKe
 }
 
 func DBGetPaginatedDmMessageEntry(handle *badger.DB, snap *Snapshot,
-	dmThreadKey DmThreadKey, startingTimestamp uint64, maxMessagesToFetch uint64) (
+	dmThreadKey DmThreadKey, maxTimestamp uint64, maxMessagesToFetch uint64) (
 	_messageEntries []*NewMessageEntry, _err error) {
 
 	var err error
 	var messageEntries []*NewMessageEntry
 	err = handle.View(func(txn *badger.Txn) error {
 		messageEntries, err = DBGetPaginatedDmMessageEntryWithTxn(
-			txn, snap, dmThreadKey, startingTimestamp, maxMessagesToFetch)
+			txn, snap, dmThreadKey, maxTimestamp, maxMessagesToFetch)
 		return err
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetPaginatedDmMessageEntry: "+
-			"Problem getting paginated message entries with dmThreadKey (%v), startingTimestamp (%v), "+
-			"maxMessagesToFetch (%v)", dmThreadKey, startingTimestamp, maxMessagesToFetch)
+			"Problem getting paginated message entries with dmThreadKey (%v), maxTimestamp (%v), "+
+			"maxMessagesToFetch (%v)", dmThreadKey, maxTimestamp, maxMessagesToFetch)
 	}
 	return messageEntries, nil
 }
 
 func DBGetPaginatedDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
-	dmThreadKey DmThreadKey, startingTimestamp uint64, maxMessagesToFetch uint64) (
+	dmThreadKey DmThreadKey, maxTimestamp uint64, maxMessagesToFetch uint64) (
 	_messageEntries []*NewMessageEntry, _err error) {
 
 	var messageEntries []*NewMessageEntry
 	// Construct the seek key given the dm thread and the starting timestamp.
 	dmMessageKey := MakeDmMessageKeyFromDmThreadKey(dmThreadKey)
-	prefix := _dbSeekPrefixForPrefixDmMessageIndex(dmMessageKey.MinorGroupOwnerPublicKey, dmMessageKey.MinorGroupKeyName,
-		dmMessageKey.MajorGroupOwnerPublicKey, dmMessageKey.MajorGroupKeyName)
-	startKey := append(prefix, EncodeUint64(startingTimestamp)...)
+	prefix := _dbSeekPrefixForPrefixDmMessageIndex(dmMessageKey.MinorAccessGroupOwnerPublicKey, dmMessageKey.MinorAccessGroupKeyName,
+		dmMessageKey.MajorAccessGroupOwnerPublicKey, dmMessageKey.MajorAccessGroupKeyName)
+	startKey := append(prefix, EncodeUint64(maxTimestamp)...)
 
 	// Now fetch the messages from the Db
 	keysFound, valsFound, err := _enumerateLimitedKeysReversedForPrefixAndStartingKeyWithTxn(txn, prefix, startKey, maxMessagesToFetch)
@@ -2168,15 +2303,16 @@ func DBDeleteDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessag
 // PrefixDmThreadIndex
 // This prefix stores information about all the different DM threads that the user has participated in.
 // We store a duplicate entry for each thread, with the "user", "party" accessGroupIds flipped.
-// <userAccessGroupOwnerPublicKey, userAccessGroupKeyName, partyAccessGroupOwnerPublicKey, partyAccessGroupKeyName> -> <>
+// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
+//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName> -> <DmThreadExistence>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForPrefixDmThreadIndex(key DmThreadKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixDmThreadIndex...)
-	prefixCopy = append(prefixCopy, key.userGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.userGroupKeyName.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.partyGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.partyGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.UserAccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.UserAccessGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.PartyAccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.PartyAccessGroupKeyName.ToBytes()...)
 	return prefixCopy
 }
 
@@ -2235,15 +2371,20 @@ func DBCheckDmThreadExistence(db *badger.DB, snap *Snapshot, key DmThreadKey) (*
 func DBCheckDmThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, key DmThreadKey) (*DmThreadExistence, error) {
 
 	prefix := _dbKeyForPrefixDmThreadIndex(key)
-	_, err := DBGetWithTxn(txn, snap, prefix)
+	dmThreadExistenceBytes, err := DBGetWithTxn(txn, snap, prefix)
 	if err == badger.ErrKeyNotFound {
 		return nil, nil
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "DBCheckDmThreadExistenceWithTxn: Problem checking dm thread existence with key: %v", key)
 	}
 
-	dmThreadExists := MakeDmThreadExistence()
-	return &dmThreadExists, nil
+	dmThreadExistence := &DmThreadExistence{}
+	rr := bytes.NewReader(dmThreadExistenceBytes)
+	if exists, err := DecodeFromBytes(dmThreadExistence, rr); !exists || err != nil {
+		return nil, errors.Wrapf(err, "DBCheckDmThreadExistenceWithTxn: Problem decoding dm thread existence"+
+			"with key: %v", key)
+	}
+	return dmThreadExistence, nil
 }
 
 func DBGetAllUserDmThreadsByAccessGroupId(db *badger.DB, snap *Snapshot,
@@ -2256,7 +2397,7 @@ func DBGetAllUserDmThreadsByAccessGroupId(db *badger.DB, snap *Snapshot,
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllUserDmThreads: Problem getting all user dm threads with "+
-			"userGroupOwnerPublicKey: %v, userGroupKeyName: %v", userGroupOwnerPublicKey, userGroupKeyName)
+			"UserAccessGroupOwnerPublicKey: %v, UserAccessGroupKeyName: %v", userGroupOwnerPublicKey, userGroupKeyName)
 	}
 	return ret, nil
 }
@@ -2300,7 +2441,7 @@ func DBGetAllUserDmThreads(db *badger.DB, snap *Snapshot, userGroupOwnerPublicKe
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllUserDmThreads: Problem getting all user dm threads with "+
-			"userGroupOwnerPublicKey: %v", userGroupOwnerPublicKey)
+			"UserAccessGroupOwnerPublicKey: %v", userGroupOwnerPublicKey)
 	}
 	return ret, nil
 }
@@ -2330,9 +2471,9 @@ func DBGetAllUserDmThreadsWithTxn(txn *badger.Txn, snap *Snapshot,
 	return userDmThreads, nil
 }
 
-func DBPutDmThreadIndex(db *badger.DB, snap *Snapshot, dmThreadKey DmThreadKey) error {
+func DBPutDmThreadIndex(db *badger.DB, snap *Snapshot, blockHeight uint64, dmThreadKey DmThreadKey) error {
 	err := db.Update(func(txn *badger.Txn) error {
-		return DBPutDmThreadIndexWithTxn(txn, snap, dmThreadKey)
+		return DBPutDmThreadIndexWithTxn(txn, snap, blockHeight, dmThreadKey)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "DBPutDmThreadIndex: Problem putting dm thread index with key: %v", dmThreadKey)
@@ -2340,9 +2481,12 @@ func DBPutDmThreadIndex(db *badger.DB, snap *Snapshot, dmThreadKey DmThreadKey) 
 	return nil
 }
 
-func DBPutDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, dmThreadKey DmThreadKey) error {
+func DBPutDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, dmThreadKey DmThreadKey) error {
 	prefix := _dbKeyForPrefixDmThreadIndex(dmThreadKey)
-	if err := DBSetWithTxn(txn, snap, prefix, []byte{}); err != nil {
+	// We don't store any data under this index for now. For forward-compatibility we store a dummy
+	// DeSoEncoder to allow for encoder migrations, should they ever be useful.
+	dmThreadExistence := MakeDmThreadExistence()
+	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, &dmThreadExistence)); err != nil {
 		return errors.Wrapf(err, "DBPutDmThreadIndex: Problem putting dm thread index with key: %v", dmThreadKey)
 	}
 	return nil
@@ -2362,6 +2506,97 @@ func DBDeleteDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, dmThreadKey D
 	prefix := _dbKeyForPrefixDmThreadIndex(dmThreadKey)
 	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
 		return errors.Wrapf(err, "DBDeleteDmThreadIndex: Problem deleting dm thread index with key: %v", dmThreadKey)
+	}
+
+	return nil
+}
+
+// -------------------------------------------------------------------------------------
+// ThreadAttributesIndex
+// This prefix stores the thread attributes for a given thread. The key structure is the same as the
+// ThreadAttributesKey structure, i.e.:
+// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
+//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName, NewMessageType> -> <ThreadAttributesEntry>
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForPrefixThreadAttributesIndex(key ThreadAttributesKey) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixThreadAttributesIndex...)
+	prefixCopy = append(prefixCopy, key.UserAccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.UserAccessGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.PartyAccessGroupOwnerPublicKey.ToBytes()...)
+	prefixCopy = append(prefixCopy, key.PartyAccessGroupKeyName.ToBytes()...)
+	prefixCopy = append(prefixCopy, byte(key.NewMessageType))
+	return prefixCopy
+}
+
+func DBGetThreadAttributesEntry(db *badger.DB, snap *Snapshot, key ThreadAttributesKey) (*ThreadAttributesEntry, error) {
+	var ret *ThreadAttributesEntry
+	var err error
+	err = db.View(func(txn *badger.Txn) error {
+		ret, err = DBGetThreadAttributesEntryWithTxn(txn, snap, key)
+		return err
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetThreadAttributesEntry: Problem getting thread attributes entry "+
+			"with key: %v", key)
+	}
+	return ret, nil
+}
+
+func DBGetThreadAttributesEntryWithTxn(txn *badger.Txn, snap *Snapshot, key ThreadAttributesKey) (*ThreadAttributesEntry, error) {
+
+	prefix := _dbKeyForPrefixThreadAttributesIndex(key)
+	threadAttributesEntryBytes, err := DBGetWithTxn(txn, snap, prefix)
+	if err == badger.ErrKeyNotFound {
+		return nil, nil
+	} else if err != nil {
+		return nil, errors.Wrapf(err, "DBGetThreadAttributesEntryWithTxn: Problem getting thread attributes "+
+			"entry with key: %v", key)
+	}
+
+	threadAttributesEntry := &ThreadAttributesEntry{}
+	rr := bytes.NewReader(threadAttributesEntryBytes)
+	if exists, err := DecodeFromBytes(threadAttributesEntry, rr); !exists || err != nil {
+		return nil, errors.Wrapf(err, "DBGetThreadAttributesEntryWithTxn: Problem decoding thread attributes "+
+			"entry with key: %v", key)
+	}
+	return threadAttributesEntry, nil
+}
+
+func DBPutThreadAttributesEntry(db *badger.DB, snap *Snapshot, blockHeight uint64, key ThreadAttributesKey, threadAttributesEntry *ThreadAttributesEntry) error {
+	err := db.Update(func(txn *badger.Txn) error {
+		return DBPutThreadAttributesEntryWithTxn(txn, snap, blockHeight, key, threadAttributesEntry)
+	})
+	if err != nil {
+		return errors.Wrapf(err, "DBPutThreadAttributesEntry: Problem putting thread attributes entry with key: %v", key)
+	}
+	return nil
+}
+
+func DBPutThreadAttributesEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, key ThreadAttributesKey, threadAttributesEntry *ThreadAttributesEntry) error {
+	prefix := _dbKeyForPrefixThreadAttributesIndex(key)
+	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, threadAttributesEntry)); err != nil {
+		return errors.Wrapf(err, "DBPutThreadAttributesEntryWithTxn: Problem putting thread attributes entry with key: %v", key)
+	}
+	return nil
+}
+
+func DBDeleteThreadAttributesEntry(db *badger.DB, snap *Snapshot, key ThreadAttributesKey) error {
+	err := db.Update(func(txn *badger.Txn) error {
+		return DBDeleteThreadAttributesEntryWithTxn(txn, snap, key)
+	})
+	if err != nil {
+		return errors.Wrapf(err, "DBDeleteThreadAttributesEntry: Problem deleting thread attributes entry with"+
+			" key: %v", key)
+	}
+	return nil
+}
+
+func DBDeleteThreadAttributesEntryWithTxn(txn *badger.Txn, snap *Snapshot, key ThreadAttributesKey) error {
+	prefix := _dbKeyForPrefixThreadAttributesIndex(key)
+	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
+		return errors.Wrapf(err, "DBDeleteThreadAttributesEntryWithTxn: Problem deleting thread attributes entry "+
+			"with key: %v", key)
 	}
 
 	return nil
@@ -2738,15 +2973,16 @@ func DBDeleteAccessGroupMemberEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 // -------------------------------------------------------------------------------------
 // Enumerate over group members of an access group
 // PrefixGroupMemberEnumerationIndex
-// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, AccessGroupMemberPublicKey> -> <>
+// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, AccessGroupMemberPublicKey> -> <AccessGroupMemberEnumerationEntry>
 // -------------------------------------------------------------------------------------
 
 // _dbKeyForAccessGroupMemberEnumerationIndex returns the key for a group enumeration index.
-func _dbKeyForAccessGroupMemberEnumerationIndex(groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, groupMemberPublicKey PublicKey) []byte {
+func _dbKeyForAccessGroupMemberEnumerationIndex(accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName,
+	accessGroupMemberPublicKey PublicKey) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixAccessGroupMemberEnumerationIndex...)
-	key := append(prefixCopy, groupOwnerPublicKey.ToBytes()...)
-	key = append(key, groupKeyName.ToBytes()...)
-	key = append(key, groupMemberPublicKey.ToBytes()...)
+	key := append(prefixCopy, accessGroupOwnerPublicKey.ToBytes()...)
+	key = append(key, accessGroupKeyName.ToBytes()...)
+	key = append(key, accessGroupMemberPublicKey.ToBytes()...)
 	return key
 }
 
@@ -2783,12 +3019,18 @@ func DBGetGroupMemberExistenceFromEnumerationIndexWithTxn(txn *badger.Txn, snap 
 
 	prefix := _dbKeyForAccessGroupMemberEnumerationIndex(groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
 
-	_, err := DBGetWithTxn(txn, snap, prefix)
+	accessGroupMemberEnumerationEntryBytes, err := DBGetWithTxn(txn, snap, prefix)
 	if err == badger.ErrKeyNotFound {
 		return false, nil
 	} else if err != nil {
 		return false, errors.Wrapf(err, "DBGetGroupMemberForAccessGroupWithTxn: Problem getting group member for access group"+
 			" groupOwnerPublicKey: %v, groupKeyName: %v, groupMemberPublicKey: %v", groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
+	}
+	accessGroupMemberEnumerationEntry := &AccessGroupMemberEnumerationEntry{}
+	rr := bytes.NewReader(accessGroupMemberEnumerationEntryBytes)
+	if exists, err := DecodeFromBytes(accessGroupMemberEnumerationEntry, rr); err != nil || !exists {
+		return false, errors.Wrapf(err, "DBGetGroupMemberForAccessGroupWithTxn: Problem getting group member existence "+
+			"for access group groupOwnerPublicKey: %v, groupKeyName: %v, groupMemberPublicKey: %v", groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
 	}
 
 	return true, nil
@@ -2868,8 +3110,11 @@ func DBPutAccessGroupMemberEnumerationIndex(handle *badger.DB, snap *Snapshot, b
 func DBPutAccessGroupMemberEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
 	groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, accessGroupMemberPublicKey PublicKey) error {
 
+	// We don't store any data under this index for now. For forward-compatibility we store a dummy
+	// DeSoEncoder to allow for encoder migrations, should they ever be useful.
+	accessGroupMemberEnumerationEntry := MakeAccessGroupMemberEnumerationEntry()
 	if err := DBSetWithTxn(txn, snap, _dbKeyForAccessGroupMemberEnumerationIndex(
-		groupOwnerPublicKey, groupKeyName, accessGroupMemberPublicKey), []byte{}); err != nil {
+		groupOwnerPublicKey, groupKeyName, accessGroupMemberPublicKey), EncodeToBytes(blockHeight, &accessGroupMemberEnumerationEntry)); err != nil {
 
 		return errors.Wrapf(err, "DBPutAccessGroupMemberInMembershipIndexWithTxn: Problem setting access "+
 			"recipient with groupOwnerPublicKey %v, groupKeyName %v, accessGroupMemberPublicKey %v",
@@ -3298,10 +3543,8 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 
 // -------------------------------------------------------------------------------------
 // Reposts mapping functions
-//
-//	<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
-//	<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
-//
+// 		<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
+// 		<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
 // -------------------------------------------------------------------------------------
 // PrefixReposterPubKeyRepostedPostHashToRepostPostHash
 func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash BlockHash, repostPostHash BlockHash) []byte {
@@ -4913,8 +5156,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -6649,26 +6892,33 @@ type TransactionMetadata struct {
 	// when looking up output amounts
 	TxnOutputs []*DeSoOutput
 
-	BasicTransferTxindexMetadata       *BasicTransferTxindexMetadata       `json:",omitempty"`
-	BitcoinExchangeTxindexMetadata     *BitcoinExchangeTxindexMetadata     `json:",omitempty"`
-	CreatorCoinTxindexMetadata         *CreatorCoinTxindexMetadata         `json:",omitempty"`
-	CreatorCoinTransferTxindexMetadata *CreatorCoinTransferTxindexMetadata `json:",omitempty"`
-	UpdateProfileTxindexMetadata       *UpdateProfileTxindexMetadata       `json:",omitempty"`
-	SubmitPostTxindexMetadata          *SubmitPostTxindexMetadata          `json:",omitempty"`
-	LikeTxindexMetadata                *LikeTxindexMetadata                `json:",omitempty"`
-	FollowTxindexMetadata              *FollowTxindexMetadata              `json:",omitempty"`
-	PrivateMessageTxindexMetadata      *PrivateMessageTxindexMetadata      `json:",omitempty"`
-	SwapIdentityTxindexMetadata        *SwapIdentityTxindexMetadata        `json:",omitempty"`
-	NFTBidTxindexMetadata              *NFTBidTxindexMetadata              `json:",omitempty"`
-	AcceptNFTBidTxindexMetadata        *AcceptNFTBidTxindexMetadata        `json:",omitempty"`
-	NFTTransferTxindexMetadata         *NFTTransferTxindexMetadata         `json:",omitempty"`
-	AcceptNFTTransferTxindexMetadata   *AcceptNFTTransferTxindexMetadata   `json:",omitempty"`
-	BurnNFTTxindexMetadata             *BurnNFTTxindexMetadata             `json:",omitempty"`
-	DAOCoinTxindexMetadata             *DAOCoinTxindexMetadata             `json:",omitempty"`
-	DAOCoinTransferTxindexMetadata     *DAOCoinTransferTxindexMetadata     `json:",omitempty"`
-	CreateNFTTxindexMetadata           *CreateNFTTxindexMetadata           `json:",omitempty"`
-	UpdateNFTTxindexMetadata           *UpdateNFTTxindexMetadata           `json:",omitempty"`
-	DAOCoinLimitOrderTxindexMetadata   *DAOCoinLimitOrderTxindexMetadata   `json:",omitempty"`
+	BasicTransferTxindexMetadata         *BasicTransferTxindexMetadata         `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata       *BitcoinExchangeTxindexMetadata       `json:",omitempty"`
+	CreatorCoinTxindexMetadata           *CreatorCoinTxindexMetadata           `json:",omitempty"`
+	CreatorCoinTransferTxindexMetadata   *CreatorCoinTransferTxindexMetadata   `json:",omitempty"`
+	UpdateProfileTxindexMetadata         *UpdateProfileTxindexMetadata         `json:",omitempty"`
+	SubmitPostTxindexMetadata            *SubmitPostTxindexMetadata            `json:",omitempty"`
+	LikeTxindexMetadata                  *LikeTxindexMetadata                  `json:",omitempty"`
+	FollowTxindexMetadata                *FollowTxindexMetadata                `json:",omitempty"`
+	PrivateMessageTxindexMetadata        *PrivateMessageTxindexMetadata        `json:",omitempty"`
+	SwapIdentityTxindexMetadata          *SwapIdentityTxindexMetadata          `json:",omitempty"`
+	NFTBidTxindexMetadata                *NFTBidTxindexMetadata                `json:",omitempty"`
+	AcceptNFTBidTxindexMetadata          *AcceptNFTBidTxindexMetadata          `json:",omitempty"`
+	NFTTransferTxindexMetadata           *NFTTransferTxindexMetadata           `json:",omitempty"`
+	AcceptNFTTransferTxindexMetadata     *AcceptNFTTransferTxindexMetadata     `json:",omitempty"`
+	BurnNFTTxindexMetadata               *BurnNFTTxindexMetadata               `json:",omitempty"`
+	DAOCoinTxindexMetadata               *DAOCoinTxindexMetadata               `json:",omitempty"`
+	DAOCoinTransferTxindexMetadata       *DAOCoinTransferTxindexMetadata       `json:",omitempty"`
+	CreateNFTTxindexMetadata             *CreateNFTTxindexMetadata             `json:",omitempty"`
+	UpdateNFTTxindexMetadata             *UpdateNFTTxindexMetadata             `json:",omitempty"`
+	DAOCoinLimitOrderTxindexMetadata     *DAOCoinLimitOrderTxindexMetadata     `json:",omitempty"`
+	CreateUserAssociationTxindexMetadata *CreateUserAssociationTxindexMetadata `json:",omitempty"`
+	DeleteUserAssociationTxindexMetadata *DeleteUserAssociationTxindexMetadata `json:",omitempty"`
+	CreatePostAssociationTxindexMetadata *CreatePostAssociationTxindexMetadata `json:",omitempty"`
+	DeletePostAssociationTxindexMetadata *DeletePostAssociationTxindexMetadata `json:",omitempty"`
+	AccessGroupTxindexMetadata           *AccessGroupTxindexMetadata           `json:",omitempty"`
+	AccessGroupMembersTxindexMetadata    *AccessGroupMembersTxindexMetadata    `json:",omitempty"`
+	NewMessageTxindexMetadata            *NewMessageTxindexMetadata            `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -6729,6 +6979,27 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.UpdateNFTTxindexMetadata, skipMetadata...)...)
 	// encoding DAOCoinLimitOrderTxindexMetadata
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinLimitOrderTxindexMetadata, skipMetadata...)...)
+
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		// encoding CreateUserAssociationTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.CreateUserAssociationTxindexMetadata, skipMetadata...)...)
+		// encoding DeleteUserAssociationTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.DeleteUserAssociationTxindexMetadata, skipMetadata...)...)
+		// encoding CreatePostAssociationTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.CreatePostAssociationTxindexMetadata, skipMetadata...)...)
+		// encoding DeletePostAssociationTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.DeletePostAssociationTxindexMetadata, skipMetadata...)...)
+	}
+
+	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		// encoding AccessGroupTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.AccessGroupTxindexMetadata, skipMetadata...)...)
+		// encoding AccessGroupMembersTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.AccessGroupMembersTxindexMetadata, skipMetadata...)...)
+		// encoding NewMessageTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.NewMessageTxindexMetadata, skipMetadata...)...)
+	}
+
 	return data
 }
 
@@ -6922,11 +7193,66 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	} else if err != nil {
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinLimitOrderTxindexMetadata")
 	}
+
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		// decoding CreateUserAssociationTxindexMetadata
+		CopyCreateUserAssociationTxindexMetadata := &CreateUserAssociationTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyCreateUserAssociationTxindexMetadata, rr); exist && err == nil {
+			txnMeta.CreateUserAssociationTxindexMetadata = CopyCreateUserAssociationTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreateUserAssociationTxindexMetadata")
+		}
+		// decoding DeleteUserAssociationTxindexMetadata
+		CopyDeleteUserAssociationTxindexMetadata := &DeleteUserAssociationTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyDeleteUserAssociationTxindexMetadata, rr); exist && err == nil {
+			txnMeta.DeleteUserAssociationTxindexMetadata = CopyDeleteUserAssociationTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeleteUserAssociationTxindexMetadata")
+		}
+		// decoding CreatePostAssociationTxindexMetadata
+		CopyCreatePostAssociationTxindexMetadata := &CreatePostAssociationTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyCreatePostAssociationTxindexMetadata, rr); exist && err == nil {
+			txnMeta.CreatePostAssociationTxindexMetadata = CopyCreatePostAssociationTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreatePostAssociationTxindexMetadata")
+		}
+		// decoding DeletePostAssociationTxindexMetadata
+		CopyDeletePostAssociationTxindexMetadata := &DeletePostAssociationTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyDeletePostAssociationTxindexMetadata, rr); exist && err == nil {
+			txnMeta.DeletePostAssociationTxindexMetadata = CopyDeletePostAssociationTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeletePostAssociationTxindexMetadata")
+		}
+	}
+
+	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+		// decoding AccessGroupTxindexMetadata
+		CopyAccessGroupTxindexMetadata := &AccessGroupTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyAccessGroupTxindexMetadata, rr); exist && err == nil {
+			txnMeta.AccessGroupTxindexMetadata = CopyAccessGroupTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AccessGroupTxindexMetadata")
+		}
+		// decoding AccessGroupMembersTxindexMetadata
+		CopyAccessGroupMembersTxindexMetadata := &AccessGroupMembersTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyAccessGroupMembersTxindexMetadata, rr); exist && err == nil {
+			txnMeta.AccessGroupMembersTxindexMetadata = CopyAccessGroupMembersTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AccessGroupMembersTxindexMetadata")
+		}
+		// decoding NewMessageTxindexMetadata
+		CopyNewMessageTxindexMetadata := &NewMessageTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyNewMessageTxindexMetadata, rr); exist && err == nil {
+			txnMeta.NewMessageTxindexMetadata = CopyNewMessageTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading NewMessageTxindexMetadata")
+		}
+	}
 	return nil
 }
 
 func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, AssociationsMigration)
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {
@@ -8891,7 +9217,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -9018,7 +9344,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -9310,7 +9636,7 @@ func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DA
 		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
 	}
 
-	// Store in index: PrefixDAOCoinLimitOrderByOrderID
+	// Delete from index: PrefixDAOCoinLimitOrderByOrderID
 	key = DBKeyForDAOCoinLimitOrderByOrderID(order)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting order from index PrefixDAOCoinLimitOrderByOrderID")
@@ -9520,4 +9846,894 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 	opts.ValueLogFileSize = PerformanceLogValueSize
 
 	return opts
+}
+
+// ---------------------------------------------
+// Associations
+// ---------------------------------------------
+
+func DBKeyForUserAssociationByPrefix(associationEntry *UserAssociationEntry, prefixType []byte) ([]byte, error) {
+	if bytes.Equal(prefixType, Prefixes.PrefixUserAssociationByID) {
+		return DBKeyForUserAssociationByID(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixUserAssociationByTransactor) {
+		return DBKeyForUserAssociationByTransactor(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixUserAssociationByTargetUser) {
+		return DBKeyForUserAssociationByTargetUser(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixUserAssociationByUsers) {
+		return DBKeyForUserAssociationByUsers(associationEntry), nil
+	}
+	return nil, errors.New("invalid user association prefix type")
+}
+
+func DBKeyForUserAssociationByID(associationEntry *UserAssociationEntry) []byte {
+	// AssociationID
+	var key []byte
+	key = append(key, Prefixes.PrefixUserAssociationByID...)
+	key = append(key, associationEntry.AssociationID.ToBytes()...)
+	return key
+}
+
+func DBKeyForUserAssociationByTransactor(associationEntry *UserAssociationEntry) []byte {
+	// TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
+	var key []byte
+	key = append(key, Prefixes.PrefixUserAssociationByTransactor...)
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
+	return key
+}
+
+func DBKeyForUserAssociationByTargetUser(associationEntry *UserAssociationEntry) []byte {
+	// TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
+	var key []byte
+	key = append(key, Prefixes.PrefixUserAssociationByTargetUser...)
+	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
+	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
+	return key
+}
+
+func DBKeyForUserAssociationByUsers(associationEntry *UserAssociationEntry) []byte {
+	// TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
+	var key []byte
+	key = append(key, Prefixes.PrefixUserAssociationByUsers...)
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, associationEntry.TargetUserPKID.ToBytes()...)
+	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
+	return key
+}
+
+func DBKeyForPostAssociationByPrefix(associationEntry *PostAssociationEntry, prefixType []byte) ([]byte, error) {
+	if bytes.Equal(prefixType, Prefixes.PrefixPostAssociationByID) {
+		return DBKeyForPostAssociationByID(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixPostAssociationByTransactor) {
+		return DBKeyForPostAssociationByTransactor(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixPostAssociationByPost) {
+		return DBKeyForPostAssociationByPost(associationEntry), nil
+	}
+	if bytes.Equal(prefixType, Prefixes.PrefixPostAssociationByType) {
+		return DBKeyForPostAssociationByType(associationEntry), nil
+	}
+	return nil, errors.New("invalid post association prefix type")
+}
+
+func DBKeyForPostAssociationByID(associationEntry *PostAssociationEntry) []byte {
+	// AssociationID
+	var key []byte
+	key = append(key, Prefixes.PrefixPostAssociationByID...)
+	key = append(key, associationEntry.AssociationID.ToBytes()...)
+	return key
+}
+
+func DBKeyForPostAssociationByTransactor(associationEntry *PostAssociationEntry) []byte {
+	// TransactorPKID, AssociationType, AssociationValue, PostHash
+	var key []byte
+	key = append(key, Prefixes.PrefixPostAssociationByTransactor...)
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.PostHash.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
+	return key
+}
+
+func DBKeyForPostAssociationByPost(associationEntry *PostAssociationEntry) []byte {
+	// PostHash, AssociationType, AssociationValue, TransactorPKID
+	var key []byte
+	key = append(key, Prefixes.PrefixPostAssociationByPost...)
+	key = append(key, associationEntry.PostHash.ToBytes()...)
+	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
+	return key
+}
+
+func DBKeyForPostAssociationByType(associationEntry *PostAssociationEntry) []byte {
+	// AssociationType, AssociationValue, PostHash, TransactorPKID
+	var key []byte
+	key = append(key, Prefixes.PrefixPostAssociationByType...)
+	key = append(key, bytes.ToLower(associationEntry.AssociationType)...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	key = append(key, associationEntry.AssociationValue...)
+	key = append(key, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	key = append(key, associationEntry.PostHash.ToBytes()...)
+	key = append(key, associationEntry.TransactorPKID.ToBytes()...)
+	key = append(key, associationEntry.AppPKID.ToBytes()...)
+	return key
+}
+
+func DBGetUserAssociationByID(handle *badger.DB, snap *Snapshot, associationID *BlockHash) (*UserAssociationEntry, error) {
+	var ret *UserAssociationEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetUserAssociationByIDWithTxn(txn, snap, associationID)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetUserAssociationByIDWithTxn(txn *badger.Txn, snap *Snapshot, associationID *BlockHash) (*UserAssociationEntry, error) {
+	// Retrieve association entry from db.
+	key := DBKeyForUserAssociationByID(&UserAssociationEntry{AssociationID: associationID})
+	associationBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetUserAssociationByID: problem retrieving association entry")
+	}
+
+	// Decode association entry from bytes.
+	associationEntry := &UserAssociationEntry{}
+	rr := bytes.NewReader(associationBytes)
+	if exist, err := DecodeFromBytes(associationEntry, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetUserAssociationByID: problem decoding association entry")
+	}
+	return associationEntry, nil
+}
+
+func DBGetPostAssociationByID(handle *badger.DB, snap *Snapshot, associationID *BlockHash) (*PostAssociationEntry, error) {
+	var ret *PostAssociationEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetPostAssociationByIDWithTxn(txn, snap, associationID)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetPostAssociationByIDWithTxn(txn *badger.Txn, snap *Snapshot, associationID *BlockHash) (*PostAssociationEntry, error) {
+	// Retrieve association entry from db.
+	key := DBKeyForPostAssociationByID(&PostAssociationEntry{AssociationID: associationID})
+	associationBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetPostAssociationByID: problem retrieving association entry")
+	}
+
+	// Decode association entry from bytes.
+	associationEntry := &PostAssociationEntry{}
+	rr := bytes.NewReader(associationBytes)
+	if exist, err := DecodeFromBytes(associationEntry, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetPostAssociationByID: problem decoding association entry")
+	}
+	return associationEntry, nil
+}
+
+func DBGetUserAssociationByAttributes(handle *badger.DB, snap *Snapshot, queryEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
+	var ret *UserAssociationEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetUserAssociationByAttributesWithTxn(txn, snap, queryEntry)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetUserAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, queryEntry *UserAssociationEntry) (*UserAssociationEntry, error) {
+	// Retrieve association ID from db.
+	key := DBKeyForUserAssociationByTransactor(queryEntry)
+	associationBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetUserAssociationByAttributes: problem retrieving association ID")
+	}
+
+	// Decode ID.
+	associationID := &BlockHash{}
+	rr := bytes.NewReader(associationBytes)
+	if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetUserAssociationByAttributes: problem decoding association ID")
+	}
+
+	// Retrieve association entry from db by ID.
+	return DBGetUserAssociationByIDWithTxn(txn, snap, associationID)
+}
+
+func DBGetPostAssociationByAttributes(handle *badger.DB, snap *Snapshot, queryEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
+	var ret *PostAssociationEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetPostAssociationByAttributesWithTxn(txn, snap, queryEntry)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetPostAssociationByAttributesWithTxn(txn *badger.Txn, snap *Snapshot, queryEntry *PostAssociationEntry) (*PostAssociationEntry, error) {
+	// Retrieve association ID from db.
+	key := DBKeyForPostAssociationByTransactor(queryEntry)
+	associationBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetPostAssociationByAttributes: problem retrieving association ID")
+	}
+
+	// Decode ID.
+	associationID := &BlockHash{}
+	rr := bytes.NewReader(associationBytes)
+	if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetPostAssociationByAttributes: problem decoding association ID")
+	}
+
+	// Retrieve association entry from db by ID.
+	return DBGetPostAssociationByIDWithTxn(txn, snap, associationID)
+}
+
+func DBGetUserAssociationsByAttributes(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationQuery *UserAssociationQuery,
+	utxoViewAssociationIds *Set[BlockHash],
+) ([]*UserAssociationEntry, []byte, error) {
+	// Query for association IDs by input query params.
+	associationIds, prefixType, err := DBGetUserAssociationIdsByAttributes(
+		handle, snap, associationQuery, utxoViewAssociationIds,
+	)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: ")
+	}
+
+	// Map from association IDs to association entries.
+	associationEntries, err := MapSet(associationIds, func(associationID BlockHash) (*UserAssociationEntry, error) {
+		// Retrieve association entry from db by ID.
+		return DBGetUserAssociationByID(handle, snap, &associationID)
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationsByAttributes: problem retrieving association entry by ID: ")
+	}
+	return associationEntries, prefixType, nil
+}
+
+func DBGetUserAssociationIdsByAttributes(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationQuery *UserAssociationQuery,
+	utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
+	// Construct key based on input query params.
+	var prefixType []byte
+	var keyPrefix []byte
+	var err error
+
+	// TransactorPKID + TargetUserPKID
+	if associationQuery.TransactorPKID != nil {
+		if associationQuery.TargetUserPKID != nil {
+			// PrefixUserAssociationByUsers: TransactorPKID, TargetUserPKID, AssociationType, AssociationValue
+			prefixType = Prefixes.PrefixUserAssociationByUsers
+			keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByUsers...)
+			keyPrefix = append(keyPrefix, associationQuery.TransactorPKID.ToBytes()...)
+			keyPrefix = append(keyPrefix, associationQuery.TargetUserPKID.ToBytes()...)
+		} else {
+			// PrefixUserAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, TargetUserPKID
+			prefixType = Prefixes.PrefixUserAssociationByTransactor
+			keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByTransactor...)
+			keyPrefix = append(keyPrefix, associationQuery.TransactorPKID.ToBytes()...)
+		}
+	} else if associationQuery.TargetUserPKID != nil {
+		// PrefixUserAssociationByTargetUser: TargetUserPKID, AssociationType, AssociationValue, TransactorPKID
+		prefixType = Prefixes.PrefixUserAssociationByTargetUser
+		keyPrefix = append(keyPrefix, Prefixes.PrefixUserAssociationByTargetUser...)
+		keyPrefix = append(keyPrefix, associationQuery.TargetUserPKID.ToBytes()...)
+	} else {
+		// TransactorPKID == nil, TargetUserPKID == nil
+		return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params: missing Transactor or TargetUser")
+	}
+
+	// AssociationType
+	if len(associationQuery.AssociationType) > 0 {
+		keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationType)...)
+		keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+	} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
+		// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
+		return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params: missing AssociationType")
+	} else if len(associationQuery.AssociationTypePrefix) > 0 {
+		keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
+	}
+
+	// AssociationValue
+	if len(associationQuery.AssociationValue) > 0 {
+		keyPrefix = append(keyPrefix, associationQuery.AssociationValue...)
+		keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+	} else if len(associationQuery.AssociationValuePrefix) > 0 {
+		keyPrefix = append(keyPrefix, associationQuery.AssociationValuePrefix...)
+	}
+
+	// AppPKID
+	if associationQuery.AppPKID != nil {
+		if associationQuery.TransactorPKID == nil ||
+			associationQuery.TargetUserPKID == nil ||
+			len(associationQuery.AssociationType) == 0 ||
+			len(associationQuery.AssociationValue) == 0 {
+			return nil, nil, errors.New("DBGetUserAssociationIdsByAttributes: invalid query params: querying by App requires all other parameters")
+		}
+		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
+	}
+
+	// Convert LastSeenAssociationID to LastSeenKey.
+	var lastSeenKey []byte
+	if associationQuery.LastSeenAssociationID != nil {
+		lastSeenKey, err = _dbUserAssociationIdToKey(handle, snap, associationQuery.LastSeenAssociationID, prefixType)
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
+		}
+	}
+
+	// Map UTXO view AssociationIDs to keys.
+	utxoViewAssociationKeys := NewSet([]string{})
+	err = utxoViewAssociationIds.ForEach(func(associationID BlockHash) error {
+		utxoViewAssociationKey, innerErr := _dbUserAssociationIdToKey(handle, snap, &associationID, prefixType)
+		if innerErr != nil {
+			return innerErr
+		}
+		if utxoViewAssociationKey != nil {
+			utxoViewAssociationKeys.Add(string(utxoViewAssociationKey))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: ")
+	}
+
+	// Scan for all association IDs with the given key prefix.
+	_, valsFound, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+		handle,
+		keyPrefix,
+		associationQuery.Limit,
+		lastSeenKey,
+		associationQuery.SortDescending,
+		utxoViewAssociationKeys,
+	)
+
+	// Cast resulting values from bytes to association IDs.
+	associationIds := NewSet([]BlockHash{})
+	for _, valBytes := range valsFound {
+		associationID := &BlockHash{}
+		rr := bytes.NewReader(valBytes)
+		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
+			return nil, nil, errors.Wrapf(err, "DBGetUserAssociationIdsByAttributes: problem decoding association id: ")
+		}
+		associationIds.Add(*associationID)
+	}
+	return associationIds, prefixType, nil
+}
+
+func DBGetPostAssociationsByAttributes(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationQuery *PostAssociationQuery,
+	utxoViewAssociationIds *Set[BlockHash],
+) ([]*PostAssociationEntry, []byte, error) {
+	// Query for association IDs by input query params.
+	associationIds, prefixType, err := DBGetPostAssociationIdsByAttributes(
+		handle, snap, associationQuery, utxoViewAssociationIds,
+	)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationsByAttributes: ")
+	}
+
+	// Map from association IDs to association entries.
+	associationEntries, err := MapSet(associationIds, func(associationID BlockHash) (*PostAssociationEntry, error) {
+		// Retrieve association entry from db by ID.
+		return DBGetPostAssociationByID(handle, snap, &associationID)
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationsByAttributes: problem retrieving association entry by ID: ")
+	}
+	return associationEntries, prefixType, nil
+}
+
+func DBGetPostAssociationIdsByAttributes(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationQuery *PostAssociationQuery,
+	utxoViewAssociationIds *Set[BlockHash],
+) (*Set[BlockHash], []byte, error) {
+	// Construct key based on input query params.
+	var prefixType []byte
+	var keyPrefix []byte
+	var err error
+
+	if associationQuery.TransactorPKID != nil {
+		// PrefixPostAssociationByTransactor: TransactorPKID, AssociationType, AssociationValue, PostHash
+		// TransactorPKID != nil
+		prefixType = Prefixes.PrefixPostAssociationByTransactor
+
+		// TransactorPKID
+		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByTransactor...)
+		keyPrefix = append(keyPrefix, associationQuery.TransactorPKID.ToBytes()...)
+
+		// AssociationType
+		if len(associationQuery.AssociationType) > 0 {
+			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationType)...)
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+		} else if len(associationQuery.AssociationValue) > 0 ||
+			len(associationQuery.AssociationValuePrefix) > 0 ||
+			associationQuery.PostHash != nil {
+			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "" || PostHash != nil)
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationType")
+		} else if len(associationQuery.AssociationTypePrefix) > 0 {
+			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
+		}
+
+		// AssociationValue
+		if len(associationQuery.AssociationValue) > 0 {
+			keyPrefix = append(keyPrefix, associationQuery.AssociationValue...)
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+		} else if associationQuery.PostHash != nil {
+			// AssociationValue == "", PostHash != nil
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationValue")
+		} else if len(associationQuery.AssociationValuePrefix) > 0 {
+			keyPrefix = append(keyPrefix, associationQuery.AssociationValuePrefix...)
+		}
+
+		// PostHash
+		if associationQuery.PostHash != nil {
+			keyPrefix = append(keyPrefix, associationQuery.PostHash.ToBytes()...)
+		}
+
+	} else if associationQuery.PostHash != nil {
+		// PrefixPostAssociationByPost: PostHash, AssociationType, AssociationValue, TransactorPKID
+		// TransactorPKID == nil, PostHash != nil
+		prefixType = Prefixes.PrefixPostAssociationByPost
+
+		// PostHash
+		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByPost...)
+		keyPrefix = append(keyPrefix, associationQuery.PostHash.ToBytes()...)
+
+		// AssociationType
+		if len(associationQuery.AssociationType) > 0 {
+			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationType)...)
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+		} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
+			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationType")
+		} else if len(associationQuery.AssociationTypePrefix) > 0 {
+			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
+		}
+
+		// AssociationValue
+		if len(associationQuery.AssociationValue) > 0 {
+			keyPrefix = append(keyPrefix, associationQuery.AssociationValue...)
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+		} else if len(associationQuery.AssociationValuePrefix) > 0 {
+			keyPrefix = append(keyPrefix, []byte(associationQuery.AssociationValuePrefix)...)
+		}
+
+	} else {
+		// PrefixPostAssociationByType: AssociationType, AssociationValue, PostHash, TransactorPKID
+		// TransactorPKID == nil, PostHash == nil
+		prefixType = Prefixes.PrefixPostAssociationByType
+		keyPrefix = append(keyPrefix, Prefixes.PrefixPostAssociationByType...)
+
+		// AssociationType
+		if len(associationQuery.AssociationType) > 0 {
+			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationType)...)
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationType which can vary in length
+		} else if len(associationQuery.AssociationValue) > 0 || len(associationQuery.AssociationValuePrefix) > 0 {
+			// AssociationType == "", (AssociationValue != "" || AssociationValuePrefix != "")
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: missing AssociationType")
+		} else if len(associationQuery.AssociationTypePrefix) > 0 {
+			keyPrefix = append(keyPrefix, bytes.ToLower(associationQuery.AssociationTypePrefix)...)
+		}
+
+		// AssociationValue
+		if len(associationQuery.AssociationValue) > 0 {
+			keyPrefix = append(keyPrefix, associationQuery.AssociationValue...)
+			keyPrefix = append(keyPrefix, AssociationNullTerminator) // Null terminator byte for AssociationValue which can vary in length
+		} else if len(associationQuery.AssociationValuePrefix) > 0 {
+			keyPrefix = append(keyPrefix, associationQuery.AssociationValuePrefix...)
+		}
+	}
+
+	// AppPKID
+	if associationQuery.AppPKID != nil {
+		if associationQuery.TransactorPKID == nil ||
+			associationQuery.PostHash == nil ||
+			len(associationQuery.AssociationType) == 0 ||
+			len(associationQuery.AssociationValue) == 0 {
+			return nil, nil, errors.New("DBGetPostAssociationIdsByAttributes: invalid query params: querying by App requires all other parameters")
+		}
+		keyPrefix = append(keyPrefix, associationQuery.AppPKID.ToBytes()...)
+	}
+
+	// Convert LastSeenAssociationID to LastSeenKey.
+	var lastSeenKey []byte
+	if associationQuery.LastSeenAssociationID != nil {
+		lastSeenKey, err = _dbPostAssociationIdToKey(handle, snap, associationQuery.LastSeenAssociationID, prefixType)
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
+		}
+	}
+
+	// Map UTXO view AssociationIDs to keys.
+	utxoViewAssociationKeys := NewSet([]string{})
+	err = utxoViewAssociationIds.ForEach(func(associationID BlockHash) error {
+		utxoViewAssociationKey, innerErr := _dbPostAssociationIdToKey(handle, snap, &associationID, prefixType)
+		if innerErr != nil {
+			return innerErr
+		}
+		if utxoViewAssociationKey != nil {
+			utxoViewAssociationKeys.Add(string(utxoViewAssociationKey))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: ")
+	}
+
+	// Scan for all association IDs with the given key prefix.
+	_, valsFound, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+		handle,
+		keyPrefix,
+		associationQuery.Limit,
+		lastSeenKey,
+		associationQuery.SortDescending,
+		utxoViewAssociationKeys,
+	)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "DBGetPostAssociationsIdsByAttributes: ")
+	}
+
+	// Cast resulting values from bytes to association IDs.
+	associationIds := NewSet([]BlockHash{})
+	for _, valBytes := range valsFound {
+		associationID := &BlockHash{}
+		rr := bytes.NewReader(valBytes)
+		if exist, err := DecodeFromBytes(associationID, rr); !exist || err != nil {
+			return nil, nil, errors.Wrapf(err, "DBGetPostAssociationIdsByAttributes: problem decoding association id: ")
+		}
+		associationIds.Add(*associationID)
+	}
+	return associationIds, prefixType, nil
+}
+
+func _dbUserAssociationIdToKey(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationID *BlockHash,
+	prefixType []byte,
+) ([]byte, error) {
+	// Converts a UserAssociationID to a db key.
+	associationEntry, err := DBGetUserAssociationByID(handle, snap, associationID)
+	if err != nil {
+		return nil, err
+	}
+	if associationEntry == nil {
+		return nil, nil
+	}
+	return DBKeyForUserAssociationByPrefix(associationEntry, prefixType)
+}
+
+func _dbPostAssociationIdToKey(
+	handle *badger.DB,
+	snap *Snapshot,
+	associationID *BlockHash,
+	prefixType []byte,
+) ([]byte, error) {
+	// Converts a PostAssociationID to a db key.
+	associationEntry, err := DBGetPostAssociationByID(handle, snap, associationID)
+	if err != nil {
+		return nil, err
+	}
+	if associationEntry == nil {
+		return nil, nil
+	}
+	return DBKeyForPostAssociationByPrefix(associationEntry, prefixType)
+}
+
+func DBPutUserAssociationWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	associationEntry *UserAssociationEntry,
+	blockHeight uint64,
+) error {
+	if associationEntry == nil {
+		return nil
+	}
+	associationEntryBytes := EncodeToBytes(blockHeight, associationEntry)
+	associationIDBytes := EncodeToBytes(blockHeight, associationEntry.AssociationID)
+
+	// Store entry in index: PrefixUserAssociationByID.
+	key := DBKeyForUserAssociationByID(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationEntryBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByID",
+		)
+	}
+
+	// Store ID in index: PrefixUserAssociationByTransactor.
+	key = DBKeyForUserAssociationByTransactor(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTransactor",
+		)
+	}
+
+	// Store ID in index: PrefixUserAssociationByTargetUser.
+	key = DBKeyForUserAssociationByTargetUser(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTargetUser",
+		)
+	}
+
+	// Store ID in index: PrefixUserAssociationByUsers.
+	key = DBKeyForUserAssociationByUsers(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByUsers")
+	}
+	return nil
+}
+
+func DBDeleteUserAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *UserAssociationEntry) error {
+	if associationEntry == nil {
+		return nil
+	}
+
+	// Delete from index: PrefixUserAssociationByID.
+	key := DBKeyForUserAssociationByID(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByID",
+		)
+	}
+
+	// Delete from index: PrefixUserAssociationByTransactor.
+	key = DBKeyForUserAssociationByTransactor(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTransactor",
+		)
+	}
+
+	// Delete from index: PrefixUserAssociationByTargetUser.
+	key = DBKeyForUserAssociationByTargetUser(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTargetUser",
+		)
+	}
+
+	// Delete from index: PrefixUserAssociationByUsers.
+	key = DBKeyForUserAssociationByUsers(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByUsers",
+		)
+	}
+	return nil
+}
+
+func DBPutPostAssociationWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	associationEntry *PostAssociationEntry,
+	blockHeight uint64,
+) error {
+	if associationEntry == nil {
+		return nil
+	}
+	associationEntryBytes := EncodeToBytes(blockHeight, associationEntry)
+	associationIDBytes := EncodeToBytes(blockHeight, associationEntry.AssociationID)
+
+	// Store entry in index: PrefixPostAssociationByID.
+	key := DBKeyForPostAssociationByID(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationEntryBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByID",
+		)
+	}
+
+	// Store ID in index: PrefixPostAssociationByTransactor.
+	key = DBKeyForPostAssociationByTransactor(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByTransactor",
+		)
+	}
+
+	// Store ID in index: PrefixPostAssociationByPost.
+	key = DBKeyForPostAssociationByPost(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByPost",
+		)
+	}
+
+	// Store ID in index: PrefixPostAssociationByType.
+	key = DBKeyForPostAssociationByType(associationEntry)
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByType",
+		)
+	}
+	return nil
+}
+
+func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *PostAssociationEntry) error {
+	if associationEntry == nil {
+		return nil
+	}
+
+	// Delete from index: PrefixPostAssociationByID.
+	key := DBKeyForPostAssociationByID(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByID",
+		)
+	}
+
+	// Delete from index: PrefixPostAssociationByTransactor.
+	key = DBKeyForPostAssociationByTransactor(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByTransactor",
+		)
+	}
+
+	// Delete from index: PrefixPostAssociationByPost.
+	key = DBKeyForPostAssociationByPost(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByPost",
+		)
+	}
+
+	// Delete from index: PrefixPostAssociationByType.
+	key = DBKeyForPostAssociationByType(associationEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByType",
+		)
+	}
+	return nil
+}
+
+func EnumerateKeysForPrefixWithLimitOffsetOrder(
+	db *badger.DB,
+	prefix []byte,
+	limit int,
+	lastSeenKey []byte,
+	sortDescending bool,
+	skipKeys *Set[string],
+) ([][]byte, [][]byte, error) {
+	keysFound := [][]byte{}
+	valsFound := [][]byte{}
+
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		keysFound, valsFound, err = _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
+			txn, prefix, limit, lastSeenKey, sortDescending, skipKeys,
+		)
+		return err
+	})
+	if dbErr != nil {
+		return nil, nil, errors.Wrapf(
+			dbErr,
+			"EnumerateKeysForPrefixWithLimitOffsetOrder: problem fetching keys and values from db: ",
+		)
+	}
+
+	return keysFound, valsFound, nil
+}
+
+func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
+	txn *badger.Txn,
+	prefix []byte,
+	limit int,
+	lastSeenKey []byte,
+	sortDescending bool,
+	skipKeys *Set[string],
+) ([][]byte, [][]byte, error) {
+	keysFound := [][]byte{}
+	valsFound := [][]byte{}
+
+	// If provided, start at the last seen key.
+	startingKey := prefix
+	haveSeenLastSeenKey := true
+	if lastSeenKey != nil {
+		startingKey = lastSeenKey
+		haveSeenLastSeenKey = false
+		if limit > 0 {
+			// Need to increment limit by one (if non-zero) since
+			// we include the lastSeenKey/lastSeenValue.
+			limit += 1
+		}
+	}
+
+	opts := badger.DefaultIteratorOptions
+	// Search keys in reverse order if sort DESC.
+	if sortDescending {
+		opts.Reverse = true
+		startingKey = append(startingKey, 0xff)
+	}
+	nodeIterator := txn.NewIterator(opts)
+	defer nodeIterator.Close()
+
+	for nodeIterator.Seek(startingKey); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+		// Break if at or beyond limit.
+		if limit > 0 && len(keysFound) >= limit {
+			break
+		}
+		key := nodeIterator.Item().Key()
+		// Skip if key is before the last seen key. The caller
+		// needs to filter out the lastSeenKey in the view as
+		// we return any key >= the lastSeenKey.
+		if !haveSeenLastSeenKey {
+			if !bytes.Equal(key, lastSeenKey) {
+				continue
+			}
+			haveSeenLastSeenKey = true
+		}
+		// Skip if key is included in the set of skipKeys.
+		if skipKeys.Includes(string(key)) {
+			continue
+		}
+		// Copy key.
+		keyCopy := make([]byte, len(key))
+		copy(keyCopy[:], key[:])
+		// Copy value.
+		valCopy, err := nodeIterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		// Append found entry to return slices.
+		keysFound = append(keysFound, keyCopy)
+		valsFound = append(valsFound, valCopy)
+	}
+	return keysFound, valsFound, nil
 }

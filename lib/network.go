@@ -227,12 +227,15 @@ const (
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
 	TxnTypeDAOCoinLimitOrder            TxnType = 26
-	TxnTypeAccessGroup                  TxnType = 27
-	TxnTypeAccessGroupMembers           TxnType = 28
-	TxnTypeNewMessage                   TxnType = 29
-	TxnTypeUpdateMessage                TxnType = 30
+	TxnTypeCreateUserAssociation        TxnType = 27
+	TxnTypeDeleteUserAssociation        TxnType = 28
+	TxnTypeCreatePostAssociation        TxnType = 29
+	TxnTypeDeletePostAssociation        TxnType = 30
+	TxnTypeAccessGroup                  TxnType = 31
+	TxnTypeAccessGroupMembers           TxnType = 32
+	TxnTypeNewMessage                   TxnType = 33
 
-	// NEXT_ID = 31
+	// NEXT_ID = 34
 )
 
 type TxnString string
@@ -264,10 +267,13 @@ const (
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
 	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
+	TxnStringCreateUserAssociation        TxnString = "CREATE_USER_ASSOCIATION"
+	TxnStringDeleteUserAssociation        TxnString = "DELETE_USER_ASSOCIATION"
+	TxnStringCreatePostAssociation        TxnString = "CREATE_POST_ASSOCIATION"
+	TxnStringDeletePostAssociation        TxnString = "DELETE_POST_ASSOCIATION"
 	TxnStringAccessGroup                  TxnString = "ACCESS_GROUP_CREATE"
 	TxnStringAccessGroupMembers           TxnString = "ACCESS_GROUP_MEMBERS"
 	TxnStringNewMessage                   TxnString = "NEW_MESSAGE"
-	TxnStringUpdateMessage                TxnString = "UPDATE_MESSAGE"
 	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
@@ -278,8 +284,9 @@ var (
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
-		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeAccessGroup,
-		TxnTypeAccessGroupMembers, TxnTypeNewMessage, TxnTypeUpdateMessage,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeCreateUserAssociation,
+		TxnTypeDeleteUserAssociation, TxnTypeCreatePostAssociation, TxnTypeDeletePostAssociation,
+		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -287,8 +294,9 @@ var (
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
-		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringAccessGroup,
-		TxnStringAccessGroupMembers, TxnStringNewMessage, TxnStringUpdateMessage,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringCreateUserAssociation,
+		TxnStringDeleteUserAssociation, TxnStringCreatePostAssociation, TxnStringDeletePostAssociation,
+		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage,
 	}
 )
 
@@ -354,14 +362,20 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringDAOCoinTransfer
 	case TxnTypeDAOCoinLimitOrder:
 		return TxnStringDAOCoinLimitOrder
+	case TxnTypeCreateUserAssociation:
+		return TxnStringCreateUserAssociation
+	case TxnTypeDeleteUserAssociation:
+		return TxnStringDeleteUserAssociation
+	case TxnTypeCreatePostAssociation:
+		return TxnStringCreatePostAssociation
+	case TxnTypeDeletePostAssociation:
+		return TxnStringDeletePostAssociation
 	case TxnTypeAccessGroup:
 		return TxnStringAccessGroup
 	case TxnTypeAccessGroupMembers:
 		return TxnStringAccessGroupMembers
 	case TxnTypeNewMessage:
 		return TxnStringNewMessage
-	case TxnTypeUpdateMessage:
-		return TxnStringUpdateMessage
 	default:
 		return TxnStringUndefined
 	}
@@ -421,14 +435,20 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeDAOCoinTransfer
 	case TxnStringDAOCoinLimitOrder:
 		return TxnTypeDAOCoinLimitOrder
+	case TxnStringCreateUserAssociation:
+		return TxnTypeCreateUserAssociation
+	case TxnStringDeleteUserAssociation:
+		return TxnTypeDeleteUserAssociation
+	case TxnStringCreatePostAssociation:
+		return TxnTypeCreatePostAssociation
+	case TxnStringDeletePostAssociation:
+		return TxnTypeDeletePostAssociation
 	case TxnStringAccessGroup:
 		return TxnTypeAccessGroup
 	case TxnStringAccessGroupMembers:
 		return TxnTypeAccessGroupMembers
 	case TxnStringNewMessage:
 		return TxnTypeNewMessage
-	case TxnStringUpdateMessage:
-		return TxnTypeUpdateMessage
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -496,6 +516,14 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinTransferMetadata{}).New(), nil
 	case TxnTypeDAOCoinLimitOrder:
 		return (&DAOCoinLimitOrderMetadata{}).New(), nil
+	case TxnTypeCreateUserAssociation:
+		return (&CreateUserAssociationMetadata{}).New(), nil
+	case TxnTypeDeleteUserAssociation:
+		return (&DeleteUserAssociationMetadata{}).New(), nil
+	case TxnTypeCreatePostAssociation:
+		return (&CreatePostAssociationMetadata{}).New(), nil
+	case TxnTypeDeletePostAssociation:
+		return (&DeletePostAssociationMetadata{}).New(), nil
 	case TxnTypeAccessGroup:
 		return (&AccessGroupMetadata{}).New(), nil
 	case TxnTypeAccessGroupMembers:
@@ -2619,6 +2647,16 @@ func (desoSign *DeSoSignature) Verify(hash []byte, pubKey *btcec.PublicKey) bool
 		return false
 	}
 	return desoSign.Sign.Verify(hash, pubKey)
+}
+
+// HasHighS returns true if the signature has a high S value, which is non-standard
+func (desoSign *DeSoSignature) HasHighS() bool {
+	if desoSign == nil || desoSign.Sign == nil {
+		return false
+	}
+	// We reject high-S signatures as they lead to inconsistent public key recovery
+	// https://github.com/indutny/elliptic/blob/master/lib/elliptic/ec/index.js#L147
+	return desoSign.Sign.S.Cmp(big.NewInt(0).Rsh(secp256k1.Params().N, 1)) != -1
 }
 
 // ToBytes encodes the signature in accordance to the DeSo-DER ECDSA format.
@@ -5063,18 +5101,28 @@ type TransactionSpendingLimit struct {
 	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
 
 	// AccessGroupMap is a map with keys composed of
-	// AccessGroupId || AccessGroupOperationType
+	// AccessGroupOwnerPublicKey || AccessGroupKeyName || AccessGroupOperationType
 	// to number of transactions.
 	AccessGroupMap map[AccessGroupLimitKey]uint64
 
 	// AccessGroupMemberMap is a map with keys composed of
-	// AccessGroupId || AccessGroupMemberOperationType
+	// AccessGroupOwnerPublicKey || AccessGroupKeyName || AccessGroupMemberOperationType
 	// to number of transactions.
 	AccessGroupMemberMap map[AccessGroupMemberLimitKey]uint64
 
 	// ===== ENCODER MIGRATION UnlimitedDerivedKeysMigration =====
 	// IsUnlimited field determines whether this derived key has no spending limit.
 	IsUnlimited bool
+
+	// ===== ENCODER MIGRATION AssociationsMigration =====
+	// AssociationClass || AssociationType || AppPKID || AppScopeType || AssociationOperation
+	// to number of transactions
+	//   - AssociationClass: one of { User, Post }
+	//   - AssociationType: a byte slice to scope by AssociationType or an empty byte slice to signify Any
+	//   - AppPKID: a PKID to scope by App, if AppScopeType == Any then AppPKID has to be the ZeroPKID
+	//   - AppScopeType: one of { Any, Scoped }
+	//   - AssociationOperation: one of { Any, Create, Delete }
+	AssociationLimitMap map[AssociationLimitKey]uint64
 }
 
 // ToMetamaskString encodes the TransactionSpendingLimit into a Metamask-compatible string. The encoded string will
@@ -5220,14 +5268,85 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 		indentationCounter--
 	}
 
+	// AssociationLimitMap
+	if len(tsl.AssociationLimitMap) > 0 {
+		var associationLimitStr []string
+		str += _indt(indentationCounter) + "Association Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.AssociationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Association Class: " +
+				limitKey.AssociationClass.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Association Type: " +
+				limitKey.AssociationType + "\n"
+			opString += _indt(indentationCounter) + "App PKID: " +
+				Base58CheckEncode(limitKey.AppPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			associationLimitStr = append(associationLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(associationLimitStr)
+		indentationCounter--
+	}
+
+	// AccessGroupMap
+	if len(tsl.AccessGroupMap) > 0 {
+		var accessGroupStr []string
+		str += _indt(indentationCounter) + "Access Groups:\n"
+		indentationCounter++
+		for accessGroupKey, limit := range tsl.AccessGroupMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
+				Base58CheckEncode(accessGroupKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Access Group Key Name: " +
+				hex.EncodeToString(accessGroupKey.AccessGroupKeyName.ToBytes()) + "\n"
+			opString += _indt(indentationCounter) + "Access Group Operation: " +
+				accessGroupKey.OperationType.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+
+			indentationCounter--
+			opString += _indt(indentationCounter) + "]\n"
+			accessGroupStr = append(accessGroupStr, opString)
+		}
+	}
+
+	// AccessGroupMemberMap
+	if len(tsl.AccessGroupMemberMap) > 0 {
+		var accessGroupMemberStr []string
+		for accessGroupMemberKey, limit := range tsl.AccessGroupMemberMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
+				Base58CheckEncode(accessGroupMemberKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Access Group Key Name: " +
+				hex.EncodeToString(accessGroupMemberKey.AccessGroupKeyName.ToBytes()) + "\n"
+			opString += _indt(indentationCounter) + "Access Group Member Operation Type: " +
+				accessGroupMemberKey.OperationType.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+
+			indentationCounter--
+			opString += _indt(indentationCounter) + "]\n"
+			accessGroupMemberStr = append(accessGroupMemberStr, opString)
+		}
+	}
+
 	// IsUnlimited
 	if tsl.IsUnlimited {
 		str += "Unlimited"
 	}
-
-	// AccessGroupLimitMap
-	// AccessGroupMemberLimitMap
-	// TODO: We need to pass blockheight here to support access group spending limit
 
 	return str
 }
@@ -5357,6 +5476,29 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 		data = append(data, BoolToByte(tsl.IsUnlimited))
 	}
 
+	// TODO: merge associations and access group migrations
+	// AssociationLimitMap, gated by the encoder migration
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		associationLimitMapLength := uint64(len(tsl.AssociationLimitMap))
+		data = append(data, UintToBuf(associationLimitMapLength)...)
+		if associationLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[AssociationLimitKey](0, associationLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.AssociationLimitMap {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.AssociationLimitMap[key])...)
+			}
+		}
+	}
+
 	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
 		accessGroupLimitMapLength := uint64(len(tsl.AccessGroupMap))
 		data = append(data, UintToBuf(accessGroupLimitMapLength)...)
@@ -5371,8 +5513,7 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 			sort.Slice(keys, func(ii, jj int) bool {
 				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
 			})
-			for _, key := range keys {
-				data = append(data, key.Encode()...)
+			for key := range tsl.AccessGroupMap {
 				data = append(data, UintToBuf(tsl.AccessGroupMap[key])...)
 			}
 		}
@@ -5529,6 +5670,32 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
+	// TODO: merge Associations and access group migrations
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		associationMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
+		if associationMapLen > 0 {
+			for ii := uint64(0); ii < associationMapLen; ii++ {
+				associationLimitKey := &AssociationLimitKey{}
+				if err = associationLimitKey.Decode(rr); err != nil {
+					return errors.Wrap(err, "Error decoding Association Key")
+				}
+				var operationCount uint64
+				operationCount, err = ReadUvarint(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.AssociationLimitMap[*associationLimitKey]; exists {
+					return errors.New("Association Key already exists in map")
+				}
+				tsl.AssociationLimitMap[*associationLimitKey] = operationCount
+			}
+		}
+	}
+
 	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
 		// Access Group Map
 		accessGroupLimitMapLen, err := ReadUvarint(rr)
@@ -5555,9 +5722,13 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 
 		// Access Group Member Map
+		accessGroupMemberLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
 		tsl.AccessGroupMemberMap = make(map[AccessGroupMemberLimitKey]uint64)
-		if accessGroupLimitMapLen > 0 {
-			for ii := uint64(0); ii < accessGroupLimitMapLen; ii++ {
+		if accessGroupMemberLimitMapLen > 0 {
+			for ii := uint64(0); ii < accessGroupMemberLimitMapLen; ii++ {
 				accessGroupMemberLimitKey := &AccessGroupMemberLimitKey{}
 				if err = accessGroupMemberLimitKey.Decode(rr); err != nil {
 					return errors.Wrapf(err, "Error decoding access group member limit key")
@@ -5611,6 +5782,15 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		copyTSL.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = daoCoinLimitOrderCount
 	}
 
+	if tsl.AssociationLimitMap != nil {
+		// Before the AssociationsBlockHeight, this map will be null.
+		// So we should ensure this is the case in the copy too.
+		copyTSL.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
+		for associationLimitKey, associationCount := range tsl.AssociationLimitMap {
+			copyTSL.AssociationLimitMap[associationLimitKey] = associationCount
+		}
+	}
+
 	for accessGroupLimitKey, accessGroupCount := range tsl.AccessGroupMap {
 		copyTSL.AccessGroupMap[accessGroupLimitKey] = accessGroupCount
 	}
@@ -5623,22 +5803,23 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 }
 
 func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpendingLimit, blockHeight uint32) (_isUnlimited bool, _err error) {
-	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 9)
+	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 10)
 
 	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight {
 		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
 	}
 
-	// TODO: Do we need another blockheight for access group spending limits?
+	// Note: We don't need a blockheight here to gate access group nor access group member maps. They will always be
+	// empty prior to the fork block height, and should be empty after the blockheight for the unlimited spending limit.
 	if tsl.IsUnlimited && (tsl.GlobalDESOLimit > 0 ||
 		len(tsl.TransactionCountLimitMap) > 0 ||
 		len(tsl.CreatorCoinOperationLimitMap) > 0 ||
 		len(tsl.DAOCoinOperationLimitMap) > 0 ||
 		len(tsl.NFTOperationLimitMap) > 0 ||
 		len(tsl.DAOCoinLimitOrderLimitMap) > 0 ||
+		len(tsl.AssociationLimitMap) > 0 ||
 		len(tsl.AccessGroupMap) > 0 ||
 		len(tsl.AccessGroupMemberMap) > 0) {
-
 		return tsl.IsUnlimited, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
 	}
 
@@ -6035,9 +6216,206 @@ func MakeDAOCoinLimitOrderLimitKey(buyingDAOCoinCreatorPKID PKID, sellingDAOCoin
 	}
 }
 
+type AssociationLimitKey struct {
+	AssociationClass AssociationClass // User || Post
+	AssociationType  string
+	AppPKID          PKID
+	AppScopeType     AssociationAppScopeType // Any || Scoped
+	Operation        AssociationOperation    // Any || Create || Delete
+}
+
+type AssociationClass uint8
+type AssociationClassString string
+type AssociationAppScopeType uint8
+type AssociationAppScopeTypeString string
+type AssociationOperation uint8
+type AssociationOperationString string
+
+const (
+	UserAssociationClassString      AssociationClassString = "user"
+	PostAssociationClassString      AssociationClassString = "post"
+	UndefinedAssociationClassString AssociationClassString = "undefined"
+)
+
+func (associationClass AssociationClass) ToString() string {
+	return string(associationClass.ToAssociationClassString())
+}
+
+func (associationClass AssociationClass) ToAssociationClassString() AssociationClassString {
+	switch associationClass {
+	case AssociationClassUser:
+		return UserAssociationClassString
+	case AssociationClassPost:
+		return PostAssociationClassString
+	default:
+		return UndefinedAssociationClassString
+	}
+}
+
+func (associationClassString AssociationClassString) ToAssociationClass() AssociationClass {
+	switch associationClassString {
+	case UserAssociationClassString:
+		return AssociationClassUser
+	case PostAssociationClassString:
+		return AssociationClassPost
+	default:
+		return AssociationClassUndefined
+	}
+}
+
+const (
+	AnyAssociationAppScopeTypeString       AssociationAppScopeTypeString = "any"
+	ScopedAssociationAppScopeTypeString    AssociationAppScopeTypeString = "scoped"
+	UndefinedAssociationAppScopeTypeString AssociationAppScopeTypeString = "undefined"
+)
+
+func (associationAppScopeType AssociationAppScopeType) ToString() string {
+	return string(associationAppScopeType.ToAssociationAppScopeTypeString())
+}
+
+func (associationAppScopeType AssociationAppScopeType) ToAssociationAppScopeTypeString() AssociationAppScopeTypeString {
+	switch associationAppScopeType {
+	case AssociationAppScopeTypeAny:
+		return AnyAssociationAppScopeTypeString
+	case AssociationAppScopeTypeScoped:
+		return ScopedAssociationAppScopeTypeString
+	default:
+		return UndefinedAssociationAppScopeTypeString
+	}
+}
+
+func (associationAppScopeTypeString AssociationAppScopeTypeString) ToAssociationAppScopeType() AssociationAppScopeType {
+	switch associationAppScopeTypeString {
+	case AnyAssociationAppScopeTypeString:
+		return AssociationAppScopeTypeAny
+	case ScopedAssociationAppScopeTypeString:
+		return AssociationAppScopeTypeScoped
+	default:
+		return AssociationAppScopeTypeUndefined
+	}
+}
+
+const (
+	AnyAssociationOperation       AssociationOperationString = "any"
+	CreateAssociationOperation    AssociationOperationString = "create"
+	DeleteAssociationOperation    AssociationOperationString = "delete"
+	UndefinedAssociationOperation AssociationOperationString = "undefined"
+)
+
+func (associationOperation AssociationOperation) ToString() string {
+	return string(associationOperation.ToAssociationOperationString())
+}
+
+func (associationOperation AssociationOperation) ToAssociationOperationString() AssociationOperationString {
+	switch associationOperation {
+	case AssociationOperationAny:
+		return AnyAssociationOperation
+	case AssociationOperationCreate:
+		return CreateAssociationOperation
+	case AssociationOperationDelete:
+		return DeleteAssociationOperation
+	default:
+		return UndefinedAssociationOperation
+	}
+}
+
+func (associationOperationString AssociationOperationString) ToAssociationOperation() AssociationOperation {
+	switch associationOperationString {
+	case AnyAssociationOperation:
+		return AssociationOperationAny
+	case CreateAssociationOperation:
+		return AssociationOperationCreate
+	case DeleteAssociationOperation:
+		return AssociationOperationDelete
+	default:
+		return AssociationOperationUndefined
+	}
+}
+
+const (
+	// AssociationClass: User || Post
+	AssociationClassUser      AssociationClass = 0
+	AssociationClassPost      AssociationClass = 1
+	AssociationClassUndefined AssociationClass = 2
+	// AssociationScope: Any || Scoped
+	AssociationAppScopeTypeAny       AssociationAppScopeType = 0
+	AssociationAppScopeTypeScoped    AssociationAppScopeType = 1
+	AssociationAppScopeTypeUndefined AssociationAppScopeType = 2
+	// AssociationOperation: Any || Create || Delete
+	AssociationOperationAny       AssociationOperation = 0
+	AssociationOperationCreate    AssociationOperation = 1
+	AssociationOperationDelete    AssociationOperation = 2
+	AssociationOperationUndefined AssociationOperation = 3
+)
+
+func (associationLimitKey AssociationLimitKey) Encode() []byte {
+	var data []byte
+	data = append(data, UintToBuf(uint64(associationLimitKey.AssociationClass))...)
+	data = append(data, EncodeByteArray([]byte(associationLimitKey.AssociationType))...)
+	data = append(data, associationLimitKey.AppPKID.ToBytes()...)
+	data = append(data, UintToBuf(uint64(associationLimitKey.AppScopeType))...)
+	data = append(data, UintToBuf(uint64(associationLimitKey.Operation))...)
+	return data
+}
+
+func (associationLimitKey *AssociationLimitKey) Decode(rr *bytes.Reader) error {
+	var err error
+	// AssociationClass: User || Post
+	associationClass, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AssociationLimitKey.Decode: Problem reading AssociationClass: ")
+	}
+	associationLimitKey.AssociationClass = AssociationClass(associationClass)
+	// AssociationType
+	associationType, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AssociationType: ")
+	}
+	associationLimitKey.AssociationType = string(associationType)
+	// AppPKID
+	appPKID := &PKID{}
+	if err = appPKID.FromBytes(rr); err != nil {
+		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AppPKID: ")
+	}
+	associationLimitKey.AppPKID = *appPKID
+	// AppScopeType: Any || Scoped
+	appScopeType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AppScopeType: ")
+	}
+	associationLimitKey.AppScopeType = AssociationAppScopeType(appScopeType)
+	// Operation: Any || Create || Delete
+	operation, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AssociationLimitKey.Decode: Problem reading Operation: ")
+	}
+	associationLimitKey.Operation = AssociationOperation(operation)
+	return nil
+}
+
+func MakeAssociationLimitKey(
+	associationClass AssociationClass,
+	associationType []byte,
+	appPKID PKID,
+	appScopeType AssociationAppScopeType,
+	operation AssociationOperation,
+) AssociationLimitKey {
+	// Note: AssociationType is case-insensitive.
+	return AssociationLimitKey{
+		AssociationClass: associationClass,
+		AssociationType:  string(bytes.ToLower(associationType)),
+		AppPKID:          appPKID,
+		AppScopeType:     appScopeType,
+		Operation:        operation,
+	}
+}
+
 type AccessGroupLimitKey struct {
-	// AccessGroupId is the id of the group for which we want to apply the spending limit
-	AccessGroupId AccessGroupId
+	// AccessGroupOwnerPublicKey is the public key of the owner of the access group.
+	AccessGroupOwnerPublicKey PublicKey
+
+	// AccessGroupKeyName is the name of the access group.
+	AccessGroupKeyName GroupKeyName
 
 	// OperationType is the type of operation for which the spending limit count will apply
 	OperationType AccessGroupOperationType
@@ -6045,16 +6423,26 @@ type AccessGroupLimitKey struct {
 
 func (accessGroupLimitKey *AccessGroupLimitKey) Encode() []byte {
 	var data []byte
-	data = append(data, accessGroupLimitKey.AccessGroupId.ToBytes()...)
+	data = append(data, EncodeByteArray(accessGroupLimitKey.AccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(accessGroupLimitKey.AccessGroupKeyName.ToBytes())...)
 	data = append(data, UintToBuf(uint64(accessGroupLimitKey.OperationType))...)
 	return data
 }
 
 func (accessGroupLimitKey *AccessGroupLimitKey) Decode(rr *bytes.Reader) error {
-	accessGroupLimitKey.AccessGroupId = AccessGroupId{}
-	if err := accessGroupLimitKey.AccessGroupId.FromBytes(rr); err != nil {
-		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: Problem reading AccessGroupId")
+	accessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: "+
+			"Problem reading AccessGroupOwnerPublicKey")
 	}
+	accessGroupLimitKey.AccessGroupOwnerPublicKey = *NewPublicKey(accessGroupOwnerPublicKeyBytes)
+
+	accessGroupKeyNameBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: "+
+			"Problem reading AccessGroupKeyName")
+	}
+	accessGroupLimitKey.AccessGroupKeyName = *NewGroupKeyName(accessGroupKeyNameBytes)
 
 	operationType, err := ReadUvarint(rr)
 	if err != nil {
@@ -6064,16 +6452,22 @@ func (accessGroupLimitKey *AccessGroupLimitKey) Decode(rr *bytes.Reader) error {
 	return nil
 }
 
-func MakeAccessGroupLimitKey(accessGroupId AccessGroupId, operationType AccessGroupOperationType) AccessGroupLimitKey {
+func MakeAccessGroupLimitKey(accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName,
+	operationType AccessGroupOperationType) AccessGroupLimitKey {
+
 	return AccessGroupLimitKey{
-		AccessGroupId: accessGroupId,
-		OperationType: operationType,
+		AccessGroupOwnerPublicKey: accessGroupOwnerPublicKey,
+		AccessGroupKeyName:        accessGroupKeyName,
+		OperationType:             operationType,
 	}
 }
 
 type AccessGroupMemberLimitKey struct {
-	// AccessGroupId is the id of the group for which we want to apply the member spending limit.
-	AccessGroupId AccessGroupId
+	// AccessGroupOwnerPublicKey is the public key of the owner of the access group.
+	AccessGroupOwnerPublicKey PublicKey
+
+	// AccessGroupKeyName is the name of the access group.
+	AccessGroupKeyName GroupKeyName
 
 	// OperationType is the type of operation for which the spending limit count will apply to.
 	OperationType AccessGroupMemberOperationType
@@ -6081,16 +6475,26 @@ type AccessGroupMemberLimitKey struct {
 
 func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Encode() []byte {
 	var data []byte
-	data = append(data, accessGroupMemberLimitKey.AccessGroupId.ToBytes()...)
+	data = append(data, EncodeByteArray(accessGroupMemberLimitKey.AccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(accessGroupMemberLimitKey.AccessGroupKeyName.ToBytes())...)
 	data = append(data, UintToBuf(uint64(accessGroupMemberLimitKey.OperationType))...)
 	return data
 }
 
 func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Decode(rr *bytes.Reader) error {
-	accessGroupMemberLimitKey.AccessGroupId = AccessGroupId{}
-	if err := accessGroupMemberLimitKey.AccessGroupId.FromBytes(rr); err != nil {
-		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: Problem reading AccessGroupId")
+	accessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMemberLimitKey.Decode: "+
+			"Problem reading AccessGroupOwnerPublicKey")
 	}
+	accessGroupMemberLimitKey.AccessGroupOwnerPublicKey = *NewPublicKey(accessGroupOwnerPublicKeyBytes)
+
+	accessGroupKeyNameBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMemberLimitKey.Decode: "+
+			"Problem reading AccessGroupKeyName")
+	}
+	accessGroupMemberLimitKey.AccessGroupKeyName = *NewGroupKeyName(accessGroupKeyNameBytes)
 
 	operationType, err := ReadUvarint(rr)
 	if err != nil {
@@ -6100,10 +6504,12 @@ func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Decode(rr *bytes.Rea
 	return nil
 }
 
-func MakeAccessGroupMemberLimitKey(accessGroupId AccessGroupId, operationType AccessGroupMemberOperationType) AccessGroupMemberLimitKey {
+func MakeAccessGroupMemberLimitKey(accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName,
+	operationType AccessGroupMemberOperationType) AccessGroupMemberLimitKey {
 	return AccessGroupMemberLimitKey{
-		AccessGroupId: accessGroupId,
-		OperationType: operationType,
+		AccessGroupOwnerPublicKey: accessGroupOwnerPublicKey,
+		AccessGroupKeyName:        accessGroupKeyName,
+		OperationType:             operationType,
 	}
 }
 
@@ -6694,7 +7100,7 @@ type MessagingGroupMetadata struct {
 	MessagingPublicKey    []byte
 	MessagingGroupKeyName []byte
 	// This value is the signature of the following using the private key
-	// of the GroupOwnerPublicKey (aka txn.PublicKey):
+	// of the AccessGroupOwnerPublicKey (aka txn.PublicKey):
 	// - Sha256DoubleHash(MessagingPublicKey || MessagingGroupKeyName)
 	//
 	// This signature is only required when setting up a group where
@@ -6776,16 +7182,261 @@ func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 	return &MessagingGroupMetadata{}
 }
 
+// ==================================================================
+// Associations Metadata
+// ==================================================================
+
+type CreateUserAssociationMetadata struct {
+	TargetUserPublicKey *PublicKey
+	AppPublicKey        *PublicKey
+	AssociationType     []byte
+	AssociationValue    []byte
+}
+
+type DeleteUserAssociationMetadata struct {
+	AssociationID *BlockHash
+}
+
+type CreatePostAssociationMetadata struct {
+	PostHash         *BlockHash
+	AppPublicKey     *PublicKey
+	AssociationType  []byte
+	AssociationValue []byte
+}
+
+type DeletePostAssociationMetadata struct {
+	AssociationID *BlockHash
+}
+
+func (txnData *CreateUserAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeCreateUserAssociation
+}
+
+func (txnData *DeleteUserAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeDeleteUserAssociation
+}
+
+func (txnData *CreatePostAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeCreatePostAssociation
+}
+
+func (txnData *DeletePostAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeDeletePostAssociation
+}
+
+func (txnData *CreateUserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.TargetUserPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AppPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AssociationType)...)
+	data = append(data, EncodeByteArray(txnData.AssociationValue)...)
+	return data, nil
+}
+
+func (txnData *DeleteUserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.AssociationID.ToBytes())...)
+	return data, nil
+}
+
+func (txnData *CreatePostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.PostHash.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AppPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AssociationType)...)
+	data = append(data, EncodeByteArray(txnData.AssociationValue)...)
+	return data, nil
+}
+
+func (txnData *DeletePostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.AssociationID.ToBytes())...)
+	return data, nil
+}
+
+func (txnData *CreateUserAssociationMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// TargetUserPublicKey
+	targetUserPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading TargetUserPublicKey: ")
+	}
+	txnData.TargetUserPublicKey = NewPublicKey(targetUserPublicKeyBytes)
+
+	// AppPublicKey
+	appPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AppPublicKey: ")
+	}
+	txnData.AppPublicKey = NewPublicKey(appPublicKeyBytes)
+
+	// AssociationType
+	txnData.AssociationType, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AssociationType: ")
+	}
+
+	// AssociationValue
+	txnData.AssociationValue, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AssociationValue: ")
+	}
+
+	return nil
+}
+
+func (txnData *DeleteUserAssociationMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// AssociationID
+	associationIDBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationMetadata.FromBytes: Problem reading AssociationID: ")
+	}
+	txnData.AssociationID = NewBlockHash(associationIDBytes)
+
+	return nil
+}
+
+func (txnData *CreatePostAssociationMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// PostHash
+	postHashBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading PostHash: ")
+	}
+	txnData.PostHash = NewBlockHash(postHashBytes)
+
+	// AppPublicKey
+	appPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AppPublicKey: ")
+	}
+	txnData.AppPublicKey = NewPublicKey(appPublicKeyBytes)
+
+	// AssociationType
+	txnData.AssociationType, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AssociationType: ")
+	}
+
+	// AssociationValue
+	txnData.AssociationValue, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AssociationValue: ")
+	}
+
+	return nil
+}
+
+func (txnData *DeletePostAssociationMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// AssociationID
+	associationIDBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationMetadata.FromBytes: Problem reading AssociationID: ")
+	}
+	txnData.AssociationID = NewBlockHash(associationIDBytes)
+
+	return nil
+}
+
+func (txnData *CreateUserAssociationMetadata) New() DeSoTxnMetadata {
+	return &CreateUserAssociationMetadata{}
+}
+
+func (txnData *DeleteUserAssociationMetadata) New() DeSoTxnMetadata {
+	return &DeleteUserAssociationMetadata{}
+}
+
+func (txnData *CreatePostAssociationMetadata) New() DeSoTxnMetadata {
+	return &CreatePostAssociationMetadata{}
+}
+
+func (txnData *DeletePostAssociationMetadata) New() DeSoTxnMetadata {
+	return &DeletePostAssociationMetadata{}
+}
+
+type UserAssociationQuery struct {
+	TransactorPKID         *PKID
+	TargetUserPKID         *PKID
+	AppPKID                *PKID
+	AssociationType        []byte
+	AssociationTypePrefix  []byte
+	AssociationValue       []byte
+	AssociationValuePrefix []byte
+	Limit                  int
+	LastSeenAssociationID  *BlockHash
+	SortDescending         bool
+}
+
+type PostAssociationQuery struct {
+	TransactorPKID         *PKID
+	PostHash               *BlockHash
+	AppPKID                *PKID
+	AssociationType        []byte
+	AssociationTypePrefix  []byte
+	AssociationValue       []byte
+	AssociationValuePrefix []byte
+	Limit                  int
+	LastSeenAssociationID  *BlockHash
+	SortDescending         bool
+}
+
 // =======================================================================================
 // AccessGroupMetadata
 // =======================================================================================
 
 type AccessGroupOperationType uint8
+type AccessGroupOperationString string
 
 const (
-	AccessGroupOperationTypeCreate AccessGroupOperationType = 0
-	AccessGroupOperationTypeUpdate AccessGroupOperationType = 1
+	AccessGroupOperationTypeCreate  AccessGroupOperationType = 0
+	AccessGroupOperationTypeUpdate  AccessGroupOperationType = 1
+	AccessGroupOperationTypeUnknown AccessGroupOperationType = 2
 )
+
+const (
+	AccessGroupOperationStringCreate  AccessGroupOperationString = "create"
+	AccessGroupOperationStringUpdate  AccessGroupOperationString = "update"
+	AccessGroupOperationStringUnknown AccessGroupOperationString = "unknown"
+)
+
+func (groupOp AccessGroupOperationType) ToAccessGroupOperationString() AccessGroupOperationString {
+	switch groupOp {
+	case AccessGroupOperationTypeCreate:
+		return AccessGroupOperationStringCreate
+	case AccessGroupOperationTypeUpdate:
+		return AccessGroupOperationStringUpdate
+	default:
+		return AccessGroupOperationStringUnknown
+	}
+}
+
+func (opString AccessGroupOperationString) ToAccessGroupOperationType() AccessGroupOperationType {
+	switch opString {
+	case AccessGroupOperationStringCreate:
+		return AccessGroupOperationTypeCreate
+	case AccessGroupOperationStringUpdate:
+		return AccessGroupOperationTypeUpdate
+	default:
+		return AccessGroupOperationTypeUnknown
+	}
+}
+
+func (groupOp AccessGroupOperationType) ToString() string {
+	switch groupOp {
+	case AccessGroupOperationTypeCreate:
+		return "AccessGroupOperationTypeCreate"
+	case AccessGroupOperationTypeUpdate:
+		return "AccessGroupOperationTypeUpdate"
+	default:
+		return ""
+	}
+}
 
 type AccessGroupMetadata struct {
 	AccessGroupOwnerPublicKey []byte
@@ -6851,12 +7502,60 @@ func (txnData *AccessGroupMetadata) New() DeSoTxnMetadata {
 // =======================================================================================
 
 type AccessGroupMemberOperationType uint8
+type AccessGroupMemberOperationString string
 
 const (
-	AccessGroupMemberOperationTypeAdd    AccessGroupMemberOperationType = 0
-	AccessGroupMemberOperationTypeRemove AccessGroupMemberOperationType = 1
-	AccessGroupMemberOperationTypeUpdate AccessGroupMemberOperationType = 2
+	AccessGroupMemberOperationTypeAdd     AccessGroupMemberOperationType = 0
+	AccessGroupMemberOperationTypeRemove  AccessGroupMemberOperationType = 1
+	AccessGroupMemberOperationTypeUpdate  AccessGroupMemberOperationType = 2
+	AccessGroupMemberOperationTypeUnknown AccessGroupMemberOperationType = 3
 )
+
+const (
+	AccessGroupMemberOperationStringAdd     AccessGroupMemberOperationString = "add"
+	AccessGroupMemberOperationStringRemove  AccessGroupMemberOperationString = "remove"
+	AccessGroupMemberOperationStringUpdate  AccessGroupMemberOperationString = "update"
+	AccessGroupMemberOperationStringUnknown AccessGroupMemberOperationString = "unknown"
+)
+
+func (groupOp AccessGroupMemberOperationType) ToAccessGroupMemberOperationString() AccessGroupMemberOperationString {
+	switch groupOp {
+	case AccessGroupMemberOperationTypeAdd:
+		return AccessGroupMemberOperationStringAdd
+	case AccessGroupMemberOperationTypeRemove:
+		return AccessGroupMemberOperationStringRemove
+	case AccessGroupMemberOperationTypeUpdate:
+		return AccessGroupMemberOperationStringUpdate
+	default:
+		return AccessGroupMemberOperationStringUnknown
+	}
+}
+
+func (opString AccessGroupMemberOperationString) ToAccessGroupMemberOperation() AccessGroupMemberOperationType {
+	switch opString {
+	case AccessGroupMemberOperationStringAdd:
+		return AccessGroupMemberOperationTypeAdd
+	case AccessGroupMemberOperationStringRemove:
+		return AccessGroupMemberOperationTypeRemove
+	case AccessGroupMemberOperationStringUpdate:
+		return AccessGroupMemberOperationTypeUpdate
+	default:
+		return AccessGroupMemberOperationTypeUnknown
+	}
+}
+
+func (groupOp AccessGroupMemberOperationType) ToString() string {
+	switch groupOp {
+	case AccessGroupMemberOperationTypeAdd:
+		return "AccessGroupMemberOperationTypeAdd"
+	case AccessGroupMemberOperationTypeRemove:
+		return "AccessGroupMemberOperationTypeRemove"
+	case AccessGroupMemberOperationTypeUpdate:
+		return "AccessGroupMemberOperationTypeUpdate"
+	default:
+		return ""
+	}
+}
 
 // AccessGroupMembersMetadata is the metadata for a transaction to update the members of an access group.
 type AccessGroupMembersMetadata struct {
@@ -7026,8 +7725,9 @@ const (
 	NewMessageTypeGroupChat NewMessageType = 1
 
 	// Message Operations
-	NewMessageOperationCreate NewMessageOperation = 0
-	NewMessageOperationUpdate NewMessageOperation = 1
+	NewMessageOperationCreate           NewMessageOperation = 0
+	NewMessageOperationUpdate           NewMessageOperation = 1
+	NewMessageOperationThreadAttributes NewMessageOperation = 2
 )
 
 type NewMessageMetadata struct {

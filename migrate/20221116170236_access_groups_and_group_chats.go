@@ -126,18 +126,6 @@ func init() {
 		}
 
 		_, err = db.Exec(`
-			CREATE TABLE IF NOT EXISTS pg_new_message_group_chat_thread_entries (
-				access_group_owner_public_key  BYTEA NOT NULL,
-				access_group_key_name          BYTEA NOT NULL,
-				
-				PRIMARY KEY (access_group_owner_public_key, access_group_key_name)
-			);
-		`)
-		if err != nil {
-			return err
-		}
-
-		_, err = db.Exec(`
 			CREATE TABLE IF NOT EXISTS pg_new_message_group_chat_entries (
 				access_group_owner_public_key        BYTEA NOT NULL,
 				access_group_key_name                BYTEA,
@@ -150,6 +138,36 @@ func init() {
 				extra_data                           JSONB,
 
 				PRIMARY KEY (access_group_owner_public_key, access_group_key_name, timestamp_nanos)
+			);
+		`)
+		if err != nil {
+			return err
+		}
+
+		_, err = db.Exec(`
+			CREATE TABLE IF NOT EXISTS pg_new_message_group_chat_thread_entries (
+				access_group_owner_public_key  BYTEA NOT NULL,
+				access_group_key_name          BYTEA NOT NULL,
+				
+				PRIMARY KEY (access_group_owner_public_key, access_group_key_name)
+			);
+		`)
+		if err != nil {
+			return err
+		}
+
+		// ThreadAttributesEntry data
+		_, err = db.Exec(`
+			CREATE TABLE IF NOT EXISTS pg_new_message_thread_attributes_entries (
+				user_access_group_owner_public_key  BYTEA NOT NULL,
+				user_access_group_key_name          BYTEA NOT NULL,
+				party_access_group_owner_public_key BYTEA NOT NULL,
+				party_access_group_key_name         BYTEA NOT NULL,
+				new_message_type                    SMALLINT,
+				attribute_data                      JSONB,
+
+				PRIMARY KEY (user_access_group_owner_public_key, user_access_group_key_name,
+					party_access_group_owner_public_key, party_access_group_key_name, new_message_type)
 			);
 		`)
 		if err != nil {
@@ -171,6 +189,9 @@ func init() {
 				new_message_operation                   SMALLINT
 			);
 		`)
+		if err != nil {
+			return err
+		}
 
 		return nil
 	}
@@ -183,7 +204,10 @@ func init() {
 			DROP TABLE IF EXISTS pg_metadata_access_group_create;
 			DROP TABLE IF EXISTS pg_metadata_access_group_members;
 			DROP TABLE IF EXISTS pg_new_message_dm_entries;
+			DROP TABLE IF EXISTS pg_new_message_dm_thread_entries;
 			DROP TABLE IF EXISTS pg_new_message_group_chat_entries;
+			DROP TABLE IF EXISTS pg_new_message_group_chat_thread_entries;
+			DROP TABLE IF EXISTS pg_new_message_thread_attributes_entries;
 			DROP TABLE IF EXISTS pg_metadata_new_message;
 		`)
 		return err

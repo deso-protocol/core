@@ -100,12 +100,16 @@ const (
 	EncoderTypeBlockHash
 	EncoderTypeDAOCoinLimitOrderEntry
 	EncoderTypeFilledDAOCoinLimitOrder
+	EncoderTypeUserAssociationEntry
+	EncoderTypePostAssociationEntry
 	EncoderTypeAccessGroupEntry
 	EncoderTypeAccessGroupMemberEntry
 	EncoderTypeGroupMembershipKey
 	EncoderTypeNewMessageEntry
+	EncoderTypeAccessGroupMemberEnumerationEntry
 	EncoderTypeDmThreadExistence
 	EncoderTypeGroupChatThreadExistence
+	EncoderTypeThreadAttributesEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -136,6 +140,13 @@ const (
 	EncoderTypeDAOCoinTxindexMetadata
 	EncoderTypeCreateNFTTxindexMetadata
 	EncoderTypeUpdateNFTTxindexMetadata
+	EncoderTypeCreateUserAssociationTxindexMetadata
+	EncoderTypeDeleteUserAssociationTxindexMetadata
+	EncoderTypeCreatePostAssociationTxindexMetadata
+	EncoderTypeDeletePostAssociationTxindexMetadata
+	EncoderTypeAccessGroupTxindexMetadata
+	EncoderTypeAccessGroupMembersTxindexMetadata
+	EncoderTypeNewMessageTxindexMetadata
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndTxIndex
@@ -205,6 +216,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &DAOCoinLimitOrderEntry{}
 	case EncoderTypeFilledDAOCoinLimitOrder:
 		return &FilledDAOCoinLimitOrder{}
+	case EncoderTypeUserAssociationEntry:
+		return &UserAssociationEntry{}
+	case EncoderTypePostAssociationEntry:
+		return &PostAssociationEntry{}
 	case EncoderTypeAccessGroupEntry:
 		return &AccessGroupEntry{}
 	case EncoderTypeAccessGroupMemberEntry:
@@ -213,10 +228,14 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMembershipKey{}
 	case EncoderTypeNewMessageEntry:
 		return &NewMessageEntry{}
+	case EncoderTypeAccessGroupMemberEnumerationEntry:
+		return &AccessGroupMemberEnumerationEntry{}
 	case EncoderTypeDmThreadExistence:
 		return &DmThreadExistence{}
 	case EncoderTypeGroupChatThreadExistence:
 		return &GroupChatThreadExistence{}
+	case EncoderTypeThreadAttributesEntry:
+		return &ThreadAttributesEntry{}
 	}
 
 	// Txindex encoder types
@@ -267,6 +286,20 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &CreateNFTTxindexMetadata{}
 	case EncoderTypeUpdateNFTTxindexMetadata:
 		return &UpdateNFTTxindexMetadata{}
+	case EncoderTypeCreateUserAssociationTxindexMetadata:
+		return &CreateUserAssociationTxindexMetadata{}
+	case EncoderTypeDeleteUserAssociationTxindexMetadata:
+		return &DeleteUserAssociationTxindexMetadata{}
+	case EncoderTypeCreatePostAssociationTxindexMetadata:
+		return &CreatePostAssociationTxindexMetadata{}
+	case EncoderTypeDeletePostAssociationTxindexMetadata:
+		return &DeletePostAssociationTxindexMetadata{}
+	case EncoderTypeAccessGroupTxindexMetadata:
+		return &AccessGroupTxindexMetadata{}
+	case EncoderTypeAccessGroupMembersTxindexMetadata:
+		return &AccessGroupMembersTxindexMetadata{}
+	case EncoderTypeNewMessageTxindexMetadata:
+		return &NewMessageTxindexMetadata{}
 	default:
 		return nil
 	}
@@ -535,11 +568,15 @@ const (
 	OperationTypeDAOCoinTransfer              OperationType = 26
 	OperationTypeSpendingLimitAccounting      OperationType = 27
 	OperationTypeDAOCoinLimitOrder            OperationType = 28
-	OperationTypeAccessGroup                  OperationType = 29
-	OperationTypeAccessGroupMembers           OperationType = 30
-	OperationTypeNewMessage                   OperationType = 31
+	OperationTypeCreateUserAssociation        OperationType = 29
+	OperationTypeDeleteUserAssociation        OperationType = 30
+	OperationTypeCreatePostAssociation        OperationType = 31
+	OperationTypeDeletePostAssociation        OperationType = 32
+	OperationTypeAccessGroup                  OperationType = 33
+	OperationTypeAccessGroupMembers           OperationType = 34
+	OperationTypeNewMessage                   OperationType = 35
 
-	// NEXT_TAG = 32
+	// NEXT_TAG = 36
 )
 
 func (op OperationType) String() string {
@@ -655,6 +692,22 @@ func (op OperationType) String() string {
 	case OperationTypeDAOCoinLimitOrder:
 		{
 			return "OperationTypeDAOCoinLimitOrder"
+		}
+	case OperationTypeCreateUserAssociation:
+		{
+			return "OperationTypeCreateUserAssociation"
+		}
+	case OperationTypeDeleteUserAssociation:
+		{
+			return "OperationTypeDeleteUserAssociation"
+		}
+	case OperationTypeCreatePostAssociation:
+		{
+			return "OperationTypeCreatePostAssociation"
+		}
+	case OperationTypeDeletePostAssociation:
+		{
+			return "OperationTypeDeletePostAssociation"
 		}
 	case OperationTypeAccessGroup:
 		{
@@ -823,8 +876,13 @@ type UtxoOperation struct {
 	// These are used to construct notifications for order fulfillment.
 	FilledDAOCoinLimitOrders []*FilledDAOCoinLimitOrder
 
+	// Save the state of any deleted associations, in case we need
+	// to disconnect/revert and re-instate the prev association.
+	PrevUserAssociationEntry *UserAssociationEntry
+	PrevPostAssociationEntry *PostAssociationEntry
+
 	//
-	// Access Group Soft-Fork fields
+	// Access Group Fork fields
 	//
 
 	// PrevAccessGroupEntry is the previous access group entry. It is used in
@@ -842,6 +900,8 @@ type UtxoOperation struct {
 	PrevDmThreadExistence *DmThreadExistence
 	// PrevGroupChatThreadExistence is used for disconnecting Group chat threads.
 	PrevGroupChatThreadExistence *GroupChatThreadExistence
+	// PrevThreadAttributesEntry is used for disconnecting thread attributes.
+	PrevThreadAttributesEntry *ThreadAttributesEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1126,6 +1186,15 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
 	}
 
+	// TODO: merge associations and access group migrations
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		// PrevUserAssociationEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevUserAssociationEntry, skipMetadata...)...)
+
+		// PrevPostAssociationEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevPostAssociationEntry, skipMetadata...)...)
+	}
+
 	//
 	// DeSoAccessGroupsMigration Encoder Migration
 	//
@@ -1148,6 +1217,9 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// PrevGroupChatThreadExistence
 		data = append(data, EncodeToBytes(blockHeight, op.PrevGroupChatThreadExistence, skipMetadata...)...)
+
+		// PrevThreadAttributesEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevThreadAttributesEntry, skipMetadata...)...)
 	}
 
 	return data
@@ -1684,6 +1756,24 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FilledDAOCoinLimitOrder")
 	}
 
+	// TODO: merge association and access group migrations
+	if MigrationTriggered(blockHeight, AssociationsMigration) {
+		// PrevUserAssociationEntry
+		prevUserAssociationEntry := &UserAssociationEntry{}
+		if exist, err := DecodeFromBytes(prevUserAssociationEntry, rr); exist && err == nil {
+			op.PrevUserAssociationEntry = prevUserAssociationEntry
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevUserAssociationEntry")
+		}
+
+		// PrevPostAssociationEntry
+		prevPostAssociationEntry := &PostAssociationEntry{}
+		if exist, err := DecodeFromBytes(prevPostAssociationEntry, rr); exist && err == nil {
+			op.PrevPostAssociationEntry = prevPostAssociationEntry
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevPostAssociationEntry")
+		}
+	}
 	//
 	// DeSoAccessGroupsMigration Encoder Migration
 	//
@@ -1734,13 +1824,21 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		} else if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGroupChatThreadExistence")
 		}
+
+		// PrevThreadAttributesEntry
+		threadAttributesEntry := &ThreadAttributesEntry{}
+		if exist, err := DecodeFromBytes(threadAttributesEntry, rr); exist && err == nil {
+			op.PrevThreadAttributesEntry = threadAttributesEntry
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevThreadAttributesEntry")
+		}
 	}
 
 	return nil
 }
 
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, DeSoAccessGroupsMigration)
+	return GetMigrationVersion(blockHeight, AssociationsMigration, DeSoAccessGroupsMigration)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {
@@ -2125,25 +2223,25 @@ func (message *NewMessageEntry) GetEncoderType() EncoderType {
 }
 
 type GroupChatMessageKey struct {
-	GroupOwnerPublicKey PublicKey
-	GroupKeyName        GroupKeyName
-	TimestampNanos      uint64
+	AccessGroupOwnerPublicKey PublicKey
+	AccessGroupKeyName        GroupKeyName
+	TimestampNanos            uint64
 }
 
 func MakeGroupChatMessageKey(groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, tstampNanos uint64) GroupChatMessageKey {
 	return GroupChatMessageKey{
-		GroupOwnerPublicKey: groupOwnerPublicKey,
-		GroupKeyName:        groupKeyName,
-		TimestampNanos:      tstampNanos,
+		AccessGroupOwnerPublicKey: groupOwnerPublicKey,
+		AccessGroupKeyName:        groupKeyName,
+		TimestampNanos:            tstampNanos,
 	}
 }
 
 type DmMessageKey struct {
-	MinorGroupOwnerPublicKey PublicKey
-	MinorGroupKeyName        GroupKeyName
-	MajorGroupOwnerPublicKey PublicKey
-	MajorGroupKeyName        GroupKeyName
-	TimestampNanos           uint64
+	MinorAccessGroupOwnerPublicKey PublicKey
+	MinorAccessGroupKeyName        GroupKeyName
+	MajorAccessGroupOwnerPublicKey PublicKey
+	MajorAccessGroupKeyName        GroupKeyName
+	TimestampNanos                 uint64
 }
 
 func MakeDmMessageKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName,
@@ -2171,17 +2269,17 @@ func MakeDmMessageKey(xGroupOwnerPublicKey PublicKey, xGroupKeyName GroupKeyName
 	}
 
 	return DmMessageKey{
-		MinorGroupOwnerPublicKey: minorGroupOwnerPublicKey,
-		MinorGroupKeyName:        minorGroupKeyName,
-		MajorGroupOwnerPublicKey: majorGroupOwnerPublicKey,
-		MajorGroupKeyName:        majorGroupKeyName,
-		TimestampNanos:           tstampNanos,
+		MinorAccessGroupOwnerPublicKey: minorGroupOwnerPublicKey,
+		MinorAccessGroupKeyName:        minorGroupKeyName,
+		MajorAccessGroupOwnerPublicKey: majorGroupOwnerPublicKey,
+		MajorAccessGroupKeyName:        majorGroupKeyName,
+		TimestampNanos:                 tstampNanos,
 	}
 }
 
 func MakeDmMessageKeyFromDmThreadKey(dmThreadKey DmThreadKey) DmMessageKey {
-	return MakeDmMessageKeyForSenderRecipient(dmThreadKey.userGroupOwnerPublicKey, dmThreadKey.userGroupKeyName,
-		dmThreadKey.partyGroupOwnerPublicKey, dmThreadKey.partyGroupKeyName, 0)
+	return MakeDmMessageKeyForSenderRecipient(dmThreadKey.UserAccessGroupOwnerPublicKey, dmThreadKey.UserAccessGroupKeyName,
+		dmThreadKey.PartyAccessGroupOwnerPublicKey, dmThreadKey.PartyAccessGroupKeyName, 0)
 }
 
 func MakeDmMessageKeyForSenderRecipient(senderAccessGroupOwnerPublicKey PublicKey, senderAccessGroupKeyName GroupKeyName,
@@ -2194,19 +2292,19 @@ func MakeDmMessageKeyForSenderRecipient(senderAccessGroupOwnerPublicKey PublicKe
 }
 
 type DmThreadKey struct {
-	userGroupOwnerPublicKey  PublicKey
-	userGroupKeyName         GroupKeyName
-	partyGroupOwnerPublicKey PublicKey
-	partyGroupKeyName        GroupKeyName
+	UserAccessGroupOwnerPublicKey  PublicKey
+	UserAccessGroupKeyName         GroupKeyName
+	PartyAccessGroupOwnerPublicKey PublicKey
+	PartyAccessGroupKeyName        GroupKeyName
 }
 
 func MakeDmThreadKey(userGroupOwnerPublicKey PublicKey, userGroupKeyName GroupKeyName,
 	partyGroupOwnerPublicKey PublicKey, partyGroupKeyName GroupKeyName) DmThreadKey {
 	return DmThreadKey{
-		userGroupOwnerPublicKey:  userGroupOwnerPublicKey,
-		userGroupKeyName:         userGroupKeyName,
-		partyGroupOwnerPublicKey: partyGroupOwnerPublicKey,
-		partyGroupKeyName:        partyGroupKeyName,
+		UserAccessGroupOwnerPublicKey:  userGroupOwnerPublicKey,
+		UserAccessGroupKeyName:         userGroupKeyName,
+		PartyAccessGroupOwnerPublicKey: partyGroupOwnerPublicKey,
+		PartyAccessGroupKeyName:        partyGroupKeyName,
 	}
 }
 
@@ -2227,6 +2325,33 @@ func MakeDmThreadKeyFromMessageEntry(messageEntry *NewMessageEntry, shouldUseRec
 			*messageEntry.SenderAccessGroupOwnerPublicKey, *messageEntry.SenderAccessGroupKeyName,
 			*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName), nil
 	}
+}
+
+// AccessGroupMemberEnumerationEntry
+type AccessGroupMemberEnumerationEntry struct {
+	isDeleted bool
+}
+
+func MakeAccessGroupMemberEnumerationEntry() AccessGroupMemberEnumerationEntry {
+	return AccessGroupMemberEnumerationEntry{
+		isDeleted: false,
+	}
+}
+
+func (entry *AccessGroupMemberEnumerationEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	return []byte{}
+}
+
+func (entry *AccessGroupMemberEnumerationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	return nil
+}
+
+func (entry *AccessGroupMemberEnumerationEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (entry *AccessGroupMemberEnumerationEntry) GetEncoderType() EncoderType {
+	return EncoderTypeAccessGroupMemberEnumerationEntry
 }
 
 // DmThreadExistence
@@ -2396,7 +2521,7 @@ func NewMessagingGroupKey(ownerPublicKey *PublicKey, groupKeyName []byte) *Messa
 }
 
 func (key *MessagingGroupKey) String() string {
-	return fmt.Sprintf("<OwnerPublicKey: %v, GroupKeyName: %v",
+	return fmt.Sprintf("<OwnerPublicKey: %v, AccessGroupKeyName: %v",
 		key.OwnerPublicKey, key.GroupKeyName)
 }
 
@@ -2586,6 +2711,56 @@ func (entry *AccessGroupEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (entry *AccessGroupEntry) GetEncoderType() EncoderType {
 	return EncoderTypeAccessGroupEntry
+}
+
+type ThreadAttributesKey struct {
+	UserAccessGroupOwnerPublicKey  PublicKey
+	UserAccessGroupKeyName         GroupKeyName
+	PartyAccessGroupOwnerPublicKey PublicKey
+	PartyAccessGroupKeyName        GroupKeyName
+	NewMessageType
+}
+
+func NewThreadAttributesKey(userAccessGroupOwnerPublicKey PublicKey, userAccessGroupKeyName GroupKeyName,
+	partyAccessGroupOwnerPublicKey PublicKey, partyAccessGroupKeyName GroupKeyName, newMessageType NewMessageType) *ThreadAttributesKey {
+	return &ThreadAttributesKey{
+		UserAccessGroupOwnerPublicKey:  userAccessGroupOwnerPublicKey,
+		UserAccessGroupKeyName:         userAccessGroupKeyName,
+		PartyAccessGroupOwnerPublicKey: partyAccessGroupOwnerPublicKey,
+		PartyAccessGroupKeyName:        partyAccessGroupKeyName,
+		NewMessageType:                 newMessageType,
+	}
+}
+
+type ThreadAttributesEntry struct {
+	AttributeData map[string][]byte
+
+	isDeleted bool
+}
+
+func (entry *ThreadAttributesEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeExtraData(entry.AttributeData)...)
+	return data
+}
+
+func (entry *ThreadAttributesEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	attributeData, err := DecodeExtraData(rr)
+	if err != nil {
+		return errors.Wrapf(err, "ThreadAttributesEntry.RawDecodeWithoutMetadata: Problem reading "+
+			"AttributeData")
+	}
+	entry.AttributeData = attributeData
+
+	return nil
+}
+
+func (entry *ThreadAttributesEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (entry *ThreadAttributesEntry) GetEncoderType() EncoderType {
+	return EncoderTypeThreadAttributesEntry
 }
 
 // AccessGroupEntry is used to update access keys for a user, this was added in
@@ -3375,7 +3550,7 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration)
+	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration, DeSoAccessGroupsMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {
@@ -5230,4 +5405,751 @@ func (order *FilledDAOCoinLimitOrder) GetVersionByte(blockHeight uint64) byte {
 
 func (order *FilledDAOCoinLimitOrder) GetEncoderType() EncoderType {
 	return EncoderTypeFilledDAOCoinLimitOrder
+}
+
+// -----------------------------------
+// Associations
+// -----------------------------------
+
+type UserAssociationEntry struct {
+	AssociationID    *BlockHash
+	TransactorPKID   *PKID
+	TargetUserPKID   *PKID
+	AppPKID          *PKID
+	AssociationType  []byte
+	AssociationValue []byte
+	ExtraData        map[string][]byte
+	BlockHeight      uint32
+	isDeleted        bool
+}
+
+type PostAssociationEntry struct {
+	AssociationID    *BlockHash
+	TransactorPKID   *PKID
+	PostHash         *BlockHash
+	AppPKID          *PKID
+	AssociationType  []byte
+	AssociationValue []byte
+	ExtraData        map[string][]byte
+	BlockHeight      uint32
+	isDeleted        bool
+}
+
+func (associationEntry *UserAssociationEntry) Copy() *UserAssociationEntry {
+	// Copy ExtraData.
+	extraDataCopy := make(map[string][]byte)
+	for key, value := range associationEntry.ExtraData {
+		extraDataCopy[key] = value
+	}
+
+	// Return new AssociationEntry.
+	return &UserAssociationEntry{
+		AssociationID:    associationEntry.AssociationID.NewBlockHash(),
+		TransactorPKID:   associationEntry.TransactorPKID.NewPKID(),
+		TargetUserPKID:   associationEntry.TargetUserPKID.NewPKID(),
+		AppPKID:          associationEntry.AppPKID.NewPKID(),
+		AssociationType:  append([]byte{}, associationEntry.AssociationType...),  // Makes a copy.
+		AssociationValue: append([]byte{}, associationEntry.AssociationValue...), // Makes a copy.
+		ExtraData:        extraDataCopy,
+		BlockHeight:      associationEntry.BlockHeight,
+		isDeleted:        associationEntry.isDeleted,
+	}
+}
+
+func (associationEntry *PostAssociationEntry) Copy() *PostAssociationEntry {
+	// Copy ExtraData.
+	extraDataCopy := make(map[string][]byte)
+	for key, value := range associationEntry.ExtraData {
+		extraDataCopy[key] = value
+	}
+
+	// Return new AssociationEntry.
+	return &PostAssociationEntry{
+		AssociationID:    associationEntry.AssociationID.NewBlockHash(),
+		TransactorPKID:   associationEntry.TransactorPKID.NewPKID(),
+		PostHash:         associationEntry.PostHash.NewBlockHash(),
+		AppPKID:          associationEntry.AppPKID.NewPKID(),
+		AssociationType:  append([]byte{}, associationEntry.AssociationType...),  // Makes a copy.
+		AssociationValue: append([]byte{}, associationEntry.AssociationValue...), // Makes a copy.
+		ExtraData:        extraDataCopy,
+		BlockHeight:      associationEntry.BlockHeight,
+		isDeleted:        associationEntry.isDeleted,
+	}
+}
+
+func (associationEntry *UserAssociationEntry) ToMapKey() AssociationMapKey {
+	return AssociationMapKey{
+		AssociationID: *associationEntry.AssociationID,
+	}
+}
+
+func (associationEntry *PostAssociationEntry) ToMapKey() AssociationMapKey {
+	return AssociationMapKey{
+		AssociationID: *associationEntry.AssociationID,
+	}
+}
+
+func (associationEntry *UserAssociationEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.AssociationID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.TransactorPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.TargetUserPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.AppPKID, skipMetadata...)...)
+	data = append(data, EncodeByteArray(associationEntry.AssociationType)...)
+	data = append(data, EncodeByteArray(associationEntry.AssociationValue)...)
+	data = append(data, EncodeExtraData(associationEntry.ExtraData)...)
+	data = append(data, UintToBuf(uint64(associationEntry.BlockHeight))...)
+	return data
+}
+
+func (associationEntry *PostAssociationEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.AssociationID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.TransactorPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.PostHash, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, associationEntry.AppPKID, skipMetadata...)...)
+	data = append(data, EncodeByteArray(associationEntry.AssociationType)...)
+	data = append(data, EncodeByteArray(associationEntry.AssociationValue)...)
+	data = append(data, EncodeExtraData(associationEntry.ExtraData)...)
+	data = append(data, UintToBuf(uint64(associationEntry.BlockHeight))...)
+	return data
+}
+
+func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	// AssociationID
+	associationID := &BlockHash{}
+	if exist, err := DecodeFromBytes(associationID, rr); exist && err == nil {
+		associationEntry.AssociationID = associationID
+	} else if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AssociationID: ")
+	}
+
+	// TransactorPKID
+	transactorPKID := &PKID{}
+	if exist, err := DecodeFromBytes(transactorPKID, rr); exist && err == nil {
+		associationEntry.TransactorPKID = transactorPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading TransactorPKID: ")
+	}
+
+	// TargetUserPKID
+	targetUserPKID := &PKID{}
+	if exist, err := DecodeFromBytes(targetUserPKID, rr); exist && err == nil {
+		associationEntry.TargetUserPKID = targetUserPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading TargetUserPKID: ")
+	}
+
+	// AppPKID
+	appPKID := &PKID{}
+	if exist, err := DecodeFromBytes(appPKID, rr); exist && err == nil {
+		associationEntry.AppPKID = appPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AppPKID: ")
+	}
+
+	// AssociationType
+	associationEntry.AssociationType, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AssociationType: ")
+	}
+
+	// AssociationValue
+	associationEntry.AssociationValue, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AssociationValue: ")
+	}
+
+	// ExtraData
+	extraData, err := DecodeExtraData(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading ExtraData: ")
+	}
+	associationEntry.ExtraData = extraData
+
+	// BlockHeight
+	entryBlockHeight, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading BlockHeight: ")
+	}
+	if blockHeight > uint64(math.MaxUint32) {
+		return fmt.Errorf("UserAssociationEntry.Decode: invalid block height %d: greater than max uint32", entryBlockHeight)
+	}
+	associationEntry.BlockHeight = uint32(entryBlockHeight)
+
+	return nil
+}
+
+func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	// AssociationID
+	associationID := &BlockHash{}
+	if exist, err := DecodeFromBytes(associationID, rr); exist && err == nil {
+		associationEntry.AssociationID = associationID
+	} else if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AssociationID: ")
+	}
+
+	// TransactorPKID
+	transactorPKID := &PKID{}
+	if exist, err := DecodeFromBytes(transactorPKID, rr); exist && err == nil {
+		associationEntry.TransactorPKID = transactorPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading TransactorPKID: ")
+	}
+
+	// PostHash
+	postHash := &BlockHash{}
+	if exist, err := DecodeFromBytes(postHash, rr); exist && err == nil {
+		associationEntry.PostHash = postHash
+	} else if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading PostHash: ")
+	}
+
+	// AppPKID
+	appPKID := &PKID{}
+	if exist, err := DecodeFromBytes(appPKID, rr); exist && err == nil {
+		associationEntry.AppPKID = appPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AppPKID: ")
+	}
+
+	// AssociationType
+	associationEntry.AssociationType, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AssociationType: ")
+	}
+
+	// AssociationValue
+	associationEntry.AssociationValue, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AssociationValue: ")
+	}
+
+	// ExtraData
+	extraData, err := DecodeExtraData(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading ExtraData: ")
+	}
+	associationEntry.ExtraData = extraData
+
+	// BlockHeight
+	entryBlockHeight, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading BlockHeight: ")
+	}
+	if blockHeight > uint64(math.MaxUint32) {
+		return fmt.Errorf("PostAssociationEntry.Decode: invalid block height %d: greater than max uint32", entryBlockHeight)
+	}
+	associationEntry.BlockHeight = uint32(entryBlockHeight)
+
+	return nil
+}
+
+func (associationEntry *UserAssociationEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (associationEntry *PostAssociationEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (associationEntry *UserAssociationEntry) GetEncoderType() EncoderType {
+	return EncoderTypeUserAssociationEntry
+}
+
+func (associationEntry *PostAssociationEntry) GetEncoderType() EncoderType {
+	return EncoderTypePostAssociationEntry
+}
+
+type AssociationMapKey struct {
+	AssociationID BlockHash
+}
+
+func (associationEntry *UserAssociationEntry) Eq(other *UserAssociationEntry) bool {
+	// Compare if two user association entries are equal. Note that their ExtraData and
+	// BlockHeights can differ, and we would still consider them equal. Also note that
+	// AssociationType is case-insensitive while AssociationValue is case-sensitive.
+	// Basically all of these nil checks can never happen. But they're safety checks.
+	if other == nil {
+		return false
+	}
+	return associationEntry.TransactorPKID != nil &&
+		associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
+		associationEntry.TargetUserPKID != nil &&
+		associationEntry.TargetUserPKID.Eq(other.TargetUserPKID) &&
+		associationEntry.AppPKID != nil &&
+		associationEntry.AppPKID.Eq(other.AppPKID) &&
+		_isMatchingAssociationType(associationEntry.AssociationType, other.AssociationType) &&
+		bytes.Equal(associationEntry.AssociationValue, other.AssociationValue)
+}
+
+func (associationEntry *PostAssociationEntry) Eq(other *PostAssociationEntry) bool {
+	// Compare if two post association entries are equal. Note that their ExtraData and
+	// BlockHeights can differ, and we would still consider them equal. Also note that
+	// AssociationType is case-insensitive while AssociationValue is case-sensitive.
+	// Basically all of these nil checks can never happen. But they're safety checks.
+	if other == nil {
+		return false
+	}
+	return associationEntry.TransactorPKID != nil &&
+		associationEntry.TransactorPKID.Eq(other.TransactorPKID) &&
+		associationEntry.PostHash != nil &&
+		associationEntry.PostHash.IsEqual(other.PostHash) &&
+		associationEntry.AppPKID != nil &&
+		associationEntry.AppPKID.Eq(other.AppPKID) &&
+		_isMatchingAssociationType(associationEntry.AssociationType, other.AssociationType) &&
+		bytes.Equal(associationEntry.AssociationValue, other.AssociationValue)
+}
+
+type CreateUserAssociationTxindexMetadata struct {
+	TargetUserPublicKeyBase58Check string
+	AppPublicKeyBase58Check        string
+	AssociationType                string
+	AssociationValue               string
+}
+
+type DeleteUserAssociationTxindexMetadata struct {
+	AssociationIDHex               string
+	TargetUserPublicKeyBase58Check string
+	AppPublicKeyBase58Check        string
+	AssociationType                string
+	AssociationValue               string
+}
+
+type CreatePostAssociationTxindexMetadata struct {
+	PostHashHex             string
+	AppPublicKeyBase58Check string
+	AssociationType         string
+	AssociationValue        string
+}
+
+type DeletePostAssociationTxindexMetadata struct {
+	AssociationIDHex        string
+	PostHashHex             string
+	AppPublicKeyBase58Check string
+	AssociationType         string
+	AssociationValue        string
+}
+
+func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.TargetUserPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AppPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
+	return data
+}
+
+func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationIDHex))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.TargetUserPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AppPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
+	return data
+}
+
+func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.PostHashHex))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AppPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
+	return data
+}
+
+func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationIDHex))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.PostHashHex))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AppPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
+	return data
+}
+
+func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// TargetUserPublicKeyBase58Check
+	targetUserPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading TargetUserPublicKeyBase58Check: ")
+	}
+	associationTxindexMeta.TargetUserPublicKeyBase58Check = string(targetUserPublicKeyBase58CheckBytes)
+
+	// AppPublicKeyBase58Check
+	appPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AppPublicKeyBase58Check: ")
+	}
+	associationTxindexMeta.AppPublicKeyBase58Check = string(appPublicKeyBase58CheckBytes)
+
+	// AssociationType
+	associationTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AssociationType: ")
+	}
+	associationTxindexMeta.AssociationType = string(associationTypeBytes)
+
+	// AssociationValue
+	associationValueBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationTxindexMetadata.Decode: Problem reading AssociationValue: ")
+	}
+	associationTxindexMeta.AssociationValue = string(associationValueBytes)
+
+	return nil
+}
+
+func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// AssociationIDHex
+	associationIDHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationTxindexMetadata.Decode: Problem reading AssociationIDHex: ")
+	}
+	associationTxindexMeta.AssociationIDHex = string(associationIDHexBytes)
+
+	// TargetUserPublicKeyBase58Check
+	targetUserPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationTxindexMetadata.Decode: Problem reading TargetUserPublicKeyBase58Check: ")
+	}
+	associationTxindexMeta.TargetUserPublicKeyBase58Check = string(targetUserPublicKeyBase58CheckBytes)
+
+	// AppPublicKeyBase58Check
+	appPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationTxindexMetadata.Decode: Problem reading AppPublicKeyBase58Check: ")
+	}
+	associationTxindexMeta.AppPublicKeyBase58Check = string(appPublicKeyBase58CheckBytes)
+
+	// AssociationType
+	associationTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationTxindexMetadata.Decode: Problem reading AssociationType: ")
+	}
+	associationTxindexMeta.AssociationType = string(associationTypeBytes)
+
+	// AssociationValue
+	associationValueBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationTxindexMetadata.Decode: Problem reading AssociationValue: ")
+	}
+	associationTxindexMeta.AssociationValue = string(associationValueBytes)
+
+	return nil
+}
+
+func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// PostHashHex
+	postHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading PostHashHex: ")
+	}
+	associationTxindexMeta.PostHashHex = string(postHashHexBytes)
+
+	// AppPublicKeyBase58Check
+	appPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AppPublicKeyBase58Check: ")
+	}
+	associationTxindexMeta.AppPublicKeyBase58Check = string(appPublicKeyBase58CheckBytes)
+
+	// AssociationType
+	associationTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AssociationType: ")
+	}
+	associationTxindexMeta.AssociationType = string(associationTypeBytes)
+
+	// AssociationValue
+	associationValueBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AssociationValue: ")
+	}
+	associationTxindexMeta.AssociationValue = string(associationValueBytes)
+
+	return nil
+}
+
+func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// AssociationIDHex
+	associationIDHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationTxindexMetadata.Decode: Problem reading AssociationIDHex: ")
+	}
+	associationTxindexMeta.AssociationIDHex = string(associationIDHexBytes)
+
+	// PostHashHex
+	postHashHexBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationTxindexMetadata.Decode: Problem reading PostHashHex: ")
+	}
+	associationTxindexMeta.PostHashHex = string(postHashHexBytes)
+
+	// AppPublicKeyBase58Check
+	appPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationTxindexMetadata.Decode: Problem reading AppPublicKeyBase58Check: ")
+	}
+	associationTxindexMeta.AppPublicKeyBase58Check = string(appPublicKeyBase58CheckBytes)
+
+	// AssociationType
+	associationTypeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationTxindexMetadata.Decode: Problem reading AssociationType: ")
+	}
+	associationTxindexMeta.AssociationType = string(associationTypeBytes)
+
+	// AssociationValue
+	associationValueBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationTxindexMetadata.Decode: Problem reading AssociationValue: ")
+	}
+	associationTxindexMeta.AssociationValue = string(associationValueBytes)
+
+	return nil
+}
+
+func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCreateUserAssociationTxindexMetadata
+}
+
+func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeDeleteUserAssociationTxindexMetadata
+}
+
+func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCreatePostAssociationTxindexMetadata
+}
+
+func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeDeletePostAssociationTxindexMetadata
+}
+
+type AccessGroupTxindexMetadata struct {
+	AccessGroupOwnerPublicKey PublicKey
+	AccessGroupPublicKey      PublicKey
+	AccessGroupKeyName        GroupKeyName
+	AccessGroupOperationType
+}
+
+func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, &accessGroupTxindexMetadata.AccessGroupOwnerPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &accessGroupTxindexMetadata.AccessGroupPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &accessGroupTxindexMetadata.AccessGroupKeyName, skipMetadata...)...)
+	data = append(data, UintToBuf(uint64(accessGroupTxindexMetadata.AccessGroupOperationType))...)
+	return data
+}
+
+func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+
+	// AccessGroupOwnerPublicKey
+	accessGroupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(accessGroupOwnerPublicKey, rr); exist && err == nil {
+		accessGroupTxindexMetadata.AccessGroupOwnerPublicKey = *accessGroupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupTxindexMetadata.Decode: Problem reading AccessGroupOwnerPublicKey: ")
+	}
+
+	// AccessGroupPublicKey
+	accessGroupPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(accessGroupPublicKey, rr); exist && err == nil {
+		accessGroupTxindexMetadata.AccessGroupPublicKey = *accessGroupPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupTxindexMetadata.Decode: Problem reading AccessGroupPublicKey: ")
+	}
+
+	// AccessGroupKeyName
+	accessGroupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(accessGroupKeyName, rr); exist && err == nil {
+		accessGroupTxindexMetadata.AccessGroupKeyName = *accessGroupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupTxindexMetadata.Decode: Problem reading AccessGroupKeyName: ")
+	}
+
+	// AccessGroupOperationType
+	accessGroupOperationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupTxindexMetadata.Decode: Problem reading AccessGroupOperationType: ")
+	}
+	accessGroupTxindexMetadata.AccessGroupOperationType = AccessGroupOperationType(accessGroupOperationType)
+
+	return nil
+}
+
+func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeAccessGroupTxindexMetadata
+}
+
+type AccessGroupMembersTxindexMetadata struct {
+	AccessGroupOwnerPublicKey PublicKey
+	AccessGroupKeyName        GroupKeyName
+	AccessGroupMembersList    []*AccessGroupMember
+	AccessGroupMemberOperationType
+}
+
+func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, &accessGroupMembersTxindexMetadata.AccessGroupOwnerPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &accessGroupMembersTxindexMetadata.AccessGroupKeyName, skipMetadata...)...)
+	data = append(data, encodeAccessGroupMembersList(accessGroupMembersTxindexMetadata.AccessGroupMembersList)...)
+	data = append(data, UintToBuf(uint64(accessGroupMembersTxindexMetadata.AccessGroupMemberOperationType))...)
+	return data
+}
+
+func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+
+	// AccessGroupOwnerPublicKey
+	accessGroupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(accessGroupOwnerPublicKey, rr); exist && err == nil {
+		accessGroupMembersTxindexMetadata.AccessGroupOwnerPublicKey = *accessGroupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersTxindexMetadata.Decode: Problem reading AccessGroupOwnerPublicKey: ")
+	}
+
+	// AccessGroupKeyName
+	accessGroupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(accessGroupKeyName, rr); exist && err == nil {
+		accessGroupMembersTxindexMetadata.AccessGroupKeyName = *accessGroupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersTxindexMetadata.Decode: Problem reading AccessGroupKeyName: ")
+	}
+
+	// AccessGroupMembersList
+	accessGroupMembersList, err := decodeAccessGroupMembersList(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersTxindexMetadata.Decode: Problem reading AccessGroupMembersList: ")
+	}
+	accessGroupMembersTxindexMetadata.AccessGroupMembersList = accessGroupMembersList
+
+	// AccessGroupMemberOperationType
+	accessGroupMemberOperationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersTxindexMetadata.Decode: Problem reading AccessGroupMemberOperationType: ")
+	}
+	accessGroupMembersTxindexMetadata.AccessGroupMemberOperationType = AccessGroupMemberOperationType(accessGroupMemberOperationType)
+
+	return nil
+}
+
+func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeAccessGroupMembersTxindexMetadata
+}
+
+type NewMessageTxindexMetadata struct {
+	SenderAccessGroupOwnerPublicKey    PublicKey
+	SenderAccessGroupKeyName           GroupKeyName
+	RecipientAccessGroupOwnerPublicKey PublicKey
+	RecipientAccessGroupKeyName        GroupKeyName
+	TimestampNanos                     uint64
+	NewMessageType
+	NewMessageOperation
+}
+
+func (newMessageTxindexMetadata *NewMessageTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, &newMessageTxindexMetadata.SenderAccessGroupOwnerPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &newMessageTxindexMetadata.SenderAccessGroupKeyName, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &newMessageTxindexMetadata.RecipientAccessGroupOwnerPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &newMessageTxindexMetadata.RecipientAccessGroupKeyName, skipMetadata...)...)
+	data = append(data, UintToBuf(newMessageTxindexMetadata.TimestampNanos)...)
+	data = append(data, UintToBuf(uint64(newMessageTxindexMetadata.NewMessageType))...)
+	data = append(data, UintToBuf(uint64(newMessageTxindexMetadata.NewMessageOperation))...)
+	return data
+}
+
+func (newMessageTxindexMetadata *NewMessageTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+
+	// SenderAccessGroupOwnerPublicKey
+	senderAccessGroupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(senderAccessGroupOwnerPublicKey, rr); exist && err == nil {
+		newMessageTxindexMetadata.SenderAccessGroupOwnerPublicKey = *senderAccessGroupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading SenderAccessGroupOwnerPublicKey: ")
+	}
+
+	// SenderAccessGroupKeyName
+	senderAccessGroupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(senderAccessGroupKeyName, rr); exist && err == nil {
+		newMessageTxindexMetadata.SenderAccessGroupKeyName = *senderAccessGroupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading SenderAccessGroupKeyName: ")
+	}
+
+	// RecipientAccessGroupOwnerPublicKey
+	recipientAccessGroupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(recipientAccessGroupOwnerPublicKey, rr); exist && err == nil {
+		newMessageTxindexMetadata.RecipientAccessGroupOwnerPublicKey = *recipientAccessGroupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading RecipientAccessGroupOwnerPublicKey: ")
+	}
+
+	// RecipientAccessGroupKeyName
+	recipientAccessGroupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(recipientAccessGroupKeyName, rr); exist && err == nil {
+		newMessageTxindexMetadata.RecipientAccessGroupKeyName = *recipientAccessGroupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading RecipientAccessGroupKeyName: ")
+	}
+
+	// TimestampNanos
+	timestampNanos, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading TimestampNanos: ")
+	}
+	newMessageTxindexMetadata.TimestampNanos = timestampNanos
+
+	// NewMessageType
+	newMessageType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading NewMessageType: ")
+	}
+	newMessageTxindexMetadata.NewMessageType = NewMessageType(newMessageType)
+
+	// NewMessageOperation
+	newMessageOperation, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading NewMessageOperation: ")
+	}
+	newMessageTxindexMetadata.NewMessageOperation = NewMessageOperation(newMessageOperation)
+
+	return nil
+}
+
+func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeNewMessageTxindexMetadata
 }

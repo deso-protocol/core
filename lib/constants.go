@@ -254,9 +254,13 @@ type ForkHeights struct {
 	// we introduce derived keys without a spending limit.
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
+	// AssociationsBlockHeight defines the height at which
+	// we introduce UserAssociations and PostAssociations.
+	AssociationsBlockHeight uint32
+
+	// TODO: merge access groups and associations into one fork height
 	// DeSoAccessGroupsBlockHeight defines the height at which we introduce access groups.
 	DeSoAccessGroupsBlockHeight uint32
-
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -319,7 +323,9 @@ type MigrationHeight struct {
 const (
 	DefaultMigration              MigrationName = "DefaultMigration"
 	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
-	DeSoAccessGroupsMigration     MigrationName = "DeSoAccessGroupsMigration"
+	// TODO: merge these migrations into one
+	DeSoAccessGroupsMigration MigrationName = "DeSoAccessGroupsMigration"
+	AssociationsMigration     MigrationName = "AssociationsMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -328,8 +334,11 @@ type EncoderMigrationHeights struct {
 	// DeSoUnlimitedDerivedKeys coincides with the DeSoUnlimitedDerivedKeysBlockHeight block
 	DeSoUnlimitedDerivedKeys MigrationHeight
 
+	// TODO: merge these migration heights into one
 	// DeSoAccessGroups coincides with the DeSoAccessGroupsBlockHeight block
 	DeSoAccessGroups MigrationHeight
+	// DeSoAssociations coincides with the AssociationsBlockHeight block
+	DeSoAssociations MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -344,10 +353,16 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Height:  uint64(forkHeights.DeSoUnlimitedDerivedKeysBlockHeight),
 			Name:    UnlimitedDerivedKeysMigration,
 		},
+		// TODO: Merge these into one migration height
 		DeSoAccessGroups: MigrationHeight{
 			Version: 2,
 			Height:  uint64(forkHeights.DeSoAccessGroupsBlockHeight),
 			Name:    DeSoAccessGroupsMigration,
+		},
+		DeSoAssociations: MigrationHeight{
+			Version: 3,
+			Height:  uint64(forkHeights.AssociationsBlockHeight),
+			Name:    AssociationsMigration,
 		},
 	}
 }
@@ -506,6 +521,7 @@ type DeSoParams struct {
 	MaxProfilePicLengthBytes      uint64
 	MaxProfilePicDimensions       uint64
 	MaxPrivateMessageLengthBytes  uint64
+	MaxNewMessageLengthBytes      uint64
 
 	StakeFeeBasisPoints         uint64
 	MaxPostBodyLengthBytes      uint64
@@ -588,7 +604,9 @@ var RegtestForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
-	DeSoAccessGroupsBlockHeight:                          uint32(0),
+	// TODO: merge these into one height
+	DeSoAccessGroupsBlockHeight: uint32(0),
+	AssociationsBlockHeight:     uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -732,8 +750,11 @@ var MainnetForkHeights = ForkHeights{
 	// Mon Sept 19 @ 12pm PST
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
 
+	// TODO: Merge these fork heights into one
 	// TODO: ADD FINAL DATE & TIME HERE
 	DeSoAccessGroupsBlockHeight: uint32(math.MaxUint32),
+	// FIXME: Set to real block height when we're ready.
+	AssociationsBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -880,6 +901,10 @@ var DeSoMainnetParams = DeSoParams{
 	// data a private message is allowed to include in an PrivateMessage transaction.
 	MaxPrivateMessageLengthBytes: 10000,
 
+	// MaxNewMessageLengthBytes is the maximum number of bytes of encrypted
+	// data a new message is allowed to include in an NewMessage transaction.
+	MaxNewMessageLengthBytes: 10000,
+
 	// Set the stake fee to 10%
 	StakeFeeBasisPoints: 10 * 100,
 	// TODO(performance): We're currently storing posts using HTML, which is
@@ -985,8 +1010,11 @@ var TestnetForkHeights = ForkHeights{
 	// Tues Sept 13 @ 10am PT
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
 
+	// TODO: Merge these fork heights into one
 	// TODO: ADD FINAL DATE & TIME HERE
 	DeSoAccessGroupsBlockHeight: uint32(math.MaxUint32),
+	// FIXME: Set to real block height when we're ready.
+	AssociationsBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1093,6 +1121,10 @@ var DeSoTestnetParams = DeSoParams{
 	// MaxPrivateMessageLengthBytes is the maximum number of bytes of encrypted
 	// data a private message is allowed to include in an PrivateMessage transaction.
 	MaxPrivateMessageLengthBytes: 10000,
+
+	// MaxNewMessageLengthBytes is the maximum number of bytes of encrypted
+	// data a new message is allowed to include in an NewMessage transaction.
+	MaxNewMessageLengthBytes: 10000,
 
 	// Set the stake fee to 5%
 	StakeFeeBasisPoints: 5 * 100,
@@ -1273,3 +1305,9 @@ const (
 	MaxDmMessageRecursionDepth        = 10
 	MaxGroupChatMessageRecursionDepth = 10
 )
+
+// Constants for UserAssociation and PostAssociation txn types.
+const MaxAssociationTypeByteLength int = 64
+const MaxAssociationValueByteLength int = 256
+const AssociationTypeReservedPrefix = "DESO"
+const AssociationNullTerminator = byte(0)

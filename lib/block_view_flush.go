@@ -109,6 +109,12 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		//if err := bav._flushDAOCoinLimitOrderEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		//	return err
 		//}
+		if err := bav._flushUserAssociationEntriesToDbWithTxn(txn, blockHeight); err != nil {
+			return err
+		}
+		if err := bav._flushPostAssociationEntriesToDbWithTxn(txn, blockHeight); err != nil {
+			return err
+		}
 	}
 
 	// Always flush to BadgerDB.
@@ -1039,36 +1045,33 @@ func (bav *UtxoView) _flushAccessGroupEntriesToDbWithTxn(txn *badger.Txn, blockH
 	numPut := 0
 
 	// Go through all entries in AccessGroupIdToAccessGroupEntry and add them to the DB.
-	// These records are part of the DeSo V3 Messages.
-	for accessGroupKey, accessGroupEntry := range bav.AccessGroupIdToAccessGroupEntry {
+	for accessGroupKeyIter, accessGroupEntryIter := range bav.AccessGroupIdToAccessGroupEntry {
 		// Delete the existing mapping in the DB for this map key, this will be re-added
-		// later if isDeleted=false. Access entries can have a list of members, and
+		// later if isDeleted=false. Access group entries can have a list of members, and
 		// we store these members under a separate prefix. To delete an access group
 		// we also have to go delete all of the recipients.
-		//
-		// TODO: We should have a single DeleteMappings function in db_utils.go that we push this
-		// complexity into.
-		if accessGroupEntry == nil {
-			return fmt.Errorf("UtxoView._flushAccessGroupEntriesToDbWithTxn: accessGroupEntry is nil")
+		accessGroupKey := accessGroupKeyIter
+		if accessGroupEntryIter == nil {
+			return fmt.Errorf("UtxoView._flushAccessGroupEntriesToDbWithTxn: accessGroupEntryIter is nil")
 		}
-		copyAccessGroupEntry := *accessGroupEntry
+		accessGroupEntry := *accessGroupEntryIter
 
 		if err := DBDeleteAccessGroupEntryWithTxn(txn, bav.Snapshot,
 			accessGroupKey.AccessGroupOwnerPublicKey, accessGroupKey.AccessGroupKeyName); err != nil {
 
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
 				"Problem deleting accessGroupKey %v and accessGroupEntry %v from db",
-				accessGroupKey, copyAccessGroupEntry)
+				accessGroupKey, accessGroupEntry)
 		}
 
-		if copyAccessGroupEntry.isDeleted {
+		if accessGroupEntry.isDeleted {
 			numDeleted++
 		} else {
-			if err := DBPutAccessGroupEntryWithTxn(txn, bav.Snapshot, blockHeight, &copyAccessGroupEntry); err != nil {
+			if err := DBPutAccessGroupEntryWithTxn(txn, bav.Snapshot, blockHeight, &accessGroupEntry); err != nil {
 
 				return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
 					"Problem putting accessGroupKey %v and accessGroupEntry %v to db",
-					accessGroupKey, copyAccessGroupEntry)
+					accessGroupKey, accessGroupEntry)
 			}
 			numPut++
 		}
@@ -1082,21 +1085,32 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 	numDeleted := 0
 	numPut := 0
 
-	// Flush group members to db.
-	for groupMembershipKey, accessGroupMember := range bav.AccessGroupMembershipKeyToAccessGroupMember {
-		if accessGroupMember == nil {
+	// Go through all entries in AccessGroupMembershipKeyToAccessGroupMember and add them to the DB.
+	for groupMembershipKeyIter, accessGroupMemberIter := range bav.AccessGroupMembershipKeyToAccessGroupMember {
+		// Delete the existing mapping in the DB for this map key, this will be re-added
+		// later if isDeleted=false.
+		groupMembershipKey := groupMembershipKeyIter
+		if accessGroupMemberIter == nil {
 			return fmt.Errorf("UtxoView._flushAccessGroupMembersToDbWithTxn:"+
 				" groupMembershipKey: %v, is nil", groupMembershipKey)
 		}
-		copyAccessGroupMember := *accessGroupMember
+		accessGroupMember := *accessGroupMemberIter
 
-		// add group member to membership index
+		// For each group member, we store two entries in the DB. One is the mapping from
+		//	<AccessGroupMemberPublicKey, AccessGroupOwnerPublicKey, AccessGroupKeyName> -> <AccessGroupMemberEntry>
+		// that is used to store data for all the access groups where the public key AccessGroupMemberPublicKey was added as a member.
+		// The other mapping is from
+		// 	<AccessGroupOwnerPublicKey, AccessGroupKeyName, AccessGroupMemberPublicKey> -> <AccessGroupMemberEnumerationEntry>
+		// that is used to index the list of members for a given access group. This mapping doesn't store information about
+		// the member entry, just the existence of the member. The reason we store both mappings is that we want to be able
+		// to quickly iterate over all the members of a given access group, and we want to be able to quickly iterate over
+		// all the access groups where a given public key is a member.
 		if err := DBDeleteAccessGroupMemberEntryWithTxn(txn, bav.Snapshot,
 			groupMembershipKey.AccessGroupMemberPublicKey, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 				"Fail while putting new membership index. Problem putting access group member entry with "+
 				"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
-				groupMembershipKey, copyAccessGroupMember)
+				groupMembershipKey, accessGroupMember)
 		}
 		if err := DBDeleteAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot,
 			groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName, groupMembershipKey.AccessGroupMemberPublicKey); err != nil {
@@ -1104,27 +1118,27 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 				"Fail while putting new membership index. Problem putting access group member entry with "+
 				"AccessGroupMembershipKey %v and AccessGroupMember %v to db",
-				groupMembershipKey, copyAccessGroupMember)
+				groupMembershipKey, accessGroupMember)
 		}
 
 		// add group member to enumeration index
-		if copyAccessGroupMember.isDeleted {
+		if accessGroupMember.isDeleted {
 			numDeleted++
 		} else {
 			if err := DBPutAccessGroupMemberEntryWithTxn(txn, bav.Snapshot, blockHeight,
-				&copyAccessGroupMember, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
+				&accessGroupMember, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
 
 				return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 					"Fail while putting new membership index. Problem putting access group member entry with "+
 					"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
-					groupMembershipKey, copyAccessGroupMember)
+					groupMembershipKey, accessGroupMember)
 			}
 			if err := DBPutAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot, blockHeight,
 				groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName, groupMembershipKey.AccessGroupMemberPublicKey); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 					"Fail while putting new enumeration index. Problem putting access group member entry with "+
 					"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
-					groupMembershipKey, copyAccessGroupMember)
+					groupMembershipKey, accessGroupMember)
 			}
 			numPut++
 		}
@@ -1139,12 +1153,20 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 		len(bav.GroupChatMessagesIndex), len(bav.DmMessagesIndex), len(bav.DmThreadIndex), len(bav.GroupChatThreadIndex))
 
 	// Flush group chat messages to db.
+	// Go through all entries in GroupChatMessagesIndex and add them to the DB.
 	{
 		numDeleted := 0
 		numPut := 0
-		for groupChatMessageKeyIter, messageEntry := range bav.GroupChatMessagesIndex {
+		for groupChatMessageKeyIter, messageEntryIter := range bav.GroupChatMessagesIndex {
 			groupChatMessageKey := groupChatMessageKeyIter
+			if messageEntryIter == nil {
+				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
+					"groupChatMessageKey: %v, is nil", groupChatMessageKey)
+			}
+			messageEntry := *messageEntryIter
 
+			// Delete the existing mapping in the DB for this map key, this will be re-added
+			// later if isDeleted=false.
 			if err := DBDeleteGroupChatMessageEntryWithTxn(txn, bav.Snapshot, groupChatMessageKey); err != nil {
 				return errors.Wrapf(
 					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
@@ -1155,7 +1177,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 				numDeleted++
 			} else {
 				if err := DBPutGroupChatMessageEntryWithTxn(txn, bav.Snapshot, blockHeight,
-					groupChatMessageKey, messageEntry); err != nil {
+					groupChatMessageKey, &messageEntry); err != nil {
 					return errors.Wrapf(
 						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry into "+
 							"group chat message index with key %v and value %v", groupChatMessageKey, messageEntry)
@@ -1166,12 +1188,20 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d group chat messages, put %d group chat messages", numDeleted, numPut)
 	}
 	// Flush group chat threads to db.
+	// Go through all entries in GroupChatThreadIndex and add them to the DB.
 	{
 		numDeleted := 0
 		numPut := 0
-		for groupChatThreadKeyIter, existence := range bav.GroupChatThreadIndex {
+		for groupChatThreadKeyIter, existenceIter := range bav.GroupChatThreadIndex {
 			groupChatThreadKey := groupChatThreadKeyIter
+			if existenceIter == nil {
+				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
+					"groupChatThreadKey: %v, is nil", groupChatThreadKey)
+			}
+			existence := *existenceIter
 
+			// Delete the existing mapping in the DB for this map key, this will be re-added
+			// later if isDeleted=false.
 			if err := DBDeleteGroupChatThreadIndexWithTxn(txn, bav.Snapshot, groupChatThreadKey); err != nil {
 				return errors.Wrapf(
 					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
@@ -1193,12 +1223,20 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 	}
 
 	// Flush dm messages to db.
+	// Go through all entries in DmMessagesIndex and add them to the DB.
 	{
 		numDeleted := 0
 		numPut := 0
-		for dmMessageKeyIter, messageEntry := range bav.DmMessagesIndex {
+		for dmMessageKeyIter, messageEntryIter := range bav.DmMessagesIndex {
 			dmMessageKey := dmMessageKeyIter
+			if messageEntryIter == nil {
+				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
+					"dmMessageKey: %v, is nil", dmMessageKey)
+			}
+			messageEntry := *messageEntryIter
 
+			// Delete the existing mapping in the DB for this map key, this will be re-added
+			// later if isDeleted=false.
 			if err := DBDeleteDmMessageEntryWithTxn(txn, bav.Snapshot, dmMessageKey); err != nil {
 				return errors.Wrapf(
 					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
@@ -1208,7 +1246,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 			if messageEntry.isDeleted {
 				numDeleted++
 			} else {
-				if err := DBPutDmMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, dmMessageKey, messageEntry); err != nil {
+				if err := DBPutDmMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, dmMessageKey, &messageEntry); err != nil {
 					return errors.Wrapf(
 						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry "+
 							"into dm message index with key %v and value %v", dmMessageKey, messageEntry)
@@ -1219,12 +1257,20 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d dm messages, put %d dm messages", numDeleted, numPut)
 	}
 	// Flush dm threads to db.
+	// Go through all entries in DmThreadIndex and add them to the DB.
 	{
 		numDeleted := 0
 		numPut := 0
-		for dmThreadKeyIter, existence := range bav.DmThreadIndex {
+		for dmThreadKeyIter, existenceIter := range bav.DmThreadIndex {
 			dmThreadKey := dmThreadKeyIter
+			if existenceIter == nil {
+				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
+					"dmThreadKey: %v, is nil", dmThreadKey)
+			}
+			existence := *existenceIter
 
+			// Delete the existing mapping in the DB for this map key, this will be re-added
+			// later if isDeleted=false.
 			if err := DBDeleteDmThreadIndexWithTxn(txn, bav.Snapshot, dmThreadKey); err != nil {
 				return errors.Wrapf(
 					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings for DmThreadKey: %v: ", &dmThreadKey)
@@ -1233,7 +1279,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 			if existence.isDeleted {
 				numDeleted++
 			} else {
-				if err := DBPutDmThreadIndexWithTxn(txn, bav.Snapshot, dmThreadKey); err != nil {
+				if err := DBPutDmThreadIndexWithTxn(txn, bav.Snapshot, blockHeight, dmThreadKey); err != nil {
 					return errors.Wrapf(
 						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting DmThreadKey: %v", dmThreadKey)
 				}
@@ -1242,12 +1288,46 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 		}
 		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d dm threads, put %d dm threads", numDeleted, numPut)
 	}
+	// Flush thread attribute entries to db.
+	// Go through all entries in ThreadAttributeIndex and add them to the DB.
+	{
+		numDeleted := 0
+		numPut := 0
+		for threadAttributeKeyIter, threadAttributeEntryIter := range bav.ThreadAttributesIndex {
+			threadAttributeKey := threadAttributeKeyIter
+			if threadAttributeEntryIter == nil {
+				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
+					"threadAttributeKey: %v, is nil", threadAttributeKey)
+			}
+			threadAttributeEntry := *threadAttributeEntryIter
+
+			// Delete the existing mapping in the DB for this map key, this will be re-added
+			// later if isDeleted=false.
+			if err := DBDeleteThreadAttributesEntryWithTxn(txn, bav.Snapshot, threadAttributeKey); err != nil {
+				return errors.Wrapf(
+					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
+						"for ThreadAttributeKey: %v: ", &threadAttributeKey)
+			}
+
+			if threadAttributeEntry.isDeleted {
+				numDeleted++
+			} else {
+				if err := DBPutThreadAttributesEntryWithTxn(txn, bav.Snapshot, blockHeight, threadAttributeKey, &threadAttributeEntry); err != nil {
+					return errors.Wrapf(
+						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting thread attribute entry "+
+							"into thread attribute index with key %v and value %v", threadAttributeKey, threadAttributeEntry)
+				}
+				numPut++
+			}
+		}
+		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d thread attributes, put %d thread attributes", numDeleted, numPut)
+	}
 
 	return nil
 }
 
 func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	glog.V(1).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: flushing %d mappings", len(bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry))
+	glog.V(2).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: flushing %d mappings", len(bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry))
 
 	// Go through all the entries in the DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry map.
 	for orderIter, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
@@ -1293,8 +1373,100 @@ func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, 
 		}
 	}
 
-	glog.V(1).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
+	glog.V(2).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// At this point all of the DAO coin limit order mappings in the db should be up-to-date.
+	return nil
+}
+
+func (bav *UtxoView) _flushUserAssociationEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Go through all the entries in the AssociationMapKeyToUserAssociationEntry map.
+	for associationMapKeyIter, associationEntryIter := range bav.AssociationMapKeyToUserAssociationEntry {
+		// Make a copy of the iterator since we make references to it below.
+		associationMapKey := associationMapKeyIter
+		associationEntry := *associationEntryIter
+
+		// Sanity-check that the AssociationMapKey computed from the AssociationEntry
+		// is equal to the AssociationMapKey that maps to that entry.
+		mapKeyInEntry := associationEntry.ToMapKey()
+		if mapKeyInEntry != associationMapKey {
+			return fmt.Errorf(
+				"_flushUserAssociationEntriesToDbWithTxn: association entry key %v doesn't match the map key %v",
+				&mapKeyInEntry,
+				&associationMapKey,
+			)
+		}
+
+		// Delete the existing mappings in the db for this AssociationMapKey. They
+		// will be re-added if the corresponding entry in memory has isDeleted=false.
+		if err := DBDeleteUserAssociationWithTxn(txn, bav.Snapshot, &associationEntry); err != nil {
+			return fmt.Errorf(
+				"_flushUserAssociationEntriesToDbWithTxn: problem deleting association mappings for map key %v: %v",
+				&associationMapKey,
+				err,
+			)
+		}
+	}
+
+	// Go through all the entries in the AssociationMapKeyToUserAssociationEntry map.
+	for _, associationEntryIter := range bav.AssociationMapKeyToUserAssociationEntry {
+		associationEntry := *associationEntryIter
+		if associationEntry.isDeleted {
+			// If the AssociationEntry has isDeleted=true then there's
+			// nothing to do because we already deleted the entry above.
+		} else {
+			// If the AssociationEntry has isDeleted=false then we
+			// put the corresponding mappings for it into the db.
+			if err := DBPutUserAssociationWithTxn(txn, bav.Snapshot, &associationEntry, blockHeight); err != nil {
+				return fmt.Errorf("_flushUserAssociationEntriesToDbWithTxn: %v", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (bav *UtxoView) _flushPostAssociationEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Go through all the entries in the AssociationMapKeyToPostAssociationEntry map.
+	for associationMapKeyIter, associationEntryIter := range bav.AssociationMapKeyToPostAssociationEntry {
+		// Make a copy of the iterator since we make references to it below.
+		associationMapKey := associationMapKeyIter
+		associationEntry := *associationEntryIter
+
+		// Sanity-check that the AssociationMapKey computed from the AssociationEntry
+		// is equal to the AssociationMapKey that maps to that entry.
+		mapKeyInEntry := associationEntry.ToMapKey()
+		if mapKeyInEntry != associationMapKey {
+			return fmt.Errorf(
+				"_flushPostAssociationEntriesToDbWithTxn: association entry key %v doesn't match the map key %v",
+				&mapKeyInEntry,
+				&associationMapKey,
+			)
+		}
+
+		// Delete the existing mappings in the db for this AssociationMapKey. They
+		// will be re-added if the corresponding entry in memory has isDeleted=false.
+		if err := DBDeletePostAssociationWithTxn(txn, bav.Snapshot, &associationEntry); err != nil {
+			return fmt.Errorf(
+				"_flushPostAssociationEntriesToDbWithTxn: problem deleting association mappings for map key %v: %v",
+				&associationMapKey,
+				err,
+			)
+		}
+	}
+
+	// Go through all the entries in the AssociationMapKeyToPostAssociationEntry map.
+	for _, associationEntryIter := range bav.AssociationMapKeyToPostAssociationEntry {
+		associationEntry := *associationEntryIter
+		if associationEntry.isDeleted {
+			// If the AssociationEntry has isDeleted=true then there's
+			// nothing to do because we already deleted the entry above.
+		} else {
+			// If the AssociationEntry has isDeleted=false then we
+			// put the corresponding mappings for it into the db.
+			if err := DBPutPostAssociationWithTxn(txn, bav.Snapshot, &associationEntry, blockHeight); err != nil {
+				return fmt.Errorf("_flushPostAssociationEntriesToDbWithTxn: %v", err)
+			}
+		}
+	}
 	return nil
 }
