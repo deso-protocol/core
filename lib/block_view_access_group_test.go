@@ -56,8 +56,9 @@ func TestAccessGroup(t *testing.T) {
 	tConfig := &transactionTestConfig{
 		t:                          t,
 		testBadger:                 true,
-		testPostgres:               true,
+		testPostgres:               false,
 		testPostgresPort:           5433,
+		disableLogging:             false,
 		initialBlocksMined:         4,
 		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
 		initChainCallback:          initChainCallback,
@@ -353,6 +354,9 @@ func _verifyDisconnectUtxoViewEntryForAccessGroup(t *testing.T, utxoView *UtxoVi
 	accessGroupEntry, exists := utxoView.AccessGroupIdToAccessGroupEntry[*accessGroupKey]
 	require.Equal(true, exists)
 
+	currentUtxoOp := utxoOps[len(utxoOps)-1]
+	require.Equal(OperationTypeAccessGroup, currentUtxoOp.Type)
+
 	switch operationType {
 	case AccessGroupOperationTypeCreate:
 		require.NotNil(accessGroupEntry)
@@ -361,7 +365,6 @@ func _verifyDisconnectUtxoViewEntryForAccessGroup(t *testing.T, utxoView *UtxoVi
 		require.NotNil(accessGroupEntry)
 		require.Equal(false, accessGroupEntry.isDeleted)
 
-		currentUtxoOp := utxoOps[len(utxoOps)-1]
 		previousEntry := currentUtxoOp.PrevAccessGroupEntry
 		require.NotNil(previousEntry)
 		require.Equal(true, _verifyEqualAccessGroupEntry(
@@ -380,6 +383,7 @@ func _verifyDbEntryForAccessGroup(t *testing.T, dbAdapter *DbAdapter,
 	accessGroupId := NewAccessGroupId(NewPublicKey(accessGroupOwnerPublicKey), accessGroupKeyName)
 	accessGroupEntry, err := dbAdapter.GetAccessGroupEntryByAccessGroupId(accessGroupId)
 	require.NoError(err)
+	require.NotNil(accessGroupEntry)
 	require.Equal(true, _verifyEqualAccessGroupEntry(t, accessGroupEntry, accessGroupOwnerPublicKey, accessGroupPublicKey, accessGroupKeyName, extraData))
 }
 

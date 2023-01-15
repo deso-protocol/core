@@ -196,7 +196,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(params *DeSoParams, usePostgres b
 			postgresDb, embpg, err = StartTestEmbeddedPostgresDB("", postgresPort)
 			if err != nil {
 				log.Fatal(err, " | If the error says that a process is already listening on the port, go into task manager "+
-					"and kill the postgres process listening to said port.")
+					"and kill the postgres process listening to said port. Otherwise remove the /tmp/pg_bin directory, or similar.")
 			}
 		}
 	}

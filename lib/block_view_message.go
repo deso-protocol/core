@@ -98,7 +98,7 @@ func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 	//	}
 	//
 	//	messagingGroupEntry := &MessagingGroupEntry{
-	//		GroupOwnerPublicKey:   pgMessagingGroup.GroupOwnerPublicKey,
+	//		AccessGroupOwnerPublicKey:   pgMessagingGroup.AccessGroupOwnerPublicKey,
 	//		MessagingPublicKey:    pgMessagingGroup.MessagingPublicKey,
 	//		MessagingGroupKeyName: pgMessagingGroup.MessagingGroupKeyName,
 	//		MessagingGroupMembers: memberEntries,

@@ -6,11 +6,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-// GetAccessGroupEntry will check the membership index for membership of memberPublicKey in the group
-// <groupOwnerPublicKey, groupKeyName>. Based on the blockheight, we fetch the full group or we fetch
-// the simplified message group entry from the membership index.
-func (bav *UtxoView) GetAccessGroupEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName,
-	blockHeight uint32) (*AccessGroupEntry, error) {
+// GetAccessGroupEntry will fetch an access group entry corresponding to the provided access group id:
+// <groupOwnerPublicKey, groupKeyName>.
+func (bav *UtxoView) GetAccessGroupEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) (*AccessGroupEntry, error) {
 
 	// If either of the provided parameters is nil, we return.
 	if groupOwnerPublicKey == nil || groupKeyName == nil {
@@ -22,52 +20,8 @@ func (bav *UtxoView) GetAccessGroupEntry(groupOwnerPublicKey *PublicKey, groupKe
 	return bav.GetAccessGroupEntryWithAccessGroupId(accessGroupKey)
 }
 
-// GetAccessGroupForAccessGroupKeyExistence will check if the group with key accessGroupKey exists, if so it will fetch
-// the simplified group entry from the membership index.
-func (bav *UtxoView) GetAccessGroupForAccessGroupKeyExistence(accessGroupId *AccessGroupId) (bool, error) {
-
-	if accessGroupId == nil {
-		return false, fmt.Errorf("GetAccessGroupForAccessGroupKeyExistence: Called with nil accessGroupId")
-	}
-
-	// The owner is a member of their own group by default, hence they will be present in the membership index.
-	exists, err := bav.GetAccessGroupExistenceWithAccessGroupId(accessGroupId)
-	if err != nil {
-		return false, errors.Wrapf(err, "GetAccessGroupForAccessGroupKeyExistence: Problem getting "+
-			"access group entry for access group id: %v", accessGroupId)
-	}
-	return exists, nil
-}
-
-func (bav *UtxoView) GetAccessGroupExistenceWithAccessGroupId(
-	accessGroupId *AccessGroupId) (bool, error) {
-
-	// Base group exists for every user.
-	if EqualGroupKeyName(&accessGroupId.AccessGroupKeyName, BaseGroupKeyName()) {
-		return true, nil
-	}
-
-	// If an entry exists in the current UtxoView, we need to check whether it's deleted.
-	if mapValue, exists := bav.AccessGroupIdToAccessGroupEntry[*accessGroupId]; exists {
-		if mapValue == nil || mapValue.isDeleted {
-			return false, nil
-		}
-		return true, nil
-	}
-
-	// If we get here it means no value exists in our in-memory map. In this case,
-	// defer to the db. If a mapping exists in the db, return it. If not, return false.
-	dbAdapter := bav.GetDbAdapter()
-	existence, err := dbAdapter.GetAccessGroupExistenceByAccessGroupId(accessGroupId)
-	if err != nil {
-		return false, errors.Wrapf(err, "GetAccessGroupExistenceWithAccessGroupId: Problem getting "+
-			"access group existence for access group id %v", accessGroupId)
-	}
-	return existence, nil
-}
-
-func (bav *UtxoView) GetAccessGroupEntryWithAccessGroupId(
-	accessGroupId *AccessGroupId) (*AccessGroupEntry, error) {
+// GetAccessGroupEntryWithAccessGroupId will fetch an access group entry corresponding to the provided access group id.
+func (bav *UtxoView) GetAccessGroupEntryWithAccessGroupId(accessGroupId *AccessGroupId) (*AccessGroupEntry, error) {
 	// This function is used to get an AccessGroupEntry given an AccessGroupId.
 	// Each user has a built-in AccessGroupId, called the "base group key," which is simply an
 	// access key corresponding to user's main key.
@@ -94,7 +48,7 @@ func (bav *UtxoView) GetAccessGroupEntryWithAccessGroupId(
 			"access group entry for access group key %v", accessGroupId)
 	}
 	if accessGroupEntry != nil {
-		if err := bav._setAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntry); err != nil {
+		if err := bav._setAccessGroupIdToAccessGroupEntryMapping(accessGroupEntry); err != nil {
 			return nil, errors.Wrapf(err, "GetAccessGroupEntryWithAccessGroupId: Problem setting "+
 				"access group entry for access group key %v", accessGroupId)
 		}
@@ -102,46 +56,38 @@ func (bav *UtxoView) GetAccessGroupEntryWithAccessGroupId(
 	return accessGroupEntry, nil
 }
 
-func (bav *UtxoView) _setAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntry *AccessGroupEntry) error {
+// GetAccessGroupExistenceWithAccessGroupId will return true or false depending on whether the access group
+// entry corresponding to the provided access group id exists.
+func (bav *UtxoView) GetAccessGroupExistenceWithAccessGroupId(accessGroupId *AccessGroupId) (bool, error) {
 
-	// This function shouldn't be called with a nil entry.
-	if accessGroupEntry == nil || accessGroupEntry.AccessGroupOwnerPublicKey == nil || accessGroupEntry.AccessGroupKeyName == nil {
-		return fmt.Errorf("_setAccessGroupKeyToAccessGroupEntryMapping: Called with nil AccessGroupEntry, " +
-			"AccessGroupEntry.AccessGroupOwnerPublicKey, or AccessGroupEntry.AccessGroupKeyName; this should never happen")
+	// Base group exists for every user.
+	if EqualGroupKeyName(&accessGroupId.AccessGroupKeyName, BaseGroupKeyName()) {
+		return true, nil
 	}
 
-	// Create a key for the UtxoView mapping. We always put user's owner public key as part of the map key.
-	// Note that this is different from message entries, which are indexed by access public keys.
-	accessKey := accessGroupEntry.GetAccessGroupId()
-	bav.AccessGroupIdToAccessGroupEntry[accessKey] = accessGroupEntry
-	return nil
-}
-
-func (bav *UtxoView) _deleteAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntry *AccessGroupEntry) error {
-
-	// This function shouldn't be called with a nil entry.
-	if accessGroupEntry == nil || accessGroupEntry.AccessGroupOwnerPublicKey == nil || accessGroupEntry.AccessGroupKeyName == nil {
-		return fmt.Errorf("_deleteAccessGroupKeyToAccessGroupEntryMapping: Called with nil AccessGroupEntry, " +
-			"AccessGroupEntry.AccessGroupOwnerPublicKey, or AccessGroupEntry.AccessGroupKeyName; this should never happen")
+	// If an entry exists in the current UtxoView, we need to check whether it's deleted.
+	if mapValue, exists := bav.AccessGroupIdToAccessGroupEntry[*accessGroupId]; exists {
+		if mapValue == nil || mapValue.isDeleted {
+			return false, nil
+		}
+		return true, nil
 	}
 
-	// Create a tombstone entry.
-	tombstoneAccessGroupEntry := *accessGroupEntry
-	tombstoneAccessGroupEntry.isDeleted = true
-
-	// Set the mappings to point to the tombstone entry.
-	if err := bav._setAccessGroupKeyToAccessGroupEntryMapping(&tombstoneAccessGroupEntry); err != nil {
-		return errors.Wrapf(err, "_deleteAccessGroupKeyToAccessGroupEntryMapping: Problem setting "+
-			"access group entry for access group key %v", accessGroupEntry)
+	// If we get here it means no value exists in our in-memory map. In this case,
+	// defer to the db. If a mapping exists in the db, return it. If not, return false.
+	dbAdapter := bav.GetDbAdapter()
+	existence, err := dbAdapter.GetAccessGroupExistenceByAccessGroupId(accessGroupId)
+	if err != nil {
+		return false, errors.Wrapf(err, "GetAccessGroupExistenceWithAccessGroupId: Problem getting "+
+			"access group existence for access group id %v", accessGroupId)
 	}
-
-	return nil
+	return existence, nil
 }
 
 // GetAllAccessGroupIdsForUser will return all access group ids for the provided owner public key.
 // Note that this function will return the base group key for every user, and there are possible overlaps
 // between the _accessGroupIdsOwned and _accessGroupIdsMember lists, if user adds themselves as member of
-// an access group they own.
+// an access group they own. Returned AccessGroupIds are in random order.
 func (bav *UtxoView) GetAllAccessGroupIdsForUser(ownerPublicKey []byte) (
 	_accessGroupIdsOwned []*AccessGroupId, _accessGroupIdsMember []*AccessGroupId, _err error) {
 	// This function will return all groups a user is associated with,
@@ -160,6 +106,8 @@ func (bav *UtxoView) GetAllAccessGroupIdsForUser(ownerPublicKey []byte) (
 	return accessGroupIdsOwned, accessGroupIdsMember, nil
 }
 
+// GetAccessGroupIdsForOwner will return all access group ids that were registered for the provided owner public key.
+// Note that this function will return the base group key for every user. Returned accessGroupIds are in random order.
 func (bav *UtxoView) GetAccessGroupIdsForOwner(ownerPublicKey []byte) (_accessGroupIdsOwned []*AccessGroupId, _err error) {
 	// This function will return all access groups owned by the provided ownerPublicKey.
 	if err := IsByteArrayValidPublicKey(ownerPublicKey); err != nil {
@@ -184,16 +132,16 @@ func (bav *UtxoView) GetAccessGroupIdsForOwner(ownerPublicKey []byte) (_accessGr
 	accessGroupIdsMap[*baseGroupId] = struct{}{}
 
 	// Iterate over UtxoView mappings and merge the results with our map.
-	for accessGroupId, accessGroupEntry := range bav.AccessGroupIdToAccessGroupEntry {
-		if !bytes.Equal(accessGroupId.AccessGroupOwnerPublicKey.ToBytes(), ownerPk.ToBytes()) {
+	for accessGroupIdIter, accessGroupEntryIter := range bav.AccessGroupIdToAccessGroupEntry {
+		if !bytes.Equal(accessGroupIdIter.AccessGroupOwnerPublicKey.ToBytes(), ownerPk.ToBytes()) {
 			continue
 		}
-		copyGroupId := accessGroupId
-		if accessGroupEntry.isDeleted {
-			delete(accessGroupIdsMap, copyGroupId)
+		accessGroupId := accessGroupIdIter
+		if accessGroupEntryIter.isDeleted {
+			delete(accessGroupIdsMap, accessGroupId)
 			continue
 		}
-		accessGroupIdsMap[copyGroupId] = struct{}{}
+		accessGroupIdsMap[accessGroupId] = struct{}{}
 	}
 
 	// Convert the map to a slice.
@@ -206,6 +154,8 @@ func (bav *UtxoView) GetAccessGroupIdsForOwner(ownerPublicKey []byte) (_accessGr
 	return accessGroupIds, nil
 }
 
+// GetAccessGroupIdsForMember will return all access group ids in which the provided memberPublicKey was added as member.
+// Returned accessGroupIds are in random order.
 func (bav *UtxoView) GetAccessGroupIdsForMember(memberPublicKey []byte) (_accessGroupIds []*AccessGroupId, _err error) {
 	// This function will return all access groups where the provided memberPublicKey is a member.
 	if err := IsByteArrayValidPublicKey(memberPublicKey); err != nil {
@@ -226,14 +176,14 @@ func (bav *UtxoView) GetAccessGroupIdsForMember(memberPublicKey []byte) (_access
 	}
 
 	// Iterate over UtxoView mappings and merge the results with our map.
-	for accessGroupMembershipKey, accessGroupMemberEntry := range bav.AccessGroupMembershipKeyToAccessGroupMember {
-		if !bytes.Equal(accessGroupMembershipKey.AccessGroupMemberPublicKey.ToBytes(), memberPk.ToBytes()) {
+	for accessGroupMembershipKeyIter, accessGroupMemberEntryIter := range bav.AccessGroupMembershipKeyToAccessGroupMember {
+		if !bytes.Equal(accessGroupMembershipKeyIter.AccessGroupMemberPublicKey.ToBytes(), memberPk.ToBytes()) {
 			continue
 		}
-		copyAccessGroupMembershipKey := accessGroupMembershipKey
+		accessGroupMembershipKey := accessGroupMembershipKeyIter
 		accessGroupId := NewAccessGroupId(
-			&copyAccessGroupMembershipKey.AccessGroupOwnerPublicKey, copyAccessGroupMembershipKey.AccessGroupKeyName.ToBytes())
-		if accessGroupMemberEntry.isDeleted {
+			&accessGroupMembershipKey.AccessGroupOwnerPublicKey, accessGroupMembershipKey.AccessGroupKeyName.ToBytes())
+		if accessGroupMemberEntryIter.isDeleted {
 			delete(accessGroupIdsForMemberMap, *accessGroupId)
 			continue
 		}
@@ -244,6 +194,46 @@ func (bav *UtxoView) GetAccessGroupIdsForMember(memberPublicKey []byte) (_access
 		accessGroupIdsForMemberMap), nil
 }
 
+// _setAccessGroupIdToAccessGroupEntryMapping is a helper function that sets the mapping from an access group id to
+// an access group entry in the UtxoView.
+func (bav *UtxoView) _setAccessGroupIdToAccessGroupEntryMapping(accessGroupEntry *AccessGroupEntry) error {
+
+	// This function shouldn't be called with a nil entry.
+	if accessGroupEntry == nil || accessGroupEntry.AccessGroupOwnerPublicKey == nil || accessGroupEntry.AccessGroupKeyName == nil {
+		return fmt.Errorf("_setAccessGroupIdToAccessGroupEntryMapping: Called with nil AccessGroupEntry, " +
+			"AccessGroupEntry.AccessGroupOwnerPublicKey, or AccessGroupEntry.AccessGroupKeyName; this should never happen")
+	}
+
+	// Create a key for the UtxoView mapping.
+	accessGroupId := accessGroupEntry.GetAccessGroupId()
+	bav.AccessGroupIdToAccessGroupEntry[accessGroupId] = accessGroupEntry
+	return nil
+}
+
+// _deleteAccessGroupIdToAccessGroupEntryMapping is a helper function that deletes the mapping from an access group id to
+// an access group entry in the UtxoView.
+func (bav *UtxoView) _deleteAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntry *AccessGroupEntry) error {
+
+	// This function shouldn't be called with a nil entry.
+	if accessGroupEntry == nil || accessGroupEntry.AccessGroupOwnerPublicKey == nil || accessGroupEntry.AccessGroupKeyName == nil {
+		return fmt.Errorf("_deleteAccessGroupKeyToAccessGroupEntryMapping: Called with nil AccessGroupEntry, " +
+			"AccessGroupEntry.AccessGroupOwnerPublicKey, or AccessGroupEntry.AccessGroupKeyName; this should never happen")
+	}
+
+	// Create a tombstone entry.
+	tombstoneAccessGroupEntry := *accessGroupEntry
+	tombstoneAccessGroupEntry.isDeleted = true
+
+	// Set the mappings to point to the tombstone entry.
+	if err := bav._setAccessGroupIdToAccessGroupEntryMapping(&tombstoneAccessGroupEntry); err != nil {
+		return errors.Wrapf(err, "_deleteAccessGroupKeyToAccessGroupEntryMapping: Problem setting "+
+			"access group entry for access group key %v", accessGroupEntry)
+	}
+
+	return nil
+}
+
+// ValidateAccessGroupPublicKeyAndName validates that the provided access group public key and name are correctly formatted.
 func ValidateAccessGroupPublicKeyAndName(accessGroupOwnerPublicKey, keyName []byte) error {
 	// This is a helper function that allows us to verify messaging public key and key name.
 
@@ -268,6 +258,8 @@ func ValidateAccessGroupPublicKeyAndName(accessGroupOwnerPublicKey, keyName []by
 	return nil
 }
 
+// ValidateAccessGroupPublicKeyAndNameWithUtxoView validates that the provided access group public key and name are correctly formatted.
+// It also checks that the access group exists based on the UtxoView.
 func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 	groupOwnerPublicKey, groupKeyName []byte, blockHeight uint32) error {
 
@@ -280,8 +272,8 @@ func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 
 	// Fetch the access key entry from UtxoView.
 	accessGroupKey := NewAccessGroupId(NewPublicKey(groupOwnerPublicKey), groupKeyName)
-	// To validate an access group key, we try to fetch the simplified group entry from the membership index.
-	groupExistence, err := bav.GetAccessGroupForAccessGroupKeyExistence(accessGroupKey)
+	// To validate an access group key, we try to fetch the existence entry, which speeds up the lookup.
+	groupExistence, err := bav.GetAccessGroupExistenceWithAccessGroupId(accessGroupKey)
 	if err != nil {
 		return errors.Wrapf(err, "ValidateAccessGroupPublicKeyAndNameAndAccessPublicKeyWithUtxoView: "+
 			"Problem fetching access group entry")
@@ -307,8 +299,8 @@ func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 //
 // Aside from metadata, access groups also have members with whom the private key of the accessGroupPublicKey is shared.
 // Access group members are added or updated in a separate transaction called AccessGroupMembers, which has its own connect
-// function, namely _connectAccessGroupMembers. In addition, access group can have attributes, which are key-value pairs
-// that are used to store additional information about the access group. Access group attributes are the main venue for
+// function, namely _connectAccessGroupMembers. In addition, access groups can have extraData, which is a key-value map
+// that are is to store additional information about the access group. Access group extraData is the main venue for
 // utilizing the generality of access groups, ranging from on-chain private group chats, to private content.
 func (bav *UtxoView) _connectAccessGroup(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
@@ -330,16 +322,21 @@ func (bav *UtxoView) _connectAccessGroup(
 
 	// Sanity-check that the access group owner public key is the same as the transaction's sender. For now, groups can
 	// only be registered for the sender's own public key.
-	// TODO: make sure to verify AccessGroupOwnerPublicKey if the below constraint is relaxed.
 	if !bytes.Equal(txn.PublicKey, txMeta.AccessGroupOwnerPublicKey) {
 		return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupOwnerPublicKeyCannotBeDifferent,
 			"_connectAccessGroup: access public key and txn public key must be the same")
 	}
 
+	// Make sure that the access group owner public key and the group key name have the correct format.
+	if err := ValidateAccessGroupPublicKeyAndName(txMeta.AccessGroupOwnerPublicKey, txMeta.AccessGroupKeyName); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroup: "+
+			"Problem parsing AccessGroupOwnerPublicKey: %v and group key name %v", txMeta.AccessGroupOwnerPublicKey, txMeta.AccessGroupKeyName)
+	}
+
 	// Make sure that the access public key and the group key name have the correct format.
 	if err := ValidateAccessGroupPublicKeyAndName(txMeta.AccessGroupPublicKey, txMeta.AccessGroupKeyName); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroup: "+
-			"Problem parsing public key: %v and group key name %v", txMeta.AccessGroupPublicKey, txMeta.AccessGroupKeyName)
+			"Problem parsing AccessGroupPublicKey: %v and group key name %v", txMeta.AccessGroupPublicKey, txMeta.AccessGroupKeyName)
 	}
 
 	// Sanity-check that we're not trying to add an access public key identical to the ownerPublicKey. This is reserved
@@ -419,7 +416,7 @@ func (bav *UtxoView) _connectAccessGroup(
 		ExtraData:                 txn.ExtraData,
 	}
 
-	if err := bav._setAccessGroupKeyToAccessGroupEntryMapping(accessGroupEntry); err != nil {
+	if err := bav._setAccessGroupIdToAccessGroupEntryMapping(accessGroupEntry); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroup: ")
 	}
 
@@ -516,7 +513,7 @@ func (bav *UtxoView) _disconnectAccessGroup(
 				"current access group entry. Previous entry: %v, current entry: %v", accessGroupOp.PrevAccessGroupEntry, accessGroupEntry)
 		}
 		// Set the access group entry to the previous access group entry.
-		if err := bav._setAccessGroupKeyToAccessGroupEntryMapping(accessGroupOp.PrevAccessGroupEntry); err != nil {
+		if err := bav._setAccessGroupIdToAccessGroupEntryMapping(accessGroupOp.PrevAccessGroupEntry); err != nil {
 			return errors.Wrapf(err, "_disconnectAccessGroup: Problem setting access group entry: ")
 		}
 	}
