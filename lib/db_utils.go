@@ -641,28 +641,28 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 		// prefix_id:"[70]"
 		return true, &BlockHash{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixAccessGroupEntriesByAccessGroupId) {
-		// prefix_id:"[63]"
+		// prefix_id:"[71]"
 		return true, &AccessGroupEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixAccessGroupMembershipIndex) {
-		// prefix_id:"[64]"
+		// prefix_id:"[72]"
 		return true, &AccessGroupMemberEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixAccessGroupMemberEnumerationIndex) {
-		// prefix_id:"[71]"
+		// prefix_id:"[73]"
 		return true, &AccessGroupMemberEnumerationEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatMessagesIndex) {
-		// prefix_id:"[72]"
-		return true, &NewMessageEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatThreadIndex) {
-		// prefix_id:"[73]"
-		return true, &GroupChatThreadExistence{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessagesIndex) {
 		// prefix_id:"[74]"
 		return true, &NewMessageEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatThreadIndex) {
 		// prefix_id:"[75]"
+		return true, &GroupChatThreadExistence{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessagesIndex) {
+		// prefix_id:"[76]"
+		return true, &NewMessageEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
+		// prefix_id:"[77]"
 		return true, &DmThreadExistence{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixThreadAttributesIndex) {
-		// prefix_id:"[76]"
+		// prefix_id:"[78]"
 		return true, &ThreadAttributesEntry{}
 	}
 
