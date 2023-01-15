@@ -87,6 +87,7 @@ const (
 	RuleErrorBitcoinExchangeTotalOutputLessThanOrEqualZero      RuleError = "RuleErrorBitcoinExchangeTotalOutputLessThanOrEqualZero"
 	RuleErrorTxnSanity                                          RuleError = "RuleErrorTxnSanity"
 	RuleErrorTxnTooBig                                          RuleError = "RuleErrorTxnTooBig"
+	RuleErrorTxnSigHasHighS                                     RuleError = "RuleErrorTxnSigHasHighS"
 
 	RuleErrorPrivateMessageEncryptedTextLengthExceedsMax           RuleError = "RuleErrorPrivateMessageEncryptedTextLengthExceedsMax"
 	RuleErrorPrivateMessageRecipientPubKeyLen                      RuleError = "RuleErrorPrivateMessageRecipientPubKeyLen"
@@ -460,6 +461,17 @@ const (
 	RuleErrorDerivedKeyDAOCoinOperationNotAuthorized     RuleError = "RuleErrorDerivedKeyDAOCoinOperationNotAuthorized"
 	RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID   RuleError = "RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID"
 	RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized    RuleError = "RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized"
+
+	// Association Errors
+	RuleErrorAssociationBeforeBlockHeight     RuleError = "RuleErrorAssociationBeforeBlockHeight"
+	RuleErrorAssociationInvalidID             RuleError = "RuleErrorAssociationInvalidID"
+	RuleErrorAssociationNotFound              RuleError = "RuleErrorAssociationNotFound"
+	RuleErrorAssociationInvalidTransactor     RuleError = "RuleErrorAssociationInvalidTransactor"
+	RuleErrorAssociationInvalidApp            RuleError = "RuleErrorAssociationInvalidApp"
+	RuleErrorAssociationInvalidType           RuleError = "RuleErrorAssociationInvalidType"
+	RuleErrorAssociationInvalidValue          RuleError = "RuleErrorAssociationInvalidValue"
+	RuleErrorUserAssociationInvalidTargetUser RuleError = "RuleErrorUserAssociationInvalidTargetUser"
+	RuleErrorPostAssociationInvalidPost       RuleError = "RuleErrorPostAssociationInvalidPost"
 
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"
 	HeaderErrorNilPrevHash                                                       RuleError = "HeaderErrorNilPrevHash"

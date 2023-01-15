@@ -1786,6 +1786,100 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			QuantityToFillInBaseUnits:                 realTxMeta.QuantityToFillInBaseUnits,
 		}
 
+	case TxnTypeCreateUserAssociation:
+		realTxMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
+		targetUserPublicKeyBase58Check := PkToString(realTxMeta.TargetUserPublicKey.ToBytes(), utxoView.Params)
+		appPublicKeyBase58Check := PkToString(realTxMeta.AppPublicKey.ToBytes(), utxoView.Params)
+
+		txnMeta.CreateUserAssociationTxindexMetadata = &CreateUserAssociationTxindexMetadata{
+			TargetUserPublicKeyBase58Check: targetUserPublicKeyBase58Check,
+			AppPublicKeyBase58Check:        appPublicKeyBase58Check,
+			AssociationType:                string(realTxMeta.AssociationType),
+			AssociationValue:               string(realTxMeta.AssociationValue),
+		}
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: targetUserPublicKeyBase58Check,
+			Metadata:             "AssociationTargetUserPublicKeyBase58Check",
+		})
+
+	case TxnTypeDeleteUserAssociation:
+		realTxMeta := txn.TxnMeta.(*DeleteUserAssociationMetadata)
+		prevAssociationEntry := &UserAssociationEntry{}
+		targetUserPublicKeyBase58Check := ""
+		appPublicKeyKeyBase58Check := ""
+		if utxoOps[len(utxoOps)-1].PrevUserAssociationEntry != nil {
+			prevAssociationEntry = utxoOps[len(utxoOps)-1].PrevUserAssociationEntry
+			targetUserPublicKeyBase58Check = PkToString(
+				utxoView.GetPublicKeyForPKID(prevAssociationEntry.TargetUserPKID), utxoView.Params,
+			)
+			appPublicKeyKeyBase58Check = PkToString(
+				utxoView.GetPublicKeyForPKID(prevAssociationEntry.AppPKID), utxoView.Params,
+			)
+		}
+
+		txnMeta.DeleteUserAssociationTxindexMetadata = &DeleteUserAssociationTxindexMetadata{
+			AssociationIDHex:               hex.EncodeToString(realTxMeta.AssociationID.ToBytes()),
+			TargetUserPublicKeyBase58Check: targetUserPublicKeyBase58Check,
+			AppPublicKeyBase58Check:        appPublicKeyKeyBase58Check,
+			AssociationType:                string(prevAssociationEntry.AssociationType),
+			AssociationValue:               string(prevAssociationEntry.AssociationValue),
+		}
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: targetUserPublicKeyBase58Check,
+			Metadata:             "AssociationTargetUserPublicKeyBase58Check",
+		})
+
+	case TxnTypeCreatePostAssociation:
+		realTxMeta := txn.TxnMeta.(*CreatePostAssociationMetadata)
+		appPublicKeyBase58Check := PkToString(realTxMeta.AppPublicKey.ToBytes(), utxoView.Params)
+
+		txnMeta.CreatePostAssociationTxindexMetadata = &CreatePostAssociationTxindexMetadata{
+			PostHashHex:             hex.EncodeToString(realTxMeta.PostHash.ToBytes()),
+			AppPublicKeyBase58Check: appPublicKeyBase58Check,
+			AssociationType:         string(realTxMeta.AssociationType),
+			AssociationValue:        string(realTxMeta.AssociationValue),
+		}
+
+		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.PostHash)
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(postEntry.PosterPublicKey, utxoView.Params),
+			Metadata:             "AssociationTargetPostCreatorPublicKeyBase58Check",
+		})
+
+	case TxnTypeDeletePostAssociation:
+		realTxMeta := txn.TxnMeta.(*DeletePostAssociationMetadata)
+		prevAssociationEntry := &PostAssociationEntry{}
+		postHashHex := ""
+		appPublicKeyKeyBase58Check := ""
+		postAuthorPublicKeyBase58Check := ""
+		if utxoOps[len(utxoOps)-1].PrevPostAssociationEntry != nil {
+			prevAssociationEntry = utxoOps[len(utxoOps)-1].PrevPostAssociationEntry
+			postHashHex = hex.EncodeToString(prevAssociationEntry.PostHash.ToBytes())
+			appPublicKeyKeyBase58Check = PkToString(
+				utxoView.GetPublicKeyForPKID(prevAssociationEntry.AppPKID), utxoView.Params,
+			)
+			postAuthorPublicKeyBase58Check = PkToString(
+				utxoView.GetPostEntryForPostHash(prevAssociationEntry.PostHash).PosterPublicKey,
+				utxoView.Params,
+			)
+		}
+
+		txnMeta.DeletePostAssociationTxindexMetadata = &DeletePostAssociationTxindexMetadata{
+			AssociationIDHex:        hex.EncodeToString(realTxMeta.AssociationID.ToBytes()),
+			PostHashHex:             postHashHex,
+			AppPublicKeyBase58Check: appPublicKeyKeyBase58Check,
+			AssociationType:         string(prevAssociationEntry.AssociationType),
+			AssociationValue:        string(prevAssociationEntry.AssociationValue),
+		}
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: postAuthorPublicKeyBase58Check,
+			Metadata:             "AssociationTargetPostCreatorPublicKeyBase58Check",
+		})
+
 	}
 	// TODO: Do we need something for access groups and new dm/group chats here?
 	return txnMeta
