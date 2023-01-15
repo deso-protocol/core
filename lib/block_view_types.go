@@ -144,6 +144,9 @@ const (
 	EncoderTypeDeleteUserAssociationTxindexMetadata
 	EncoderTypeCreatePostAssociationTxindexMetadata
 	EncoderTypeDeletePostAssociationTxindexMetadata
+	EncoderTypeAccessGroupTxindexMetadata
+	EncoderTypeAccessGroupMembersTxindexMetadata
+	EncoderTypeNewMessageTxindexMetadata
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndTxIndex
@@ -291,6 +294,12 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &CreatePostAssociationTxindexMetadata{}
 	case EncoderTypeDeletePostAssociationTxindexMetadata:
 		return &DeletePostAssociationTxindexMetadata{}
+	case EncoderTypeAccessGroupTxindexMetadata:
+		return &AccessGroupTxindexMetadata{}
+	case EncoderTypeAccessGroupMembersTxindexMetadata:
+		return &AccessGroupMembersTxindexMetadata{}
+	case EncoderTypeNewMessageTxindexMetadata:
+		return &NewMessageTxindexMetadata{}
 	default:
 		return nil
 	}
@@ -5936,4 +5945,211 @@ func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) GetEncoderTy
 
 func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeDeletePostAssociationTxindexMetadata
+}
+
+type AccessGroupTxindexMetadata struct {
+	AccessGroupOwnerPublicKey PublicKey
+	AccessGroupPublicKey      PublicKey
+	AccessGroupKeyName        GroupKeyName
+	AccessGroupOperationType
+}
+
+func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, &accessGroupTxindexMetadata.AccessGroupOwnerPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &accessGroupTxindexMetadata.AccessGroupPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &accessGroupTxindexMetadata.AccessGroupKeyName, skipMetadata...)...)
+	data = append(data, UintToBuf(uint64(accessGroupTxindexMetadata.AccessGroupOperationType))...)
+	return data
+}
+
+func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+
+	// AccessGroupOwnerPublicKey
+	accessGroupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(accessGroupOwnerPublicKey, rr); exist && err == nil {
+		accessGroupTxindexMetadata.AccessGroupOwnerPublicKey = *accessGroupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupTxindexMetadata.Decode: Problem reading AccessGroupOwnerPublicKey: ")
+	}
+
+	// AccessGroupPublicKey
+	accessGroupPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(accessGroupPublicKey, rr); exist && err == nil {
+		accessGroupTxindexMetadata.AccessGroupPublicKey = *accessGroupPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupTxindexMetadata.Decode: Problem reading AccessGroupPublicKey: ")
+	}
+
+	// AccessGroupKeyName
+	accessGroupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(accessGroupKeyName, rr); exist && err == nil {
+		accessGroupTxindexMetadata.AccessGroupKeyName = *accessGroupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupTxindexMetadata.Decode: Problem reading AccessGroupKeyName: ")
+	}
+
+	// AccessGroupOperationType
+	accessGroupOperationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupTxindexMetadata.Decode: Problem reading AccessGroupOperationType: ")
+	}
+	accessGroupTxindexMetadata.AccessGroupOperationType = AccessGroupOperationType(accessGroupOperationType)
+
+	return nil
+}
+
+func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeAccessGroupTxindexMetadata
+}
+
+type AccessGroupMembersTxindexMetadata struct {
+	AccessGroupOwnerPublicKey PublicKey
+	AccessGroupKeyName        GroupKeyName
+	AccessGroupMembersList    []*AccessGroupMember
+	AccessGroupMemberOperationType
+}
+
+func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, &accessGroupMembersTxindexMetadata.AccessGroupOwnerPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &accessGroupMembersTxindexMetadata.AccessGroupKeyName, skipMetadata...)...)
+	data = append(data, encodeAccessGroupMembersList(accessGroupMembersTxindexMetadata.AccessGroupMembersList)...)
+	data = append(data, UintToBuf(uint64(accessGroupMembersTxindexMetadata.AccessGroupMemberOperationType))...)
+	return data
+}
+
+func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+
+	// AccessGroupOwnerPublicKey
+	accessGroupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(accessGroupOwnerPublicKey, rr); exist && err == nil {
+		accessGroupMembersTxindexMetadata.AccessGroupOwnerPublicKey = *accessGroupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersTxindexMetadata.Decode: Problem reading AccessGroupOwnerPublicKey: ")
+	}
+
+	// AccessGroupKeyName
+	accessGroupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(accessGroupKeyName, rr); exist && err == nil {
+		accessGroupMembersTxindexMetadata.AccessGroupKeyName = *accessGroupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersTxindexMetadata.Decode: Problem reading AccessGroupKeyName: ")
+	}
+
+	// AccessGroupMembersList
+	accessGroupMembersList, err := decodeAccessGroupMembersList(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersTxindexMetadata.Decode: Problem reading AccessGroupMembersList: ")
+	}
+	accessGroupMembersTxindexMetadata.AccessGroupMembersList = accessGroupMembersList
+
+	// AccessGroupMemberOperationType
+	accessGroupMemberOperationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersTxindexMetadata.Decode: Problem reading AccessGroupMemberOperationType: ")
+	}
+	accessGroupMembersTxindexMetadata.AccessGroupMemberOperationType = AccessGroupMemberOperationType(accessGroupMemberOperationType)
+
+	return nil
+}
+
+func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeAccessGroupMembersTxindexMetadata
+}
+
+type NewMessageTxindexMetadata struct {
+	SenderAccessGroupOwnerPublicKey    PublicKey
+	SenderAccessGroupKeyName           GroupKeyName
+	RecipientAccessGroupOwnerPublicKey PublicKey
+	RecipientAccessGroupKeyName        GroupKeyName
+	TimestampNanos                     uint64
+	NewMessageType
+	NewMessageOperation
+}
+
+func (newMessageTxindexMetadata *NewMessageTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, &newMessageTxindexMetadata.SenderAccessGroupOwnerPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &newMessageTxindexMetadata.SenderAccessGroupKeyName, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &newMessageTxindexMetadata.RecipientAccessGroupOwnerPublicKey, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, &newMessageTxindexMetadata.RecipientAccessGroupKeyName, skipMetadata...)...)
+	data = append(data, UintToBuf(newMessageTxindexMetadata.TimestampNanos)...)
+	data = append(data, UintToBuf(uint64(newMessageTxindexMetadata.NewMessageType))...)
+	data = append(data, UintToBuf(uint64(newMessageTxindexMetadata.NewMessageOperation))...)
+	return data
+}
+
+func (newMessageTxindexMetadata *NewMessageTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+
+	// SenderAccessGroupOwnerPublicKey
+	senderAccessGroupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(senderAccessGroupOwnerPublicKey, rr); exist && err == nil {
+		newMessageTxindexMetadata.SenderAccessGroupOwnerPublicKey = *senderAccessGroupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading SenderAccessGroupOwnerPublicKey: ")
+	}
+
+	// SenderAccessGroupKeyName
+	senderAccessGroupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(senderAccessGroupKeyName, rr); exist && err == nil {
+		newMessageTxindexMetadata.SenderAccessGroupKeyName = *senderAccessGroupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading SenderAccessGroupKeyName: ")
+	}
+
+	// RecipientAccessGroupOwnerPublicKey
+	recipientAccessGroupOwnerPublicKey := &PublicKey{}
+	if exist, err := DecodeFromBytes(recipientAccessGroupOwnerPublicKey, rr); exist && err == nil {
+		newMessageTxindexMetadata.RecipientAccessGroupOwnerPublicKey = *recipientAccessGroupOwnerPublicKey
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading RecipientAccessGroupOwnerPublicKey: ")
+	}
+
+	// RecipientAccessGroupKeyName
+	recipientAccessGroupKeyName := &GroupKeyName{}
+	if exist, err := DecodeFromBytes(recipientAccessGroupKeyName, rr); exist && err == nil {
+		newMessageTxindexMetadata.RecipientAccessGroupKeyName = *recipientAccessGroupKeyName
+	} else if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading RecipientAccessGroupKeyName: ")
+	}
+
+	// TimestampNanos
+	timestampNanos, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading TimestampNanos: ")
+	}
+	newMessageTxindexMetadata.TimestampNanos = timestampNanos
+
+	// NewMessageType
+	newMessageType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading NewMessageType: ")
+	}
+	newMessageTxindexMetadata.NewMessageType = NewMessageType(newMessageType)
+
+	// NewMessageOperation
+	newMessageOperation, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageTxindexMetadata.Decode: Problem reading NewMessageOperation: ")
+	}
+	newMessageTxindexMetadata.NewMessageOperation = NewMessageOperation(newMessageOperation)
+
+	return nil
+}
+
+func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeNewMessageTxindexMetadata
 }
