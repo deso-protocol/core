@@ -57,6 +57,161 @@ var (
 // Snapshot
 // -------------------------------------------------------------------------------------
 
+// Before explaining what a snapshot is and how to create one, it is important to understand
+// some context on how snapshots came about, and therefore why all this code is even needed
+// in the first place.
+//
+// Ordinarily, in the pre-hypersync era, one would create a UtxoView, call ConnectBlock() on
+// it to connect all the transactions in the block, and then call flush() on that UtxoView
+// in order to persist all the state changes to disk.
+//
+// Then hypersync came along. With hypersync, we want to allow one node to download the entire
+// state db directly from another node. But we have a problem: If we try and download the full
+// db state at the "tip" of the chain, then the state could change in the middle of our download,
+// which could take half an hour or more.
+//
+// So, in order to allow nodes to reliably and robustly download the full db state from one
+// another, we created the concept of a "snapshot." This works as follows:
+//
+//  1. Ever 1,000 blocks, or every "snapshot epoch", nodes will save a "snapshot" of the current
+//     DB state, and keep it around. Imagine, for now, that this snapshot is just a FULL COPY of
+//     the db state at each 1,000 block interval...
+//
+//  2. Whenever one node wants to hypersync from another node, it downloads this snapshot,
+//     which should remain static throughout the snapshot epoch, for about a thousand blocks or so.
+//     Then, once the node has successfully synced the snapshot, it can download the blocks from
+//     the snapshot height, which remember is a multiple of 1,000, up to the tip and just apply
+//     them like normal block sync.
+//
+// This process is *much* faster than applying all blocks from the beginning of time because
+// we don't need to validate transactions when downloading a snapshot *and* because a lot of
+// txns *modify* existing state rather than *add* to existing state. For example, if two people
+// money back and forth a million times, that would be only two account balances you need to
+// download via the hypersync approach, which is much less than a million transactions worth!
+//
+// Now, there is one detail we glossed over in step (1) above, which is: How is a snapshot
+// generated? Clearly copying the entire state every 1,000 blocks would be prohibitively
+// expensive *and* slow. So, this file implements some cleverness in order to make the
+// generation of snapshots *insanely* efficient (virtually costless).
+//
+// At a high level, this works by saving a copy of each key-value pair we modify from the
+// snapshot height up to the tip. These copies are called "ancestral records" in all of this
+// code, and you can imagine them as basically storing the "diff" between the snapshot height
+// and the current tip.
+//
+// Some terminology:
+//
+//  1. "Main DB" refers to the main db representing all the state up to the current tip. When
+//     you flush() your UtxoView, you're flushing to the main DB.
+//
+//  2. "Ancestral Records DB" refers to a separate db containing one key-value pair for
+//     every *modification* since the snapshot height. For example, let's suppose that
+//     the key-value (K1 -> V1) exists at the snapshot height, and then we modify it in
+//     the main DB to (K1 -> V2) at some block *after* the snapshot. In that case, the
+//     Ancestral Records DB would contain (K1 -> V1), i.e. the old value corresponding to
+//     K1. And if we were to *add* a new key-value pair (Knew -> Vnew) to the main DB,
+//     Ancestral Records would indicate that this record hasn't existed before by storing
+//     a special (Knew -> X) record, where X is a fixed value telling us that 'Knew' didn't
+//     exist at the snapshot. Finally, when we *delete* a key-value pair (K1 -> V1) from the
+//     main DB, then the Ancestral Records would represent this as basically (K1 -> V1),
+//     since that's the old value -- so identically to how we handled record modifications.
+//
+// The key thing to understand is that if you take the MainDB and "merge" it with the
+// Ancestral Records DB, modifying and deleting keys accordingly, then you can compute
+// the snapshot at the historical height that the Ancestral Records started being computed
+// at.
+//
+// OK... so with all that context, you're now ready to understand how to use this file
+// concretely. Remember that, before snapshots, we could just casually flush() our UtxoView
+// without any issues. Well, now there's one extra step that we have to do to effectively
+// tell the Ancestral Records DB to start "recording" all modifications we're going to make
+// during our flush. The flow works as follows:
+//
+//  1. Call PrepareAncestralRecordsFlush() to tell the Ancestral Records DB to start "recording"
+//     all the modifications you're about to make.
+//
+//     This will increment a MainDBSemaphore variable, which I'll explain in a moment.
+//
+//  2. Now you can call utxoView.flush() and be confident that everything being modified in the
+//     MainDB will have a corresponding record in the Ancestral Records DB. If you're curious,
+//     this was achieved by adding some clever code in DBSetWithTxn that checks to see if you're
+//     computing ancestral records, and does the right thing.
+//
+//     There's one more caveat to the above, which is that we don't actually write to disk when
+//     we compute an ancestral record. That would slow down consensus, which we want to avoid.
+//     Instead, we just add all the ancestral records we're computing to an in-memory cache,
+//     which brings us to our next step...
+//
+//  3. Once your utxoView.flush() is complete, you have to call StartAncestralRecordsFlush().
+//     This signals that your "MainDB" write is complete, and you can now dump ancestral records
+//     to the Ancestral Records DB.
+//
+//     Unfortunately, there's one more caveat here, which is that you're still not actually going to
+//     flush the ancestral records yet. Instead, you're going to add the "bundle" to a queue that
+//     is constantly getting processed in an asynchronous worker. Again, the reason for this
+//     complexity is to avoid getting in the way of the main consensus thread.
+//
+//     This will increment a MainDBSemaphore *again*, making its value *even*. This is important!
+//     If the value of MainDBSemaphore is *even*, it means that you've properly paired your
+//     PrepareAncestralRecordsFlush() call with your StartAncestralRecordsFlush() call *and* it
+//     also means we're *NOT* in the middle of a main DB flush. These are the conditions needed
+//     in order for it to be OK to safely flush ancestral records basically.
+//
+//     In addition to incrementing the MainDBSemaphore, we *also* increment a second semaphore,
+//     which we call the AncestralDBSemaphore. I'll explain this in a moment.
+//
+//  4. Finally, in an ansynchronous thread, the bundle of in-memory ancestral records will be pulled
+//     off the queue and flushed to disk via FlushAncestralRecords().
+//
+//     Once the flush of a particular bundle of ancestral records is complete, we then increment
+//     the AncestralDBSemaphore *again*, making its value *even*. This is important! If the value
+//     of the AncestralDBSemaphore is *even*, it means that we are *NOT* in the middle of an
+//     ancestral records flush, which is good. *IN ADDITION*, though, we have one more important
+//     condition to consider, which is whether (MainDBSempahore == AncestralDBSemaphore). When this
+//     is true *and* when both of these values are *even*, it means that the ancestral records queue
+//     is *empty*, meaning that the ancestral records are fully up-to-date.
+//
+//     How would these values ever be "messed up?" This is a very important question. Suppose that
+//     the consensus thread is cranking, and we've enqueued 20 blocks worth of ancestral record
+//     flushes. That means that, if MainDBSemaphore is 100, let's say, then
+//     AncestralDBSemaphore is (100 - 20) = 80. Eventually, as FlushAncestralRecords() is called by
+//     the other thread, the value of AncestralDBSemaphore will increase until it becomes equal to
+//     the MainDBSemaphore. The reason why I mention this case is because, if a node is shut down
+//     at a point where the values are unequal like this, then the node's snapshot is basically
+//     *BROKEN* and needs to be recomputed from scratch. Right now, the only way to do this is to
+//     roll back the blocks to the snapshot height and re-apply them, which is not a robust process.
+//
+// I want to personally apologize for the complexity around the MainDBSemaphore and the
+// AncestralDBSemaphore. It's all in the name of making the snapshot flushing capable of operating
+// fully in parallel with the "main" consensus thread, without slowing it down. In hindsight, it may
+// have been worth side-stepping this complexity in favor of a slower and atomic flow, whereby we
+// first flush the main DB and then immediately flush the ancestral records for that block before
+// allowing forward progress. Doing it this way would also have avoided situations in which a
+// snapshot can break, thus eliminating any reliance on block disconnecting in our codebase.
+// But we live and learn.
+//  ---@petern: Fear not the complexity. Embrace it, and the parity semaphores will love you back.
+//
+// In addition to all of the above, there is one more cool thing that a snapshot does, which is that
+// it keeps track of an "online" checksum of all keys and values in the snapshot. This is done using
+// a cool new primitive we developed called an "Elliptic Sum." At a high level, it's very simple:
+// Imagine you can "add" a key-value pair to a checksum such that if ChecksumA = ChecksumB, then the
+// key-value pairs that contributed to each *MUST* be identical. This allows a node to effectively
+// *validate* that the key-value pairs that it downloaded during a hypersync are not tampered-with in
+// any way. And this checksum is *really important* because, without it, another node could easily trick
+// you into thinking that it has a billion dollars in an extra balance that it appended to the state
+// it sent you...
+//
+// If you understood all of the above, I think you mostly understand hypersync and the code in this file.
+// Good job!
+//
+// = = =
+//
+// The comment below pre-dates the one above, but I'm leaving it here for posterity. It also has
+// some useful tidbits of information and detail that are worth going through if you're going to
+// go deep into this file.
+//
+// = = =
+//
 // Snapshot is the main data structure used in hyper sync. It manages the creation of the database
 // snapshot (as the name suggests), which is a periodic copy of the node's state at certain block
 // heights, separated by a constant period. This period is defined by SnapshotBlockHeightPeriod,
@@ -86,9 +241,9 @@ var (
 // records, to combine them into a chunk representing the database at a past snapshot heights.
 //
 // Summarizing, Snapshot serves three main purposes:
-// 	- maintaining ancestral records
-// 	- managing the state checksum
-// 	- serving snapshot chunks to syncing nodes.
+//   - maintaining ancestral records
+//   - managing the state checksum
+//   - serving snapshot chunks to syncing nodes.
 type Snapshot struct {
 	// SnapshotDb is used to store snapshot-related records.
 	SnapshotDb      *badger.DB
@@ -202,6 +357,18 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	// If this condition is true, the snapshot is broken and we need to start the recovery process.
 	// We will revert the blockchain to the last snapshot epoch and restart the node. After the restart,
 	// the node will rebuild snapshot by resyncing blocks up to the tip, starting from last snapshot epoch.
+	// See the comment at the top of snapshot.go for more information on how this is determined.
+	//
+	// Explaining in detail:
+	// - If StateSemaphore is > 0 then it means that we had an enqueued snapshot flush
+	//   operation when the node was last restarted that didn't make it to disk. This means
+	//   our snapshot is compromised and we need to recompute it by disconnecting all the blocks
+	//   from the tip to the current snapshot height and recomputing all ancestral records.
+	//
+	// - IsFlushing() can be true if either we were in the process of flushing the main db to
+	//   disk *OR* if we were in the process of flushing a bundle of ancestral records to disk.
+	//   Either way, it means our snapshot was compromised and we need to recompute it as described
+	//   in the previous bullet.
 	shouldRestart := false
 	if operationChannel.StateSemaphore > 0 || status.IsFlushing() {
 		operationChannel.StateSemaphore = 0
@@ -425,9 +592,12 @@ func (snap *Snapshot) ForceResetToLastSnapshot(chain *Blockchain) error {
 	return nil
 }
 
-// StartAncestralRecordsFlush updates the ancestral records after a UtxoView flush. This function should be called in a
+// StartAncestralRecordsFlush updates the ancestral records after a UtxoView flush. This function should be called
 // after all UtxoView flushes. shouldIncrement is usually set to true and indicates that we are supposed to update the
 // db semaphores. The semaphore are used to manage concurrency between the main and ancestral dbs.
+//
+// See comment at the top of this file to understand how to use this function to generate
+// ancestral records needed to support hypersync.
 func (snap *Snapshot) StartAncestralRecordsFlush(shouldIncrement bool) {
 	// If snapshot is broken then there's nothing to do.
 	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush, shouldIncrement: (%v)", shouldIncrement)
@@ -555,6 +725,9 @@ func (snap *Snapshot) WaitForAllOperationsToFinish() {
 
 // PrepareAncestralRecordsFlush adds a new instance of ancestral cache to the AncestralMemory deque.
 // It must be called prior to calling StartAncestralRecordsFlush.
+//
+// See comment at the top of this file to understand how to use this function to generate
+// ancestral records needed to support hypersync.
 func (snap *Snapshot) PrepareAncestralRecordsFlush() {
 	// Signal that the main db update has started by holding the MemoryLock and incrementing the MainDBSemaphore.
 	snap.Status.MemoryLock.Lock()
@@ -578,6 +751,9 @@ func (snap *Snapshot) PrepareAncestralRecordsFlush() {
 // PrepareAncestralRecord prepares an individual ancestral record in the last ancestral cache.
 // It will add the record to AncestralRecordsMap with a bool indicating whether the key existed
 // before or not.
+//
+// See comment at the top of this file to understand how to use this function to generate
+// ancestral records needed to support hypersync.
 func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed bool) error {
 	// If the record was not found, we add it to the NonExistingRecordsMap, otherwise to ExistingRecordsMap.
 	index := snap.AncestralFlushCounter
@@ -770,7 +946,8 @@ func (snap *Snapshot) DeleteAncestralRecords(height uint64) error {
 }
 
 // GetAncestralRecordsKey is used to get an ancestral record key from a main DB key.
-// 	<prefix [1]byte, block height [8]byte, key []byte> -> <value []byte, existence_byte [1]byte>
+//
+//	<prefix [1]byte, block height [8]byte, key []byte> -> <value []byte, existence_byte [1]byte>
 func (snap *Snapshot) GetAncestralRecordsKey(key []byte, blockHeight uint64) []byte {
 	var prefix []byte
 
@@ -810,7 +987,9 @@ func (snap *Snapshot) DBSetAncestralRecordWithTxn(
 
 // AncestralRecordToDBEntry is used to translate the <ancestral_key, ancestral_value> pairs into
 // the actual <key, value> pairs. Ancestral records have the format:
-// 	<prefix [1]byte, block height [8]byte, key []byte> -> <value []byte, existence_byte [1]byte>
+//
+//	<prefix [1]byte, block height [8]byte, key []byte> -> <value []byte, existence_byte [1]byte>
+//
 // So we need to trim the first 9 bytes off of the ancestral_key to get the actual key.
 // And we need to trim the last 1 byte off of the ancestral_value to get the actual value.
 func (snap *Snapshot) AncestralRecordToDBEntry(ancestralEntry *DBEntry) *DBEntry {
@@ -1738,6 +1917,15 @@ type SnapshotOperation struct {
 type SnapshotOperationChannel struct {
 	OperationChannel chan *SnapshotOperation
 
+	// Every time we enqueue a snapshot operation, this semaphore is incremented in
+	// order to indicate how many operations we have yet to process. When an operation
+	// is dequeued, this semaphore is decremented. When the semaphore value hits zero,
+	// it means we've finished processing all snapshot operations.
+	//
+	// Note that this semaphore keeps track of snapshot operations, which include
+	// but are not limited to ancestral record flushes. As such it is different
+	// from the MainDBSemaphore and the AncestralDBSemaphore which manage concurrency
+	// around flushes only.
 	StateSemaphore     int32
 	StateSemaphoreLock sync.Mutex
 
@@ -1863,6 +2051,8 @@ type SnapshotStatus struct {
 	// MainDBSemaphore and AncestralDBSemaphore are atomically accessed counter semaphores that will be
 	// used to control race conditions between main db and ancestral records. They basically manage the concurrency
 	// between writes to the main and ancestral dbs.
+	//
+	// See the comment at the top of snapshot.go for detailed information on how these semaphores work.
 	MainDBSemaphore      uint64
 	AncestralDBSemaphore uint64
 

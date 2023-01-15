@@ -227,6 +227,9 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.nodeMessageChan,
 		node.Config.ForceChecksum)
 	if err != nil {
+		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral
+		// records to the DB. In this case, the snapshot is corrupted and needs to be computed. See the
+		// comment at the top of snapshot.go for more information on how this works.
 		if shouldRestart {
 			glog.Infof(lib.CLog(lib.Red, fmt.Sprintf("Start: Got en error while starting server and shouldRestart "+
 				"is true. Node will be erased and resynced. Error: (%v)", err)))
