@@ -77,6 +77,8 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	m2PublicKey := NewPublicKey(m2PubBytes)
 	m3PubBytes, _, _ := Base58CheckDecode(m3Pub)
 	m3PublicKey := NewPublicKey(m3PubBytes)
+	m4PubBytes, _, _ := Base58CheckDecode(m4Pub)
+	m4PublicKey := NewPublicKey(m4PubBytes)
 	m5PubBytes, _, _ := Base58CheckDecode(m5Pub)
 
 	fundPublicKeysWithNanosMap := make(map[PublicKey]uint64)
