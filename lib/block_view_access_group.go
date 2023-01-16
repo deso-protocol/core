@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/pkg/errors"
+	"sort"
 )
 
 // GetAccessGroupEntry will fetch an access group entry corresponding to the provided access group id:
@@ -107,7 +108,8 @@ func (bav *UtxoView) GetAllAccessGroupIdsForUser(ownerPublicKey []byte) (
 }
 
 // GetAccessGroupIdsForOwner will return all access group ids that were registered for the provided owner public key.
-// Note that this function will return the base group key for every user. Returned accessGroupIds are in random order.
+// Note that this function will return the base group key for every user.
+// Returned accessGroupIds are sorted lexicographically for convenience.
 func (bav *UtxoView) GetAccessGroupIdsForOwner(ownerPublicKey []byte) (_accessGroupIdsOwned []*AccessGroupId, _err error) {
 	// This function will return all access groups owned by the provided ownerPublicKey.
 	if err := IsByteArrayValidPublicKey(ownerPublicKey); err != nil {
@@ -150,12 +152,15 @@ func (bav *UtxoView) GetAccessGroupIdsForOwner(ownerPublicKey []byte) (_accessGr
 		accessGroupIdCopy := accessGroupId
 		accessGroupIds = append(accessGroupIds, &accessGroupIdCopy)
 	}
+	sort.Slice(accessGroupIds, func(ii, jj int) bool {
+		return bytes.Compare(accessGroupIds[ii].ToBytes(), accessGroupIds[jj].ToBytes()) < 0
+	})
 
 	return accessGroupIds, nil
 }
 
 // GetAccessGroupIdsForMember will return all access group ids in which the provided memberPublicKey was added as member.
-// Returned accessGroupIds are in random order.
+// Returned accessGroupIds are sorted lexicographically for convenience.
 func (bav *UtxoView) GetAccessGroupIdsForMember(memberPublicKey []byte) (_accessGroupIds []*AccessGroupId, _err error) {
 	// This function will return all access groups where the provided memberPublicKey is a member.
 	if err := IsByteArrayValidPublicKey(memberPublicKey); err != nil {
@@ -190,8 +195,17 @@ func (bav *UtxoView) GetAccessGroupIdsForMember(memberPublicKey []byte) (_access
 		accessGroupIdsForMemberMap[*accessGroupId] = struct{}{}
 	}
 
-	return MapKeysToNonDeterministicPointerSlice[AccessGroupId, struct{}](
-		accessGroupIdsForMemberMap), nil
+	// Convert the map to a slice.
+	accessGroupIdsForMember := []*AccessGroupId{}
+	for accessGroupId := range accessGroupIdsForMemberMap {
+		accessGroupIdCopy := accessGroupId
+		accessGroupIdsForMember = append(accessGroupIdsForMember, &accessGroupIdCopy)
+	}
+	sort.Slice(accessGroupIdsForMember, func(ii, jj int) bool {
+		return bytes.Compare(accessGroupIdsForMember[ii].ToBytes(), accessGroupIdsForMember[jj].ToBytes()) < 0
+	})
+
+	return accessGroupIdsForMember, nil
 }
 
 // _setAccessGroupIdToAccessGroupEntryMapping is a helper function that sets the mapping from an access group id to
