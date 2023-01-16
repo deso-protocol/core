@@ -93,10 +93,11 @@ type UtxoView struct {
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
 
-	Handle   *badger.DB
-	Postgres *Postgres
-	Params   *DeSoParams
-	Snapshot *Snapshot
+	Handle       *badger.DB
+	Postgres     *Postgres
+	Params       *DeSoParams
+	Snapshot     *Snapshot
+	EventManager *EventManager
 }
 
 // Assumes the db Handle is already set on the view, but otherwise the
@@ -162,7 +163,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
-	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot)
+	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot, bav.EventManager)
 	if err != nil {
 		return nil, err
 	}
@@ -361,6 +362,7 @@ func NewUtxoView(
 	_params *DeSoParams,
 	_postgres *Postgres,
 	_snapshot *Snapshot,
+	_eventManager *EventManager,
 ) (*UtxoView, error) {
 
 	view := UtxoView{
@@ -373,8 +375,9 @@ func NewUtxoView(
 		// itself with the header chain (see comment on GetBestHash for more info on that).
 		TipHash: DbGetBestHash(_handle, _snapshot, ChainTypeDeSoBlock /* don't get the header chain */),
 
-		Postgres: _postgres,
-		Snapshot: _snapshot,
+		Postgres:     _postgres,
+		Snapshot:     _snapshot,
+		EventManager: _eventManager,
 		// Set everything else in _ResetViewMappings()
 	}
 

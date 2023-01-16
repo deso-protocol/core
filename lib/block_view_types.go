@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/deso-protocol/core/proto_schemas/entries"
+	"github.com/golang/protobuf/proto"
 	"io"
 	"math"
 	"math/big"
@@ -267,6 +269,7 @@ type DeSoEncoder interface {
 	// always be passed if we're nesting EncodeToBytes in the method implementation.
 	RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte
 	RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error
+	RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error)
 
 	// GetVersionByte should return the version of the DeSoEncoder as a function of EncoderMigrationHeights and blockHeight.
 	// For instance, if we added a new migration at height H and version byte V, we should implement the GetVersionByte
@@ -472,6 +475,10 @@ func (utxo *UtxoEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 	}
 
 	return nil
+}
+
+func (utxo *UtxoEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (utxo *UtxoEntry) GetVersionByte(blockHeight uint64) byte {
@@ -1610,6 +1617,10 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	return nil
 }
 
+func (op *UtxoOperation) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -1660,6 +1671,10 @@ func (opBundle *UtxoOperationBundle) RawDecodeWithoutMetadata(blockHeight uint64
 	}
 
 	return nil
+}
+
+func (opBundle *UtxoOperationBundle) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (opBundle *UtxoOperationBundle) GetVersionByte(blockHeight uint64) byte {
@@ -1856,6 +1871,10 @@ func (message *MessageEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	return nil
 }
 
+func (message *MessageEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (message *MessageEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -1882,6 +1901,10 @@ func (name *GroupKeyName) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes
 	}
 	copy(name[:], nameBytes)
 	return nil
+}
+
+func (name *GroupKeyName) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (name *GroupKeyName) GetVersionByte(blockHeight uint64) byte {
@@ -2081,6 +2104,10 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 	return nil
 }
 
+func (entry *MessagingGroupEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (entry *MessagingGroupEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -2176,6 +2203,10 @@ func (rec *MessagingGroupMember) RawDecodeWithoutMetadata(blockHeight uint64, rr
 	return nil
 }
 
+func (rec *MessagingGroupMember) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (rec *MessagingGroupMember) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -2205,6 +2236,10 @@ func (entry *ForbiddenPubKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, 
 		return errors.Wrapf(err, "ForbiddenPubKeyEntry.Decode: Problem decoding PubKey")
 	}
 	return nil
+}
+
+func (entry *ForbiddenPubKeyEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (entry *ForbiddenPubKeyEntry) GetVersionByte(blockHeight uint64) byte {
@@ -2258,6 +2293,10 @@ func (likeEntry *LikeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 		return errors.Wrapf(err, "LikeEntry.Decode: problem reading LikedPostHash")
 	}
 	return nil
+}
+
+func (likeEntry *LikeEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (likeEntry *LikeEntry) GetVersionByte(blockHeight uint64) byte {
@@ -2398,6 +2437,10 @@ func (nft *NFTEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	return nil
 }
 
+func (nft *NFTEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (nft *NFTEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -2485,6 +2528,10 @@ func (be *NFTBidEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 	return nil
 }
 
+func (be *NFTBidEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (be *NFTBidEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -2546,6 +2593,10 @@ func (bundle *NFTBidEntryBundle) RawDecodeWithoutMetadata(blockHeight uint64, rr
 	}
 
 	return nil
+}
+
+func (bundle *NFTBidEntryBundle) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (bundle *NFTBidEntryBundle) GetVersionByte(blockHeight uint64) byte {
@@ -2659,6 +2710,10 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 	}
 
 	return nil
+}
+
+func (key *DerivedKeyEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
@@ -2793,6 +2848,10 @@ func (de *DiamondEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	return nil
 }
 
+func (de *DiamondEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (de *DiamondEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -2863,6 +2922,10 @@ func (re *RepostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 	return nil
 }
 
+func (re *RepostEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (re *RepostEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -2925,6 +2988,10 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	}
 
 	return nil
+}
+
+func (gp *GlobalParamsEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
@@ -3232,6 +3299,56 @@ func (pe *PostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	return nil
 }
 
+func (pe *PostEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	protoPost := &entries.Post{
+		PostHash:                       EncodeBlockhashToHexString(pe.PostHash),
+		PosterPublicKey:                PkToString(pe.PosterPublicKey, desoParams),
+		ParentStakeID:                  EncodeHexToStringIfNotNull(pe.ParentStakeID),
+		RepostedPostHash:               EncodeBlockhashToHexString(pe.RepostedPostHash),
+		IsQuotedRepost:                 pe.IsQuotedRepost,
+		CreatorBasisPoints:             pe.CreatorBasisPoints,
+		StakeMultipleBasisPoints:       pe.StakeMultipleBasisPoints,
+		ConfirmationBlockHeight:        pe.ConfirmationBlockHeight,
+		TimestampNanos:                 pe.TimestampNanos,
+		IsHidden:                       pe.IsHidden,
+		LikeCount:                      pe.LikeCount,
+		RepostCount:                    pe.RepostCount,
+		QuoteRepostCount:               pe.QuoteRepostCount,
+		DiamondCount:                   pe.DiamondCount,
+		IsDeleted:                      pe.isDeleted,
+		CommentCount:                   pe.CommentCount,
+		IsPinned:                       pe.IsPinned,
+		IsNFT:                          pe.IsNFT,
+		NumNFTCopies:                   pe.NumNFTCopies,
+		NumNFTCopiesForSale:            pe.NumNFTCopiesForSale,
+		NumNFTCopiesBurned:             pe.NumNFTCopiesBurned,
+		HasUnlockable:                  pe.HasUnlockable,
+		NFTRoyaltyToCreatorBasisPoints: pe.NFTRoyaltyToCreatorBasisPoints,
+		NFTRoyaltyToCoinBasisPoints:    pe.NFTRoyaltyToCoinBasisPoints,
+	}
+
+	bodyJSONObj := &DeSoBodySchema{}
+	err := json.Unmarshal(pe.Body, bodyJSONObj)
+	if err != nil {
+		return nil, fmt.Errorf("Error decoding postEntry.Body: %w", err)
+	}
+
+	protoPostBody := &entries.DeSoBodySchema{
+		Body:      bodyJSONObj.Body,
+		ImageURLs: bodyJSONObj.ImageURLs,
+		VideoURLs: bodyJSONObj.VideoURLs,
+	}
+
+	protoPost.Body = protoPostBody
+
+	protoBufBytes, err := proto.Marshal(protoPost)
+	if err != nil {
+		return nil, fmt.Errorf("Error marshalling protobuf post: %w", err)
+	}
+
+	return protoBufBytes, nil
+}
+
 func (pe *PostEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -3325,6 +3442,10 @@ func (be *BalanceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	}
 
 	return nil
+}
+
+func (be *BalanceEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (be *BalanceEntry) GetVersionByte(blockHeight uint64) byte {
@@ -3475,6 +3596,10 @@ func (ce *CoinEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	return nil
 }
 
+func (ce *CoinEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (ce *CoinEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -3509,6 +3634,10 @@ func (pair *PublicKeyRoyaltyPair) RawDecodeWithoutMetadata(blockHeight uint64, r
 		return errors.Wrapf(err, "PublicKeyRoyaltyPair.Decode: problem decoding royalty amount")
 	}
 	return nil
+}
+
+func (pair *PublicKeyRoyaltyPair) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (pair *PublicKeyRoyaltyPair) GetVersionByte(blockHeight uint64) byte {
@@ -3557,6 +3686,10 @@ func (pkid *PKIDEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 	}
 
 	return nil
+}
+
+func (pkid *PKIDEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (pkid *PKIDEntry) GetVersionByte(blockHeight uint64) byte {
@@ -3679,6 +3812,10 @@ func (pe *ProfileEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	}
 
 	return nil
+}
+
+func (pe *ProfileEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (pe *ProfileEntry) GetVersionByte(blockHeight uint64) byte {
@@ -4245,6 +4382,10 @@ func (order *DAOCoinLimitOrderEntry) RawDecodeWithoutMetadata(blockHeight uint64
 	return nil
 }
 
+func (order *DAOCoinLimitOrderEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (order *DAOCoinLimitOrderEntry) GetVersionByte(blockHeight uint64) byte {
 	return byte(0)
 }
@@ -4509,6 +4650,10 @@ func (order *FilledDAOCoinLimitOrder) RawDecodeWithoutMetadata(blockHeight uint6
 	}
 
 	return nil
+}
+
+func (order *FilledDAOCoinLimitOrder) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (order *FilledDAOCoinLimitOrder) GetVersionByte(blockHeight uint64) byte {

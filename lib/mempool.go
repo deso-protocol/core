@@ -788,7 +788,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 		if len(txnsToDump)%1000 == 0 || ii == len(allTxns)-1 {
 			glog.Infof("OpenTempDBAndDumpTxns: Dumping txns %v to %v", ii-len(txnsToDump)+1, ii)
 			err := tempMempoolDB.Update(func(txn *badger.Txn) error {
-				return FlushMempoolToDbWithTxn(txn, nil, blockHeight, txnsToDump)
+				return FlushMempoolToDbWithTxn(txn, nil, blockHeight, txnsToDump, mp.bc.eventManager)
 			})
 			if err != nil {
 				return fmt.Errorf("OpenTempDBAndDumpTxns: Error flushing mempool txns to DB: %v", err)
@@ -936,7 +936,7 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 	// Note that it is safe to use this because we expect that the blockchain
 	// lock is held for the duration of this function call so there shouldn't
 	// be any shifting of the db happening beneath our fee.
-	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres, mp.bc.snapshot)
+	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres, mp.bc.snapshot, mp.bc.eventManager)
 	if err != nil {
 		return 0, errors.Wrapf(err,
 			"_helpConnectDepsAndFinalTxn: Problem initializing UtxoView")
@@ -2423,9 +2423,9 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
 	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string) *DeSoMempool {
 
-	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot)
-	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot)
-	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot)
+	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
+	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
+	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
 	newPool := &DeSoMempool{
 		quit:                            make(chan struct{}),
 		bc:                              _bc,

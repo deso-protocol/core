@@ -2467,6 +2467,10 @@ func (utxoKey *UtxoKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	return nil
 }
 
+func (utxoKey *UtxoKey) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (utxoKey *UtxoKey) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -2537,6 +2541,10 @@ func (desoOutput *DeSoOutput) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 		return errors.Wrapf(err, "DesoOutput.Decode: Problem reading AmountNanos")
 	}
 	return nil
+}
+
+func (desoOutput *DeSoOutput) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (desoOutput *DeSoOutput) GetVersionByte(blockHeight uint64) byte {

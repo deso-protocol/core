@@ -129,7 +129,7 @@ type DBPrefixes struct {
 
 	// Main post index.
 	// <prefix_id, PostHash BlockHash> -> PostEntry
-	PrefixPostHashToPostEntry []byte `prefix_id:"[17]" is_state:"true"`
+	PrefixPostHashToPostEntry []byte `prefix_id:"[17]" is_state:"true" core_state:"true"`
 	// Post sorts
 	// <prefix_id, publicKey [33]byte, PostHash> -> <>
 	PrefixPosterPublicKeyPostHash []byte `prefix_id:"[18]" is_state:"true"`
@@ -148,7 +148,7 @@ type DBPrefixes struct {
 
 	// Main profile index
 	// <prefix_id, PKID [33]byte> -> ProfileEntry
-	PrefixPKIDToProfileEntry []byte `prefix_id:"[23]" is_state:"true"`
+	PrefixPKIDToProfileEntry []byte `prefix_id:"[23]" is_state:"true" core_state:"false"`
 	// Profile sorts
 	// For username, we set the PKID as a value since the username is not fixed width.
 	// We always lowercase usernames when using them as map keys in order to make
@@ -531,6 +531,9 @@ type DBStatePrefixes struct {
 	// StatePrefixesMap maps prefixes to whether they are state (true) or non-state (false) prefixes.
 	StatePrefixesMap map[byte]bool
 
+	// CoreStatePrefixesMap maps prefixes to whether they are core state (true) or non-state (false) prefixes.
+	CoreStatePrefixesMap map[byte]bool
+
 	// StatePrefixesList is a list of state prefixes.
 	StatePrefixesList [][]byte
 
@@ -545,6 +548,7 @@ func GetStatePrefixes() *DBStatePrefixes {
 	statePrefixes := &DBStatePrefixes{}
 	statePrefixes.Prefixes = &DBPrefixes{}
 	statePrefixes.StatePrefixesMap = make(map[byte]bool)
+	statePrefixes.CoreStatePrefixesMap = make(map[byte]bool)
 
 	// Iterate over all the DBPrefixes fields and parse the prefix_id and is_state tags.
 	prefixElements := reflect.ValueOf(statePrefixes.Prefixes).Elem()
@@ -562,6 +566,11 @@ func GetStatePrefixes() *DBStatePrefixes {
 			panic(any(fmt.Errorf("prefix (%v) already exists in StatePrefixesMap. You created a "+
 				"prefix overlap, fix it", structFields.Field(i).Name)))
 		}
+
+		if structFields.Field(i).Tag.Get("core_state") == "true" {
+			statePrefixes.CoreStatePrefixesMap[prefix] = true
+		}
+
 		if structFields.Field(i).Tag.Get("is_state") == "true" {
 			statePrefixes.StatePrefixesMap[prefix] = true
 			statePrefixes.StatePrefixesList = append(statePrefixes.StatePrefixesList, []byte{prefix})
@@ -594,6 +603,16 @@ func isStateKey(key []byte) bool {
 	}
 	prefix := key[0]
 	isState, exists := StatePrefixes.StatePrefixesMap[prefix]
+	return exists && isState
+}
+
+// isStateKey checks if a key is a state-related key.
+func isCoreStateKey(key []byte) bool {
+	if MaxPrefixLen > 1 {
+		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))
+	}
+	prefix := key[0]
+	isState, exists := StatePrefixes.CoreStatePrefixesMap[prefix]
 	return exists && isState
 }
 
@@ -651,7 +670,7 @@ func EncodeKeyAndValueForChecksum(key []byte, value []byte, blockHeight uint64) 
 // DBSetWithTxn is a wrapper around BadgerDB Set function which allows us to add computation
 // prior to DB writes. In particular, we use it to maintain a dynamic LRU cache, compute the
 // state checksum, and to build DB snapshots with ancestral records.
-func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) error {
+func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eventManager *EventManager) error {
 	// We only cache / update ancestral records when we're dealing with state prefix.
 	isState := snap != nil && snap.isState(key)
 	var ancestralValue []byte
@@ -698,6 +717,15 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 			// We also add the new record to the checksum.
 			snap.AddChecksumBytes(key, value)
 		}
+	}
+
+	// If we have an event manager, we fire off the on db transaction event.
+	if eventManager != nil {
+		eventManager.dbTransactionConnected(&DBTransactionEvent{
+			Key:           key,
+			Value:         value,
+			OperationType: "set",
+		})
 	}
 	return nil
 }
@@ -971,7 +999,7 @@ func DBGetPublicKeyForPKID(db *badger.DB, snap *Snapshot, pkidd *PKID) []byte {
 }
 
 func DBPutPKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	publicKey []byte, pkidEntry *PKIDEntry, params *DeSoParams) error {
+	publicKey []byte, pkidEntry *PKIDEntry, params *DeSoParams, eventManager *EventManager) error {
 
 	// If the PKID entry is identical to the public key, there's no point in saving it in the DB.
 	// All functions fetching PKID will already return the public key if PKID was unset.
@@ -983,7 +1011,7 @@ func DBPutPKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint6
 	{
 		prefix := append([]byte{}, Prefixes.PrefixPublicKeyToPKID...)
 		pubKeyToPkidKey := append(prefix, publicKey...)
-		if err := DBSetWithTxn(txn, snap, pubKeyToPkidKey, EncodeToBytes(blockHeight, pkidEntry)); err != nil {
+		if err := DBSetWithTxn(txn, snap, pubKeyToPkidKey, EncodeToBytes(blockHeight, pkidEntry), eventManager); err != nil {
 
 			return errors.Wrapf(err, "DBPutPKIDMappingsWithTxn: Problem "+
 				"adding mapping for pkid: %v public key: %v",
@@ -995,7 +1023,7 @@ func DBPutPKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint6
 	{
 		prefix := append([]byte{}, Prefixes.PrefixPKIDToPublicKey...)
 		pkidToPubKey := append(prefix, pkidEntry.PKID[:]...)
-		if err := DBSetWithTxn(txn, snap, pkidToPubKey, publicKey); err != nil {
+		if err := DBSetWithTxn(txn, snap, pkidToPubKey, publicKey, eventManager); err != nil {
 
 			return errors.Wrapf(err, "DBPutPKIDMappingsWithTxn: Problem "+
 				"adding mapping for pkid: %v public key: %v",
@@ -1191,7 +1219,7 @@ func DbGetDeSoBalanceNanosForPublicKey(db *badger.DB, snap *Snapshot, publicKey 
 }
 
 func DbPutDeSoBalanceForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot,
-	publicKey []byte, balanceNanos uint64) error {
+	publicKey []byte, balanceNanos uint64, eventManager *EventManager) error {
 
 	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutDeSoBalanceForPublicKeyWithTxn: Public key "+
@@ -1200,7 +1228,7 @@ func DbPutDeSoBalanceForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot,
 
 	balanceBytes := EncodeUint64(balanceNanos)
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey), balanceBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey), balanceBytes, eventManager); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutDeSoBalanceForPublicKey: Problem adding balance mapping of %d for: %s ",
@@ -1211,10 +1239,10 @@ func DbPutDeSoBalanceForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot,
 }
 
 func DbPutDeSoBalanceForPublicKey(handle *badger.DB, snap *Snapshot,
-	publicKey []byte, balanceNanos uint64) error {
+	publicKey []byte, balanceNanos uint64, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutDeSoBalanceForPublicKeyWithTxn(txn, snap, publicKey, balanceNanos)
+		return DbPutDeSoBalanceForPublicKeyWithTxn(txn, snap, publicKey, balanceNanos, eventManager)
 	})
 }
 
@@ -1255,7 +1283,7 @@ func _dbSeekPrefixForMessagePublicKey(publicKey []byte) []byte {
 
 // Note that this adds a mapping for the sender *and* the recipient.
 func DBPutMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	messageKey MessageKey, messageEntry *MessageEntry) error {
+	messageKey MessageKey, messageEntry *MessageEntry, eventManager *EventManager) error {
 
 	if err := IsByteArrayValidPublicKey(messageEntry.SenderPublicKey[:]); err != nil {
 		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating sender public key")
@@ -1271,7 +1299,7 @@ func DBPutMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint6
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForMessageEntry(
-		messageKey.PublicKey[:], messageKey.TstampNanos), EncodeToBytes(blockHeight, messageEntry)); err != nil {
+		messageKey.PublicKey[:], messageKey.TstampNanos), EncodeToBytes(blockHeight, messageEntry), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem setting the message (%v)", EncodeToBytes(blockHeight, messageEntry))
 	}
@@ -1280,10 +1308,10 @@ func DBPutMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint6
 }
 
 func DBPutMessageEntry(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	messageKey MessageKey, messageEntry *MessageEntry) error {
+	messageKey MessageKey, messageEntry *MessageEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutMessageEntryWithTxn(txn, snap, blockHeight, messageKey, messageEntry)
+		return DBPutMessageEntryWithTxn(txn, snap, blockHeight, messageKey, messageEntry, eventManager)
 	})
 }
 
@@ -1499,13 +1527,13 @@ func _dbSeekPrefixForMessagingGroupEntry(ownerPublicKey *PublicKey) []byte {
 }
 
 func DBPutMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry) error {
+	ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry, eventManager *EventManager) error {
 
 	messagingKey := &MessagingGroupKey{
 		OwnerPublicKey: *ownerPublicKey,
 		GroupKeyName:   *messagingGroupEntry.MessagingGroupKeyName,
 	}
-	if err := DBSetWithTxn(txn, snap, _dbKeyForMessagingGroupEntry(messagingKey), EncodeToBytes(blockHeight, messagingGroupEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForMessagingGroupEntry(messagingKey), EncodeToBytes(blockHeight, messagingGroupEntry), eventManager); err != nil {
 		return errors.Wrapf(err, "DBPutMessagingGroupEntryWithTxn: Problem adding messaging key entry mapping: ")
 	}
 
@@ -1513,10 +1541,10 @@ func DBPutMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeigh
 }
 
 func DBPutMessagingGroupEntry(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry) error {
+	ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutMessagingGroupEntryWithTxn(txn, snap, blockHeight, ownerPublicKey, messagingGroupEntry)
+		return DBPutMessagingGroupEntryWithTxn(txn, snap, blockHeight, ownerPublicKey, messagingGroupEntry, eventManager)
 	})
 }
 
@@ -1662,7 +1690,7 @@ func _dbSeekPrefixForMessagingGroupMember(memberPublicKey *PublicKey) []byte {
 
 func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
 	messagingGroupMember *MessagingGroupMember, groupOwnerPublicKey *PublicKey,
-	messagingGroupEntry *MessagingGroupEntry) error {
+	messagingGroupEntry *MessagingGroupEntry, eventManager *EventManager) error {
 	// Sanity-check that public keys have the correct length.
 
 	if len(messagingGroupMember.EncryptedKey) < btcec.PrivKeyBytesLen {
@@ -1684,7 +1712,7 @@ func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForMessagingGroupMember(
 		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.MessagingPublicKey),
-		EncodeToBytes(blockHeight, memberGroupEntry)); err != nil {
+		EncodeToBytes(blockHeight, memberGroupEntry), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutMessagingGroupMemberWithTxn: Problem setting messaging recipient with key (%v) "+
 			"and entry (%v) in the db", _dbKeyForMessagingGroupMember(
@@ -1696,10 +1724,10 @@ func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 }
 
 func DBPutMessagingGroupMember(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	messagingGroupMember *MessagingGroupMember, ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry) error {
+	messagingGroupMember *MessagingGroupMember, ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutMessagingGroupMemberWithTxn(txn, snap, blockHeight, messagingGroupMember, ownerPublicKey, messagingGroupEntry)
+		return DBPutMessagingGroupMemberWithTxn(txn, snap, blockHeight, messagingGroupMember, ownerPublicKey, messagingGroupEntry, eventManager)
 	})
 }
 
@@ -1802,24 +1830,24 @@ func _dbKeyForForbiddenBlockSignaturePubKeys(publicKey []byte) []byte {
 	return key
 }
 
-func DbPutForbiddenBlockSignaturePubKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte) error {
+func DbPutForbiddenBlockSignaturePubKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, eventManager *EventManager) error {
 
 	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutForbiddenBlockSignaturePubKeyWithTxn: Forbidden public key "+
 			"length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
 	}
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForForbiddenBlockSignaturePubKeys(publicKey), []byte{}); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForForbiddenBlockSignaturePubKeys(publicKey), []byte{}, eventManager); err != nil {
 		return errors.Wrapf(err, "DbPutForbiddenBlockSignaturePubKeyWithTxn: Problem adding mapping for sender: ")
 	}
 
 	return nil
 }
 
-func DbPutForbiddenBlockSignaturePubKey(handle *badger.DB, snap *Snapshot, publicKey []byte) error {
+func DbPutForbiddenBlockSignaturePubKey(handle *badger.DB, snap *Snapshot, publicKey []byte, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutForbiddenBlockSignaturePubKeyWithTxn(txn, snap, publicKey)
+		return DbPutForbiddenBlockSignaturePubKeyWithTxn(txn, snap, publicKey, eventManager)
 	})
 }
 
@@ -1907,7 +1935,7 @@ func _dbSeekPrefixForLikerPubKeysLikingAPostHash(likedPostHash BlockHash) []byte
 
 // Note that this adds a mapping for the user *and* the liked post.
 func DbPutLikeMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	userPubKey []byte, likedPostHash BlockHash) error {
+	userPubKey []byte, likedPostHash BlockHash, eventManager *EventManager) error {
 
 	if len(userPubKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutLikeMappingsWithTxn: User public key "+
@@ -1915,13 +1943,13 @@ func DbPutLikeMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForLikerPubKeyToLikedPostHashMapping(
-		userPubKey, likedPostHash), []byte{}); err != nil {
+		userPubKey, likedPostHash), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutLikeMappingsWithTxn: Problem adding user to liked post mapping: ")
 	}
 	if err := DBSetWithTxn(txn, snap, _dbKeyForLikedPostHashToLikerPubKeyMapping(
-		likedPostHash, userPubKey), []byte{}); err != nil {
+		likedPostHash, userPubKey), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutLikeMappingsWithTxn: Problem adding liked post to user mapping: ")
@@ -1931,10 +1959,10 @@ func DbPutLikeMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 }
 
 func DbPutLikeMappings(handle *badger.DB, snap *Snapshot,
-	userPubKey []byte, likedPostHash BlockHash) error {
+	userPubKey []byte, likedPostHash BlockHash, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutLikeMappingsWithTxn(txn, snap, userPubKey, likedPostHash)
+		return DbPutLikeMappingsWithTxn(txn, snap, userPubKey, likedPostHash, eventManager)
 	})
 }
 
@@ -2098,7 +2126,7 @@ func _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
 
 // Note that this adds a mapping for the user *and* the reposted post.
 func DbPutRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	repostEntry RepostEntry) error {
+	repostEntry RepostEntry, eventManager *EventManager) error {
 
 	if len(repostEntry.ReposterPubKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutRepostMappingsWithTxn: User public key "+
@@ -2112,7 +2140,7 @@ func DbPutRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uin
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(
-		repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry.RepostPostHash), []byte{}); err != nil {
+		repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry.RepostPostHash), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutRepostMappingsWithTxn: Problem adding user to reposted post mapping: ")
@@ -2122,10 +2150,10 @@ func DbPutRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uin
 }
 
 func DbPutRepostMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	userPubKey []byte, repostedPostHash BlockHash, repostEntry RepostEntry) error {
+	userPubKey []byte, repostedPostHash BlockHash, repostEntry RepostEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutRepostMappingsWithTxn(txn, snap, blockHeight, repostEntry)
+		return DbPutRepostMappingsWithTxn(txn, snap, blockHeight, repostEntry, eventManager)
 	})
 }
 
@@ -2249,7 +2277,7 @@ func _dbSeekPrefixForPKIDsFollowingYou(yourPKID *PKID) []byte {
 
 // Note that this adds a mapping for the follower *and* the pub key being followed.
 func DbPutFollowMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	followerPKID *PKID, followedPKID *PKID) error {
+	followerPKID *PKID, followedPKID *PKID, eventManager *EventManager) error {
 
 	if len(followerPKID) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutFollowMappingsWithTxn: Follower PKID "+
@@ -2261,13 +2289,13 @@ func DbPutFollowMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForFollowerToFollowedMapping(
-		followerPKID, followedPKID), []byte{}); err != nil {
+		followerPKID, followedPKID), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutFollowMappingsWithTxn: Problem adding follower to followed mapping: ")
 	}
 	if err := DBSetWithTxn(txn, snap, _dbKeyForFollowedToFollowerMapping(
-		followedPKID, followerPKID), []byte{}); err != nil {
+		followedPKID, followerPKID), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutFollowMappingsWithTxn: Problem adding followed to follower mapping: ")
@@ -2277,10 +2305,10 @@ func DbPutFollowMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 }
 
 func DbPutFollowMappings(handle *badger.DB, snap *Snapshot,
-	followerPKID *PKID, followedPKID *PKID) error {
+	followerPKID *PKID, followedPKID *PKID, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutFollowMappingsWithTxn(txn, snap, followerPKID, followedPKID)
+		return DbPutFollowMappingsWithTxn(txn, snap, followerPKID, followedPKID, eventManager)
 	})
 }
 
@@ -2496,7 +2524,7 @@ func _dbSeekPrefixForReceiverPKIDAndSenderPKID(receiverPKID *PKID, senderPKID *P
 }
 
 func DbPutDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	diamondEntry *DiamondEntry) error {
+	diamondEntry *DiamondEntry, eventManager *EventManager) error {
 
 	if len(diamondEntry.ReceiverPKID) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutDiamondMappingsWithTxn: Receiver PKID "+
@@ -2508,17 +2536,17 @@ func DbPutDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight ui
 	}
 
 	diamondEntryBytes := EncodeToBytes(blockHeight, diamondEntry)
-	if err := DBSetWithTxn(txn, snap, _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry), diamondEntryBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry), diamondEntryBytes, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DbPutDiamondMappingsWithTxn: Problem adding receiver to giver mapping: ")
 	}
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry), diamondEntryBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry), diamondEntryBytes, eventManager); err != nil {
 		return errors.Wrapf(err, "DbPutDiamondMappingsWithTxn: Problem adding sender to receiver mapping: ")
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry),
-		[]byte{}); err != nil {
+		[]byte{}, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DbPutDiamondMappingsWithTxn: Problem adding DiamondedPostHash Diamonder Diamond Level mapping: ")
 	}
@@ -2527,10 +2555,10 @@ func DbPutDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight ui
 }
 
 func DbPutDiamondMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	diamondEntry *DiamondEntry) error {
+	diamondEntry *DiamondEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutDiamondMappingsWithTxn(txn, snap, blockHeight, diamondEntry)
+		return DbPutDiamondMappingsWithTxn(txn, snap, blockHeight, diamondEntry, eventManager)
 	})
 }
 
@@ -2767,8 +2795,8 @@ func _keyForBitcoinBurnTxID(bitcoinBurnTxID *BlockHash) []byte {
 	return append(prefixCopy, bitcoinBurnTxID[:]...)
 }
 
-func DbPutBitcoinBurnTxIDWithTxn(txn *badger.Txn, snap *Snapshot, bitcoinBurnTxID *BlockHash) error {
-	return DBSetWithTxn(txn, snap, _keyForBitcoinBurnTxID(bitcoinBurnTxID), []byte{})
+func DbPutBitcoinBurnTxIDWithTxn(txn *badger.Txn, snap *Snapshot, bitcoinBurnTxID *BlockHash, eventManager *EventManager) error {
+	return DBSetWithTxn(txn, snap, _keyForBitcoinBurnTxID(bitcoinBurnTxID), []byte{}, eventManager)
 }
 
 func DbExistsBitcoinBurnTxIDWithTxn(txn *badger.Txn, snap *Snapshot, bitcoinBurnTxID *BlockHash) bool {
@@ -2850,13 +2878,13 @@ func DecodeUint64(scoreBytes []byte) uint64 {
 	return binary.BigEndian.Uint64(scoreBytes)
 }
 
-func DbPutNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot, nanosPurchased uint64) error {
-	return DBSetWithTxn(txn, snap, Prefixes.PrefixNanosPurchased, EncodeUint64(nanosPurchased))
+func DbPutNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot, nanosPurchased uint64, eventManager *EventManager) error {
+	return DBSetWithTxn(txn, snap, Prefixes.PrefixNanosPurchased, EncodeUint64(nanosPurchased), eventManager)
 }
 
-func DbPutNanosPurchased(handle *badger.DB, snap *Snapshot, nanosPurchased uint64) error {
+func DbPutNanosPurchased(handle *badger.DB, snap *Snapshot, nanosPurchased uint64, eventManager *EventManager) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutNanosPurchasedWithTxn(txn, snap, nanosPurchased)
+		return DbPutNanosPurchasedWithTxn(txn, snap, nanosPurchased, eventManager)
 	})
 }
 
@@ -2880,17 +2908,17 @@ func DbGetNanosPurchased(handle *badger.DB, snap *Snapshot) uint64 {
 }
 
 func DbPutGlobalParamsEntry(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	globalParamsEntry GlobalParamsEntry) error {
+	globalParamsEntry GlobalParamsEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutGlobalParamsEntryWithTxn(txn, snap, blockHeight, globalParamsEntry)
+		return DbPutGlobalParamsEntryWithTxn(txn, snap, blockHeight, globalParamsEntry, eventManager)
 	})
 }
 
 func DbPutGlobalParamsEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	globalParamsEntry GlobalParamsEntry) error {
+	globalParamsEntry GlobalParamsEntry, eventManager *EventManager) error {
 
-	err := DBSetWithTxn(txn, snap, Prefixes.PrefixGlobalParams, EncodeToBytes(blockHeight, &globalParamsEntry))
+	err := DBSetWithTxn(txn, snap, Prefixes.PrefixGlobalParams, EncodeToBytes(blockHeight, &globalParamsEntry), eventManager)
 	if err != nil {
 		return errors.Wrapf(err, "DbPutGlobalParamsEntryWithTxn: Problem adding global params entry to db: ")
 	}
@@ -2919,10 +2947,10 @@ func DbGetGlobalParamsEntry(handle *badger.DB, snap *Snapshot) *GlobalParamsEntr
 }
 
 func DbPutUSDCentsPerBitcoinExchangeRateWithTxn(txn *badger.Txn, snap *Snapshot,
-	usdCentsPerBitcoinExchangeRate uint64) error {
+	usdCentsPerBitcoinExchangeRate uint64, eventManager *EventManager) error {
 
 	return DBSetWithTxn(txn, snap, Prefixes.PrefixUSDCentsPerBitcoinExchangeRate,
-		EncodeUint64(usdCentsPerBitcoinExchangeRate))
+		EncodeUint64(usdCentsPerBitcoinExchangeRate), eventManager)
 }
 
 func DbGetUSDCentsPerBitcoinExchangeRateWithTxn(txn *badger.Txn, snap *Snapshot) uint64 {
@@ -2991,14 +3019,14 @@ func _UtxoKeyFromDbKey(utxoDbKey []byte) *UtxoKey {
 	}
 }
 
-func PutUtxoNumEntriesWithTxn(txn *badger.Txn, snap *Snapshot, newNumEntries uint64) error {
-	return DBSetWithTxn(txn, snap, Prefixes.PrefixUtxoNumEntries, EncodeUint64(newNumEntries))
+func PutUtxoNumEntriesWithTxn(txn *badger.Txn, snap *Snapshot, newNumEntries uint64, eventManager *EventManager) error {
+	return DBSetWithTxn(txn, snap, Prefixes.PrefixUtxoNumEntries, EncodeUint64(newNumEntries), eventManager)
 }
 
 func PutUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	utxoKey *UtxoKey, utxoEntry *UtxoEntry) error {
+	utxoKey *UtxoKey, utxoEntry *UtxoEntry, eventManager *EventManager) error {
 
-	return DBSetWithTxn(txn, snap, _DbKeyForUtxoKey(utxoKey), EncodeToBytes(blockHeight, utxoEntry))
+	return DBSetWithTxn(txn, snap, _DbKeyForUtxoKey(utxoKey), EncodeToBytes(blockHeight, utxoEntry), eventManager)
 }
 
 func DbGetUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, utxoKey *UtxoKey) *UtxoEntry {
@@ -3040,7 +3068,7 @@ func DeletePubKeyUtxoKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 	return DBDeleteWithTxn(txn, snap, keyToDelete)
 }
 
-func PutPubKeyUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, utxoKey *UtxoKey) error {
+func PutPubKeyUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, utxoKey *UtxoKey, eventManager *EventManager) error {
 	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("PutPubKeyUtxoKeyWithTxn: Public key has improper length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
 	}
@@ -3048,7 +3076,7 @@ func PutPubKeyUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, 
 	keyToAdd := append(append([]byte{}, Prefixes.PrefixPubKeyUtxoKey...), publicKey...)
 	keyToAdd = append(keyToAdd, _SerializeUtxoKey(utxoKey)...)
 
-	return DBSetWithTxn(txn, snap, keyToAdd, []byte{})
+	return DBSetWithTxn(txn, snap, keyToAdd, []byte{}, eventManager)
 }
 
 // DbGetUtxosForPubKey finds the UtxoEntry's corresponding to the public
@@ -3139,14 +3167,14 @@ func DeleteUnmodifiedMappingsForUtxoWithTxn(txn *badger.Txn, snap *Snapshot, utx
 }
 
 func PutMappingsForUtxoWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	utxoKey *UtxoKey, utxoEntry *UtxoEntry) error {
+	utxoKey *UtxoKey, utxoEntry *UtxoEntry, eventManager *EventManager) error {
 	// Put the <utxoKey -> utxoEntry> mapping.
-	if err := PutUtxoEntryForUtxoKeyWithTxn(txn, snap, blockHeight, utxoKey, utxoEntry); err != nil {
+	if err := PutUtxoEntryForUtxoKeyWithTxn(txn, snap, blockHeight, utxoKey, utxoEntry, eventManager); err != nil {
 		return nil
 	}
 
 	// Put the <pubkey, utxoKey> -> <> mapping.
-	if err := PutPubKeyUtxoKeyWithTxn(txn, snap, utxoEntry.PublicKey, utxoKey); err != nil {
+	if err := PutPubKeyUtxoKeyWithTxn(txn, snap, utxoEntry.PublicKey, utxoKey, eventManager); err != nil {
 		return err
 	}
 
@@ -3184,12 +3212,12 @@ func GetUtxoOperationsForBlock(handle *badger.DB, snap *Snapshot, blockHash *Blo
 }
 
 func PutUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	blockHash *BlockHash, utxoOpsForBlock [][]*UtxoOperation) error {
+	blockHash *BlockHash, utxoOpsForBlock [][]*UtxoOperation, eventManager *EventManager) error {
 
 	opBundle := &UtxoOperationBundle{
 		UtxoOpBundle: utxoOpsForBlock,
 	}
-	return DBSetWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash), EncodeToBytes(blockHeight, opBundle))
+	return DBSetWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash), EncodeToBytes(blockHeight, opBundle), eventManager)
 }
 
 func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHash *BlockHash) error {
@@ -3334,19 +3362,19 @@ func DbGetBestHash(handle *badger.DB, snap *Snapshot, chainType ChainType) *Bloc
 }
 
 func PutBestHashWithTxn(txn *badger.Txn, snap *Snapshot,
-	bh *BlockHash, chainType ChainType) error {
+	bh *BlockHash, chainType ChainType, eventManager *EventManager) error {
 
 	prefix := _prefixForChainType(chainType)
 	if len(prefix) == 0 {
 		glog.Errorf("PutBestHashWithTxn: Problem getting prefix for ChainType: %d", chainType)
 		return nil
 	}
-	return DBSetWithTxn(txn, snap, prefix, bh[:])
+	return DBSetWithTxn(txn, snap, prefix, bh[:], eventManager)
 }
 
-func PutBestHash(handle *badger.DB, snap *Snapshot, bh *BlockHash, chainType ChainType) error {
+func PutBestHash(handle *badger.DB, snap *Snapshot, bh *BlockHash, chainType ChainType, eventManager *EventManager) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return PutBestHashWithTxn(txn, snap, bh, chainType)
+		return PutBestHashWithTxn(txn, snap, bh, chainType, eventManager)
 	})
 }
 
@@ -3401,7 +3429,7 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB, snap *Snapshot) (*MsgDeSo
 	return blockRet, nil
 }
 
-func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
+func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
 	if desoBlock.Header == nil {
 		return fmt.Errorf("PutBlockWithTxn: Header was nil in block %v", desoBlock)
 	}
@@ -3421,7 +3449,7 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 		return nil
 	}
 	// If the block is not in the db then set it.
-	if err := DBSetWithTxn(txn, snap, blockKey, data); err != nil {
+	if err := DBSetWithTxn(txn, snap, blockKey, data, eventManager); err != nil {
 		return err
 	}
 
@@ -3447,7 +3475,7 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 		pkMapKey := pkMapKeyIter
 
 		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
-		if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward)); err != nil {
+		if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward), eventManager); err != nil {
 			return err
 		}
 	}
@@ -3455,9 +3483,9 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 	return nil
 }
 
-func PutBlock(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
+func PutBlock(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
 	err := handle.Update(func(txn *badger.Txn) error {
-		return PutBlockWithTxn(txn, snap, desoBlock)
+		return PutBlockWithTxn(txn, snap, desoBlock, eventManager)
 	})
 	if err != nil {
 		return err
@@ -3580,7 +3608,7 @@ func GetHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot,
 }
 
 func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
-	node *BlockNode, bitcoinNodes bool) error {
+	node *BlockNode, bitcoinNodes bool, eventManager *EventManager) error {
 
 	key := _heightHashToNodeIndexKey(node.Height, node.Hash, bitcoinNodes)
 	serializedNode, err := SerializeBlockNode(node)
@@ -3588,15 +3616,15 @@ func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 		return errors.Wrapf(err, "PutHeightHashToNodeInfoWithTxn: Problem serializing node")
 	}
 
-	if err := DBSetWithTxn(txn, snap, key, serializedNode); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, serializedNode, eventManager); err != nil {
 		return err
 	}
 	return nil
 }
 
-func PutHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot, node *BlockNode, bitcoinNodes bool) error {
+func PutHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot, node *BlockNode, bitcoinNodes bool, eventManager *EventManager) error {
 	err := handle.Update(func(txn *badger.Txn) error {
-		return PutHeightHashToNodeInfoWithTxn(txn, snap, node, bitcoinNodes)
+		return PutHeightHashToNodeInfoWithTxn(txn, snap, node, bitcoinNodes, eventManager)
 	})
 
 	if err != nil {
@@ -3647,8 +3675,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -3661,21 +3689,21 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		snap.PrepareAncestralRecordsFlush()
 	}
 
-	if err := PutBestHash(handle, snap, blockHash, ChainTypeDeSoBlock); err != nil {
+	if err := PutBestHash(handle, snap, blockHash, ChainTypeDeSoBlock, eventManager); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
 	}
 	// Add the genesis block to the (hash -> block) index.
-	if err := PutBlock(handle, snap, genesisBlock); err != nil {
+	if err := PutBlock(handle, snap, genesisBlock, eventManager); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block into db")
 	}
 	// Add the genesis block to the (height, hash -> node info) index in the db.
-	if err := PutHeightHashToNodeInfo(handle, snap, genesisNode, false /*bitcoinNodes*/); err != nil {
+	if err := PutHeightHashToNodeInfo(handle, snap, genesisNode, false /*bitcoinNodes*/, eventManager); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting (height, hash -> node) in db")
 	}
-	if err := DbPutNanosPurchased(handle, snap, params.DeSoNanosPurchasedAtGenesis); err != nil {
+	if err := DbPutNanosPurchased(handle, snap, params.DeSoNanosPurchasedAtGenesis, eventManager); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
 	}
-	if err := DbPutGlobalParamsEntry(handle, snap, 0, InitialGlobalParamsEntry); err != nil {
+	if err := DbPutGlobalParamsEntry(handle, snap, 0, InitialGlobalParamsEntry, eventManager); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting GlobalParamsEntry into db for block chain")
 	}
 
@@ -3692,7 +3720,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	// think things are initialized because we set the best block hash at the
 	// top. We should fix this at some point so that an error in this step
 	// wipes out the best hash.
-	utxoView, err := NewUtxoView(handle, params, nil, snap)
+	utxoView, err := NewUtxoView(handle, params, nil, snap, eventManager)
 	if err != nil {
 		return fmt.Errorf(
 			"InitDbWithDeSoGenesisBlock: Error initializing UtxoView")
@@ -3967,13 +3995,13 @@ func DbGetTxindexTip(handle *badger.DB, snap *Snapshot) *BlockHash {
 	return _getBlockHashForPrefix(handle, snap, Prefixes.PrefixTransactionIndexTip)
 }
 
-func DbPutTxindexTipWithTxn(txn *badger.Txn, snap *Snapshot, tipHash *BlockHash) error {
-	return DBSetWithTxn(txn, snap, Prefixes.PrefixTransactionIndexTip, tipHash[:])
+func DbPutTxindexTipWithTxn(txn *badger.Txn, snap *Snapshot, tipHash *BlockHash, eventManager *EventManager) error {
+	return DBSetWithTxn(txn, snap, Prefixes.PrefixTransactionIndexTip, tipHash[:], eventManager)
 }
 
-func DbPutTxindexTip(handle *badger.DB, snap *Snapshot, tipHash *BlockHash) error {
+func DbPutTxindexTip(handle *badger.DB, snap *Snapshot, tipHash *BlockHash, eventManager *EventManager) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutTxindexTipWithTxn(txn, snap, tipHash)
+		return DbPutTxindexTipWithTxn(txn, snap, tipHash, eventManager)
 	})
 }
 
@@ -4082,12 +4110,12 @@ func _DbGetTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, 
 }
 
 func DbPutTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot,
-	publicKey []byte, nextIndex uint64) error {
+	publicKey []byte, nextIndex uint64, eventManager *EventManager) error {
 
 	key := _DbTxindexPublicKeyNextIndexPrefix(publicKey)
 	valBuf := UintToBuf(nextIndex)
 
-	return DBSetWithTxn(txn, snap, key, valBuf)
+	return DBSetWithTxn(txn, snap, key, valBuf, eventManager)
 }
 
 func DbDeleteTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte) error {
@@ -4096,22 +4124,22 @@ func DbDeleteTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot
 }
 
 func DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(txn *badger.Txn, snap *Snapshot,
-	publicKey []byte, txID *BlockHash) error {
+	publicKey []byte, txID *BlockHash, eventManager *EventManager) error {
 
 	nextIndex := _DbGetTxindexNextIndexForPublicKeyWithTxn(txn, snap, publicKey)
 	if nextIndex == nil {
 		return fmt.Errorf("Error getting next index")
 	}
 	key := DbTxindexPublicKeyIndexToTxnKey(publicKey, uint32(*nextIndex))
-	err := DbPutTxindexNextIndexForPublicKeyWithTxn(txn, snap, publicKey, uint64(*nextIndex+1))
+	err := DbPutTxindexNextIndexForPublicKeyWithTxn(txn, snap, publicKey, uint64(*nextIndex+1), eventManager)
 	if err != nil {
 		return err
 	}
-	return DBSetWithTxn(txn, snap, key, txID[:])
+	return DBSetWithTxn(txn, snap, key, txID[:], eventManager)
 }
 
 func DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(txn *badger.Txn,
-	snap *Snapshot, publicKey []byte, txID *BlockHash) error {
+	snap *Snapshot, publicKey []byte, txID *BlockHash, eventManager *EventManager) error {
 
 	// Get all the mappings corresponding to the public key passed in.
 	// TODO: This is inefficient but reorgs are rare so whatever.
@@ -4147,7 +4175,7 @@ func DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(txn *badger.Txn,
 
 	// Re-add all the mappings to the db except the one we just deleted.
 	for _, singleTxID := range txIDsInDB {
-		if err := DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, publicKey, singleTxID); err != nil {
+		if err := DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, publicKey, singleTxID, eventManager); err != nil {
 			return err
 		}
 	}
@@ -4190,6 +4218,10 @@ func (pk *AffectedPublicKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	pk.Metadata = string(metadataBytes)
 
 	return nil
+}
+
+func (pk *AffectedPublicKey) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (pk *AffectedPublicKey) GetVersionByte(blockHeight uint64) byte {
@@ -4277,6 +4309,10 @@ func (txnMeta *BasicTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 	return nil
 }
 
+func (txnMeta *BasicTransferTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *BasicTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -4346,6 +4382,10 @@ func (txnMeta *BitcoinExchangeTxindexMetadata) RawDecodeWithoutMetadata(blockHei
 	return nil
 }
 
+func (txnMeta *BitcoinExchangeTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *BitcoinExchangeTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -4413,6 +4453,10 @@ func (txnMeta *CreatorCoinTxindexMetadata) RawDecodeWithoutMetadata(blockHeight 
 	return nil
 }
 
+func (txnMeta *CreatorCoinTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *CreatorCoinTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -4467,6 +4511,10 @@ func (txnMeta *CreatorCoinTransferTxindexMetadata) RawDecodeWithoutMetadata(bloc
 	return nil
 }
 
+func (txnMeta *CreatorCoinTransferTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *CreatorCoinTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -4503,6 +4551,10 @@ func (txnMeta *DAOCoinTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHei
 	}
 	txnMeta.DAOCoinToTransferNanos = *DAOCoinToTransferNanos
 	return nil
+}
+
+func (txnMeta *DAOCoinTransferTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (txnMeta *DAOCoinTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
@@ -4566,6 +4618,10 @@ func (txnMeta *DAOCoinTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint
 	txnMeta.TransferRestrictionStatus = string(transferRestrictionStatusBytes)
 
 	return nil
+}
+
+func (txnMeta *DAOCoinTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (txnMeta *DAOCoinTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
@@ -4640,6 +4696,10 @@ func (orderMeta *FilledDAOCoinLimitOrderMetadata) RawDecodeWithoutMetadata(block
 	return nil
 }
 
+func (orderMeta *FilledDAOCoinLimitOrderMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (orderMeta *FilledDAOCoinLimitOrderMetadata) GetVersionByte(blockHeight uint64) byte {
 	return byte(0)
 }
@@ -4707,6 +4767,10 @@ func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawDecodeWithoutMetadata(blockH
 		daoMeta.FilledDAOCoinLimitOrdersMetadata = append(daoMeta.FilledDAOCoinLimitOrdersMetadata, filledDAOCoinLimitOrderMetadata)
 	}
 	return nil
+}
+
+func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (daoMeta *DAOCoinLimitOrderTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
@@ -4789,6 +4853,10 @@ func (txnMeta *UpdateProfileTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 	return nil
 }
 
+func (txnMeta *UpdateProfileTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *UpdateProfileTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -4833,6 +4901,10 @@ func (txnMeta *SubmitPostTxindexMetadata) RawDecodeWithoutMetadata(blockHeight u
 	return nil
 }
 
+func (txnMeta *SubmitPostTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *SubmitPostTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -4873,6 +4945,10 @@ func (txnMeta *LikeTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	return nil
 }
 
+func (txnMeta *LikeTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *LikeTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -4902,6 +4978,10 @@ func (txnMeta *FollowTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint6
 		return errors.Wrapf(err, "FollowTxindexMetadata.Decode: Problem reading IsUnfollow")
 	}
 	return nil
+}
+
+func (txnMeta *FollowTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (txnMeta *FollowTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
@@ -4934,6 +5014,10 @@ func (txnMeta *PrivateMessageTxindexMetadata) RawDecodeWithoutMetadata(blockHeig
 		return errors.Wrapf(err, "PrivateMessageTxindexMetadata.Decode: Problem reading TimestampNanos")
 	}
 	return nil
+}
+
+func (txnMeta *PrivateMessageTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (txnMeta *PrivateMessageTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
@@ -4991,6 +5075,10 @@ func (txnMeta *SwapIdentityTxindexMetadata) RawDecodeWithoutMetadata(blockHeight
 	return nil
 }
 
+func (txnMeta *SwapIdentityTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *SwapIdentityTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -5045,6 +5133,10 @@ func (txnMeta *NFTRoyaltiesMetadata) RawDecodeWithoutMetadata(blockHeight uint64
 		return errors.Wrapf(err, "NFTRoyaltiesMetadata.Decode: Problem reading AdditionalDESORoyaltiesMap")
 	}
 	return nil
+}
+
+func (txnMeta *NFTRoyaltiesMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (txnMeta *NFTRoyaltiesMetadata) GetVersionByte(blockHeight uint64) byte {
@@ -5113,6 +5205,10 @@ func (txnMeta *NFTBidTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint6
 	return nil
 }
 
+func (txnMeta *NFTBidTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *NFTBidTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -5163,6 +5259,10 @@ func (txnMeta *AcceptNFTBidTxindexMetadata) RawDecodeWithoutMetadata(blockHeight
 	return nil
 }
 
+func (txnMeta *AcceptNFTBidTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *AcceptNFTBidTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -5202,6 +5302,10 @@ func (txnMeta *NFTTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHeight 
 	return nil
 }
 
+func (txnMeta *NFTTransferTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *NFTTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -5237,6 +5341,10 @@ func (txnMeta *AcceptNFTTransferTxindexMetadata) RawDecodeWithoutMetadata(blockH
 		return errors.Wrapf(err, "AcceptNFTTransferTxindexMetadata.Decode: problem reading SerialNumber")
 	}
 	return nil
+}
+
+func (txnMeta *AcceptNFTTransferTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (txnMeta *AcceptNFTTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
@@ -5275,6 +5383,10 @@ func (txnMeta *BurnNFTTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint
 		return errors.Wrapf(err, "BurnNFTTxindexMetadata.Decode: problem reading SerialNumber")
 	}
 	return nil
+}
+
+func (txnMeta *BurnNFTTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (txnMeta *BurnNFTTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
@@ -5322,6 +5434,10 @@ func (txnMeta *CreateNFTTxindexMetadata) RawDecodeWithoutMetadata(blockHeight ui
 	return nil
 }
 
+func (txnMeta *CreateNFTTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *CreateNFTTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -5358,6 +5474,10 @@ func (txnMeta *UpdateNFTTxindexMetadata) RawDecodeWithoutMetadata(blockHeight ui
 
 	}
 	return nil
+}
+
+func (txnMeta *UpdateNFTTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (txnMeta *UpdateNFTTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
@@ -5659,6 +5779,10 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	return nil
 }
 
+func (txnMeta *TransactionMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -5709,17 +5833,17 @@ func DbGetTxindexTransactionRefByTxID(handle *badger.DB, snap *Snapshot, txID *B
 	return valObj
 }
 func DbPutTxindexTransactionWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	txID *BlockHash, txnMeta *TransactionMetadata) error {
+	txID *BlockHash, txnMeta *TransactionMetadata, eventManager *EventManager) error {
 
 	key := append(append([]byte{}, Prefixes.PrefixTransactionIDToMetadata...), txID[:]...)
-	return DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, txnMeta))
+	return DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, txnMeta), eventManager)
 }
 
 func DbPutTxindexTransaction(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	txID *BlockHash, txnMeta *TransactionMetadata) error {
+	txID *BlockHash, txnMeta *TransactionMetadata, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutTxindexTransactionWithTxn(txn, snap, blockHeight, txID, txnMeta)
+		return DbPutTxindexTransactionWithTxn(txn, snap, blockHeight, txID, txnMeta, eventManager)
 	})
 }
 
@@ -5764,11 +5888,11 @@ func _getPublicKeysForTxn(
 }
 
 func DbPutTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	desoTxn *MsgDeSoTxn, params *DeSoParams, txnMeta *TransactionMetadata) error {
+	desoTxn *MsgDeSoTxn, params *DeSoParams, txnMeta *TransactionMetadata, eventManager *EventManager) error {
 
 	txID := desoTxn.Hash()
 
-	if err := DbPutTxindexTransactionWithTxn(txn, snap, blockHeight, txID, txnMeta); err != nil {
+	if err := DbPutTxindexTransactionWithTxn(txn, snap, blockHeight, txID, txnMeta, eventManager); err != nil {
 		return fmt.Errorf("Problem adding txn to txindex transaction index: %v", err)
 	}
 
@@ -5780,7 +5904,7 @@ func DbPutTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blo
 		pkFound := pkFoundIter
 
 		// Simply add a new entry for each of the public keys found.
-		if err := DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, pkFound[:], txID); err != nil {
+		if err := DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, pkFound[:], txID, eventManager); err != nil {
 			return err
 		}
 	}
@@ -5790,16 +5914,16 @@ func DbPutTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blo
 }
 
 func DbPutTxindexTransactionMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	desoTxn *MsgDeSoTxn, params *DeSoParams, txnMeta *TransactionMetadata) error {
+	desoTxn *MsgDeSoTxn, params *DeSoParams, txnMeta *TransactionMetadata, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbPutTxindexTransactionMappingsWithTxn(
-			txn, snap, blockHeight, desoTxn, params, txnMeta)
+			txn, snap, blockHeight, desoTxn, params, txnMeta, eventManager)
 	})
 }
 
 func DbDeleteTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	desoTxn *MsgDeSoTxn, params *DeSoParams) error {
+	desoTxn *MsgDeSoTxn, params *DeSoParams, eventManager *EventManager) error {
 
 	txID := desoTxn.Hash()
 
@@ -5815,7 +5939,7 @@ func DbDeleteTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, 
 	// For each public key found, delete the txID mapping from the db.
 	for pkFoundIter := range publicKeys {
 		pkFound := pkFoundIter
-		if err := DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, pkFound[:], txID); err != nil {
+		if err := DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, pkFound[:], txID, eventManager); err != nil {
 			return err
 		}
 	}
@@ -5831,10 +5955,10 @@ func DbDeleteTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, 
 }
 
 func DbDeleteTxindexTransactionMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	desoTxn *MsgDeSoTxn, params *DeSoParams) error {
+	desoTxn *MsgDeSoTxn, params *DeSoParams, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteTxindexTransactionMappingsWithTxn(txn, snap, blockHeight, desoTxn, params)
+		return DbDeleteTxindexTransactionMappingsWithTxn(txn, snap, blockHeight, desoTxn, params, eventManager)
 	})
 }
 
@@ -6046,10 +6170,10 @@ func DBDeletePostEntryMappings(handle *badger.DB, snap *Snapshot,
 }
 
 func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	postEntry *PostEntry, params *DeSoParams) error {
+	postEntry *PostEntry, params *DeSoParams, eventManager *EventManager) error {
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForPostEntryHash(
-		postEntry.PostHash), EncodeToBytes(blockHeight, postEntry)); err != nil {
+		postEntry.PostHash), EncodeToBytes(blockHeight, postEntry), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 			"adding mapping for post: %v", postEntry.PostHash)
@@ -6075,7 +6199,7 @@ func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight 
 		}
 		parentStakeIDKey := _dbKeyForCommentParentStakeIDToPostHash(
 			extendedStakeID, postEntry.TimestampNanos, postEntry.PostHash)
-		if err := DBSetWithTxn(txn, snap, parentStakeIDKey, []byte{}); err != nil {
+		if err := DBSetWithTxn(txn, snap, parentStakeIDKey, []byte{}, eventManager); err != nil {
 
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for comment: %v: %v", postEntry, err)
@@ -6083,25 +6207,25 @@ func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight 
 
 	} else {
 		if err := DBSetWithTxn(txn, snap, _dbKeyForPosterPublicKeyTimestampPostHash(
-			postEntry.PosterPublicKey, postEntry.TimestampNanos, postEntry.PostHash), []byte{}); err != nil {
+			postEntry.PosterPublicKey, postEntry.TimestampNanos, postEntry.PostHash), []byte{}, eventManager); err != nil {
 
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for public key: %v: %v", postEntry, err)
 		}
 		if err := DBSetWithTxn(txn, snap, _dbKeyForTstampPostHash(
-			postEntry.TimestampNanos, postEntry.PostHash), []byte{}); err != nil {
+			postEntry.TimestampNanos, postEntry.PostHash), []byte{}, eventManager); err != nil {
 
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for tstamp: %v", postEntry)
 		}
 		if err := DBSetWithTxn(txn, snap, _dbKeyForCreatorBpsPostHash(
-			postEntry.CreatorBasisPoints, postEntry.PostHash), []byte{}); err != nil {
+			postEntry.CreatorBasisPoints, postEntry.PostHash), []byte{}, eventManager); err != nil {
 
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for creatorBps: %v", postEntry)
 		}
 		if err := DBSetWithTxn(txn, snap, _dbKeyForStakeMultipleBpsPostHash(
-			postEntry.StakeMultipleBasisPoints, postEntry.PostHash), []byte{}); err != nil {
+			postEntry.StakeMultipleBasisPoints, postEntry.PostHash), []byte{}, eventManager); err != nil {
 
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for stakeMultipleBps: %v", postEntry)
@@ -6115,12 +6239,12 @@ func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight 
 			RepostedPostHash: postEntry.RepostedPostHash,
 			ReposterPubKey:   postEntry.PosterPublicKey,
 		}
-		if err := DbPutRepostMappingsWithTxn(txn, snap, blockHeight, repostEntry); err != nil {
+		if err := DbPutRepostMappingsWithTxn(txn, snap, blockHeight, repostEntry, eventManager); err != nil {
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding mapping for repostPostHash to ReposterPubKey: %v", err)
 		}
 		if err := DBSetWithTxn(txn, snap,
 			_dbKeyForRepostedPostHashReposterPubKey(postEntry.RepostedPostHash, postEntry.PosterPublicKey),
-			[]byte{}); err != nil {
+			[]byte{}, eventManager); err != nil {
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding "+
 				"mapping for _dbKeyForRepostedPostHashReposterPubKey: %v", err)
 		}
@@ -6129,7 +6253,7 @@ func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight 
 		if err := DBSetWithTxn(txn, snap,
 			_dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
 				postEntry.RepostedPostHash, postEntry.PosterPublicKey, postEntry.PostHash),
-			[]byte{}); err != nil {
+			[]byte{}, eventManager); err != nil {
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding "+
 				"mapping for _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash: %v", err)
 		}
@@ -6138,10 +6262,10 @@ func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight 
 }
 
 func DBPutPostEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	postEntry *PostEntry, params *DeSoParams) error {
+	postEntry *PostEntry, params *DeSoParams, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutPostEntryMappingsWithTxn(txn, snap, blockHeight, postEntry, params)
+		return DBPutPostEntryMappingsWithTxn(txn, snap, blockHeight, postEntry, params, eventManager)
 	})
 }
 
@@ -6453,18 +6577,18 @@ func DBDeleteNFTMappings(
 	})
 }
 
-func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, nftEntry *NFTEntry) error {
+func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, nftEntry *NFTEntry, eventManager *EventManager) error {
 	nftEntryBytes := EncodeToBytes(blockHeight, nftEntry)
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForNFTPostHashSerialNumber(
-		nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
+		nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes, eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
 			"adding mapping for post: %v, serial number: %d", nftEntry.NFTPostHash, nftEntry.SerialNumber)
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(
-		nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
+		nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes, eventManager); err != nil {
 		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
 			"adding mapping for pkid: %v, post: %v, serial number: %d", nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber)
 	}
@@ -6472,10 +6596,10 @@ func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight u
 	return nil
 }
 
-func DBPutNFTEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64, nftEntry *NFTEntry) error {
+func DBPutNFTEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64, nftEntry *NFTEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutNFTEntryMappingsWithTxn(txn, snap, blockHeight, nftEntry)
+		return DBPutNFTEntryMappingsWithTxn(txn, snap, blockHeight, nftEntry, eventManager)
 	})
 }
 
@@ -6555,13 +6679,13 @@ func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, s
 
 // TODO: are we sure we want to pass a pointer to an array here?
 func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
+	nftKey NFTKey, nftBidEntries *[]*NFTBidEntry, eventManager *EventManager) error {
 
 	nftBidEntryBundle := &NFTBidEntryBundle{
 		nftBidEntryBundle: *nftBidEntries,
 	}
 	if err := DBSetWithTxn(txn, snap, _dbKeyForPostHashSerialNumberToAcceptedBidEntries(
-		&nftKey.NFTPostHash, nftKey.SerialNumber), EncodeToBytes(blockHeight, nftBidEntryBundle)); err != nil {
+		&nftKey.NFTPostHash, nftKey.SerialNumber), EncodeToBytes(blockHeight, nftBidEntryBundle), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutAcceptedNFTBidEntriesMappingWithTxn: Problem "+
 			"adding accepted bid mapping for post: %v, serial number: %d", nftKey.NFTPostHash, nftKey.SerialNumber)
@@ -6570,10 +6694,10 @@ func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, snap *Snapshot, b
 }
 
 func DBPutAcceptedNFTBidEntriesMapping(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
+	nftKey NFTKey, nftBidEntries *[]*NFTBidEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, snap, blockHeight, nftKey, nftBidEntries)
+		return DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, snap, blockHeight, nftKey, nftBidEntries, eventManager)
 	})
 }
 
@@ -6729,13 +6853,13 @@ func DBDeleteNFTBidMappings(handle *badger.DB, snap *Snapshot, nftBidKey *NFTBid
 	})
 }
 
-func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftBidEntry *NFTBidEntry) error {
+func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftBidEntry *NFTBidEntry, eventManager *EventManager) error {
 	// We store two indexes for NFT bids. (1) sorted by bid amount nanos in the key and
 	// (2) sorted by the bidder PKID. Both come in handy.
 
 	// Put the first index --> []byte{} (no data needs to be stored since it all info is in the key)
 	if err := DBSetWithTxn(txn, snap,
-		_dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry), []byte{}); err != nil {
+		_dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutNFTBidEntryMappingsWithTxn: Problem "+
 			"adding mapping to BidderPKID for bid entry: %v", nftBidEntry)
@@ -6744,7 +6868,7 @@ func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftBidEntr
 	// Put the second index --> BidAmountNanos
 	if err := DBSetWithTxn(txn, snap, _dbKeyForNFTBidderPKIDPostHashSerialNumber(
 		nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber,
-	), EncodeUint64(nftBidEntry.BidAmountNanos)); err != nil {
+	), EncodeUint64(nftBidEntry.BidAmountNanos), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutNFTBidEntryMappingsWithTxn: Problem "+
 			"adding mapping to BidAmountNanos for bid entry: %v", nftBidEntry)
@@ -6753,10 +6877,10 @@ func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftBidEntr
 	return nil
 }
 
-func DBPutNFTBidEntryMappings(handle *badger.DB, snap *Snapshot, nftEntry *NFTBidEntry) error {
+func DBPutNFTBidEntryMappings(handle *badger.DB, snap *Snapshot, nftEntry *NFTBidEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutNFTBidEntryMappingsWithTxn(txn, snap, nftEntry)
+		return DBPutNFTBidEntryMappingsWithTxn(txn, snap, nftEntry, eventManager)
 	})
 }
 
@@ -6909,18 +7033,18 @@ func _dbSeekPrefixForDerivedKeyMappings(
 }
 
 func DBPutDerivedKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
+	ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry, eventManager *EventManager) error {
 
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)
 
-	return DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, derivedKeyEntry))
+	return DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, derivedKeyEntry), eventManager)
 }
 
 func DBPutDerivedKeyMapping(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
+	ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutDerivedKeyMappingWithTxn(txn, snap, blockHeight, ownerPublicKey, derivedPublicKey, derivedKeyEntry)
+		return DBPutDerivedKeyMappingWithTxn(txn, snap, blockHeight, ownerPublicKey, derivedPublicKey, derivedKeyEntry, eventManager)
 	})
 }
 
@@ -7119,11 +7243,11 @@ func DBDeleteProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 }
 
 func DBPutProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams) error {
+	profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams, eventManager *EventManager) error {
 
 	// Set the main PKID -> profile entry mapping.
 	if err := DBSetWithTxn(txn, snap, _dbKeyForPKIDToProfileEntry(pkid),
-		EncodeToBytes(blockHeight, profileEntry)); err != nil {
+		EncodeToBytes(blockHeight, profileEntry), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutProfileEntryMappingsWithTxn: Problem "+
 			"adding mapping for profile: %v", PkToString(pkid[:], params))
@@ -7132,7 +7256,7 @@ func DBPutProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 	// Username
 	if err := DBSetWithTxn(txn, snap,
 		_dbKeyForProfileUsernameToPKID(profileEntry.Username),
-		pkid[:]); err != nil {
+		pkid[:], eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutProfileEntryMappingsWithTxn: Problem "+
 			"adding mapping for profile with username: %v", string(profileEntry.Username))
@@ -7141,7 +7265,7 @@ func DBPutProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 	// The coin deso mapping
 	if err := DBSetWithTxn(txn, snap,
 		_dbKeyForCreatorDeSoLockedNanosCreatorPKID(
-			profileEntry.CreatorCoinEntry.DeSoLockedNanos, pkid), []byte{}); err != nil {
+			profileEntry.CreatorCoinEntry.DeSoLockedNanos, pkid), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutProfileEntryMappingsWithTxn: Problem "+
 			"adding mapping for profile coin: ")
@@ -7151,10 +7275,10 @@ func DBPutProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 }
 
 func DBPutProfileEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams) error {
+	profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutProfileEntryMappingsWithTxn(txn, snap, blockHeight, profileEntry, pkid, params)
+		return DBPutProfileEntryMappingsWithTxn(txn, snap, blockHeight, profileEntry, pkid, params, eventManager)
 	})
 }
 
@@ -7352,7 +7476,7 @@ func DBDeleteBalanceEntryMappings(handle *badger.DB, snap *Snapshot,
 }
 
 func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	balanceEntry *BalanceEntry, isDAOCoin bool) error {
+	balanceEntry *BalanceEntry, isDAOCoin bool, eventManager *EventManager) error {
 
 	// If the balance is zero, then there is no point in storing this entry.
 	// We already placeholder a "zero" balance entry in connect logic.
@@ -7364,7 +7488,7 @@ func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 	// Set the forward direction for the HODLer
 	if err := DBSetWithTxn(txn, snap, _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
 		balanceEntry.HODLerPKID, balanceEntry.CreatorPKID, isDAOCoin),
-		balanceEntryBytes); err != nil {
+		balanceEntryBytes, eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutBalanceEntryMappingsWithTxn: Problem "+
 			"adding forward mappings for pub keys: %v %v",
@@ -7375,7 +7499,7 @@ func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 	// Set the reverse direction for the creator
 	if err := DBSetWithTxn(txn, snap, _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(
 		balanceEntry.CreatorPKID, balanceEntry.HODLerPKID, isDAOCoin),
-		balanceEntryBytes); err != nil {
+		balanceEntryBytes, eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutBalanceEntryMappingsWithTxn: Problem "+
 			"adding reverse mappings for pub keys: %v %v",
@@ -7387,11 +7511,11 @@ func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 }
 
 func DBPutBalanceEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	balanceEntry *BalanceEntry, isDAOCoin bool) error {
+	balanceEntry *BalanceEntry, isDAOCoin bool, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DBPutBalanceEntryMappingsWithTxn(
-			txn, snap, blockHeight, balanceEntry, isDAOCoin)
+			txn, snap, blockHeight, balanceEntry, isDAOCoin, eventManager)
 	})
 }
 
@@ -7625,7 +7749,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -7752,7 +7876,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -7999,7 +8123,7 @@ func _DBGetAllDAOCoinLimitOrdersByPrefix(handle *badger.DB, prefixKey []byte) ([
 	return orders, nil
 }
 
-func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCoinLimitOrderEntry, blockHeight uint64) error {
+func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCoinLimitOrderEntry, blockHeight uint64, eventManager *EventManager) error {
 	if order == nil {
 		return nil
 	}
@@ -8008,19 +8132,19 @@ func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCo
 	// Store in index: PrefixDAOCoinLimitOrderByTransactorPKID
 	key := DBKeyForDAOCoinLimitOrder(order)
 
-	if err := DBSetWithTxn(txn, snap, key, orderBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, orderBytes, eventManager); err != nil {
 		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
 	}
 
 	// Store in index: PrefixDAOCoinLimitOrderByTransactorPKID
 	key = DBKeyForDAOCoinLimitOrderByTransactorPKID(order)
-	if err := DBSetWithTxn(txn, snap, key, orderBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, orderBytes, eventManager); err != nil {
 		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
 	}
 
 	// Store in index: PrefixDAOCoinLimitOrderByOrderID
 	key = DBKeyForDAOCoinLimitOrderByOrderID(order)
-	if err := DBSetWithTxn(txn, snap, key, orderBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, orderBytes, eventManager); err != nil {
 		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing order in index PrefixDAOCoinLimitOrderByOrderID")
 	}
 
@@ -8068,24 +8192,24 @@ func _dbKeyForMempoolTxn(mempoolTx *MempoolTx) []byte {
 	return key
 }
 
-func DbPutMempoolTxnWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, mempoolTx *MempoolTx) error {
+func DbPutMempoolTxnWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, mempoolTx *MempoolTx, eventManager *EventManager) error {
 
 	mempoolTxnBytes, err := mempoolTx.Tx.ToBytes(false /*preSignatureBool*/)
 	if err != nil {
 		return errors.Wrapf(err, "DbPutMempoolTxnWithTxn: Problem encoding mempoolTxn to bytes.")
 	}
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForMempoolTxn(mempoolTx), mempoolTxnBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForMempoolTxn(mempoolTx), mempoolTxnBytes, eventManager); err != nil {
 		return errors.Wrapf(err, "DbPutMempoolTxnWithTxn: Problem putting mapping for txn hash: %s", mempoolTx.Hash.String())
 	}
 
 	return nil
 }
 
-func DbPutMempoolTxn(handle *badger.DB, snap *Snapshot, blockHeight uint64, mempoolTx *MempoolTx) error {
+func DbPutMempoolTxn(handle *badger.DB, snap *Snapshot, blockHeight uint64, mempoolTx *MempoolTx, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutMempoolTxnWithTxn(txn, snap, blockHeight, mempoolTx)
+		return DbPutMempoolTxnWithTxn(txn, snap, blockHeight, mempoolTx, eventManager)
 	})
 }
 
@@ -8148,9 +8272,9 @@ func DbDeleteAllMempoolTxnsWithTxn(txn *badger.Txn, snap *Snapshot) error {
 	return nil
 }
 
-func FlushMempoolToDbWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, allTxns []*MempoolTx) error {
+func FlushMempoolToDbWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, allTxns []*MempoolTx, eventManager *EventManager) error {
 	for _, mempoolTx := range allTxns {
-		err := DbPutMempoolTxnWithTxn(txn, snap, blockHeight, mempoolTx)
+		err := DbPutMempoolTxnWithTxn(txn, snap, blockHeight, mempoolTx, eventManager)
 		if err != nil {
 			return errors.Wrapf(err, "FlushMempoolToDb: Putting "+
 				"mempool tx hash %s failed.", mempoolTx.Hash.String())
@@ -8160,9 +8284,9 @@ func FlushMempoolToDbWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64
 	return nil
 }
 
-func FlushMempoolToDb(handle *badger.DB, snap *Snapshot, blockHeight uint64, allTxns []*MempoolTx) error {
+func FlushMempoolToDb(handle *badger.DB, snap *Snapshot, blockHeight uint64, allTxns []*MempoolTx, eventManager *EventManager) error {
 	err := handle.Update(func(txn *badger.Txn) error {
-		return FlushMempoolToDbWithTxn(txn, snap, blockHeight, allTxns)
+		return FlushMempoolToDbWithTxn(txn, snap, blockHeight, allTxns, eventManager)
 	})
 	if err != nil {
 		return err

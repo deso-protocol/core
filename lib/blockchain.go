@@ -1928,7 +1928,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				"ProcessBlock: Problem saving block with StatusBlockProcessed")
 		}
 	} else {
-		if err := PutHeightHashToNodeInfo(bc.db, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); err != nil {
+		if err := PutHeightHashToNodeInfo(bc.db, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/, bc.eventManager); err != nil {
 			return false, false, errors.Wrapf(
 				err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo with StatusBlockProcessed")
 		}
@@ -2035,14 +2035,14 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// 	set in PutBlockWithTxn. Block rewards are part of the state, and they should be identical to the ones
 			// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
 			// 	somehow ancestral records get corrupted?
-			if err := PutBlockWithTxn(txn, bc.snapshot, desoBlock); err != nil {
+			if err := PutBlockWithTxn(txn, bc.snapshot, desoBlock, bc.eventManager); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
 			}
 
 			// Store the new block's node in our node index in the db under the
 			//   <height uin32, blockhash BlockHash> -> <node info>
 			// index.
-			if err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); err != nil {
+			if err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/, bc.eventManager); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
 			}
 
@@ -2081,7 +2081,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output.
 		if bc.blockView == nil {
-			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem initializing UtxoView in simple connect to tip")
 			}
@@ -2140,7 +2140,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			// Since we don't have utxo operations in postgres, always write UTXO operations for the block to badger
 			err = bc.db.Update(func(txn *badger.Txn) error {
-				if err = PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
+				if err = PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock, bc.eventManager); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 				}
 				return nil
@@ -2150,14 +2150,14 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			err = bc.db.Update(func(txn *badger.Txn) error {
 				// This will update the node's status.
 				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db height & hash")
-				if err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); err != nil {
+				if err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/, bc.eventManager); err != nil {
 					return errors.Wrapf(
 						err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation")
 				}
 
 				// Set the best node hash to this one. Note the header chain should already
 				// be fully aware of this block so we shouldn't update it here.
-				if err := PutBestHashWithTxn(txn, bc.snapshot, blockHash, ChainTypeDeSoBlock); err != nil {
+				if err := PutBestHashWithTxn(txn, bc.snapshot, blockHash, ChainTypeDeSoBlock, bc.eventManager); err != nil {
 					return err
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db height & hash")
@@ -2165,7 +2165,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 				// Write the utxo operations for this block to the db so we can have the
 				// ability to roll it back in the future.
-				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
+				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock, bc.eventManager); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
@@ -2275,7 +2275,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// the txns to account for txns that spend previous txns in the block, but it would
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 		if err != nil {
 			return false, false, errors.Wrapf(err, "processblock: Problem initializing UtxoView in reorg")
 		}
@@ -2395,7 +2395,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// If we made it here then we were able to connect the block successfully.
 			// So mark its status as valid and update the node index accordingly.
 			attachNode.Status |= StatusBlockValidated
-			if err := PutHeightHashToNodeInfo(bc.db, bc.snapshot, attachNode, false /*bitcoinNodes*/); err != nil {
+			if err := PutHeightHashToNodeInfo(bc.db, bc.snapshot, attachNode, false /*bitcoinNodes*/, bc.eventManager); err != nil {
 				return false, false, errors.Wrapf(
 					err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation in reorg")
 			}
@@ -2426,7 +2426,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// single transaction.
 		err = bc.db.Update(func(txn *badger.Txn) error {
 			// Set the best node hash to the new tip.
-			if err := PutBestHashWithTxn(txn, bc.snapshot, newTipNode.Hash, ChainTypeDeSoBlock); err != nil {
+			if err := PutBestHashWithTxn(txn, bc.snapshot, newTipNode.Hash, ChainTypeDeSoBlock, bc.eventManager); err != nil {
 				return err
 			}
 
@@ -2446,7 +2446,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			for ii, attachNode := range attachBlocks {
 				// Add the utxo operations for the blocks we're attaching so we can roll them back
 				// in the future if necessary.
-				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, attachNode.Hash, utxoOpsForAttachBlocks[ii]); err != nil {
+				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, attachNode.Hash, utxoOpsForAttachBlocks[ii], bc.eventManager); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem putting utxo operations for block")
 				}
 			}
@@ -2585,7 +2585,7 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 		hash := *bc.bestChain[ii].Hash
 		height := uint64(bc.bestChain[ii].Height)
 		err := bc.db.Update(func(txn *badger.Txn) error {
-			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, nil)
+			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, nil, bc.eventManager)
 			if err != nil {
 				return err
 			}
@@ -2621,7 +2621,7 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 			}
 
 			// Set the best node hash to the new tip.
-			if err := PutBestHashWithTxn(txn, nil, &prevHash, ChainTypeDeSoBlock); err != nil {
+			if err := PutBestHashWithTxn(txn, nil, &prevHash, ChainTypeDeSoBlock, bc.eventManager); err != nil {
 				return err
 			}
 
@@ -2636,7 +2636,7 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64) error {
 			}
 
 			node.Status = StatusHeaderValidated
-			if err := PutHeightHashToNodeInfoWithTxn(txn, nil, node, false); err != nil {
+			if err := PutHeightHashToNodeInfoWithTxn(txn, nil, node, false, bc.eventManager); err != nil {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting height hash to node info")
 			}
 
@@ -2677,7 +2677,7 @@ func (bc *Blockchain) ValidateTransaction(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return errors.Wrapf(err, "ValidateTransaction: Problem Problem creating new utxo view: ")
 	}
@@ -2786,7 +2786,7 @@ func ComputeMerkleRoot(txns []*MsgDeSoTxn) (_merkle *BlockHash, _txHashes []*Blo
 func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
 	// If we have access to a mempool, use it to account for utxos we might not
 	// get otherwise.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem initializing UtxoView: ")
 	}
@@ -3532,7 +3532,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateDAOCoinLimitOrderTxn: Problem creating new utxo view: ")
@@ -4060,7 +4060,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateAcceptNFTBidTxn: Problem creating new utxo view: ")
@@ -4237,7 +4237,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateCreatorCoinTransferTxnWithDiamonds: "+
@@ -4459,7 +4459,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return nil, 0, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateBasicTransferTxnWithDiamonds: "+
@@ -4660,7 +4660,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 					"_computeInputsForTxn: Problem getting augmented UtxoView from mempool: ")
 			}
 		} else {
-			utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+			utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 			if err != nil {
 				return 0, 0, 0, 0, errors.Wrapf(err,
 					"_computeInputsForTxn: Problem creating new utxo view: ")
@@ -4839,7 +4839,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 
 	// If the block is more than X% full, use the maximum between the min
 	// fee rate and the median fees of all the transactions in the block.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return minFeeRateNanosPerKB
 	}

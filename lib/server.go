@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core/proto_schemas/entries"
 	"net"
 	"reflect"
 	"runtime"
@@ -423,6 +424,8 @@ func NewServer(
 	// TODO: Would be nice if this heavier-weight operation were moved to Start() to
 	// keep this constructor fast.
 	srv.eventManager = eventManager
+	stateChangeSyncer := NewStateChangeSyncer(_params)
+	eventManager.OnDbTransactionConnected(stateChangeSyncer._handleDbTransaction)
 	eventManager.OnBlockConnected(srv._handleBlockMainChainConnectedd)
 	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
 	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
@@ -1341,13 +1344,13 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			srv.blockchain.blockIndex[*curretNode.Hash] = curretNode
 			srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
 			srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
-			err := PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, curretNode, false /*bitcoinNodes*/)
+			err := PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, curretNode, false /*bitcoinNodes*/, srv.eventManager)
 			if err != nil {
 				return err
 			}
 		}
 		// We will also set the hash of the block at snapshot height as the best chain hash.
-		err := PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock)
+		err := PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
 		return err
 	})
 	if err != nil {
@@ -1688,6 +1691,15 @@ func (srv *Server) _handleBlockMainChainDisconnectedd(event *BlockEvent) {
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainDisconnect: Block %s height %d disconnected from "+
 		"main chain and chain is current.", hex.EncodeToString(blockHash[:]), blk.Header.Height)
+}
+
+func getProtoStructFromEncoderType(encoderType EncoderType) interface{} {
+	if encoderType == EncoderTypePostEntry {
+		return &entries.Post{}
+	} else if encoderType == EncoderTypeProfileEntry {
+		return &entries.Profile{}
+	}
+	return nil
 }
 
 func (srv *Server) _maybeRequestSync(pp *Peer) {

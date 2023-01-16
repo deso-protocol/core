@@ -1,8 +1,15 @@
 package lib
 
 type TransactionEventFunc func(event *TransactionEvent)
+type DBTransactionEventFunc func(event *DBTransactionEvent)
 type BlockEventFunc func(event *BlockEvent)
 type SnapshotCompletedEventFunc func()
+
+type DBTransactionEvent struct {
+	Key           []byte
+	Value         []byte
+	OperationType string
+}
 
 type TransactionEvent struct {
 	Txn     *MsgDeSoTxn
@@ -22,15 +29,26 @@ type BlockEvent struct {
 }
 
 type EventManager struct {
-	transactionConnectedHandlers []TransactionEventFunc
-	blockConnectedHandlers       []BlockEventFunc
-	blockDisconnectedHandlers    []BlockEventFunc
-	blockAcceptedHandlers        []BlockEventFunc
-	snapshotCompletedHandlers    []SnapshotCompletedEventFunc
+	transactionConnectedHandlers   []TransactionEventFunc
+	dbTransactionConnectedHandlers []DBTransactionEventFunc
+	blockConnectedHandlers         []BlockEventFunc
+	blockDisconnectedHandlers      []BlockEventFunc
+	blockAcceptedHandlers          []BlockEventFunc
+	snapshotCompletedHandlers      []SnapshotCompletedEventFunc
 }
 
 func NewEventManager() *EventManager {
 	return &EventManager{}
+}
+
+func (em *EventManager) OnDbTransactionConnected(handler DBTransactionEventFunc) {
+	em.dbTransactionConnectedHandlers = append(em.dbTransactionConnectedHandlers, handler)
+}
+
+func (em *EventManager) dbTransactionConnected(event *DBTransactionEvent) {
+	for _, handler := range em.dbTransactionConnectedHandlers {
+		handler(event)
+	}
 }
 
 func (em *EventManager) OnTransactionConnected(handler TransactionEventFunc) {

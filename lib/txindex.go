@@ -84,7 +84,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 					TotalOutputNanos: totalOutput,
 					FeeNanos:         0,
 				},
-			})
+			}, coreChain.eventManager)
 			if err != nil {
 				return nil, fmt.Errorf("NewTXIndex: Error initializing seed balances in txindex: %v", err)
 			}
@@ -111,7 +111,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 					TotalOutputNanos: 0,
 					FeeNanos:         0,
 				},
-			})
+			}, coreChain.eventManager)
 			if err != nil {
 				return nil, fmt.Errorf("NewTXIndex: Error initializing seed txn %v in txindex: %v", txn, err)
 			}
@@ -301,7 +301,7 @@ func (txi *TXIndex) Update() error {
 		err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
 			for _, txn := range blockMsg.Txns {
 				if err := DbDeleteTxindexTransactionMappingsWithTxn(dbTxn, nil,
-					blockHeight, txn, txi.Params); err != nil {
+					blockHeight, txn, txi.Params, txi.CoreChain.eventManager); err != nil {
 
 					return fmt.Errorf("Update: Problem deleting "+
 						"transaction mappings for transaction %v: %v", txn.Hash(), err)
@@ -315,7 +315,7 @@ func (txi *TXIndex) Update() error {
 
 		// Now that all the transactions have been deleted from our txindex,
 		// it's safe to disconnect the block from our txindex chain.
-		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil)
+		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)
@@ -342,7 +342,7 @@ func (txi *TXIndex) Update() error {
 				"%v: %v", blockToDetach, err)
 		}
 		// We have to flush a couple of extra things that the view doesn't flush...
-		if err := PutBestHash(txi.TXIndexChain.DB(), nil, utxoView.TipHash, ChainTypeDeSoBlock); err != nil {
+		if err := PutBestHash(txi.TXIndexChain.DB(), nil, utxoView.TipHash, ChainTypeDeSoBlock, txi.CoreChain.eventManager); err != nil {
 			return fmt.Errorf("Update: Error putting best hash for block "+
 				"%v: %v", blockToDetach, err)
 		}
@@ -398,7 +398,7 @@ func (txi *TXIndex) Update() error {
 		// us to extract custom metadata fields that we can show in our block explorer.
 		//
 		// Only set a BitcoinManager if we have one. This makes some tests pass.
-		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil)
+		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
 		if err != nil {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)
@@ -422,7 +422,7 @@ func (txi *TXIndex) Update() error {
 				}
 
 				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, nil, blockHeight,
-					txn, txi.Params, txnMeta)
+					txn, txi.Params, txnMeta, txi.CoreChain.eventManager)
 				if err != nil {
 					return fmt.Errorf("Update: Problem adding txn %v to txindex: %v",
 						txn, err)

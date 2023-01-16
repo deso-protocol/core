@@ -62,6 +62,10 @@ func (pkid *PKID) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader)
 	return nil
 }
 
+func (pkid *PKID) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (pkid *PKID) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -137,6 +141,10 @@ func (publicKey *PublicKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 	return nil
 }
 
+func (publicKey *PublicKey) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
+}
+
 func (publicKey *PublicKey) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -206,6 +214,10 @@ func (bh *BlockHash) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	}
 	copy(bh[:], blockHashBytes)
 	return nil
+}
+
+func (bh *BlockHash) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
+	return nil, nil
 }
 
 func (bh *BlockHash) GetVersionByte(blockHeight uint64) byte {

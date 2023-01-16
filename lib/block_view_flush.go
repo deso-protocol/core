@@ -160,7 +160,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn, blockHeight uint64)
 			numPut++
 			// If the entry is unspent, then we need to re-set its mappings in the db
 			// appropriately.
-			if err := PutMappingsForUtxoWithTxn(txn, bav.Snapshot, blockHeight, &utxoKey, utxoEntry); err != nil {
+			if err := PutMappingsForUtxoWithTxn(txn, bav.Snapshot, blockHeight, &utxoKey, utxoEntry, bav.EventManager); err != nil {
 				return err
 			}
 		}
@@ -169,7 +169,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn, blockHeight uint64)
 	glog.V(2).Infof("_flushUtxosToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// Now update the number of entries in the db with confidence.
-	if err := PutUtxoNumEntriesWithTxn(txn, bav.Snapshot, bav.NumUtxoEntries); err != nil {
+	if err := PutUtxoNumEntriesWithTxn(txn, bav.Snapshot, bav.NumUtxoEntries, bav.EventManager); err != nil {
 		return err
 	}
 
@@ -199,7 +199,7 @@ func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
 		pubKey := pubKeyIter[:]
 
 		if balanceNanos > 0 {
-			if err := DbPutDeSoBalanceForPublicKeyWithTxn(txn, bav.Snapshot, pubKey, balanceNanos); err != nil {
+			if err := DbPutDeSoBalanceForPublicKeyWithTxn(txn, bav.Snapshot, pubKey, balanceNanos, bav.EventManager); err != nil {
 				return err
 			}
 		}
@@ -210,7 +210,7 @@ func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushGlobalParamsEntryToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	globalParamsEntry := bav.GlobalParamsEntry
-	if err := DbPutGlobalParamsEntryWithTxn(txn, bav.Snapshot, blockHeight, *globalParamsEntry); err != nil {
+	if err := DbPutGlobalParamsEntryWithTxn(txn, bav.Snapshot, blockHeight, *globalParamsEntry, bav.EventManager); err != nil {
 		return errors.Wrapf(err, "_flushGlobalParamsEntryToDbWithTxn: Problem putting global params entry in DB")
 	}
 	return nil
@@ -238,7 +238,7 @@ func (bav *UtxoView) _flushForbiddenPubKeyEntriesToDbWithTxn(txn *badger.Txn) er
 			// If the ForbiddenPubKeyEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DbPutForbiddenBlockSignaturePubKeyWithTxn(txn, bav.Snapshot,
-				forbiddenPubKeyEntry.PubKey); err != nil {
+				forbiddenPubKeyEntry.PubKey, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -258,7 +258,7 @@ func (bav *UtxoView) _flushBitcoinExchangeDataWithTxn(txn *badger.Txn) error {
 
 		if mappingExists {
 			// In this case we should add the mapping to the db.
-			if err := DbPutBitcoinBurnTxIDWithTxn(txn, bav.Snapshot, &bitcoinBurnTxID); err != nil {
+			if err := DbPutBitcoinBurnTxIDWithTxn(txn, bav.Snapshot, &bitcoinBurnTxID, bav.EventManager); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushBitcoinExchangeDataWithTxn: "+
 					"Problem putting BitcoinBurnTxID %v to db", &bitcoinBurnTxID)
 			}
@@ -272,13 +272,13 @@ func (bav *UtxoView) _flushBitcoinExchangeDataWithTxn(txn *badger.Txn) error {
 	}
 
 	// Update NanosPurchased
-	if err := DbPutNanosPurchasedWithTxn(txn, bav.Snapshot, bav.NanosPurchased); err != nil {
+	if err := DbPutNanosPurchasedWithTxn(txn, bav.Snapshot, bav.NanosPurchased, bav.EventManager); err != nil {
 		errors.Wrapf(err, "UtxoView._flushBitcoinExchangeDataWithTxn: "+
 			"Problem putting NanosPurchased %d to db", bav.NanosPurchased)
 	}
 
 	// Update the BitcoinUSDExchangeRate in the db
-	if err := DbPutUSDCentsPerBitcoinExchangeRateWithTxn(txn, bav.Snapshot, bav.USDCentsPerBitcoin); err != nil {
+	if err := DbPutUSDCentsPerBitcoinExchangeRateWithTxn(txn, bav.Snapshot, bav.USDCentsPerBitcoin, bav.EventManager); err != nil {
 		errors.Wrapf(err, "UtxoView.FlushToDBWithTxn: "+
 			"Problem putting USDCentsPerBitcoin %d to db", bav.USDCentsPerBitcoin)
 	}
@@ -309,7 +309,7 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 		} else {
 			// If the MessageEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, messageKey, messageEntry); err != nil {
+			if err := DBPutMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, messageKey, messageEntry, bav.EventManager); err != nil {
 				return err
 			}
 		}
@@ -352,7 +352,7 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn, blockHeight
 		} else {
 			// If the RepostEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutRepostMappingsWithTxn(txn, bav.Snapshot, blockHeight, *repostEntry); err != nil {
+			if err := DbPutRepostMappingsWithTxn(txn, bav.Snapshot, blockHeight, *repostEntry, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -401,7 +401,7 @@ func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 			// If the LikeEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DbPutLikeMappingsWithTxn(txn, bav.Snapshot,
-				likeEntry.LikerPubKey, *likeEntry.LikedPostHash); err != nil {
+				likeEntry.LikerPubKey, *likeEntry.LikedPostHash, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -448,7 +448,7 @@ func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 			// If the FollowEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DbPutFollowMappingsWithTxn(txn, bav.Snapshot,
-				followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
+				followEntry.FollowerPKID, followEntry.FollowedPKID, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -493,7 +493,7 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn, blockHeight ui
 		} else {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutNFTEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight, nftEntry); err != nil {
+			if err := DBPutNFTEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight, nftEntry, bav.EventManager); err != nil {
 				return err
 			}
 		}
@@ -533,7 +533,7 @@ func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn, blockH
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, bav.Snapshot, blockHeight,
-				nftKey, acceptedNFTBidEntries); err != nil {
+				nftKey, acceptedNFTBidEntries, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -578,7 +578,7 @@ func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutNFTBidEntryMappingsWithTxn(txn, bav.Snapshot, nftBidEntry); err != nil {
+			if err := DBPutNFTBidEntryMappingsWithTxn(txn, bav.Snapshot, nftBidEntry, bav.EventManager); err != nil {
 				return err
 			}
 		}
@@ -623,7 +623,7 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 			// If the DiamondEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DbPutDiamondMappingsWithTxn(txn,
-				bav.Snapshot, blockHeight, diamondEntry); err != nil {
+				bav.Snapshot, blockHeight, diamondEntry, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -675,7 +675,7 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn, blockHeight u
 			// If the PostEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DBPutPostEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
-				postEntry, bav.Params); err != nil {
+				postEntry, bav.Params, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -735,7 +735,7 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn, blockHeight u
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DBPutPKIDMappingsWithTxn(txn, bav.Snapshot, blockHeight,
-				pubKeyCopy, pkidEntry, bav.Params); err != nil {
+				pubKeyCopy, pkidEntry, bav.Params, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -790,7 +790,7 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DBPutProfileEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
-				profileEntry, &profilePKID, bav.Params); err != nil {
+				profileEntry, &profilePKID, bav.Params, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -850,7 +850,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DBPutBalanceEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
-				balanceEntry, false); err != nil {
+				balanceEntry, false, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -908,7 +908,7 @@ func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn, blo
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
 			if err := DBPutBalanceEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
-				balanceEntry, true); err != nil {
+				balanceEntry, true, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -944,7 +944,7 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn, blockHeig
 		} else {
 			// In this case we add the mapping to the DB.
 			if err := DBPutDerivedKeyMappingWithTxn(txn, bav.Snapshot, blockHeight,
-				derivedKeyMapKey.OwnerPublicKey, derivedKeyMapKey.DerivedPublicKey, derivedKeyEntry); err != nil {
+				derivedKeyMapKey.OwnerPublicKey, derivedKeyMapKey.DerivedPublicKey, derivedKeyEntry, bav.EventManager); err != nil {
 
 				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
 					"Problem putting DerivedKeyEntry %v to db", *derivedKeyEntry)
@@ -999,7 +999,7 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 			// complexity into.
 			ownerPublicKey := messagingGroupKey.OwnerPublicKey
 			if err := DBPutMessagingGroupEntryWithTxn(txn, bav.Snapshot, blockHeight,
-				&ownerPublicKey, messagingGroupEntry); err != nil {
+				&ownerPublicKey, messagingGroupEntry, bav.EventManager); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
 					"Problem putting MessagingGroupEntry %v to db", *messagingGroupEntry)
 			}
@@ -1011,7 +1011,7 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 					continue
 				}
 				if err := DBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
-					recipient, &ownerPublicKey, messagingGroupEntry); err != nil {
+					recipient, &ownerPublicKey, messagingGroupEntry, bav.EventManager); err != nil {
 					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
 						"Problem putting MessagingGroupEntry recipient (%v) to db", recipient)
 				}
@@ -1065,7 +1065,7 @@ func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, 
 			numPut++
 			// If the OrderEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutDAOCoinLimitOrderWithTxn(txn, bav.Snapshot, orderEntry, blockHeight); err != nil {
+			if err := DBPutDAOCoinLimitOrderWithTxn(txn, bav.Snapshot, orderEntry, blockHeight, bav.EventManager); err != nil {
 				return err
 			}
 		}
