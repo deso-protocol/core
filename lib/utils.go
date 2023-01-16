@@ -2,7 +2,6 @@ package lib
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -10,7 +9,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/unrolled/secure"
 	"math/big"
-	"reflect"
 	"strings"
 )
 
@@ -204,75 +202,6 @@ func SafeMakeRecover(outputError *error) {
 	if err := recover(); err != nil {
 		*outputError = errors.New(fmt.Sprintf("Error in make: %v", err))
 	}
-}
-
-// CopyStruct takes 2 structs and copies values from fields of the same name from the source struct to the destination struct.
-// This is used to copy values from a deso entry struct to a protobuf entry struct.
-func CopyStruct(src interface{}, dst interface{}) error {
-	fmt.Printf("\nTop of copy struct")
-	srcValue := reflect.ValueOf(src).Elem()
-	dstValue := reflect.ValueOf(dst).Elem()
-
-	if srcValue.Kind() != reflect.Struct || dstValue.Kind() != reflect.Struct {
-		return fmt.Errorf("both srcValue and dst must be structs")
-	}
-
-	// Loop through all the fields in the source struct, and copy them over to the destination struct
-	// if the destination struct contains a field of the same name and type.
-	for i := 0; i < srcValue.NumField(); i++ {
-		fmt.Printf("\nLooping through fields")
-		srcFieldValue := srcValue.Field(i)
-		srcFieldName := srcValue.Type().Field(i).Name
-		fmt.Printf("\nAfter name")
-		srcFieldType := srcValue.Type().Field(i).Type
-		fmt.Printf("\nAfter type")
-		srcFieldEncode := srcValue.Type().Field(i).Tag.Get("proto_encode")
-		fmt.Printf("\nAfter tag")
-		dstField := dstValue.FieldByName(srcFieldName)
-		fmt.Printf("\nAfter get field")
-
-		// TODO: Move this into a helper function.
-		// TODO: Validate that the field is a byte slice.
-		if srcFieldEncode == "Base58CheckEncode" {
-			//fmt.Printf("\nBefore base58 check encoding: %v", srcFieldValue.Bytes())
-			//srcFieldValue = reflect.ValueOf(Base58CheckEncode(srcFieldValue.Bytes(), false, params))
-		} else if srcFieldEncode == "HexEncodeToString" {
-			fmt.Printf("\nHere is the field type: %v", srcFieldType)
-			fmt.Printf("\nHere is the field name: %v", srcFieldName)
-			fmt.Printf("\nHere is the field kind: %v", srcFieldValue.Kind())
-			fmt.Printf("\nHere is the field elem: %v", srcFieldValue.Elem())
-			PostHashValue := srcFieldValue.Elem()
-			fmt.Printf("\nPostHashType: %v", PostHashValue.Type())
-			postHashBytes := make([]byte, HashSizeBytes)
-			reflect.Copy(reflect.ValueOf(postHashBytes), PostHashValue)
-			fmt.Printf("\nPostHashBytes: %v", postHashBytes)
-			srcFieldValue = reflect.ValueOf(postHashBytes)
-			fmt.Printf("Done")
-		} else if srcFieldEncode == "DeSoBodySchema" {
-			fmt.Printf("\nHere is the field type: %v", srcFieldType)
-			fmt.Printf("\nHere is the field name: %v", srcFieldName)
-			fmt.Printf("\nHere is the field kind: %v", srcFieldValue.Kind())
-			//DesoBodyValue := srcFieldValue.Elem()
-			//fmt.Printf("\nDeso body value type: %v", DesoBodyValue.Type())
-			desoBodyBytes := make([]byte, HashSizeBytes)
-			reflect.Copy(reflect.ValueOf(desoBodyBytes), srcFieldValue)
-			fmt.Printf("\nHere are the bytes: %v", desoBodyBytes)
-			bodyJSONObj := &DeSoBodySchema{}
-			err := json.Unmarshal(desoBodyBytes, bodyJSONObj)
-			if err != nil {
-				fmt.Printf("Error decoding postEntry.Body: %v\n", err)
-			}
-			fmt.Printf("\nbodyJSONObj: %+v", bodyJSONObj)
-			srcFieldValue = reflect.ValueOf(bodyJSONObj)
-		}
-
-		fmt.Printf("\nBefore set")
-		if dstField.IsValid() && dstField.Type() == srcFieldType {
-			dstField.Set(srcFieldValue)
-			fmt.Printf("\nAfter set")
-		}
-	}
-	return nil
 }
 
 func EncodeBlockhashToHexString(blockHash *BlockHash) string {
