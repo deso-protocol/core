@@ -60,12 +60,8 @@ type UtxoView struct {
 	GroupChatMessagesIndex map[GroupChatMessageKey]*NewMessageEntry
 	DmMessagesIndex        map[DmMessageKey]*NewMessageEntry
 
-	// Group Chat and Dm threads.
-	GroupChatThreadIndex map[AccessGroupId]*GroupChatThreadExistence
-	DmThreadIndex        map[DmThreadKey]*DmThreadExistence
-
-	// Message Thread Attributes.
-	ThreadAttributesIndex map[ThreadAttributesKey]*ThreadAttributesEntry
+	// Dm threads.
+	DmThreadIndex map[DmThreadKey]*DmThreadEntry
 
 	// Follow data
 	FollowKeyToFollowEntry map[FollowKey]*FollowEntry
@@ -161,11 +157,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.DmMessagesIndex = make(map[DmMessageKey]*NewMessageEntry)
 
 	// Group chat and Dm threads.
-	bav.GroupChatThreadIndex = make(map[AccessGroupId]*GroupChatThreadExistence)
-	bav.DmThreadIndex = make(map[DmThreadKey]*DmThreadExistence)
-
-	// Message thread attributes.
-	bav.ThreadAttributesIndex = make(map[ThreadAttributesKey]*ThreadAttributesEntry)
+	bav.DmThreadIndex = make(map[DmThreadKey]*DmThreadEntry)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -330,24 +322,10 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	}
 
 	// Copy dm thread index
-	newView.DmThreadIndex = make(map[DmThreadKey]*DmThreadExistence)
-	for dmThreadKey, threadExistence := range bav.DmThreadIndex {
-		newThreadExistence := *threadExistence
-		newView.DmThreadIndex[dmThreadKey] = &newThreadExistence
-	}
-
-	// Copy group chat thread index
-	newView.GroupChatThreadIndex = make(map[AccessGroupId]*GroupChatThreadExistence)
-	for groupChatThreadKey, threadExistence := range bav.GroupChatThreadIndex {
-		newThreadExistence := *threadExistence
-		newView.GroupChatThreadIndex[groupChatThreadKey] = &newThreadExistence
-	}
-
-	// Copy thread attributes index
-	newView.ThreadAttributesIndex = make(map[ThreadAttributesKey]*ThreadAttributesEntry)
-	for threadAttributesKey, threadAttributesEntry := range bav.ThreadAttributesIndex {
-		newThreadAttributesEntry := *threadAttributesEntry
-		newView.ThreadAttributesIndex[threadAttributesKey] = &newThreadAttributesEntry
+	newView.DmThreadIndex = make(map[DmThreadKey]*DmThreadEntry)
+	for dmThreadKey, threadEntry := range bav.DmThreadIndex {
+		newThreadEntry := *threadEntry
+		newView.DmThreadIndex[dmThreadKey] = &newThreadEntry
 	}
 
 	// Copy the follow data

@@ -451,33 +451,25 @@ type DBPrefixes struct {
 	// 	<prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
 	PrefixGroupChatMessagesIndex []byte `prefix_id:"[74]" is_state:"true"`
 
-	// PrefixGroupChatThreadIndex is modified by the NewMessage transaction and is used to store a GroupChatThreadExistence
-	// for each existing group chat thread. The index has the following structure:
-	// 	<prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName> -> <GroupChatThreadExistence>
-	PrefixGroupChatThreadIndex []byte `prefix_id:"[75]" is_state:"true"`
-
 	// PrefixDmMessagesIndex is modified by the NewMessage transaction and is used to store NewMessageEntry objects for
-	// each message sent to a Dm thread. The index has the following structure:
+	// each message sent to a Dm thread. It answers the question: "Give me all the messages between these two users."
+	// The index has the following structure:
 	// 	<prefix, MinorAccessGroupOwnerPublicKey, MinorAccessGroupKeyName,
 	//		MajorAccessGroupOwnerPublicKey, MajorAccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
 	// The Minor/Major distinction is used to deterministically map the two accessGroupIds of message's sender/recipient
 	// into a single pair based on the lexicographical ordering of the two accessGroupIds. This is done to ensure that
 	// both sides of the conversation have the same key for the same conversation, and we can store just a single message.
-	PrefixDmMessagesIndex []byte `prefix_id:"[76]" is_state:"true"`
+	PrefixDmMessagesIndex []byte `prefix_id:"[75]" is_state:"true"`
 
-	// PrefixDmThreadIndex is modified by the NewMessage transaction and is used to store a DmThreadExistence
-	// for each existing dm thread. The index has the following structure:
+	// PrefixDmThreadIndex is modified by the NewMessage transaction and is used to store a DmThreadEntry
+	// for each existing dm thread. It answers the question: "Give me all the threads for a particular user."
+	// The index has the following structure:
 	// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
-	//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName> -> <DmThreadExistence>
+	//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName> -> <DmThreadEntry>
 	// It's worth noting that two of these entries are stored for each Dm thread, one being the inverse of the other.
-	PrefixDmThreadIndex []byte `prefix_id:"[77]" is_state:"true"`
+	PrefixDmThreadIndex []byte `prefix_id:"[76]" is_state:"true"`
 
-	// PrefixThreadAttributesIndex is modified by the UpdateThread transaction and is used to store a ThreadAttributes
-	// for each existing thread. The index has the following structure:
-	// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
-	//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName, NewMessageType> -> <ThreadAttributesEntry>
-	PrefixThreadAttributesIndex []byte `prefix_id:"[78]" is_state:"true"`
-	// NEXT_TAG: 79
+	// NEXT_TAG: 77
 
 }
 
@@ -671,18 +663,12 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatMessagesIndex) {
 		// prefix_id:"[74]"
 		return true, &NewMessageEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatThreadIndex) {
-		// prefix_id:"[75]"
-		return true, &GroupChatThreadExistence{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessagesIndex) {
 		// prefix_id:"[76]"
 		return true, &NewMessageEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
 		// prefix_id:"[77]"
-		return true, &DmThreadExistence{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixThreadAttributesIndex) {
-		// prefix_id:"[78]"
-		return true, &ThreadAttributesEntry{}
+		return true, &DmThreadEntry{}
 	}
 
 	return true, nil
@@ -2049,96 +2035,6 @@ func DBDeleteGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key G
 }
 
 // -------------------------------------------------------------------------------------
-// PrefixGroupChatThreadIndex
-// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName> -> <GroupChatThreadExistence>
-// -------------------------------------------------------------------------------------
-
-func _dbKeyForGroupChatThreadIndex(key AccessGroupId) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixGroupChatThreadIndex...)
-	prefixCopy = append(prefixCopy, key.AccessGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.AccessGroupKeyName.ToBytes()...)
-	return prefixCopy
-}
-
-func DBCheckGroupChatThreadExistence(db *badger.DB, snap *Snapshot, groupId AccessGroupId) (*GroupChatThreadExistence, error) {
-	var ret *GroupChatThreadExistence
-	var err error
-	err = db.View(func(txn *badger.Txn) error {
-		ret, err = DBCheckGroupChatThreadExistenceWithTxn(txn, snap, groupId)
-		return err
-	})
-	if err != nil {
-		return nil, errors.Wrapf(err, "DBCheckGroupChatThreadExistence: Problem getting group chat thread index")
-	}
-	return ret, nil
-}
-
-func DBCheckGroupChatThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, groupId AccessGroupId) (*GroupChatThreadExistence, error) {
-
-	prefix := _dbKeyForGroupChatThreadIndex(groupId)
-	groupChatThreadExistenceBytes, err := DBGetWithTxn(txn, snap, prefix)
-	if err == badger.ErrKeyNotFound {
-		return nil, nil
-	} else if err != nil {
-		return nil, errors.Wrapf(err, "DBCheckGroupChatThreadExistenceWithTxn: Problem getting group chat thread index")
-	}
-
-	groupChatThreadExistence := &GroupChatThreadExistence{}
-	rr := bytes.NewReader(groupChatThreadExistenceBytes)
-	if exists, err := DecodeFromBytes(groupChatThreadExistence, rr); !exists || err != nil {
-		return nil, errors.Wrapf(err, "DBCheckGroupChatThreadExistenceWithTxn: "+
-			"Problem decoding group chat thread index with key: %v and value: %v", prefix, groupChatThreadExistenceBytes)
-	}
-
-	return groupChatThreadExistence, nil
-}
-
-func DBPutGroupChatThreadIndex(db *badger.DB, snap *Snapshot, blockHeight uint64, groupId AccessGroupId) error {
-	err := db.Update(func(txn *badger.Txn) error {
-		return DBPutGroupChatThreadIndexWithTxn(txn, snap, blockHeight, groupId)
-	})
-	if err != nil {
-		return errors.Wrapf(err, "DBPutGroupChatThreadIndex: Problem putting group chat thread index")
-	}
-	return nil
-}
-
-func DBPutGroupChatThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	groupId AccessGroupId) error {
-
-	prefix := _dbKeyForGroupChatThreadIndex(groupId)
-	// We don't store any data under this index for now. For forward-compatibility we store a dummy
-	// DeSoEncoder to allow for encoder migrations, should they ever be useful.
-	groupChatThreadExistence := MakeGroupChatThreadExistence()
-	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, &groupChatThreadExistence)); err != nil {
-		return errors.Wrapf(err, "DBPutGroupChatThreadExistenceWithTxn: Problem setting group chat thread index "+
-			"with key (%v) in the db", prefix)
-	}
-	return nil
-}
-
-func DBDeleteGroupChatThreadIndex(db *badger.DB, snap *Snapshot, groupId AccessGroupId) error {
-	err := db.Update(func(txn *badger.Txn) error {
-		return DBDeleteGroupChatThreadIndexWithTxn(txn, snap, groupId)
-	})
-	if err != nil {
-		return errors.Wrapf(err, "DBDeleteGroupChatThreadIndex: Problem deleting group chat thread index")
-	}
-	return nil
-}
-
-func DBDeleteGroupChatThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, groupId AccessGroupId) error {
-
-	prefix := _dbKeyForGroupChatThreadIndex(groupId)
-	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
-		return errors.Wrapf(err, "DBDeleteGroupChatThreadExistenceWithTxn: Deleting mapping for group chat "+
-			"thread key: %v", groupId)
-	}
-
-	return nil
-}
-
-// -------------------------------------------------------------------------------------
 // PrefixDmMessagesIndex
 // 	<prefix, MinorAccessGroupOwnerPublicKey, MinorAccessGroupKeyName,
 //		MajorAccessGroupOwnerPublicKey, MajorAccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
@@ -2304,7 +2200,7 @@ func DBDeleteDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessag
 // This prefix stores information about all the different DM threads that the user has participated in.
 // We store a duplicate entry for each thread, with the "user", "party" accessGroupIds flipped.
 // 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
-//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName> -> <DmThreadExistence>
+//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName> -> <DmThreadEntry>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForPrefixDmThreadIndex(key DmThreadKey) []byte {
@@ -2355,8 +2251,8 @@ func _dbDecodeKeyForPrefixDmThreadIndex(key []byte) (_userGroupOwnerPublicKey Pu
 	return userGroupOwnerPublicKey, userGroupKeyName, partyGroupOwnerPublicKey, partyGroupKeyName, nil
 }
 
-func DBCheckDmThreadExistence(db *badger.DB, snap *Snapshot, key DmThreadKey) (*DmThreadExistence, error) {
-	var ret *DmThreadExistence
+func DBCheckDmThreadExistence(db *badger.DB, snap *Snapshot, key DmThreadKey) (*DmThreadEntry, error) {
+	var ret *DmThreadEntry
 	var err error
 	err = db.View(func(txn *badger.Txn) error {
 		ret, err = DBCheckDmThreadExistenceWithTxn(txn, snap, key)
@@ -2368,7 +2264,7 @@ func DBCheckDmThreadExistence(db *badger.DB, snap *Snapshot, key DmThreadKey) (*
 	return ret, nil
 }
 
-func DBCheckDmThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, key DmThreadKey) (*DmThreadExistence, error) {
+func DBCheckDmThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, key DmThreadKey) (*DmThreadEntry, error) {
 
 	prefix := _dbKeyForPrefixDmThreadIndex(key)
 	dmThreadExistenceBytes, err := DBGetWithTxn(txn, snap, prefix)
@@ -2378,7 +2274,7 @@ func DBCheckDmThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, key DmThre
 		return nil, errors.Wrapf(err, "DBCheckDmThreadExistenceWithTxn: Problem checking dm thread existence with key: %v", key)
 	}
 
-	dmThreadExistence := &DmThreadExistence{}
+	dmThreadExistence := &DmThreadEntry{}
 	rr := bytes.NewReader(dmThreadExistenceBytes)
 	if exists, err := DecodeFromBytes(dmThreadExistence, rr); !exists || err != nil {
 		return nil, errors.Wrapf(err, "DBCheckDmThreadExistenceWithTxn: Problem decoding dm thread existence"+
@@ -2485,7 +2381,7 @@ func DBPutDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint
 	prefix := _dbKeyForPrefixDmThreadIndex(dmThreadKey)
 	// We don't store any data under this index for now. For forward-compatibility we store a dummy
 	// DeSoEncoder to allow for encoder migrations, should they ever be useful.
-	dmThreadExistence := MakeDmThreadExistence()
+	dmThreadExistence := MakeDmThreadEntry()
 	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, &dmThreadExistence)); err != nil {
 		return errors.Wrapf(err, "DBPutDmThreadIndex: Problem putting dm thread index with key: %v", dmThreadKey)
 	}
@@ -2506,97 +2402,6 @@ func DBDeleteDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, dmThreadKey D
 	prefix := _dbKeyForPrefixDmThreadIndex(dmThreadKey)
 	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
 		return errors.Wrapf(err, "DBDeleteDmThreadIndex: Problem deleting dm thread index with key: %v", dmThreadKey)
-	}
-
-	return nil
-}
-
-// -------------------------------------------------------------------------------------
-// ThreadAttributesIndex
-// This prefix stores the thread attributes for a given thread. The key structure is the same as the
-// ThreadAttributesKey structure, i.e.:
-// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
-//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName, NewMessageType> -> <ThreadAttributesEntry>
-// -------------------------------------------------------------------------------------
-
-func _dbKeyForPrefixThreadAttributesIndex(key ThreadAttributesKey) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixThreadAttributesIndex...)
-	prefixCopy = append(prefixCopy, key.UserAccessGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.UserAccessGroupKeyName.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.PartyAccessGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.PartyAccessGroupKeyName.ToBytes()...)
-	prefixCopy = append(prefixCopy, byte(key.NewMessageType))
-	return prefixCopy
-}
-
-func DBGetThreadAttributesEntry(db *badger.DB, snap *Snapshot, key ThreadAttributesKey) (*ThreadAttributesEntry, error) {
-	var ret *ThreadAttributesEntry
-	var err error
-	err = db.View(func(txn *badger.Txn) error {
-		ret, err = DBGetThreadAttributesEntryWithTxn(txn, snap, key)
-		return err
-	})
-	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetThreadAttributesEntry: Problem getting thread attributes entry "+
-			"with key: %v", key)
-	}
-	return ret, nil
-}
-
-func DBGetThreadAttributesEntryWithTxn(txn *badger.Txn, snap *Snapshot, key ThreadAttributesKey) (*ThreadAttributesEntry, error) {
-
-	prefix := _dbKeyForPrefixThreadAttributesIndex(key)
-	threadAttributesEntryBytes, err := DBGetWithTxn(txn, snap, prefix)
-	if err == badger.ErrKeyNotFound {
-		return nil, nil
-	} else if err != nil {
-		return nil, errors.Wrapf(err, "DBGetThreadAttributesEntryWithTxn: Problem getting thread attributes "+
-			"entry with key: %v", key)
-	}
-
-	threadAttributesEntry := &ThreadAttributesEntry{}
-	rr := bytes.NewReader(threadAttributesEntryBytes)
-	if exists, err := DecodeFromBytes(threadAttributesEntry, rr); !exists || err != nil {
-		return nil, errors.Wrapf(err, "DBGetThreadAttributesEntryWithTxn: Problem decoding thread attributes "+
-			"entry with key: %v", key)
-	}
-	return threadAttributesEntry, nil
-}
-
-func DBPutThreadAttributesEntry(db *badger.DB, snap *Snapshot, blockHeight uint64, key ThreadAttributesKey, threadAttributesEntry *ThreadAttributesEntry) error {
-	err := db.Update(func(txn *badger.Txn) error {
-		return DBPutThreadAttributesEntryWithTxn(txn, snap, blockHeight, key, threadAttributesEntry)
-	})
-	if err != nil {
-		return errors.Wrapf(err, "DBPutThreadAttributesEntry: Problem putting thread attributes entry with key: %v", key)
-	}
-	return nil
-}
-
-func DBPutThreadAttributesEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, key ThreadAttributesKey, threadAttributesEntry *ThreadAttributesEntry) error {
-	prefix := _dbKeyForPrefixThreadAttributesIndex(key)
-	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, threadAttributesEntry)); err != nil {
-		return errors.Wrapf(err, "DBPutThreadAttributesEntryWithTxn: Problem putting thread attributes entry with key: %v", key)
-	}
-	return nil
-}
-
-func DBDeleteThreadAttributesEntry(db *badger.DB, snap *Snapshot, key ThreadAttributesKey) error {
-	err := db.Update(func(txn *badger.Txn) error {
-		return DBDeleteThreadAttributesEntryWithTxn(txn, snap, key)
-	})
-	if err != nil {
-		return errors.Wrapf(err, "DBDeleteThreadAttributesEntry: Problem deleting thread attributes entry with"+
-			" key: %v", key)
-	}
-	return nil
-}
-
-func DBDeleteThreadAttributesEntryWithTxn(txn *badger.Txn, snap *Snapshot, key ThreadAttributesKey) error {
-	prefix := _dbKeyForPrefixThreadAttributesIndex(key)
-	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
-		return errors.Wrapf(err, "DBDeleteThreadAttributesEntryWithTxn: Problem deleting thread attributes entry "+
-			"with key: %v", key)
 	}
 
 	return nil
@@ -3543,8 +3348,10 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 
 // -------------------------------------------------------------------------------------
 // Reposts mapping functions
-// 		<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
-// 		<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
+//
+//	<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
+//	<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
+//
 // -------------------------------------------------------------------------------------
 // PrefixReposterPubKeyRepostedPostHashToRepostPostHash
 func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash BlockHash, repostPostHash BlockHash) []byte {

@@ -107,9 +107,7 @@ const (
 	EncoderTypeGroupMembershipKey
 	EncoderTypeNewMessageEntry
 	EncoderTypeAccessGroupMemberEnumerationEntry
-	EncoderTypeDmThreadExistence
-	EncoderTypeGroupChatThreadExistence
-	EncoderTypeThreadAttributesEntry
+	EncoderTypeDmThreadEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -230,12 +228,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &NewMessageEntry{}
 	case EncoderTypeAccessGroupMemberEnumerationEntry:
 		return &AccessGroupMemberEnumerationEntry{}
-	case EncoderTypeDmThreadExistence:
-		return &DmThreadExistence{}
-	case EncoderTypeGroupChatThreadExistence:
-		return &GroupChatThreadExistence{}
-	case EncoderTypeThreadAttributesEntry:
-		return &ThreadAttributesEntry{}
+	case EncoderTypeDmThreadEntry:
+		return &DmThreadEntry{}
 	}
 
 	// Txindex encoder types
@@ -896,12 +890,8 @@ type UtxoOperation struct {
 
 	// PrevNewMessageEntry is the previous message entry, used for disconnecting NewMessage transactions.
 	PrevNewMessageEntry *NewMessageEntry
-	// PrevDmThreadExistence is used for disconnecting DM message threads.
-	PrevDmThreadExistence *DmThreadExistence
-	// PrevGroupChatThreadExistence is used for disconnecting Group chat threads.
-	PrevGroupChatThreadExistence *GroupChatThreadExistence
-	// PrevThreadAttributesEntry is used for disconnecting thread attributes.
-	PrevThreadAttributesEntry *ThreadAttributesEntry
+	// PrevDmThreadEntry is used for disconnecting DM message threads.
+	PrevDmThreadEntry *DmThreadEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1212,14 +1202,8 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		// PrevNewMessageEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevNewMessageEntry, skipMetadata...)...)
 
-		// PrevDmThreadExistence
-		data = append(data, EncodeToBytes(blockHeight, op.PrevDmThreadExistence, skipMetadata...)...)
-
-		// PrevGroupChatThreadExistence
-		data = append(data, EncodeToBytes(blockHeight, op.PrevGroupChatThreadExistence, skipMetadata...)...)
-
-		// PrevThreadAttributesEntry
-		data = append(data, EncodeToBytes(blockHeight, op.PrevThreadAttributesEntry, skipMetadata...)...)
+		// PrevDmThreadEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevDmThreadEntry, skipMetadata...)...)
 	}
 
 	return data
@@ -1809,28 +1793,12 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNewMessageEntry")
 		}
 
-		// PrevDmThreadExistence
-		dmThreadExistence := &DmThreadExistence{}
+		// PrevDmThreadEntry
+		dmThreadExistence := &DmThreadEntry{}
 		if exist, err := DecodeFromBytes(dmThreadExistence, rr); exist && err == nil {
-			op.PrevDmThreadExistence = dmThreadExistence
+			op.PrevDmThreadEntry = dmThreadExistence
 		} else if err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevDmThreadExistence")
-		}
-
-		// PrevGroupChatThreadExistence
-		groupChatThreadExistence := &GroupChatThreadExistence{}
-		if exist, err := DecodeFromBytes(groupChatThreadExistence, rr); exist && err == nil {
-			op.PrevGroupChatThreadExistence = groupChatThreadExistence
-		} else if err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGroupChatThreadExistence")
-		}
-
-		// PrevThreadAttributesEntry
-		threadAttributesEntry := &ThreadAttributesEntry{}
-		if exist, err := DecodeFromBytes(threadAttributesEntry, rr); exist && err == nil {
-			op.PrevThreadAttributesEntry = threadAttributesEntry
-		} else if err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevThreadAttributesEntry")
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevDmThreadEntry")
 		}
 	}
 
@@ -2354,58 +2322,32 @@ func (entry *AccessGroupMemberEnumerationEntry) GetEncoderType() EncoderType {
 	return EncoderTypeAccessGroupMemberEnumerationEntry
 }
 
-// DmThreadExistence
-type DmThreadExistence struct {
+// DmThreadEntry
+type DmThreadEntry struct {
 	isDeleted bool
 }
 
-func MakeDmThreadExistence() DmThreadExistence {
-	return DmThreadExistence{
+func MakeDmThreadEntry() DmThreadEntry {
+	return DmThreadEntry{
 		isDeleted: false,
 	}
 }
 
-func (exists *DmThreadExistence) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	return []byte{}
+func (entry *DmThreadEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	return data
 }
 
-func (exists *DmThreadExistence) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+func (entry *DmThreadEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	return nil
 }
 
-func (exists *DmThreadExistence) GetVersionByte(blockHeight uint64) byte {
+func (entry *DmThreadEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
-func (exists *DmThreadExistence) GetEncoderType() EncoderType {
-	return EncoderTypeDmThreadExistence
-}
-
-// GroupChatThreadExistence
-type GroupChatThreadExistence struct {
-	isDeleted bool
-}
-
-func MakeGroupChatThreadExistence() GroupChatThreadExistence {
-	return GroupChatThreadExistence{
-		isDeleted: false,
-	}
-}
-
-func (exists *GroupChatThreadExistence) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	return []byte{}
-}
-
-func (exists *GroupChatThreadExistence) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	return nil
-}
-
-func (exists *GroupChatThreadExistence) GetVersionByte(blockHeight uint64) byte {
-	return 0
-}
-
-func (exists *GroupChatThreadExistence) GetEncoderType() EncoderType {
-	return EncoderTypeGroupChatThreadExistence
+func (entry *DmThreadEntry) GetEncoderType() EncoderType {
+	return EncoderTypeDmThreadEntry
 }
 
 // GroupKeyName helps with handling key names in AccessGroups
@@ -2711,56 +2653,6 @@ func (entry *AccessGroupEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (entry *AccessGroupEntry) GetEncoderType() EncoderType {
 	return EncoderTypeAccessGroupEntry
-}
-
-type ThreadAttributesKey struct {
-	UserAccessGroupOwnerPublicKey  PublicKey
-	UserAccessGroupKeyName         GroupKeyName
-	PartyAccessGroupOwnerPublicKey PublicKey
-	PartyAccessGroupKeyName        GroupKeyName
-	NewMessageType
-}
-
-func NewThreadAttributesKey(userAccessGroupOwnerPublicKey PublicKey, userAccessGroupKeyName GroupKeyName,
-	partyAccessGroupOwnerPublicKey PublicKey, partyAccessGroupKeyName GroupKeyName, newMessageType NewMessageType) *ThreadAttributesKey {
-	return &ThreadAttributesKey{
-		UserAccessGroupOwnerPublicKey:  userAccessGroupOwnerPublicKey,
-		UserAccessGroupKeyName:         userAccessGroupKeyName,
-		PartyAccessGroupOwnerPublicKey: partyAccessGroupOwnerPublicKey,
-		PartyAccessGroupKeyName:        partyAccessGroupKeyName,
-		NewMessageType:                 newMessageType,
-	}
-}
-
-type ThreadAttributesEntry struct {
-	AttributeData map[string][]byte
-
-	isDeleted bool
-}
-
-func (entry *ThreadAttributesEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	var data []byte
-	data = append(data, EncodeExtraData(entry.AttributeData)...)
-	return data
-}
-
-func (entry *ThreadAttributesEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	attributeData, err := DecodeExtraData(rr)
-	if err != nil {
-		return errors.Wrapf(err, "ThreadAttributesEntry.RawDecodeWithoutMetadata: Problem reading "+
-			"AttributeData")
-	}
-	entry.AttributeData = attributeData
-
-	return nil
-}
-
-func (entry *ThreadAttributesEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
-}
-
-func (entry *ThreadAttributesEntry) GetEncoderType() EncoderType {
-	return EncoderTypeThreadAttributesEntry
 }
 
 // AccessGroupEntry is used to update access keys for a user, this was added in

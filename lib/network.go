@@ -7394,9 +7394,9 @@ type AccessGroupOperationType uint8
 type AccessGroupOperationString string
 
 const (
-	AccessGroupOperationTypeCreate  AccessGroupOperationType = 0
-	AccessGroupOperationTypeUpdate  AccessGroupOperationType = 1
-	AccessGroupOperationTypeUnknown AccessGroupOperationType = 2
+	AccessGroupOperationTypeUnknown AccessGroupOperationType = 0
+	AccessGroupOperationTypeCreate  AccessGroupOperationType = 1
+	AccessGroupOperationTypeUpdate  AccessGroupOperationType = 2
 )
 
 const (
@@ -7505,10 +7505,10 @@ type AccessGroupMemberOperationType uint8
 type AccessGroupMemberOperationString string
 
 const (
-	AccessGroupMemberOperationTypeAdd     AccessGroupMemberOperationType = 0
-	AccessGroupMemberOperationTypeRemove  AccessGroupMemberOperationType = 1
-	AccessGroupMemberOperationTypeUpdate  AccessGroupMemberOperationType = 2
-	AccessGroupMemberOperationTypeUnknown AccessGroupMemberOperationType = 3
+	AccessGroupMemberOperationTypeUnknown AccessGroupMemberOperationType = 0
+	AccessGroupMemberOperationTypeAdd     AccessGroupMemberOperationType = 1
+	AccessGroupMemberOperationTypeRemove  AccessGroupMemberOperationType = 2
+	AccessGroupMemberOperationTypeUpdate  AccessGroupMemberOperationType = 3
 )
 
 const (
@@ -7725,9 +7725,8 @@ const (
 	NewMessageTypeGroupChat NewMessageType = 1
 
 	// Message Operations
-	NewMessageOperationCreate           NewMessageOperation = 0
-	NewMessageOperationUpdate           NewMessageOperation = 1
-	NewMessageOperationThreadAttributes NewMessageOperation = 2
+	NewMessageOperationCreate NewMessageOperation = 0
+	NewMessageOperationUpdate NewMessageOperation = 1
 )
 
 type NewMessageMetadata struct {

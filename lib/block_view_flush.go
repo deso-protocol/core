@@ -1149,8 +1149,8 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 
 func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: flushing (len=%d) group chat messages, "+
-		"(len=%d) dm messages, (len=%d) dm threads, (len=%d) group chat threads",
-		len(bav.GroupChatMessagesIndex), len(bav.DmMessagesIndex), len(bav.DmThreadIndex), len(bav.GroupChatThreadIndex))
+		"(len=%d) dm messages, (len=%d) dm threads",
+		len(bav.GroupChatMessagesIndex), len(bav.DmMessagesIndex), len(bav.DmThreadIndex))
 
 	// Flush group chat messages to db.
 	// Go through all entries in GroupChatMessagesIndex and add them to the DB.
@@ -1186,40 +1186,6 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 			}
 		}
 		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d group chat messages, put %d group chat messages", numDeleted, numPut)
-	}
-	// Flush group chat threads to db.
-	// Go through all entries in GroupChatThreadIndex and add them to the DB.
-	{
-		numDeleted := 0
-		numPut := 0
-		for groupChatThreadKeyIter, existenceIter := range bav.GroupChatThreadIndex {
-			groupChatThreadKey := groupChatThreadKeyIter
-			if existenceIter == nil {
-				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
-					"groupChatThreadKey: %v, is nil", groupChatThreadKey)
-			}
-			existence := *existenceIter
-
-			// Delete the existing mapping in the DB for this map key, this will be re-added
-			// later if isDeleted=false.
-			if err := DBDeleteGroupChatThreadIndexWithTxn(txn, bav.Snapshot, groupChatThreadKey); err != nil {
-				return errors.Wrapf(
-					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
-						"for GroupChatThreadKey: %v: ", &groupChatThreadKey)
-			}
-
-			if existence.isDeleted {
-				numDeleted++
-			} else {
-				if err := DBPutGroupChatThreadIndexWithTxn(txn, bav.Snapshot, blockHeight, groupChatThreadKey); err != nil {
-					return errors.Wrapf(
-						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting group chat thread index "+
-							"with key %v and value %v", groupChatThreadKey, existence)
-				}
-				numPut++
-			}
-		}
-		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d group chat threads, put %d group chat threads", numDeleted, numPut)
 	}
 
 	// Flush dm messages to db.
@@ -1287,40 +1253,6 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 			}
 		}
 		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d dm threads, put %d dm threads", numDeleted, numPut)
-	}
-	// Flush thread attribute entries to db.
-	// Go through all entries in ThreadAttributeIndex and add them to the DB.
-	{
-		numDeleted := 0
-		numPut := 0
-		for threadAttributeKeyIter, threadAttributeEntryIter := range bav.ThreadAttributesIndex {
-			threadAttributeKey := threadAttributeKeyIter
-			if threadAttributeEntryIter == nil {
-				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
-					"threadAttributeKey: %v, is nil", threadAttributeKey)
-			}
-			threadAttributeEntry := *threadAttributeEntryIter
-
-			// Delete the existing mapping in the DB for this map key, this will be re-added
-			// later if isDeleted=false.
-			if err := DBDeleteThreadAttributesEntryWithTxn(txn, bav.Snapshot, threadAttributeKey); err != nil {
-				return errors.Wrapf(
-					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
-						"for ThreadAttributeKey: %v: ", &threadAttributeKey)
-			}
-
-			if threadAttributeEntry.isDeleted {
-				numDeleted++
-			} else {
-				if err := DBPutThreadAttributesEntryWithTxn(txn, bav.Snapshot, blockHeight, threadAttributeKey, &threadAttributeEntry); err != nil {
-					return errors.Wrapf(
-						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting thread attribute entry "+
-							"into thread attribute index with key %v and value %v", threadAttributeKey, threadAttributeEntry)
-				}
-				numPut++
-			}
-		}
-		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d thread attributes, put %d thread attributes", numDeleted, numPut)
 	}
 
 	return nil
