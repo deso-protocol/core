@@ -254,13 +254,11 @@ type ForkHeights struct {
 	// we introduce derived keys without a spending limit.
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
-	// AssociationsBlockHeight defines the height at which
-	// we introduce UserAssociations and PostAssociations.
-	AssociationsBlockHeight uint32
+	// AssociationsAndAccessGroupsBlockHeight defines the height at which
+	// we introduce UserAssociations and PostAssociations, as well as Acess Groups
+	// and related Access Group Messages.
+	AssociationsAndAccessGroupsBlockHeight uint32
 
-	// TODO: merge access groups and associations into one fork height
-	// DeSoAccessGroupsBlockHeight defines the height at which we introduce access groups.
-	DeSoAccessGroupsBlockHeight uint32
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -321,11 +319,9 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration              MigrationName = "DefaultMigration"
-	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
-	// TODO: merge these migrations into one
-	DeSoAccessGroupsMigration MigrationName = "DeSoAccessGroupsMigration"
-	AssociationsMigration     MigrationName = "AssociationsMigration"
+	DefaultMigration                     MigrationName = "DefaultMigration"
+	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
+	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -334,11 +330,8 @@ type EncoderMigrationHeights struct {
 	// DeSoUnlimitedDerivedKeys coincides with the DeSoUnlimitedDerivedKeysBlockHeight block
 	DeSoUnlimitedDerivedKeys MigrationHeight
 
-	// TODO: merge these migration heights into one
-	// DeSoAccessGroups coincides with the DeSoAccessGroupsBlockHeight block
-	DeSoAccessGroups MigrationHeight
-	// DeSoAssociations coincides with the AssociationsBlockHeight block
-	DeSoAssociations MigrationHeight
+	// This coincides with the AssociationsAndAccessGroups block
+	AssociationsAndAccessGroups MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -353,16 +346,10 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Height:  uint64(forkHeights.DeSoUnlimitedDerivedKeysBlockHeight),
 			Name:    UnlimitedDerivedKeysMigration,
 		},
-		// TODO: Merge these into one migration height
-		DeSoAccessGroups: MigrationHeight{
+		AssociationsAndAccessGroups: MigrationHeight{
 			Version: 2,
-			Height:  uint64(forkHeights.DeSoAccessGroupsBlockHeight),
-			Name:    DeSoAccessGroupsMigration,
-		},
-		DeSoAssociations: MigrationHeight{
-			Version: 3,
-			Height:  uint64(forkHeights.AssociationsBlockHeight),
-			Name:    AssociationsMigration,
+			Height:  uint64(forkHeights.AssociationsAndAccessGroupsBlockHeight),
+			Name:    AssociationsAndAccessGroupsMigration,
 		},
 	}
 }
@@ -604,9 +591,7 @@ var RegtestForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
-	// TODO: merge these into one height
-	DeSoAccessGroupsBlockHeight: uint32(0),
-	AssociationsBlockHeight:     uint32(0),
+	AssociationsAndAccessGroupsBlockHeight:               uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -750,11 +735,8 @@ var MainnetForkHeights = ForkHeights{
 	// Mon Sept 19 @ 12pm PST
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
 
-	// TODO: Merge these fork heights into one
 	// TODO: ADD FINAL DATE & TIME HERE
-	DeSoAccessGroupsBlockHeight: uint32(math.MaxUint32),
-	// FIXME: Set to real block height when we're ready.
-	AssociationsBlockHeight: math.MaxUint32,
+	AssociationsAndAccessGroupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1010,11 +992,8 @@ var TestnetForkHeights = ForkHeights{
 	// Tues Sept 13 @ 10am PT
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
 
-	// TODO: Merge these fork heights into one
 	// TODO: ADD FINAL DATE & TIME HERE
-	DeSoAccessGroupsBlockHeight: uint32(math.MaxUint32),
-	// FIXME: Set to real block height when we're ready.
-	AssociationsBlockHeight: math.MaxUint32,
+	AssociationsAndAccessGroupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1299,6 +1278,8 @@ const (
 	// Access group key constants
 	MinAccessGroupKeyNameCharacters = 1
 	MaxAccessGroupKeyNameCharacters = 32
+
+	// TODO: Are these fields needed?
 	// Access group enumeration max recursion depth.
 	MaxAccessGroupMemberEnumerationRecursionDepth = 10
 	// Dm and group chat message entries paginated fetch max recursion depth

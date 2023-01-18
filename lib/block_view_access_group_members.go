@@ -379,7 +379,7 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Make sure access groups are live.
-	if blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorAccessGroupMembersBeforeBlockHeight, "_connectAccessGroupMembers: "+
 				"Problem connecting access group members: DeSo V3 messages are not live yet")
@@ -459,7 +459,8 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 		accessGroupMemberPublicKeys[memberPublicKey] = struct{}{}
 	}
 
-	// We also validate that each access group member entry in transaction metadata points to an existing, previously registered access group.
+	// We also validate that each access group member entry in transaction metadata points to an existing,
+	// previously registered access group.
 	for _, accessMember := range txMeta.AccessGroupMembersList {
 		if err := bav.ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 			accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName, blockHeight); err != nil {
@@ -799,6 +800,9 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationRemove(txM
 
 		// Add the existing access member group entry to our list of previous entries. Make copy to it so that we
 		// don't get some unexpected results if we ever modify the UtxoView entry.
+		//
+		// TODO: Note that the map data isn't being copied, whichi could result in bugs on disconnects. Ignoring
+		// for now because we're going to get rid of disconnects.
 		existingGroupMemberEntryCopy := *existingGroupMemberEntry
 		prevAccessGroupMemberEntries = append(prevAccessGroupMemberEntries, &existingGroupMemberEntryCopy)
 

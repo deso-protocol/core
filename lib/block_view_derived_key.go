@@ -189,9 +189,6 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
 			AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
 		}
-		if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
-			newTransactionSpendingLimit.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
-		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 			// Copy the existing transaction spending limit.
 			newTransactionSpendingLimitCopy := *prevDerivedKeyEntry.TransactionSpendingLimitTracker
@@ -271,7 +268,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						}
 					}
 					// ====== Associations Fork ======
-					if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+					if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 						for associationLimitKey, transactionCount := range transactionSpendingLimit.AssociationLimitMap {
 							if transactionCount == 0 {
 								delete(newTransactionSpendingLimit.AssociationLimitMap, associationLimitKey)
@@ -280,11 +277,12 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 							}
 						}
 					}
+
 					// ====== Access Group Fork ======
 					// Note that we don't really need to gate this logic by the blockheight because the to/from bytes
 					// encoding/decoding will never overwrite these maps prior to the fork blockheight. We do it
 					// anyway as a sanity-check.
-					if blockHeight >= bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
+					if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 						for accessGroupLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMap {
 							if transactionCount == 0 {
 								delete(newTransactionSpendingLimit.AccessGroupMap, accessGroupLimitKey)

@@ -1105,6 +1105,9 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 		// the member entry, just the existence of the member. The reason we store both mappings is that we want to be able
 		// to quickly iterate over all the members of a given access group, and we want to be able to quickly iterate over
 		// all the access groups where a given public key is a member.
+		//
+		// TODO: Would probably be a bit cleaner to have one function that bundles these functions like
+		// we do for other parts of the code but OK for now.
 		if err := DBDeleteAccessGroupMemberEntryWithTxn(txn, bav.Snapshot,
 			groupMembershipKey.AccessGroupMemberPublicKey, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
@@ -1125,6 +1128,8 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 		if accessGroupMember.isDeleted {
 			numDeleted++
 		} else {
+			// TODO: Would probably be a bit cleaner to have one function that bundles these functions like
+			// we do for other parts of the code but OK for now.
 			if err := DBPutAccessGroupMemberEntryWithTxn(txn, bav.Snapshot, blockHeight,
 				&accessGroupMember, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
 
@@ -1222,18 +1227,19 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 		}
 		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d dm messages, put %d dm messages", numDeleted, numPut)
 	}
+
 	// Flush dm threads to db.
 	// Go through all entries in DmThreadIndex and add them to the DB.
 	{
 		numDeleted := 0
 		numPut := 0
-		for dmThreadKeyIter, existenceIter := range bav.DmThreadIndex {
+		for dmThreadKeyIter, dmThreadEntryIter := range bav.DmThreadIndex {
 			dmThreadKey := dmThreadKeyIter
-			if existenceIter == nil {
+			if dmThreadEntryIter == nil {
 				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
 					"dmThreadKey: %v, is nil", dmThreadKey)
 			}
-			existence := *existenceIter
+			dmThreadEntry := *dmThreadEntryIter
 
 			// Delete the existing mapping in the DB for this map key, this will be re-added
 			// later if isDeleted=false.
@@ -1242,7 +1248,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings for DmThreadKey: %v: ", &dmThreadKey)
 			}
 
-			if existence.isDeleted {
+			if dmThreadEntry.isDeleted {
 				numDeleted++
 			} else {
 				if err := DBPutDmThreadIndexWithTxn(txn, bav.Snapshot, blockHeight, dmThreadKey); err != nil {

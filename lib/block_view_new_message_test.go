@@ -72,7 +72,7 @@ func TestNewMessage(t *testing.T) {
 	fundPublicKeysWithNanosMap[*m3PublicKey] = 100
 	initChainCallback := func(tm *transactionTestMeta) {
 		_setAccessGroupParams(tm)
-		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 100
+		tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 100
 	}
 	tConfig := &transactionTestConfig{
 		t:                          t,
@@ -118,7 +118,7 @@ func TestNewMessage(t *testing.T) {
 		tv1MessageEntry, NewMessageTypeDm, NewMessageOperationCreate,
 		RuleErrorNewMessageBeforeDeSoAccessGroups)
 	tv1.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
-		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
+		tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	}
 	// Send and update a dm message from (m0, baseGroup) to (m1, baseGroup)
 	tv2MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,
@@ -232,7 +232,7 @@ func TestNewMessage(t *testing.T) {
 	// Add the above transactions to a block.
 	tvv1 := []*transactionTestVector{tv1, tv2, tv3, tv4, tv5, tv6, tv7}
 	tvb1DisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 100
+		tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 100
 	}
 	tvb1 := NewTransactionTestVectorBlock(tvv1, nil, tvb1DisconnectCallback)
 

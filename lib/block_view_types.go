@@ -1176,20 +1176,13 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
 	}
 
-	// TODO: merge associations and access group migrations
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		// PrevUserAssociationEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevUserAssociationEntry, skipMetadata...)...)
 
 		// PrevPostAssociationEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevPostAssociationEntry, skipMetadata...)...)
-	}
 
-	//
-	// DeSoAccessGroupsMigration Encoder Migration
-	//
-
-	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
 		// PrevAccessGroupEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevAccessGroupEntry, skipMetadata...)...)
 
@@ -1740,8 +1733,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FilledDAOCoinLimitOrder")
 	}
 
-	// TODO: merge association and access group migrations
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		// PrevUserAssociationEntry
 		prevUserAssociationEntry := &UserAssociationEntry{}
 		if exist, err := DecodeFromBytes(prevUserAssociationEntry, rr); exist && err == nil {
@@ -1757,12 +1749,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		} else if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevPostAssociationEntry")
 		}
-	}
-	//
-	// DeSoAccessGroupsMigration Encoder Migration
-	//
 
-	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
 		// PrevAccessGroupEntry
 		accessGroupEntry := &AccessGroupEntry{}
 		if exist, err := DecodeFromBytes(accessGroupEntry, rr); exist && err == nil {
@@ -1806,7 +1793,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 }
 
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsMigration, DeSoAccessGroupsMigration)
+	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {
@@ -3442,7 +3429,7 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration, DeSoAccessGroupsMigration)
+	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration, AssociationsAndAccessGroupsMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {

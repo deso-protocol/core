@@ -640,7 +640,7 @@ func (bav *UtxoView) _connectNewMessage(
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Make sure access groups are live.
-	if blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 		return 0, 0, nil, RuleErrorNewMessageBeforeDeSoAccessGroups
 	}
 

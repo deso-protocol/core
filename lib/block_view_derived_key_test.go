@@ -1722,7 +1722,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = 0
 	// Setting DeSoAccessGroupsBlockHeight to 100 because flushToDb in this test uses hard-coded blockheight of 0, which
 	// breaks the encoding.
-	params.ForkHeights.DeSoAccessGroupsBlockHeight = 100
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 100
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	GlobalDeSoParams = *params
@@ -2641,7 +2641,7 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
 	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = unlimitedDerivedKeysBlockHeight
-	params.ForkHeights.DeSoAccessGroupsBlockHeight = 100
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 100
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	GlobalDeSoParams = *params
@@ -4183,7 +4183,7 @@ func _setTestDerivedKeyWithAccessGroupParams(tm *transactionTestMeta) {
 	tm.params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
 	tm.params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = 0
 	// TODO: Note that there a laziness comment in the spending limit transaction creation code.
-	tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 7
+	tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 7
 	tm.params.EncoderMigrationHeights = GetEncoderMigrationHeights(&tm.params.ForkHeights)
 	tm.params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&tm.params.ForkHeights)
 	tm.params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true

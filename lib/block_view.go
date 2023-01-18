@@ -1225,7 +1225,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	if txn.Signature.Sign == nil {
 		return nil, fmt.Errorf("_verifySignature: Transaction signature is empty")
 	}
-	if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+	if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 		if txn.Signature.HasHighS() {
 			return nil, errors.Wrapf(RuleErrorTxnSigHasHighS, "_verifySignature: high-S deteceted")
 		}
@@ -1322,7 +1322,7 @@ func (bav *UtxoView) ValidateDerivedKey(ownerPkBytes []byte, derivedPkBytes []by
 // Either to use the DER encoding and place the derived public key in transaction's ExtraData, or to use DeSo-DER signature
 // encoding and pass a special recovery ID into the signature's bytes. However, both encodings can't be used at the same time.
 func IsDerivedSignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _isDerived bool, _err error) {
-	if MigrationTriggered(uint64(blockHeight), AssociationsMigration) {
+	if MigrationTriggered(uint64(blockHeight), AssociationsAndAccessGroupsMigration) {
 		if txn.Signature.HasHighS() {
 			return nil, false, errors.Wrapf(
 				RuleErrorTxnSigHasHighS,

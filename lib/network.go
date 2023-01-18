@@ -241,6 +241,7 @@ const (
 type TxnString string
 
 const (
+	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 	TxnStringUnset                        TxnString = "UNSET"
 	TxnStringBlockReward                  TxnString = "BLOCK_REWARD"
 	TxnStringBasicTransfer                TxnString = "BASIC_TRANSFER"
@@ -274,7 +275,6 @@ const (
 	TxnStringAccessGroup                  TxnString = "ACCESS_GROUP_CREATE"
 	TxnStringAccessGroupMembers           TxnString = "ACCESS_GROUP_MEMBERS"
 	TxnStringNewMessage                   TxnString = "NEW_MESSAGE"
-	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 )
 
 var (
@@ -5309,7 +5309,7 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
 				Base58CheckEncode(accessGroupKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
 			opString += _indt(indentationCounter) + "Access Group Key Name: " +
-				hex.EncodeToString(accessGroupKey.AccessGroupKeyName.ToBytes()) + "\n"
+				string(accessGroupKey.AccessGroupKeyName.ToBytes()) + "\n"
 			opString += _indt(indentationCounter) + "Access Group Operation: " +
 				accessGroupKey.OperationType.ToString() + "\n"
 			opString += _indt(indentationCounter) + "Transaction Count: " +
@@ -5331,7 +5331,7 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
 				Base58CheckEncode(accessGroupMemberKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
 			opString += _indt(indentationCounter) + "Access Group Key Name: " +
-				hex.EncodeToString(accessGroupMemberKey.AccessGroupKeyName.ToBytes()) + "\n"
+				string(accessGroupMemberKey.AccessGroupKeyName.ToBytes()) + "\n"
 			opString += _indt(indentationCounter) + "Access Group Member Operation Type: " +
 				accessGroupMemberKey.OperationType.ToString() + "\n"
 			opString += _indt(indentationCounter) + "Transaction Count: " +
@@ -5476,9 +5476,8 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 		data = append(data, BoolToByte(tsl.IsUnlimited))
 	}
 
-	// TODO: merge associations and access group migrations
 	// AssociationLimitMap, gated by the encoder migration
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		associationLimitMapLength := uint64(len(tsl.AssociationLimitMap))
 		data = append(data, UintToBuf(associationLimitMapLength)...)
 		if associationLimitMapLength > 0 {
@@ -5499,7 +5498,7 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 		}
 	}
 
-	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		accessGroupLimitMapLength := uint64(len(tsl.AccessGroupMap))
 		data = append(data, UintToBuf(accessGroupLimitMapLength)...)
 		if accessGroupLimitMapLength > 0 {
@@ -5670,8 +5669,7 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
-	// TODO: merge Associations and access group migrations
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		associationMapLen, err := ReadUvarint(rr)
 		if err != nil {
 			return err
@@ -5696,7 +5694,7 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
-	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		// Access Group Map
 		accessGroupLimitMapLen, err := ReadUvarint(rr)
 		if err != nil {
@@ -7460,7 +7458,7 @@ type AccessGroupMetadata struct {
 	AccessGroupOwnerPublicKey []byte
 	AccessGroupPublicKey      []byte
 	AccessGroupKeyName        []byte
-	AccessGroupOperationType
+	AccessGroupOperationType  AccessGroupOperationType
 }
 
 func (txnData *AccessGroupMetadata) GetTxnType() TxnType {

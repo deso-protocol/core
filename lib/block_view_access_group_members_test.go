@@ -1531,11 +1531,11 @@ func _verifyMembersList(tm *transactionTestMeta, utxoView *UtxoView, accessGroup
 
 func _setAccessGroupParams(tm *transactionTestMeta) {
 	tm.params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
-	tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 0
+	tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	tm.params.EncoderMigrationHeights.DeSoUnlimitedDerivedKeys.Height = 0
-	tm.params.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
+	tm.params.EncoderMigrationHeights.AssociationsAndAccessGroups.Height = 0
 	GlobalDeSoParams.EncoderMigrationHeights.DeSoUnlimitedDerivedKeys.Height = 0
-	GlobalDeSoParams.EncoderMigrationHeights.DeSoAccessGroups.Height = 0
+	GlobalDeSoParams.EncoderMigrationHeights.AssociationsAndAccessGroups.Height = 0
 	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
 		tm.params.EncoderMigrationHeightsList[ii].Height = 0
 		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 0

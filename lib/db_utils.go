@@ -664,10 +664,10 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 		// prefix_id:"[74]"
 		return true, &NewMessageEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessagesIndex) {
-		// prefix_id:"[76]"
+		// prefix_id:"[75]"
 		return true, &NewMessageEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
-		// prefix_id:"[77]"
+		// prefix_id:"[76]"
 		return true, &DmThreadEntry{}
 	}
 
@@ -6787,7 +6787,7 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 	// encoding DAOCoinLimitOrderTxindexMetadata
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinLimitOrderTxindexMetadata, skipMetadata...)...)
 
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		// encoding CreateUserAssociationTxindexMetadata
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.CreateUserAssociationTxindexMetadata, skipMetadata...)...)
 		// encoding DeleteUserAssociationTxindexMetadata
@@ -6798,7 +6798,7 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.DeletePostAssociationTxindexMetadata, skipMetadata...)...)
 	}
 
-	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		// encoding AccessGroupTxindexMetadata
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.AccessGroupTxindexMetadata, skipMetadata...)...)
 		// encoding AccessGroupMembersTxindexMetadata
@@ -7001,7 +7001,7 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinLimitOrderTxindexMetadata")
 	}
 
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		// decoding CreateUserAssociationTxindexMetadata
 		CopyCreateUserAssociationTxindexMetadata := &CreateUserAssociationTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyCreateUserAssociationTxindexMetadata, rr); exist && err == nil {
@@ -7032,7 +7032,7 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		}
 	}
 
-	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		// decoding AccessGroupTxindexMetadata
 		CopyAccessGroupTxindexMetadata := &AccessGroupTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyAccessGroupTxindexMetadata, rr); exist && err == nil {
@@ -7059,7 +7059,7 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 }
 
 func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsMigration)
+	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration)
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {

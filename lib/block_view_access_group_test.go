@@ -51,7 +51,7 @@ func TestAccessGroup(t *testing.T) {
 	fundPublicKeysWithNanosMap[*m3PublicKey] = 100
 	initChainCallback := func(tm *transactionTestMeta) {
 		_setAccessGroupParams(tm)
-		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = 100
+		tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 100
 	}
 	tConfig := &transactionTestConfig{
 		t:                          t,
@@ -88,7 +88,7 @@ func TestAccessGroup(t *testing.T) {
 		"before fork height", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1,
 		AccessGroupOperationTypeCreate, nil, RuleErrorAccessGroupsBeforeBlockHeight)
 	tv1.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
-		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = uint32(0)
+		tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
 	}
 	tv2 := _createAccessGroupTestVector("TEST 2: (PASS) Try connecting access group create transaction "+
 		"after fork height", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1,
@@ -240,7 +240,7 @@ func TestAccessGroup(t *testing.T) {
 	}
 	tvbDisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
 		// Reset the ForkHeight for access groups
-		tm.params.ForkHeights.DeSoAccessGroupsBlockHeight = uint32(1000)
+		tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(1000)
 		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
 		require.NoError(err)
 		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0B}, []*AccessGroupId{})
