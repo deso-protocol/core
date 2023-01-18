@@ -2317,12 +2317,12 @@ func (bav *UtxoView) _checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(deri
 	}
 
 	// Look for the spending limit corresponding to this accessGroupMetadata.
-	groupKeyNameFromMeta := *NewGroupKeyName(accessGroupMetadata.AccessGroupKeyName)
-	for _, groupKeyNameIter := range []GroupKeyName{groupKeyNameFromMeta, AccessGroupKeyNameAny} {
+	for _, scopeTypeIter := range []AccessGroupScopeType{AccessGroupScopeTypeScoped, AccessGroupScopeTypeAny} {
 		for _, operationTypeIter := range []AccessGroupOperationType{operationType, AccessGroupOperationTypeAny} {
 			accessGroupLimitKey := MakeAccessGroupLimitKey(
 				*NewPublicKey(accessGroupMetadata.AccessGroupOwnerPublicKey),
-				groupKeyNameIter,
+				scopeTypeIter,
+				*NewGroupKeyName(accessGroupMetadata.AccessGroupKeyName),
 				operationTypeIter,
 			)
 			spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap[accessGroupLimitKey]
@@ -2379,12 +2379,12 @@ func (bav *UtxoView) _checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEnt
 	}
 
 	// Look for the spending limit corresponding to this accessGroupMembersMetadata.
-	groupKeyNameFromMeta := *NewGroupKeyName(accessGroupMembersMetadata.AccessGroupKeyName)
-	for _, groupKeyNameIter := range []GroupKeyName{groupKeyNameFromMeta, AccessGroupKeyNameAny} {
+	for _, scopeTypeIter := range []AccessGroupScopeType{AccessGroupScopeTypeScoped, AccessGroupScopeTypeAny} {
 		for _, operationTypeIter := range []AccessGroupMemberOperationType{operationType, AccessGroupMemberOperationTypeAny} {
 			accessGroupMembersLimitKey := MakeAccessGroupMemberLimitKey(
 				*NewPublicKey(accessGroupMembersMetadata.AccessGroupOwnerPublicKey),
-				groupKeyNameIter,
+				scopeTypeIter,
+				*NewGroupKeyName(accessGroupMembersMetadata.AccessGroupKeyName),
 				operationTypeIter,
 			)
 			spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap[accessGroupMembersLimitKey]

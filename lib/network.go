@@ -5308,6 +5308,8 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			indentationCounter++
 			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
 				Base58CheckEncode(accessGroupKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Access Group Scope Type: " +
+				accessGroupKey.AccessGroupScopeType.ToString() + "\n"
 			opString += _indt(indentationCounter) + "Access Group Key Name: " +
 				string(accessGroupKey.AccessGroupKeyName.ToBytes()) + "\n"
 			opString += _indt(indentationCounter) + "Access Group Operation: " +
@@ -5330,6 +5332,8 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			indentationCounter++
 			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
 				Base58CheckEncode(accessGroupMemberKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Access Group Scope Type: " +
+				accessGroupMemberKey.AccessGroupScopeType.ToString() + "\n"
 			opString += _indt(indentationCounter) + "Access Group Key Name: " +
 				string(accessGroupMemberKey.AccessGroupKeyName.ToBytes()) + "\n"
 			opString += _indt(indentationCounter) + "Access Group Member Operation Type: " +
@@ -6412,6 +6416,9 @@ type AccessGroupLimitKey struct {
 	// AccessGroupOwnerPublicKey is the public key of the owner of the access group.
 	AccessGroupOwnerPublicKey PublicKey
 
+	// AccessGroupScopeType is the scope of the access group.
+	AccessGroupScopeType AccessGroupScopeType
+
 	// AccessGroupKeyName is the name of the access group.
 	AccessGroupKeyName GroupKeyName
 
@@ -6422,6 +6429,7 @@ type AccessGroupLimitKey struct {
 func (accessGroupLimitKey *AccessGroupLimitKey) Encode() []byte {
 	var data []byte
 	data = append(data, EncodeByteArray(accessGroupLimitKey.AccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, UintToBuf(uint64(accessGroupLimitKey.AccessGroupScopeType))...)
 	data = append(data, EncodeByteArray(accessGroupLimitKey.AccessGroupKeyName.ToBytes())...)
 	data = append(data, UintToBuf(uint64(accessGroupLimitKey.OperationType))...)
 	return data
@@ -6434,6 +6442,12 @@ func (accessGroupLimitKey *AccessGroupLimitKey) Decode(rr *bytes.Reader) error {
 			"Problem reading AccessGroupOwnerPublicKey")
 	}
 	accessGroupLimitKey.AccessGroupOwnerPublicKey = *NewPublicKey(accessGroupOwnerPublicKeyBytes)
+
+	scopeType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: Problem decoding AccessGroupScopeType")
+	}
+	accessGroupLimitKey.AccessGroupScopeType = AccessGroupScopeType(scopeType)
 
 	accessGroupKeyNameBytes, err := DecodeByteArray(rr)
 	if err != nil {
@@ -6452,11 +6466,13 @@ func (accessGroupLimitKey *AccessGroupLimitKey) Decode(rr *bytes.Reader) error {
 
 func MakeAccessGroupLimitKey(
 	accessGroupOwnerPublicKey PublicKey,
+	accessGroupScopeType AccessGroupScopeType,
 	accessGroupKeyName GroupKeyName,
 	operationType AccessGroupOperationType,
 ) AccessGroupLimitKey {
 	return AccessGroupLimitKey{
 		AccessGroupOwnerPublicKey: accessGroupOwnerPublicKey,
+		AccessGroupScopeType:      accessGroupScopeType,
 		AccessGroupKeyName:        accessGroupKeyName,
 		OperationType:             operationType,
 	}
@@ -6465,6 +6481,9 @@ func MakeAccessGroupLimitKey(
 type AccessGroupMemberLimitKey struct {
 	// AccessGroupOwnerPublicKey is the public key of the owner of the access group.
 	AccessGroupOwnerPublicKey PublicKey
+
+	// AccessGroupScopeType is the scope of the access group member.
+	AccessGroupScopeType AccessGroupScopeType
 
 	// AccessGroupKeyName is the name of the access group.
 	AccessGroupKeyName GroupKeyName
@@ -6476,6 +6495,7 @@ type AccessGroupMemberLimitKey struct {
 func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Encode() []byte {
 	var data []byte
 	data = append(data, EncodeByteArray(accessGroupMemberLimitKey.AccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, UintToBuf(uint64(accessGroupMemberLimitKey.AccessGroupScopeType))...)
 	data = append(data, EncodeByteArray(accessGroupMemberLimitKey.AccessGroupKeyName.ToBytes())...)
 	data = append(data, UintToBuf(uint64(accessGroupMemberLimitKey.OperationType))...)
 	return data
@@ -6488,6 +6508,12 @@ func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Decode(rr *bytes.Rea
 			"Problem reading AccessGroupOwnerPublicKey")
 	}
 	accessGroupMemberLimitKey.AccessGroupOwnerPublicKey = *NewPublicKey(accessGroupOwnerPublicKeyBytes)
+
+	scopeType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMemberLimitKey.Decode: Problem reading AccessGroupScopeType")
+	}
+	accessGroupMemberLimitKey.AccessGroupScopeType = AccessGroupScopeType(scopeType)
 
 	accessGroupKeyNameBytes, err := DecodeByteArray(rr)
 	if err != nil {
@@ -6506,11 +6532,13 @@ func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Decode(rr *bytes.Rea
 
 func MakeAccessGroupMemberLimitKey(
 	accessGroupOwnerPublicKey PublicKey,
+	accessGroupScopeType AccessGroupScopeType,
 	accessGroupKeyName GroupKeyName,
 	operationType AccessGroupMemberOperationType,
 ) AccessGroupMemberLimitKey {
 	return AccessGroupMemberLimitKey{
 		AccessGroupOwnerPublicKey: accessGroupOwnerPublicKey,
+		AccessGroupScopeType:      accessGroupScopeType,
 		AccessGroupKeyName:        accessGroupKeyName,
 		OperationType:             operationType,
 	}
@@ -7393,26 +7421,69 @@ type PostAssociationQuery struct {
 // AccessGroupMetadata
 // =======================================================================================
 
-// When set in an access group spending limit as the group key name, the string "any" will be
-// treated as "special" to indicate that the derived key is allowed to create/update an access
-// group with "any" value as the "group key name."
-var AccessGroupKeyNameAny GroupKeyName = [32]byte{'a', 'n', 'y'}
+type AccessGroupScopeType uint8
+type AccessGroupScopeString string
+
+const (
+	AccessGroupScopeTypeAny     AccessGroupScopeType = 0
+	AccessGroupScopeTypeScoped  AccessGroupScopeType = 1
+	AccessGroupScopeTypeUnknown AccessGroupScopeType = 2
+)
+
+const (
+	AccessGroupScopeStringAny     AccessGroupScopeString = "any"
+	AccessGroupScopeStringScoped  AccessGroupScopeString = "scoped"
+	AccessGroupScopeStringUnknown AccessGroupScopeString = "unknown"
+)
+
+func (scopeType AccessGroupScopeType) ToAccessGroupOScopeString() AccessGroupScopeString {
+	switch scopeType {
+	case AccessGroupScopeTypeAny:
+		return AccessGroupScopeStringAny
+	case AccessGroupScopeTypeScoped:
+		return AccessGroupScopeStringScoped
+	default:
+		return AccessGroupScopeStringUnknown
+	}
+}
+
+func (scopeString AccessGroupScopeString) ToAccessGroupScopeType() AccessGroupScopeType {
+	switch scopeString {
+	case AccessGroupScopeStringAny:
+		return AccessGroupScopeTypeAny
+	case AccessGroupScopeStringScoped:
+		return AccessGroupScopeTypeScoped
+	default:
+		return AccessGroupScopeTypeUnknown
+	}
+}
+
+func (scopeType AccessGroupScopeType) ToString() string {
+	switch scopeType {
+	case AccessGroupScopeTypeAny:
+		return "AccessGroupScopeTypeAny"
+	case AccessGroupScopeTypeScoped:
+		return "AccessGroupScopeTypeScoped"
+	default:
+		return ""
+	}
+}
 
 type AccessGroupOperationType uint8
 type AccessGroupOperationString string
 
 const (
-	AccessGroupOperationTypeUnknown AccessGroupOperationType = 0
-	AccessGroupOperationTypeAny     AccessGroupOperationType = 1
-	AccessGroupOperationTypeCreate  AccessGroupOperationType = 2
-	AccessGroupOperationTypeUpdate  AccessGroupOperationType = 3
+	AccessGroupOperationTypeAny     AccessGroupOperationType = 0
+	AccessGroupOperationTypeCreate  AccessGroupOperationType = 1
+	AccessGroupOperationTypeUpdate  AccessGroupOperationType = 2
+	AccessGroupOperationTypeUnknown AccessGroupOperationType = 3
 )
 
 const (
-	AccessGroupOperationStringUnknown AccessGroupOperationString = "unknown"
 	AccessGroupOperationStringAny     AccessGroupOperationString = "any"
 	AccessGroupOperationStringCreate  AccessGroupOperationString = "create"
 	AccessGroupOperationStringUpdate  AccessGroupOperationString = "update"
+	AccessGroupOperationStringUnknown AccessGroupOperationString = "unknown"
 )
 
 func (groupOp AccessGroupOperationType) ToAccessGroupOperationString() AccessGroupOperationString {
