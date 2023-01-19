@@ -1115,7 +1115,7 @@ func TestNFTBasic(t *testing.T) {
 
 	// Happy path: can modify a post after it is NFTed (if above specified block height).
 	{
-		params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
+		params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
 		testMeta.expectedSenderBalances = append(
 			testMeta.expectedSenderBalances,
 			_getBalance(testMeta.t, testMeta.chain, nil, m0Pub),

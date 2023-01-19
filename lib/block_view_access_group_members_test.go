@@ -95,7 +95,7 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	tConfig := &transactionTestConfig{
 		t:                          t,
 		testBadger:                 true,
-		testPostgres:               false,
+		testPostgres:               true,
 		testPostgresPort:           5433,
 		disableLogging:             false,
 		initialBlocksMined:         4,
@@ -447,7 +447,7 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	tConfig := &transactionTestConfig{
 		t:                          t,
 		testBadger:                 true,
-		testPostgres:               false,
+		testPostgres:               true,
 		testPostgresPort:           5433,
 		disableLogging:             false,
 		initialBlocksMined:         4,
@@ -895,7 +895,7 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 	tConfig := &transactionTestConfig{
 		t:                          t,
 		testBadger:                 true,
-		testPostgres:               false,
+		testPostgres:               true,
 		testPostgresPort:           5433,
 		disableLogging:             false,
 		initialBlocksMined:         4,

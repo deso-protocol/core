@@ -56,7 +56,7 @@ func TestAccessGroup(t *testing.T) {
 	tConfig := &transactionTestConfig{
 		t:                          t,
 		testBadger:                 true,
-		testPostgres:               false,
+		testPostgres:               true,
 		testPostgresPort:           5433,
 		disableLogging:             false,
 		initialBlocksMined:         4,
