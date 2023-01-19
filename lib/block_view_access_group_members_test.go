@@ -1666,8 +1666,8 @@ func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
 			[]*AccessGroupMember{
 				{
 					AccessGroupMemberPublicKey: m1PkBytes,
-					AccessGroupMemberKeyName:   []byte("m1"),
-					EncryptedKey:               []byte{},
+					AccessGroupMemberKeyName:   BaseGroupKeyName().ToBytes(),
+					EncryptedKey:               []byte{1},
 					ExtraData:                  make(map[string][]byte),
 				},
 			},
@@ -1774,40 +1774,29 @@ func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 	}
 	{
-		//// Create access group derived key for any GroupKeyName + OperationType
-		//derivedKeyPriv := _submitAuthorizeDerivedKeyTxn(
-		//	MakeAccessGroupMemberLimitKey(
-		//		*NewPublicKey(senderPkBytes),
-		//		AccessGroupScopeTypeAny,
-		//		*NewGroupKeyName([]byte{}),
-		//		AccessGroupMemberOperationTypeAny,
-		//	),
-		//	3,
-		//)
-		//
-		//// Happy path: add authorized access group members
-		//err = _submitAccessGroupMembersTxnWithDerivedKey(
-		//	"GroupKeyName1", AccessGroupMemberOperationTypeAdd, derivedKeyPriv,
-		//)
-		//require.NoError(t, err)
-		//
-		//// Happy path: add authorized access group members to different group
-		//err = _submitAccessGroupMembersTxnWithDerivedKey(
-		//	"GroupKeyName2", AccessGroupMemberOperationTypeAdd, derivedKeyPriv,
-		//)
-		//require.NoError(t, err)
-		//
-		//// Happy path: update authorized access group members
-		//err = _submitAccessGroupMembersTxnWithDerivedKey(
-		//	"GroupKeyName1", AccessGroupMemberOperationTypeUpdate, derivedKeyPriv,
-		//)
-		//require.NoError(t, err)
-		//
-		//// Sad path: spending limit is exceeded, unauthorized
-		//err = _submitAccessGroupMembersTxnWithDerivedKey(
-		//	"GroupKeyName2", AccessGroupMemberOperationTypeUpdate, derivedKeyPriv,
-		//)
-		//require.Error(t, err)
-		//require.Contains(t, err.Error(), RuleErrorAccessGroupMemberSpendingLimitInvalid)
+		// Create access group members derived key for any GroupKeyName + OperationType
+		accessGroupMemberLimitKey := MakeAccessGroupMemberLimitKey(
+			*NewPublicKey(senderPkBytes),
+			AccessGroupScopeTypeAny,
+			*NewGroupKeyName([]byte{}),
+			AccessGroupMemberOperationTypeAny,
+		)
+		derivedKeyPriv := _submitAuthorizeDerivedKeyTxn(nil, &accessGroupMemberLimitKey, 2)
+
+		// Happy path: update authorized access group members
+		txn = _createAccessGroupMemberTxn(groupKeyName, AccessGroupMemberOperationTypeUpdate)
+		err = _submitTxnWithDerivedKey(txn, derivedKeyPriv)
+		require.NoError(t, err)
+
+		// Happy path: add authorized access group members to different group
+		txn = _createAccessGroupMemberTxn(groupKeyName+"2", AccessGroupMemberOperationTypeAdd)
+		err = _submitTxnWithDerivedKey(txn, derivedKeyPriv)
+		require.NoError(t, err)
+
+		// Sad path: spending limit is exceeded, unauthorized
+		txn = _createAccessGroupMemberTxn(groupKeyName+"2", AccessGroupMemberOperationTypeAdd)
+		err = _submitTxnWithDerivedKey(txn, derivedKeyPriv)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAccessGroupMemberSpendingLimitInvalid)
 	}
 }
