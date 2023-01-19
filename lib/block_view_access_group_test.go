@@ -482,3 +482,68 @@ func _customCreateAccessGroupTxn(
 
 	return txn, totalInput, changeAmount, fees, nil
 }
+
+func TestAccessGroupTxnSpendingLimitToMetamaskString(t *testing.T) {
+	toMetamaskString := func(
+		scopeType AccessGroupScopeType,
+		groupKeyName GroupKeyName,
+		operationType AccessGroupOperationType,
+	) string {
+		accessGroupLimitKey := MakeAccessGroupLimitKey(
+			*NewPublicKey(m0PkBytes),
+			scopeType,
+			groupKeyName,
+			operationType,
+		)
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+			AccessGroupMap: map[AccessGroupLimitKey]uint64{
+				accessGroupLimitKey: 1,
+			},
+		}
+		return txnSpendingLimit.ToMetamaskString(&GlobalDeSoParams)
+	}
+
+	// Scoped GroupKeyName + OperationType
+	metamaskStr := toMetamaskString(
+		AccessGroupScopeTypeScoped,
+		*NewGroupKeyName([]byte("TestGroupKeyName")),
+		AccessGroupOperationTypeCreate,
+	)
+	require.Equal(t, metamaskStr,
+		"Spending limits on the derived key:\n"+
+			"	Total $DESO Limit: 1.0 $DESO\n"+
+			"	Transaction Count Limit: \n"+
+			"		AUTHORIZE_DERIVED_KEY: 1\n"+
+			"	Access Group Restrictions:\n"+
+			"		[\n"+
+			"			Access Group Owner Public Key: "+m0Pub+"\n"+
+			"			Access Group Key Name: TestGroupKeyName\n"+
+			"			Access Group Operation: Create\n"+
+			"			Transaction Count: 1\n"+
+			"		]\n",
+	)
+
+	// Any GroupKeyName + OperationType
+	metamaskStr = toMetamaskString(
+		AccessGroupScopeTypeAny,
+		*NewGroupKeyName([]byte{}),
+		AccessGroupOperationTypeAny,
+	)
+	require.Equal(t, metamaskStr,
+		"Spending limits on the derived key:\n"+
+			"	Total $DESO Limit: 1.0 $DESO\n"+
+			"	Transaction Count Limit: \n"+
+			"		AUTHORIZE_DERIVED_KEY: 1\n"+
+			"	Access Group Restrictions:\n"+
+			"		[\n"+
+			"			Access Group Owner Public Key: "+m0Pub+"\n"+
+			"			Access Group Key Name: Any\n"+
+			"			Access Group Operation: Any\n"+
+			"			Transaction Count: 1\n"+
+			"		]\n",
+	)
+}
