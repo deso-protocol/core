@@ -2586,7 +2586,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 				"		]\n",
 		)
 
-		// Unscoped AssociationType + App + Operation
+		// Any AssociationType + App + Operation
 		metamaskStr = toMetamaskString(
 			"", ZeroPKID, AssociationAppScopeTypeAny, AssociationOperationAny,
 		)
