@@ -2320,8 +2320,6 @@ func (bav *UtxoView) _checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(deri
 	for _, scopeTypeIter := range []AccessGroupScopeType{AccessGroupScopeTypeScoped, AccessGroupScopeTypeAny} {
 		groupKeyName := *NewGroupKeyName(accessGroupMetadata.AccessGroupKeyName)
 		if scopeTypeIter == AccessGroupScopeTypeAny {
-			// FIXME: Verify that this is the right way to do this, and that we won't
-			// be screwed by the "base key" having an empty group name or whatever.
 			groupKeyName = *NewGroupKeyName([]byte{})
 		}
 
