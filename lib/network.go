@@ -5308,7 +5308,7 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			indentationCounter++
 			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
 				Base58CheckEncode(accessGroupKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
-			groupKeyName := string(bytes.Trim(accessGroupKey.AccessGroupKeyName.ToBytes(), "\x00"))
+			groupKeyName := string(AccessKeyNameDecode(&accessGroupKey.AccessGroupKeyName))
 			if accessGroupKey.AccessGroupScopeType == AccessGroupScopeTypeAny {
 				groupKeyName = "Any"
 			}
@@ -5339,7 +5339,7 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			indentationCounter++
 			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
 				Base58CheckEncode(accessGroupMemberKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
-			groupKeyName := string(bytes.Trim(accessGroupMemberKey.AccessGroupKeyName.ToBytes(), "\x00"))
+			groupKeyName := string(AccessKeyNameDecode(&accessGroupMemberKey.AccessGroupKeyName))
 			if accessGroupMemberKey.AccessGroupScopeType == AccessGroupScopeTypeAny {
 				groupKeyName = "Any"
 			}
