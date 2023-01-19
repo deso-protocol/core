@@ -2542,4 +2542,68 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		)
 		require.NoError(t, err)
 	}
+	{
+		// Test TransactionSpendingLimit.ToMetamaskString()
+		toMetamaskString := func(
+			associationType string,
+			appPKID PKID,
+			appScopeType AssociationAppScopeType,
+			operation AssociationOperation,
+		) string {
+			associationLimitKey := MakeAssociationLimitKey(
+				AssociationClassUser, []byte(associationType), appPKID, appScopeType, operation,
+			)
+			txnSpendingLimit := &TransactionSpendingLimit{
+				GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+				TransactionCountLimitMap: map[TxnType]uint64{
+					TxnTypeAuthorizeDerivedKey:   1,
+					TxnTypeCreateUserAssociation: 1,
+				},
+				AssociationLimitMap: map[AssociationLimitKey]uint64{
+					associationLimitKey: 1,
+				},
+			}
+			return txnSpendingLimit.ToMetamaskString(params)
+		}
+
+		// Scoped AssociationType + App + Operation
+		metamaskStr := toMetamaskString(
+			"REACTION", *m1PKID, AssociationAppScopeTypeScoped, AssociationOperationCreate,
+		)
+		require.Equal(t, metamaskStr,
+			"Spending limits on the derived key:\n"+
+				"	Total $DESO Limit: 1.0 $DESO\n"+
+				"	Transaction Count Limit: \n"+
+				"		AUTHORIZE_DERIVED_KEY: 1\n"+
+				"		CREATE_USER_ASSOCIATION: 1\n"+
+				"	Association Restrictions:\n"+
+				"		[\n"+
+				"			Association Class: User\n"+
+				"			Association Type: REACTION\n"+
+				"			App PKID: "+m1Pub+"\n"+
+				"			Operation: Create\n"+
+				"			Transaction Count: 1\n"+
+				"		]\n",
+		)
+
+		// Unscoped AssociationType + App + Operation
+		metamaskStr = toMetamaskString(
+			"", ZeroPKID, AssociationAppScopeTypeAny, AssociationOperationAny,
+		)
+		require.Equal(t, metamaskStr,
+			"Spending limits on the derived key:\n"+
+				"	Total $DESO Limit: 1.0 $DESO\n"+
+				"	Transaction Count Limit: \n"+
+				"		AUTHORIZE_DERIVED_KEY: 1\n"+
+				"		CREATE_USER_ASSOCIATION: 1\n"+
+				"	Association Restrictions:\n"+
+				"		[\n"+
+				"			Association Class: User\n"+
+				"			Association Type: Any\n"+
+				"			App PKID: Any\n"+
+				"			Operation: Any\n"+
+				"			Transaction Count: 1\n"+
+				"		]\n",
+		)
+	}
 }

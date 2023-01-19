@@ -15,6 +15,7 @@ import (
 	"net"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -5243,10 +5244,18 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			indentationCounter++
 			opString += _indt(indentationCounter) + "Association Class: " +
 				limitKey.AssociationClass.ToString() + "\n"
+			associationType := strings.ToUpper(limitKey.AssociationType)
+			if associationType == "" {
+				associationType = "Any"
+			}
 			opString += _indt(indentationCounter) + "Association Type: " +
-				limitKey.AssociationType + "\n"
+				associationType + "\n"
+			appPublicKeyBase58Check := "Any"
+			if limitKey.AppScopeType == AssociationAppScopeTypeScoped {
+				appPublicKeyBase58Check = Base58CheckEncode(limitKey.AppPKID.ToBytes(), false, params)
+			}
 			opString += _indt(indentationCounter) + "App PKID: " +
-				Base58CheckEncode(limitKey.AppPKID.ToBytes(), false, params) + "\n"
+				appPublicKeyBase58Check + "\n"
 			opString += _indt(indentationCounter) + "Operation: " +
 				limitKey.Operation.ToString() + "\n"
 			opString += _indt(indentationCounter) + "Transaction Count: " +
@@ -6046,9 +6055,9 @@ type AssociationOperation uint8
 type AssociationOperationString string
 
 const (
-	UserAssociationClassString      AssociationClassString = "user"
-	PostAssociationClassString      AssociationClassString = "post"
-	UndefinedAssociationClassString AssociationClassString = "undefined"
+	UndefinedAssociationClassString AssociationClassString = "Undefined"
+	UserAssociationClassString      AssociationClassString = "User"
+	PostAssociationClassString      AssociationClassString = "Post"
 )
 
 func (associationClass AssociationClass) ToString() string {
@@ -6078,9 +6087,9 @@ func (associationClassString AssociationClassString) ToAssociationClass() Associ
 }
 
 const (
-	AnyAssociationAppScopeTypeString       AssociationAppScopeTypeString = "any"
-	ScopedAssociationAppScopeTypeString    AssociationAppScopeTypeString = "scoped"
-	UndefinedAssociationAppScopeTypeString AssociationAppScopeTypeString = "undefined"
+	UndefinedAssociationAppScopeTypeString AssociationAppScopeTypeString = "Undefined"
+	AnyAssociationAppScopeTypeString       AssociationAppScopeTypeString = "Any"
+	ScopedAssociationAppScopeTypeString    AssociationAppScopeTypeString = "Scoped"
 )
 
 func (associationAppScopeType AssociationAppScopeType) ToString() string {
@@ -6110,10 +6119,10 @@ func (associationAppScopeTypeString AssociationAppScopeTypeString) ToAssociation
 }
 
 const (
-	AnyAssociationOperation       AssociationOperationString = "any"
-	CreateAssociationOperation    AssociationOperationString = "create"
-	DeleteAssociationOperation    AssociationOperationString = "delete"
-	UndefinedAssociationOperation AssociationOperationString = "undefined"
+	UndefinedAssociationOperation AssociationOperationString = "Undefined"
+	AnyAssociationOperation       AssociationOperationString = "Any"
+	CreateAssociationOperation    AssociationOperationString = "Create"
+	DeleteAssociationOperation    AssociationOperationString = "Delete"
 )
 
 func (associationOperation AssociationOperation) ToString() string {
@@ -6148,18 +6157,18 @@ func (associationOperationString AssociationOperationString) ToAssociationOperat
 
 const (
 	// AssociationClass: User || Post
-	AssociationClassUser      AssociationClass = 0
-	AssociationClassPost      AssociationClass = 1
-	AssociationClassUndefined AssociationClass = 2
+	AssociationClassUndefined AssociationClass = 0
+	AssociationClassUser      AssociationClass = 1
+	AssociationClassPost      AssociationClass = 2
 	// AssociationScope: Any || Scoped
-	AssociationAppScopeTypeAny       AssociationAppScopeType = 0
-	AssociationAppScopeTypeScoped    AssociationAppScopeType = 1
-	AssociationAppScopeTypeUndefined AssociationAppScopeType = 2
+	AssociationAppScopeTypeUndefined AssociationAppScopeType = 0
+	AssociationAppScopeTypeAny       AssociationAppScopeType = 1
+	AssociationAppScopeTypeScoped    AssociationAppScopeType = 2
 	// AssociationOperation: Any || Create || Delete
-	AssociationOperationAny       AssociationOperation = 0
-	AssociationOperationCreate    AssociationOperation = 1
-	AssociationOperationDelete    AssociationOperation = 2
-	AssociationOperationUndefined AssociationOperation = 3
+	AssociationOperationUndefined AssociationOperation = 0
+	AssociationOperationAny       AssociationOperation = 1
+	AssociationOperationCreate    AssociationOperation = 2
+	AssociationOperationDelete    AssociationOperation = 3
 )
 
 func (associationLimitKey AssociationLimitKey) Encode() []byte {
