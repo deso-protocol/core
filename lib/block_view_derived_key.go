@@ -267,7 +267,11 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
 						}
 					}
-					// ====== Associations Fork ======
+
+					// ====== Associations And Access Groups Fork ======
+					// Note that we don't really need to gate this logic by the blockheight because the to/from bytes
+					// encoding/decoding will never overwrite these maps prior to the fork blockheight. We do it
+					// anyway as a sanity-check.
 					if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 						for associationLimitKey, transactionCount := range transactionSpendingLimit.AssociationLimitMap {
 							if transactionCount == 0 {
@@ -276,13 +280,6 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 								newTransactionSpendingLimit.AssociationLimitMap[associationLimitKey] = transactionCount
 							}
 						}
-					}
-
-					// ====== Access Group Fork ======
-					// Note that we don't really need to gate this logic by the blockheight because the to/from bytes
-					// encoding/decoding will never overwrite these maps prior to the fork blockheight. We do it
-					// anyway as a sanity-check.
-					if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 						for accessGroupLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMap {
 							if transactionCount == 0 {
 								delete(newTransactionSpendingLimit.AccessGroupMap, accessGroupLimitKey)

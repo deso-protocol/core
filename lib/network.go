@@ -5799,8 +5799,8 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 	}
 
 	if tsl.AssociationLimitMap != nil {
-		// Before the AssociationsBlockHeight, this map will be null.
-		// So we should ensure this is the case in the copy too.
+		// Before the AssociationsAndAccessGroupsBlockHeight, this map will
+		// be null. So we should ensure this is the case in the copy too.
 		copyTSL.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
 		for associationLimitKey, associationCount := range tsl.AssociationLimitMap {
 			copyTSL.AssociationLimitMap[associationLimitKey] = associationCount

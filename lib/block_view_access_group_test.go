@@ -88,7 +88,7 @@ func TestAccessGroup(t *testing.T) {
 		"before fork height", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1,
 		AccessGroupOperationTypeCreate, nil, RuleErrorAccessGroupsBeforeBlockHeight)
 	tv1.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
-		tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
+		tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(1)
 	}
 	tv2 := _createAccessGroupTestVector("TEST 2: (PASS) Try connecting access group create transaction "+
 		"after fork height", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupName1,

@@ -118,7 +118,7 @@ func TestNewMessage(t *testing.T) {
 		tv1MessageEntry, NewMessageTypeDm, NewMessageOperationCreate,
 		RuleErrorNewMessageBeforeDeSoAccessGroups)
 	tv1.connectCallback = func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView) {
-		tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
+		tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
 	}
 	// Send and update a dm message from (m0, baseGroup) to (m1, baseGroup)
 	tv2MessageEntry := _createMessageEntry(*m0PublicKey, *BaseGroupKeyName(), *m0PublicKey,

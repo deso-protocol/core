@@ -254,9 +254,11 @@ type ForkHeights struct {
 	// we introduce derived keys without a spending limit.
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
-	// AssociationsAndAccessGroupsBlockHeight defines the height at which
-	// we introduce UserAssociations and PostAssociations, as well as Acess Groups
-	// and related Access Group Messages.
+	// AssociationsAndAccessGroupsBlockHeight defines the height at which we introduced:
+	//   - Access Groups
+	//   - User and Post Associations
+	//   - Editable NFT posts
+	//   - Frozen posts
 	AssociationsAndAccessGroupsBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -1173,6 +1175,8 @@ const (
 	RepostedPostHash = "RecloutedPostHash"
 	// Key in transaction's extra map -- The presence of this key indicates that this post is a repost with a quote.
 	IsQuotedRepostKey = "IsQuotedReclout"
+	// Key in transaction's extra data map that freezes a post rendering it immutable.
+	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
 	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"
@@ -1232,6 +1236,7 @@ var (
 var (
 	QuotedRepostVal    = []byte{1}
 	NotQuotedRepostVal = []byte{0}
+	IsFrozenPostVal    = []byte{1}
 )
 
 var (
