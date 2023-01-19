@@ -5310,8 +5310,15 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 				Base58CheckEncode(accessGroupKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
 			opString += _indt(indentationCounter) + "Access Group Scope Type: " +
 				accessGroupKey.AccessGroupScopeType.ToString() + "\n"
+			// FIXME: Verify that this string prints nicely in the event that we are asking
+			// for a derived key with the permission to create a group with {any group key name}
+			// and {any operation type}.
+			groupKeyName := string(accessGroupKey.AccessGroupKeyName.ToBytes())
+			if accessGroupKey.AccessGroupScopeType == AccessGroupScopeTypeAny {
+				groupKeyName = "ANY"
+			}
 			opString += _indt(indentationCounter) + "Access Group Key Name: " +
-				string(accessGroupKey.AccessGroupKeyName.ToBytes()) + "\n"
+				groupKeyName + "\n"
 			opString += _indt(indentationCounter) + "Access Group Operation: " +
 				accessGroupKey.OperationType.ToString() + "\n"
 			opString += _indt(indentationCounter) + "Transaction Count: " +
@@ -5334,8 +5341,15 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 				Base58CheckEncode(accessGroupMemberKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
 			opString += _indt(indentationCounter) + "Access Group Scope Type: " +
 				accessGroupMemberKey.AccessGroupScopeType.ToString() + "\n"
+			// FIXME: Verify that this string prints nicely in the event that we are asking
+			// for a derived key with the permission to create a group with {any group key name}
+			// and {any operation type}.
+			groupKeyName := string(accessGroupMemberKey.AccessGroupKeyName.ToBytes())
+			if accessGroupMemberKey.AccessGroupScopeType == AccessGroupScopeTypeAny {
+				groupKeyName = "ANY"
+			}
 			opString += _indt(indentationCounter) + "Access Group Key Name: " +
-				string(accessGroupMemberKey.AccessGroupKeyName.ToBytes()) + "\n"
+				groupKeyName + "\n"
 			opString += _indt(indentationCounter) + "Access Group Member Operation Type: " +
 				accessGroupMemberKey.OperationType.ToString() + "\n"
 			opString += _indt(indentationCounter) + "Transaction Count: " +
@@ -7461,9 +7475,9 @@ func (scopeString AccessGroupScopeString) ToAccessGroupScopeType() AccessGroupSc
 func (scopeType AccessGroupScopeType) ToString() string {
 	switch scopeType {
 	case AccessGroupScopeTypeAny:
-		return "AccessGroupScopeTypeAny"
+		return "ANY"
 	case AccessGroupScopeTypeScoped:
-		return "AccessGroupScopeTypeScoped"
+		return "SCOPED"
 	default:
 		return ""
 	}

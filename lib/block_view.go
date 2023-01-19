@@ -2318,11 +2318,18 @@ func (bav *UtxoView) _checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(deri
 
 	// Look for the spending limit corresponding to this accessGroupMetadata.
 	for _, scopeTypeIter := range []AccessGroupScopeType{AccessGroupScopeTypeScoped, AccessGroupScopeTypeAny} {
+		groupKeyName := *NewGroupKeyName(accessGroupMetadata.AccessGroupKeyName)
+		if scopeTypeIter == AccessGroupScopeTypeAny {
+			// FIXME: Verify that this is the right way to do this, and that we won't
+			// be screwed by the "base key" having an empty group name or whatever.
+			groupKeyName = *NewGroupKeyName([]byte{})
+		}
+
 		for _, operationTypeIter := range []AccessGroupOperationType{operationType, AccessGroupOperationTypeAny} {
 			accessGroupLimitKey := MakeAccessGroupLimitKey(
 				*NewPublicKey(accessGroupMetadata.AccessGroupOwnerPublicKey),
 				scopeTypeIter,
-				*NewGroupKeyName(accessGroupMetadata.AccessGroupKeyName),
+				groupKeyName,
 				operationTypeIter,
 			)
 			spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap[accessGroupLimitKey]
@@ -2380,11 +2387,18 @@ func (bav *UtxoView) _checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEnt
 
 	// Look for the spending limit corresponding to this accessGroupMembersMetadata.
 	for _, scopeTypeIter := range []AccessGroupScopeType{AccessGroupScopeTypeScoped, AccessGroupScopeTypeAny} {
+		groupKeyName := *NewGroupKeyName(accessGroupMembersMetadata.AccessGroupKeyName)
+		if scopeTypeIter == AccessGroupScopeTypeAny {
+			// FIXME: Verify that this is the right way to do this, and that we won't
+			// be screwed by the "base key" having an empty group name or whatever.
+			groupKeyName = *NewGroupKeyName([]byte{})
+		}
+
 		for _, operationTypeIter := range []AccessGroupMemberOperationType{operationType, AccessGroupMemberOperationTypeAny} {
 			accessGroupMembersLimitKey := MakeAccessGroupMemberLimitKey(
 				*NewPublicKey(accessGroupMembersMetadata.AccessGroupOwnerPublicKey),
 				scopeTypeIter,
-				*NewGroupKeyName(accessGroupMembersMetadata.AccessGroupKeyName),
+				groupKeyName,
 				operationTypeIter,
 			)
 			spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap[accessGroupMembersLimitKey]
