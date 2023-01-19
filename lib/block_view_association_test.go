@@ -2556,8 +2556,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			txnSpendingLimit := &TransactionSpendingLimit{
 				GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 				TransactionCountLimitMap: map[TxnType]uint64{
-					TxnTypeAuthorizeDerivedKey:   1,
-					TxnTypeCreateUserAssociation: 1,
+					TxnTypeAuthorizeDerivedKey: 1,
 				},
 				AssociationLimitMap: map[AssociationLimitKey]uint64{
 					associationLimitKey: 1,
@@ -2575,7 +2574,6 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 				"	Total $DESO Limit: 1.0 $DESO\n"+
 				"	Transaction Count Limit: \n"+
 				"		AUTHORIZE_DERIVED_KEY: 1\n"+
-				"		CREATE_USER_ASSOCIATION: 1\n"+
 				"	Association Restrictions:\n"+
 				"		[\n"+
 				"			Association Class: User\n"+
@@ -2595,7 +2593,6 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 				"	Total $DESO Limit: 1.0 $DESO\n"+
 				"	Transaction Count Limit: \n"+
 				"		AUTHORIZE_DERIVED_KEY: 1\n"+
-				"		CREATE_USER_ASSOCIATION: 1\n"+
 				"	Association Restrictions:\n"+
 				"		[\n"+
 				"			Association Class: User\n"+
