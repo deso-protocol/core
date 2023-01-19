@@ -1536,3 +1536,278 @@ func _setAccessGroupParams(tm *transactionTestMeta) {
 	tm.params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&tm.params.ForkHeights)
 	GlobalDeSoParams = *tm.params
 }
+
+func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
+	// Initialize test chain and miner.
+	var err error
+	chain, params, db := NewLowDifficultyBlockchain()
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Initialize fork heights.
+	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
+	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err = miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height) + 1
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       uint32(blockHeight),
+		feeRateNanosPerKb: uint64(101),
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+	require.NoError(t, err)
+	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
+	require.NoError(t, err)
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+
+	// Helper funcs
+	_submitAuthorizeDerivedKeyTxn := func(
+		accessGroupLimitKey *AccessGroupLimitKey,
+		accessGroupMemberLimitKey *AccessGroupMemberLimitKey,
+		count int,
+	) string {
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+		}
+		if accessGroupLimitKey != nil {
+			txnSpendingLimit.AccessGroupMap = map[AccessGroupLimitKey]uint64{
+				*accessGroupLimitKey: uint64(count),
+			}
+		}
+		if accessGroupMemberLimitKey != nil {
+			txnSpendingLimit.AccessGroupMemberMap = map[AccessGroupMemberLimitKey]uint64{
+				*accessGroupMemberLimitKey: uint64(count),
+			}
+		}
+
+		derivedKeyMetadata, derivedKeyAuthPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
+			t, senderPrivKey, blockHeight+5, txnSpendingLimit, false, blockHeight,
+		)
+		derivedKeyAuthPrivBase58Check := Base58CheckEncode(derivedKeyAuthPriv.Serialize(), true, params)
+
+		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraDataAndSpendingLimits(
+			t,
+			chain,
+			db,
+			params,
+			utxoView,
+			testMeta.feeRateNanosPerKb,
+			senderPkBytes,
+			derivedKeyMetadata.DerivedPublicKey,
+			derivedKeyAuthPrivBase58Check,
+			derivedKeyMetadata.ExpirationBlock,
+			derivedKeyMetadata.AccessSignature,
+			false,
+			nil,
+			nil,
+			txnSpendingLimit,
+		)
+		require.NoError(t, err)
+		require.NoError(t, utxoView.FlushToDb(0))
+		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+		testMeta.txns = append(testMeta.txns, txn)
+
+		err = utxoView.ValidateDerivedKey(senderPkBytes, derivedKeyMetadata.DerivedPublicKey, blockHeight)
+		require.NoError(t, err)
+		return derivedKeyAuthPrivBase58Check
+	}
+
+	_createAccessGroupTxn := func(
+		accessGroupKeyName string,
+		operationType AccessGroupOperationType,
+	) *MsgDeSoTxn {
+		txn, _, _, _, err := testMeta.chain.CreateAccessGroupTxn(
+			senderPkBytes,
+			m0PkBytes,
+			[]byte(accessGroupKeyName),
+			operationType,
+			make(map[string][]byte),
+			testMeta.feeRateNanosPerKb,
+			mempool,
+			[]*DeSoOutput{},
+		)
+		require.NoError(t, err)
+		return txn
+	}
+
+	_createAccessGroupMemberTxn := func(
+		accessGroupKeyName string,
+		operationType AccessGroupMemberOperationType,
+	) *MsgDeSoTxn {
+		txn, _, _, _, err := testMeta.chain.CreateAccessGroupMembersTxn(
+			senderPkBytes,
+			[]byte(accessGroupKeyName),
+			[]*AccessGroupMember{
+				{
+					AccessGroupMemberPublicKey: m1PkBytes,
+					AccessGroupMemberKeyName:   []byte("m1"),
+					EncryptedKey:               []byte{},
+					ExtraData:                  make(map[string][]byte),
+				},
+			},
+			operationType,
+			make(map[string][]byte),
+			testMeta.feeRateNanosPerKb,
+			mempool,
+			[]*DeSoOutput{},
+		)
+		require.NoError(t, err)
+		return txn
+	}
+
+	_submitTxnWithDerivedKey := func(
+		txn *MsgDeSoTxn,
+		derivedKeyPrivBase58Check string,
+	) error {
+		// Get UTXO view.
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		// Sign txn.
+		_signTxnWithDerivedKey(t, txn, derivedKeyPrivBase58Check)
+		// Connect txn.
+		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
+			txn,
+			txn.Hash(),
+			getTxnSize(*txn),
+			testMeta.savedHeight,
+			true,
+			false,
+		)
+		if err != nil {
+			return err
+		}
+		// Flush UTXO view to the db.
+		require.NoError(t, utxoView.FlushToDb(0))
+		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+		testMeta.txns = append(testMeta.txns, txn)
+		return nil
+	}
+
+	{
+		// ParamUpdater set min fee rate
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1,
+			1,
+			-1,
+			-1,
+			-1,
+		)
+	}
+	var txn *MsgDeSoTxn
+	groupKeyName := "TestGroupKeyName"
+	{
+		// Create access group derived key for any GroupKeyName + OperationType
+		accessGroupLimitKey := MakeAccessGroupLimitKey(
+			*NewPublicKey(senderPkBytes),
+			AccessGroupScopeTypeAny,
+			*NewGroupKeyName([]byte{}),
+			AccessGroupOperationTypeAny,
+		)
+		derivedKeyPriv := _submitAuthorizeDerivedKeyTxn(&accessGroupLimitKey, nil, 2)
+
+		// Happy path: create access group for TestGroupKeyName
+		txn = _createAccessGroupTxn(groupKeyName, AccessGroupOperationTypeCreate)
+		err = _submitTxnWithDerivedKey(txn, derivedKeyPriv)
+		require.NoError(t, err)
+
+		// Happy path: create access group for TestGroupKeyName2
+		txn = _createAccessGroupTxn(groupKeyName+"2", AccessGroupOperationTypeCreate)
+		err = _submitTxnWithDerivedKey(txn, derivedKeyPriv)
+		require.NoError(t, err)
+	}
+	{
+		// Create access group members derived key for scoped GroupKeyName + OperationType.
+		accessGroupMemberLimitKey := MakeAccessGroupMemberLimitKey(
+			*NewPublicKey(senderPkBytes),
+			AccessGroupScopeTypeScoped,
+			*NewGroupKeyName([]byte(groupKeyName)),
+			AccessGroupMemberOperationTypeAdd,
+		)
+		derivedKeyPriv := _submitAuthorizeDerivedKeyTxn(nil, &accessGroupMemberLimitKey, 1)
+
+		// Sad path: try to add access group members with different group key name, unauthorized
+		txn = _createAccessGroupMemberTxn(groupKeyName+"2", AccessGroupMemberOperationTypeAdd)
+		err = _submitTxnWithDerivedKey(txn, derivedKeyPriv)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAccessGroupMemberSpendingLimitInvalid)
+
+		// Sad path: try to update access group members, unauthorized
+		txn = _createAccessGroupMemberTxn(groupKeyName, AccessGroupMemberOperationTypeUpdate)
+		err = _submitTxnWithDerivedKey(txn, derivedKeyPriv)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorAccessGroupMemberSpendingLimitInvalid)
+
+		// Happy path: add authorized access group members
+		txn = _createAccessGroupMemberTxn(groupKeyName, AccessGroupMemberOperationTypeAdd)
+		err = _submitTxnWithDerivedKey(txn, derivedKeyPriv)
+		require.NoError(t, err)
+	}
+	{
+		//// Create access group derived key for any GroupKeyName + OperationType
+		//derivedKeyPriv := _submitAuthorizeDerivedKeyTxn(
+		//	MakeAccessGroupMemberLimitKey(
+		//		*NewPublicKey(senderPkBytes),
+		//		AccessGroupScopeTypeAny,
+		//		*NewGroupKeyName([]byte{}),
+		//		AccessGroupMemberOperationTypeAny,
+		//	),
+		//	3,
+		//)
+		//
+		//// Happy path: add authorized access group members
+		//err = _submitAccessGroupMembersTxnWithDerivedKey(
+		//	"GroupKeyName1", AccessGroupMemberOperationTypeAdd, derivedKeyPriv,
+		//)
+		//require.NoError(t, err)
+		//
+		//// Happy path: add authorized access group members to different group
+		//err = _submitAccessGroupMembersTxnWithDerivedKey(
+		//	"GroupKeyName2", AccessGroupMemberOperationTypeAdd, derivedKeyPriv,
+		//)
+		//require.NoError(t, err)
+		//
+		//// Happy path: update authorized access group members
+		//err = _submitAccessGroupMembersTxnWithDerivedKey(
+		//	"GroupKeyName1", AccessGroupMemberOperationTypeUpdate, derivedKeyPriv,
+		//)
+		//require.NoError(t, err)
+		//
+		//// Sad path: spending limit is exceeded, unauthorized
+		//err = _submitAccessGroupMembersTxnWithDerivedKey(
+		//	"GroupKeyName2", AccessGroupMemberOperationTypeUpdate, derivedKeyPriv,
+		//)
+		//require.Error(t, err)
+		//require.Contains(t, err.Error(), RuleErrorAccessGroupMemberSpendingLimitInvalid)
+	}
+}
