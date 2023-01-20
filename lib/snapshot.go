@@ -444,16 +444,20 @@ func (snap *Snapshot) Run() {
 			}
 
 		case SnapshotOperationChecksumAdd:
-			if err := snap.Checksum.AddOrRemoveBytesWithMigrations(operation.checksumKey, operation.checksumValue,
-				snap.Status.CurrentBlockHeight, snap.Migrations.migrationChecksums, true); err != nil {
+			newChecksum, err := AddOrRemoveBytesWithMigrations(snap.Checksum, operation.checksumKey, operation.checksumValue,
+				snap.Status.CurrentBlockHeight, snap.params, snap.Migrations.migrationChecksums, true)
+			if err != nil {
 				glog.Errorf("Snapshot.Run: Problem adding checksum bytes operation (%v)", operation)
 			}
+			snap.Checksum = newChecksum
 
 		case SnapshotOperationChecksumRemove:
-			if err := snap.Checksum.AddOrRemoveBytesWithMigrations(operation.checksumKey, operation.checksumValue,
-				snap.Status.CurrentBlockHeight, snap.Migrations.migrationChecksums, false); err != nil {
+			newChecksum, err := AddOrRemoveBytesWithMigrations(snap.Checksum, operation.checksumKey, operation.checksumValue,
+				snap.Status.CurrentBlockHeight, snap.params, snap.Migrations.migrationChecksums, false)
+			if err != nil {
 				glog.Errorf("Snapshot.Run: Problem removing checksum bytes operation (%v)", operation)
 			}
+			snap.Checksum = newChecksum
 
 		case SnapshotOperationChecksumPrint:
 			stateChecksum, err := snap.Checksum.ToBytes()
@@ -1087,11 +1091,7 @@ func (snap *Snapshot) SnapshotProcessBlock(blockNode *BlockNode) {
 
 // isState determines if a key is a state-related record.
 func (snap *Snapshot) isState(key []byte) bool {
-	if !snap.isTxIndex {
-		return isStateKey(key)
-	} else {
-		return isStateKey(key) || isTxIndexKey(key)
-	}
+	return isStateKey(key)
 }
 
 func (snap *Snapshot) String() string {
@@ -1248,12 +1248,14 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 
 		//snap.timer.Start("SetSnapshotChunk.Checksum")
 		for _, dbEntry := range chunk {
-			if localErr := snap.Checksum.AddOrRemoveBytesWithMigrations(dbEntry.Key, dbEntry.Value, blockHeight,
-				snap.Migrations.migrationChecksums, true); localErr != nil {
+			newChecksum, localErr := AddOrRemoveBytesWithMigrations(snap.Checksum, dbEntry.Key, dbEntry.Value, blockHeight,
+				snap.params, snap.Migrations.migrationChecksums, true)
+			if localErr != nil {
 				glog.Errorf("Snapshot.SetSnapshotChunk: Problem adding checksum")
 				err = localErr
 				return
 			}
+			snap.Checksum = newChecksum
 		}
 		if localErr := snap.Checksum.Wait(); localErr != nil {
 			err = localErr
@@ -1507,22 +1509,30 @@ func (sc *StateChecksum) RemoveBytes(bytes []byte) error {
 // checksum copy for each migration epoch and add to it with the respective encoder version. This function is
 // called in the context of the snapshot's epoch so that everything happens in sync with the main thread.
 // The parameter addBytes determines if we want to add or remove bytes from the checksums.
-func (sc *StateChecksum) AddOrRemoveBytesWithMigrations(keyInput []byte, valueInput []byte, blockHeight uint64,
-	encoderMigrationChecksums []*EncoderMigrationChecksum, addBytes bool) error {
+func AddOrRemoveBytesWithMigrations(sc *StateChecksum, keyInput []byte, valueInput []byte, blockHeight uint64, params *DeSoParams,
+	encoderMigrationChecksums []*EncoderMigrationChecksum, addBytes bool) (*StateChecksum, error) {
+
 	key, err := SafeMakeSliceWithLength[byte](uint64(len(keyInput)))
 	if err != nil {
-		return err
+		return sc, err
 	}
 	copy(key, keyInput)
 	value, err := SafeMakeSliceWithLength[byte](uint64(len(valueInput)))
 	if err != nil {
-		return err
+		return sc, err
 	}
 	copy(value, valueInput)
 
+	// After the access groups fork height, we will only compute the checksum on prefixes with is_checksum = true.
+	if blockHeight >= uint64(params.ForkHeights.AssociationsAndAccessGroupsBlockHeight) {
+		if !isChecksumKey(key) {
+			return sc, nil
+		}
+	}
+
 	// First check if we can add another worker to the worker pool by trying to increment the semaphore.
 	if err := sc.semaphore.Acquire(sc.ctx, 1); err != nil {
-		return errors.Wrapf(err, " StateChecksum.AddBytesWithMigrations: problem acquiring semaphore")
+		return sc, errors.Wrapf(err, " StateChecksum.AddBytesWithMigrations: problem acquiring semaphore")
 	}
 
 	go func() {
@@ -1574,7 +1584,7 @@ func (sc *StateChecksum) AddOrRemoveBytesWithMigrations(keyInput []byte, valueIn
 		}
 	}()
 
-	return nil
+	return sc, nil
 }
 
 // GetChecksum is used to get the checksum elliptic curve element.
@@ -2406,8 +2416,8 @@ func (migration *EncoderMigration) StartMigrations() error {
 
 	// Get all state prefixes and sort them.
 	var prefixes [][]byte
-	for prefix, isState := range StatePrefixes.StatePrefixesMap {
-		if !isState {
+	for prefix, prefixType := range PrefixesMetadata.PrefixToTypeMap {
+		if !prefixType.IsType(DBPrefixTypeState) {
 			continue
 		}
 		prefixes = append(prefixes, []byte{prefix})
@@ -2437,7 +2447,7 @@ func (migration *EncoderMigration) StartMigrations() error {
 				var incompletePrefixes [][]byte
 				var currentPrefix []byte
 
-				for _, prefix := range StatePrefixes.StatePrefixesList {
+				for _, prefix := range PrefixesMetadata.StatePrefixesList {
 					if prefix[0] < startedPrefix[0] {
 						completedPrefixes = append(completedPrefixes, prefix)
 					} else if prefix[0] == startedPrefix[0] {
@@ -2469,8 +2479,14 @@ func (migration *EncoderMigration) StartMigrations() error {
 				item := it.Item()
 				key := item.Key()
 				err := item.Value(func(value []byte) error {
-					return carrierChecksum.AddOrRemoveBytesWithMigrations(key, value, migration.currentBlockHeight,
-						outstandingChecksums, true)
+					newChecksum, err := AddOrRemoveBytesWithMigrations(carrierChecksum, key, value, migration.currentBlockHeight,
+						migration.params, outstandingChecksums, true)
+					if err != nil {
+						return errors.Wrapf(err, "EncoderMigration.StartMigrations: Problem adding or removing bytes "+
+							"with migrations")
+					}
+					carrierChecksum = newChecksum
+					return nil
 				})
 				if err != nil {
 					return err
