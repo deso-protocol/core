@@ -3950,7 +3950,7 @@ func TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing
 		testBadger:                 true,
 		testPostgres:               false,
 		testPostgresPort:           5433,
-		disableLogging:             false,
+		disableLogging:             true,
 		initialBlocksMined:         4,
 		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
 		initChainCallback:          initChainCallback,
