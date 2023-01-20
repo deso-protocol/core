@@ -2,10 +2,16 @@ package lib
 
 import (
 	"bytes"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+	"io/ioutil"
+	"log"
+	"net/http"
 	"testing"
 )
 
@@ -32,16 +38,442 @@ func (data *AccessGroupTestData) GetInputType() transactionTestInputType {
 }
 
 func TestAccessGroup(t *testing.T) {
+	tes := GetTestAccessGroupTransactionTestSuite(t, m0Pub, m1Pub, m2Pub, m3Pub)
+	tes.Run()
+}
+
+type privatePublicBase58Check struct {
+	priv *btcec.PrivateKey
+	pub  string
+}
+
+func getPublicKeysTest1(seed byte, number int) []*privatePublicBase58Check {
+	var privPublic []*privatePublicBase58Check
+	for ii := 0; ii < number; ii++ {
+		priv, pub := btcec.PrivKeyFromBytes(btcec.S256(), []byte{byte(ii), 2, 3, 4, seed})
+		publicKeyBase58Check := Base58CheckEncode(pub.SerializeCompressed(), false, &DeSoTestnetParams)
+		privPub := &privatePublicBase58Check{
+			priv: priv,
+			pub:  publicKeyBase58Check,
+		}
+		privPublic = append(privPublic, privPub)
+	}
+
+	return privPublic
+}
+
+func TestLogTransactionBytes(t *testing.T) {
+	privPublic := getPublicKeysTest1(5, 4)
+
+	glog.Infof("publicKey0Base58Check: %v", privPublic[0].pub)
+	glog.Infof("publicKey1Base58Check: %v", privPublic[1].pub)
+	glog.Infof("publicKey2Base58Check: %v", privPublic[2].pub)
+	glog.Infof("publicKey3Base58Check: %v", privPublic[3].pub)
+}
+
+func TestSignSomething(t *testing.T) {
+	require := require.New(t)
+
+	txnHex := "01c49c4915154cb20f5b34739006f04d41b6e8a30a07d74dcb11f9eab5c886f3920102023472f3b193294e1b6c8556fe1f42f36b91a2daedb9df1dbc4e2b275b7daa523e904e03a39c7250d5522d902d36286bf7942599e33d302fb1b3fda50d4dc3cfdaca9092de97b3fc0f02002103a39c7250d5522d902d36286bf7942599e33d302fb1b3fda50d4dc3cfdaca90920000"
+	txnBytes, _ := hex.DecodeString(txnHex)
+	txn := &MsgDeSoTxn{}
+	err := txn.FromBytes(txnBytes)
+	require.NoError(err)
+
+	seed, _ := hex.DecodeString("590f245dd25a0e6471d528a969f6bea16c707db5545096214c0878c19bd25303")
+	privateKeyBase58Check := Base58CheckEncode(seed, true, &DeSoTestnetParams)
+	_signTxn(t, txn, privateKeyBase58Check)
+
+	txnBytes, _ = txn.ToBytes(false)
+	glog.Infof("txnBytes: %v", hex.EncodeToString(txnBytes))
+}
+
+type TransactionFee struct {
+	// PublicKeyBase58Check is the public key of the user who receives the fee.
+	PublicKeyBase58Check string
+	// ProfileEntryResponse is only non-nil when TransactionFees are retrieved through admin endpoints.
+	// The ProfileEntryResponse is only used to display usernames and avatars in the admin dashboard and thus is
+	// excluded in other places to reduce payload sizes and improve performance.
+	ProfileEntryResponse []byte
+	// AmountNanos is the amount PublicKeyBase58Check receives when this fee is incurred.
+	AmountNanos uint64
+}
+
+type AccessGroupMemberAPI struct {
+	AccessGroupMemberPublicKeyBase58Check string
+	AccessGroupMemberKeyName              string
+	EncryptedKey                          string
+
+	ExtraData map[string]string
+}
+
+func txnToPostBody(txn *MsgDeSoTxn) []byte {
+	var postBody []byte
+
+	txnType := txn.TxnMeta.GetTxnType()
+	debyteExtraData := func(extraData map[string][]byte) map[string]string {
+		extraDataString := make(map[string]string)
+		for k, v := range extraData {
+			extraDataString[k] = string(v)
+		}
+		return extraDataString
+	}
+	txnExtraData := debyteExtraData(txn.ExtraData)
+
+	switch txnType {
+	case TxnTypeAccessGroup:
+		txnMeta := txn.TxnMeta.(*AccessGroupMetadata)
+		postBody, _ = json.Marshal(map[string]any{
+			"AccessGroupOwnerPublicKeyBase58Check": Base58CheckEncode(txnMeta.AccessGroupOwnerPublicKey, false, &DeSoTestnetParams),
+			"AccessGroupPublicKeyBase58Check":      Base58CheckEncode(txnMeta.AccessGroupPublicKey, false, &DeSoTestnetParams),
+			"AccessGroupKeyName":                   string(txnMeta.AccessGroupKeyName),
+			"MinFeeRateNanosPerKB":                 uint64(1000),
+			"TransactionFees":                      []TransactionFee{},
+			"ExtraData":                            txnExtraData,
+		})
+	case TxnTypeAccessGroupMembers:
+		txnMeta := txn.TxnMeta.(*AccessGroupMembersMetadata)
+		members := make([]AccessGroupMemberAPI, len(txnMeta.AccessGroupMembersList))
+		for ii, member := range txnMeta.AccessGroupMembersList {
+			members[ii] = AccessGroupMemberAPI{
+				AccessGroupMemberPublicKeyBase58Check: Base58CheckEncode(member.AccessGroupMemberPublicKey, false, &DeSoTestnetParams),
+				AccessGroupMemberKeyName:              string(member.AccessGroupMemberKeyName),
+				EncryptedKey:                          string(member.EncryptedKey),
+				ExtraData:                             debyteExtraData(member.ExtraData),
+			}
+		}
+		postBody, _ = json.Marshal(map[string]any{
+			"AccessGroupOwnerPublicKeyBase58Check": Base58CheckEncode(txnMeta.AccessGroupOwnerPublicKey, false, &DeSoTestnetParams),
+			"AccessGroupKeyName":                   string(txnMeta.AccessGroupKeyName),
+			"AccessGroupMemberList":                members,
+			"MinFeeRateNanosPerKB":                 uint64(1000),
+			"TransactionFees":                      []TransactionFee{},
+			"ExtraData":                            txnExtraData,
+		})
+	case TxnTypeNewMessage:
+		txnMeta := txn.TxnMeta.(*NewMessageMetadata)
+		postBody, _ = json.Marshal(map[string]any{
+			"SenderAccessGroupOwnerPublicKeyBase58Check":    Base58CheckEncode(txnMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), false, &DeSoTestnetParams),
+			"SenderAccessGroupPublicKeyBase58Check":         Base58CheckEncode(txnMeta.SenderAccessGroupPublicKey.ToBytes(), false, &DeSoTestnetParams),
+			"SenderAccessGroupKeyName":                      string(txnMeta.SenderAccessGroupKeyName.ToBytes()),
+			"RecipientAccessGroupOwnerPublicKeyBase58Check": Base58CheckEncode(txnMeta.RecipientAccessGroupOwnerPublicKey.ToBytes(), false, &DeSoTestnetParams),
+			"RecipientAccessGroupPublicKeyBase58Check":      Base58CheckEncode(txnMeta.RecipientAccessGroupPublicKey.ToBytes(), false, &DeSoTestnetParams),
+			"RecipientAccessGroupKeyName":                   string(txnMeta.RecipientAccessGroupKeyName.ToBytes()),
+			"EncryptedMessageText":                          string(txnMeta.EncryptedText),
+			"MinFeeRateNanosPerKB":                          uint64(1000),
+			"TransactionFees":                               []TransactionFee{},
+			"ExtraData":                                     txnExtraData,
+		})
+	}
+	return postBody
+}
+
+func txnToPostTransactionHex(t *testing.T, txn *MsgDeSoTxn) (_transactionHex string, _failed bool) {
+	var transactionHex string
+	if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroup {
+		accessGroupTxn := txn.TxnMeta.(*AccessGroupMetadata)
+		if accessGroupTxn.AccessGroupOperationType != AccessGroupOperationTypeCreate {
+			return "", true
+		}
+		glog.Infof("\t AccessGroupOwnerPublicKey: %v\n"+
+			"\t AccessGroupPublicKey: %v\n"+
+			"\t AccessGroupKeyName: %v\n"+
+			"\t AccessGroupOperationType: %v\n"+
+			"\t ExtraData: %v\n",
+			Base58CheckEncode(accessGroupTxn.AccessGroupOwnerPublicKey, false, &DeSoTestnetParams),
+			Base58CheckEncode(accessGroupTxn.AccessGroupPublicKey, false, &DeSoTestnetParams),
+			hex.EncodeToString(accessGroupTxn.AccessGroupKeyName),
+			accessGroupTxn.AccessGroupOperationType,
+			txn.ExtraData)
+		postBody := txnToPostBody(txn)
+		transactionHex = submitPostRequest(t, postBody, "/api/v0/create-access-group")["TransactionHex"].(string)
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {
+		accessGroupMembersTxn := txn.TxnMeta.(*AccessGroupMembersMetadata)
+		if accessGroupMembersTxn.AccessGroupMemberOperationType != AccessGroupMemberOperationTypeAdd {
+			return "", true
+		}
+		newMembers := []AccessGroupMember{}
+		for _, member := range accessGroupMembersTxn.AccessGroupMembersList {
+			newMembers = append(newMembers, *member)
+		}
+		glog.Infof("\t AccessGroupOwnerPublicKey: %v\n"+
+			"\t AccessGroupKeyName: %v\n"+
+			"\t AccessGroupMemberList: %v\n"+
+			"\t ExtraData: %v\n",
+			Base58CheckEncode(accessGroupMembersTxn.AccessGroupOwnerPublicKey, false, &DeSoTestnetParams),
+			hex.EncodeToString(accessGroupMembersTxn.AccessGroupKeyName),
+			newMembers,
+			txn.ExtraData)
+		postBody := txnToPostBody(txn)
+		transactionHex = submitPostRequest(t, postBody, "/api/v0/add-access-group-members")["TransactionHex"].(string)
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeNewMessage {
+		newMessageTxn := txn.TxnMeta.(*NewMessageMetadata)
+		if newMessageTxn.NewMessageOperation != NewMessageOperationCreate {
+			return "", true
+		}
+		glog.Infof("\t SenderAccessGroupOwnerPublicKeyBase58Check: %v\n"+
+			"\t SenderAccessGroupPublicKeyBase58Check: %v\n"+
+			"\t SenderAccessGroupKeyName: %v\n"+
+			"\t RecipientAccessGroupOwnerPublicKeyBase58Check: %v\n"+
+			"\t RecipientAccessGroupPublicKeyBase58Check: %v\n"+
+			"\t RecipientAccessGroupKeyName: %v\n"+
+			"\t EncryptedText: %v\n"+
+			"\t ExtraData: %v\n",
+			Base58CheckEncode(newMessageTxn.SenderAccessGroupOwnerPublicKey.ToBytes(), false, &DeSoTestnetParams),
+			Base58CheckEncode(newMessageTxn.SenderAccessGroupPublicKey.ToBytes(), false, &DeSoTestnetParams),
+			hex.EncodeToString(newMessageTxn.SenderAccessGroupKeyName.ToBytes()),
+			Base58CheckEncode(newMessageTxn.RecipientAccessGroupOwnerPublicKey.ToBytes(), false, &DeSoTestnetParams),
+			Base58CheckEncode(newMessageTxn.RecipientAccessGroupPublicKey.ToBytes(), false, &DeSoTestnetParams),
+			hex.EncodeToString(newMessageTxn.RecipientAccessGroupKeyName.ToBytes()),
+			hex.EncodeToString(newMessageTxn.EncryptedText),
+			txn.ExtraData)
+		postBody := txnToPostBody(txn)
+		if newMessageTxn.NewMessageType == NewMessageTypeDm {
+			transactionHex = submitPostRequest(t, postBody, "/api/v0/send-dm-message")["TransactionHex"].(string)
+		} else if newMessageTxn.NewMessageType == NewMessageTypeGroupChat {
+			transactionHex = submitPostRequest(t, postBody, "/api/v0/send-group-chat-message")["TransactionHex"].(string)
+		} else {
+			return "", true
+		}
+	} else {
+		return "", true
+	}
+	glog.Infof("TransactionHex: %v", transactionHex)
+	return transactionHex, false
+}
+
+func submitTxnPostBody(txnBytes []byte) []byte {
+	postBody, _ := json.Marshal(map[string]any{
+		"TransactionHex": hex.EncodeToString(txnBytes),
+	})
+	return postBody
+}
+
+func sendDesoBody(fromPublicKey string, toPublicKey string, amount uint64) []byte {
+	postBody, _ := json.Marshal(map[string]any{
+		"SenderPublicKeyBase58Check":   fromPublicKey,
+		"RecipientPublicKeyOrUsername": toPublicKey,
+		"AmountNanos":                  amount,
+		"MinFeeRateNanosPerKB":         uint64(1000),
+		"TransactionFees":              []TransactionFee{},
+	})
+	return postBody
+}
+
+func TestCreateAccessGroupTxn(t *testing.T) {
+	postBody, _ := json.Marshal(map[string]any{
+		"AccessGroupOwnerPublicKeyBase58Check": "tBCKYP6LM4Q5hqNQqu7XQRLUJns6m51Pqy395oWHYmNkEnd2sAMgyh",
+		"AccessGroupPublicKeyBase58Check":      "tBCKYUdUDF16yHy8Qn1WFnyA3vRsEBXuWr9PaRiv54biYkbVKkbZNY",
+		"AccessGroupKeyName":                   "67726f757031",
+		"MinFeeRateNanosPerKB":                 uint64(1000),
+		"TransactionFees":                      []TransactionFee{},
+		"ExtraData":                            map[string]string{"abc": "def"},
+	})
+
+	TransactionHex := submitPostRequest(t, postBody, "/api/v0/create-access-group")["TransactionHex"].(string)
+	log.Printf("TransactionHex: %v", TransactionHex)
+	require := require.New(t)
+	transactionBytes, err := hex.DecodeString(TransactionHex)
+	require.NoError(err)
+	txn := &MsgDeSoTxn{}
+	err = txn.FromBytes(transactionBytes)
+	require.NoError(err)
+	glog.Infof("txn: %v", txn)
+}
+
+func submitPostRequest(t *testing.T, postBody []byte, route string) map[string]any {
+	//Encode the data
+	responseBody := bytes.NewBuffer(postBody)
+	//Leverage Go's HTTP Post function to make request
+	resp, err := http.Post(fmt.Sprintf("http://18.223.163.110:18001%v", route), "application/json", responseBody)
+	//Handle Error
+	if err != nil {
+		log.Fatalf("An Error Occured %v", err)
+	}
+	defer resp.Body.Close()
+	//Read the response body
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	sb := string(body)
+	log.Printf(sb)
+	entries := make(map[string]any)
+	err = json.Unmarshal(body, &entries)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	return entries
+}
+
+func fundPublicKey(t *testing.T, publicKeyBase58Check string, amount uint64) {
+	require := require.New(t)
+
+	body := sendDesoBody("tBCKXyutsCWVbECXqE5zqP7NyGjmXg1SHkYJgKUsNujHfVF7GsVxzU", publicKeyBase58Check, amount)
+	transactionHex := submitPostRequest(t, body, "/api/v0/send-deso")["TransactionHex"].(string)
+	txnBytes, _ := hex.DecodeString(transactionHex)
+	txn := &MsgDeSoTxn{}
+	err := txn.FromBytes(txnBytes)
+	require.NoError(err)
+
+	seed, _ := hex.DecodeString("590f245dd25a0e6471d528a969f6bea16c707db5545096214c0878c19bd25303")
+	privateKeyBase58Check := Base58CheckEncode(seed, true, &DeSoTestnetParams)
+	_signTxn(t, txn, privateKeyBase58Check)
+
+	txnBytes, _ = txn.ToBytes(false)
+	submitPostBody := submitTxnPostBody(txnBytes)
+	response := submitPostRequest(t, submitPostBody, "/api/v0/submit-transaction")
+	glog.Infof("response: %v", response)
+
+}
+
+func signTransactionWithPublicKeyToPriv(t *testing.T, transactionHex string, publicKeyToPriv map[string]*btcec.PrivateKey) []byte {
+	require := require.New(t)
+
+	transactionBytes, err := hex.DecodeString(transactionHex)
+	require.NoError(err)
+	actualTxn := &MsgDeSoTxn{}
+	err = actualTxn.FromBytes(transactionBytes)
+	require.NoError(err)
+	signerPriv, exists := publicKeyToPriv[Base58CheckEncode(actualTxn.PublicKey, false, &DeSoTestnetParams)]
+	require.Equal(true, exists)
+	signerPrivBase58Check := Base58CheckEncode(signerPriv.Serialize(), true, &DeSoTestnetParams)
+	_signTxn(t, actualTxn, signerPrivBase58Check)
+	txnBytes, err := actualTxn.ToBytes(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return txnBytes
+}
+
+func processTestVectorsWithPublicKeyToPriv(t *testing.T, testVectors []*transactionTestVector, testMeta *transactionTestMeta,
+	publicKeyToPriv map[string]*btcec.PrivateKey, submitTxn bool) {
+
+	transactionCounter := 0
+	for _, testVector := range testVectors {
+		txn, err := testVector.getTransaction(testVector, testMeta)
+		if err != nil {
+			continue
+		}
+
+		glog.Infof("transactionCounter: %v", transactionCounter)
+		transactionHex, failed := txnToPostTransactionHex(t, txn)
+		if failed {
+			glog.Infof("FAILED")
+			continue
+		}
+
+		txnBytes := signTransactionWithPublicKeyToPriv(t, transactionHex, publicKeyToPriv)
+		if submitTxn {
+			submitPostBody := submitTxnPostBody(txnBytes)
+			response := submitPostRequest(t, submitPostBody, "/api/v0/submit-transaction")
+			glog.Infof("response: %v", response)
+		}
+		transactionCounter += 1
+	}
+}
+
+func TestSignAccessGroupTxnVectors(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	privPublic := getPublicKeysTest1(200, 4)
+	glog.Infof("publicKey0Base58Check: %v", privPublic[0].pub)
+	glog.Infof("publicKey1Base58Check: %v", privPublic[1].pub)
+	glog.Infof("publicKey2Base58Check: %v", privPublic[2].pub)
+	glog.Infof("publicKey3Base58Check: %v", privPublic[3].pub)
+
+	publicKeyToPriv := make(map[string]*btcec.PrivateKey)
+	for _, privPub := range privPublic {
+		publicKeyToPriv[privPub.pub] = privPub.priv
+		fundPublicKey(t, privPub.pub, 10000)
+	}
+	submit := true
+
+	testVectorsSuite := GetTestAccessGroupTransactionTestSuite(t, privPublic[0].pub, privPublic[1].pub,
+		privPublic[2].pub, privPublic[3].pub)
+	tm := testVectorsSuite.InitializeChainAndGetTestMeta(true, false)
+	blockCounter := 0
+	for _, block := range testVectorsSuite.testVectorBlocks {
+		testVectors := block.testVectors
+		glog.Infof("Processing Block %v", blockCounter)
+		processTestVectorsWithPublicKeyToPriv(t, testVectors, tm, publicKeyToPriv, submit)
+		blockCounter += 1
+	}
+}
+
+func TestSignAccessGroupMembersAddTxnVectors(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	privPublic := getPublicKeysTest1(220, 6)
+	glog.Infof("publicKey0Base58Check: %v", privPublic[0].pub)
+	glog.Infof("publicKey1Base58Check: %v", privPublic[1].pub)
+	glog.Infof("publicKey2Base58Check: %v", privPublic[2].pub)
+	glog.Infof("publicKey3Base58Check: %v", privPublic[3].pub)
+	glog.Infof("publicKey4Base58Check: %v", privPublic[4].pub)
+	glog.Infof("publicKey5Base58Check: %v", privPublic[5].pub)
+
+	publicKeyToPriv := make(map[string]*btcec.PrivateKey)
+	for _, privPub := range privPublic {
+		publicKeyToPriv[privPub.pub] = privPub.priv
+		fundPublicKey(t, privPub.pub, 10000)
+	}
+	submit := true
+
+	testVectorsSuite := GetTestAccessGroupMembersAddTransactionTestSuite(t, privPublic[0].pub, privPublic[1].pub,
+		privPublic[2].pub, privPublic[3].pub, privPublic[4].pub, privPublic[5].pub)
+	tm := testVectorsSuite.InitializeChainAndGetTestMeta(true, false)
+	for blockCounter, block := range testVectorsSuite.testVectorBlocks {
+		// Skip the last block
+		if blockCounter == len(testVectorsSuite.testVectorBlocks)-1 {
+			continue
+		}
+		testVectors := block.testVectors
+		glog.Infof("Processing Block %v", blockCounter)
+		processTestVectorsWithPublicKeyToPriv(t, testVectors, tm, publicKeyToPriv, submit)
+	}
+}
+
+func TestSignNewMessageTxnVectors(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	privPublic := getPublicKeysTest1(222, 4)
+	glog.Infof("publicKey0Base58Check: %v", privPublic[0].pub)
+	glog.Infof("publicKey1Base58Check: %v", privPublic[1].pub)
+	glog.Infof("publicKey2Base58Check: %v", privPublic[2].pub)
+	glog.Infof("publicKey3Base58Check: %v", privPublic[3].pub)
+
+	publicKeyToPriv := make(map[string]*btcec.PrivateKey)
+	for _, privPub := range privPublic {
+		publicKeyToPriv[privPub.pub] = privPub.priv
+		fundPublicKey(t, privPub.pub, 50000)
+	}
+	submit := true
+
+	testVectorsSuite := GetTestNewMessageTransactionTestSuite(t, privPublic[0].pub, privPublic[1].pub,
+		privPublic[2].pub, privPublic[3].pub)
+	tm := testVectorsSuite.InitializeChainAndGetTestMeta(true, false)
+	for blockCounter, block := range testVectorsSuite.testVectorBlocks {
+		testVectors := block.testVectors
+		glog.Infof("Processing Block %v", blockCounter)
+		processTestVectorsWithPublicKeyToPriv(t, testVectors, tm, publicKeyToPriv, submit)
+	}
+}
+
+func GetTestAccessGroupTransactionTestSuite(t *testing.T, m0PublicKeyBase58Check string, m1PublicKeyBase58Check string,
+	m2PublicKeyBase58Check string, m3PublicKeyBase58Check string) (_transactionTestSuite *transactionTestSuite) {
+	require := require.New(t)
+	_ = require
+
+	m0PubBytes, _, _ := Base58CheckDecode(m0PublicKeyBase58Check)
 	m0PublicKey := NewPublicKey(m0PubBytes)
-	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
+	m1PubBytes, _, _ := Base58CheckDecode(m1PublicKeyBase58Check)
 	m1PublicKey := NewPublicKey(m1PubBytes)
-	m2PubBytes, _, _ := Base58CheckDecode(m2Pub)
+	m2PubBytes, _, _ := Base58CheckDecode(m2PublicKeyBase58Check)
 	m2PublicKey := NewPublicKey(m2PubBytes)
-	m3PubBytes, _, _ := Base58CheckDecode(m3Pub)
+	m3PubBytes, _, _ := Base58CheckDecode(m3PublicKeyBase58Check)
 	m3PublicKey := NewPublicKey(m3PubBytes)
 
 	fundPublicKeysWithNanosMap := make(map[PublicKey]uint64)
@@ -249,7 +681,7 @@ func TestAccessGroup(t *testing.T) {
 	}
 	tvb := []*transactionTestVectorBlock{NewTransactionTestVectorBlock(tvv, tvbConnectCallback, tvbDisconnectCallback)}
 	tes := NewTransactionTestSuite(t, tvb, tConfig)
-	tes.Run()
+	return tes
 }
 
 func _createAccessGroupTestVector(id string, userPrivateKey string, userPublicKey []byte, accessGroupOwnerPublicKey []byte,

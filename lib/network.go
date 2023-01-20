@@ -7688,6 +7688,12 @@ type AccessGroupMember struct {
 	ExtraData map[string][]byte
 }
 
+func (member AccessGroupMember) String() string {
+	return fmt.Sprintf("AccessGroupMember: PublicKey: %v, KeyName: %v, EncryptedKey: %v, ExtraData: %v",
+		Base58CheckEncode(member.AccessGroupMemberPublicKey, false, &DeSoTestnetParams),
+		hex.EncodeToString(member.AccessGroupMemberKeyName), member.EncryptedKey, member.ExtraData)
+}
+
 func (txnData *AccessGroupMembersMetadata) GetTxnType() TxnType {
 	return TxnTypeAccessGroupMembers
 }

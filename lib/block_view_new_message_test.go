@@ -50,19 +50,25 @@ func (data *NewMessageTestData) GetInputType() transactionTestInputType {
 }
 
 func TestNewMessage(t *testing.T) {
+	tes := GetTestNewMessageTransactionTestSuite(t, m0Pub, m1Pub, m2Pub, m3Pub)
+	tes.Run()
+}
+
+func GetTestNewMessageTransactionTestSuite(t *testing.T, m0PublicKeyBase58Check string, m1PublicKeyBase58Check string,
+	m2PublicKeyBase58Check string, m3PublicKeyBase58Check string) *transactionTestSuite {
 	require := require.New(t)
 	_ = require
 
 	const DmEnumerationMsgCount = 50
 	const GroupChatEnumerationMsgCount = 50
 
-	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	m0PubBytes, _, _ := Base58CheckDecode(m0PublicKeyBase58Check)
 	m0PublicKey := NewPublicKey(m0PubBytes)
-	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
+	m1PubBytes, _, _ := Base58CheckDecode(m1PublicKeyBase58Check)
 	m1PublicKey := NewPublicKey(m1PubBytes)
-	m2PubBytes, _, _ := Base58CheckDecode(m2Pub)
+	m2PubBytes, _, _ := Base58CheckDecode(m2PublicKeyBase58Check)
 	m2PublicKey := NewPublicKey(m2PubBytes)
-	m3PubBytes, _, _ := Base58CheckDecode(m3Pub)
+	m3PubBytes, _, _ := Base58CheckDecode(m3PublicKeyBase58Check)
 	m3PublicKey := NewPublicKey(m3PubBytes)
 
 	fundPublicKeysWithNanosMap := make(map[PublicKey]uint64)
@@ -724,7 +730,7 @@ func TestNewMessage(t *testing.T) {
 	tvbb := []*transactionTestVectorBlock{tvb1, tvb2, tvb3, tvb4, tvb5}
 
 	tes := NewTransactionTestSuite(t, tvbb, tConfig)
-	tes.Run()
+	return tes
 }
 
 func _createNewMessageTestVector(id string, userPrivateKey string, userPublicKey []byte, messageEntry *NewMessageEntry,
