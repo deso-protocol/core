@@ -657,6 +657,7 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 			}
 		}
 	}
+	require.NoError(utxoView.processPublicKeyToBlockRewardMap(lastBlock, true))
 
 	// Move all disconnected transactions to our transactionTestSuite mempool map.
 	// TODO: should we be doing this while we disconnect transaction by transaction?
@@ -681,7 +682,6 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 	// Delete the utxo operations for the blocks we're detaching since we don't need them anymore.
 	require.NoError(tm.db.Update(func(txn *badger.Txn) error {
 		require.NoError(DeleteUtxoOperationsForBlockWithTxn(txn, nil, lastBlockHash))
-		require.NoError(DeleteBlockRewardWithTxn(txn, nil, lastBlock))
 		return nil
 	}))
 

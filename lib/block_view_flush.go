@@ -137,6 +137,11 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushDAOCoinLimitOrderEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
+
+	// Flush block reward entries to badger
+	if err := bav._flushBlockRewardEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1403,6 +1408,23 @@ func (bav *UtxoView) _flushPostAssociationEntriesToDbWithTxn(txn *badger.Txn, bl
 			// put the corresponding mappings for it into the db.
 			if err := DBPutPostAssociationWithTxn(txn, bav.Snapshot, &associationEntry, blockHeight); err != nil {
 				return fmt.Errorf("_flushPostAssociationEntriesToDbWithTxn: %v", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (bav *UtxoView) _flushBlockRewardEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	for publicKey, blockRewardEntryIter := range bav.publicKeyToBlockRewardMap {
+		blockRewardEntry := *blockRewardEntryIter
+
+		if err := DeleteBlockRewardWithTxn(txn, bav.Snapshot, publicKey, blockRewardEntry.blockHash); err != nil {
+			return fmt.Errorf("_flushBlockRewardEntriesToDbWithTxn: problem deleting block reward entry: %v", err)
+		}
+
+		if !blockRewardEntry.isDeleted {
+			if err := PutBlockRewardWithTxn(txn, bav.Snapshot, publicKey, blockRewardEntry.blockHash, blockRewardEntry.blockReward); err != nil {
+				return fmt.Errorf("_flushBlockRewardEntriesToDbWithTxn: problem putting block reward entry: %v", err)
 			}
 		}
 	}
