@@ -121,6 +121,7 @@ func TestStateChecksumBasicAddRemove(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
+	// Initialize the checksum.
 	z := StateChecksum{}
 	z.Initialize(nil, nil)
 	identity := group.Ristretto255.Identity()
