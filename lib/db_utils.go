@@ -229,7 +229,7 @@ type DBPrefixes struct {
 	//   - This index is needed because block rewards take N blocks to mature, which means we need
 	//     a way to deduct them from balance calculations until that point. Without this index, it
 	//     would be impossible to figure out which of a user's UTXOs have yet to mature.
-	//   - Schema: <prefix_id, publicKey [33]byte, hash BlockHash> -> <uint64 blockRewardNanos>
+	//   - Schema: <prefix_id, hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
 	PrefixPublicKeyBlockHashToBlockReward []byte `prefix_id:"[53]" is_state:"true"`
 
 	// Prefix for NFT accepted bid entries:
@@ -4741,6 +4741,33 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 		return err
 	}
 
+	// Index the block reward. Used for deducting immature block rewards from user balances.
+	if len(desoBlock.Txns) == 0 {
+		return fmt.Errorf("PutBlockWithTxn: Got block without any txns %v", desoBlock)
+	}
+	blockRewardTxn := desoBlock.Txns[0]
+	if blockRewardTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		return fmt.Errorf("PutBlockWithTxn: Got block without block reward as first txn %v", desoBlock)
+	}
+	// It's possible the block reward is split across multiple public keys.
+	pubKeyToBlockRewardMap := make(map[PkMapKey]uint64)
+	for _, bro := range desoBlock.Txns[0].TxOutputs {
+		pkMapKey := MakePkMapKey(bro.PublicKey)
+		if _, hasKey := pubKeyToBlockRewardMap[pkMapKey]; !hasKey {
+			pubKeyToBlockRewardMap[pkMapKey] = bro.AmountNanos
+		} else {
+			pubKeyToBlockRewardMap[pkMapKey] += bro.AmountNanos
+		}
+	}
+	for pkMapKeyIter, blockReward := range pubKeyToBlockRewardMap {
+		pkMapKey := pkMapKeyIter
+
+		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
+		if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward)); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -4755,37 +4782,39 @@ func PutBlock(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock) error 
 	return nil
 }
 
-func PutBlockReward(handle *badger.DB, snap *Snapshot, publicKey PublicKey, blockHash *BlockHash, blockReward uint64) error {
-	err := handle.Update(func(txn *badger.Txn) error {
-		return PutBlockRewardWithTxn(txn, snap, publicKey, blockHash, blockReward)
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func PutBlockRewardWithTxn(txn *badger.Txn, snap *Snapshot, publicKey PublicKey, blockHash *BlockHash, blockReward uint64) error {
-
-	blockRewardKey := PublicKeyBlockHashToBlockRewardKey(publicKey.ToBytes(), blockHash)
-	if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward)); err != nil {
-		return err
-	}
-	return nil
-}
-
-func DeleteBlockReward(handle *badger.DB, snap *Snapshot, publicKey PublicKey, blockHash *BlockHash) error {
+func DeleteBlockReward(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DeleteBlockRewardWithTxn(txn, snap, publicKey, blockHash)
+		return DeleteBlockRewardWithTxn(txn, snap, desoBlock)
 	})
 }
 
-func DeleteBlockRewardWithTxn(txn *badger.Txn, snap *Snapshot, publicKey PublicKey, blockHash *BlockHash) error {
+func DeleteBlockRewardWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
+	blockHash, err := desoBlock.Header.Hash()
+	if err != nil {
+		return errors.Wrapf(err, "DeleteBlockRewardWithTxn: Problem hashing header: ")
+	}
 
-	blockRewardKey := PublicKeyBlockHashToBlockRewardKey(publicKey.ToBytes(), blockHash)
-	if err := DBDeleteWithTxn(txn, snap, blockRewardKey); err != nil {
-		return err
+	// Index the block reward. Used for deducting immature block rewards from user balances.
+	if len(desoBlock.Txns) == 0 {
+		return fmt.Errorf("DeleteBlockRewardWithTxn: Got block without any txns %v", desoBlock)
+	}
+	blockRewardTxn := desoBlock.Txns[0]
+	if blockRewardTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		return fmt.Errorf("DeleteBlockRewardWithTxn: Got block without block reward as first txn %v", desoBlock)
+	}
+	// It's possible the block reward is split across multiple public keys.
+	blockRewardPublicKeys := make(map[PkMapKey]bool)
+	for _, bro := range desoBlock.Txns[0].TxOutputs {
+		pkMapKey := MakePkMapKey(bro.PublicKey)
+		blockRewardPublicKeys[pkMapKey] = true
+	}
+	for pkMapKeyIter := range blockRewardPublicKeys {
+		pkMapKey := pkMapKeyIter
+
+		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
+		if err := DBDeleteWithTxn(txn, snap, blockRewardKey); err != nil {
+			return err
+		}
 	}
 
 	return nil

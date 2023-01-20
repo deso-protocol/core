@@ -2565,6 +2565,32 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapsho
 	}
 
 	// NOTE: This function doesn't maintain the snapshot. The checksum should be recalculated after this.
+
+	// There is this edge-case where a partial blockProcess can skew the state. This is because of block reward entries,
+	// which are stored along with the block. In particular, if we've stored the block at blockTipHeight + 1, and the node
+	// crashed in the middle of ProcessBlock, then the reward entry will be stored in the state, even thought the block tip
+	// is at blockTipHeight. So we delete the block reward at the blockTipHeight + 1 to make sure the state is correct.
+	// TODO: decouple block reward from PutBlockWithTxn.
+	blockTipHeight := bc.bestChain[len(bc.bestChain)-1].Height
+	for hashIter, node := range bc.blockIndex {
+		hash := hashIter.NewBlockHash()
+		if node.Height > blockTipHeight {
+			glog.V(1).Info(CLog(Yellow, fmt.Sprintf("DisconnectBlocksToHeight: Found node in blockIndex with "+
+				"larger height than the current block tip. Deleting the corresponding block reward. Node: (%v)", node)))
+			blockToDetach, err := GetBlock(hash, bc.db, snap)
+			if err != nil && err != badger.ErrKeyNotFound {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem getting block with hash: (%v) and "+
+					"at height: (%v)", hash, node.Height)
+			}
+			if blockToDetach != nil {
+				if err = DeleteBlockReward(bc.db, snap, blockToDetach); err != nil {
+					return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward with hash: "+
+						"(%v) and at height: (%v)", hash, node.Height)
+				}
+			}
+		}
+	}
+
 	for ii := len(bc.bestChain) - 1; ii > 0 && uint64(bc.bestChain[ii].Height) > blockHeight; ii-- {
 		node := bc.bestChain[ii]
 		prevHash := *bc.bestChain[ii-1].Hash
@@ -2622,6 +2648,10 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapsho
 			// them anymore.
 			if err := DeleteUtxoOperationsForBlockWithTxn(txn, snap, &hash); err != nil {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting utxo operations for block")
+			}
+
+			if err := DeleteBlockRewardWithTxn(txn, snap, blockToDetach); err != nil {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward")
 			}
 
 			// Revert the detached block's status to StatusHeaderValidated and save the blockNode to the db.

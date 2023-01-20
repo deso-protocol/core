@@ -106,9 +106,6 @@ type UtxoView struct {
 	AssociationMapKeyToUserAssociationEntry map[AssociationMapKey]*UserAssociationEntry
 	AssociationMapKeyToPostAssociationEntry map[AssociationMapKey]*PostAssociationEntry
 
-	// Block Reward
-	publicKeyToBlockRewardMap map[PublicKey]*BlockRewardEntry
-
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -194,9 +191,6 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Association entries
 	bav.AssociationMapKeyToUserAssociationEntry = make(map[AssociationMapKey]*UserAssociationEntry)
 	bav.AssociationMapKeyToPostAssociationEntry = make(map[AssociationMapKey]*PostAssociationEntry)
-
-	// Block Reward
-	bav.publicKeyToBlockRewardMap = make(map[PublicKey]*BlockRewardEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -439,13 +433,6 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for entryKey, entry := range bav.AssociationMapKeyToPostAssociationEntry {
 		newEntry := *entry
 		newView.AssociationMapKeyToPostAssociationEntry[entryKey] = &newEntry
-	}
-
-	// Block Reward
-	newView.publicKeyToBlockRewardMap = make(map[PublicKey]*BlockRewardEntry, len(bav.publicKeyToBlockRewardMap))
-	for publicKey, blockReward := range bav.publicKeyToBlockRewardMap {
-		newBlockReward := *blockReward
-		newView.publicKeyToBlockRewardMap[publicKey] = &newBlockReward
 	}
 	return newView, nil
 }
@@ -1206,9 +1193,6 @@ func (bav *UtxoView) DisconnectBlock(
 		if err != nil {
 			return errors.Wrapf(err, "DisconnectBlock: Problem disconnecting transaction: %v", currentTxn)
 		}
-	}
-	if err := bav.processPublicKeyToBlockRewardMap(desoBlock, true); err != nil {
-		return errors.Wrapf(err, "DisconnectBlock: ")
 	}
 
 	// At this point, all of the transactions in the block should be fully
@@ -2921,9 +2905,6 @@ func (bav *UtxoView) ConnectBlock(
 			})
 		}
 	}
-	if err := bav.processPublicKeyToBlockRewardMap(desoBlock, false); err != nil {
-		return nil, errors.Wrapf(err, "ConnectBlock: ")
-	}
 
 	// We should now have computed totalFees. Use this to check that
 	// the block reward's outputs are correct.
@@ -3320,46 +3301,6 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 			"GetSpendableUtxosForPublicKey: balance underflow (%d,%d)", balanceNanos, immatureBlockRewards)
 	}
 	return balanceNanos - immatureBlockRewards, nil
-}
-
-func (bav *UtxoView) processPublicKeyToBlockRewardMap(desoBlock *MsgDeSoBlock, isDisconnect bool) error {
-	if desoBlock.Header == nil {
-		return fmt.Errorf("PutBlockRewardWithTxn: Header was nil in block %v", desoBlock)
-	}
-	blockHash, err := desoBlock.Header.Hash()
-	if err != nil {
-		return errors.Wrapf(err, "PutBlockRewardWithTxn: Problem hashing header: ")
-	}
-
-	// Index the block reward. Used for deducting immature block rewards from user balances.
-	if len(desoBlock.Txns) == 0 {
-		return fmt.Errorf("setBlockRewardPublicKey: Got block without any txns %v", desoBlock)
-	}
-	blockRewardTxn := desoBlock.Txns[0]
-	if blockRewardTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-		return fmt.Errorf("setBlockRewardPublicKey: Got block without block reward as first txn %v", desoBlock)
-	}
-	// It's possible the block reward is split across multiple public keys.
-	pubKeyToBlockRewardMap := make(map[PublicKey]*BlockRewardEntry)
-	for _, bro := range desoBlock.Txns[0].TxOutputs {
-		pkMapKey := *NewPublicKey(bro.PublicKey)
-		if _, hasKey := pubKeyToBlockRewardMap[pkMapKey]; !hasKey {
-			pubKeyToBlockRewardMap[pkMapKey] = &BlockRewardEntry{
-				blockReward: bro.AmountNanos,
-				blockHash:   blockHash,
-				isDeleted:   isDisconnect,
-			}
-		} else {
-			pubKeyToBlockRewardMap[pkMapKey] = &BlockRewardEntry{
-				blockReward: pubKeyToBlockRewardMap[pkMapKey].blockReward + bro.AmountNanos,
-				blockHash:   blockHash,
-				isDeleted:   isDisconnect,
-			}
-		}
-	}
-
-	bav.publicKeyToBlockRewardMap = pubKeyToBlockRewardMap
-	return nil
 }
 
 func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[string][]byte {
