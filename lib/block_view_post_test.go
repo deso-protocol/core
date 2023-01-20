@@ -269,7 +269,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeSubmitPost, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb(0))
+	require.NoError(utxoView.FlushToDb(uint64(blockHeight)))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -2076,9 +2076,10 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 func TestFreezingPosts(t *testing.T) {
 	// Initialize blockchain.
 	chain, params, db := NewLowDifficultyBlockchain()
-	params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = 0
-	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
+	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	GlobalDeSoParams = *params
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Mine a few blocks to give the senderPkString some money.

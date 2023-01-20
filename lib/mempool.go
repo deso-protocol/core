@@ -1880,6 +1880,54 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			Metadata:             "AssociationTargetPostCreatorPublicKeyBase58Check",
 		})
 
+	case TxnTypeAccessGroup:
+		realTxMeta := txn.TxnMeta.(*AccessGroupMetadata)
+		txnMeta.AccessGroupTxindexMetadata = &AccessGroupTxindexMetadata{
+			AccessGroupOwnerPublicKey: *NewPublicKey(realTxMeta.AccessGroupOwnerPublicKey),
+			AccessGroupPublicKey:      *NewPublicKey(realTxMeta.AccessGroupPublicKey),
+			AccessGroupKeyName:        *NewGroupKeyName(realTxMeta.AccessGroupKeyName),
+			AccessGroupOperationType:  realTxMeta.AccessGroupOperationType,
+		}
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(realTxMeta.AccessGroupOwnerPublicKey, utxoView.Params),
+			Metadata:             "AccessGroupCreateOwnerPublicKeyBase58Check",
+		})
+
+	case TxnTypeAccessGroupMembers:
+		realTxMeta := txn.TxnMeta.(*AccessGroupMembersMetadata)
+		txnMeta.AccessGroupMembersTxindexMetadata = &AccessGroupMembersTxindexMetadata{
+			AccessGroupOwnerPublicKey:      *NewPublicKey(realTxMeta.AccessGroupOwnerPublicKey),
+			AccessGroupKeyName:             *NewGroupKeyName(realTxMeta.AccessGroupKeyName),
+			AccessGroupMembersList:         realTxMeta.AccessGroupMembersList,
+			AccessGroupMemberOperationType: realTxMeta.AccessGroupMemberOperationType,
+		}
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(realTxMeta.AccessGroupOwnerPublicKey, utxoView.Params),
+			Metadata:             "AccessGroupMembersOwnerPublicKeyBase58Check",
+		})
+
+	case TxnTypeNewMessage:
+		realTxMeta := txn.TxnMeta.(*NewMessageMetadata)
+		txnMeta.NewMessageTxindexMetadata = &NewMessageTxindexMetadata{
+			SenderAccessGroupOwnerPublicKey:    realTxMeta.SenderAccessGroupOwnerPublicKey,
+			SenderAccessGroupKeyName:           realTxMeta.SenderAccessGroupKeyName,
+			RecipientAccessGroupOwnerPublicKey: realTxMeta.RecipientAccessGroupOwnerPublicKey,
+			RecipientAccessGroupKeyName:        realTxMeta.RecipientAccessGroupKeyName,
+			TimestampNanos:                     realTxMeta.TimestampNanos,
+			NewMessageType:                     realTxMeta.NewMessageType,
+			NewMessageOperation:                realTxMeta.NewMessageOperation,
+		}
+
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(realTxMeta.SenderAccessGroupOwnerPublicKey.ToBytes(), utxoView.Params),
+			Metadata:             "NewMessageSenderAccessGroupOwnerPublicKey",
+		})
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(realTxMeta.RecipientAccessGroupOwnerPublicKey.ToBytes(), utxoView.Params),
+			Metadata:             "NewMessageRecipientAccessGroupOwnerPublicKe",
+		})
 	}
 	return txnMeta
 }

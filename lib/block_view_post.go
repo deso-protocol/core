@@ -757,7 +757,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		delete(extraData, RepostedPostHash)
 	}
 	isFrozen := false
-	if blockHeight >= bav.Params.ForkHeights.AccessGroupsAndAssociationsBlockHeight {
+	if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 		if extraDataIsFrozen, exists := extraData[IsFrozenKey]; exists {
 			isFrozen = bytes.Equal(extraDataIsFrozen, IsFrozenPostVal)
 			delete(extraData, IsFrozenKey)
@@ -809,7 +809,7 @@ func (bav *UtxoView) _connectSubmitPost(
 				PkToStringBoth(txn.PublicKey), spew.Sdump(GetParamUpdaterPublicKeys(blockHeight, bav.Params)))
 		}
 
-		if blockHeight >= bav.Params.ForkHeights.AccessGroupsAndAssociationsBlockHeight {
+		if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 			// Modification of a frozen post is not allowed after the above block height.
 			if existingPostEntryy.IsFrozen {
 				return 0, 0, nil, errors.Wrapf(RuleErrorSubmitPostModifyingFrozenPost, "_connectSubmitPost: ")

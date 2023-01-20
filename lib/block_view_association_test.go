@@ -41,7 +41,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true)
-	params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = 0
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -104,7 +104,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	// -------------------------------
 	{
 		// RuleErrorAssociationBeforeBlockHeight
-		params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = math.MaxUint32
+		params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = math.MaxUint32
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
 			TargetUserPublicKey: NewPublicKey(m1PkBytes),
 			AppPublicKey:        &ZeroPublicKey,
@@ -116,7 +116,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationBeforeBlockHeight)
-		params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = 0
+		params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	}
 	{
 		// RuleErrorUserAssociationInvalidTargetUser
@@ -413,7 +413,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	}
 	{
 		// RuleErrorAssociationBeforeBlockHeight
-		params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = math.MaxUint32
+		params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = math.MaxUint32
 		createPostAssociationMetadata = &CreatePostAssociationMetadata{
 			PostHash:         postHash,
 			AppPublicKey:     &ZeroPublicKey,
@@ -425,7 +425,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorAssociationBeforeBlockHeight)
-		params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = 0
+		params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	}
 	{
 		// RuleErrorPostAssociationInvalidPost
@@ -2205,7 +2205,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = 0
 	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = 0
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
-	params.ForkHeights.AccessGroupsAndAssociationsBlockHeight = 0
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -2541,5 +2541,66 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: deleteUserAssociationMetadata},
 		)
 		require.NoError(t, err)
+	}
+	{
+		// Test TransactionSpendingLimit.ToMetamaskString()
+		toMetamaskString := func(
+			associationType string,
+			appPKID PKID,
+			appScopeType AssociationAppScopeType,
+			operation AssociationOperation,
+		) string {
+			associationLimitKey := MakeAssociationLimitKey(
+				AssociationClassUser, []byte(associationType), appPKID, appScopeType, operation,
+			)
+			txnSpendingLimit := &TransactionSpendingLimit{
+				GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+				TransactionCountLimitMap: map[TxnType]uint64{
+					TxnTypeAuthorizeDerivedKey: 1,
+				},
+				AssociationLimitMap: map[AssociationLimitKey]uint64{
+					associationLimitKey: 1,
+				},
+			}
+			return txnSpendingLimit.ToMetamaskString(params)
+		}
+
+		// Scoped AssociationType + App + Operation
+		metamaskStr := toMetamaskString(
+			"REACTION", *m1PKID, AssociationAppScopeTypeScoped, AssociationOperationCreate,
+		)
+		require.Equal(t, metamaskStr,
+			"Spending limits on the derived key:\n"+
+				"	Total $DESO Limit: 1.0 $DESO\n"+
+				"	Transaction Count Limit: \n"+
+				"		AUTHORIZE_DERIVED_KEY: 1\n"+
+				"	Association Restrictions:\n"+
+				"		[\n"+
+				"			Association Class: User\n"+
+				"			Association Type: REACTION\n"+
+				"			App PKID: "+m1Pub+"\n"+
+				"			Operation: Create\n"+
+				"			Transaction Count: 1\n"+
+				"		]\n",
+		)
+
+		// Any AssociationType + App + Operation
+		metamaskStr = toMetamaskString(
+			"", ZeroPKID, AssociationAppScopeTypeAny, AssociationOperationAny,
+		)
+		require.Equal(t, metamaskStr,
+			"Spending limits on the derived key:\n"+
+				"	Total $DESO Limit: 1.0 $DESO\n"+
+				"	Transaction Count Limit: \n"+
+				"		AUTHORIZE_DERIVED_KEY: 1\n"+
+				"	Association Restrictions:\n"+
+				"		[\n"+
+				"			Association Class: User\n"+
+				"			Association Type: Any\n"+
+				"			App PKID: Any\n"+
+				"			Operation: Any\n"+
+				"			Transaction Count: 1\n"+
+				"		]\n",
+		)
 	}
 }
