@@ -255,8 +255,8 @@ type ForkHeights struct {
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
 	// AssociationsAndAccessGroupsBlockHeight defines the height at which we introduced:
-	//   - User and Post Associations
 	//   - Access Groups
+	//   - User and Post Associations
 	//   - Editable NFT posts
 	//   - Frozen posts
 	AssociationsAndAccessGroupsBlockHeight uint32
