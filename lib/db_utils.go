@@ -48,10 +48,10 @@ const (
 // Prefixes var when fetching prefixes to avoid parsing the prefix_id tags every time.
 var Prefixes = GetPrefixes()
 
-// PrefixesMetadata is a static variable that allows us to quickly fetch state-related prefixes. We make
+// StatePrefixes is a static variable that allows us to quickly fetch state-related prefixes. We make
 // the distinction between state and non-state prefixes for hyper sync, where the node is only syncing
 // state prefixes. This significantly speeds up the syncing process and the node will still work properly.
-var PrefixesMetadata = GetDBPrefixesMetadata()
+var StatePrefixes = GetStatePrefixes()
 
 type DBPrefixes struct {
 	// The key prefixes for the key-value database. To store a particular
@@ -84,11 +84,11 @@ type DBPrefixes struct {
 
 	// Utxo table.
 	// <prefix_id, txid BlockHash, output_index uint64> -> UtxoEntry
-	PrefixUtxoKeyToUtxoEntry []byte `prefix_id:"[5]" is_state:"true" is_checksum:"true"`
+	PrefixUtxoKeyToUtxoEntry []byte `prefix_id:"[5]" is_state:"true"`
 	// <prefix_id, pubKey [33]byte, utxoKey< txid BlockHash, index uint32 >> -> <>
-	PrefixPubKeyUtxoKey []byte `prefix_id:"[7]" is_state:"true" is_checksum:"true"`
+	PrefixPubKeyUtxoKey []byte `prefix_id:"[7]" is_state:"true"`
 	// The number of utxo entries in the database.
-	PrefixUtxoNumEntries []byte `prefix_id:"[8]" is_state:"true" is_checksum:"true"`
+	PrefixUtxoNumEntries []byte `prefix_id:"[8]" is_state:"true"`
 	// Utxo operations table.
 	// This table contains, for each blockhash on the main chain, the UtxoOperations
 	// that were applied by this block. To roll back the block, one must loop through
@@ -99,9 +99,9 @@ type DBPrefixes struct {
 	// The below are mappings related to the validation of BitcoinExchange transactions.
 	//
 	// The number of nanos that has been purchased thus far.
-	PrefixNanosPurchased []byte `prefix_id:"[10]" is_state:"true" is_checksum:"true"`
+	PrefixNanosPurchased []byte `prefix_id:"[10]" is_state:"true"`
 	// How much Bitcoin is work in USD cents.
-	PrefixUSDCentsPerBitcoinExchangeRate []byte `prefix_id:"[27]" is_state:"true" is_checksum:"true"`
+	PrefixUSDCentsPerBitcoinExchangeRate []byte `prefix_id:"[27]" is_state:"true"`
 	// <prefix_id, key> -> <GlobalParamsEntry encoded>
 	PrefixGlobalParams []byte `prefix_id:"[40]" is_state:"true"`
 
@@ -110,7 +110,7 @@ type DBPrefixes struct {
 	// no key is set for a TxID that means it has not been processed (and thus it can be
 	// used to create new nanos).
 	// <prefix_id, BitcoinTxID BlockHash> -> <nothing>
-	PrefixBitcoinBurnTxIDs []byte `prefix_id:"[11]" is_state:"true" is_checksum:"true"`
+	PrefixBitcoinBurnTxIDs []byte `prefix_id:"[11]" is_state:"true"`
 	// Messages are indexed by the public key of their senders and receivers. If
 	// a message sends from pkFrom to pkTo then there will be two separate entries,
 	// one for pkFrom and one for pkTo. The exact format is as follows:
@@ -137,9 +137,9 @@ type DBPrefixes struct {
 	// <prefix_id, tstampNanos uint64, PostHash> -> <>
 	PrefixTstampNanosPostHash []byte `prefix_id:"[19]" is_state:"true"`
 	// <prefix_id, creatorbps uint64, PostHash> -> <>
-	PrefixCreatorBpsPostHash []byte `prefix_id:"[20]" is_state:"true" is_checksum:"true"`
+	PrefixCreatorBpsPostHash []byte `prefix_id:"[20]" is_state:"true"`
 	// <prefix_id, multiplebps uint64, PostHash> -> <>
-	PrefixMultipleBpsPostHash []byte `prefix_id:"[21]" is_state:"true" is_checksum:"true"`
+	PrefixMultipleBpsPostHash []byte `prefix_id:"[21]" is_state:"true"`
 	// Comments are just posts that have their ParentStakeID set, and
 	// so we have a separate index that allows us to return all the
 	// comments for a given StakeID
@@ -157,9 +157,7 @@ type DBPrefixes struct {
 	PrefixProfileUsernameToPKID []byte `prefix_id:"[25]" is_state:"true"`
 	// This allows us to sort the profiles by the value of their coin (since
 	// the amount of DeSo locked in a profile is proportional to coin price).
-	PrefixCreatorDeSoLockedNanosCreatorPKID []byte `prefix_id:"[32]" is_state:"true" is_checksum:"true"`
-
-	// DEPRECATED
+	PrefixCreatorDeSoLockedNanosCreatorPKID []byte `prefix_id:"[32]" is_state:"true"`
 	// The StakeID is a post hash for posts and a public key for users.
 	// <prefix_id, StakeIDType, AmountNanos uint64, StakeID [var]byte> -> <>
 	PrefixStakeIDTypeAmountStakeIDIndex []byte `prefix_id:"[26]" is_state:"true"`
@@ -179,8 +177,8 @@ type DBPrefixes struct {
 	// Prefixes for creator coin fields:
 	// <prefix_id, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
 	// <prefix_id, creator PKID [33]byte, HODLer PKID [33]byte> -> <BalanceEntry>
-	PrefixHODLerPKIDCreatorPKIDToBalanceEntry []byte `prefix_id:"[33]" is_state:"true" is_checksum:"true"`
-	PrefixCreatorPKIDHODLerPKIDToBalanceEntry []byte `prefix_id:"[34]" is_state:"true" is_checksum:"true"`
+	PrefixHODLerPKIDCreatorPKIDToBalanceEntry []byte `prefix_id:"[33]" is_state:"true"`
+	PrefixCreatorPKIDHODLerPKIDToBalanceEntry []byte `prefix_id:"[34]" is_state:"true"`
 
 	PrefixPosterPublicKeyTimestampPostHash []byte `prefix_id:"[35]" is_state:"true"`
 	// If no mapping exists for a particular public key, then the PKID is simply
@@ -200,8 +198,8 @@ type DBPrefixes struct {
 	// Prefixes for diamonds:
 	//  <prefix_id, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <DiamondEntry>
 	//  <prefix_id, DiamondSenderPKID [33]byte, DiamondReceiverPKID [33]byte, posthash> -> <DiamondEntry>
-	PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash []byte `prefix_id:"[41]" is_state:"true" is_checksum:"true"`
-	PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash []byte `prefix_id:"[43]" is_state:"true" is_checksum:"true"`
+	PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash []byte `prefix_id:"[41]" is_state:"true"`
+	PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash []byte `prefix_id:"[43]" is_state:"true"`
 	// Public keys that have been restricted from signing blocks.
 	// <prefix_id, ForbiddenPublicKey [33]byte> -> <>
 	PrefixForbiddenBlockSignaturePubKeys []byte `prefix_id:"[44]" is_state:"true"`
@@ -212,39 +210,39 @@ type DBPrefixes struct {
 	// 		Diamonds: <prefix_id, DiamondedPostHash, DiamonderPubKey [33]byte, DiamondLevel (uint64)> -> <>
 	PrefixRepostedPostHashReposterPubKey               []byte `prefix_id:"[45]" is_state:"true"`
 	PrefixRepostedPostHashReposterPubKeyRepostPostHash []byte `prefix_id:"[46]" is_state:"true"`
-	PrefixDiamondedPostHashDiamonderPKIDDiamondLevel   []byte `prefix_id:"[47]" is_state:"true" is_checksum:"true"`
+	PrefixDiamondedPostHashDiamonderPKIDDiamondLevel   []byte `prefix_id:"[47]" is_state:"true"`
 	// Prefixes for NFT ownership:
 	// 	<prefix_id, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
-	PrefixPostHashSerialNumberToNFTEntry []byte `prefix_id:"[48]" is_state:"true" is_checksum:"true"`
+	PrefixPostHashSerialNumberToNFTEntry []byte `prefix_id:"[48]" is_state:"true"`
 	//  <prefix_id, PKID [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
-	PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry []byte `prefix_id:"[49]" is_state:"true" is_checksum:"true"`
+	PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry []byte `prefix_id:"[49]" is_state:"true"`
 	// Prefixes for NFT bids:
 	//  <prefix_id, NFTPostHash [32]byte, SerialNumber uint64, BidNanos uint64, PKID [33]byte> -> <>
-	PrefixPostHashSerialNumberBidNanosBidderPKID []byte `prefix_id:"[50]" is_state:"true" is_checksum:"true"`
+	PrefixPostHashSerialNumberBidNanosBidderPKID []byte `prefix_id:"[50]" is_state:"true"`
 	//  <prefix_id, BidderPKID [33]byte, NFTPostHash [32]byte, SerialNumber uint64> -> <BidNanos uint64>
-	PrefixBidderPKIDPostHashSerialNumberToBidNanos []byte `prefix_id:"[51]" is_state:"true" is_checksum:"true"`
+	PrefixBidderPKIDPostHashSerialNumberToBidNanos []byte `prefix_id:"[51]" is_state:"true"`
 
 	// <prefix_id, PublicKey [33]byte> -> uint64
-	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true" is_checksum:"true"`
+	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"`
 
 	// Block reward prefix:
 	//   - This index is needed because block rewards take N blocks to mature, which means we need
 	//     a way to deduct them from balance calculations until that point. Without this index, it
 	//     would be impossible to figure out which of a user's UTXOs have yet to mature.
 	//   - Schema: <prefix_id, hash BlockHash> -> <pubKey [33]byte, uint64 blockRewardNanos>
-	PrefixPublicKeyBlockHashToBlockReward []byte `prefix_id:"[53]" is_state:"true" is_checksum:"true"`
+	PrefixPublicKeyBlockHashToBlockReward []byte `prefix_id:"[53]" is_state:"true"`
 
 	// Prefix for NFT accepted bid entries:
 	//   - Note: this index uses a slice to track the history of winning bids for an NFT. It is
 	//     not core to consensus and should not be relied upon as it could get inefficient.
 	//   - Schema: <prefix_id>, NFTPostHash [32]byte, SerialNumber uint64 -> []NFTBidEntry
-	PrefixPostHashSerialNumberToAcceptedBidEntries []byte `prefix_id:"[54]" is_state:"true" is_checksum:"true"`
+	PrefixPostHashSerialNumberToAcceptedBidEntries []byte `prefix_id:"[54]" is_state:"true"`
 
 	// Prefixes for DAO coin fields:
 	// <prefix, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
 	// <prefix, creator PKID [33]byte, HODLer PKID [33]byte> -> <BalanceEntry>
-	PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry []byte `prefix_id:"[55]" is_state:"true" is_checksum:"true""`
-	PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry []byte `prefix_id:"[56]" is_state:"true" is_checksum:"true"`
+	PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry []byte `prefix_id:"[55]" is_state:"true"`
+	PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry []byte `prefix_id:"[56]" is_state:"true"`
 
 	// Prefix for MessagingGroupEntries indexed by OwnerPublicKey and GroupKeyName:
 	//
@@ -293,7 +291,7 @@ type DBPrefixes struct {
 
 	// Prefix for Authorize Derived Key transactions:
 	// 		<prefix_id, OwnerPublicKey [33]byte, DerivedPublicKey [33]byte> -> <DerivedKeyEntry>
-	PrefixAuthorizeDerivedKey []byte `prefix_id:"[59]" is_state:"true" is_checksum:"true"`
+	PrefixAuthorizeDerivedKey []byte `prefix_id:"[59]" is_state:"true"`
 
 	// Prefixes for DAO coin limit orders
 	// This index powers the order book.
@@ -321,9 +319,9 @@ type DBPrefixes struct {
 	//   _PrefixDAOCoinLimitOrderByOrderID
 	//   OrderID [32]byte
 	// > -> <DAOCoinLimitOrderEntry>
-	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true" is_checksum:"true"`
-	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true" is_checksum:"true"`
-	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true" is_checksum:"true"`
+	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"`
+	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
+	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
 
 	// User Association prefixes
 	// PrefixUserAssociationByID:
@@ -453,33 +451,25 @@ type DBPrefixes struct {
 	// 	<prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
 	PrefixGroupChatMessagesIndex []byte `prefix_id:"[74]" is_state:"true"`
 
-	// PrefixGroupChatThreadIndex is modified by the NewMessage transaction and is used to store a GroupChatThreadExistence
-	// for each existing group chat thread. The index has the following structure:
-	// 	<prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName> -> <GroupChatThreadExistence>
-	PrefixGroupChatThreadIndex []byte `prefix_id:"[75]" is_state:"true"`
-
 	// PrefixDmMessagesIndex is modified by the NewMessage transaction and is used to store NewMessageEntry objects for
-	// each message sent to a Dm thread. The index has the following structure:
+	// each message sent to a Dm thread. It answers the question: "Give me all the messages between these two users."
+	// The index has the following structure:
 	// 	<prefix, MinorAccessGroupOwnerPublicKey, MinorAccessGroupKeyName,
 	//		MajorAccessGroupOwnerPublicKey, MajorAccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
 	// The Minor/Major distinction is used to deterministically map the two accessGroupIds of message's sender/recipient
 	// into a single pair based on the lexicographical ordering of the two accessGroupIds. This is done to ensure that
 	// both sides of the conversation have the same key for the same conversation, and we can store just a single message.
-	PrefixDmMessagesIndex []byte `prefix_id:"[76]" is_state:"true"`
+	PrefixDmMessagesIndex []byte `prefix_id:"[75]" is_state:"true"`
 
-	// PrefixDmThreadIndex is modified by the NewMessage transaction and is used to store a DmThreadExistence
-	// for each existing dm thread. The index has the following structure:
+	// PrefixDmThreadIndex is modified by the NewMessage transaction and is used to store a DmThreadEntry
+	// for each existing dm thread. It answers the question: "Give me all the threads for a particular user."
+	// The index has the following structure:
 	// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
-	//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName> -> <DmThreadExistence>
+	//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName> -> <DmThreadEntry>
 	// It's worth noting that two of these entries are stored for each Dm thread, one being the inverse of the other.
-	PrefixDmThreadIndex []byte `prefix_id:"[77]" is_state:"true"`
+	PrefixDmThreadIndex []byte `prefix_id:"[76]" is_state:"true"`
 
-	// PrefixThreadAttributesIndex is modified by the UpdateThread transaction and is used to store a ThreadAttributes
-	// for each existing thread. The index has the following structure:
-	// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
-	//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName, NewMessageType> -> <ThreadAttributesEntry>
-	PrefixThreadAttributesIndex []byte `prefix_id:"[78]" is_state:"true"`
-	// NEXT_TAG: 79
+	// NEXT_TAG: 77
 
 }
 
@@ -673,18 +663,12 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatMessagesIndex) {
 		// prefix_id:"[74]"
 		return true, &NewMessageEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixGroupChatThreadIndex) {
-		// prefix_id:"[75]"
-		return true, &GroupChatThreadExistence{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmMessagesIndex) {
-		// prefix_id:"[76]"
+		// prefix_id:"[75]"
 		return true, &NewMessageEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
-		// prefix_id:"[77]"
-		return true, &DmThreadExistence{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixThreadAttributesIndex) {
-		// prefix_id:"[78]"
-		return true, &ThreadAttributesEntry{}
+		// prefix_id:"[76]"
+		return true, &DmThreadEntry{}
 	}
 
 	return true, nil
@@ -730,56 +714,30 @@ func GetPrefixes() *DBPrefixes {
 	return prefixes
 }
 
-type DBPrefixType int
-
-func (pt *DBPrefixType) Add(newPt DBPrefixType) {
-	*pt |= newPt
-}
-
-func (pt *DBPrefixType) Remove(removePt DBPrefixType) {
-	*pt &= ^removePt
-}
-
-func (pt *DBPrefixType) IsType(otherPt DBPrefixType) bool {
-	return *pt&otherPt == otherPt
-}
-
-const (
-	// DBPrefixTypeState is the prefix for the keys that make up the state database.
-	DBPrefixTypeState DBPrefixType = 1 << iota
-	// DBPrefixTypeTxindex is the prefix for the keys that make up the transaction index database.
-	DBPrefixTypeTxindex
-	// DBPrefixTypeChecksum is the prefix for the keys that make up the checksum.
-	DBPrefixTypeChecksum
-)
-
-// DBPrefixesMetadata is a helper struct that stores information about state-related prefixes.
-type DBPrefixesMetadata struct {
+// DBStatePrefixes is a helper struct that stores information about state-related prefixes.
+type DBStatePrefixes struct {
 	Prefixes *DBPrefixes
 
-	// PrefixToTypeMap maps prefixes to whether they are state (true) or non-state (false) prefixes.
-	PrefixToTypeMap map[byte]DBPrefixType
+	// StatePrefixesMap maps prefixes to whether they are state (true) or non-state (false) prefixes.
+	StatePrefixesMap map[byte]bool
 
-	// StatePrefixesList is a sorted list of state prefixes.
+	// StatePrefixesList is a list of state prefixes.
 	StatePrefixesList [][]byte
 
-	// TxIndexPrefixesList is a list of TxIndex prefixes
-	TxIndexPrefixesList [][]byte
-
-	// ChecksumPrefixesList is a list of Checksum prefixes
-	ChecksumPrefixesList [][]byte
+	// TxIndexPrefixes is a list of TxIndex prefixes
+	TxIndexPrefixes [][]byte
 }
 
-// GetDBPrefixesMetadata() creates a DBPrefixesMetadata object from the DBPrefixes struct and returns it. We
+// GetStatePrefixes() creates a DBStatePrefixes object from the DBPrefixes struct and returns it. We
 // parse the prefix_id and is_state tags.
-func GetDBPrefixesMetadata() *DBPrefixesMetadata {
-	// Initialize the DBPrefixesMetadata struct.
-	prefixesMetadata := &DBPrefixesMetadata{}
-	prefixesMetadata.Prefixes = &DBPrefixes{}
-	prefixesMetadata.PrefixToTypeMap = make(map[byte]DBPrefixType)
+func GetStatePrefixes() *DBStatePrefixes {
+	// Initialize the DBStatePrefixes struct.
+	statePrefixes := &DBStatePrefixes{}
+	statePrefixes.Prefixes = &DBPrefixes{}
+	statePrefixes.StatePrefixesMap = make(map[byte]bool)
 
 	// Iterate over all the DBPrefixes fields and parse the prefix_id and is_state tags.
-	prefixElements := reflect.ValueOf(prefixesMetadata.Prefixes).Elem()
+	prefixElements := reflect.ValueOf(statePrefixes.Prefixes).Elem()
 	structFields := prefixElements.Type()
 	for i := 0; i < structFields.NumField(); i++ {
 		prefixField := prefixElements.Field(i)
@@ -790,28 +748,23 @@ func GetDBPrefixesMetadata() *DBPrefixesMetadata {
 				structFields.Field(i).Name, MaxPrefixLen)))
 		}
 		prefix := prefixBytes[0]
-		if _, exists := prefixesMetadata.PrefixToTypeMap[prefix]; exists {
-			panic(any(fmt.Errorf("prefix (%v) already exists in PrefixToTypeMap. You created a "+
+		if statePrefixes.StatePrefixesMap[prefix] {
+			panic(any(fmt.Errorf("prefix (%v) already exists in StatePrefixesMap. You created a "+
 				"prefix overlap, fix it", structFields.Field(i).Name)))
 		}
-		// Set the prefix metadata based on the Tag on the prefix field.
-		prefixesMetadata.PrefixToTypeMap[prefix] = 0
 		if structFields.Field(i).Tag.Get("is_state") == "true" {
-			prefixesMetadata.PrefixToTypeMap[prefix] |= DBPrefixTypeState
-			prefixesMetadata.StatePrefixesList = append(prefixesMetadata.StatePrefixesList, []byte{prefix})
-		}
-		if structFields.Field(i).Tag.Get("is_txindex") == "true" {
-			prefixesMetadata.PrefixToTypeMap[prefix] |= DBPrefixTypeTxindex
-			prefixesMetadata.TxIndexPrefixesList = append(prefixesMetadata.TxIndexPrefixesList, []byte{prefix})
-		}
-		if structFields.Field(i).Tag.Get("is_checksum") == "true" {
-			prefixesMetadata.PrefixToTypeMap[prefix] |= DBPrefixTypeChecksum
-			prefixesMetadata.ChecksumPrefixesList = append(prefixesMetadata.ChecksumPrefixesList, []byte{prefix})
+			statePrefixes.StatePrefixesMap[prefix] = true
+			statePrefixes.StatePrefixesList = append(statePrefixes.StatePrefixesList, []byte{prefix})
+		} else if structFields.Field(i).Tag.Get("is_txindex") == "true" {
+			statePrefixes.TxIndexPrefixes = append(statePrefixes.TxIndexPrefixes, []byte{prefix})
+			statePrefixes.StatePrefixesMap[prefix] = false
+		} else {
+			statePrefixes.StatePrefixesMap[prefix] = false
 		}
 	}
 	// Sort prefixes.
-	sort.Slice(prefixesMetadata.StatePrefixesList, func(i int, j int) bool {
-		switch bytes.Compare(prefixesMetadata.StatePrefixesList[i], prefixesMetadata.StatePrefixesList[j]) {
+	sort.Slice(statePrefixes.StatePrefixesList, func(i int, j int) bool {
+		switch bytes.Compare(statePrefixes.StatePrefixesList[i], statePrefixes.StatePrefixesList[j]) {
 		case 0:
 			return true
 		case -1:
@@ -821,7 +774,7 @@ func GetDBPrefixesMetadata() *DBPrefixesMetadata {
 		}
 		return false
 	})
-	return prefixesMetadata
+	return statePrefixes
 }
 
 // isStateKey checks if a key is a state-related key.
@@ -830,8 +783,8 @@ func isStateKey(key []byte) bool {
 		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))
 	}
 	prefix := key[0]
-	prefixType, exists := PrefixesMetadata.PrefixToTypeMap[prefix]
-	return exists && prefixType.IsType(DBPrefixTypeState)
+	isState, exists := StatePrefixes.StatePrefixesMap[prefix]
+	return exists && isState
 }
 
 // isTxIndexKey checks if a key is a txindex-related key.
@@ -840,31 +793,12 @@ func isTxIndexKey(key []byte) bool {
 		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))
 	}
 	prefix := key[0]
-	prefixType, exists := PrefixesMetadata.PrefixToTypeMap[prefix]
-	return exists && prefixType.IsType(DBPrefixTypeChecksum)
-}
-
-// isChecksumKey checks if a key is a checksum-related key.
-func isChecksumKey(key []byte) bool {
-	if MaxPrefixLen > 1 {
-		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))
+	for _, txIndexPrefix := range StatePrefixes.TxIndexPrefixes {
+		if prefix == txIndexPrefix[0] {
+			return true
+		}
 	}
-	prefix := key[0]
-	prefixType, exists := PrefixesMetadata.PrefixToTypeMap[prefix]
-	return exists && prefixType.IsType(DBPrefixTypeChecksum)
-}
-
-// getPrefixType returns the prefix type of a key.
-func getPrefixType(key []byte) (DBPrefixType, error) {
-	if MaxPrefixLen > 1 {
-		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))
-	}
-	prefix := key[0]
-	prefixType, exists := PrefixesMetadata.PrefixToTypeMap[prefix]
-	if !exists {
-		return 0, fmt.Errorf("prefix (%v) does not exist in PrefixToTypeMap", prefix)
-	}
-	return prefixType, nil
+	return false
 }
 
 // -------------------------------------------------------------------------------------
@@ -1103,7 +1037,7 @@ func DBDeleteAllStateRecords(db *badger.DB) (_shouldErase bool, _error error) {
 	}()
 
 	// Iterate over all state prefixes.
-	for _, prefix := range PrefixesMetadata.StatePrefixesList {
+	for _, prefix := range StatePrefixes.StatePrefixesList {
 		startKey := prefix
 		fetchingPrefix := true
 
@@ -2101,96 +2035,6 @@ func DBDeleteGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key G
 }
 
 // -------------------------------------------------------------------------------------
-// PrefixGroupChatThreadIndex
-// <prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName> -> <GroupChatThreadExistence>
-// -------------------------------------------------------------------------------------
-
-func _dbKeyForGroupChatThreadIndex(key AccessGroupId) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixGroupChatThreadIndex...)
-	prefixCopy = append(prefixCopy, key.AccessGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.AccessGroupKeyName.ToBytes()...)
-	return prefixCopy
-}
-
-func DBCheckGroupChatThreadExistence(db *badger.DB, snap *Snapshot, groupId AccessGroupId) (*GroupChatThreadExistence, error) {
-	var ret *GroupChatThreadExistence
-	var err error
-	err = db.View(func(txn *badger.Txn) error {
-		ret, err = DBCheckGroupChatThreadExistenceWithTxn(txn, snap, groupId)
-		return err
-	})
-	if err != nil {
-		return nil, errors.Wrapf(err, "DBCheckGroupChatThreadExistence: Problem getting group chat thread index")
-	}
-	return ret, nil
-}
-
-func DBCheckGroupChatThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, groupId AccessGroupId) (*GroupChatThreadExistence, error) {
-
-	prefix := _dbKeyForGroupChatThreadIndex(groupId)
-	groupChatThreadExistenceBytes, err := DBGetWithTxn(txn, snap, prefix)
-	if err == badger.ErrKeyNotFound {
-		return nil, nil
-	} else if err != nil {
-		return nil, errors.Wrapf(err, "DBCheckGroupChatThreadExistenceWithTxn: Problem getting group chat thread index")
-	}
-
-	groupChatThreadExistence := &GroupChatThreadExistence{}
-	rr := bytes.NewReader(groupChatThreadExistenceBytes)
-	if exists, err := DecodeFromBytes(groupChatThreadExistence, rr); !exists || err != nil {
-		return nil, errors.Wrapf(err, "DBCheckGroupChatThreadExistenceWithTxn: "+
-			"Problem decoding group chat thread index with key: %v and value: %v", prefix, groupChatThreadExistenceBytes)
-	}
-
-	return groupChatThreadExistence, nil
-}
-
-func DBPutGroupChatThreadIndex(db *badger.DB, snap *Snapshot, blockHeight uint64, groupId AccessGroupId) error {
-	err := db.Update(func(txn *badger.Txn) error {
-		return DBPutGroupChatThreadIndexWithTxn(txn, snap, blockHeight, groupId)
-	})
-	if err != nil {
-		return errors.Wrapf(err, "DBPutGroupChatThreadIndex: Problem putting group chat thread index")
-	}
-	return nil
-}
-
-func DBPutGroupChatThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	groupId AccessGroupId) error {
-
-	prefix := _dbKeyForGroupChatThreadIndex(groupId)
-	// We don't store any data under this index for now. For forward-compatibility we store a dummy
-	// DeSoEncoder to allow for encoder migrations, should they ever be useful.
-	groupChatThreadExistence := MakeGroupChatThreadExistence()
-	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, &groupChatThreadExistence)); err != nil {
-		return errors.Wrapf(err, "DBPutGroupChatThreadExistenceWithTxn: Problem setting group chat thread index "+
-			"with key (%v) in the db", prefix)
-	}
-	return nil
-}
-
-func DBDeleteGroupChatThreadIndex(db *badger.DB, snap *Snapshot, groupId AccessGroupId) error {
-	err := db.Update(func(txn *badger.Txn) error {
-		return DBDeleteGroupChatThreadIndexWithTxn(txn, snap, groupId)
-	})
-	if err != nil {
-		return errors.Wrapf(err, "DBDeleteGroupChatThreadIndex: Problem deleting group chat thread index")
-	}
-	return nil
-}
-
-func DBDeleteGroupChatThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, groupId AccessGroupId) error {
-
-	prefix := _dbKeyForGroupChatThreadIndex(groupId)
-	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
-		return errors.Wrapf(err, "DBDeleteGroupChatThreadExistenceWithTxn: Deleting mapping for group chat "+
-			"thread key: %v", groupId)
-	}
-
-	return nil
-}
-
-// -------------------------------------------------------------------------------------
 // PrefixDmMessagesIndex
 // 	<prefix, MinorAccessGroupOwnerPublicKey, MinorAccessGroupKeyName,
 //		MajorAccessGroupOwnerPublicKey, MajorAccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
@@ -2356,7 +2200,7 @@ func DBDeleteDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessag
 // This prefix stores information about all the different DM threads that the user has participated in.
 // We store a duplicate entry for each thread, with the "user", "party" accessGroupIds flipped.
 // 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
-//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName> -> <DmThreadExistence>
+//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName> -> <DmThreadEntry>
 // -------------------------------------------------------------------------------------
 
 func _dbKeyForPrefixDmThreadIndex(key DmThreadKey) []byte {
@@ -2407,8 +2251,8 @@ func _dbDecodeKeyForPrefixDmThreadIndex(key []byte) (_userGroupOwnerPublicKey Pu
 	return userGroupOwnerPublicKey, userGroupKeyName, partyGroupOwnerPublicKey, partyGroupKeyName, nil
 }
 
-func DBCheckDmThreadExistence(db *badger.DB, snap *Snapshot, key DmThreadKey) (*DmThreadExistence, error) {
-	var ret *DmThreadExistence
+func DBCheckDmThreadExistence(db *badger.DB, snap *Snapshot, key DmThreadKey) (*DmThreadEntry, error) {
+	var ret *DmThreadEntry
 	var err error
 	err = db.View(func(txn *badger.Txn) error {
 		ret, err = DBCheckDmThreadExistenceWithTxn(txn, snap, key)
@@ -2420,7 +2264,7 @@ func DBCheckDmThreadExistence(db *badger.DB, snap *Snapshot, key DmThreadKey) (*
 	return ret, nil
 }
 
-func DBCheckDmThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, key DmThreadKey) (*DmThreadExistence, error) {
+func DBCheckDmThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, key DmThreadKey) (*DmThreadEntry, error) {
 
 	prefix := _dbKeyForPrefixDmThreadIndex(key)
 	dmThreadExistenceBytes, err := DBGetWithTxn(txn, snap, prefix)
@@ -2430,7 +2274,7 @@ func DBCheckDmThreadExistenceWithTxn(txn *badger.Txn, snap *Snapshot, key DmThre
 		return nil, errors.Wrapf(err, "DBCheckDmThreadExistenceWithTxn: Problem checking dm thread existence with key: %v", key)
 	}
 
-	dmThreadExistence := &DmThreadExistence{}
+	dmThreadExistence := &DmThreadEntry{}
 	rr := bytes.NewReader(dmThreadExistenceBytes)
 	if exists, err := DecodeFromBytes(dmThreadExistence, rr); !exists || err != nil {
 		return nil, errors.Wrapf(err, "DBCheckDmThreadExistenceWithTxn: Problem decoding dm thread existence"+
@@ -2537,7 +2381,7 @@ func DBPutDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint
 	prefix := _dbKeyForPrefixDmThreadIndex(dmThreadKey)
 	// We don't store any data under this index for now. For forward-compatibility we store a dummy
 	// DeSoEncoder to allow for encoder migrations, should they ever be useful.
-	dmThreadExistence := MakeDmThreadExistence()
+	dmThreadExistence := MakeDmThreadEntry()
 	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, &dmThreadExistence)); err != nil {
 		return errors.Wrapf(err, "DBPutDmThreadIndex: Problem putting dm thread index with key: %v", dmThreadKey)
 	}
@@ -2558,97 +2402,6 @@ func DBDeleteDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, dmThreadKey D
 	prefix := _dbKeyForPrefixDmThreadIndex(dmThreadKey)
 	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
 		return errors.Wrapf(err, "DBDeleteDmThreadIndex: Problem deleting dm thread index with key: %v", dmThreadKey)
-	}
-
-	return nil
-}
-
-// -------------------------------------------------------------------------------------
-// ThreadAttributesIndex
-// This prefix stores the thread attributes for a given thread. The key structure is the same as the
-// ThreadAttributesKey structure, i.e.:
-// 	<prefix, UserAccessGroupOwnerPublicKey, UserAccessGroupKeyName,
-//		PartyAccessGroupOwnerPublicKey, PartyAccessGroupKeyName, NewMessageType> -> <ThreadAttributesEntry>
-// -------------------------------------------------------------------------------------
-
-func _dbKeyForPrefixThreadAttributesIndex(key ThreadAttributesKey) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixThreadAttributesIndex...)
-	prefixCopy = append(prefixCopy, key.UserAccessGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.UserAccessGroupKeyName.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.PartyAccessGroupOwnerPublicKey.ToBytes()...)
-	prefixCopy = append(prefixCopy, key.PartyAccessGroupKeyName.ToBytes()...)
-	prefixCopy = append(prefixCopy, byte(key.NewMessageType))
-	return prefixCopy
-}
-
-func DBGetThreadAttributesEntry(db *badger.DB, snap *Snapshot, key ThreadAttributesKey) (*ThreadAttributesEntry, error) {
-	var ret *ThreadAttributesEntry
-	var err error
-	err = db.View(func(txn *badger.Txn) error {
-		ret, err = DBGetThreadAttributesEntryWithTxn(txn, snap, key)
-		return err
-	})
-	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetThreadAttributesEntry: Problem getting thread attributes entry "+
-			"with key: %v", key)
-	}
-	return ret, nil
-}
-
-func DBGetThreadAttributesEntryWithTxn(txn *badger.Txn, snap *Snapshot, key ThreadAttributesKey) (*ThreadAttributesEntry, error) {
-
-	prefix := _dbKeyForPrefixThreadAttributesIndex(key)
-	threadAttributesEntryBytes, err := DBGetWithTxn(txn, snap, prefix)
-	if err == badger.ErrKeyNotFound {
-		return nil, nil
-	} else if err != nil {
-		return nil, errors.Wrapf(err, "DBGetThreadAttributesEntryWithTxn: Problem getting thread attributes "+
-			"entry with key: %v", key)
-	}
-
-	threadAttributesEntry := &ThreadAttributesEntry{}
-	rr := bytes.NewReader(threadAttributesEntryBytes)
-	if exists, err := DecodeFromBytes(threadAttributesEntry, rr); !exists || err != nil {
-		return nil, errors.Wrapf(err, "DBGetThreadAttributesEntryWithTxn: Problem decoding thread attributes "+
-			"entry with key: %v", key)
-	}
-	return threadAttributesEntry, nil
-}
-
-func DBPutThreadAttributesEntry(db *badger.DB, snap *Snapshot, blockHeight uint64, key ThreadAttributesKey, threadAttributesEntry *ThreadAttributesEntry) error {
-	err := db.Update(func(txn *badger.Txn) error {
-		return DBPutThreadAttributesEntryWithTxn(txn, snap, blockHeight, key, threadAttributesEntry)
-	})
-	if err != nil {
-		return errors.Wrapf(err, "DBPutThreadAttributesEntry: Problem putting thread attributes entry with key: %v", key)
-	}
-	return nil
-}
-
-func DBPutThreadAttributesEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, key ThreadAttributesKey, threadAttributesEntry *ThreadAttributesEntry) error {
-	prefix := _dbKeyForPrefixThreadAttributesIndex(key)
-	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, threadAttributesEntry)); err != nil {
-		return errors.Wrapf(err, "DBPutThreadAttributesEntryWithTxn: Problem putting thread attributes entry with key: %v", key)
-	}
-	return nil
-}
-
-func DBDeleteThreadAttributesEntry(db *badger.DB, snap *Snapshot, key ThreadAttributesKey) error {
-	err := db.Update(func(txn *badger.Txn) error {
-		return DBDeleteThreadAttributesEntryWithTxn(txn, snap, key)
-	})
-	if err != nil {
-		return errors.Wrapf(err, "DBDeleteThreadAttributesEntry: Problem deleting thread attributes entry with"+
-			" key: %v", key)
-	}
-	return nil
-}
-
-func DBDeleteThreadAttributesEntryWithTxn(txn *badger.Txn, snap *Snapshot, key ThreadAttributesKey) error {
-	prefix := _dbKeyForPrefixThreadAttributesIndex(key)
-	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
-		return errors.Wrapf(err, "DBDeleteThreadAttributesEntryWithTxn: Problem deleting thread attributes entry "+
-			"with key: %v", key)
 	}
 
 	return nil
@@ -3595,8 +3348,10 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 
 // -------------------------------------------------------------------------------------
 // Reposts mapping functions
-// 		<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
-// 		<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
+//
+//	<prefix_id, user pub key [33]byte, reposted post BlockHash> -> <>
+//	<prefix_id, reposted post BlockHash, user pub key [33]byte> -> <>
+//
 // -------------------------------------------------------------------------------------
 // PrefixReposterPubKeyRepostedPostHashToRepostPostHash
 func _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey []byte, repostedPostHash BlockHash, repostPostHash BlockHash) []byte {
@@ -7032,7 +6787,7 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 	// encoding DAOCoinLimitOrderTxindexMetadata
 	data = append(data, EncodeToBytes(blockHeight, txnMeta.DAOCoinLimitOrderTxindexMetadata, skipMetadata...)...)
 
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		// encoding CreateUserAssociationTxindexMetadata
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.CreateUserAssociationTxindexMetadata, skipMetadata...)...)
 		// encoding DeleteUserAssociationTxindexMetadata
@@ -7043,7 +6798,7 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.DeletePostAssociationTxindexMetadata, skipMetadata...)...)
 	}
 
-	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		// encoding AccessGroupTxindexMetadata
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.AccessGroupTxindexMetadata, skipMetadata...)...)
 		// encoding AccessGroupMembersTxindexMetadata
@@ -7246,7 +7001,7 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DAOCoinLimitOrderTxindexMetadata")
 	}
 
-	if MigrationTriggered(blockHeight, AssociationsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		// decoding CreateUserAssociationTxindexMetadata
 		CopyCreateUserAssociationTxindexMetadata := &CreateUserAssociationTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyCreateUserAssociationTxindexMetadata, rr); exist && err == nil {
@@ -7277,7 +7032,7 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		}
 	}
 
-	if MigrationTriggered(blockHeight, DeSoAccessGroupsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		// decoding AccessGroupTxindexMetadata
 		CopyAccessGroupTxindexMetadata := &AccessGroupTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyAccessGroupTxindexMetadata, rr); exist && err == nil {
@@ -7304,7 +7059,7 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 }
 
 func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsMigration)
+	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration)
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {

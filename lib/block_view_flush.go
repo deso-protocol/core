@@ -1105,6 +1105,9 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 		// the member entry, just the existence of the member. The reason we store both mappings is that we want to be able
 		// to quickly iterate over all the members of a given access group, and we want to be able to quickly iterate over
 		// all the access groups where a given public key is a member.
+		//
+		// TODO: Would probably be a bit cleaner to have one function that bundles these functions like
+		// we do for other parts of the code but OK for now.
 		if err := DBDeleteAccessGroupMemberEntryWithTxn(txn, bav.Snapshot,
 			groupMembershipKey.AccessGroupMemberPublicKey, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
@@ -1125,6 +1128,8 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 		if accessGroupMember.isDeleted {
 			numDeleted++
 		} else {
+			// TODO: Would probably be a bit cleaner to have one function that bundles these functions like
+			// we do for other parts of the code but OK for now.
 			if err := DBPutAccessGroupMemberEntryWithTxn(txn, bav.Snapshot, blockHeight,
 				&accessGroupMember, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
 
@@ -1149,8 +1154,8 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 
 func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: flushing (len=%d) group chat messages, "+
-		"(len=%d) dm messages, (len=%d) dm threads, (len=%d) group chat threads",
-		len(bav.GroupChatMessagesIndex), len(bav.DmMessagesIndex), len(bav.DmThreadIndex), len(bav.GroupChatThreadIndex))
+		"(len=%d) dm messages, (len=%d) dm threads",
+		len(bav.GroupChatMessagesIndex), len(bav.DmMessagesIndex), len(bav.DmThreadIndex))
 
 	// Flush group chat messages to db.
 	// Go through all entries in GroupChatMessagesIndex and add them to the DB.
@@ -1187,40 +1192,6 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 		}
 		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d group chat messages, put %d group chat messages", numDeleted, numPut)
 	}
-	// Flush group chat threads to db.
-	// Go through all entries in GroupChatThreadIndex and add them to the DB.
-	{
-		numDeleted := 0
-		numPut := 0
-		for groupChatThreadKeyIter, existenceIter := range bav.GroupChatThreadIndex {
-			groupChatThreadKey := groupChatThreadKeyIter
-			if existenceIter == nil {
-				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
-					"groupChatThreadKey: %v, is nil", groupChatThreadKey)
-			}
-			existence := *existenceIter
-
-			// Delete the existing mapping in the DB for this map key, this will be re-added
-			// later if isDeleted=false.
-			if err := DBDeleteGroupChatThreadIndexWithTxn(txn, bav.Snapshot, groupChatThreadKey); err != nil {
-				return errors.Wrapf(
-					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
-						"for GroupChatThreadKey: %v: ", &groupChatThreadKey)
-			}
-
-			if existence.isDeleted {
-				numDeleted++
-			} else {
-				if err := DBPutGroupChatThreadIndexWithTxn(txn, bav.Snapshot, blockHeight, groupChatThreadKey); err != nil {
-					return errors.Wrapf(
-						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting group chat thread index "+
-							"with key %v and value %v", groupChatThreadKey, existence)
-				}
-				numPut++
-			}
-		}
-		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d group chat threads, put %d group chat threads", numDeleted, numPut)
-	}
 
 	// Flush dm messages to db.
 	// Go through all entries in DmMessagesIndex and add them to the DB.
@@ -1256,18 +1227,19 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 		}
 		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d dm messages, put %d dm messages", numDeleted, numPut)
 	}
+
 	// Flush dm threads to db.
 	// Go through all entries in DmThreadIndex and add them to the DB.
 	{
 		numDeleted := 0
 		numPut := 0
-		for dmThreadKeyIter, existenceIter := range bav.DmThreadIndex {
+		for dmThreadKeyIter, dmThreadEntryIter := range bav.DmThreadIndex {
 			dmThreadKey := dmThreadKeyIter
-			if existenceIter == nil {
+			if dmThreadEntryIter == nil {
 				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
 					"dmThreadKey: %v, is nil", dmThreadKey)
 			}
-			existence := *existenceIter
+			dmThreadEntry := *dmThreadEntryIter
 
 			// Delete the existing mapping in the DB for this map key, this will be re-added
 			// later if isDeleted=false.
@@ -1276,7 +1248,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings for DmThreadKey: %v: ", &dmThreadKey)
 			}
 
-			if existence.isDeleted {
+			if dmThreadEntry.isDeleted {
 				numDeleted++
 			} else {
 				if err := DBPutDmThreadIndexWithTxn(txn, bav.Snapshot, blockHeight, dmThreadKey); err != nil {
@@ -1287,40 +1259,6 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 			}
 		}
 		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d dm threads, put %d dm threads", numDeleted, numPut)
-	}
-	// Flush thread attribute entries to db.
-	// Go through all entries in ThreadAttributeIndex and add them to the DB.
-	{
-		numDeleted := 0
-		numPut := 0
-		for threadAttributeKeyIter, threadAttributeEntryIter := range bav.ThreadAttributesIndex {
-			threadAttributeKey := threadAttributeKeyIter
-			if threadAttributeEntryIter == nil {
-				return fmt.Errorf("UtxoView._flushNewMessageEntriesToDbWithTxn: "+
-					"threadAttributeKey: %v, is nil", threadAttributeKey)
-			}
-			threadAttributeEntry := *threadAttributeEntryIter
-
-			// Delete the existing mapping in the DB for this map key, this will be re-added
-			// later if isDeleted=false.
-			if err := DBDeleteThreadAttributesEntryWithTxn(txn, bav.Snapshot, threadAttributeKey); err != nil {
-				return errors.Wrapf(
-					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
-						"for ThreadAttributeKey: %v: ", &threadAttributeKey)
-			}
-
-			if threadAttributeEntry.isDeleted {
-				numDeleted++
-			} else {
-				if err := DBPutThreadAttributesEntryWithTxn(txn, bav.Snapshot, blockHeight, threadAttributeKey, &threadAttributeEntry); err != nil {
-					return errors.Wrapf(
-						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting thread attribute entry "+
-							"into thread attribute index with key %v and value %v", threadAttributeKey, threadAttributeEntry)
-				}
-				numPut++
-			}
-		}
-		glog.V(2).Infof("_flushNewMessageEntriesToDbWithTxn: deleted %d thread attributes, put %d thread attributes", numDeleted, numPut)
 	}
 
 	return nil

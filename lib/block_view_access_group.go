@@ -9,7 +9,8 @@ import (
 
 // GetAccessGroupEntry will fetch an access group entry corresponding to the provided access group id:
 // <groupOwnerPublicKey, groupKeyName>.
-func (bav *UtxoView) GetAccessGroupEntry(groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) (*AccessGroupEntry, error) {
+func (bav *UtxoView) GetAccessGroupEntry(
+	groupOwnerPublicKey *PublicKey, groupKeyName *GroupKeyName) (*AccessGroupEntry, error) {
 
 	// If either of the provided parameters is nil, we return.
 	if groupOwnerPublicKey == nil || groupKeyName == nil {
@@ -235,6 +236,11 @@ func (bav *UtxoView) _deleteAccessGroupKeyToAccessGroupEntryMapping(accessGroupE
 	}
 
 	// Create a tombstone entry.
+	//
+	// TODO: The copy we're creating still shares a map reference with the original. This means that
+	// modifying the ExtraData map of the copy will affect the copy. This is OK for now because we
+	// never do this, and also we're getting rid of disconnects soon so we won't need this function
+	// after that hopefully.
 	tombstoneAccessGroupEntry := *accessGroupEntry
 	tombstoneAccessGroupEntry.isDeleted = true
 
@@ -272,8 +278,8 @@ func ValidateAccessGroupPublicKeyAndName(accessGroupOwnerPublicKey, keyName []by
 	return nil
 }
 
-// ValidateAccessGroupPublicKeyAndNameWithUtxoView validates that the provided access group public key and name are correctly formatted.
-// It also checks that the access group exists based on the UtxoView.
+// ValidateAccessGroupPublicKeyAndNameWithUtxoView validates that the provided access group public key and
+// name are correctly formatted. It also checks that the access group exists based on the UtxoView.
 func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 	groupOwnerPublicKey, groupKeyName []byte, blockHeight uint32) error {
 
@@ -321,7 +327,7 @@ func (bav *UtxoView) _connectAccessGroup(
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Make sure access groups are live.
-	if blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 		return 0, 0, nil, errors.Wrapf(
 			RuleErrorAccessGroupsBeforeBlockHeight, "_connectAccessGroup: "+
 				"Problem connecting access key, too early block height")
@@ -395,14 +401,16 @@ func (bav *UtxoView) _connectAccessGroup(
 		if existingEntry != nil && !existingEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupAlreadyExists,
 				"_connectAccessGroup: Access group already exists for access group owner public key %v "+
-					"and access group key name %v", accessGroupKey.AccessGroupOwnerPublicKey, accessGroupKey.AccessGroupKeyName)
+					"and access group key name %v",
+				accessGroupKey.AccessGroupOwnerPublicKey, accessGroupKey.AccessGroupKeyName)
 		}
 	case AccessGroupOperationTypeUpdate:
 		// If the group doesn't exist then we return an error.
 		if existingEntry == nil || existingEntry.isDeleted {
 			return 0, 0, nil, errors.Wrapf(RuleErrorAccessGroupDoesNotExist,
 				"_connectAccessGroup: Access group doesn't exist for access group owner public key %v "+
-					"and access group key name %v", accessGroupKey.AccessGroupOwnerPublicKey, accessGroupKey.AccessGroupKeyName)
+					"and access group key name %v",
+				accessGroupKey.AccessGroupOwnerPublicKey, accessGroupKey.AccessGroupKeyName)
 		}
 		prevAccessGroupEntry = *existingEntry
 	default:
@@ -450,7 +458,7 @@ func (bav *UtxoView) _disconnectAccessGroup(
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Make sure access groups are live.
-	if blockHeight < bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 		return errors.Wrapf(
 			RuleErrorAccessGroupsBeforeBlockHeight, "_disconnectAccessGroup: "+
 				"Problem disconnecting access group txn, too early block height")

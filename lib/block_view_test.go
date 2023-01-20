@@ -402,8 +402,8 @@ func (tes *transactionTestSuite) GetAllStateDbEntries(tm *transactionTestMeta, b
 
 	// Get all state prefixes and sort them.
 	var prefixes [][]byte
-	for prefix, prefixType := range PrefixesMetadata.PrefixToTypeMap {
-		if !prefixType.IsType(DBPrefixTypeState) {
+	for prefix, isState := range StatePrefixes.StatePrefixesMap {
+		if !isState {
 			continue
 		}
 		prefixes = append(prefixes, []byte{prefix})

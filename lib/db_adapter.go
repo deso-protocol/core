@@ -491,8 +491,8 @@ func (adapter *DbAdapter) GetGroupChatMessageEntry(groupChatMessageKey GroupChat
 	}
 }
 
-// CheckDmThreadExistence returns a DmThreadExistence entry for the provided DmThreadKey from db.
-func (adapter *DbAdapter) CheckDmThreadExistence(dmThreadKey DmThreadKey) (*DmThreadExistence, error) {
+// CheckDmThreadExistence returns a DmThreadEntry entry for the provided DmThreadKey from db.
+func (adapter *DbAdapter) CheckDmThreadExistence(dmThreadKey DmThreadKey) (*DmThreadEntry, error) {
 
 	if adapter.postgresDb != nil {
 		pgDmThreadExistence := adapter.postgresDb.CheckDmThreadExistence(dmThreadKey)
@@ -502,20 +502,6 @@ func (adapter *DbAdapter) CheckDmThreadExistence(dmThreadKey DmThreadKey) (*DmTh
 		return pgDmThreadExistence, nil
 	} else {
 		return DBCheckDmThreadExistence(adapter.badgerDb, adapter.snapshot, dmThreadKey)
-	}
-}
-
-// CheckGroupChatThreadExistence returns a GroupChatThreadExistence entry for the provided AccessGroupId from db.
-func (adapter *DbAdapter) CheckGroupChatThreadExistence(groupKey AccessGroupId) (*GroupChatThreadExistence, error) {
-
-	if adapter.postgresDb != nil {
-		pgGroupChatThreadExistence := adapter.postgresDb.CheckGroupChatThreadExistence(groupKey)
-		if pgGroupChatThreadExistence == nil {
-			return nil, nil
-		}
-		return pgGroupChatThreadExistence, nil
-	} else {
-		return DBCheckGroupChatThreadExistence(adapter.badgerDb, adapter.snapshot, groupKey)
 	}
 }
 
@@ -568,20 +554,5 @@ func (adapter *DbAdapter) GetPaginatedMessageEntriesForGroupChatThread(groupChat
 	} else {
 		return DBGetPaginatedGroupChatMessageEntry(adapter.badgerDb, adapter.snapshot,
 			groupChatThread, startingTimestamp, maxMessagesToFetch)
-	}
-}
-
-// GetThreadAttributesEntry returns the ThreadAttributesEntry for the given ThreadAttributesKey from db.
-func (adapter *DbAdapter) GetThreadAttributesEntry(threadKey ThreadAttributesKey) (*ThreadAttributesEntry, error) {
-
-	if adapter.postgresDb != nil {
-		pgThreadAttributesEntry := adapter.postgresDb.GetThreadAttributesEntry(threadKey)
-		if pgThreadAttributesEntry == nil {
-			return nil, nil
-		}
-		_, threadAttributesEntry := pgThreadAttributesEntry.ToThreadAttributesKeyAndThreadAttributesEntry()
-		return threadAttributesEntry, nil
-	} else {
-		return DBGetThreadAttributesEntry(adapter.badgerDb, adapter.snapshot, threadKey)
 	}
 }

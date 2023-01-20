@@ -189,9 +189,6 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
 			AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
 		}
-		if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
-			newTransactionSpendingLimit.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
-		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 			// Copy the existing transaction spending limit.
 			newTransactionSpendingLimitCopy := *prevDerivedKeyEntry.TransactionSpendingLimitTracker
@@ -270,8 +267,12 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
 						}
 					}
-					// ====== Associations Fork ======
-					if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+
+					// ====== Associations And Access Groups Fork ======
+					// Note that we don't really need to gate this logic by the blockheight because the to/from bytes
+					// encoding/decoding will never overwrite these maps prior to the fork blockheight. We do it
+					// anyway as a sanity-check.
+					if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 						for associationLimitKey, transactionCount := range transactionSpendingLimit.AssociationLimitMap {
 							if transactionCount == 0 {
 								delete(newTransactionSpendingLimit.AssociationLimitMap, associationLimitKey)
@@ -279,12 +280,6 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 								newTransactionSpendingLimit.AssociationLimitMap[associationLimitKey] = transactionCount
 							}
 						}
-					}
-					// ====== Access Group Fork ======
-					// Note that we don't really need to gate this logic by the blockheight because the to/from bytes
-					// encoding/decoding will never overwrite these maps prior to the fork blockheight. We do it
-					// anyway as a sanity-check.
-					if blockHeight >= bav.Params.ForkHeights.DeSoAccessGroupsBlockHeight {
 						for accessGroupLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMap {
 							if transactionCount == 0 {
 								delete(newTransactionSpendingLimit.AccessGroupMap, accessGroupLimitKey)
