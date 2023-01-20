@@ -5309,7 +5309,7 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 	// AccessGroupMap
 	if len(tsl.AccessGroupMap) > 0 {
 		var accessGroupStr []string
-		str += _indt(indentationCounter) + "Access Groups:\n"
+		str += _indt(indentationCounter) + "Access Group Restrictions:\n"
 		indentationCounter++
 		for accessGroupKey, limit := range tsl.AccessGroupMap {
 			opString := _indt(indentationCounter) + "[\n"
@@ -5317,14 +5317,9 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			indentationCounter++
 			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
 				Base58CheckEncode(accessGroupKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
-			opString += _indt(indentationCounter) + "Access Group Scope Type: " +
-				accessGroupKey.AccessGroupScopeType.ToString() + "\n"
-			// FIXME: Verify that this string prints nicely in the event that we are asking
-			// for a derived key with the permission to create a group with {any group key name}
-			// and {any operation type}.
-			groupKeyName := string(accessGroupKey.AccessGroupKeyName.ToBytes())
+			groupKeyName := string(AccessKeyNameDecode(&accessGroupKey.AccessGroupKeyName))
 			if accessGroupKey.AccessGroupScopeType == AccessGroupScopeTypeAny {
-				groupKeyName = "ANY"
+				groupKeyName = "Any"
 			}
 			opString += _indt(indentationCounter) + "Access Group Key Name: " +
 				groupKeyName + "\n"
@@ -5337,25 +5332,25 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			opString += _indt(indentationCounter) + "]\n"
 			accessGroupStr = append(accessGroupStr, opString)
 		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(accessGroupStr)
+		indentationCounter--
 	}
 
 	// AccessGroupMemberMap
 	if len(tsl.AccessGroupMemberMap) > 0 {
 		var accessGroupMemberStr []string
+		str += _indt(indentationCounter) + "Access Group Member Restrictions:\n"
+		indentationCounter++
 		for accessGroupMemberKey, limit := range tsl.AccessGroupMemberMap {
 			opString := _indt(indentationCounter) + "[\n"
 
 			indentationCounter++
 			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
 				Base58CheckEncode(accessGroupMemberKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
-			opString += _indt(indentationCounter) + "Access Group Scope Type: " +
-				accessGroupMemberKey.AccessGroupScopeType.ToString() + "\n"
-			// FIXME: Verify that this string prints nicely in the event that we are asking
-			// for a derived key with the permission to create a group with {any group key name}
-			// and {any operation type}.
-			groupKeyName := string(accessGroupMemberKey.AccessGroupKeyName.ToBytes())
+			groupKeyName := string(AccessKeyNameDecode(&accessGroupMemberKey.AccessGroupKeyName))
 			if accessGroupMemberKey.AccessGroupScopeType == AccessGroupScopeTypeAny {
-				groupKeyName = "ANY"
+				groupKeyName = "Any"
 			}
 			opString += _indt(indentationCounter) + "Access Group Key Name: " +
 				groupKeyName + "\n"
@@ -5368,6 +5363,9 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			opString += _indt(indentationCounter) + "]\n"
 			accessGroupMemberStr = append(accessGroupMemberStr, opString)
 		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(accessGroupMemberStr)
+		indentationCounter--
 	}
 
 	// IsUnlimited
@@ -7497,17 +7495,17 @@ type AccessGroupOperationType uint8
 type AccessGroupOperationString string
 
 const (
-	AccessGroupOperationTypeAny     AccessGroupOperationType = 0
-	AccessGroupOperationTypeCreate  AccessGroupOperationType = 1
-	AccessGroupOperationTypeUpdate  AccessGroupOperationType = 2
-	AccessGroupOperationTypeUnknown AccessGroupOperationType = 3
+	AccessGroupOperationTypeUnknown AccessGroupOperationType = 0
+	AccessGroupOperationTypeAny     AccessGroupOperationType = 1
+	AccessGroupOperationTypeCreate  AccessGroupOperationType = 2
+	AccessGroupOperationTypeUpdate  AccessGroupOperationType = 3
 )
 
 const (
-	AccessGroupOperationStringAny     AccessGroupOperationString = "any"
-	AccessGroupOperationStringCreate  AccessGroupOperationString = "create"
-	AccessGroupOperationStringUpdate  AccessGroupOperationString = "update"
-	AccessGroupOperationStringUnknown AccessGroupOperationString = "unknown"
+	AccessGroupOperationStringUnknown AccessGroupOperationString = "Unknown"
+	AccessGroupOperationStringAny     AccessGroupOperationString = "Any"
+	AccessGroupOperationStringCreate  AccessGroupOperationString = "Create"
+	AccessGroupOperationStringUpdate  AccessGroupOperationString = "Update"
 )
 
 func (groupOp AccessGroupOperationType) ToAccessGroupOperationString() AccessGroupOperationString {
@@ -7537,16 +7535,10 @@ func (opString AccessGroupOperationString) ToAccessGroupOperationType() AccessGr
 }
 
 func (groupOp AccessGroupOperationType) ToString() string {
-	switch groupOp {
-	case AccessGroupOperationTypeAny:
-		return "AccessGroupOperationTypeAny"
-	case AccessGroupOperationTypeCreate:
-		return "AccessGroupOperationTypeCreate"
-	case AccessGroupOperationTypeUpdate:
-		return "AccessGroupOperationTypeUpdate"
-	default:
+	if groupOp == AccessGroupOperationTypeUnknown {
 		return ""
 	}
+	return string(groupOp.ToAccessGroupOperationString())
 }
 
 type AccessGroupMetadata struct {
@@ -7616,19 +7608,19 @@ type AccessGroupMemberOperationType uint8
 type AccessGroupMemberOperationString string
 
 const (
-	AccessGroupMemberOperationTypeAny     AccessGroupMemberOperationType = 0
-	AccessGroupMemberOperationTypeAdd     AccessGroupMemberOperationType = 1
-	AccessGroupMemberOperationTypeRemove  AccessGroupMemberOperationType = 2
-	AccessGroupMemberOperationTypeUpdate  AccessGroupMemberOperationType = 3
-	AccessGroupMemberOperationTypeUnknown AccessGroupMemberOperationType = 4
+	AccessGroupMemberOperationTypeUnknown AccessGroupMemberOperationType = 0
+	AccessGroupMemberOperationTypeAny     AccessGroupMemberOperationType = 1
+	AccessGroupMemberOperationTypeAdd     AccessGroupMemberOperationType = 2
+	AccessGroupMemberOperationTypeRemove  AccessGroupMemberOperationType = 3
+	AccessGroupMemberOperationTypeUpdate  AccessGroupMemberOperationType = 4
 )
 
 const (
-	AccessGroupMemberOperationStringAny     AccessGroupMemberOperationString = "any"
-	AccessGroupMemberOperationStringAdd     AccessGroupMemberOperationString = "add"
-	AccessGroupMemberOperationStringRemove  AccessGroupMemberOperationString = "remove"
-	AccessGroupMemberOperationStringUpdate  AccessGroupMemberOperationString = "update"
-	AccessGroupMemberOperationStringUnknown AccessGroupMemberOperationString = "unknown"
+	AccessGroupMemberOperationStringUnknown AccessGroupMemberOperationString = "Unknown"
+	AccessGroupMemberOperationStringAny     AccessGroupMemberOperationString = "Any"
+	AccessGroupMemberOperationStringAdd     AccessGroupMemberOperationString = "Add"
+	AccessGroupMemberOperationStringRemove  AccessGroupMemberOperationString = "Remove"
+	AccessGroupMemberOperationStringUpdate  AccessGroupMemberOperationString = "Update"
 )
 
 func (groupOp AccessGroupMemberOperationType) ToAccessGroupMemberOperationString() AccessGroupMemberOperationString {
@@ -7662,18 +7654,10 @@ func (opString AccessGroupMemberOperationString) ToAccessGroupMemberOperation() 
 }
 
 func (groupOp AccessGroupMemberOperationType) ToString() string {
-	switch groupOp {
-	case AccessGroupMemberOperationTypeAny:
-		return "AccessGroupMemberOperationTypeAny"
-	case AccessGroupMemberOperationTypeAdd:
-		return "AccessGroupMemberOperationTypeAdd"
-	case AccessGroupMemberOperationTypeRemove:
-		return "AccessGroupMemberOperationTypeRemove"
-	case AccessGroupMemberOperationTypeUpdate:
-		return "AccessGroupMemberOperationTypeUpdate"
-	default:
+	if groupOp == AccessGroupMemberOperationTypeUnknown {
 		return ""
 	}
+	return string(groupOp.ToAccessGroupMemberOperationString())
 }
 
 // AccessGroupMembersMetadata is the metadata for a transaction to update the members of an access group.
