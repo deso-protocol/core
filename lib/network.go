@@ -7450,7 +7450,7 @@ const (
 	AccessGroupScopeStringUnknown AccessGroupScopeString = "unknown"
 )
 
-func (scopeType AccessGroupScopeType) ToAccessGroupOScopeString() AccessGroupScopeString {
+func (scopeType AccessGroupScopeType) ToAccessGroupScopeString() AccessGroupScopeString {
 	switch scopeType {
 	case AccessGroupScopeTypeAny:
 		return AccessGroupScopeStringAny
