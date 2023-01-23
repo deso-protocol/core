@@ -82,7 +82,8 @@ jobs:
       - name: Run go test
         run: >-
           go test -run TestAssociations -v ./lib &&
-          go test -run TestDAOCoinLimitOrder -v ./lib
+          go test -run TestDAOCoinLimitOrder -v ./lib &&
+          go test -run TestFreezingPosts -v ./lib
 
       - name: Rollback migrations
         run: go run scripts/migrate.go rollback
