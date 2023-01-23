@@ -114,6 +114,6 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	fmt.Printf("\n\n*****Printing to index file: %+v\n\n", dbOperationIndexBytes)
 
 	// Update the state change file size.
-	transactionLen := uint32(len(protobufBytes) + 4)
+	transactionLen := uint32(len(protobufBytes) + 5)
 	stateChangeSyncer.StateChangeFileSize += transactionLen
 }
