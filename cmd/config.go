@@ -156,6 +156,8 @@ func (config *Config) Print() {
 		glog.Infof("Mempool Dump Directory: %s", config.MempoolDumpDirectory)
 	}
 
+	glog.Infof("Trusted block producer public keys: %v", config.TrustedBlockProducerPublicKeys)
+
 	if config.PostgresURI != "" {
 		glog.Infof("Postgres URI: %s", config.PostgresURI)
 	}
