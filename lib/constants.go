@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/pkg/errors"
 	"log"
 	"math"
 	"math/big"
@@ -253,15 +254,18 @@ type ForkHeights struct {
 	// we introduce derived keys without a spending limit.
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
-	// AssociationsBlockHeight defines the height at which
-	// we introduce UserAssociations and PostAssociations.
-	AssociationsBlockHeight uint32
+	// AssociationsAndAccessGroupsBlockHeight defines the height at which we introduced:
+	//   - Access Groups
+	//   - User and Post Associations
+	//   - Editable NFT posts
+	//   - Frozen posts
+	AssociationsAndAccessGroupsBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
 
-// EncoderMigrationHeights is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
+// MigrationName is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
 // you should:
 //  0. Typically, encoder migrations should align with hard fork heights. So the first
 //     step is to define a new value in ForkHeights, and set the value accordingly for
@@ -317,9 +321,9 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration              MigrationName = "DefaultMigration"
-	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
-	AssociationsMigration         MigrationName = "AssociationsMigration"
+	DefaultMigration                     MigrationName = "DefaultMigration"
+	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
+	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -328,8 +332,8 @@ type EncoderMigrationHeights struct {
 	// DeSoUnlimitedDerivedKeys coincides with the DeSoUnlimitedDerivedKeysBlockHeight block
 	DeSoUnlimitedDerivedKeys MigrationHeight
 
-	// DeSoAssociations coincides with the AssociationsBlockHeight block
-	DeSoAssociations MigrationHeight
+	// This coincides with the AssociationsAndAccessGroups block
+	AssociationsAndAccessGroups MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -344,10 +348,10 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Height:  uint64(forkHeights.DeSoUnlimitedDerivedKeysBlockHeight),
 			Name:    UnlimitedDerivedKeysMigration,
 		},
-		DeSoAssociations: MigrationHeight{
+		AssociationsAndAccessGroups: MigrationHeight{
 			Version: 2,
-			Height:  uint64(forkHeights.AssociationsBlockHeight),
-			Name:    AssociationsMigration,
+			Height:  uint64(forkHeights.AssociationsAndAccessGroupsBlockHeight),
+			Name:    AssociationsAndAccessGroupsMigration,
 		},
 	}
 }
@@ -506,6 +510,7 @@ type DeSoParams struct {
 	MaxProfilePicLengthBytes      uint64
 	MaxProfilePicDimensions       uint64
 	MaxPrivateMessageLengthBytes  uint64
+	MaxNewMessageLengthBytes      uint64
 
 	StakeFeeBasisPoints         uint64
 	MaxPostBodyLengthBytes      uint64
@@ -588,7 +593,7 @@ var RegtestForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
-	AssociationsBlockHeight:                              uint32(0),
+	AssociationsAndAccessGroupsBlockHeight:               uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -732,8 +737,8 @@ var MainnetForkHeights = ForkHeights{
 	// Mon Sept 19 @ 12pm PST
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
 
-	// FIXME: Set to real block height when we're ready.
-	AssociationsBlockHeight: math.MaxUint32,
+	// TODO: ADD FINAL DATE & TIME HERE
+	AssociationsAndAccessGroupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -880,6 +885,10 @@ var DeSoMainnetParams = DeSoParams{
 	// data a private message is allowed to include in an PrivateMessage transaction.
 	MaxPrivateMessageLengthBytes: 10000,
 
+	// MaxNewMessageLengthBytes is the maximum number of bytes of encrypted
+	// data a new message is allowed to include in an NewMessage transaction.
+	MaxNewMessageLengthBytes: 10000,
+
 	// Set the stake fee to 10%
 	StakeFeeBasisPoints: 10 * 100,
 	// TODO(performance): We're currently storing posts using HTML, which is
@@ -922,7 +931,7 @@ var DeSoMainnetParams = DeSoParams{
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
 	hash, err := chainhash.NewHashFromStr(ss)
 	if err != nil {
-		panic(err)
+		panic(any(errors.Wrapf(err, "mustDecodeHexBlockHashBitcoin: Problem decoding block hash: %v", ss)))
 	}
 	return (*BlockHash)(hash)
 }
@@ -985,8 +994,8 @@ var TestnetForkHeights = ForkHeights{
 	// Tues Sept 13 @ 10am PT
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
 
-	// FIXME: Set to real block height when we're ready.
-	AssociationsBlockHeight: math.MaxUint32,
+	// TODO: ADD FINAL DATE & TIME HERE
+	AssociationsAndAccessGroupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1094,6 +1103,10 @@ var DeSoTestnetParams = DeSoParams{
 	// data a private message is allowed to include in an PrivateMessage transaction.
 	MaxPrivateMessageLengthBytes: 10000,
 
+	// MaxNewMessageLengthBytes is the maximum number of bytes of encrypted
+	// data a new message is allowed to include in an NewMessage transaction.
+	MaxNewMessageLengthBytes: 10000,
+
 	// Set the stake fee to 5%
 	StakeFeeBasisPoints: 5 * 100,
 	// TODO(performance): We're currently storing posts using HTML, which
@@ -1162,6 +1175,8 @@ const (
 	RepostedPostHash = "RecloutedPostHash"
 	// Key in transaction's extra map -- The presence of this key indicates that this post is a repost with a quote.
 	IsQuotedRepostKey = "IsQuotedReclout"
+	// Key in transaction's extra data map that freezes a post rendering it immutable.
+	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
 	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"
@@ -1221,6 +1236,7 @@ var (
 var (
 	QuotedRepostVal    = []byte{1}
 	NotQuotedRepostVal = []byte{0}
+	IsFrozenPostVal    = []byte{1}
 )
 
 var (
@@ -1264,6 +1280,16 @@ const (
 	// Messaging key constants
 	MinMessagingKeyNameCharacters = 1
 	MaxMessagingKeyNameCharacters = 32
+	// Access group key constants
+	MinAccessGroupKeyNameCharacters = 1
+	MaxAccessGroupKeyNameCharacters = 32
+
+	// TODO: Are these fields needed?
+	// Access group enumeration max recursion depth.
+	MaxAccessGroupMemberEnumerationRecursionDepth = 10
+	// Dm and group chat message entries paginated fetch max recursion depth
+	MaxDmMessageRecursionDepth        = 10
+	MaxGroupChatMessageRecursionDepth = 10
 )
 
 // Constants for UserAssociation and PostAssociation txn types.
