@@ -201,7 +201,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		var transactionSpendingLimitBytes []byte
 		if txn.ExtraData != nil {
 			// Only overwrite the memo if the key exists in extra data
-			if blockHeight >= bav.Params.ForkHeights.AssociationsBlockHeight {
+			if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 				if memoBytes, exists := txn.ExtraData[DerivedKeyMemoKey]; exists {
 					memo = memoBytes
 				}
