@@ -8,6 +8,13 @@ import (
 	"os"
 )
 
+const (
+	DbOperationTypeInsert = uint8(0)
+	DbOperationTypeDelete = uint8(1)
+	DbOperationTypeUpdate = uint8(2)
+	DbOperationTypeUpsert = uint8(3)
+)
+
 func createLogFile(fileName string) *os.File {
 	file, _ := os.Create(fileName)
 	return file
@@ -75,8 +82,15 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	encoderTypeBytes := make([]byte, 2)
 	binary.LittleEndian.PutUint16(encoderTypeBytes, uint16(encoderType))
 
+	// Convert the encoder type to a byte slice.
+	operationTypeBytes := make([]byte, 1)
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.LittleEndian, event.OperationType)
+	operationTypeBytes = buf.Bytes()
+
 	// Append the value length and encoder type to the protobuf bytes.
 	valueWithLengthAndEncoderTypeBytes := append(valueLenBytes, encoderTypeBytes...)
+	valueWithLengthAndEncoderTypeBytes = append(valueWithLengthAndEncoderTypeBytes, operationTypeBytes...)
 	valueWithLengthAndEncoderTypeBytes = append(valueWithLengthAndEncoderTypeBytes, protobufBytes...)
 
 	fmt.Printf("\n\n*****Printing to file: %+v\n\n", valueWithLengthAndEncoderTypeBytes)
