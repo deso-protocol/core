@@ -71,8 +71,8 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 		}
 	}
 
-	// Get byte length of value + encoder type (uint16).
-	valueLen := uint16(len(protobufBytes) + 2)
+	// Get byte length of value.
+	valueLen := uint16(len(protobufBytes))
 
 	// Convert the value length to a byte slice.
 	valueLenBytes := make([]byte, 2)
