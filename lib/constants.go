@@ -718,7 +718,7 @@ var MainnetForkHeights = ForkHeights{
 	DeSoDiamondsBlockHeight:                              uint32(52112),
 	NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
 
-	// Mon Jan 24 @ 12pm PST
+	// Mon Jan 24 2022 @ 12pm PST
 	DeSoV3MessagesBlockHeight:     uint32(98474),
 	BuyNowAndNFTSplitsBlockHeight: uint32(98474),
 	DAOCoinBlockHeight:            uint32(98474),
@@ -728,13 +728,13 @@ var MainnetForkHeights = ForkHeights{
 	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(130901),
 	DAOCoinLimitOrderBlockHeight:             uint32(130901),
 
-	// Fri Jun 9 @ 12pm PT
+	// Fri Jun 9 2022 @ 12pm PT
 	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(137173),
 	OrderBookDBFetchOptimizationBlockHeight:        uint32(137173),
 
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
-	// Mon Sept 19 @ 12pm PST
+	// Mon Sept 19 2022 @ 12pm PST
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
 
 	// TODO: ADD FINAL DATE & TIME HERE
@@ -972,12 +972,12 @@ var TestnetForkHeights = ForkHeights{
 
 	// Flags after this point can differ from mainnet
 
-	// Thu Jan 20 @ 12pm PST
+	// Thu Jan 20 2022 @ 12pm PST
 	DeSoV3MessagesBlockHeight:     uint32(97322),
 	BuyNowAndNFTSplitsBlockHeight: uint32(97322),
 	DAOCoinBlockHeight:            uint32(97322),
 
-	// Wed Apr 20 @ 9am ET
+	// Wed Apr 20 2022 @ 9am ET
 	ExtraDataOnEntriesBlockHeight:          uint32(304087),
 	DerivedKeySetSpendingLimitsBlockHeight: uint32(304087),
 	// Add 18h for the spending limits to be checked, since this is how we're
@@ -985,17 +985,17 @@ var TestnetForkHeights = ForkHeights{
 	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(304087 + 18*60),
 	DAOCoinLimitOrderBlockHeight:             uint32(304087),
 
-	// Thu Jun 9 @ 11:59pm PT
+	// Thu Jun 9 2022 @ 11:59pm PT
 	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(360584),
 	OrderBookDBFetchOptimizationBlockHeight:        uint32(360584),
 
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
-	// Tues Sept 13 @ 10am PT
+	// Tues Sept 13 2022 @ 10am PT
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
 
-	// TODO: ADD FINAL DATE & TIME HERE
-	AssociationsAndAccessGroupsBlockHeight: uint32(math.MaxUint32),
+	// Tues Jan 24 2023 @ 1pm PT
+	AssociationsAndAccessGroupsBlockHeight: uint32(596555),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
