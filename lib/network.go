@@ -273,7 +273,7 @@ const (
 	TxnStringDeleteUserAssociation        TxnString = "DELETE_USER_ASSOCIATION"
 	TxnStringCreatePostAssociation        TxnString = "CREATE_POST_ASSOCIATION"
 	TxnStringDeletePostAssociation        TxnString = "DELETE_POST_ASSOCIATION"
-	TxnStringAccessGroup                  TxnString = "ACCESS_GROUP_CREATE"
+	TxnStringAccessGroup                  TxnString = "ACCESS_GROUP"
 	TxnStringAccessGroupMembers           TxnString = "ACCESS_GROUP_MEMBERS"
 	TxnStringNewMessage                   TxnString = "NEW_MESSAGE"
 )
