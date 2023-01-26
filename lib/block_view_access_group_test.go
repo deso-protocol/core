@@ -193,8 +193,9 @@ func txnToPostTransactionHex(t *testing.T, txn *MsgDeSoTxn) (_transactionHex str
 			return "", true
 		}
 		newMembers := []AccessGroupMember{}
-		for _, member := range accessGroupMembersTxn.AccessGroupMembersList {
-			newMembers = append(newMembers, *member)
+		for _, memberIter := range accessGroupMembersTxn.AccessGroupMembersList {
+			member := *memberIter
+			newMembers = append(newMembers, member)
 		}
 		glog.Infof("\t AccessGroupOwnerPublicKey: %v\n"+
 			"\t AccessGroupKeyName: %v\n"+
@@ -285,7 +286,7 @@ func submitPostRequest(t *testing.T, postBody []byte, route string) map[string]a
 	//Encode the data
 	responseBody := bytes.NewBuffer(postBody)
 	//Leverage Go's HTTP Post function to make request
-	resp, err := http.Post(fmt.Sprintf("http://18.223.163.110:18001%v", route), "application/json", responseBody)
+	resp, err := http.Post(fmt.Sprintf("https://test.deso.org%v", route), "application/json", responseBody)
 	//Handle Error
 	if err != nil {
 		log.Fatalf("An Error Occured %v", err)
