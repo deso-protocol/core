@@ -737,7 +737,7 @@ var MainnetForkHeights = ForkHeights{
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
 
 	// Mon Feb 6 2023 @ 9am PST
-	AssociationsAndAccessGroupsBlockHeight: uint32(205187),
+	AssociationsAndAccessGroupsBlockHeight: uint32(205386),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
