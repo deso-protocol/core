@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"log"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -737,8 +736,8 @@ var MainnetForkHeights = ForkHeights{
 	// Mon Sept 19 2022 @ 12pm PST
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
 
-	// TODO: ADD FINAL DATE & TIME HERE
-	AssociationsAndAccessGroupsBlockHeight: uint32(math.MaxUint32),
+	// Mon Feb 6 2023 @ 9am PST
+	AssociationsAndAccessGroupsBlockHeight: uint32(205386),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
