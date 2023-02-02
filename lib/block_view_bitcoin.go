@@ -33,7 +33,7 @@ func (bav *UtxoView) _existsBitcoinTxIDMapping(bitcoinBurnTxID *BlockHash) bool 
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return true. If not, return
 	// false. Either way, save the value to the in-memory view mapping got later.
-	dbHasMapping := DbExistsBitcoinBurnTxID(bav.Handle, bitcoinBurnTxID)
+	dbHasMapping := DbExistsBitcoinBurnTxID(bav.Handle, bav.Snapshot, bitcoinBurnTxID)
 	bav.BitcoinBurnTxIDs[*bitcoinBurnTxID] = dbHasMapping
 	return dbHasMapping
 }
@@ -167,7 +167,7 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	if len(txn.PublicKey) != 0 {
 		return 0, 0, nil, RuleErrorBitcoinExchangeShouldNotHavePublicKey
 	}
-	if txn.Signature != nil {
+	if txn.Signature.Sign != nil {
 		return 0, 0, nil, RuleErrorBitcoinExchangeShouldNotHaveSignature
 	}
 
@@ -336,7 +336,7 @@ func (bav *UtxoView) _connectUpdateBitcoinUSDExchangeRate(
 	}
 
 	// Validate the public key. Only a paramUpdater is allowed to trigger this.
-	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
+	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
 	if !updaterIsParamUpdater {
 		return 0, 0, nil, RuleErrorUserNotAuthorizedToUpdateExchangeRate
 	}

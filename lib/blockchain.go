@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
+	"github.com/holiman/uint256"
 	"math"
 	"math/big"
 	"reflect"
@@ -69,16 +70,17 @@ const (
 	StatusBlockValidated
 	StatusBlockValidateFailed
 
-	// These statuses are only used for Bitcoin header blocks in the BitcoinManager,
-	// not DeSo blocks. As such, you should only see these referenced in the BitcoinManager.
-	// We include them here because overloading the DeSo data structures to make it
-	// so that the BitcoinManager can use them is easier than defining whole new data
-	// structures that are incompatible with existing methods like LatestLocator(). If
-	// Go supported generics, this would probably not be necessary but it doesn't and
-	// so this is the path of least resistance.
-	StatusBitcoinHeaderValidated
-	StatusBitcoinHeaderValidateFailed
+	StatusBitcoinHeaderValidated      // Deprecated
+	StatusBitcoinHeaderValidateFailed // Deprecated
 )
+
+// IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
+func (blockStatus BlockStatus) IsFullyProcessed() bool {
+	return blockStatus&StatusHeaderValidated != 0 &&
+		blockStatus&StatusBlockStored != 0 &&
+		blockStatus&StatusBlockProcessed != 0 &&
+		blockStatus&StatusBlockValidated != 0
+}
 
 func (blockStatus BlockStatus) String() string {
 	if blockStatus == 0 {
@@ -349,7 +351,7 @@ func CalcNextDifficultyTarget(
 	}
 
 	// If we get here we know we are dealing with a block whose height exceeds
-	// the height of the first difficulty adjustment (that is
+	// the height of the first difficulty adjustment, that is
 	//   lastNode.Height > blocksPerRetarget
 
 	// If we're not at a difficulty retarget point, return the previous
@@ -402,11 +404,21 @@ type OrphanBlock struct {
 type Blockchain struct {
 	db                              *badger.DB
 	postgres                        *Postgres
+	snapshot                        *Snapshot
 	timeSource                      chainlib.MedianTimeSource
 	trustedBlockProducerPublicKeys  map[PkMapKey]bool
 	trustedBlockProducerStartHeight uint64
+	MaxSyncBlockHeight              uint32
 	params                          *DeSoParams
 	eventManager                    *EventManager
+
+	// Archival mode determines if we'll be downloading historical blocks after finishing hypersync.
+	// It is turned off by default, meaning we won't be downloading blocks prior to the first snapshot
+	// height, nor we'll be downloading utxoops for these blocks. This is OK because we're assuming a
+	// reorg reverting a last snapshot is extremely unlikely. If it does happen, it would require the
+	// syncing node to re-run hypersync, which is a tiny overhead. Moreover, we are moving away from
+	// utxoops overall. They'll only be needed close to the tip to handle reorgs and nowhere else.
+	archivalMode bool
 	// Returns true once all of the housekeeping in creating the
 	// blockchain is complete. This includes setting up the genesis block.
 	isInitialized bool
@@ -431,6 +443,19 @@ type Blockchain struct {
 	// are not written to disk and are only cached in memory. Moreover we only keep
 	// up to MaxOrphansInMemory of them in order to prevent memory exhaustion.
 	orphanList *list.List
+
+	// We connect many blocks in the same view and flush every X number of blocks
+	blockView *UtxoView
+
+	// State checksum is used to verify integrity of state data and when
+	// syncing from snapshot in the hyper sync protocol.
+	//
+	// TODO: These could be rolled into SyncState, or at least into a single
+	// variable.
+	syncingState                bool
+	downloadingHistoricalBlocks bool
+
+	timer *Timer
 }
 
 func (bc *Blockchain) CopyBlockIndex() map[BlockHash]*BlockNode {
@@ -463,6 +488,19 @@ func (bc *Blockchain) CopyBestHeaderChain() ([]*BlockNode, map[BlockHash]*BlockN
 	return newBestChain, newBestChainMap
 }
 
+// IsFullyStored determines if there are block nodes that haven't been fully stored or processed in the best block chain.
+func (bc *Blockchain) IsFullyStored() bool {
+	if bc.ChainState() == SyncStateFullyCurrent {
+		for _, blockNode := range bc.bestChain {
+			if !blockNode.Status.IsFullyProcessed() {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 // _initChain initializes the in-memory data structures for the Blockchain object
 // by reading from the database. If the database has never been initialized before
 // then _initChain will initialize it to contain only the genesis block before
@@ -476,7 +514,7 @@ func (bc *Blockchain) _initChain() error {
 			bestBlockHash = chain.TipHash
 		}
 	} else {
-		bestBlockHash = DbGetBestHash(bc.db, ChainTypeDeSoBlock)
+		bestBlockHash = DbGetBestHash(bc.db, bc.snapshot, ChainTypeDeSoBlock)
 	}
 	// When we load up initially, the best header hash is just the tip of the best
 	// block chain, since we don't store headers for which we don't have corresponding
@@ -491,7 +529,7 @@ func (bc *Blockchain) _initChain() error {
 		if bc.postgres != nil {
 			err = bc.postgres.InitGenesisBlock(bc.params, bc.db)
 		} else {
-			err = InitDbWithDeSoGenesisBlock(bc.params, bc.db, bc.eventManager)
+			err = InitDbWithDeSoGenesisBlock(bc.params, bc.db, bc.eventManager, bc.snapshot)
 		}
 		if err != nil {
 			return errors.Wrapf(err, "_initChain: Problem initializing db with genesis block")
@@ -570,16 +608,19 @@ func (bc *Blockchain) _initChain() error {
 // NewBlockchain returns a new blockchain object. It initializes some in-memory
 // data structures by reading from the db. It also initializes the db if it hasn't
 // been initialized in the past. This function should only be called once per
-// db, and one should never run two blockhain objects over the same db at the same
+// db, and one should never run two blockchain objects over the same db at the same
 // time as they will likely step on each other and become inconsistent.
 func NewBlockchain(
 	trustedBlockProducerPublicKeyStrs []string,
 	trustedBlockProducerStartHeight uint64,
+	maxSyncBlockHeight uint32,
 	params *DeSoParams,
 	timeSource chainlib.MedianTimeSource,
 	db *badger.DB,
 	postgres *Postgres,
 	eventManager *EventManager,
+	snapshot *Snapshot,
+	archivalMode bool,
 ) (*Blockchain, error) {
 
 	trustedBlockProducerPublicKeys := make(map[PkMapKey]bool)
@@ -591,14 +632,20 @@ func NewBlockchain(
 		trustedBlockProducerPublicKeys[MakePkMapKey(pkBytes)] = true
 	}
 
+	timer := &Timer{}
+	timer.Initialize()
+
 	bc := &Blockchain{
 		db:                              db,
 		postgres:                        postgres,
+		snapshot:                        snapshot,
 		timeSource:                      timeSource,
 		trustedBlockProducerPublicKeys:  trustedBlockProducerPublicKeys,
 		trustedBlockProducerStartHeight: trustedBlockProducerStartHeight,
+		MaxSyncBlockHeight:              maxSyncBlockHeight,
 		params:                          params,
 		eventManager:                    eventManager,
+		archivalMode:                    archivalMode,
 
 		blockIndex:   make(map[BlockHash]*BlockNode),
 		bestChainMap: make(map[BlockHash]*BlockNode),
@@ -606,6 +653,7 @@ func NewBlockchain(
 		bestHeaderChainMap: make(map[BlockHash]*BlockNode),
 
 		orphanList: list.New(),
+		timer:      timer,
 	}
 
 	// Hold the chain lock whenever we modify this object from now on.
@@ -732,7 +780,10 @@ func locateHeaders(locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32,
 	}
 
 	// Populate and return the found headers.
-	headers := make([]*MsgDeSoHeader, 0, total)
+	headers, err := SafeMakeSliceWithLengthAndCapacity[*MsgDeSoHeader](0, uint64(total))
+	if err != nil {
+		// TODO: do we really want to introduce an error here?
+	}
 	for ii := uint32(0); ii < total; ii++ {
 		headers = append(headers, node.Header)
 		if uint32(len(headers)) == total {
@@ -761,6 +812,9 @@ func locateHeaders(locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32,
 //
 // This function is safe for concurrent access.
 func (bc *Blockchain) LocateBestBlockChainHeaders(locator []*BlockHash, stopHash *BlockHash) []*MsgDeSoHeader {
+	// TODO: Shouldn't we hold a ChainLock here? I think it's fine though because the place
+	// where it's currently called is single-threaded via a channel in server.go. Going to
+	// avoid messing with it for now.
 	headers := locateHeaders(locator, stopHash, MaxHeadersPerMsg,
 		bc.blockIndex, bc.bestChain, bc.bestChainMap)
 
@@ -951,7 +1005,7 @@ func (bc *Blockchain) HasBlock(blockHash *BlockHash) bool {
 
 // Don't need a lock because blocks don't get removed from the db after they're added
 func (bc *Blockchain) GetBlock(blockHash *BlockHash) *MsgDeSoBlock {
-	blk, err := GetBlock(blockHash, bc.db)
+	blk, err := GetBlock(blockHash, bc.db, bc.snapshot)
 	if err != nil {
 		glog.V(2).Infof("Blockchain.GetBlock: Failed to fetch node with hash %v from the db: %v", blockHash, err)
 		return nil
@@ -970,7 +1024,30 @@ func (bc *Blockchain) GetBlockAtHeight(height uint32) *MsgDeSoBlock {
 	return bc.GetBlock(bc.bestChain[height].Hash)
 }
 
+// GetBlockNodeWithHash looks for a block node in the bestChain list that matches the hash.
+func (bc *Blockchain) GetBlockNodeWithHash(hash *BlockHash) *BlockNode {
+	for _, blockNode := range bc.bestChain {
+		if blockNode.Hash.IsEqual(hash) {
+			return blockNode
+		}
+	}
+
+	return nil
+}
+
+// isTipMaxed compares the tip height to the MaxSyncBlockHeight height.
+func (bc *Blockchain) isTipMaxed(tip *BlockNode) bool {
+	if bc.MaxSyncBlockHeight > 0 {
+		return tip.Height >= bc.MaxSyncBlockHeight
+	}
+	return false
+}
+
 func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
+	if bc.MaxSyncBlockHeight > 0 {
+		return tip.Height >= bc.MaxSyncBlockHeight
+	}
+
 	minChainWorkBytes, _ := hex.DecodeString(bc.params.MinChainWorkHex)
 
 	// Not current if the cumulative work is below the threshold.
@@ -998,6 +1075,13 @@ const (
 	// validate them before we download blocks, SyncingHeaders implies that
 	// the block tip is also not current yet.
 	SyncStateSyncingHeaders SyncState = iota
+	// SyncStateSyncingSnapshot indicates that our header chain is current, and
+	// we're syncing state from a snapshot. This is part of the hyper sync
+	// protocol, where the node first downloads the header chain and then
+	// proceeds to download state from some recent point in time. After we
+	// download the snapshot, we will continue downloading blocks from the
+	// snapshot height, rather than from genesis.
+	SyncStateSyncingSnapshot
 	// SyncStateSyncingBlocks indicates that our header chain is current but
 	// that the block chain we have is not current yet. In particular, it
 	// means, among other things, that the tip of the block chain is still
@@ -1007,6 +1091,9 @@ const (
 	// block chain is current but that there are headers in our main chain for
 	// which we have not yet processed blocks.
 	SyncStateNeedBlocksss
+	// SyncStateSyncingHistoricalBlocks indicates that our node was bootstrapped using
+	// hypersync and that we're currently downloading historical blocks
+	SyncStateSyncingHistoricalBlocks
 	// SyncStateFullyCurrent indicates that our header chain is current and that
 	// we've fetched all the blocks corresponding to this chain.
 	SyncStateFullyCurrent
@@ -1016,10 +1103,14 @@ func (ss SyncState) String() string {
 	switch ss {
 	case SyncStateSyncingHeaders:
 		return "SYNCING_HEADERS"
+	case SyncStateSyncingSnapshot:
+		return "SYNCING_SNAPSHOT"
 	case SyncStateSyncingBlocks:
 		return "SYNCING_BLOCKS"
 	case SyncStateNeedBlocksss:
 		return "NEED_BLOCKS"
+	case SyncStateSyncingHistoricalBlocks:
+		return "SYNCING_HISTORICAL_BLOCKS"
 	case SyncStateFullyCurrent:
 		return "FULLY_CURRENT"
 	default:
@@ -1034,8 +1125,26 @@ func (ss SyncState) String() string {
 func (bc *Blockchain) chainState() SyncState {
 	// If the header is not current, then we're in the SyncStateSyncingHeaders.
 	headerTip := bc.headerTip()
+	if headerTip == nil {
+		return SyncStateSyncingHeaders
+	}
+
 	if !bc.isTipCurrent(headerTip) {
 		return SyncStateSyncingHeaders
+	}
+
+	// If the header tip is current and the block tip is far in the past, then we're in the SyncStateSyncingSnapshot state.
+	if bc.syncingState {
+		return SyncStateSyncingSnapshot
+	}
+
+	// If we get here that means that the block tip is pretty much up to date, so we'll either be downloading historical
+	// blocks if we're in the archival mode, or we'll download the remaining, most recent blocks.
+
+	// If the node is the archival mode and we're downloading historical blocks,
+	// then we're in the SyncStateSyncingHistoricalBlocks state.
+	if bc.downloadingHistoricalBlocks {
+		return SyncStateSyncingHistoricalBlocks
 	}
 
 	// If the header tip is current but the block tip isn't then we're in
@@ -1061,7 +1170,57 @@ func (bc *Blockchain) ChainState() SyncState {
 
 func (bc *Blockchain) isSyncing() bool {
 	syncState := bc.chainState()
-	return syncState == SyncStateSyncingHeaders || syncState == SyncStateSyncingBlocks
+	return syncState == SyncStateSyncingHeaders || syncState == SyncStateSyncingBlocks ||
+		syncState == SyncStateSyncingSnapshot || syncState == SyncStateSyncingHistoricalBlocks
+}
+
+// Check if the node is in the archival mode by going through blocks in the best chain and looking up their status.
+func (bc *Blockchain) checkArchivalMode() bool {
+	// If node is not in the archival mode or if snapshot is nil then there is nothing to check.
+	if !bc.archivalMode || bc.snapshot == nil {
+		return false
+	}
+
+	// If for some reason snapshot metadata is not initialized then we should also return false.
+	if bc.snapshot.CurrentEpochSnapshotMetadata == nil {
+		glog.Errorf("checkArchivalMode: Snapshot epoch metadata is nil, this should generally not happen.")
+		return false
+	}
+
+	firstSnapshotHeight := bc.snapshot.CurrentEpochSnapshotMetadata.FirstSnapshotBlockHeight
+	for _, blockNode := range bc.bestChain {
+		if uint64(blockNode.Height) > firstSnapshotHeight {
+			return false
+		}
+
+		// Check if we have blocks that have been processed and validated but not stored. This would indicate that there
+		// are historical blocks that we are yet to download.
+		if (blockNode.Status&StatusBlockProcessed) == 1 &&
+			(blockNode.Status&StatusBlockValidated) == 1 &&
+			(blockNode.Status&StatusBlockStored) == 0 {
+
+			return true
+		}
+	}
+
+	// If we get here, it means that all blocks have been processed and stored, so there is nothing to do.
+	return false
+}
+
+// isHyperSyncCondition checks if the block tip is more than a snapshot period away from the header tip. If that's the case
+// then it is likely faster to delete the entire database and HyperSync the state from scratch, rather than syncing blocks.
+func (bc *Blockchain) isHyperSyncCondition() bool {
+	// If HyperSync is turned off then there's nothing to do.
+	if bc.snapshot == nil {
+		return false
+	}
+
+	blockTip := bc.blockTip()
+	headerTip := bc.headerTip()
+	if uint64(headerTip.Height-blockTip.Height) >= SnapshotBlockHeightPeriod {
+		return true
+	}
+	return false
 }
 
 // headerTip returns the tip of the header chain. Because we fetch headers
@@ -1082,8 +1241,18 @@ func (bc *Blockchain) HeaderTip() *BlockNode {
 	return bc.headerTip()
 }
 
+// TODO: This breaks law of demeter and we should fix it
 func (bc *Blockchain) DB() *badger.DB {
 	return bc.db
+}
+
+// TODO: This breaks law of demeter and we should fix it
+func (bc *Blockchain) Postgres() *Postgres {
+	return bc.postgres
+}
+
+func (bc *Blockchain) Snapshot() *Snapshot {
+	return bc.snapshot
 }
 
 // blockTip returns the tip of the main block chain. We fetch headers first
@@ -1420,7 +1589,7 @@ func updateBestChainInMemory(mainChainList []*BlockNode, mainChainMap map[BlockH
 	mainChainList = mainChainList[:len(mainChainList)-len(detachBlocks)]
 
 	// Add the nodes we attached to the end of the list. Note that this loop iterates
-	// forward because because attachBlocks has the node right after the common ancestor
+	// forward because attachBlocks has the node right after the common ancestor
 	// first, with the new tip at the end.
 	for _, attachNode := range attachBlocks {
 		mainChainList = append(mainChainList, attachNode)
@@ -1611,20 +1780,14 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	return bc.processHeader(blockHeader, headerHash)
 }
 
-// Note: It is the caller's responsibility to ensure that the BitcoinManager is
-// time-current prior to calling ProcessBlock on any transactions that require the
-// BitcoinManager for validation (e.g. BitcoinExchange transactions). Failure to
-// do so will cause ProcessBlock to error on blocks that could otherwise be valid
-// if a time-current BitcoinManager were available. If it is known for sure that
-// no BitcoinExchange transactions need to be validated then it is OK for the
-// BitcoinManager to not be time-current and even for it to be nil entirely. This
-// is useful e.g. for tests where we want to exercise ProcessBlock without setting
-// up a time-current BitcoinManager.
 func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _err error) {
 	// TODO: Move this to be more isolated.
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
 
+	blockHeight := uint64(bc.BlockTip().Height + 1)
+
+	bc.timer.Start("Blockchain.ProcessBlock: Initial")
 	if desoBlock == nil {
 		return false, false, fmt.Errorf("ProcessBlock: Block is nil")
 	}
@@ -1673,7 +1836,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 
 			// Verify that the public key has not been forbidden.
-			dbEntry := DbGetForbiddenBlockSignaturePubKey(bc.db, publicKey)
+			dbEntry := DbGetForbiddenBlockSignaturePubKey(bc.db, bc.snapshot, publicKey)
 			if dbEntry != nil {
 				return false, false, errors.Wrapf(RuleErrorForbiddenBlockProducerPublicKey,
 					"ProcessBlock: Block producer public key %v is forbidden", PkToStringBoth(publicKey))
@@ -1698,6 +1861,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 		}
 	}
+	bc.timer.End("Blockchain.ProcessBlock: Initial")
+	bc.timer.Start("Blockchain.ProcessBlock: BlockNode")
 
 	// See if a node for the block exists in our node index.
 	nodeToValidate, nodeExists := bc.blockIndex[*blockHash]
@@ -1745,6 +1910,11 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		return false, true, nil
 	}
 
+	if nodeToValidate.Status.IsFullyProcessed() {
+		glog.Infof("Node is not fully processed - current statuses are: %+v", nodeToValidate.Status)
+		return false, false, RuleErrorBlockAlreadyExists
+	}
+
 	// At this point, because we know the block isn't an orphan, go ahead and mark
 	// it as processed. This flag is basically used to avoid situations in which we
 	// continuously try to fetch and reprocess a block because we forgot to mark
@@ -1758,7 +1928,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				"ProcessBlock: Problem saving block with StatusBlockProcessed")
 		}
 	} else {
-		if err := PutHeightHashToNodeInfo(nodeToValidate, bc.db, false /*bitcoinNodes*/); err != nil {
+		if err := PutHeightHashToNodeInfo(bc.db, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); err != nil {
 			return false, false, errors.Wrapf(
 				err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo with StatusBlockProcessed")
 		}
@@ -1844,24 +2014,46 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// Try and store the block and its corresponding node info since it has passed
 	// basic validation.
 	nodeToValidate.Status |= StatusBlockStored
+	bc.timer.End("Blockchain.ProcessBlock: BlockNode")
+	bc.timer.Start("Blockchain.ProcessBlock: Db Update")
 
 	if bc.postgres != nil {
 		if err = bc.postgres.UpsertBlock(nodeToValidate); err != nil {
 			err = errors.Wrapf(err, "ProcessBlock: Problem saving block with StatusBlockStored")
 		}
+
+		// We're not storing blocks in postgres, so we should store the actual blocks in the badgerdb.
+		// This is needed for disconnects, otherwise GetBlock() will fail (e.g. when we reorg).
+		if err == nil {
+			err = bc.db.Update(func(txn *badger.Txn) error {
+				if err := PutBlockWithTxn(txn, nil, desoBlock); err != nil {
+					return errors.Wrapf(err, "ProcessBlock: Problem putting block with txns")
+				}
+				return nil
+			})
+		}
 	} else {
 		err = bc.db.Update(func(txn *badger.Txn) error {
+			if bc.snapshot != nil {
+				bc.snapshot.PrepareAncestralRecordsFlush()
+				defer bc.snapshot.StartAncestralRecordsFlush(true)
+				glog.V(2).Infof("ProcessBlock: Preparing snapshot flush")
+			}
 			// Store the new block in the db under the
 			//   <blockHash> -> <serialized block>
 			// index.
-			if err := PutBlockWithTxn(txn, desoBlock); err != nil {
+			// TODO: In the archival mode, we'll be setting ancestral entries for the block reward. Note that it is
+			// 	set in PutBlockWithTxn. Block rewards are part of the state, and they should be identical to the ones
+			// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
+			// 	somehow ancestral records get corrupted?
+			if err := PutBlockWithTxn(txn, bc.snapshot, desoBlock); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
 			}
 
 			// Store the new block's node in our node index in the db under the
 			//   <height uin32, blockhash BlockHash> -> <node info>
 			// index.
-			if err := PutHeightHashToNodeInfoWithTxn(txn, nodeToValidate, false /*bitcoinNodes*/); err != nil {
+			if err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
 			}
 
@@ -1873,6 +2065,12 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		return false, false, errors.Wrapf(err, "ProcessBlock: Problem storing block after basic validation")
 	}
 
+	// If we've already validated this block, there's no need to do that again. This in particular gets triggered in the
+	// archival mode, where we actually skip block validation altogether for historical blocks.
+	if nodeToValidate.Status&StatusBlockValidated != 0 {
+		return true, false, nil
+	}
+
 	// Now we try and add the block to the main block chain (note that it should
 	// already be on the main header chain if we've made it this far).
 
@@ -1882,7 +2080,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// See if the current tip is equal to the block's parent.
 	isMainChain := false
 
+	bc.timer.End("Blockchain.ProcessBlock: Db Update")
+
 	if *parentNode.Hash == *currentTip.Hash {
+		bc.timer.Start("Blockchain.ProcessBlock: Transactions Validation")
 		// Create a new UtxoView representing the current tip.
 		//
 		// TODO: An optimization can be made here where we pre-load all the inputs this txn
@@ -1890,26 +2091,30 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// the txns to account for txns that spend previous txns in the block, but it would
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output.
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
-		if err != nil {
-			return false, false, errors.Wrapf(err, "ProcessBlock: Problem initializing UtxoView in simple connect to tip")
+		if bc.blockView == nil {
+			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+			if err != nil {
+				return false, false, errors.Wrapf(err, "ProcessBlock: Problem initializing UtxoView in simple connect to tip")
+			}
+
+			bc.blockView = utxoView
 		}
 
 		// Preload the view with almost all of the data it will need to connect the block
-		err = utxoView.Preload(desoBlock)
+		err := bc.blockView.Preload(desoBlock, blockHeight)
 		if err != nil {
 			glog.Errorf("ProcessBlock: Problem preloading the view: %v", err)
 		}
 
 		// Verify that the utxo view is pointing to the current tip.
-		if *utxoView.TipHash != *currentTip.Hash {
+		if *bc.blockView.TipHash != *currentTip.Hash {
 			//return false, false, fmt.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
 			//	"not the current tip hash (%v)", utxoView.TipHash, currentTip.Hash)
-			glog.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
-				"not the current tip hash (%v)", utxoView.TipHash, currentTip.Hash)
+			glog.Infof("ProcessBlock: Tip hash for utxo view (%v) is "+
+				"not the current tip hash (%v)", bc.blockView.TipHash, currentTip.Hash)
 		}
 
-		utxoOpsForBlock, err := utxoView.ConnectBlock(desoBlock, txHashes, verifySignatures, nil)
+		utxoOpsForBlock, err := bc.blockView.ConnectBlock(desoBlock, txHashes, verifySignatures, nil, blockHeight)
 		if err != nil {
 			if IsRuleError(err) {
 				// If we have a RuleError, mark the block as invalid before
@@ -1927,6 +2132,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// If all of the above passed it means the block is valid. So set the
 		// status flag on the block to indicate that and write the status to disk.
 		nodeToValidate.Status |= StatusBlockValidated
+		bc.timer.End("Blockchain.ProcessBlock: Transactions Validation")
 
 		// Now that we have a valid block that we know is connecting to the tip,
 		// update our data structures to actually make this connection. Do this
@@ -1939,37 +2145,54 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// Write the modified utxo set to the view.
 			// FIXME: This codepath breaks the balance computation in handleBlock for Rosetta
 			// because it clears the UtxoView before balances can be snapshotted.
-			if err := utxoView.FlushToDb(); err != nil {
+			if err := bc.blockView.FlushToDb(blockHeight); err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem flushing view to db")
 			}
+
+			// Since we don't have utxo operations in postgres, always write UTXO operations for the block to badger
+			err = bc.db.Update(func(txn *badger.Txn) error {
+				if err = PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
+					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+				}
+				return nil
+			})
 		} else {
+			bc.timer.Start("Blockchain.ProcessBlock: Transactions Db put")
 			err = bc.db.Update(func(txn *badger.Txn) error {
 				// This will update the node's status.
-				if err := PutHeightHashToNodeInfoWithTxn(txn, nodeToValidate, false /*bitcoinNodes*/); err != nil {
+				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db height & hash")
+				if err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); err != nil {
 					return errors.Wrapf(
 						err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation")
 				}
 
 				// Set the best node hash to this one. Note the header chain should already
 				// be fully aware of this block so we shouldn't update it here.
-				if err := PutBestHashWithTxn(txn, blockHash, ChainTypeDeSoBlock); err != nil {
+				if err := PutBestHashWithTxn(txn, bc.snapshot, blockHash, ChainTypeDeSoBlock); err != nil {
 					return err
 				}
-
-				// Write the modified utxo set to the view.
-				if err := utxoView.FlushToDbWithTxn(txn); err != nil {
-					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
-				}
+				bc.timer.End("Blockchain.ProcessBlock: Transactions Db height & hash")
+				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db utxo flush")
 
 				// Write the utxo operations for this block to the db so we can have the
 				// ability to roll it back in the future.
-				if err := PutUtxoOperationsForBlockWithTxn(txn, blockHash, utxoOpsForBlock); err != nil {
+				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 				}
+				bc.timer.End("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
+
+				// Write the modified utxo set to the view.
+				if err := bc.blockView.FlushToDbWithTxn(txn, blockHeight); err != nil {
+					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
+				}
+				bc.timer.End("Blockchain.ProcessBlock: Transactions Db utxo flush")
+				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
 
 				return nil
 			})
+			bc.timer.End("Blockchain.ProcessBlock: Transactions Db put")
 		}
+		bc.timer.Start("Blockchain.ProcessBlock: Transactions Db end")
 
 		if err != nil {
 			return false, false, errors.Wrapf(err, "ProcessBlock: Problem writing block info to db on simple add to tip")
@@ -2018,10 +2241,13 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		if bc.eventManager != nil {
 			bc.eventManager.blockConnected(&BlockEvent{
 				Block:    desoBlock,
-				UtxoView: utxoView,
+				UtxoView: bc.blockView,
 				UtxoOps:  utxoOpsForBlock,
 			})
 		}
+
+		bc.blockView = nil
+		bc.timer.End("Blockchain.ProcessBlock: Transactions Db end")
 
 	} else if nodeToValidate.CumWork.Cmp(currentTip.CumWork) <= 0 {
 		// A block has less cumulative work than our tip. In this case, we just ignore
@@ -2034,7 +2260,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// of the block is greater than our tip. This means we have a fork that has
 		// the potential to become our new main chain so we need to do a reorg to
 		// process it. A reorg consists of the following:
-		// 1) Find the common ancecstor of this block and the main chain.
+		// 1) Find the common ancestor of this block and the main chain.
 		// 2) Roll back all of the main chain blocks back to this common ancestor.
 		// 3) Verify and add the new blocks up to this one.
 		//
@@ -2044,6 +2270,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// to the database.
 
 		// Find the common ancestor of this block and the main chain.
+		// TODO: Reorgs with postgres?
 		commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(currentTip, nodeToValidate)
 		// Log a warning if the reorg is going to be a big one.
 		numBlocks := currentTip.Height - commonAncestor.Height
@@ -2060,7 +2287,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// the txns to account for txns that spend previous txns in the block, but it would
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 		if err != nil {
 			return false, false, errors.Wrapf(err, "processblock: Problem initializing UtxoView in reorg")
 		}
@@ -2073,10 +2300,11 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// Go through and detach all of the blocks down to the common ancestor. We
 		// shouldn't encounter any errors but if we do, return without marking the
 		// block as invalid.
+		var blocksToDetach []*MsgDeSoBlock
 		for _, nodeToDetach := range detachBlocks {
 			// Fetch the utxo operations for the block we're detaching. We need these
 			// in order to be able to detach the block.
-			utxoOps, err := GetUtxoOperationsForBlock(bc.db, nodeToDetach.Hash)
+			utxoOps, err := GetUtxoOperationsForBlock(bc.db, bc.snapshot, nodeToDetach.Hash)
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"utxo operations during detachment of block (%v) "+
@@ -2085,7 +2313,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			// Fetch the block itself since we need some info from it to roll
 			// it back.
-			blockToDetach, err := GetBlock(nodeToDetach.Hash, bc.db)
+			blockToDetach, err := GetBlock(nodeToDetach.Hash, bc.db, bc.snapshot)
+			blocksToDetach = append(blocksToDetach, blockToDetach)
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"block (%v) during detach in reorg", nodeToDetach)
@@ -2099,7 +2328,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 
 			// Now roll the block back in the view.
-			if err := utxoView.DisconnectBlock(blockToDetach, txHashes, utxoOps); err != nil {
+			if err := utxoView.DisconnectBlock(blockToDetach, txHashes, utxoOps, blockHeight); err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem rolling back "+
 					"block (%v) during detachment in reorg", nodeToDetach)
 			}
@@ -2129,11 +2358,13 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		ruleErrorsFound := []RuleError{}
 		// The first element will be the node right after the common ancestor and
 		// the last element will be the new node we need to attach.
+		var blocksToAttach []*MsgDeSoBlock
 		for _, attachNode := range attachBlocks {
 
 			// Fetch the block itself since we need some info from it to try and
 			// connect it.
-			blockToAttach, err := GetBlock(attachNode.Hash, bc.db)
+			blockToAttach, err := GetBlock(attachNode.Hash, bc.db, bc.snapshot)
+			blocksToAttach = append(blocksToAttach, blockToAttach)
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"block (%v) during attach in reorg", attachNode)
@@ -2156,7 +2387,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			// Initialize the utxo operations slice.
 			utxoOps, err := utxoView.ConnectBlock(
-				blockToAttach, txHashes, verifySignatures, nil)
+				blockToAttach, txHashes, verifySignatures, nil, blockHeight)
 			if err != nil {
 				if IsRuleError(err) {
 					// If we have a RuleError, mark the block as invalid. But don't return
@@ -2176,7 +2407,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			// If we made it here then we were able to connect the block successfully.
 			// So mark its status as valid and update the node index accordingly.
 			attachNode.Status |= StatusBlockValidated
-			if err := PutHeightHashToNodeInfo(attachNode, bc.db, false /*bitcoinNodes*/); err != nil {
+			if err := PutHeightHashToNodeInfo(bc.db, bc.snapshot, attachNode, false /*bitcoinNodes*/); err != nil {
 				return false, false, errors.Wrapf(
 					err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation in reorg")
 			}
@@ -2207,14 +2438,14 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// single transaction.
 		err = bc.db.Update(func(txn *badger.Txn) error {
 			// Set the best node hash to the new tip.
-			if err := PutBestHashWithTxn(txn, newTipNode.Hash, ChainTypeDeSoBlock); err != nil {
+			if err := PutBestHashWithTxn(txn, bc.snapshot, newTipNode.Hash, ChainTypeDeSoBlock); err != nil {
 				return err
 			}
 
 			for _, detachNode := range detachBlocks {
 				// Delete the utxo operations for the blocks we're detaching since we don't need
 				// them anymore.
-				if err := DeleteUtxoOperationsForBlockWithTxn(txn, detachNode.Hash); err != nil {
+				if err := DeleteUtxoOperationsForBlockWithTxn(txn, bc.snapshot, detachNode.Hash); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem deleting utxo operations for block")
 				}
 
@@ -2227,13 +2458,13 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			for ii, attachNode := range attachBlocks {
 				// Add the utxo operations for the blocks we're attaching so we can roll them back
 				// in the future if necessary.
-				if err := PutUtxoOperationsForBlockWithTxn(txn, attachNode.Hash, utxoOpsForAttachBlocks[ii]); err != nil {
+				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, attachNode.Hash, utxoOpsForAttachBlocks[ii]); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem putting utxo operations for block")
 				}
 			}
 
 			// Write the modified utxo set to the view.
-			if err := utxoView.FlushToDbWithTxn(txn); err != nil {
+			if err := utxoView.FlushToDbWithTxn(txn, blockHeight); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem flushing to db")
 			}
 
@@ -2243,7 +2474,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			return false, false, errors.Errorf("ProcessBlock: Problem updating: %v", err)
 		}
 
-		// Now the the db has been updated, update our in-memory best chain. Note that there
+		// Now the db has been updated, update our in-memory best chain. Note that there
 		// is no need to update the node index because it was updated as we went along.
 		newBestChain, newBestChainMap := bc.CopyBestChain()
 		newBestChain, newBestChainMap = updateBestChainInMemory(
@@ -2257,10 +2488,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		// connected as a result of this operation. Do this in a goroutine so that
 		// if ProcessBlock is called by a consumer of incomingMessages we don't
 		// have any risk of deadlocking.
-		for _, nodeToDetach := range detachBlocks {
+		for ii, nodeToDetach := range detachBlocks {
 			// Fetch the block itself since we need some info from it to roll
 			// it back.
-			blockToDetach, err := GetBlock(nodeToDetach.Hash, bc.db)
+			blockToDetach := blocksToDetach[ii]
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"block (%v) during detach in server signal", nodeToDetach)
@@ -2273,11 +2504,11 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				bc.eventManager.blockDisconnected(&BlockEvent{Block: blockToDetach})
 			}
 		}
-		for _, attachNode := range attachBlocks {
+		for ii, attachNode := range attachBlocks {
 
 			// Fetch the block itself since we need some info from it to try and
 			// connect it.
-			blockToAttach, err := GetBlock(attachNode.Hash, bc.db)
+			blockToAttach := blocksToAttach[ii]
 			if err != nil {
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem fetching "+
 					"block (%v) during attach in server signal", attachNode)
@@ -2289,16 +2520,11 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				bc.eventManager.blockConnected(&BlockEvent{Block: blockToAttach})
 			}
 		}
-
-		// If we have a Server object then call its function
-		// TODO: Is this duplicated / necessary?
-		if bc.eventManager != nil {
-			// FIXME: We need to add the UtxoOps here to handle reorgs properly in Rosetta
-			// For now it's fine because reorgs are virtually impossible.
-			bc.eventManager.blockConnected(&BlockEvent{Block: desoBlock})
-		}
 	}
 
+	if bc.snapshot != nil {
+		bc.snapshot.FinishProcessBlock(bc.blockTip())
+	}
 	// If we've made it this far, the block has been validated and we have either added
 	// the block to the tip, done nothing with it (because its cumwork isn't high enough)
 	// or added it via a reorg and the db and our in-memory data structures reflect this
@@ -2312,10 +2538,163 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		bc.eventManager.blockAccepted(&BlockEvent{Block: desoBlock})
 	}
 
+	bc.timer.Print("Blockchain.ProcessBlock: Initial")
+	bc.timer.Print("Blockchain.ProcessBlock: BlockNode")
+	bc.timer.Print("Blockchain.ProcessBlock: Db Update")
+	bc.timer.Print("Blockchain.ProcessBlock: Transactions Validation")
+	bc.timer.Print("Blockchain.ProcessBlock: Transactions Db put")
+	bc.timer.Print("Blockchain.ProcessBlock: Transactions Db end")
+	bc.timer.Print("Blockchain.ProcessBlock: Transactions Db height & hash")
+	bc.timer.Print("Blockchain.ProcessBlock: Transactions Db utxo flush")
+
 	// At this point, the block we were processing originally should have been added
 	// to our data structures and any unconnectedTxns that are no longer unconnectedTxns should have
 	// also been processed.
 	return isMainChain, false, nil
+}
+
+// DisconnectBlocksToHeight will rollback blocks from the db and blockchain structs until block tip reaches the provided
+// blockHeight parameter.
+func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapshot) error {
+	// Roll back the block and make sure we don't hit any errors.
+	bc.ChainLock.Lock()
+	defer bc.ChainLock.Unlock()
+
+	if blockHeight < 0 {
+		blockHeight = 0
+	}
+
+	// NOTE: This function doesn't maintain the snapshot. The checksum should be recalculated after this.
+
+	// There is this edge-case where a partial blockProcess can skew the state. This is because of block reward entries,
+	// which are stored along with the block. In particular, if we've stored the block at blockTipHeight + 1, and the node
+	// crashed in the middle of ProcessBlock, then the reward entry will be stored in the state, even thought the block tip
+	// is at blockTipHeight. So we delete the block reward at the blockTipHeight + 1 to make sure the state is correct.
+	// TODO: decouple block reward from PutBlockWithTxn.
+	blockTipHeight := bc.bestChain[len(bc.bestChain)-1].Height
+	for hashIter, node := range bc.blockIndex {
+		hash := hashIter.NewBlockHash()
+		if node.Height > blockTipHeight {
+			glog.V(1).Info(CLog(Yellow, fmt.Sprintf("DisconnectBlocksToHeight: Found node in blockIndex with "+
+				"larger height than the current block tip. Deleting the corresponding block reward. Node: (%v)", node)))
+			blockToDetach, err := GetBlock(hash, bc.db, snap)
+			if err != nil && err != badger.ErrKeyNotFound {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem getting block with hash: (%v) and "+
+					"at height: (%v)", hash, node.Height)
+			}
+			if blockToDetach != nil {
+				if err = DeleteBlockReward(bc.db, snap, blockToDetach); err != nil {
+					return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward with hash: "+
+						"(%v) and at height: (%v)", hash, node.Height)
+				}
+			}
+		}
+	}
+
+	for ii := len(bc.bestChain) - 1; ii > 0 && uint64(bc.bestChain[ii].Height) > blockHeight; ii-- {
+		node := bc.bestChain[ii]
+		prevHash := *bc.bestChain[ii-1].Hash
+		hash := *bc.bestChain[ii].Hash
+		height := uint64(bc.bestChain[ii].Height)
+		err := bc.db.Update(func(txn *badger.Txn) error {
+
+			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, snap)
+			if err != nil {
+				return err
+			}
+
+			if *utxoView.TipHash != hash {
+				return fmt.Errorf("DisconnectBlocksToHeight: UtxovView tip hash doesn't match the bestChain hash")
+			}
+			// Fetch the utxo operations for the block we're detaching. We need these
+			// in order to be able to detach the block.
+			utxoOps, err := GetUtxoOperationsForBlock(bc.db, snap, &hash)
+			if err != nil {
+				return err
+			}
+
+			// Compute the hashes for all the transactions.
+			blockToDetach, err := GetBlock(&hash, bc.db, snap)
+			if err != nil {
+				return err
+			}
+			txHashes, err := ComputeTransactionHashes(blockToDetach.Txns)
+			if err != nil {
+				return err
+			}
+			err = utxoView.DisconnectBlock(blockToDetach, txHashes, utxoOps, height)
+			if err != nil {
+				return err
+			}
+
+			// Flushing the view after applying and rolling back should work.
+			err = utxoView.FlushToDb(height)
+			if err != nil {
+				return err
+			}
+
+			// Set the best node hash to the new tip.
+			if bc.postgres != nil {
+				if err := bc.postgres.UpsertChain(MAIN_CHAIN, &prevHash); err != nil {
+					return err
+				}
+			} else {
+				if err := PutBestHashWithTxn(txn, snap, &prevHash, ChainTypeDeSoBlock); err != nil {
+					return err
+				}
+			}
+
+			// Delete the utxo operations for the blocks we're detaching since we don't need
+			// them anymore.
+			if err := DeleteUtxoOperationsForBlockWithTxn(txn, snap, &hash); err != nil {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting utxo operations for block")
+			}
+
+			if err := DeleteBlockRewardWithTxn(txn, snap, blockToDetach); err != nil {
+				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward")
+			}
+
+			// Revert the detached block's status to StatusHeaderValidated and save the blockNode to the db.
+			node.Status = StatusHeaderValidated
+			if bc.postgres != nil {
+				if err := bc.postgres.DeleteTransactionsForBlock(blockToDetach, node); err != nil {
+					return err
+				}
+				if err := bc.postgres.UpsertBlock(node); err != nil {
+					return err
+				}
+			} else {
+				if err := PutHeightHashToNodeInfoWithTxn(txn, snap, node, false); err != nil {
+					return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting height hash to node info")
+				}
+			}
+
+			// If we have a Server object then call its function
+			if bc.eventManager != nil {
+				// We need to add the UtxoOps here to handle reorgs properly in Rosetta
+				// For now it's fine because reorgs are virtually impossible.
+				bc.eventManager.blockDisconnected(&BlockEvent{Block: blockToDetach})
+			}
+
+			return nil
+		})
+		if err != nil {
+			return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem disconnecting block "+
+				"with hash: (%v) at blockHeight: (%v)", hash, height)
+		}
+
+		bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
+		delete(bc.bestChainMap, hash)
+	}
+
+	// Remove blocks we've disconnected from the bestHeaderChain.
+	for ii := len(bc.bestHeaderChain) - 1; ii > 0 && uint64(bc.bestHeaderChain[ii].Height) > blockHeight; ii-- {
+		hash := *bc.bestHeaderChain[ii].Hash
+		bc.bestHeaderChain = bc.bestHeaderChain[:len(bc.bestHeaderChain)-1]
+		delete(bc.bestHeaderChainMap, hash)
+	}
+
+	return nil
 }
 
 // ValidateTransaction creates a UtxoView and sees if the transaction can be connected
@@ -2327,7 +2706,7 @@ func (bc *Blockchain) ValidateTransaction(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return errors.Wrapf(err, "ValidateTransaction: Problem Problem creating new utxo view: ")
 	}
@@ -2395,8 +2774,10 @@ func ExpectedWorkForBlockHash(hash *BlockHash) *BlockHash {
 }
 
 func ComputeTransactionHashes(txns []*MsgDeSoTxn) ([]*BlockHash, error) {
-	txHashes := make([]*BlockHash, len(txns))
-
+	txHashes, err := SafeMakeSliceWithLength[*BlockHash](uint64(len(txns)))
+	if err != nil {
+		return nil, err
+	}
 	for ii, currentTxn := range txns {
 		txHashes[ii] = currentTxn.Hash()
 	}
@@ -2434,7 +2815,7 @@ func ComputeMerkleRoot(txns []*MsgDeSoTxn) (_merkle *BlockHash, _txHashes []*Blo
 func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
 	// If we have access to a mempool, use it to account for utxos we might not
 	// get otherwise.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem initializing UtxoView: ")
 	}
@@ -2537,6 +2918,28 @@ func _computeMaxTxSize(_tx *MsgDeSoTxn) uint64 {
 func _computeMaxTxFee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	maxSizeBytes := _computeMaxTxSize(_tx)
 	return maxSizeBytes * minFeeRateNanosPerKB / 1000
+}
+
+// Computing maximum fee for tx that doesn't include change output yet.
+func _computeMaxTxFeeWithMaxChange(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
+	// TODO: This is a hack that we implement in order to remain backward-compatible with
+	// hundreds of tests that rely on the change being ommitted from the max fee
+	// computation. It shouldn't impact anything in PROD because the min fee rate is
+	// significantly higher. Nevertheless, we should fix all the tests at some point
+	// and then remove this quick-fix.
+	if minFeeRateNanosPerKB <= 100 {
+		return _computeMaxTxFee(_tx, minFeeRateNanosPerKB)
+	}
+
+	maxSizeBytes := _computeMaxTxSize(_tx)
+	res := (maxSizeBytes + MaxDeSoOutputSizeBytes) * minFeeRateNanosPerKB / 1000
+	// In the event that there is a remainder, we need to round up to
+	// ensure that the fee EXCEEDS the min fee rate.
+	// We skip this check if the networkMinFeeRate is zero to keep existing tests working.
+	if (maxSizeBytes+MaxDeSoOutputSizeBytes)*minFeeRateNanosPerKB%1000 > 0 {
+		res++
+	}
+	return res
 }
 
 func (bc *Blockchain) CreatePrivateMessageTxn(
@@ -3135,6 +3538,253 @@ func (bc *Blockchain) CreateDAOCoinTransferTxn(
 	return txn, totalInput, changeAmount, fees, nil
 }
 
+func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
+	UpdaterPublicKey []byte,
+	// See DAOCoinLimitOrderMetadata for an explanation of these fields.
+	metadata *DAOCoinLimitOrderMetadata,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// Initialize FeeNanos to the maximum uint64 to provide an upper bound on the size of the transaction.
+	// We will set FeeNanos to it's true value after we add inputs and outputs.
+	metadata.FeeNanos = math.MaxUint64
+
+	// Create a transaction containing the create DAO coin limit order fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: UpdaterPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		// We wait to compute the signature until we've added all the
+		// inputs and change.
+	}
+
+	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"Blockchain.CreateDAOCoinLimitOrderTxn: Problem creating new utxo view: ")
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateDAOCoinLimitOrderTxn: Problem getting augmented UtxoView from mempool: ")
+
+		}
+	}
+
+	// Validate txn metadata.
+	err = utxoView.IsValidDAOCoinLimitOrderMetadata(txn.PublicKey, metadata)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: ")
+	}
+
+	// Construct transactor order if submitting a new order so
+	// we can calculate BidderInputs and additional $DESO fees.
+	// This is not necessary if cancelling an existing order.
+	blockHeight := bc.blockTip().Height + 1
+	var transactorOrder *DAOCoinLimitOrderEntry
+
+	if metadata.CancelOrderID == nil {
+		// CancelOrderID is nil, so we know we're submitting a new order.
+		transactorOrder = &DAOCoinLimitOrderEntry{
+			OrderID:                   txn.Hash(),
+			TransactorPKID:            utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
+			BuyingDAOCoinCreatorPKID:  utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+			SellingDAOCoinCreatorPKID: utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+			ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
+			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
+			OperationType:                             metadata.OperationType,
+			FillType:                                  metadata.FillType,
+			BlockHeight:                               blockHeight,
+		}
+	}
+
+	// We use "additionalFees" to track how much we need to spend to cover the transactor's bid in DESO.
+	var additionalFees uint64
+	if metadata.CancelOrderID == nil &&
+		metadata.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+		// If buying $DESO, we need to find inputs from all the orders that match.
+		// This will move to txn construction as this will be put in the metadata.
+		var lastSeenOrder *DAOCoinLimitOrderEntry
+		desoNanosToConsumeMap := make(map[PKID]uint64)
+		transactorQuantityToFill := transactorOrder.QuantityToFillInBaseUnits.Clone()
+
+		for transactorQuantityToFill.GtUint64(0) {
+			var matchingOrderEntries []*DAOCoinLimitOrderEntry
+			matchingOrderEntries, err = utxoView.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder, blockHeight)
+			if err != nil {
+				return nil, 0, 0, 0, errors.Wrapf(
+					err, "Blockchain.CreateDAOCoinLimitOrderTxn: Error getting Bid orders to match: ")
+			}
+			if len(matchingOrderEntries) == 0 {
+				break
+			}
+			for _, matchingOrder := range matchingOrderEntries {
+				lastSeenOrder = matchingOrder
+
+				var matchingOrderDESOBalanceNanos uint64
+				matchingOrderDESOBalanceNanos, err = utxoView.GetDeSoBalanceNanosForPublicKey(
+					utxoView.GetPublicKeyForPKID(matchingOrder.TransactorPKID))
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(
+						err, "Blockchain.CreateDAOCoinLimitOrderTxn: error getting DeSo balance for matching bid order: ")
+				}
+
+				// Transactor is buying $DESO so matching order is selling $DESO.
+				// Calculate updated order quantities and coins exchanged.
+				var desoNanosExchanged *uint256.Int
+
+				transactorQuantityToFill,
+					_, // matching order updated quantity, not used here
+					desoNanosExchanged,
+					_, // dao coin nanos exchanged, not used here
+					err = _calculateDAOCoinsTransferredInLimitOrderMatch(
+					matchingOrder, transactorOrder.OperationType, transactorQuantityToFill)
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: ")
+				}
+
+				// Check for overflow in $DESO exchanged.
+				if !desoNanosExchanged.IsUint64() {
+					return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateDAOCoinLimitOrderTxn: order cost overflows $DESO")
+				}
+
+				// Check if matching order has enough $DESO to
+				// fulfill their order. Skip if not.
+				if desoNanosExchanged.GtUint64(matchingOrderDESOBalanceNanos) {
+					continue
+				}
+
+				// Initialize map tracking total $DESO consumed if the matching
+				// order transactor PKID hasn't been seen before.
+				if _, exists := desoNanosToConsumeMap[*matchingOrder.TransactorPKID]; !exists {
+					desoNanosToConsumeMap[*matchingOrder.TransactorPKID] = 0
+				}
+
+				// Update matching order's total $DESO consumed.
+				desoNanosToConsumeMap[*matchingOrder.TransactorPKID], err = SafeUint64().Add(
+					desoNanosToConsumeMap[*matchingOrder.TransactorPKID],
+					desoNanosExchanged.Uint64())
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: ")
+				}
+			}
+		}
+
+		for pkid, desoNanosToConsume := range desoNanosToConsumeMap {
+			var inputs []*DeSoInput
+			publicKey := NewPublicKey(utxoView.GetPublicKeyForPKID(&pkid))
+
+			inputs, err = bc.GetInputsToCoverAmount(publicKey.ToBytes(), utxoView, desoNanosToConsume)
+			if err != nil {
+				return nil, 0, 0, 0, errors.Wrapf(err,
+					"Blockchain.CreateDAOCoinLimitOrderTxn: Error getting inputs to cover amount: ")
+			}
+
+			inputsByTransactor := DeSoInputsByTransactor{
+				TransactorPublicKey: &(*publicKey), // create a pointer to a copy of the public key
+				Inputs:              inputs,
+			}
+
+			metadata.BidderInputs = append(metadata.BidderInputs, &inputsByTransactor)
+		}
+	} else if metadata.CancelOrderID == nil &&
+		metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+		// If selling $DESO for DAO coins, we need to find the matching orders
+		// and add that as an additional fee when adding inputs and outputs.
+		var lastSeenOrder *DAOCoinLimitOrderEntry
+
+		desoNanosToFulfillOrders := uint256.NewInt()
+		transactorQuantityToFill := transactorOrder.QuantityToFillInBaseUnits.Clone()
+
+		for transactorQuantityToFill.GtUint64(0) {
+			var matchingOrderEntries []*DAOCoinLimitOrderEntry
+			matchingOrderEntries, err = utxoView.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder, blockHeight)
+			if err != nil {
+				return nil, 0, 0, 0, errors.Wrapf(
+					err, "Blockchain.CreateDAOCoinLimitOrderTxn: Error getting orders to match: ")
+			}
+			if len(matchingOrderEntries) == 0 {
+				break
+			}
+			for _, matchingOrder := range matchingOrderEntries {
+				lastSeenOrder = matchingOrder
+
+				matchingOrderBalanceEntry := utxoView._getBalanceEntryForHODLerPKIDAndCreatorPKID(
+					matchingOrder.TransactorPKID, matchingOrder.SellingDAOCoinCreatorPKID, true)
+
+				// Skip if matching order doesn't own any of the DAO coins they're selling.
+				if matchingOrderBalanceEntry == nil || matchingOrderBalanceEntry.isDeleted {
+					continue
+				}
+
+				// Calculate updated order quantities and coins exchanged.
+				var updatedTransactorQuantityToFill *uint256.Int
+				var daoCoinNanosExchanged *uint256.Int
+				var desoNanosExchanged *uint256.Int
+
+				updatedTransactorQuantityToFill,
+					_, // matching order updated quantity, not used here
+					daoCoinNanosExchanged,
+					desoNanosExchanged,
+					err = _calculateDAOCoinsTransferredInLimitOrderMatch(
+					matchingOrder, transactorOrder.OperationType, transactorQuantityToFill)
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: ")
+				}
+
+				// Skip if matching order doesn't own enough of the DAO coins they're selling.
+				if matchingOrderBalanceEntry.BalanceNanos.Lt(daoCoinNanosExchanged) {
+					continue
+				}
+
+				// Now that we know this is a legitimate matching order
+				// we can update the transactor quantity to fill.
+				transactorQuantityToFill = updatedTransactorQuantityToFill
+
+				// Track total $DESO exchanged across all matching orders.
+				desoNanosToFulfillOrders, err = SafeUint256().Add(
+					desoNanosToFulfillOrders, desoNanosExchanged)
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err,
+						"Blockchain.CreateDAOCoinLimitOrderTxn: overflow when adding up $DESO to fill orders")
+				}
+			}
+		}
+
+		// Validate $DESO doesn't overflow uint64.
+		if !desoNanosToFulfillOrders.IsUint64() {
+			return nil, 0, 0, 0, fmt.Errorf(
+				"Blockchain.CreateDAOCoinLimitOrderTxn: fulfilling order $DESO overflows uint64")
+		}
+
+		additionalFees = desoNanosToFulfillOrders.Uint64()
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, _, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, additionalFees)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"CreateDAOCoinLimitOrderTxn: Problem adding inputs: ")
+	}
+	// Set fee to its actual value now that we've added inputs and outputs.
+	txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos = fees
+
+	// We want our transaction to have at least one input, even if it all
+	// goes to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateDAOCoinLimitOrderTxn: DAOCoinLimitOrder txn must have at least one input" +
+				" but had zero inputs instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
 func (bc *Blockchain) CreateCreateNFTTxn(
 	UpdaterPublicKey []byte,
 	NFTPostHash *BlockHash,
@@ -3439,7 +4089,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateAcceptNFTBidTxn: Problem creating new utxo view: ")
@@ -3537,9 +4187,126 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
 	if len(txn.TxInputs) == 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateNFTTxn: AcceptNFTBid txn " +
+		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateNFTTxn: CreateUpdateNFT txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateAccessGroupTxn(
+	userPublicKey []byte,
+	accessGroupPublicKey []byte,
+	accessGroupKeyName []byte,
+	operationType AccessGroupOperationType,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	txn := &MsgDeSoTxn{
+		PublicKey: userPublicKey,
+		TxnMeta: &AccessGroupMetadata{
+			AccessGroupOwnerPublicKey: userPublicKey,
+			AccessGroupPublicKey:      accessGroupPublicKey,
+			AccessGroupKeyName:        accessGroupKeyName,
+			AccessGroupOperationType:  operationType,
+		},
+		ExtraData: extraData,
+		TxOutputs: additionalOutputs,
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAccessGroupTxn: Problem adding inputs: ")
+	}
+
+	// Sanity-check that the spend amount is non-zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateAccessGroupTxn: Spend amount is zero")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateAccessGroupMembersTxn(
+	userPublicKey []byte,
+	accessGroupKeyName []byte,
+	accessGroupMemberList []*AccessGroupMember,
+	operationType AccessGroupMemberOperationType,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	txn := &MsgDeSoTxn{
+		PublicKey: userPublicKey,
+		TxnMeta: &AccessGroupMembersMetadata{
+			AccessGroupOwnerPublicKey:      userPublicKey,
+			AccessGroupKeyName:             accessGroupKeyName,
+			AccessGroupMembersList:         accessGroupMemberList,
+			AccessGroupMemberOperationType: operationType,
+		},
+		ExtraData: extraData,
+		TxOutputs: additionalOutputs,
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAccessGroupMembersTxn: Problem adding inputs: ")
+	}
+
+	// Sanity-check that the spend amount is non-zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateAccessGroupMembersTxn: Spend amount is zero")
+	}
+
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateNewMessageTxn(
+	userPublicKey []byte,
+	senderAccessGroupOwnerPublicKey PublicKey, senderAccessGroupKeyName GroupKeyName, senderAccessPublicKey PublicKey,
+	recipientAccessGroupOwnerPublicKey PublicKey, recipientAccessGroupKeyName GroupKeyName, recipientAccessPublicKey PublicKey,
+	encryptedText []byte,
+	timestampNanos uint64,
+	messageType NewMessageType,
+	messageOperation NewMessageOperation,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	txn := &MsgDeSoTxn{
+		PublicKey: userPublicKey,
+		TxnMeta: &NewMessageMetadata{
+			SenderAccessGroupOwnerPublicKey:    senderAccessGroupOwnerPublicKey,
+			SenderAccessGroupKeyName:           senderAccessGroupKeyName,
+			SenderAccessGroupPublicKey:         senderAccessPublicKey,
+			RecipientAccessGroupOwnerPublicKey: recipientAccessGroupOwnerPublicKey,
+			RecipientAccessGroupKeyName:        recipientAccessGroupKeyName,
+			RecipientAccessGroupPublicKey:      recipientAccessPublicKey,
+			EncryptedText:                      encryptedText,
+			TimestampNanos:                     timestampNanos,
+			NewMessageType:                     messageType,
+			NewMessageOperation:                messageOperation,
+		},
+		ExtraData: extraData,
+		TxOutputs: additionalOutputs,
+	}
+
+	// Add inputs and change for a standard pay per KB transaction.
+	totalInput, spendAmount, changeAmount, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNewMessageTxn: Problem adding inputs: ")
+	}
+
+	// Sanity-check that the spend amount is non-zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf("CreateNewMessageTxn: Spend amount is zero")
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -3616,7 +4383,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateCreatorCoinTransferTxnWithDiamonds: "+
@@ -3691,16 +4458,21 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	derivedKeySignature bool,
 	extraData map[string][]byte,
 	memo []byte,
-	transactionSpendingLimit *TransactionSpendingLimit,
+	transactionSpendingLimitHex string,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	blockHeight := bc.blockTip().Height + 1
 
+	transactionSpendingLimitBytes, err := hex.DecodeString(transactionSpendingLimitHex)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err,
+			"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem decoding transactionSpendingLimitHex")
+	}
 	if blockHeight >= bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
 		if err := _verifyAccessSignatureWithTransactionSpendingLimit(ownerPublicKey, derivedPublicKey,
-			expirationBlock, transactionSpendingLimit, accessSignature); err != nil {
+			expirationBlock, transactionSpendingLimitBytes, accessSignature, uint64(blockHeight), bc.params); err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature with transaction"+
 					" spending limit")
@@ -3708,7 +4480,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	} else {
 		// Verify that the signature is valid.
 		if err := _verifyAccessSignature(ownerPublicKey, derivedPublicKey,
-			expirationBlock, accessSignature); err != nil {
+			expirationBlock, accessSignature, blockHeight, bc.params); err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateAuthorizeDerivedKeyTxn: Problem verifying access signature")
 		}
@@ -3733,17 +4505,12 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		derivedKeyExtraData[DerivedPublicKey] = derivedPublicKey
 	}
 
-	spendingLimitsExtraData := make(map[string][]byte)
 	if blockHeight >= bc.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
 		if len(memo) != 0 {
-			spendingLimitsExtraData[DerivedKeyMemoKey] = memo
+			derivedKeyExtraData[DerivedKeyMemoKey] = memo
 		}
-		if transactionSpendingLimit != nil {
-			transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes()
-			if err != nil {
-				return nil, 0, 0, 0, err
-			}
-			spendingLimitsExtraData[TransactionSpendingLimitKey] = transactionSpendingLimitBytes
+		if len(transactionSpendingLimitBytes) != 0 {
+			derivedKeyExtraData[TransactionSpendingLimitKey] = transactionSpendingLimitBytes
 		}
 	}
 
@@ -3755,7 +4522,6 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	}
 
 	finalExtraData := mergeExtraData(extraData, derivedKeyExtraData)
-	finalExtraData = mergeExtraData(finalExtraData, spendingLimitsExtraData)
 
 	// Create a transaction containing the authorize derived key fields.
 	txn := &MsgDeSoTxn{
@@ -3839,7 +4605,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return nil, 0, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateBasicTransferTxnWithDiamonds: "+
@@ -4029,22 +4795,25 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 	// If this is an NFT Bid txn and the NFT entry is a Buy Now, we add inputs to cover the bid amount.
 	if txArg.TxnMeta.GetTxnType() == TxnTypeNFTBid && txArg.TxnMeta.(*NFTBidMetadata).SerialNumber > 0 {
-		txMeta := txArg.TxnMeta.(*NFTBidMetadata)
 		// Create a new UtxoView. If we have access to a mempool object, use it to
 		// get an augmented view that factors in pending transactions.
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
-		if err != nil {
-			return 0, 0, 0, 0, errors.Wrapf(err,
-				"_computeInputsForTxn: Problem creating new utxo view: ")
-		}
+		var err error
+		var utxoView *UtxoView
 		if mempool != nil {
 			utxoView, err = mempool.GetAugmentedUniversalView()
 			if err != nil {
 				return 0, 0, 0, 0, errors.Wrapf(err,
 					"_computeInputsForTxn: Problem getting augmented UtxoView from mempool: ")
 			}
+		} else {
+			utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+			if err != nil {
+				return 0, 0, 0, 0, errors.Wrapf(err,
+					"_computeInputsForTxn: Problem creating new utxo view: ")
+			}
 		}
 
+		txMeta := txArg.TxnMeta.(*NFTBidMetadata)
 		nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
 		nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
 
@@ -4102,7 +4871,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		// the fee each time we add an input would result in N^2 behavior.
 		maxAmountNeeded := spendAmount
 		if totalInput >= spendAmount {
-			maxAmountNeeded += _computeMaxTxFee(txCopyWithChangeOutput, minFeeRateNanosPerKB)
+			maxAmountNeeded += _computeMaxTxFeeWithMaxChange(txCopyWithChangeOutput, minFeeRateNanosPerKB)
 		}
 
 		// If the amount of input we have isn't enough to cover our upper bound on
@@ -4138,8 +4907,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	for _, utxoEntry := range utxoEntriesBeingUsed {
 		finalTxCopy.TxInputs = append(finalTxCopy.TxInputs, (*DeSoInput)(utxoEntry.UtxoKey))
 	}
-	maxFeeWithoutChange := _computeMaxTxFee(finalTxCopy, minFeeRateNanosPerKB)
-	if totalInput < (spendAmount + maxFeeWithoutChange) {
+	maxFeeWithMaxChange := _computeMaxTxFeeWithMaxChange(finalTxCopy, minFeeRateNanosPerKB)
+	if totalInput < (spendAmount + maxFeeWithMaxChange) {
 		// In this case the total input we were able to gather for the
 		// transaction is insufficient to cover the amount we want to
 		// spend plus the fee. Return an error in this case so that
@@ -4147,8 +4916,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		return 0, 0, 0, 0, fmt.Errorf("AddInputsAndChangeToTransaction: Sanity check failed: Total "+
 			"input %d is not sufficient to "+
 			"cover the spend amount (=%d) plus the fee (=%d, feerate=%d, txsize=%d), "+
-			"total=%d", totalInput, spendAmount, maxFeeWithoutChange, minFeeRateNanosPerKB,
-			_computeMaxTxSize(finalTxCopy), spendAmount+maxFeeWithoutChange)
+			"total=%d", totalInput, spendAmount, maxFeeWithMaxChange, minFeeRateNanosPerKB,
+			_computeMaxTxSize(finalTxCopy), spendAmount+maxFeeWithMaxChange)
 	}
 
 	// Now that we know the input will cover the spend amount plus the fee, add
@@ -4160,8 +4929,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	// at the maximum size but that seems OK as well. In all of these circumstances
 	// the user will get a slightly higher feerate than they asked for which isn't
 	// really a problem.
-	maxChangeFee := MaxDeSoOutputSizeBytes * minFeeRateNanosPerKB / 1000
-	changeAmount := int64(totalInput) - int64(spendAmount) - int64(maxFeeWithoutChange) - int64(maxChangeFee)
+	changeAmount := int64(totalInput) - int64(spendAmount) - int64(maxFeeWithMaxChange)
 	if changeAmount > 0 {
 		finalTxCopy.TxOutputs = append(finalTxCopy.TxOutputs, &DeSoOutput{
 			PublicKey:   spendPublicKeyBytes,
@@ -4199,7 +4967,8 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 
 	// Get the block at the tip of our block chain.
 	tipNode := bc.blockTip()
-	blk, err := GetBlock(tipNode.Hash, bc.db)
+	blockHeight := uint64(tipNode.Height + 1)
+	blk, err := GetBlock(tipNode.Hash, bc.db, bc.snapshot)
 	if err != nil {
 		return minFeeRateNanosPerKB
 	}
@@ -4216,11 +4985,11 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 
 	// If the block is more than X% full, use the maximum between the min
 	// fee rate and the median fees of all the transactions in the block.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return minFeeRateNanosPerKB
 	}
-	utxoOps, err := GetUtxoOperationsForBlock(bc.db, tipNode.Hash)
+	utxoOps, err := GetUtxoOperationsForBlock(bc.db, bc.snapshot, tipNode.Hash)
 	if err != nil {
 		return minFeeRateNanosPerKB
 	}
@@ -4229,7 +4998,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 	if err != nil {
 		return minFeeRateNanosPerKB
 	}
-	if err := utxoView.DisconnectBlock(blk, txHashes, utxoOps); err != nil {
+	if err := utxoView.DisconnectBlock(blk, txHashes, utxoOps, blockHeight); err != nil {
 		return minFeeRateNanosPerKB
 	}
 
@@ -4269,4 +5038,194 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 		return minFeeRateNanosPerKB
 	}
 	return allFeesNanosPerKB[medianPos]
+}
+
+//
+// Associations
+//
+
+func (bc *Blockchain) CreateCreateUserAssociationTxn(
+	transactorPublicKey []byte,
+	metadata *CreateUserAssociationMetadata,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a transaction containing the association fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+	return bc._createAssociationTxn(
+		"Blockchain.CreateCreateUserAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+	)
+}
+
+func (bc *Blockchain) CreateDeleteUserAssociationTxn(
+	transactorPublicKey []byte,
+	metadata *DeleteUserAssociationMetadata,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a transaction containing the association fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+	return bc._createAssociationTxn(
+		"Blockchain.CreateDeleteUserAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+	)
+}
+
+func (bc *Blockchain) CreateCreatePostAssociationTxn(
+	transactorPublicKey []byte,
+	metadata *CreatePostAssociationMetadata,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a transaction containing the association fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+	return bc._createAssociationTxn(
+		"Blockchain.CreateCreatePostAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+	)
+}
+
+func (bc *Blockchain) CreateDeletePostAssociationTxn(
+	transactorPublicKey []byte,
+	metadata *DeletePostAssociationMetadata,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a transaction containing the association fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+	return bc._createAssociationTxn(
+		"Blockchain.CreateDeletePostAssociationTxn", txn, minFeeRateNanosPerKB, mempool,
+	)
+}
+
+func (bc *Blockchain) _createAssociationTxn(
+	callingFuncName string,
+	txn *MsgDeSoTxn,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a new UtxoView. If we have access to a mempool object, use
+	// it to get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"%s: problem creating new utxo view: %v", callingFuncName, err,
+		)
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, fmt.Errorf(
+				"%s: problem getting augmented utxo view from mempool: %v", callingFuncName, err,
+			)
+		}
+	}
+
+	// Validate transaction metadata.
+	switch txn.TxnMeta.GetTxnType() {
+	case TxnTypeCreateUserAssociation:
+		err = utxoView.IsValidCreateUserAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*CreateUserAssociationMetadata))
+	case TxnTypeDeleteUserAssociation:
+		err = utxoView.IsValidDeleteUserAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*DeleteUserAssociationMetadata))
+	case TxnTypeCreatePostAssociation:
+		err = utxoView.IsValidCreatePostAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*CreatePostAssociationMetadata))
+	case TxnTypeDeletePostAssociation:
+		err = utxoView.IsValidDeletePostAssociationMetadata(txn.PublicKey, txn.TxnMeta.(*DeletePostAssociationMetadata))
+	default:
+		err = errors.New("invalid txn type")
+	}
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("%s: %v", callingFuncName, err)
+	}
+
+	// We don't need to make any tweaks to the amount because
+	// it's basically a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
+		txn, minFeeRateNanosPerKB, mempool,
+	)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"%s: problem adding inputs: %v", callingFuncName, err,
+		)
+	}
+
+	// Validate that the transaction has at least one input, even if it all goes
+	// to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"%s: txn has zero inputs, try increasing the fee rate", callingFuncName,
+		)
+	}
+
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"%s: spend amount is non-zero: %d", callingFuncName, spendAmount,
+		)
+	}
+	return txn, totalInput, changeAmount, fees, nil
 }

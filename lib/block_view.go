@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"math"
 	"reflect"
 	"strings"
@@ -46,8 +47,21 @@ type UtxoView struct {
 	// Messaging group entries.
 	MessagingGroupKeyToMessagingGroupEntry map[MessagingGroupKey]*MessagingGroupEntry
 
+	// Access group entries.
+	AccessGroupIdToAccessGroupEntry map[AccessGroupId]*AccessGroupEntry
+
+	// Group Memberships
+	AccessGroupMembershipKeyToAccessGroupMember map[AccessGroupMembershipKey]*AccessGroupMemberEntry
+
 	// Postgres stores message data slightly differently
 	MessageMap map[BlockHash]*PGMessage
+
+	// Group Chat and Dm messages.
+	GroupChatMessagesIndex map[GroupChatMessageKey]*NewMessageEntry
+	DmMessagesIndex        map[DmMessageKey]*NewMessageEntry
+
+	// Dm threads.
+	DmThreadIndex map[DmThreadKey]*DmThreadEntry
 
 	// Follow data
 	FollowKeyToFollowEntry map[FollowKey]*FollowEntry
@@ -85,6 +99,13 @@ type UtxoView struct {
 	// Derived Key entries. Map key is a combination of owner and derived public keys.
 	DerivedKeyToDerivedEntry map[DerivedKeyMapKey]*DerivedKeyEntry
 
+	// DAO coin limit order entry mapping.
+	DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry
+
+	// Association mappings
+	AssociationMapKeyToUserAssociationEntry map[AssociationMapKey]*UserAssociationEntry
+	AssociationMapKeyToPostAssociationEntry map[AssociationMapKey]*PostAssociationEntry
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -92,6 +113,7 @@ type UtxoView struct {
 	Handle   *badger.DB
 	Postgres *Postgres
 	Params   *DeSoParams
+	Snapshot *Snapshot
 }
 
 // Assumes the db Handle is already set on the view, but otherwise the
@@ -100,13 +122,13 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Utxo data
 	bav.UtxoKeyToUtxoEntry = make(map[UtxoKey]*UtxoEntry)
 	// TODO: Deprecate this value
-	bav.NumUtxoEntries = GetUtxoNumEntries(bav.Handle)
+	bav.NumUtxoEntries = GetUtxoNumEntries(bav.Handle, bav.Snapshot)
 	bav.PublicKeyToDeSoBalanceNanos = make(map[PublicKey]uint64)
 
 	// BitcoinExchange data
-	bav.NanosPurchased = DbGetNanosPurchased(bav.Handle)
-	bav.USDCentsPerBitcoin = DbGetUSDCentsPerBitcoinExchangeRate(bav.Handle)
-	bav.GlobalParamsEntry = DbGetGlobalParamsEntry(bav.Handle)
+	bav.NanosPurchased = DbGetNanosPurchased(bav.Handle, bav.Snapshot)
+	bav.USDCentsPerBitcoin = DbGetUSDCentsPerBitcoinExchangeRate(bav.Handle, bav.Snapshot)
+	bav.GlobalParamsEntry = DbGetGlobalParamsEntry(bav.Handle, bav.Snapshot)
 	bav.BitcoinBurnTxIDs = make(map[BlockHash]bool)
 
 	// Forbidden block signature pub key info.
@@ -125,6 +147,17 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Messaging group entries
 	bav.MessagingGroupKeyToMessagingGroupEntry = make(map[MessagingGroupKey]*MessagingGroupEntry)
+
+	// Access group entries
+	bav.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry)
+	bav.AccessGroupMembershipKeyToAccessGroupMember = make(map[AccessGroupMembershipKey]*AccessGroupMemberEntry)
+
+	// Group chat and Dm messages.
+	bav.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*NewMessageEntry)
+	bav.DmMessagesIndex = make(map[DmMessageKey]*NewMessageEntry)
+
+	// Group chat and Dm threads.
+	bav.DmThreadIndex = make(map[DmThreadKey]*DmThreadEntry)
 
 	// Follow data
 	bav.FollowKeyToFollowEntry = make(map[FollowKey]*FollowEntry)
@@ -151,10 +184,17 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Derived Key entries
 	bav.DerivedKeyToDerivedEntry = make(map[DerivedKeyMapKey]*DerivedKeyEntry)
+
+	// DAO Coin Limit Order Entries
+	bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry = make(map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry)
+
+	// Association entries
+	bav.AssociationMapKeyToUserAssociationEntry = make(map[AssociationMapKey]*UserAssociationEntry)
+	bav.AssociationMapKeyToPostAssociationEntry = make(map[AssociationMapKey]*PostAssociationEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
-	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres)
+	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -238,6 +278,21 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.MessageKeyToMessageEntry[msgKey] = &newMsgEntry
 	}
 
+	// Copy access group entries
+	newView.AccessGroupIdToAccessGroupEntry = make(map[AccessGroupId]*AccessGroupEntry, len(bav.AccessGroupIdToAccessGroupEntry))
+	for key, entry := range bav.AccessGroupIdToAccessGroupEntry {
+		newEntry := *entry
+		newView.AccessGroupIdToAccessGroupEntry[key] = &newEntry
+	}
+
+	// Copy access group membership index
+	newView.AccessGroupMembershipKeyToAccessGroupMember = make(map[AccessGroupMembershipKey]*AccessGroupMemberEntry, len(bav.AccessGroupMembershipKeyToAccessGroupMember))
+	for key, member := range bav.AccessGroupMembershipKeyToAccessGroupMember {
+		newMember := *member
+		newView.AccessGroupMembershipKeyToAccessGroupMember[key] = &newMember
+	}
+
+	// Copy postgres message map
 	newView.MessageMap = make(map[BlockHash]*PGMessage, len(bav.MessageMap))
 	for txnHash, message := range bav.MessageMap {
 		newMessage := *message
@@ -249,6 +304,28 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for pkid, entry := range bav.MessagingGroupKeyToMessagingGroupEntry {
 		newEntry := *entry
 		newView.MessagingGroupKeyToMessagingGroupEntry[pkid] = &newEntry
+	}
+
+	// DM and Group chats
+	// Copy group chat message index
+	newView.GroupChatMessagesIndex = make(map[GroupChatMessageKey]*NewMessageEntry)
+	for gcMsgKey, messageEntry := range bav.GroupChatMessagesIndex {
+		newMessage := *messageEntry
+		newView.GroupChatMessagesIndex[gcMsgKey] = &newMessage
+	}
+
+	// Copy dm messages index
+	newView.DmMessagesIndex = make(map[DmMessageKey]*NewMessageEntry)
+	for dmMessageKey, messageEntry := range bav.DmMessagesIndex {
+		newMessage := *messageEntry
+		newView.DmMessagesIndex[dmMessageKey] = &newMessage
+	}
+
+	// Copy dm thread index
+	newView.DmThreadIndex = make(map[DmThreadKey]*DmThreadEntry)
+	for dmThreadKey, threadEntry := range bav.DmThreadIndex {
+		newThreadEntry := *threadEntry
+		newView.DmThreadIndex[dmThreadKey] = &newThreadEntry
 	}
 
 	// Copy the follow data
@@ -338,6 +415,25 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.DerivedKeyToDerivedEntry[entryKey] = &newEntry
 	}
 
+	// Copy the DAO Coin Limit Order Entries
+	newView.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry = make(map[DAOCoinLimitOrderMapKey]*DAOCoinLimitOrderEntry,
+		len(bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry))
+	for entryKey, entry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
+		newEntry := *entry
+		newView.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry[entryKey] = &newEntry
+	}
+
+	// Copy the Association entries
+	newView.AssociationMapKeyToUserAssociationEntry = make(map[AssociationMapKey]*UserAssociationEntry, len(bav.AssociationMapKeyToUserAssociationEntry))
+	for entryKey, entry := range bav.AssociationMapKeyToUserAssociationEntry {
+		newEntry := *entry
+		newView.AssociationMapKeyToUserAssociationEntry[entryKey] = &newEntry
+	}
+	newView.AssociationMapKeyToPostAssociationEntry = make(map[AssociationMapKey]*PostAssociationEntry, len(bav.AssociationMapKeyToPostAssociationEntry))
+	for entryKey, entry := range bav.AssociationMapKeyToPostAssociationEntry {
+		newEntry := *entry
+		newView.AssociationMapKeyToPostAssociationEntry[entryKey] = &newEntry
+	}
 	return newView, nil
 }
 
@@ -345,6 +441,7 @@ func NewUtxoView(
 	_handle *badger.DB,
 	_params *DeSoParams,
 	_postgres *Postgres,
+	_snapshot *Snapshot,
 ) (*UtxoView, error) {
 
 	view := UtxoView{
@@ -353,12 +450,12 @@ func NewUtxoView(
 		// Note that the TipHash does not get reset as part of
 		// _ResetViewMappingsAfterFlush because it is not something that is affected by a
 		// flush operation. Moreover, its value is consistent with the view regardless of
-		// whether or not the view is flushed or not. Additionally the utxo view does
-		// not concern itself with the header chain (see comment on GetBestHash for more
-		// info on that).
-		TipHash: DbGetBestHash(_handle, ChainTypeDeSoBlock /* don't get the header chain */),
+		// whether the view is flushed or not. Additionally, the utxo view does not concern
+		// itself with the header chain (see comment on GetBestHash for more info on that).
+		TipHash: DbGetBestHash(_handle, _snapshot, ChainTypeDeSoBlock /* don't get the header chain */),
 
 		Postgres: _postgres,
+		Snapshot: _snapshot,
 		// Set everything else in _ResetViewMappings()
 	}
 
@@ -371,7 +468,7 @@ func NewUtxoView(
 	if view.Postgres != nil {
 		view.TipHash = view.Postgres.GetChain(MAIN_CHAIN).TipHash
 	} else {
-		view.TipHash = DbGetBestHash(view.Handle, ChainTypeDeSoBlock /* don't get the header chain */)
+		view.TipHash = DbGetBestHash(view.Handle, view.Snapshot, ChainTypeDeSoBlock /* don't get the header chain */)
 	}
 
 	// This function is generally used to reset the view after a flush has been performed
@@ -424,7 +521,7 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKeyArg *UtxoKey) *UtxoEntry {
 		if bav.Postgres != nil {
 			utxoEntry = bav.Postgres.GetUtxoEntryForUtxoKey(utxoKey)
 		} else {
-			utxoEntry = DbGetUtxoEntryForUtxoKey(bav.Handle, utxoKey)
+			utxoEntry = DbGetUtxoEntryForUtxoKey(bav.Handle, bav.Snapshot, utxoKey)
 		}
 		if utxoEntry == nil {
 			// This means the utxo is neither in our map nor in the db so
@@ -459,7 +556,7 @@ func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKeyArg []byte) (uint6
 		balanceNanos = bav.Postgres.GetBalance(NewPublicKey(publicKey))
 	} else {
 		var err error
-		balanceNanos, err = DbGetDeSoBalanceNanosForPublicKey(bav.Handle, publicKey)
+		balanceNanos, err = DbGetDeSoBalanceNanosForPublicKey(bav.Handle, bav.Snapshot, publicKey)
 		if err != nil {
 			return uint64(0), errors.Wrap(err, "GetDeSoBalanceNanosForPublicKey: ")
 		}
@@ -660,9 +757,10 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 		if len(utxoOpsForTxn) > 0 && utxoOpsForTxn[operationIndex].Type == OperationTypeSpendingLimitAccounting {
 			currentOperation := utxoOpsForTxn[operationIndex]
 			// Get the current derived key entry
-			derivedPkBytes, isDerived := IsDerivedSignature(currentTxn)
-			if !isDerived {
-				return fmt.Errorf("_disconnectBasicTransfer: Found Spending Limit Accounting op with non-derived key signature")
+			derivedPkBytes, isDerived, err := IsDerivedSignature(currentTxn, blockHeight)
+			if !isDerived || err != nil {
+				return fmt.Errorf("_disconnectBasicTransfer: Found Spending Limit Accounting op with non-derived "+
+					"key signature or got an error %v", err)
 			}
 			if err := IsByteArrayValidPublicKey(derivedPkBytes); err != nil {
 				return fmt.Errorf(
@@ -670,7 +768,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 					PkToString(derivedPkBytes, bav.Params),
 					err)
 			}
-			derivedKeyEntry := bav._getDerivedKeyMappingForOwner(currentTxn.PublicKey, derivedPkBytes)
+			derivedKeyEntry := bav.GetDerivedKeyMappingForOwner(currentTxn.PublicKey, derivedPkBytes)
 			if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
 				return fmt.Errorf("_disconnectBasicTransfer: could not find derived key entry")
 			}
@@ -924,7 +1022,7 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 			OperationTypeFollow, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	case TxnTypeLike:
 		return bav._disconnectLike(
-			OperationTypeFollow, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+			OperationTypeLike, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	case TxnTypeCreatorCoin:
 		return bav._disconnectCreatorCoin(
 			OperationTypeCreatorCoin, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
@@ -937,6 +1035,9 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	case TxnTypeDAOCoinTransfer:
 		return bav._disconnectDAOCoinTransfer(
 			OperationTypeDAOCoinTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeDAOCoinLimitOrder:
+		return bav._disconnectDAOCoinLimitOrder(
+			OperationTypeDAOCoinLimitOrder, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	case TxnTypeSwapIdentity:
 		return bav._disconnectSwapIdentity(
 			OperationTypeSwapIdentity, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
@@ -964,13 +1065,34 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	case TxnTypeAuthorizeDerivedKey:
 		return bav._disconnectAuthorizeDerivedKey(
 			OperationTypeAuthorizeDerivedKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeCreateUserAssociation:
+		return bav._disconnectCreateUserAssociation(
+			OperationTypeCreateUserAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeDeleteUserAssociation:
+		return bav._disconnectDeleteUserAssociation(
+			OperationTypeDeleteUserAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeCreatePostAssociation:
+		return bav._disconnectCreatePostAssociation(
+			OperationTypeCreatePostAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeDeletePostAssociation:
+		return bav._disconnectDeletePostAssociation(
+			OperationTypeDeletePostAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeAccessGroup:
+		return bav._disconnectAccessGroup(
+			OperationTypeAccessGroup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeAccessGroupMembers:
+		return bav._disconnectAccessGroupMembers(
+			OperationTypeAccessGroupMembers, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeNewMessage:
+		return bav._disconnectNewMessage(
+			OperationTypeNewMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	default:
 		return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
 	}
 }
 
 func (bav *UtxoView) DisconnectBlock(
-	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, utxoOps [][]*UtxoOperation) error {
+	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, utxoOps [][]*UtxoOperation, blockHeight uint64) error {
 
 	glog.Infof("DisconnectBlock: Disconnecting block %v", desoBlock)
 
@@ -995,6 +1117,15 @@ func (bav *UtxoView) DisconnectBlock(
 		numInputs += len(txn.TxInputs)
 		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 			numInputs += len(txn.TxnMeta.(*AcceptNFTBidMetadata).BidderInputs)
+		}
+		if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+			numMatchingOrderInputs := 0
+
+			for _, transactor := range txn.TxnMeta.(*DAOCoinLimitOrderMetadata).BidderInputs {
+				numMatchingOrderInputs += len(transactor.Inputs)
+			}
+
+			numInputs += numMatchingOrderInputs
 		}
 		numOutputs += len(txn.TxOutputs)
 	}
@@ -1031,9 +1162,9 @@ func (bav *UtxoView) DisconnectBlock(
 		currentTxn := desoBlock.Txns[txnIndex]
 		txnHash := txHashes[txnIndex]
 		utxoOpsForTxn := utxoOps[txnIndex]
-		blockHeight := desoBlock.Header.Height
+		desoBlockHeight := desoBlock.Header.Height
 
-		err := bav.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(blockHeight))
+		err := bav.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(desoBlockHeight))
 		if err != nil {
 			return errors.Wrapf(err, "DisconnectBlock: Problem disconnecting transaction: %v", currentTxn)
 		}
@@ -1066,6 +1197,14 @@ func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, param
 }
 
 func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _err error) {
+	if txn.Signature.Sign == nil {
+		return nil, fmt.Errorf("_verifySignature: Transaction signature is empty")
+	}
+	if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
+		if txn.Signature.HasHighS() {
+			return nil, errors.Wrapf(RuleErrorTxnSigHasHighS, "_verifySignature: high-S deteceted")
+		}
+	}
 	// Compute a hash of the transaction.
 	txBytes, err := txn.ToBytes(true /*preSignature*/)
 	if err != nil {
@@ -1074,13 +1213,20 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	txHash := Sha256DoubleHash(txBytes)
 
 	// Look for the derived key in transaction ExtraData and validate it. For transactions
-	// signed using a derived key, the derived public key is passed to ExtraData.
+	// signed using a derived key, the derived public key is passed in ExtraData. Alternatively,
+	// if the signature uses DeSo-DER encoding, meaning we can recover the derived public key from
+	// the signature.
 	var derivedPk *btcec.PublicKey
-	derivedPkBytes, isDerived := IsDerivedSignature(txn)
+	derivedPkBytes, isDerived, err := IsDerivedSignature(txn, blockHeight)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_verifySignature: Something went wrong while checking for "+
+			"derived key signature")
+	}
+	// If we got a derived key then try parsing it.
 	if isDerived {
 		derivedPk, err = btcec.ParsePubKey(derivedPkBytes, btcec.S256())
 		if err != nil {
-			return nil, RuleErrorDerivedKeyInvalidExtraData
+			return nil, fmt.Errorf("%v %v", RuleErrorDerivedKeyInvalidExtraData, RuleErrorDerivedKeyInvalidRecoveryId)
 		}
 	}
 
@@ -1091,49 +1237,21 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 		return nil, errors.Wrapf(err, "_verifySignature: Problem parsing owner public key: ")
 	}
 
-	// If no derived key is present in ExtraData, we check if transaction was signed by the owner.
-	// If derived key is present in ExtraData, we check if transaction was signed by the derived key.
+	// If no derived key was used, we check if transaction was signed by the owner.
+	// If derived key *was* used, we check if transaction was signed by the derived key.
 	if derivedPk == nil {
 		// Verify that the transaction is signed by the specified key.
 		if txn.Signature.Verify(txHash[:], ownerPk) {
 			return nil, nil
 		}
 	} else {
-		// Look for a derived key entry in UtxoView and DB, check to make sure it exists
-		// and is not isDeleted.
-		derivedKeyEntry := bav._getDerivedKeyMappingForOwner(ownerPkBytes, derivedPkBytes)
-		if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
-			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized,
-				"Derived key mapping for owner not found: Owner: %v, "+
-					"Derived key: %v", PkToStringMainnet(ownerPkBytes),
-				PkToStringMainnet(derivedPkBytes))
+		// Look for a derived key entry in UtxoView and DB, check to make sure it exists and is not isDeleted.
+		if err := bav.ValidateDerivedKey(ownerPkBytes, derivedPkBytes, uint64(blockHeight)); err != nil {
+			return nil, err
 		}
 
-		// Sanity-check that transaction public keys line up with looked-up derivedKeyEntry public keys.
-		if !reflect.DeepEqual(ownerPkBytes, derivedKeyEntry.OwnerPublicKey[:]) ||
-			!reflect.DeepEqual(derivedPkBytes, derivedKeyEntry.DerivedPublicKey[:]) {
-			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "DB entry (OwnerPubKey, "+
-				"DerivedPubKey) = (%v, %v) does not match keys used to "+
-				"look up the entry: (%v, %v). This should never happen.",
-				PkToStringMainnet(derivedKeyEntry.OwnerPublicKey[:]),
-				PkToStringMainnet(derivedKeyEntry.DerivedPublicKey[:]),
-				PkToStringMainnet(ownerPkBytes),
-				PkToStringMainnet(derivedPkBytes))
-		}
-
-		// At this point, we know the derivedKeyEntry that we have is matching.
-		// We check if the derived key hasn't been de-authorized or hasn't expired.
-		if derivedKeyEntry.OperationType != AuthorizeDerivedKeyOperationValid ||
-			derivedKeyEntry.ExpirationBlock <= uint64(blockHeight) {
-			return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Derived key EITHER "+
-				"deactivated or block height expired. Deactivation status: %v, "+
-				"Expiration block height: %v, Current block height: %v",
-				derivedKeyEntry.OperationType,
-				derivedKeyEntry.ExpirationBlock,
-				blockHeight)
-		}
-
-		// All checks passed so we try to verify the signature.
+		// All checks passed so we try to verify the signature. This step can be avoided for DeSo-DER signatures
+		// but we run it redundantly just in case.
 		if txn.Signature.Verify(txHash[:], derivedPk) {
 			return derivedPk.SerializeCompressed(), nil
 		}
@@ -1144,12 +1262,82 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	return nil, RuleErrorInvalidTransactionSignature
 }
 
-func IsDerivedSignature(txn *MsgDeSoTxn) (_derivedPkBytes []byte, _isDerived bool) {
-	if txn.ExtraData == nil {
-		return nil, false
+// ValidateDerivedKey checks if a derived key is authorized and valid.
+func (bav *UtxoView) ValidateDerivedKey(ownerPkBytes []byte, derivedPkBytes []byte, blockHeight uint64) error {
+	derivedKeyEntry := bav.GetDerivedKeyMappingForOwner(ownerPkBytes, derivedPkBytes)
+	if derivedKeyEntry == nil || derivedKeyEntry.isDeleted {
+		return errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Derived key mapping for owner not found: Owner: %v, "+
+			"Derived key: %v", PkToStringBoth(ownerPkBytes), PkToStringBoth(derivedPkBytes))
 	}
-	derivedPkBytes, isDerived := txn.ExtraData[DerivedPublicKey]
-	return derivedPkBytes, isDerived
+
+	// Sanity-check that transaction public keys line up with looked-up derivedKeyEntry public keys.
+	if !reflect.DeepEqual(ownerPkBytes, derivedKeyEntry.OwnerPublicKey[:]) ||
+		!reflect.DeepEqual(derivedPkBytes, derivedKeyEntry.DerivedPublicKey[:]) {
+		return errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "DB entry (OwnerPubKey, DerivedPubKey) = (%v, %v) does not "+
+			"match keys used to look up the entry: (%v, %v). This should never happen.",
+			PkToStringBoth(derivedKeyEntry.OwnerPublicKey[:]), PkToStringBoth(derivedKeyEntry.DerivedPublicKey[:]),
+			PkToStringBoth(ownerPkBytes), PkToStringBoth(derivedPkBytes))
+	}
+
+	// At this point, we know the derivedKeyEntry that we have is matching.
+	// We check if the derived key hasn't been de-authorized or hasn't expired.
+	if derivedKeyEntry.OperationType != AuthorizeDerivedKeyOperationValid ||
+		derivedKeyEntry.ExpirationBlock <= blockHeight {
+		return errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Derived key EITHER deactivated or block height expired. "+
+			"Deactivation status: %v, Expiration block height: %v, Current block height: %v",
+			derivedKeyEntry.OperationType, derivedKeyEntry.ExpirationBlock, blockHeight)
+	}
+
+	// If we get to this point, we got a valid derived key.
+	return nil
+}
+
+// IsDerivedSignature checks if a transaction was signed using a derived key. If so, it will recover the derived key used
+// to sign the transaction. There are two possible ways to serialize transaction's ECDSA signature for a derived key.
+// Either to use the DER encoding and place the derived public key in transaction's ExtraData, or to use DeSo-DER signature
+// encoding and pass a special recovery ID into the signature's bytes. However, both encodings can't be used at the same time.
+func IsDerivedSignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _isDerived bool, _err error) {
+	if MigrationTriggered(uint64(blockHeight), AssociationsAndAccessGroupsMigration) {
+		if txn.Signature.HasHighS() {
+			return nil, false, errors.Wrapf(
+				RuleErrorTxnSigHasHighS,
+				"IsDerivedSignature: signature has high s")
+		}
+	}
+	// If transaction contains ExtraData, then check if the DerivedPublicKey was passed along.
+	if txn.ExtraData != nil {
+		derivedPkBytes, isDerived := txn.ExtraData[DerivedPublicKey]
+		// Make sure both encodings aren't used concurrently.
+		if isDerived && txn.Signature.IsRecoverable {
+			return nil, false, errors.Wrapf(RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId,
+				"IsDerivedSignature: transaction signed with a derived key can either store public key in "+
+					"ExtraData or use the DeSo-DER recoverable signature encoding but not BOTH")
+		}
+		if isDerived {
+			return derivedPkBytes, isDerived, nil
+		}
+	}
+
+	// If transaction doesn't contain a derived key in ExtraData, then check if it contains the recovery ID.
+	if txn.Signature.IsRecoverable {
+		// Assemble the transaction hash; we need it in order to recover the public key.
+		txBytes, err := txn.ToBytes(true /*preSignature*/)
+		if err != nil {
+			return nil, false, errors.Wrapf(err, "IsDerivedSignature: Problem "+
+				"serializing txn without signature: ")
+		}
+		txHash := Sha256DoubleHash(txBytes)[:]
+
+		// Recover the public key from the signature.
+		derivedPublicKey, err := txn.Signature.RecoverPublicKey(txHash)
+		if err != nil {
+			return nil, false, errors.Wrapf(err, "IsDerivedSignature: Problem recovering "+
+				"public key from signature")
+		}
+		return derivedPublicKey.SerializeCompressed(), true, nil
+	}
+	return nil, false, nil
+
 }
 
 func (bav *UtxoView) _connectBasicTransfer(
@@ -1419,21 +1607,30 @@ func (bav *UtxoView) _connectBasicTransfer(
 		// also not allowed to have any inputs because they by construction cannot authorize
 		// the spending of any inputs.
 		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
-			if len(txn.PublicKey) != 0 || txn.Signature != nil {
+			if len(txn.PublicKey) != 0 || txn.Signature.Sign != nil {
 				return 0, 0, nil, RuleErrorBlockRewardTxnNotAllowedToHaveSignature
 			}
 		} else {
-			derivedPkBytes, err := bav._verifySignature(txn, blockHeight)
-			if err != nil {
+			if _, err := bav._verifySignature(txn, blockHeight); err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem verifying txn signature: ")
 			}
-			if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight &&
-				len(derivedPkBytes) == btcec.PubKeyBytesLenCompressed {
-				// Now we check the transaction limits on the derived key
-				utxoOpsForTxn, err = bav._checkDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn)
-				if err != nil {
-					return 0, 0, nil, err
-				}
+		}
+	}
+
+	if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
+		if derivedPkBytes, isDerivedSig, err := IsDerivedSignature(txn, blockHeight); isDerivedSig {
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: "+
+					"It looks like this transaction was signed with a derived key, but the signature is malformed: ")
+			}
+			// Now we check the transaction limits on the derived key.
+			// At this point we know that the transaction was signed by a derived key and the signature passes validation
+			// against the provided derived key. We will now verify that the spending limit for this derived key allows for
+			// this transaction, and error otherwise. If everything checks out, we will update the spending limit for this
+			// derived key to reflect the new spending limit after the transaction has been performed.
+			utxoOpsForTxn, err = bav._checkAndUpdateDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn)
+			if err != nil {
+				return 0, 0, nil, err
 			}
 		}
 	}
@@ -1443,18 +1640,27 @@ func (bav *UtxoView) _connectBasicTransfer(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
-func (bav *UtxoView) _checkDerivedKeySpendingLimit(
+func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 	txn *MsgDeSoTxn, derivedPkBytes []byte, totalInput uint64, utxoOpsForTxn []*UtxoOperation) (
 	_utxoOpsForTxn []*UtxoOperation, _err error) {
 
 	// Get the derived key entry
-	prevDerivedKeyEntry := bav._getDerivedKeyMappingForOwner(txn.PublicKey, derivedPkBytes)
+	prevDerivedKeyEntry := bav.GetDerivedKeyMappingForOwner(txn.PublicKey, derivedPkBytes)
 	if prevDerivedKeyEntry == nil || prevDerivedKeyEntry.isDeleted {
-		return utxoOpsForTxn, fmt.Errorf("_checkDerivedKeySpendingLimit: No derived key entry found")
+		return utxoOpsForTxn, fmt.Errorf("_checkAndUpdateDerivedKeySpendingLimit: No derived key entry found")
 	}
 
 	// Create a copy of the prevDerivedKeyEntry so we can safely modify the new entry
 	derivedKeyEntry := *prevDerivedKeyEntry.Copy()
+	// Make sure spending limit is not nil.
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil {
+		return utxoOpsForTxn, errors.Wrap(RuleErrorDerivedKeyNotAuthorized,
+			"_checkAndUpdateDerivedKeySpendingLimit: TransactionSpendingLimitTracker is nil")
+	}
+	// If the derived key is an unlimited key, we don't need to further check nor update the spending limits whatsoever.
+	if derivedKeyEntry.TransactionSpendingLimitTracker.IsUnlimited {
+		return utxoOpsForTxn, nil
+	}
 
 	// Spend amount is total inputs minus sum of AddUtxo type operations
 	// going to transactor (i.e. change).
@@ -1477,7 +1683,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		if utxoOp.Type == OperationTypeAddUtxo && utxoOp.Entry.UtxoType == UtxoTypeOutput &&
 			reflect.DeepEqual(utxoOp.Entry.PublicKey, txn.PublicKey) {
 			if utxoOp.Entry.AmountNanos > spendAmount {
-				return utxoOpsForTxn, fmt.Errorf("_checkDerivedKeySpendingLimit: Underflow on spend amount")
+				return utxoOpsForTxn, fmt.Errorf("_checkAndUpdateDerivedKeySpendingLimit: Underflow on spend amount")
 			}
 			spendAmount -= utxoOp.Entry.AmountNanos
 		}
@@ -1486,8 +1692,8 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 	// If the spend amount exceeds the Global DESO limit, this derived key is not authorized to spend this DESO.
 	if spendAmount > derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit {
 		return utxoOpsForTxn, errors.Wrapf(RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit,
-			"_checkDerivedKeySpendingLimit: Spend Amount %v Exceeds Global DESO Limit %v for Derived Key",
-			spendAmount, derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit)
+			"_checkAndUpdateDerivedKeySpendingLimit: Spend Amount %v Exceeds Global DESO Limit %v for Derived Key",
+			spendAmount, spew.Sdump(derivedKeyEntry.TransactionSpendingLimitTracker))
 	}
 
 	// Decrement the global limit by the spend amount
@@ -1509,7 +1715,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		default:
 			return utxoOpsForTxn, errors.Wrapf(
 				RuleErrorDerivedKeyInvalidCreatorCoinLimitOperation,
-				"_checkDerivedKeySpendingLimit: Invalid creator coin limit operation %v",
+				"_checkAndUpdateDerivedKeySpendingLimit: Invalid creator coin limit operation %v",
 				txnMeta.OperationType)
 		}
 		if derivedKeyEntry, err = bav._checkCreatorCoinLimitAndUpdateDerivedKeyEntry(
@@ -1537,7 +1743,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		default:
 			return utxoOpsForTxn, errors.Wrapf(
 				RuleErrorDerivedKeyInvalidDAOCoinLimitOperation,
-				"_checkDerivedKeySpendingLimit: Invalid DAO coin limit operation %v",
+				"_checkAndUpdateDerivedKeySpendingLimit: Invalid DAO coin limit operation %v",
 				txnMeta.OperationType)
 		}
 		if derivedKeyEntry, err = bav._checkDAOCoinLimitAndUpdateDerivedKeyEntry(
@@ -1548,6 +1754,28 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		txnMeta := txn.TxnMeta.(*DAOCoinTransferMetadata)
 		if derivedKeyEntry, err = bav._checkDAOCoinLimitAndUpdateDerivedKeyEntry(
 			derivedKeyEntry, txnMeta.ProfilePublicKey, TransferDAOCoinOperation); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeDAOCoinLimitOrder:
+		txnMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+		var buyingCoinPublicKey []byte
+		var sellingCoinPublicKey []byte
+		if txnMeta.CancelOrderID != nil {
+			orderEntry, err := bav._getDAOCoinLimitOrderEntry(txnMeta.CancelOrderID)
+			if err != nil || orderEntry == nil {
+				return utxoOpsForTxn, errors.Wrapf(
+					RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID,
+					"_checkAndUpdateDerivedKeySpendingLimit: Invalid DAO coin limit order ID %v",
+					txnMeta.CancelOrderID)
+			}
+			buyingCoinPublicKey = bav.GetPublicKeyForPKID(orderEntry.BuyingDAOCoinCreatorPKID)
+			sellingCoinPublicKey = bav.GetPublicKeyForPKID(orderEntry.SellingDAOCoinCreatorPKID)
+		} else {
+			buyingCoinPublicKey = txnMeta.BuyingDAOCoinCreatorPublicKey.ToBytes()
+			sellingCoinPublicKey = txnMeta.SellingDAOCoinCreatorPublicKey.ToBytes()
+		}
+		if derivedKeyEntry, err = bav._checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
+			derivedKeyEntry, buyingCoinPublicKey, sellingCoinPublicKey); err != nil {
 			return utxoOpsForTxn, err
 		}
 	case TxnTypeUpdateNFT:
@@ -1586,11 +1814,84 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 			derivedKeyEntry, txnMeta.NFTPostHash, txnMeta.SerialNumber, BurnNFTOperation); err != nil {
 			return utxoOpsForTxn, err
 		}
+	case TxnTypeCreateUserAssociation:
+		txnMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
+		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
+			derivedKeyEntry,
+			AssociationClassUser,
+			txnMeta.AssociationType,
+			txnMeta.AppPublicKey,
+			AssociationOperationCreate,
+		); err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+	case TxnTypeDeleteUserAssociation:
+		txnMeta := txn.TxnMeta.(*DeleteUserAssociationMetadata)
+		associationEntry, err := bav.GetUserAssociationByID(txnMeta.AssociationID)
+		if err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+		if associationEntry == nil {
+			return utxoOpsForTxn, errors.New("_checkDerivedKeySpendingLimit: association to delete not found")
+		}
+		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
+			derivedKeyEntry,
+			AssociationClassUser,
+			associationEntry.AssociationType,
+			NewPublicKey(bav.GetPublicKeyForPKID(associationEntry.AppPKID)),
+			AssociationOperationDelete,
+		); err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+	case TxnTypeCreatePostAssociation:
+		txnMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
+		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
+			derivedKeyEntry,
+			AssociationClassPost,
+			txnMeta.AssociationType,
+			txnMeta.AppPublicKey,
+			AssociationOperationCreate,
+		); err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+	case TxnTypeDeletePostAssociation:
+		txnMeta := txn.TxnMeta.(*DeletePostAssociationMetadata)
+		associationEntry, err := bav.GetPostAssociationByID(txnMeta.AssociationID)
+		if err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+		if associationEntry == nil {
+			return utxoOpsForTxn, errors.New("_checkDerivedKeySpendingLimit: association to delete not found")
+		}
+		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
+			derivedKeyEntry,
+			AssociationClassPost,
+			associationEntry.AssociationType,
+			NewPublicKey(bav.GetPublicKeyForPKID(associationEntry.AppPKID)),
+			AssociationOperationDelete,
+		); err != nil {
+			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
+		}
+	case TxnTypeAccessGroup:
+		txnMeta := txn.TxnMeta.(*AccessGroupMetadata)
+		if derivedKeyEntry, err = bav._checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(
+			derivedKeyEntry, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeAccessGroupMembers:
+		txnMeta := txn.TxnMeta.(*AccessGroupMembersMetadata)
+		if derivedKeyEntry, err = bav._checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry(
+			derivedKeyEntry, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
 	default:
 		// If we get here, it means we're dealing with a txn that doesn't have any special
-		// granular limits to deal with. This means we just check whether or not we have
+		// granular limits to deal with. This means we just check whether we have
 		// quota to execute this particular TxnType.
-
+		if derivedKeyEntry.TransactionSpendingLimitTracker.TransactionCountLimitMap == nil {
+			return utxoOpsForTxn, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized,
+				"_checkAndUpdateDerivedKeySpendingLimit: TransactionCountLimitMap is nil")
+		}
 		// If the transaction limit is not specified or equal to 0, this derived
 		// key is not authorized to perform this transaction.
 		transactionLimit, transactionLimitExists :=
@@ -1598,7 +1899,7 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 		if !transactionLimitExists || transactionLimit == 0 {
 			return utxoOpsForTxn, errors.Wrapf(
 				RuleErrorDerivedKeyTxnTypeNotAuthorized,
-				"_checkDerivedKeySpendingLimit: No more transactions of type %v are allowed on this Derived Key",
+				"_checkAndUpdateDerivedKeySpendingLimit: No more transactions of type %v are allowed on this Derived Key",
 				txnType.String())
 		}
 		// Otherwise, this derived key is authorized to perform this operation. Delete the key if this is the last
@@ -1627,6 +1928,10 @@ func (bav *UtxoView) _checkDerivedKeySpendingLimit(
 // delete the key. Returns true if the key was found and the derived key entry
 // was updated.
 func _checkNFTKeyAndUpdateDerivedKeyEntry(key NFTOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap == nil {
+		return false
+	}
 	// If the key is present in the NFTOperationLimitMap...
 	nftLimit, nftLimitExist := derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap[key]
 	// Return false because we didn't find the key
@@ -1699,6 +2004,10 @@ func _checkNFTLimitAndUpdateDerivedKeyEntry(
 // If there are no operation remaining after this one, we delete the key.
 // Returns true if the key was found and the derived key entry was updated.
 func _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(key CreatorCoinOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap == nil {
+		return false
+	}
 	// If the key is present in the CreatorCoinOperationLimitMap...
 	ccOperationLimit, ccOperationLimitExists :=
 		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[key]
@@ -1759,6 +2068,10 @@ func (bav *UtxoView) _checkCreatorCoinLimitAndUpdateDerivedKeyEntry(
 // If there are no operation remaining after this one, we delete the key.
 // Returns true if the key was found and the derived key entry was updated.
 func _checkDAOCoinKeyAndUpdateDerivedKeyEntry(key DAOCoinOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap == nil {
+		return false
+	}
 	// If the key is present in the DAOCoinOperationLimitMap...
 	daoCoinOperationLimit, daoCoinOperationLimitExists :=
 		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap[key]
@@ -1813,6 +2126,275 @@ func (bav *UtxoView) _checkDAOCoinLimitAndUpdateDerivedKeyEntry(
 	return derivedKeyEntry, RuleErrorDerivedKeyDAOCoinOperationNotAuthorized
 }
 
+// _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry checks if the DAOCoinLimitOrderLimitKey is present
+// in the DerivedKeyEntry's TransactionSpendingLimitTracker's DAOCoinLimitOrderLimitMap.
+// If the key is present, the operation is allowed and we decrement the number of operations remaining.
+// If there are no operations remaining after this one, we delete the key.
+// Returns true if the key was found and the derived key entry was updated.
+//
+// TODO: Right now, the "buy" and "sell" DAO coins that the user is transacting must be
+// specified explicitly. There is no way to specify "any" DAO coins in the spending limit
+// because ZeroPKID, which we use to specify "any" in other spending limits, corresponds
+// to DESO for order book operations. We should fix this down the road.
+func _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(
+	key DAOCoinLimitOrderLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap == nil {
+		return false
+	}
+	// Check if the key is present in the DAOCoinLimitOrderLimitMap...
+	daoCoinLimitOrderLimit, daoCoinLimitOrderLimitExists :=
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap[key]
+	// If the key doesn't exist or the value is <= 0, return false.
+	if !daoCoinLimitOrderLimitExists || daoCoinLimitOrderLimit <= 0 {
+		return false
+	}
+	// If this is the last operation allowed for this key, we delete the key from the map.
+	if daoCoinLimitOrderLimit == 1 {
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap, key)
+	} else {
+		// Otherwise, we decrement the number of operations remaining for this key
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap[key]--
+	}
+	// Return true because we found the key and decremented the remaining operations
+	return true
+}
+
+// _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry checks that the DAO Coin Limit Order
+// being performed has been authorized for this derived key.
+//
+// TODO: Right now, the "buy" and "sell" DAO coins that the user is transacting must be
+// specified explicitly. There is no way to specify "any" DAO coins in the spending limit
+// because ZeroPKID, which we use to specify "any" in other spending limits, corresponds
+// to DESO for order book operations. We should fix this down the road.
+func (bav *UtxoView) _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
+	derivedKeyEntry DerivedKeyEntry, buyingDAOCoinCreatorPublicKey []byte, sellingDAOCoinCreatorPublicKey []byte) (
+	_derivedKeyEntry DerivedKeyEntry, _err error) {
+	buyingPKIDEntry := bav.GetPKIDForPublicKey(buyingDAOCoinCreatorPublicKey)
+	if buyingPKIDEntry == nil || buyingPKIDEntry.isDeleted {
+		return derivedKeyEntry, fmt.Errorf(
+			"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry: buying pkid is deleted")
+	}
+	sellingPKIDEntry := bav.GetPKIDForPublicKey(sellingDAOCoinCreatorPublicKey)
+	if sellingPKIDEntry == nil || sellingPKIDEntry.isDeleted {
+		return derivedKeyEntry, fmt.Errorf(
+			"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry: selling pkid is deleted")
+	}
+
+	// Check (buying DAO Creator PKID || selling DAO Creator PKID) key
+	buyingAndSellingKey := MakeDAOCoinLimitOrderLimitKey(*buyingPKIDEntry.PKID, *sellingPKIDEntry.PKID)
+	if _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(buyingAndSellingKey, derivedKeyEntry) {
+		return derivedKeyEntry, nil
+	}
+
+	// TODO: How do we want to account for buying ANY creator or selling ANY creator given that we
+	// use the ZeroPKID / ZeroPublicKey to represent buying/selling DESO.
+
+	return derivedKeyEntry, errors.Wrapf(RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized,
+		"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntr: DAO Coin limit order not authorized: ")
+}
+
+func (bav *UtxoView) _checkAssociationLimitAndUpdateDerivedKey(
+	derivedKeyEntry DerivedKeyEntry,
+	associationClass AssociationClass,
+	associationType []byte,
+	appPublicKey *PublicKey,
+	operation AssociationOperation,
+) (DerivedKeyEntry, error) {
+	// Convert AppPublicKey to AppPKID
+	appPKID := bav._associationAppPublicKeyToPKID(appPublicKey)
+	// Construct AssociationLimitKey.
+	var associationLimitKey AssociationLimitKey
+	// Check for applicable spending limit matching:
+	//   - Scoped AppScopeType else any AppScopeType
+	//   - Scoped AssociationType else any AssociationType
+	//   - Scoped OperationType else any OperationType
+	for _, spendingLimitScopeType := range []AssociationAppScopeType{AssociationAppScopeTypeScoped, AssociationAppScopeTypeAny} {
+		spendingLimitAppPKID := *appPKID
+		if spendingLimitScopeType == AssociationAppScopeTypeAny {
+			spendingLimitAppPKID = ZeroPKID
+		}
+		for _, spendingLimitAssociationType := range [][]byte{associationType, []byte("")} {
+			for _, spendingLimitOperationType := range []AssociationOperation{operation, AssociationOperationAny} {
+				associationLimitKey = MakeAssociationLimitKey(
+					associationClass,
+					spendingLimitAssociationType,
+					spendingLimitAppPKID,
+					spendingLimitScopeType,
+					spendingLimitOperationType,
+				)
+				updatedDerivedKeyEntry, err := _checkAssociationLimitAndUpdateDerivedKey(derivedKeyEntry, associationLimitKey)
+				if err == nil {
+					return updatedDerivedKeyEntry, nil
+				}
+			}
+		}
+	}
+	// If we get to this point, then no authorized spending limits
+	// were found and the association is not authorized.
+	return derivedKeyEntry, errors.New("_checkAssociationLimitAndUpdateDerivedKey: association not authorized for derived key")
+}
+
+func _checkAssociationLimitAndUpdateDerivedKey(
+	derivedKeyEntry DerivedKeyEntry, associationLimitKey AssociationLimitKey,
+) (DerivedKeyEntry, error) {
+	errMsg := errors.New("_checkAssociationLimitAndUpdateDerivedKey: association not authorized for derived key")
+	// If derived key spending limit is missing, return unauthorized.
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap == nil {
+		return derivedKeyEntry, errMsg
+	}
+	// Check if the key is present in the AssociationLimitMap.
+	associationLimit, associationLimitExists :=
+		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap[associationLimitKey]
+	// If the key doesn't exist or the value is <= 0, return unauthorized.
+	if !associationLimitExists || associationLimit <= 0 {
+		return derivedKeyEntry, errMsg
+	}
+	// If this is the last operation allowed for this key, we delete the key from the map.
+	if associationLimit == 1 {
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap, associationLimitKey)
+	} else {
+		// Otherwise, we decrement the number of operations remaining for this key.
+		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap[associationLimitKey]--
+	}
+	// Happy path: we found the key and decremented the remaining operations.
+	return derivedKeyEntry, nil
+}
+
+// _checkAccessGroupSpendingLimitKeyAndUpdateDerivedKeyEntry checks that the access group spending limit is sufficient
+// to cover an accessGroup transaction. If the spending limit is present, we decrement the number of remaining operations
+// for the corresponding spending limit entry and return the new derived key entry with the updated spending limit.
+func (bav *UtxoView) _checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(derivedKeyEntry DerivedKeyEntry,
+	accessGroupMetadata *AccessGroupMetadata) (_derivedKeyEntry DerivedKeyEntry, _err error) {
+
+	// Make sure input data is valid.
+	if accessGroupMetadata == nil {
+		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: " +
+			"transaction metadata is empty")
+	}
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap == nil {
+		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: " +
+			"TransactionSpendingLimitTracker or TransactionSpendingLimitTracker.AccessGroupMap are empty")
+	}
+
+	// Validate the access group operation type.
+	var operationType AccessGroupOperationType
+	switch accessGroupMetadata.AccessGroupOperationType {
+	case AccessGroupOperationTypeCreate:
+		operationType = AccessGroupOperationTypeCreate
+	case AccessGroupOperationTypeUpdate:
+		operationType = AccessGroupOperationTypeUpdate
+	default:
+		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: Unknown access group "+
+			"operation type (%v)", accessGroupMetadata.AccessGroupOperationType)
+	}
+
+	// Look for the spending limit corresponding to this accessGroupMetadata.
+	for _, scopeTypeIter := range []AccessGroupScopeType{AccessGroupScopeTypeScoped, AccessGroupScopeTypeAny} {
+		groupKeyName := *NewGroupKeyName(accessGroupMetadata.AccessGroupKeyName)
+		if scopeTypeIter == AccessGroupScopeTypeAny {
+			groupKeyName = *NewGroupKeyName([]byte{})
+		}
+
+		for _, operationTypeIter := range []AccessGroupOperationType{operationType, AccessGroupOperationTypeAny} {
+			accessGroupLimitKey := MakeAccessGroupLimitKey(
+				*NewPublicKey(accessGroupMetadata.AccessGroupOwnerPublicKey),
+				scopeTypeIter,
+				groupKeyName,
+				operationTypeIter,
+			)
+			spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap[accessGroupLimitKey]
+			// If spending limit is non-positive, continue.
+			if !exists || spendingLimit <= 0 {
+				continue
+			}
+
+			// Delete the spending limit entry if we've exhausted the spending limit for this key, otherwise decrement it by 1.
+			if spendingLimit == 1 {
+				delete(derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap, accessGroupLimitKey)
+			} else {
+				derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap[accessGroupLimitKey]--
+			}
+			return derivedKeyEntry, nil
+		}
+	}
+
+	// If we get to this point, then no applicable spending limit was found.
+	return derivedKeyEntry, errors.Wrapf(
+		RuleErrorAccessGroupTransactionSpendingLimitInvalid,
+		"_checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry: No corresponding access group operation spending limit exists",
+	)
+}
+
+// _checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry checks that the access group members spending limit is sufficient
+// to cover an accessGroupMembers transaction. If the spending limit is present, we decrement the number of remaining operations
+// for the corresponding spending limit entry and return the new derived key entry with the updated spending limit.
+func (bav *UtxoView) _checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry(derivedKeyEntry DerivedKeyEntry,
+	accessGroupMembersMetadata *AccessGroupMembersMetadata) (_derivedKeyEntry DerivedKeyEntry, _err error) {
+
+	// Make sure input data is valid.
+	if accessGroupMembersMetadata == nil {
+		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: " +
+			"transaction metadata is empty")
+	}
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap == nil {
+		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: " +
+			"TransactionSpendingLimitTracker or TransactionSpendingLimitTracker.AccessGroupMemberMap are empty")
+	}
+
+	var operationType AccessGroupMemberOperationType
+	switch accessGroupMembersMetadata.AccessGroupMemberOperationType {
+	case AccessGroupMemberOperationTypeAdd:
+		operationType = AccessGroupMemberOperationTypeAdd
+	case AccessGroupMemberOperationTypeUpdate:
+		operationType = AccessGroupMemberOperationTypeUpdate
+	case AccessGroupMemberOperationTypeRemove:
+		operationType = AccessGroupMemberOperationTypeRemove
+	default:
+		return derivedKeyEntry, fmt.Errorf("_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: "+
+			"operation type (%v)", accessGroupMembersMetadata.AccessGroupMemberOperationType)
+	}
+
+	// Look for the spending limit corresponding to this accessGroupMembersMetadata.
+	for _, scopeTypeIter := range []AccessGroupScopeType{AccessGroupScopeTypeScoped, AccessGroupScopeTypeAny} {
+		groupKeyName := *NewGroupKeyName(accessGroupMembersMetadata.AccessGroupKeyName)
+		if scopeTypeIter == AccessGroupScopeTypeAny {
+			groupKeyName = *NewGroupKeyName([]byte{})
+		}
+
+		for _, operationTypeIter := range []AccessGroupMemberOperationType{operationType, AccessGroupMemberOperationTypeAny} {
+			accessGroupMembersLimitKey := MakeAccessGroupMemberLimitKey(
+				*NewPublicKey(accessGroupMembersMetadata.AccessGroupOwnerPublicKey),
+				scopeTypeIter,
+				groupKeyName,
+				operationTypeIter,
+			)
+			spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap[accessGroupMembersLimitKey]
+			// If spending limit is non-positive, continue.
+			if !exists || spendingLimit <= 0 {
+				continue
+			}
+
+			// Delete the spending limit entry if we've exhausted the spending limit for this key, otherwise decrement it by 1.
+			if spendingLimit == 1 {
+				delete(derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap, accessGroupMembersLimitKey)
+			} else {
+				derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap[accessGroupMembersLimitKey]--
+			}
+			return derivedKeyEntry, nil
+		}
+	}
+
+	// If we get to this point, then no applicable spending limit was found.
+	return derivedKeyEntry, errors.Wrapf(
+		RuleErrorAccessGroupMemberSpendingLimitInvalid,
+		"_checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry: No corresponding access group operation spending limit exists",
+	)
+}
+
 func (bav *UtxoView) _connectUpdateGlobalParams(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
@@ -1829,7 +2411,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 	newGlobalParamsEntry := *prevGlobalParamsEntry
 	extraData := txn.ExtraData
 	// Validate the public key. Only a paramUpdater is allowed to trigger this.
-	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
+	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
 	if !updaterIsParamUpdater {
 		return 0, 0, nil, RuleErrorUserNotAuthorizedToUpdateGlobalParams
 	}
@@ -2107,6 +2689,10 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectDAOCoinTransfer(
 				txn, txHash, blockHeight, verifySignatures)
+	case TxnTypeDAOCoinLimitOrder:
+		totalInput, totalOutput, utxoOpsForTxn, err =
+			bav._connectDAOCoinLimitOrder(
+				txn, txHash, blockHeight, verifySignatures)
 	case TxnTypeSwapIdentity:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectSwapIdentity(
@@ -2143,6 +2729,32 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAuthorizeDerivedKey(
 				txn, txHash, blockHeight, verifySignatures)
+	case TxnTypeCreateUserAssociation:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCreateUserAssociation(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeDeleteUserAssociation:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeleteUserAssociation(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeCreatePostAssociation:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCreatePostAssociation(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeDeletePostAssociation:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeletePostAssociation(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeAccessGroup:
+		totalInput, totalOutput, utxoOpsForTxn, err =
+		bav._connectAccessGroup(
+		txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeAccessGroupMembers:
+		totalInput, totalOutput, utxoOpsForTxn, err =
+		bav._connectAccessGroupMembers(
+		txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeNewMessage:
+		totalInput, totalOutput, utxoOpsForTxn, err =
+		bav._connectNewMessage(
+		txn, txHash, blockHeight, verifySignatures)
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}
@@ -2161,6 +2773,12 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			return nil, 0, 0, 0, RuleErrorTxnOutputExceedsInput
 		}
 		fees = totalInput - totalOutput
+	}
+	// Validate that totalInput - totalOutput is equal to the fee specified in the transaction metadata.
+	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+		if totalInput-totalOutput != txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos {
+			return nil, 0, 0, 0, RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee
+		}
 	}
 
 	// BitcoinExchange transactions have their own special fee that is computed as a function of how much
@@ -2183,7 +2801,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 }
 
 func (bav *UtxoView) ConnectBlock(
-	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool, eventManager *EventManager) (
+	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool, eventManager *EventManager, blockHeight uint64) (
 	[][]*UtxoOperation, error) {
 
 	glog.V(1).Infof("ConnectBlock: Connecting block %v", desoBlock)
@@ -2214,7 +2832,7 @@ func (bav *UtxoView) ConnectBlock(
 			txn, txHash, 0, uint32(blockHeader.Height), verifySignatures, false /*ignoreUtxos*/)
 		_, _ = totalInput, totalOutput // A bit surprising we don't use these
 		if err != nil {
-			return nil, errors.Wrapf(err, "ConnectBlock: ")
+			return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
 		}
 
 		// Add the fees from this txn to the total fees. If any overflow occurs
@@ -2291,7 +2909,7 @@ func (bav *UtxoView) ConnectBlock(
 // the database. It's much faster to fetch data in bulk and cache "nil" values
 // then to query individual records when connecting every transaction. If something
 // is not preloaded the view falls back to individual queries.
-func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock) error {
+func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock, blockHeight uint64) error {
 	// We can only preload if we're using postgres
 	if bav.Postgres == nil {
 		return nil
@@ -2552,7 +3170,7 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 	if bav.Postgres != nil {
 		utxoEntriesForPublicKey = bav.Postgres.GetUtxoEntriesForPublicKey(pkBytes)
 	} else {
-		utxoEntriesForPublicKey, err = DbGetUtxosForPubKey(pkBytes, bav.Handle)
+		utxoEntriesForPublicKey, err = DbGetUtxosForPubKey(pkBytes, bav.Handle, bav.Snapshot)
 	}
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GetUnspentUtxoEntrysForPublicKey: Problem fetching "+
@@ -2595,11 +3213,12 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	immatureBlockRewards := uint64(0)
 
 	if bav.Postgres != nil {
-		// TODO: Filter out immature block rewards in postgres. UtxoType needs to be set correctly when importing blocks
-		//outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), tipHeight-numImmatureBlocks, tipHeight)
-		//for _, output := range outputs {
-		//	immatureBlockRewards += output.AmountNanos
-		//}
+		// Filter out immature block rewards in postgres. UtxoType needs to be set correctly when importing blocks
+		outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), tipHeight-numImmatureBlocks, tipHeight)
+
+		for _, output := range outputs {
+			immatureBlockRewards += output.AmountNanos
+		}
 	} else {
 		for ii := uint64(1); ii < uint64(numImmatureBlocks); ii++ {
 			// Don't look up the genesis block since it isn't in the DB.
@@ -2607,13 +3226,13 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 				break
 			}
 
-			blockNode := GetHeightHashToNodeInfo(bav.Handle, tipHeight, nextBlockHash, false)
+			blockNode := GetHeightHashToNodeInfo(bav.Handle, bav.Snapshot, tipHeight, nextBlockHash, false)
 			if blockNode == nil {
 				return uint64(0), fmt.Errorf(
 					"GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block for blockhash %s",
 					nextBlockHash.String())
 			}
-			blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, pkBytes, nextBlockHash)
+			blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, bav.Snapshot, pkBytes, nextBlockHash)
 			if err != nil {
 				return uint64(0), errors.Wrapf(
 					err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block reward for "+

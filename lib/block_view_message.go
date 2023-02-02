@@ -2,7 +2,6 @@ package lib
 
 import (
 	"bytes"
-	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
@@ -25,7 +24,7 @@ func (bav *UtxoView) _getMessageEntryForMessageKey(messageKey *MessageKey) *Mess
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	dbMessageEntry := DBGetMessageEntry(bav.Handle, messageKey.PublicKey[:], messageKey.TstampNanos)
+	dbMessageEntry := DBGetMessageEntry(bav.Handle, bav.Snapshot, messageKey.PublicKey[:], messageKey.TstampNanos)
 	if dbMessageEntry != nil {
 		bav._setMessageEntryMappings(dbMessageEntry)
 	}
@@ -82,41 +81,42 @@ func (bav *UtxoView) GetMessagingGroupKeyToMessagingGroupEntryMapping(
 		return mapValue
 	}
 
-	if bav.Postgres != nil {
-		var pgMessagingGroup PGMessagingGroup
-		err := bav.Postgres.db.Model(&pgMessagingGroup).Where("group_owner_public_key = ? and messaging_group_key_name = ?",
-			messagingGroupKey.OwnerPublicKey, messagingGroupKey.GroupKeyName).First()
-		if err != nil {
-			return nil
-		}
-
-		memberEntries := []*MessagingGroupMember{}
-		if err := gob.NewDecoder(
-			bytes.NewReader(pgMessagingGroup.MessagingGroupMembers)).Decode(&memberEntries); err != nil {
-			glog.Errorf("Error decoding MessagingGroupMembers from DB: %v", err)
-			return nil
-		}
-
-		messagingGroupEntry := &MessagingGroupEntry{
-			GroupOwnerPublicKey:   pgMessagingGroup.GroupOwnerPublicKey,
-			MessagingPublicKey:    pgMessagingGroup.MessagingPublicKey,
-			MessagingGroupKeyName: pgMessagingGroup.MessagingGroupKeyName,
-			MessagingGroupMembers: memberEntries,
-		}
+	// Temporarily commenting out postgres until MessagingGroup transaction are fixed.
+	//if bav.Postgres != nil {
+	//	var pgMessagingGroup PGMessagingGroup
+	//	err := bav.Postgres.db.Model(&pgMessagingGroup).Where("group_owner_public_key = ? and messaging_group_key_name = ?",
+	//		messagingGroupKey.OwnerPublicKey, messagingGroupKey.GroupKeyName).First()
+	//	if err != nil {
+	//		return nil
+	//	}
+	//
+	//	memberEntries := []*MessagingGroupMember{}
+	//	if err := gob.NewDecoder(
+	//		bytes.NewReader(pgMessagingGroup.MessagingGroupMembers)).Decode(&memberEntries); err != nil {
+	//		glog.Errorf("Error decoding MessagingGroupMembers from DB: %v", err)
+	//		return nil
+	//	}
+	//
+	//	messagingGroupEntry := &MessagingGroupEntry{
+	//		AccessGroupOwnerPublicKey:   pgMessagingGroup.AccessGroupOwnerPublicKey,
+	//		MessagingPublicKey:    pgMessagingGroup.MessagingPublicKey,
+	//		MessagingGroupKeyName: pgMessagingGroup.MessagingGroupKeyName,
+	//		MessagingGroupMembers: memberEntries,
+	//	}
+	//	bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
+	//	return messagingGroupEntry
+	//
+	//} else {
+	// If we get here it means no value exists in our in-memory map. In this case,
+	// defer to the db. If a mapping exists in the db, return it. If not, return
+	// nil. Either way, save the value to the in-memory UtxoView mapping.
+	messagingGroupEntry := DBGetMessagingGroupEntry(bav.Handle, bav.Snapshot, messagingGroupKey)
+	if messagingGroupEntry != nil {
 		bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
-		return messagingGroupEntry
-
-	} else {
-		// If we get here it means no value exists in our in-memory map. In this case,
-		// defer to the db. If a mapping exists in the db, return it. If not, return
-		// nil. Either way, save the value to the in-memory UtxoView mapping.
-		messagingGroupEntry := DBGetMessagingGroupEntry(bav.Handle, messagingGroupKey)
-		if messagingGroupEntry != nil {
-			bav._setMessagingGroupKeyToMessagingGroupEntryMapping(&messagingGroupKey.OwnerPublicKey, messagingGroupEntry)
-		}
-		return messagingGroupEntry
-
 	}
+	return messagingGroupEntry
+
+	//}
 }
 
 func (bav *UtxoView) _setMessagingGroupKeyToMessagingGroupEntryMapping(ownerPublicKey *PublicKey,
@@ -693,7 +693,8 @@ func (bav *UtxoView) _disconnectPrivateMessage(
 	}
 
 	// Make sure the sender and recipient entries are identical by comparing their byte encodings.
-	if !reflect.DeepEqual(recipientMessageEntry.Encode(), senderMessageEntry.Encode()) {
+	if !reflect.DeepEqual(EncodeToBytes(uint64(blockHeight), recipientMessageEntry),
+		EncodeToBytes(uint64(blockHeight), senderMessageEntry)) {
 		return fmt.Errorf("_disconnectPrivateMessage: MessageEntry for "+
 			"sender (%v) doesn't matche the entry for the recipient (%v)",
 			senderMessageEntry, recipientMessageEntry)
@@ -741,6 +742,12 @@ func (bav *UtxoView) _connectMessagingGroup(
 			RuleErrorMessagingKeyBeforeBlockHeight, "_connectMessagingGroup: "+
 				"Problem connecting messaging key, too early block height")
 	}
+
+	// Check that the transaction has the right TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeMessagingGroup {
+		return 0, 0, nil, fmt.Errorf("_connectMessagingGroup: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
 	txMeta := txn.TxnMeta.(*MessagingGroupMetadata)
 
 	// If the key name is just a list of 0s, then return because this name is reserved for the base key.
@@ -770,14 +777,19 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 	// We now have a valid messaging public key, key name, and owner public key.
 	// The hard-coded default key is only intended to be registered by the owner, so we will require a signature.
-	if EqualGroupKeyName(NewGroupKeyName(txMeta.MessagingGroupKeyName), DefaultGroupKeyName()) {
-		// Verify the GroupOwnerSignature. it should be signature( messagingPublicKey || messagingKeyName )
-		// We need to make sure the default messaging key was authorized by the master public key.
-		// All other keys can be registered by derived keys.
-		bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingGroupKeyName...)
-		if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature); err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
-				"Problem verifying signature bytes, error: %v", RuleErrorMessagingSignatureInvalid)
+	//
+	// Note that we decided to relax this constraint after the fork height. Why? Because keeping it would have
+	// required users to go through two confirmations when approving a key with MetaMask vs just one.
+	if blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight {
+		if EqualGroupKeyName(NewGroupKeyName(txMeta.MessagingGroupKeyName), DefaultGroupKeyName()) {
+			// Verify the GroupOwnerSignature. it should be signature( messagingPublicKey || messagingKeyName )
+			// We need to make sure the default messaging key was authorized by the master public key.
+			// All other keys can be registered by derived keys.
+			bytes := append(txMeta.MessagingPublicKey, txMeta.MessagingGroupKeyName...)
+			if err := _verifyBytesSignature(txn.PublicKey, bytes, txMeta.GroupOwnerSignature, blockHeight, bav.Params); err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: "+
+					"Problem verifying signature bytes, error: %v", RuleErrorMessagingSignatureInvalid)
+			}
 		}
 	}
 
@@ -939,7 +951,8 @@ func (bav *UtxoView) _connectMessagingGroup(
 	var prevMessagingKeyEntry *MessagingGroupEntry
 	if existingEntry != nil && !existingEntry.isDeleted {
 		prevMessagingKeyEntry = &MessagingGroupEntry{}
-		if err = prevMessagingKeyEntry.Decode(existingEntry.Encode()); err != nil {
+		rr := bytes.NewReader(EncodeToBytes(uint64(blockHeight), existingEntry))
+		if exists, err := DecodeFromBytes(prevMessagingKeyEntry, rr); !exists || err != nil {
 			return 0, 0, nil, errors.Wrapf(err,
 				"_connectMessagingGroup: Error decoding previous entry")
 		}

@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -25,22 +28,39 @@ import (
 
 type Node struct {
 	Server   *lib.Server
-	chainDB  *badger.DB
+	ChainDB  *badger.DB
 	TXIndex  *lib.TXIndex
 	Params   *lib.DeSoParams
 	Config   *Config
 	Postgres *lib.Postgres
+
+	// IsRunning is false when a NewNode is created, set to true on Start(), set to false
+	// after Stop() is called. Mainly used in testing.
+	IsRunning bool
+	// runningMutex is held whenever we call Start() or Stop() on the node.
+	runningMutex sync.Mutex
+
+	// internalExitChan is used internally to signal that a node should close.
+	internalExitChan chan struct{}
+	// nodeMessageChan is passed to the core engine and used to trigger node actions such as a restart or database reset.
+	nodeMessageChan chan lib.NodeMessage
+	// stopWaitGroup allows us to wait for the node to fully close.
+	stopWaitGroup sync.WaitGroup
 }
 
 func NewNode(config *Config) *Node {
 	result := Node{}
 	result.Config = config
 	result.Params = config.Params
+	result.internalExitChan = make(chan struct{})
+	result.nodeMessageChan = make(chan lib.NodeMessage)
 
 	return &result
 }
 
-func (node *Node) Start() {
+// Start is the main function used to kick off the node. The exitChannels are optionally passed by the caller to receive
+// signals from the node. In particular, exitChannels will be closed by the node when the node is shutting down for good.
+func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// TODO: Replace glog with logrus so we can also get rid of flag library
 	flag.Set("log_dir", node.Config.LogDirectory)
 	flag.Set("v", fmt.Sprintf("%d", node.Config.GlogV))
@@ -48,6 +68,14 @@ func (node *Node) Start() {
 	flag.Set("alsologtostderr", "true")
 	flag.Parse()
 	glog.CopyStandardLogTo("INFO")
+	node.runningMutex.Lock()
+	defer node.runningMutex.Unlock()
+
+	node.internalExitChan = make(chan struct{})
+	node.nodeMessageChan = make(chan lib.NodeMessage)
+
+	// listenToNodeMessages handles the messages received from the engine through the nodeMessageChan.
+	go node.listenToNodeMessages()
 
 	// Print config
 	node.Config.Print()
@@ -59,6 +87,10 @@ func (node *Node) Start() {
 
 	// Validate params
 	validateParams(node.Params)
+	// This is a bit of a hack, and we should deprecate this. We rely on GlobalDeSoParams static variable in only one
+	// place in the core code, namely in encoder migrations. Encoder migrations allow us to update the core database
+	// schema without requiring a resync. GlobalDeSoParams is used so that encoders know if we're on mainnet or testnet.
+	lib.GlobalDeSoParams = *node.Params
 
 	// Setup Datadog span tracer and profiler
 	if node.Config.DatadogProfiler {
@@ -67,6 +99,10 @@ func (node *Node) Start() {
 		if err != nil {
 			glog.Fatal(err)
 		}
+	}
+
+	if node.Config.TimeEvents {
+		lib.Mode = lib.EnableTimer
 	}
 
 	// Setup statsd
@@ -79,22 +115,25 @@ func (node *Node) Start() {
 	desoAddrMgr := addrmgr.New(node.Config.DataDirectory, net.LookupIP)
 	desoAddrMgr.Start()
 
-	listeningAddrs, listeners := getAddrsToListenOn(node.Config.ProtocolPort)
+	// This just gets localhost listening addresses on the protocol port.
+	// Such as [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs.
+	listeningAddrs, listeners := GetAddrsToListenOn(node.Config.ProtocolPort)
+	_ = listeningAddrs
 
-	for _, addr := range listeningAddrs {
-		netAddr := wire.NewNetAddress(&addr, 0)
-		_ = desoAddrMgr.AddLocalAddress(netAddr, addrmgr.BoundPrio)
-	}
-
+	// If --connect-ips is not passed, we will connect the addresses from
+	// --add-ips, DNSSeeds, and DNSSeedGenerators.
 	if len(node.Config.ConnectIPs) == 0 {
+		glog.Infof("Looking for AddIPs: %v", len(node.Config.AddIPs))
 		for _, host := range node.Config.AddIPs {
 			addIPsForHost(desoAddrMgr, host, node.Params)
 		}
 
+		glog.Infof("Looking for DNSSeeds: %v", len(node.Params.DNSSeeds))
 		for _, host := range node.Params.DNSSeeds {
 			addIPsForHost(desoAddrMgr, host, node.Params)
 		}
 
+		// This is where we connect to addresses from DNSSeeds.
 		if !node.Config.PrivateMode {
 			go addSeedAddrsFromPrefixes(desoAddrMgr, node.Params)
 		}
@@ -102,20 +141,26 @@ func (node *Node) Start() {
 
 	// Setup chain database
 	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
-	opts := badger.DefaultOptions(dbDir)
+	opts := lib.PerformanceBadgerOptions(dbDir)
 	opts.ValueDir = dbDir
-	opts.MemTableSize = 1024 << 20
-	node.chainDB, err = badger.Open(opts)
+	node.ChainDB, err = badger.Open(opts)
 	if err != nil {
 		panic(err)
 	}
 
 	// Setup snapshot logger
 	if node.Config.LogDBSummarySnapshots {
-		lib.StartDBSummarySnapshots(node.chainDB)
+		lib.StartDBSummarySnapshots(node.ChainDB)
 	}
 
-	// Setup postgres using a remote URI
+	// Validate that we weren't passed incompatible Hypersync flags
+	lib.ValidateHyperSyncFlags(node.Config.HyperSync, node.Config.SyncType)
+
+	// Setup postgres using a remote URI. Postgres is not currently supported when we're in hypersync mode.
+	if node.Config.HyperSync && node.Config.PostgresURI != "" {
+		glog.Fatal("--postgres-uri is not supported when --hypersync=true. We're " +
+			"working on Hypersync support for Postgres though!")
+	}
 	var db *pg.DB
 	if node.Config.PostgresURI != "" {
 		options, err := pg.ParseURL(node.Config.PostgresURI)
@@ -141,19 +186,26 @@ func (node *Node) Start() {
 	// Setup eventManager
 	eventManager := lib.NewEventManager()
 
-	// Setup the server
-	node.Server, err = lib.NewServer(
+	// Setup the server. ShouldRestart is used whenever we detect an issue and should restart the node after a recovery
+	// process, just in case. These issues usually arise when the node was shutdown unexpectedly mid-operation. The node
+	// performs regular health checks to detect whenever this occurs.
+	shouldRestart := false
+	node.Server, err, shouldRestart = lib.NewServer(
 		node.Params,
 		listeners,
 		desoAddrMgr,
 		node.Config.ConnectIPs,
-		node.chainDB,
+		node.ChainDB,
 		node.Postgres,
 		node.Config.TargetOutboundPeers,
 		node.Config.MaxInboundPeers,
 		node.Config.MinerPublicKeys,
 		node.Config.NumMiningThreads,
 		node.Config.OneInboundPerIp,
+		node.Config.HyperSync,
+		node.Config.SyncType,
+		node.Config.MaxSyncBlockHeight,
+		node.Config.DisableEncoderMigrations,
 		node.Config.RateLimitFeerate,
 		node.Config.MinFeerate,
 		node.Config.StallTimeoutSeconds,
@@ -161,6 +213,7 @@ func (node *Node) Start() {
 		node.Config.MinBlockUpdateInterval,
 		node.Config.BlockCypherAPIKey,
 		true,
+		node.Config.SnapshotBlockHeightPeriod,
 		node.Config.DataDirectory,
 		node.Config.MempoolDumpDirectory,
 		node.Config.DisableNetworking,
@@ -171,32 +224,159 @@ func (node *Node) Start() {
 		node.Config.TrustedBlockProducerPublicKeys,
 		node.Config.TrustedBlockProducerStartHeight,
 		eventManager,
-	)
+		node.nodeMessageChan,
+		node.Config.ForceChecksum)
 	if err != nil {
+		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral
+		// records to the DB. In this case, the snapshot is corrupted and needs to be computed. See the
+		// comment at the top of snapshot.go for more information on how this works.
+		if shouldRestart {
+			glog.Infof(lib.CLog(lib.Red, fmt.Sprintf("Start: Got en error while starting server and shouldRestart "+
+				"is true. Node will be erased and resynced. Error: (%v)", err)))
+			node.nodeMessageChan <- lib.NodeErase
+			return
+		}
 		panic(err)
 	}
 
-	node.Server.Start()
+	if !shouldRestart {
+		node.Server.Start()
 
-	// Setup TXIndex - not compatible with postgres
-	if node.Config.TXIndex && node.Postgres == nil {
-		node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
-		if err != nil {
-			glog.Fatal(err)
+		// Setup TXIndex - not compatible with postgres
+		if node.Config.TXIndex && node.Postgres == nil {
+			node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
+			if err != nil {
+				glog.Fatal(err)
+			}
+			node.Server.TxIndex = node.TXIndex
+			if !shouldRestart {
+				node.TXIndex.Start()
+			}
+		}
+	}
+	node.IsRunning = true
+
+	if shouldRestart {
+		if node.nodeMessageChan != nil {
+			node.nodeMessageChan <- lib.NodeRestart
+		}
+	}
+
+	// Detect whenever an interrupt (Ctrl-c) or termination signals are sent.
+	syscallChannel := make(chan os.Signal)
+	signal.Notify(syscallChannel, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		// If an internalExitChan is triggered then we won't immediately signal a shutdown to the parent context through
+		// the exitChannels. When internal exit is called, we will just restart the node in the background.
+		select {
+		case _, open := <-node.internalExitChan:
+			if !open {
+				return
+			}
+		case <-syscallChannel:
 		}
 
-		node.TXIndex.Start()
-	}
+		node.Stop()
+		for _, channel := range exitChannels {
+			if *channel != nil {
+				close(*channel)
+				*channel = nil
+			}
+		}
+		glog.Info(lib.CLog(lib.Yellow, "Core node shutdown complete"))
+	}()
 }
 
 func (node *Node) Stop() {
-	node.Server.Stop()
+	node.runningMutex.Lock()
+	defer node.runningMutex.Unlock()
 
-	if node.TXIndex != nil {
-		node.TXIndex.Stop()
+	if !node.IsRunning {
+		return
+	}
+	node.IsRunning = false
+	glog.Infof(lib.CLog(lib.Yellow, "Node is shutting down. This might take a minute. Please don't "+
+		"close the node now or else you might corrupt the state."))
+
+	// Server
+	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping server..."))
+	node.Server.Stop()
+	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Server successfully stopped."))
+
+	// Snapshot
+	snap := node.Server.GetBlockchain().Snapshot()
+	if snap != nil {
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping snapshot..."))
+		snap.Stop()
+		node.closeDb(snap.SnapshotDb, "snapshot")
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Snapshot successfully stopped."))
 	}
 
-	node.chainDB.Close()
+	// TXIndex
+	if node.TXIndex != nil {
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping TXIndex..."))
+		node.TXIndex.Stop()
+		node.closeDb(node.TXIndex.TXIndexChain.DB(), "txindex")
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: TXIndex successfully stopped."))
+	}
+
+	// Databases
+	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Closing all databases..."))
+	node.closeDb(node.ChainDB, "chain")
+	node.stopWaitGroup.Wait()
+	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Databases successfully closed."))
+
+	if node.internalExitChan != nil {
+		close(node.internalExitChan)
+		node.internalExitChan = nil
+	}
+}
+
+// Close a database and handle the stopWaitGroup accordingly. We close databases in a go routine to speed up the process.
+func (node *Node) closeDb(db *badger.DB, dbName string) {
+	node.stopWaitGroup.Add(1)
+
+	glog.Infof("Node.closeDb: Preparing to close %v db", dbName)
+	go func() {
+		defer node.stopWaitGroup.Done()
+		if err := db.Close(); err != nil {
+			glog.Fatalf(lib.CLog(lib.Red, fmt.Sprintf("Node.Stop: Problem closing %v db: err: (%v)", dbName, err)))
+		} else {
+			glog.Infof(lib.CLog(lib.Yellow, fmt.Sprintf("Node.closeDb: Closed %v Db", dbName)))
+		}
+	}()
+}
+
+// listenToNodeMessages listens to the communication from the engine through the nodeMessageChan. There are currently
+// two main operations that the engine can request. These are a regular node restart, and a restart with a database
+// erase. The latter may seem a little harsh, but it is only triggered when the node is really broken and there's
+// no way we can recover.
+func (node *Node) listenToNodeMessages(exitChannels ...*chan struct{}) {
+	select {
+	case <-node.internalExitChan:
+		break
+	case operation := <-node.nodeMessageChan:
+		if !node.IsRunning {
+			panic("Node.listenToNodeMessages: Node is currently not running, nodeMessageChan should've not been called!")
+		}
+		glog.Infof("Node.listenToNodeMessages: Stopping node")
+		node.Stop()
+		glog.Infof("Node.listenToNodeMessages: Finished stopping node")
+		switch operation {
+		case lib.NodeErase:
+			if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
+				glog.Fatal(lib.CLog(lib.Red, fmt.Sprintf("IMPORTANT: Problem removing the directory (%v), you "+
+					"should run `rm -rf %v` to delete it manually. Error: (%v)", node.Config.DataDirectory,
+					node.Config.DataDirectory, err)))
+				return
+			}
+		}
+
+		glog.Infof("Node.listenToNodeMessages: Restarting node")
+		// Wait a few seconds so that all peer messages we've sent while closing the node get propagated in the network.
+		go node.Start(exitChannels...)
+		break
+	}
 }
 
 func validateParams(params *lib.DeSoParams) {
@@ -260,7 +440,7 @@ func validateParams(params *lib.DeSoParams) {
 	}
 }
 
-func getAddrsToListenOn(protocolPort uint16) ([]net.TCPAddr, []net.Listener) {
+func GetAddrsToListenOn(protocolPort uint16) ([]net.TCPAddr, []net.Listener) {
 	listeningAddrs := []net.TCPAddr{}
 	listeners := []net.Listener{}
 	ifaceAddrs, err := net.InterfaceAddrs()
@@ -316,7 +496,11 @@ func addIPsForHost(desoAddrMgr *addrmgr.AddrManager, host string, params *lib.De
 	glog.V(1).Infof("_addSeedAddrs: Adding seed IPs from seed %s: %v\n", host, ipAddrs)
 
 	// Convert addresses to NetAddress'es.
-	netAddrs := make([]*wire.NetAddress, len(ipAddrs))
+	netAddrs, err := lib.SafeMakeSliceWithLength[*wire.NetAddress](uint64(len(ipAddrs)))
+	if err != nil {
+		glog.V(2).Infof("_addSeedAddrs: Problem creating netAddrs slice with length %d", len(ipAddrs))
+		return
+	}
 	for ii, ip := range ipAddrs {
 		netAddrs[ii] = wire.NewNetAddressTimestamp(
 			// We initialize addresses with a

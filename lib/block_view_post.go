@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
@@ -23,8 +24,8 @@ func (bav *UtxoView) _getRepostEntryForRepostKey(repostKey *RepostKey) *RepostEn
 	// If we get here it means no value exists in our in-memory map. In this case,
 	// defer to the db. If a mapping exists in the db, return it. If not, return
 	// nil. Either way, save the value to the in-memory view mapping got later.
-	repostEntry := DbReposterPubKeyRepostedPostHashToRepostEntry(
-		bav.Handle, repostKey.ReposterPubKey[:], repostKey.RepostedPostHash)
+	repostEntry := DbReposterPubKeyRepostedPostHashToRepostEntry(bav.Handle, bav.Snapshot,
+		repostKey.ReposterPubKey[:], repostKey.RepostedPostHash)
 	if repostEntry != nil {
 		bav._setRepostEntryMappings(repostEntry)
 	}
@@ -103,7 +104,8 @@ func (bav *UtxoView) GetDiamondEntryForDiamondKey(diamondKey *DiamondKey) *Diamo
 			}
 		}
 	} else {
-		diamondEntry = DbGetDiamondMappings(bav.Handle, &diamondKey.ReceiverPKID, &diamondKey.SenderPKID, &diamondKey.DiamondPostHash)
+		diamondEntry = DbGetDiamondMappings(bav.Handle, bav.Snapshot,
+			&diamondKey.ReceiverPKID, &diamondKey.SenderPKID, &diamondKey.DiamondPostHash)
 	}
 
 	if diamondEntry != nil {
@@ -130,7 +132,7 @@ func (bav *UtxoView) GetPostEntryForPostHash(postHash *BlockHash) *PostEntry {
 		}
 		return nil
 	} else {
-		dbPostEntry := DBGetPostEntryByPostHash(bav.Handle, postHash)
+		dbPostEntry := DBGetPostEntryByPostHash(bav.Handle, bav.Snapshot, postHash)
 		if dbPostEntry != nil {
 			bav._setPostEntryMappings(dbPostEntry)
 		}
@@ -268,7 +270,7 @@ func (bav *UtxoView) GetPostEntryReaderState(
 	senderPKID := bav.GetPKIDForPublicKey(readerPK)
 	receiverPKID := bav.GetPKIDForPublicKey(postEntry.PosterPublicKey)
 	if senderPKID == nil || receiverPKID == nil {
-		glog.V(1).Infof(
+		glog.V(2).Infof(
 			"GetPostEntryReaderState: Could not find PKID for reader PK: %s or poster PK: %s",
 			PkToString(readerPK, bav.Params), PkToString(postEntry.PosterPublicKey, bav.Params))
 	} else {
@@ -306,7 +308,8 @@ func (bav *UtxoView) GetCommentEntriesForParentStakeID(parentStakeID []byte) ([]
 			bav.setPostMappings(post)
 		}
 	} else {
-		_, dbCommentHashes, _, err := DBGetCommentPostHashesForParentStakeID(bav.Handle, parentStakeID, false)
+		_, dbCommentHashes, _, err := DBGetCommentPostHashesForParentStakeID(
+			bav.Handle, bav.Snapshot, parentStakeID, false)
 		if err != nil {
 			return nil, errors.Wrapf(err, "GetCommentEntriesForParentStakeID: Problem fetching comments: %v", err)
 		}
@@ -382,7 +385,7 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 	//
 	// TODO(performance): This currently fetches all posts. We should implement
 	// some kind of pagination instead though.
-	_, _, dbPostEntries, err := DBGetAllPostsByTstamp(bav.Handle, true /*fetchEntries*/)
+	_, _, dbPostEntries, err := DBGetAllPostsByTstamp(bav.Handle, bav.Snapshot, true)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "GetAllPosts: Problem fetching PostEntry's from db: ")
 	}
@@ -408,7 +411,7 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 
 		if len(postEntry.ParentStakeID) == 0 {
 			_, dbCommentHashes, _, err := DBGetCommentPostHashesForParentStakeID(
-				bav.Handle, postEntry.ParentStakeID, false /*fetchEntries*/)
+				bav.Handle, bav.Snapshot, postEntry.ParentStakeID, false)
 			if err != nil {
 				return nil, nil, errors.Wrapf(err, "GetAllPosts: Problem fetching comment PostEntry's from db: ")
 			}
@@ -448,7 +451,10 @@ func (bav *UtxoView) GetAllPosts() (_corePosts []*PostEntry, _commentsByPostHash
 	return allCorePosts, commentsByPostHash, nil
 }
 
-func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool, nftRequired bool) (_posts []*PostEntry, _err error) {
+func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey []byte, startPostHash *BlockHash, limit uint64, mediaRequired bool, onlyNFTs bool, onlyPosts bool) (_posts []*PostEntry, _err error) {
+	if onlyNFTs && onlyPosts {
+		return nil, fmt.Errorf("GetPostsPaginatedForPublicKeyOrderedByTimestamp: onlyNFTs and onlyPosts can not be enabled both")
+	}
 	if bav.Postgres != nil {
 		var startTime uint64 = math.MaxUint64
 		if startPostHash != nil {
@@ -461,15 +467,21 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 			if mediaRequired && !post.HasMedia() {
 				continue
 			}
-			// nftRequired set to determine if we only want posts that are NFTs
-			if nftRequired && !post.NFT {
+
+			// onlyNFTs set to determine if we only want posts that are NFTs
+			if onlyNFTs && !post.NFT {
 				continue
 			}
+			if onlyPosts && post.NFT {
+				continue
+			}
+
 			bav.setPostMappings(post)
 		}
 	} else {
 		handle := bav.Handle
-		dbPrefix := append([]byte{}, _PrefixPosterPublicKeyTimestampPostHash...)
+		// FIXME: Db operation like this shouldn't happen in utxoview.
+		dbPrefix := append([]byte{}, Prefixes.PrefixPosterPublicKeyTimestampPostHash...)
 		dbPrefix = append(dbPrefix, publicKey...)
 		var prefix []byte
 		if startPostHash != nil {
@@ -523,8 +535,11 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 					continue
 				}
 
-				// nftRequired set to determine if we only want posts that are NFTs
-				if nftRequired && !postEntry.IsNFT {
+				// onlyNFTs set to determine if we only want posts that are NFTs
+				if onlyNFTs && !postEntry.IsNFT {
+					continue
+				}
+				if onlyPosts && postEntry.IsNFT {
 					continue
 				}
 
@@ -550,8 +565,11 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 			continue
 		}
 
-		// nftRequired set to determine if we only want posts that are NFTs
-		if nftRequired && !postEntry.IsNFT {
+		// onlyNFTs set to determine if we only want posts that are NFTs
+		if onlyNFTs && !postEntry.IsNFT {
+			continue
+		}
+		if onlyPosts && postEntry.IsNFT {
 			continue
 		}
 
@@ -565,7 +583,8 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 
 func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToDiamondLevel map[PKID]int64, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
+	// FIXME: Db operation like this shouldn't happen in utxoview.
+	dbPrefix := append([]byte{}, Prefixes.PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 
@@ -605,7 +624,8 @@ func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToD
 
 func (bav *UtxoView) GetRepostsForPostHash(postHash *BlockHash) (_reposterPubKeys [][]byte, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixRepostedPostHashReposterPubKey...)
+	// FIXME: Db operation like this shouldn't happen in utxoview.
+	dbPrefix := append([]byte{}, Prefixes.PrefixRepostedPostHashReposterPubKey...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 
@@ -641,7 +661,8 @@ func (bav *UtxoView) GetRepostsForPostHash(postHash *BlockHash) (_reposterPubKey
 func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *BlockHash,
 ) (_quoteReposterPubKeys [][]byte, _quoteReposterPubKeyToPosts map[PkMapKey][]*PostEntry, _err error) {
 	handle := bav.Handle
-	dbPrefix := append([]byte{}, _PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
+	// FIXME: Db operation like this shouldn't happen in utxoview.
+	dbPrefix := append([]byte{}, Prefixes.PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
 	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
 
@@ -735,6 +756,13 @@ func (bav *UtxoView) _connectSubmitPost(
 		copy(repostedPostHash[:], repostedPostHashBytes)
 		delete(extraData, RepostedPostHash)
 	}
+	isFrozen := false
+	if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
+		if extraDataIsFrozen, exists := extraData[IsFrozenKey]; exists {
+			isFrozen = bytes.Equal(extraDataIsFrozen, IsFrozenPostVal)
+			delete(extraData, IsFrozenKey)
+		}
+	}
 
 	// At this point the inputs and outputs have been processed. Now we
 	// need to handle the metadata.
@@ -778,12 +806,19 @@ func (bav *UtxoView) _connectSubmitPost(
 				"_connectSubmitPost: Post hash: %v, poster public key: %v, "+
 					"txn public key: %v, paramUpdater: %v", postHash,
 				PkToStringBoth(existingPostEntryy.PosterPublicKey),
-				PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
+				PkToStringBoth(txn.PublicKey), spew.Sdump(GetParamUpdaterPublicKeys(blockHeight, bav.Params)))
 		}
 
-		// Modification of an NFT is not allowed.
-		if existingPostEntryy.IsNFT {
-			return 0, 0, nil, errors.Wrapf(RuleErrorSubmitPostCannotUpdateNFT, "_connectSubmitPost: ")
+		if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
+			// Modification of a frozen post is not allowed after the above block height.
+			if existingPostEntryy.IsFrozen {
+				return 0, 0, nil, errors.Wrapf(RuleErrorSubmitPostModifyingFrozenPost, "_connectSubmitPost: ")
+			}
+		} else {
+			// Modification of an NFT is not allowed before the above block height.
+			if existingPostEntryy.IsNFT {
+				return 0, 0, nil, errors.Wrapf(RuleErrorSubmitPostCannotUpdateNFT, "_connectSubmitPost: ")
+			}
 		}
 
 		// It's an error if we are updating the value of RepostedPostHash. A post can only ever repost a single post.
@@ -835,6 +870,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		// which seems like undesired behavior if a paramUpdater is trying to reduce
 		// spam
 		newPostEntry.IsHidden = txMeta.IsHidden
+		newPostEntry.IsFrozen = isFrozen
 
 		// Obtain the parent posts
 		newParentPostEntry, newGrandparentPostEntry, err = bav._getParentAndGrandparentPostEntry(newPostEntry)
@@ -988,6 +1024,7 @@ func (bav *UtxoView) _connectSubmitPost(
 			TimestampNanos:           txMeta.TimestampNanos,
 			ConfirmationBlockHeight:  blockHeight,
 			PostExtraData:            extraData,
+			IsFrozen:                 isFrozen,
 			// Don't set IsHidden on new posts.
 		}
 

@@ -1,8 +1,11 @@
 package lib
 
 import (
-	"github.com/btcsuite/btcd/btcec"
+	"fmt"
+	"reflect"
 	"strings"
+
+	"github.com/btcsuite/btcd/btcec"
 )
 
 // RuleError is an error type that specifies an error occurred during
@@ -63,6 +66,7 @@ const (
 	RuleErrorForbiddenBlockProducerPublicKey                    RuleError = "RuleErrorForbiddenBlockProducerPublicKey"
 	RuleErrorInvalidBlockProducerSIgnature                      RuleError = "RuleErrorInvalidBlockProducerSIgnature"
 	RuleErrorInvalidBlockHeader                                 RuleError = "RuleErrorInvalidBlockHeader"
+	RuleErrorBlockAlreadyExists                                 RuleError = "RuleErrorBlockAlreadyExists"
 	RuleErrorOrphanBlock                                        RuleError = "RuleErrorOrphanBlock"
 	RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey        RuleError = "RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey"
 	RuleErrorBlockRewardTxnNotAllowedToHaveInputs               RuleError = "RuleErrorBlockRewardTxnNotAllowedToHaveInputs"
@@ -83,6 +87,7 @@ const (
 	RuleErrorBitcoinExchangeTotalOutputLessThanOrEqualZero      RuleError = "RuleErrorBitcoinExchangeTotalOutputLessThanOrEqualZero"
 	RuleErrorTxnSanity                                          RuleError = "RuleErrorTxnSanity"
 	RuleErrorTxnTooBig                                          RuleError = "RuleErrorTxnTooBig"
+	RuleErrorTxnSigHasHighS                                     RuleError = "RuleErrorTxnSigHasHighS"
 
 	RuleErrorPrivateMessageEncryptedTextLengthExceedsMax           RuleError = "RuleErrorPrivateMessageEncryptedTextLengthExceedsMax"
 	RuleErrorPrivateMessageRecipientPubKeyLen                      RuleError = "RuleErrorPrivateMessageRecipientPubKeyLen"
@@ -98,6 +103,51 @@ const (
 	RuleErrorBurnAddressCannotBurnBitcoin                          RuleError = "RuleErrorBurnAddressCannotBurnBitcoin"
 	RuleErrorPrivateMessageInvalidVersion                          RuleError = "RuleErrorPrivateMessageInvalidVersion"
 	RuleErrorPrivateMessageMissingExtraData                        RuleError = "RuleErrorPrivateMessageMissingExtraData"
+
+	RuleErrorAccessGroupsBeforeBlockHeight               RuleError = "RuleErrorAccessGroupsBeforeBlockHeight"
+	RuleErrorAccessGroupsNameCannotBeZeros               RuleError = "RuleErrorAccessGroupsNameCannotBeZeros"
+	RuleErrorAccessPublicKeyCannotBeOwnerKey             RuleError = "RuleErrorAccessPublicKeyCannotBeOwnerKey"
+	RuleErrorAccessGroupOwnerPublicKeyCannotBeDifferent  RuleError = "RuleErrorAccessGroupOwnerPublicKeyCannotBeDifferent"
+	RuleErrorAccessGroupAlreadyExists                    RuleError = "RuleErrorAccessGroupAlreadyExists"
+	RuleErrorAccessGroupDoesNotExist                     RuleError = "RuleErrorAccessGroupDoesNotExist"
+	RuleErrorAccessGroupOperationTypeNotSupported        RuleError = "RuleErrorAccessGroupOperationTypeNotSupported"
+	RuleErrorAccessGroupMembersBeforeBlockHeight         RuleError = "RuleErrorAccessGroupMembersBeforeBlockHeight"
+	RuleErrorAccessGroupDoesntExist                      RuleError = "RuleErrorAccessGroupDoesntExist"
+	RuleErrorAccessGroupKeyNameTooShort                  RuleError = "RuleErrorAccessGroupKeyNameTooShort"
+	RuleErrorAccessGroupKeyNameTooLong                   RuleError = "RuleErrorAccessGroupKeyNameTooLong"
+	RuleErrorAccessGroupMembersListCannotBeEmpty         RuleError = "RuleErrorAccessGroupMembersListCannotBeEmpty"
+	RuleErrorAccessMemberAlreadyExists                   RuleError = "RuleErrorAccessMemberAlreadyExists"
+	RuleErrorAccessGroupMemberOperationTypeNotSupported  RuleError = "RuleErrorAccessGroupMemberOperationTypeNotSupported"
+	RuleErrorAccessMemberDoesntExist                     RuleError = "RuleErrorAccessMemberDoesntExist"
+	RuleErrorAccessGroupMemberListDuplicateMember        RuleError = "RuleErrorAccessGroupMemberListDuplicateMember"
+	RuleErrorAccessGroupMemberCantAddOwnerBySameGroup    RuleError = "RuleErrorAccessGroupMemberCantAddOwnerBySameGroup"
+	RuleErrorAccessGroupMemberDoesntExistOrIsDeleted     RuleError = "RuleErrorAccessGroupMemberDoesntExistOrIsDeleted"
+	RuleErrorAccessGroupMemberRemoveEncryptedKeyNotEmpty RuleError = "RuleErrorAccessGroupMemberRemoveEncryptedKeyNotEmpty"
+	RuleErrorAccessGroupMemberRemoveExtraDataNotEmpty    RuleError = "RuleErrorAccessGroupMemberRemoveExtraDataNotEmpty"
+	RuleErrorAccessGroupPrevMembersListIsIncorrect       RuleError = "RuleErrorAccessGroupPrevMembersListIsIncorrect"
+	RuleErrorAccessGroupMemberEnumerationRecursionLimit  RuleError = "RuleErrorAccessGroupMemberEnumerationRecursionLimit"
+	RuleErrorAccessGroupMemberPublicKeyMismatch          RuleError = "RuleErrorAccessGroupMemberPublicKeyMismatch"
+	RuleErrorAccessGroupCreateRequiresNonZeroInput       RuleError = "RuleErrorAccessGroupCreateRequiresNonZeroInput"
+	RuleErrorAccessGroupTransactionSpendingLimitInvalid  RuleError = "RuleErrorAccessGroupTransactionSpendingLimitInvalid"
+	RuleErrorAccessGroupMemberSpendingLimitInvalid       RuleError = "RuleErrorAccessGroupMemberSpendingLimitInvalid"
+	RuleErrorAccessGroupMemberPublicKeyCannotBeDifferent RuleError = "RuleErrorAccessGroupMemberPublicKeyCannotBeDifferent"
+
+	RuleErrorNewMessageEncryptedTextLengthExceedsMax         RuleError = "RuleErrorNewMessageEncryptedTextLengthExceedsMax"
+	RuleErrorNewMessageTimestampNanosCannotBeZero            RuleError = "RuleErrorNewMessageTimestampNanosCannotBeZero"
+	RuleErrorNewMessageDmSenderAndRecipientCannotBeTheSame   RuleError = "RuleErrorNewMessageDmSenderAndRecipientCannotBeTheSame"
+	RuleErrorNewMessageDmMessageAlreadyExists                RuleError = "RuleErrorNewMessageDmMessageAlreadyExists"
+	RuleErrorNewMessageDmMessageDoesNotExist                 RuleError = "RuleErrorNewMessageDmMessageDoesNotExist"
+	RuleErrorNewMessageDmMessageTimestampMismatch            RuleError = "RuleErrorNewMessageDmMessageTimestampMismatch"
+	RuleErrorNewMessageMessageSenderDoesNotMatchTxnPublicKey RuleError = "RuleErrorNewMessageMessageSenderDoesNotMatchTxnPublicKey"
+	RuleErrorNewMessageBeforeDeSoAccessGroups                RuleError = "RuleErrorNewMessageBeforeDeSoAccessGroups"
+	RuleErrorNewMessageGroupChatMessageAlreadyExists         RuleError = "RuleErrorNewMessageGroupChatMessageAlreadyExists"
+	RuleErrorNewMessageGroupChatMessageDoesNotExist          RuleError = "RuleErrorNewMessageGroupChatMessageDoesNotExist"
+	RuleErrorNewMessageGroupMessageTimestampMismatch         RuleError = "RuleErrorNewMessageGroupMessageTimestampMismatch"
+	RuleErrorNewMessageGetDmMessagesRecursionLimit           RuleError = "RuleErrorNewMessageGetDmMessagesRecursionLimit"
+	RuleErrorNewMessageGetGroupMessagesRecursionLimit        RuleError = "RuleErrorNewMessageGetGroupMessagesRecursionLimit"
+	RuleErrorNewMessageGroupChatMemberEntryDoesntExist       RuleError = "RuleErrorNewMessageGroupChatMemberEntryDoesntExist"
+	RuleErrorNewMessageUnknownMessageType                    RuleError = "RuleErrorNewMessageUnknownMessageType"
+	RuleErrorNewMessageUnknownOperationType                  RuleError = "RuleErrorNewMessageUnknownOperationType"
 
 	RuleErrorFollowPubKeyLen                         RuleError = "RuleErrorFollowFollowedPubKeyLen"
 	RuleErrorFollowParsePubKeyError                  RuleError = "RuleErrorFollowParsePubKeyError"
@@ -143,6 +193,7 @@ const (
 	RuleErrorSubmitPostUpdateRepostHash              RuleError = "RuleErrorSubmitPostUpdateRepostHash"
 	RuleErrorSubmitPostUpdateIsQuotedRepost          RuleError = "RuleErrorSubmitPostUpdateIsQuotedRepost"
 	RuleErrorSubmitPostCannotUpdateNFT               RuleError = "RuleErrorSubmitPostCannotUpdateNFT"
+	RuleErrorSubmitPostModifyingFrozenPost           RuleError = "RuleErrorSubmitPostModifyingFrozenPost"
 
 	RuleErrorInvalidStakeID                      RuleError = "RuleErrorInvalidStakeID"
 	RuleErrorInvalidStakeIDSize                  RuleError = "RuleErrorInvalidStakeIDSize"
@@ -245,6 +296,41 @@ const (
 	RuleErrorDAOCoinCannotUpdateRestrictionStatusIfStatusIsPermanentlyUnrestricted RuleError = "RuleErrorDAOCoinCannotUpdateRestrictionStatusIfStatusIsPermanentlyUnrestricted"
 	RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus           RuleError = "RuleErrorDAOCoinCannotUpdateTransferRestrictionStatusToCurrentStatus"
 
+	// DAO Coin Limit Orders
+	RuleErrorDAOCoinLimitOrderBeforeBlockHeight                       RuleError = "RuleErrorDAOCoinLimitOrderBeforeBlockHeight"
+	RuleErrorDAOCoinLimitOrderInvalidTransactorPKID                   RuleError = "RuleErrorDAOCoinLimitOrderInvalidTransactorPKID"
+	RuleErrorDAOCoinLimitOrderInvalidBuyingDAOCoinCreatorPKID         RuleError = "RuleErrorDAOCoinLimitOrderInvalidBuyingDAOCoinCreatorPKID"
+	RuleErrorDAOCoinLimitOrderInvalidSellingDAOCoinCreatorPKID        RuleError = "RuleErrorDAOCoinLimitOrderInvalidSellingDAOCoinCreatorPKID"
+	RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin                RuleError = "RuleErrorDAOCoinLimitOrderCannotBuyAndSellSameCoin"
+	RuleErrorDAOCoinLimitOrderInvalidOperationType                    RuleError = "RuleErrorDAOCoinLimitOrderInvalidOperationType"
+	RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile      RuleError = "RuleErrorDAOCoinLimitOrderBuyingDAOCoinCreatorMissingProfile"
+	RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile     RuleError = "RuleErrorDAOCoinLimitOrderSellingDAOCoinCreatorMissingProfile"
+	RuleErrorDAOCoinLimitOrderInvalidExchangeRate                     RuleError = "RuleErrorDAOCoinLimitOrderInvalidExchangeRate"
+	RuleErrorDAOCoinLimitOrderInvalidQuantity                         RuleError = "RuleErrorDAOCoinLimitOrderInvalidQuantity"
+	RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256               RuleError = "RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint256"
+	RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64                RuleError = "RuleErrorDAOCoinLimitOrderTotalCostOverflowsUint64"
+	RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano              RuleError = "RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano"
+	RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder             RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDESOToOpenOrder"
+	RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder         RuleError = "RuleErrorDAOCoinLimitOrderInsufficientDAOCoinsToOpenOrder"
+	RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists               RuleError = "RuleErrorDAOCoinLimitOrderBidderInputNoLongerExists"
+	RuleErrorDAOCoinLimitOrderToCancelNotFound                        RuleError = "RuleErrorDAOCoinLimitOrderToCancelNotFound"
+	RuleErrorDAOCoinLimitOrderToCancelNotYours                        RuleError = "RuleErrorDAOCoinLimitOrderToCancelNotYours"
+	RuleErrorDAOCoinLimitOrderOverspendingDESO                        RuleError = "RuleErrorDAOCoinLimitOrderOverspendingDESO"
+	RuleErrorDAOCoinLimitOrderOverflowsDESO                           RuleError = "RuleErrorDAOCoinLimitOrderOverflowsDESO"
+	RuleErrorDAOCoinLimitOrderOverspendingDAOCoin                     RuleError = "RuleErrorDAOCoinLimitOrderOverspendingDAOCoin"
+	RuleErrorDAOCoinLimitOrderOverflowsDAOCoin                        RuleError = "RuleErrorDAOCoinLimitOrderOverflowsDAOCoin"
+	RuleErrorDAOCoinLimitOrderMatchingOrderIsDeleted                  RuleError = "RuleErrorDAOCoinLimitOrderMatchingOrderIsDeleted"
+	RuleErrorDAOCoinLimitOrderMatchingOwnOrder                        RuleError = "RuleErrorDAOCoinLimitOrderMatchingOwnOrder"
+	RuleErrorDAOCoinLimitOrderMatchingOrderBuyingDifferentCoins       RuleError = "RuleErrorDAOCoinLimitOrderMatchingOrderBuyingDifferentCoins"
+	RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins      RuleError = "RuleErrorDAOCoinLimitOrderMatchingOrderSellingDifferentCoins"
+	RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist                RuleError = "RuleErrorDAOCoinLimitOrderBalanceEntryDoesNotExist"
+	RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero                    RuleError = "RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero"
+	RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee                   RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee"
+	RuleErrorDAOCoinLimitOrderFeeNanosOverflow                        RuleError = "RuleErrorDAOCoinLimitOrderFeeNanosOverflow"
+	RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee RuleError = "RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee"
+	RuleErrorDAOCoinLimitOrderInvalidFillType                         RuleError = "RuleErrorDAOCoinLimitOrderInvalidFillType"
+	RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled              RuleError = "RuleErrorDAOCoinLimitOrderFillOrKillOrderUnfulfilled"
+
 	// Derived Keys
 	RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid RuleError = "RuleErrorAuthorizeDerivedKeyAccessSignatureNotValid"
 	RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput    RuleError = "RuleErrorAuthorizeDerivedKeyRequiresNonZeroInput"
@@ -255,6 +341,10 @@ const (
 	RuleErrorDerivedKeyNotAuthorized                    RuleError = "RuleErrorDerivedKeyNotAuthorized"
 	RuleErrorDerivedKeyInvalidExtraData                 RuleError = "RuleErrorDerivedKeyInvalidExtraData"
 	RuleErrorDerivedKeyBeforeBlockHeight                RuleError = "RuleErrorDerivedKeyBeforeBlockHeight"
+	RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId    RuleError = "RuleErrorDerivedKeyHasBothExtraDataAndRecoveryId"
+	RuleErrorDerivedKeyInvalidRecoveryId                RuleError = "RuleErrorDerivedKeyInvalidRecoveryId"
+	RuleErrorUnlimitedDerivedKeyBeforeBlockHeight       RuleError = "RuleErrorUnlimitedDerivedKeyBeforeBlockHeight"
+	RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits  RuleError = "RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits"
 
 	// Messages
 	RuleErrorMessagingPublicKeyCannotBeOwnerKey     RuleError = "RuleErrorMessagingPublicKeyCannotBeOwnerKey"
@@ -358,13 +448,26 @@ const (
 	RuleErrorOldToPublicKeyHasDeletedPKID   RuleError = "RuleErrorOldToPublicKeyHasDeletedPKID"
 
 	// Derived Key Transaction Spending Limits
-	RuleErrorDerivedKeyTxnTypeNotAuthorized              RuleError = "RuleErrorTxnTypeNotAuthorized"
-	RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit  RuleError = "RuleErrorTxnSpendsMoreThanGlobalDESOLimit"
+	RuleErrorDerivedKeyTxnTypeNotAuthorized              RuleError = "RuleErrorDerivedKeyTxnTypeNotAuthorized"
+	RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit  RuleError = "RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit"
 	RuleErrorDerivedKeyInvalidCreatorCoinLimitOperation  RuleError = "RuleErrorInvalidCreatorCoinLimitOperation"
 	RuleErrorDerivedKeyInvalidDAOCoinLimitOperation      RuleError = "RuleErrorInvalidDAOCoinLimitOperation"
 	RuleErrorDerivedKeyNFTOperationNotAuthorized         RuleError = "RuleErrorDerivedKeyNFTOperationNotAuthorized"
 	RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized RuleError = "RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized"
 	RuleErrorDerivedKeyDAOCoinOperationNotAuthorized     RuleError = "RuleErrorDerivedKeyDAOCoinOperationNotAuthorized"
+	RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID   RuleError = "RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID"
+	RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized    RuleError = "RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized"
+
+	// Association Errors
+	RuleErrorAssociationBeforeBlockHeight     RuleError = "RuleErrorAssociationBeforeBlockHeight"
+	RuleErrorAssociationInvalidID             RuleError = "RuleErrorAssociationInvalidID"
+	RuleErrorAssociationNotFound              RuleError = "RuleErrorAssociationNotFound"
+	RuleErrorAssociationInvalidTransactor     RuleError = "RuleErrorAssociationInvalidTransactor"
+	RuleErrorAssociationInvalidApp            RuleError = "RuleErrorAssociationInvalidApp"
+	RuleErrorAssociationInvalidType           RuleError = "RuleErrorAssociationInvalidType"
+	RuleErrorAssociationInvalidValue          RuleError = "RuleErrorAssociationInvalidValue"
+	RuleErrorUserAssociationInvalidTargetUser RuleError = "RuleErrorUserAssociationInvalidTargetUser"
+	RuleErrorPostAssociationInvalidPost       RuleError = "RuleErrorPostAssociationInvalidPost"
 
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"
 	HeaderErrorNilPrevHash                                                       RuleError = "HeaderErrorNilPrevHash"
@@ -375,14 +478,13 @@ const (
 	HeaderErrorHeightInvalid                                                     RuleError = "HeaderErrorHeightInvalid"
 	HeaderErrorDifficultyBitsNotConsistentWithTargetDifficultyComputedFromParent RuleError = "HeaderErrorDifficultyBitsNotConsistentWithTargetDifficultyComputedFromParent"
 
-	TxErrorTooLarge                                                 RuleError = "TxErrorTooLarge"
-	TxErrorDuplicate                                                RuleError = "TxErrorDuplicate"
-	TxErrorIndividualBlockReward                                    RuleError = "TxErrorIndividualBlockReward"
-	TxErrorInsufficientFeeMinFee                                    RuleError = "TxErrorInsufficientFeeMinFee"
-	TxErrorInsufficientFeeRateLimit                                 RuleError = "TxErrorInsufficientFeeRateLimit"
-	TxErrorInsufficientFeePriorityQueue                             RuleError = "TxErrorInsufficientFeePriorityQueue"
-	TxErrorUnconnectedTxnNotAllowed                                 RuleError = "TxErrorUnconnectedTxnNotAllowed"
-	TxErrorCannotProcessBitcoinExchangeUntilBitcoinManagerIsCurrent RuleError = "TxErrorCannotProcessBitcoinExchangeUntilBitcoinManagerIsCurrent"
+	TxErrorTooLarge                     RuleError = "TxErrorTooLarge"
+	TxErrorDuplicate                    RuleError = "TxErrorDuplicate"
+	TxErrorIndividualBlockReward        RuleError = "TxErrorIndividualBlockReward"
+	TxErrorInsufficientFeeMinFee        RuleError = "TxErrorInsufficientFeeMinFee"
+	TxErrorInsufficientFeeRateLimit     RuleError = "TxErrorInsufficientFeeRateLimit"
+	TxErrorInsufficientFeePriorityQueue RuleError = "TxErrorInsufficientFeePriorityQueue"
+	TxErrorUnconnectedTxnNotAllowed     RuleError = "TxErrorUnconnectedTxnNotAllowed"
 )
 
 func (e RuleError) Error() string {
@@ -414,4 +516,20 @@ func IsByteArrayValidPublicKey(bytes []byte) error {
 		return RuleErrorParsePublicKey
 	}
 	return nil
+}
+
+// AssertDependencyStructFieldNumbers checks if a struct has a specified number of fields, otherwise it panics. The idea
+// is to place this as an anti-bug feature that will detect changes to the code that poses a risk of causing a bug.
+func AssertDependencyStructFieldNumbers[T any](obj T, num int) {
+	if GetNumberOfStructFields(obj) != num {
+		panic(any(fmt.Sprintf("AssertDependencyStructFieldNumbers: Struct type (%T), number of struct fields (%v), "+
+			"expected (%v). This probably means that you've modified a dependency of this code but did not update the "+
+			"code itself.", obj, GetNumberOfStructFields(obj), num,
+		)))
+	}
+}
+
+func GetNumberOfStructFields[T any](obj T) int {
+	objElements := reflect.ValueOf(obj).Elem()
+	return objElements.NumField()
 }

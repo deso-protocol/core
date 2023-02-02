@@ -8,19 +8,23 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
-	"github.com/holiman/uint256"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"io"
 	"math"
+	"math/big"
 	"net"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/davecgh/go-spew/spew"
+	decredEC "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
-
+	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
 
@@ -28,7 +32,7 @@ import (
 // network and defines precisely how they are serialized and de-serialized.
 
 // MaxMessagePayload is the maximum size alowed for a message payload.
-const MaxMessagePayload = (1024 * 1024 * 100) // 100MB
+const MaxMessagePayload = (1024 * 1024 * 1000) // 1GB
 
 // MaxBlockRewardDataSizeBytes is the maximum size allowed for a BLOCK_REWARD's ExtraData field.
 var MaxBlockRewardDataSizeBytes = 250
@@ -82,7 +86,11 @@ const (
 	// MsgTypeGetAddr is used to solicit Addr messages from peers.
 	MsgTypeGetAddr MsgType = 16
 
-	// NEXT_TAG = 18
+	// MsgTypeGetSnapshot is used to retrieve state from peers.
+	MsgTypeGetSnapshot  MsgType = 17
+	MsgTypeSnapshotData MsgType = 18
+
+	// NEXT_TAG = 19
 
 	// Below are control messages used to signal to the Server from other parts of
 	// the code but not actually sent among peers.
@@ -94,7 +102,7 @@ const (
 	MsgTypeNewPeer              MsgType = ControlMessagesStart + 1
 	MsgTypeDonePeer             MsgType = ControlMessagesStart + 2
 	MsgTypeBlockAccepted        MsgType = ControlMessagesStart + 3
-	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4
+	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4 // Deprecated
 
 	// NEXT_TAG = 7
 )
@@ -154,6 +162,10 @@ func (msgType MsgType) String() string {
 		return "BLOCK_ACCEPTED"
 	case MsgTypeBitcoinManagerUpdate:
 		return "BITCOIN_MANAGER_UPDATE"
+	case MsgTypeGetSnapshot:
+		return "GET_SNAPSHOT"
+	case MsgTypeSnapshotData:
+		return "SNAPSHOT_DATA"
 	default:
 		return fmt.Sprintf("UNRECOGNIZED(%d) - make sure String() is up to date", msgType)
 	}
@@ -215,13 +227,22 @@ const (
 	TxnTypeMessagingGroup               TxnType = 23
 	TxnTypeDAOCoin                      TxnType = 24
 	TxnTypeDAOCoinTransfer              TxnType = 25
+	TxnTypeDAOCoinLimitOrder            TxnType = 26
+	TxnTypeCreateUserAssociation        TxnType = 27
+	TxnTypeDeleteUserAssociation        TxnType = 28
+	TxnTypeCreatePostAssociation        TxnType = 29
+	TxnTypeDeletePostAssociation        TxnType = 30
+	TxnTypeAccessGroup                  TxnType = 31
+	TxnTypeAccessGroupMembers           TxnType = 32
+	TxnTypeNewMessage                   TxnType = 33
 
-	// NEXT_ID = 26
+	// NEXT_ID = 34
 )
 
 type TxnString string
 
 const (
+	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
 	TxnStringUnset                        TxnString = "UNSET"
 	TxnStringBlockReward                  TxnString = "BLOCK_REWARD"
 	TxnStringBasicTransfer                TxnString = "BASIC_TRANSFER"
@@ -247,7 +268,14 @@ const (
 	TxnStringMessagingGroup               TxnString = "MESSAGING_GROUP"
 	TxnStringDAOCoin                      TxnString = "DAO_COIN"
 	TxnStringDAOCoinTransfer              TxnString = "DAO_COIN_TRANSFER"
-	TxnStringUndefined                    TxnString = "TXN_UNDEFINED"
+	TxnStringDAOCoinLimitOrder            TxnString = "DAO_COIN_LIMIT_ORDER"
+	TxnStringCreateUserAssociation        TxnString = "CREATE_USER_ASSOCIATION"
+	TxnStringDeleteUserAssociation        TxnString = "DELETE_USER_ASSOCIATION"
+	TxnStringCreatePostAssociation        TxnString = "CREATE_POST_ASSOCIATION"
+	TxnStringDeletePostAssociation        TxnString = "DELETE_POST_ASSOCIATION"
+	TxnStringAccessGroup                  TxnString = "ACCESS_GROUP"
+	TxnStringAccessGroupMembers           TxnString = "ACCESS_GROUP_MEMBERS"
+	TxnStringNewMessage                   TxnString = "NEW_MESSAGE"
 )
 
 var (
@@ -257,7 +285,9 @@ var (
 		TxnTypeCreatorCoin, TxnTypeSwapIdentity, TxnTypeUpdateGlobalParams, TxnTypeCreatorCoinTransfer,
 		TxnTypeCreateNFT, TxnTypeUpdateNFT, TxnTypeAcceptNFTBid, TxnTypeNFTBid, TxnTypeNFTTransfer,
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
-		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer,
+		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeCreateUserAssociation,
+		TxnTypeDeleteUserAssociation, TxnTypeCreatePostAssociation, TxnTypeDeletePostAssociation,
+		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -265,7 +295,9 @@ var (
 		TxnStringCreatorCoin, TxnStringSwapIdentity, TxnStringUpdateGlobalParams, TxnStringCreatorCoinTransfer,
 		TxnStringCreateNFT, TxnStringUpdateNFT, TxnStringAcceptNFTBid, TxnStringNFTBid, TxnStringNFTTransfer,
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
-		TxnStringDAOCoin, TxnStringDAOCoinTransfer,
+		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringCreateUserAssociation,
+		TxnStringDeleteUserAssociation, TxnStringCreatePostAssociation, TxnStringDeletePostAssociation,
+		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage,
 	}
 )
 
@@ -329,6 +361,22 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringDAOCoin
 	case TxnTypeDAOCoinTransfer:
 		return TxnStringDAOCoinTransfer
+	case TxnTypeDAOCoinLimitOrder:
+		return TxnStringDAOCoinLimitOrder
+	case TxnTypeCreateUserAssociation:
+		return TxnStringCreateUserAssociation
+	case TxnTypeDeleteUserAssociation:
+		return TxnStringDeleteUserAssociation
+	case TxnTypeCreatePostAssociation:
+		return TxnStringCreatePostAssociation
+	case TxnTypeDeletePostAssociation:
+		return TxnStringDeletePostAssociation
+	case TxnTypeAccessGroup:
+		return TxnStringAccessGroup
+	case TxnTypeAccessGroupMembers:
+		return TxnStringAccessGroupMembers
+	case TxnTypeNewMessage:
+		return TxnStringNewMessage
 	default:
 		return TxnStringUndefined
 	}
@@ -386,6 +434,22 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeDAOCoin
 	case TxnStringDAOCoinTransfer:
 		return TxnTypeDAOCoinTransfer
+	case TxnStringDAOCoinLimitOrder:
+		return TxnTypeDAOCoinLimitOrder
+	case TxnStringCreateUserAssociation:
+		return TxnTypeCreateUserAssociation
+	case TxnStringDeleteUserAssociation:
+		return TxnTypeDeleteUserAssociation
+	case TxnStringCreatePostAssociation:
+		return TxnTypeCreatePostAssociation
+	case TxnStringDeletePostAssociation:
+		return TxnTypeDeletePostAssociation
+	case TxnStringAccessGroup:
+		return TxnTypeAccessGroup
+	case TxnStringAccessGroupMembers:
+		return TxnTypeAccessGroupMembers
+	case TxnStringNewMessage:
+		return TxnTypeNewMessage
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -451,6 +515,22 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&DAOCoinMetadata{}).New(), nil
 	case TxnTypeDAOCoinTransfer:
 		return (&DAOCoinTransferMetadata{}).New(), nil
+	case TxnTypeDAOCoinLimitOrder:
+		return (&DAOCoinLimitOrderMetadata{}).New(), nil
+	case TxnTypeCreateUserAssociation:
+		return (&CreateUserAssociationMetadata{}).New(), nil
+	case TxnTypeDeleteUserAssociation:
+		return (&DeleteUserAssociationMetadata{}).New(), nil
+	case TxnTypeCreatePostAssociation:
+		return (&CreatePostAssociationMetadata{}).New(), nil
+	case TxnTypeDeletePostAssociation:
+		return (&DeletePostAssociationMetadata{}).New(), nil
+	case TxnTypeAccessGroup:
+		return (&AccessGroupMetadata{}).New(), nil
+	case TxnTypeAccessGroupMembers:
+		return (&AccessGroupMembersMetadata{}).New(), nil
+	case TxnTypeNewMessage:
+		return (&NewMessageMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -553,7 +633,10 @@ func ReadMessage(rr io.Reader, networkType NetworkType) (DeSoMessage, []byte, er
 	}
 
 	// Read the payload.
-	payload := make([]byte, payloadLength)
+	payload, err := SafeMakeSliceWithLength[byte](payloadLength)
+	if err != nil {
+		return nil, nil, fmt.Errorf("ReadMessage: PRoblem creating slice of length %v for payload", payloadLength)
+	}
 	_, err = io.ReadFull(rr, payload)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "ReadMessage: Could not read payload for message type (%s)", MsgType(inMsgType))
@@ -647,6 +730,14 @@ func NewMessage(msgType MsgType) DeSoMessage {
 		{
 			return &MsgDeSoGetAddr{}
 		}
+	case MsgTypeGetSnapshot:
+		{
+			return &MsgDeSoGetSnapshot{}
+		}
+	case MsgTypeSnapshotData:
+		{
+			return &MsgDeSoSnapshotData{}
+		}
 	default:
 		{
 			return nil
@@ -701,25 +792,6 @@ func (msg *MsgDeSoDonePeer) ToBytes(preSignature bool) ([]byte, error) {
 
 func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
-}
-
-type MsgDeSoBitcoinManagerUpdate struct {
-	// Keep it simple for now. A BitcoinManagerUpdate just signals that
-	// the BitcoinManager has added at least one block or done a reorg.
-	// No serialization because we don't want this sent on the wire ever.
-	TransactionsFound []*MsgDeSoTxn
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) GetMsgType() MsgType {
-	return MsgTypeBitcoinManagerUpdate
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoBitcoinManagerUpdate.ToBytes: Not implemented")
-}
-
-func (msg *MsgDeSoBitcoinManagerUpdate) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoBitcoinManagerUpdate.FromBytes not implemented")
 }
 
 // ==================================================================
@@ -902,7 +974,7 @@ func (msg *MsgDeSoGetBlocks) ToBytes(preSignature bool) ([]byte, error) {
 func (msg *MsgDeSoGetBlocks) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
-	// Parse the nmber of block hashes.
+	// Parse the number of block hashes.
 	numHashes, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoGetBlocks.FromBytes: Problem "+
@@ -1181,7 +1253,7 @@ func _readInvList(rr io.Reader) ([]*InvVect, error) {
 		invHash := BlockHash{}
 		_, err = io.ReadFull(rr, invHash[:])
 		if err != nil {
-			return nil, errors.Wrapf(err, "_readInvList:: Error reading Hash for InvVect: ")
+			return nil, errors.Wrapf(err, "_readInvList: Error reading Hash for InvVect: ")
 		}
 
 		invVect := &InvVect{
@@ -1211,7 +1283,10 @@ func (msg *MsgDeSoInv) FromBytes(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoInv: ")
 	}
-	isSyncResponse := ReadBoolByte(rr)
+	isSyncResponse, err := ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoInv: ")
+	}
 
 	*msg = MsgDeSoInv{
 		InvList:        invList,
@@ -1278,8 +1353,14 @@ func (msg *MsgDeSoPong) FromBytes(data []byte) error {
 type ServiceFlag uint64
 
 const (
-	// SFFullNode is a flag used to indicate a peer is a full node.
-	SFFullNode ServiceFlag = 1 << iota
+	// SFFullNodeDeprecated is deprecated, and set on all nodes by default
+	// now. We basically split it into SFHyperSync and SFArchivalMode.
+	SFFullNodeDeprecated ServiceFlag = 1 << iota
+	// SFHyperSync is a flag used to indicate that the peer supports hyper sync.
+	SFHyperSync
+	// SFArchivalNode is a flag complementary to SFHyperSync. If node is a hypersync node then
+	// it might not be able to support block sync anymore, unless it has archival mode turned on.
+	SFArchivalNode
 )
 
 type MsgDeSoVersion struct {
@@ -1405,7 +1486,10 @@ func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 		if strLen > MaxMessagePayload {
 			return fmt.Errorf("MsgDeSoVersion.FromBytes: Length msg.UserAgent %d larger than max allowed %d", strLen, MaxMessagePayload)
 		}
-		userAgent := make([]byte, strLen)
+		userAgent, err := SafeMakeSliceWithLength[byte](strLen)
+		if err != nil {
+			return fmt.Errorf("MsgDeSoVersion.FromBytes: PRoblem creating slice of length %d for user agent", strLen)
+		}
 		_, err = io.ReadFull(rr, userAgent)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Error reading msg.UserAgent")
@@ -1563,7 +1647,11 @@ func (msg *MsgDeSoAddr) FromBytes(data []byte) error {
 		if ipLen != 4 && ipLen != 16 {
 			return fmt.Errorf("MsgDeSoAddr.FromBytes: IP length must be 4 or 16 bytes but was %d", ipLen)
 		}
-		currentAddr.IP = net.IP(make([]byte, ipLen))
+		currentAddrIPSlice, err := SafeMakeSliceWithLength[byte](ipLen)
+		if err != nil {
+			return fmt.Errorf("MsgDeSoAddr.FromBytes: Problem making slice of length %d for currentAddr.IP", ipLen)
+		}
+		currentAddr.IP = net.IP(currentAddrIPSlice)
 		_, err = io.ReadFull(rr, currentAddr.IP)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoAddr.FromBytes: Error reading IP")
@@ -2045,7 +2133,10 @@ func (bpi *BlockProducerInfo) Deserialize(data []byte) error {
 		if pkLen > MaxMessagePayload {
 			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: pkLen too long: %v", pkLen)
 		}
-		pkBytes := make([]byte, pkLen)
+		pkBytes, err := SafeMakeSliceWithLength[byte](pkLen)
+		if err != nil {
+			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Problem making slice for pkBytes")
+		}
 		_, err = io.ReadFull(rr, pkBytes)
 		if err != nil {
 			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Error reading public key: ")
@@ -2062,7 +2153,10 @@ func (bpi *BlockProducerInfo) Deserialize(data []byte) error {
 		if sigLen > MaxMessagePayload {
 			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: signature len too long: %v", sigLen)
 		}
-		sigBytes := make([]byte, sigLen)
+		sigBytes, err := SafeMakeSliceWithLength[byte](sigLen)
+		if err != nil {
+			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Problem making slice for sigBytes")
+		}
 		_, err = io.ReadFull(rr, sigBytes)
 		if err != nil {
 			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Error reading signature: ")
@@ -2171,7 +2265,10 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 	if hdrLen > MaxMessagePayload {
 		return fmt.Errorf("MsgDeSoBlock.FromBytes: Header length %d longer than max %d", hdrLen, MaxMessagePayload)
 	}
-	hdrBytes := make([]byte, hdrLen)
+	hdrBytes, err := SafeMakeSliceWithLength[byte](hdrLen)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem creating slice for header")
+	}
 	_, err = io.ReadFull(rr, hdrBytes)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem reading header")
@@ -2196,7 +2293,10 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 		if txBytesLen > MaxMessagePayload {
 			return fmt.Errorf("MsgDeSoBlock.FromBytes: Txn %d length %d longer than max %d", ii, hdrLen, MaxMessagePayload)
 		}
-		txBytes := make([]byte, txBytesLen)
+		txBytes, err := SafeMakeSliceWithLength[byte](txBytesLen)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem making slice for txBytes")
+		}
 		_, err = io.ReadFull(rr, txBytes)
 		if err != nil {
 			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem reading tx bytes")
@@ -2223,13 +2323,18 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 				return fmt.Errorf("MsgDeSoBlock.FromBytes: Header length %d longer "+
 					"than max %d", blockProducerInfoLen, MaxMessagePayload)
 			}
-			blockProducerInfoBytes := make([]byte, blockProducerInfoLen)
+			blockProducerInfoBytes, err := SafeMakeSliceWithLength[byte](blockProducerInfoLen)
+			if err != nil {
+				return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem creating slice for block producer info bytes")
+			}
 			_, err = io.ReadFull(rr, blockProducerInfoBytes)
 			if err != nil {
 				return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem reading header")
 			}
 			blockProducerInfo = &BlockProducerInfo{}
-			blockProducerInfo.Deserialize(blockProducerInfoBytes)
+			if err = blockProducerInfo.Deserialize(blockProducerInfoBytes); err != nil {
+				return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error deserializing block producer info")
+			}
 			ret.BlockProducerInfo = blockProducerInfo
 		}
 	}
@@ -2257,6 +2362,128 @@ func (msg *MsgDeSoBlock) String() string {
 }
 
 // ==================================================================
+// SNAPSHOT Message
+// ==================================================================
+
+type MsgDeSoGetSnapshot struct {
+	// SnapshotStartKey is the db key from which we want to start fetching the data.
+	SnapshotStartKey []byte
+}
+
+func (msg *MsgDeSoGetSnapshot) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+	data = append(data, EncodeByteArray(msg.SnapshotStartKey)...)
+
+	return data, nil
+}
+
+func (msg *MsgDeSoGetSnapshot) FromBytes(data []byte) error {
+	var err error
+
+	rr := bytes.NewReader(data)
+
+	msg.SnapshotStartKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoGetSnapshot.FromBytes: Error reading snapshot start key")
+	}
+	if len(msg.SnapshotStartKey) == 0 {
+		return fmt.Errorf("MsgDeSoGetSnapshot.FromBytes: Received an empty SnapshotStartKey")
+	}
+	return nil
+}
+
+func (msg *MsgDeSoGetSnapshot) GetMsgType() MsgType {
+	return MsgTypeGetSnapshot
+}
+
+func (msg *MsgDeSoGetSnapshot) GetPrefix() []byte {
+	return msg.SnapshotStartKey[:1]
+}
+
+type MsgDeSoSnapshotData struct {
+	// SnapshotMetadata is the information about the current snapshot epoch.
+	SnapshotMetadata *SnapshotEpochMetadata
+
+	// SnapshotChunk is the snapshot state data chunk.
+	SnapshotChunk []*DBEntry
+	// SnapshotChunkFull indicates whether we've exhausted all entries for the given prefix.
+	// If this is true, it means that there are more entries in node's db, and false means
+	// we've fetched everything.
+	SnapshotChunkFull bool
+
+	// Prefix indicates the db prefix of the current snapshot chunk.
+	Prefix []byte
+}
+
+func (msg *MsgDeSoSnapshotData) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// Encode the snapshot metadata.
+	data = append(data, msg.SnapshotMetadata.ToBytes()...)
+
+	// Encode the snapshot chunk data.
+	if len(msg.SnapshotChunk) == 0 {
+		return nil, fmt.Errorf("MsgDeSoSnapshotData.ToBytes: Snapshot data should not be empty")
+	}
+	data = append(data, UintToBuf(uint64(len(msg.SnapshotChunk)))...)
+	for _, vv := range msg.SnapshotChunk {
+		data = append(data, vv.ToBytes()...)
+	}
+	data = append(data, BoolToByte(msg.SnapshotChunkFull))
+	data = append(data, UintToBuf(uint64(len(msg.Prefix)))...)
+	data = append(data, msg.Prefix...)
+
+	return data, nil
+}
+
+func (msg *MsgDeSoSnapshotData) FromBytes(data []byte) error {
+	var err error
+
+	rr := bytes.NewReader(data)
+
+	// Decode snapshot metadata.
+	msg.SnapshotMetadata = &SnapshotEpochMetadata{}
+	if err := msg.SnapshotMetadata.FromBytes(rr); err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding snapshot metadata")
+	}
+	// Decode snapshot keys
+	dataLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of SnapshotChunk")
+	}
+	for ; dataLen > 0; dataLen-- {
+		dbEntry := &DBEntry{}
+		if err := dbEntry.FromBytes(rr); err != nil {
+			return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding SnapshotChunk")
+		}
+		msg.SnapshotChunk = append(msg.SnapshotChunk, dbEntry)
+	}
+	msg.SnapshotChunkFull, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding SnapshotChunkFull")
+	}
+
+	prefixLen, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding length of prefix")
+	}
+	msg.Prefix, err = SafeMakeSliceWithLength[byte](prefixLen)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem creating slice for prefix")
+	}
+	_, err = io.ReadFull(rr, msg.Prefix)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoSnapshotData.FromBytes: Problem decoding prefix")
+	}
+
+	return nil
+}
+
+func (msg *MsgDeSoSnapshotData) GetMsgType() MsgType {
+	return MsgTypeSnapshotData
+}
+
+// ==================================================================
 // TXN Message
 // ==================================================================
 
@@ -2274,6 +2501,39 @@ type UtxoKey struct {
 
 func (utxoKey *UtxoKey) String() string {
 	return fmt.Sprintf("< TxID: %v, Index: %d >", &utxoKey.TxID, utxoKey.Index)
+}
+
+func (utxoKey *UtxoKey) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, utxoKey.TxID.ToBytes()...)
+	data = append(data, UintToBuf(uint64(utxoKey.Index))...)
+	return data
+}
+
+func (utxoKey *UtxoKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// Read TxIndex
+	txIdBytes := make([]byte, HashSizeBytes)
+	_, err := io.ReadFull(rr, txIdBytes)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoKey.Decode: Problem reading TxID")
+	}
+	utxoKey.TxID = *NewBlockHash(txIdBytes)
+
+	index, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoKey.Decode: Problem reading Index")
+	}
+	utxoKey.Index = uint32(index)
+
+	return nil
+}
+
+func (utxoKey *UtxoKey) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (utxoKey *UtxoKey) GetEncoderType() EncoderType {
+	return EncoderTypeUtxoKey
 }
 
 const (
@@ -2316,6 +2576,246 @@ func (desoOutput *DeSoOutput) String() string {
 		PkToStringMainnet(desoOutput.PublicKey), desoOutput.AmountNanos)
 }
 
+func (desoOutput *DeSoOutput) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(desoOutput.PublicKey)...)
+	data = append(data, UintToBuf(desoOutput.AmountNanos)...)
+
+	return data
+}
+
+func (desoOutput *DeSoOutput) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	desoOutput.PublicKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DesoOutput.Decode: Problem reading PublicKey")
+	}
+
+	desoOutput.AmountNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DesoOutput.Decode: Problem reading AmountNanos")
+	}
+	return nil
+}
+
+func (desoOutput *DeSoOutput) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (desoOutput *DeSoOutput) GetEncoderType() EncoderType {
+	return EncoderTypeDeSoOutput
+}
+
+const (
+	// derSigMagicOffset is the first byte of the DER signature format. It's a hard-coded value defined as part of the
+	// DER encoding standard.
+	derSigMagicOffset = 0x30
+
+	// derSigMagicMaxRecoveryOffset is the maximal value of the DeSo-DER signature format. We enable public key recovery
+	// from ECDSA signatures. To facilitate this, we add the recovery id to the DER magic 0x30 first byte. The recovery id
+	// is in the range of [0, 3] and corresponds to the compact signature header magic. Adding recovery id to signature
+	// encoding is totally optional and leaving the first byte 0x30 is acceptable. Specifically, the DeSo-DER signatures
+	// have the following format:
+	// <0x30 + optionally (0x01 + recoveryId)> <length of whole message> <0x02> <length of R> <R> 0x2 <length of S> <S>.
+	// At this point, a familiar reader might arrive at some malleability concerns. After all that's why bip-62 enforced
+	// DER signatures. ECDSA malleability is prevented by allowing public key recovery iff it was produced with a derived key.
+	// That is, signatures made with derived keys cannot start with 0x30, unless the underlying transaction has the
+	// derived public key in ExtraData. And if it does, then the header must be 0x30.
+	derSigMagicMaxRecoveryOffset = 0x34
+)
+
+// DeSoSignature is a wrapper around ECDSA signatures used primarily in the MsgDeSoTxn transaction type.
+type DeSoSignature struct {
+	// Sign stores the main ECDSA signature. We use the btcec crypto package for most of the heavy-lifting.
+	Sign *btcec.Signature
+
+	// RecoveryId is the public key recovery id. The RecoveryId is taken from the DeSo-DER signature header magic byte and
+	// must be in the [0, 3] range.
+	RecoveryId byte
+	// IsRecoverable indicates if the original signature contained the public key recovery id.
+	IsRecoverable bool
+}
+
+func (desoSign *DeSoSignature) SetSignature(sign *btcec.Signature) {
+	desoSign.Sign = sign
+}
+
+// Verify is a wrapper around DeSoSignature.Sign.Verify.
+func (desoSign *DeSoSignature) Verify(hash []byte, pubKey *btcec.PublicKey) bool {
+	if desoSign.Sign == nil {
+		return false
+	}
+	return desoSign.Sign.Verify(hash, pubKey)
+}
+
+// HasHighS returns true if the signature has a high S value, which is non-standard
+func (desoSign *DeSoSignature) HasHighS() bool {
+	if desoSign == nil || desoSign.Sign == nil {
+		return false
+	}
+	// We reject high-S signatures as they lead to inconsistent public key recovery
+	// https://github.com/indutny/elliptic/blob/master/lib/elliptic/ec/index.js#L147
+	return desoSign.Sign.S.Cmp(big.NewInt(0).Rsh(secp256k1.Params().N, 1)) != -1
+}
+
+// ToBytes encodes the signature in accordance to the DeSo-DER ECDSA format.
+// <0x30 + optionally (0x01 + recoveryId)> <length of whole message> <0x02> <length of R> <R> 0x2 <length of S> <S>.
+func (desoSign *DeSoSignature) ToBytes() []byte {
+	// Serialize the signature using the DER encoding.
+	signatureBytes := desoSign.Sign.Serialize()
+
+	// If the signature contains the recovery id, place it in the header magic in accordance with
+	// the DeSo-DER format.
+	if len(signatureBytes) > 0 && desoSign.IsRecoverable {
+		signatureBytes[0] += 0x01 + desoSign.RecoveryId
+	}
+	return signatureBytes
+}
+
+// FromBytes parses the signature bytes encoded in accordance to the DeSo-DER ECDSA format.
+func (desoSign *DeSoSignature) FromBytes(signatureBytes []byte) error {
+	// Signature cannot be an empty byte array.
+	if len(signatureBytes) == 0 {
+		return fmt.Errorf("FromBytes: Signature cannot be empty")
+	}
+
+	// The first byte of the signature must be in the [0x30, 0x34] range.
+	if signatureBytes[0] < derSigMagicOffset || signatureBytes[0] > derSigMagicMaxRecoveryOffset {
+		return fmt.Errorf("FromBytes: DeSo-DER header magic expected in [%v, %v] range but got: %v",
+			derSigMagicOffset, derSigMagicMaxRecoveryOffset, signatureBytes[0])
+	}
+
+	// Copy the signature bytes to make so that we can freely modify it.
+	signatureBytesCopy, err := SafeMakeSliceWithLength[byte](uint64(len(signatureBytes)))
+	if err != nil {
+		return fmt.Errorf("FromBytes: Problem creating slice for signatureBytesCopy")
+	}
+	copy(signatureBytesCopy, signatureBytes)
+	// If header magic contains the recovery Id, we will retrieve it.
+	if signatureBytes[0] > derSigMagicOffset {
+		// We subtract 1 because DeSo-DER header magic in this case is 0x30 + 0x01 + recoveryId
+		desoSign.RecoveryId = signatureBytes[0] - derSigMagicOffset - 0x01
+		desoSign.IsRecoverable = true
+		// Now set the first byte as the standard DER header offset so that we can parse it with btcec.
+		signatureBytesCopy[0] = derSigMagicOffset
+	}
+	// Parse the signature assuming it's encoded in the standard DER format.
+	desoSign.Sign, err = btcec.ParseDERSignature(signatureBytesCopy, btcec.S256())
+	if err != nil {
+		return errors.Wrapf(err, "Problem parsing signatureBytes")
+	}
+	return nil
+}
+
+const (
+	// See comment on _btcecSerializeCompact to better understand how these constants are used.
+
+	// btcecCompactSigSize is the size of a btcec compact signature. It consists of a compact signature recovery code
+	// byte followed by the R and S components serialized as 32-byte big-endian values. 1+32*2 = 65 for the R and S
+	// components. 1+32+32=65.
+	btcecCompactSigSize byte = 65
+
+	// This is a magic offset that we need to implement the compact signature concept from btcec.
+	//
+	// btcecCompactSigMagicOffset is a value used when creating the compact signature recovery code inherited from Bitcoin and
+	// has no meaning, but has been retained for compatibility. For historical purposes, it was originally picked to avoid
+	// a binary representation that would allow compact signatures to be mistaken for other components.
+	btcecCompactSigMagicOffset byte = 27
+
+	// btcecCompactSigCompPubKey is a value used when creating the compact signature recovery code to indicate the original
+	// public key was compressed.
+	btcecCompactSigCompPubKey byte = 4
+)
+
+// The concept of a compact signature comes from btcec. It's a weird format that's different from standard DER
+// encoding, but we use it because it allows us to leverage their RecoverCompact function. For some reason, btcec
+// only implemented SignCompact() and RecoverCompact() but not SerializeCompact(). So, for our use-case, we
+// implement the missing Serialize() function and then we call the following to recover the public key:
+// - btcec.RecoverCompact(_btcecSerializeCompact(desoSignature)).
+//
+// _btcecSerializeCompact encodes the signature into the compact signature format:
+// <1-byte compact sig recovery code><32-byte R><32-byte S>
+//
+// The compact sig recovery code is the value 27 + public key recovery ID + 4
+// if the compact signature was created with a compressed public key.
+// Public key recovery ID is in the range [0, 3].
+func (desoSign *DeSoSignature) _btcecSerializeCompact() ([]byte, error) {
+	// We will change from the btcec signature type to the dcrec signature type. To achieve this, we will create the
+	// ecdsa (R, S) pair using the decred's package.
+	// Reference: https://github.com/decred/dcrd/blob/1eff7/dcrec/secp256k1/modnscalar_test.go#L26
+	rBytes := desoSign.Sign.R.Bytes()
+	r := &secp256k1.ModNScalar{}
+	r.SetByteSlice(rBytes)
+
+	sBytes := desoSign.Sign.S.Bytes()
+	s := &secp256k1.ModNScalar{}
+	s.SetByteSlice(sBytes)
+
+	// To make sure the signature has been correctly parsed, we verify DER encoding of both signatures matches.
+	verifySignature := decredEC.NewSignature(r, s)
+	if !bytes.Equal(verifySignature.Serialize(), desoSign.Sign.Serialize()) {
+		return nil, fmt.Errorf("_btcecSerializeCompact: Problem sanity-checking signature")
+	}
+
+	// Encode the signature using compact format.
+	// reference: https://github.com/decred/dcrd/blob/1eff7/dcrec/secp256k1/ecdsa/signature.go#L712
+	compactSigRecoveryCode := btcecCompactSigMagicOffset + desoSign.RecoveryId + btcecCompactSigCompPubKey
+
+	// Output <compactSigRecoveryCode><32-byte R><32-byte S>.
+	var b [btcecCompactSigSize]byte
+	b[0] = compactSigRecoveryCode
+	r.PutBytesUnchecked(b[1:33])
+	s.PutBytesUnchecked(b[33:65])
+	return b[:], nil
+}
+
+// RecoverPublicKey attempts to retrieve the signer's public key from the DeSoSignature given the messageHash sha256x2 digest.
+func (desoSign *DeSoSignature) RecoverPublicKey(messageHash []byte) (*btcec.PublicKey, error) {
+	// Serialize signature into the compact encoding.
+	signatureBytes, err := desoSign._btcecSerializeCompact()
+	if err != nil {
+		return nil, errors.Wrapf(err, "RecoverPublicKey: Problem serializing compact signature")
+	}
+
+	// Now recover the public key from the compact encoding.
+	recoveredPublicKey, _, err := btcec.RecoverCompact(btcec.S256(), signatureBytes, messageHash)
+	if err != nil {
+		return nil, errors.Wrapf(err, "RecoverPublicKey: Problem recovering public key from the signature bytes")
+	}
+
+	return recoveredPublicKey, nil
+}
+
+// SignRecoverable computes a signature that adds a publicKeyRecoveryID to the first byte of a
+// standard DER signature. We call the combination the DeSo-DER signature.
+//
+// Overall, it first computes a standard DER signature, and then it adds (0x01 + recoveryID) to
+// the first byte. This makes it so that the first byte will be between [0x31, 0x34] inclusive,
+// instead of being 0x30, which is the standard DER signature magic number.
+func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) (*DeSoSignature, error) {
+	signature, err := privateKey.Sign(bb)
+	if err != nil {
+		return nil, err
+	}
+
+	// We use SignCompact from the btcec library to get the recoverID. This results in a non-standard
+	// encoding that we need to manipulate in order to get the recoveryID back out. See comment on
+	// _btcecSerializeCompact for more information.
+	signatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, bb, true)
+	if err != nil {
+		return nil, err
+	}
+	recoveryId := (signatureCompact[0] - btcecCompactSigMagicOffset) & ^byte(btcecCompactSigCompPubKey)
+
+	return &DeSoSignature{
+		Sign:          signature,
+		RecoveryId:    recoveryId,
+		IsRecoverable: true,
+	}, nil
+}
+
 type MsgDeSoTxn struct {
 	TxInputs  []*DeSoInput
 	TxOutputs []*DeSoOutput
@@ -2344,7 +2844,7 @@ type MsgDeSoTxn struct {
 	// inputs to the transaction. The exception to this rule is that
 	// BLOCK_REWARD and CREATE_deso transactions do not require a signature
 	// since they have no inputs.
-	Signature *btcec.Signature
+	Signature DeSoSignature
 
 	// (!!) **DO_NOT_USE** (!!)
 	//
@@ -2434,8 +2934,8 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	// a zero will be encoded for the length and no signature bytes will be added
 	// beyond it.
 	sigBytes := []byte{}
-	if !preSignature && msg.Signature != nil {
-		sigBytes = msg.Signature.Serialize()
+	if !preSignature && msg.Signature.Sign != nil {
+		sigBytes = msg.Signature.ToBytes()
 	}
 	// Note that even though we encode the length as a varint as opposed to a
 	// fixed-width int, it should always take up just one byte since the length
@@ -2446,30 +2946,6 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, sigBytes...)
 
 	return data, nil
-}
-
-func EncodeExtraData(extraData map[string][]byte) []byte {
-	var data []byte
-	extraDataLength := uint64(len(extraData))
-	data = append(data, UintToBuf(extraDataLength)...)
-	if extraDataLength > 0 {
-		// Sort the keys of the map
-		keys := make([]string, 0, len(extraData))
-		for key := range extraData {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		// Encode the length of the key, the key itself
-		// then the length of the value, then the value itself.
-		for _, key := range keys {
-			data = append(data, UintToBuf(uint64(len(key)))...)
-			data = append(data, []byte(key)...)
-			value := extraData[key]
-			data = append(data, UintToBuf(uint64(len(value)))...)
-			data = append(data, value...)
-		}
-	}
-	return data
 }
 
 func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
@@ -2541,7 +3017,10 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	if metaLen > MaxMessagePayload {
 		return nil, fmt.Errorf("_readTransaction.FromBytes: metaLen length %d longer than max %d", metaLen, MaxMessagePayload)
 	}
-	metaBuf := make([]byte, metaLen)
+	metaBuf, err := SafeMakeSliceWithLength[byte](metaLen)
+	if err != nil {
+		return nil, fmt.Errorf("_readTransaction.FromBytes: Problem creating slice for metaBuf")
+	}
 	_, err = io.ReadFull(rr, metaBuf)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_readTransaction: Problem reading TxnMeta")
@@ -2561,7 +3040,10 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	}
 	ret.PublicKey = nil
 	if pkLen != 0 {
-		ret.PublicKey = make([]byte, pkLen)
+		ret.PublicKey, err = SafeMakeSliceWithLength[byte](pkLen)
+		if err != nil {
+			return nil, fmt.Errorf("_readTransaction.FromBytes: Problem making slice for PublicKey")
+		}
 		_, err = io.ReadFull(rr, ret.PublicKey)
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem reading DeSoTxn.PublicKey")
@@ -2584,76 +3066,25 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 		return nil, fmt.Errorf("_readTransaction.FromBytes: sigLen length %d longer than max %d", sigLen, MaxMessagePayload)
 	}
 
-	ret.Signature = nil
+	ret.Signature.SetSignature(nil)
 	if sigLen != 0 {
-		sigBytes := make([]byte, sigLen)
+		sigBytes, err := SafeMakeSliceWithLength[byte](sigLen)
+		if err != nil {
+			return nil, fmt.Errorf("_readTransaction.FromBytes: Problem making slice for sigBytes")
+		}
 		_, err = io.ReadFull(rr, sigBytes)
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem reading DeSoTxn.Signature")
 		}
 
 		// Verify that the signature is valid.
-		sig, err := btcec.ParseDERSignature(sigBytes, btcec.S256())
+		err = ret.Signature.FromBytes(sigBytes)
 		if err != nil {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem parsing DeSoTxn.Signature bytes")
 		}
-		// If everything worked, we set the ret signature to the original.
-		ret.Signature = sig
 	}
 
 	return ret, nil
-}
-
-func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
-	// De-serialize the ExtraData
-	extraDataLen, err := ReadUvarint(rr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeExtraData: Problem reading len(DeSoTxn.ExtraData)")
-	}
-	if extraDataLen > MaxMessagePayload {
-		return nil, fmt.Errorf("DecodeExtraData: extraDataLen length %d longer than max %d", extraDataLen, MaxMessagePayload)
-	}
-	var extraData map[string][]byte
-	// Initialize an map of strings to byte slices of size extraDataLen -- extraDataLen is the number of keys.
-	if extraDataLen != 0 {
-		extraData = make(map[string][]byte, extraDataLen)
-		// Loop over each key
-		for ii := uint64(0); ii < extraDataLen; ii++ {
-			// De-serialize the length of the key
-			var keyLen uint64
-			keyLen, err = ReadUvarint(rr)
-			if err != nil {
-				return nil, fmt.Errorf("DecodeExtraData: Problem reading len(DeSoTxn.ExtraData.Keys[#{ii}]")
-			}
-			// De-serialize the key
-			keyBytes := make([]byte, keyLen)
-			_, err = io.ReadFull(rr, keyBytes)
-			if err != nil {
-				return nil, fmt.Errorf("DecodeExtraData: Problem reading key #{ii}")
-			}
-			// Convert the key to a string and check if it already exists in the map.
-			// If it already exists in the map, this is an error as a map cannot have duplicate keys.
-			key := string(keyBytes)
-			if _, keyExists := extraData[key]; keyExists {
-				return nil, fmt.Errorf("DecodeExtraData: Key [#{ii}] ({key}) already exists in ExtraData")
-			}
-			// De-serialize the length of the value
-			var valueLen uint64
-			valueLen, err = ReadUvarint(rr)
-			if err != nil {
-				return nil, fmt.Errorf("DecodeExtraData: Problem reading len(DeSoTxn.ExtraData.Value[#{ii}]")
-			}
-			// De-serialize the value
-			value := make([]byte, valueLen)
-			_, err = io.ReadFull(rr, value)
-			if err != nil {
-				return nil, fmt.Errorf("DecodeExtraData: Problem read value #{ii}")
-			}
-			// Map the key to the value
-			extraData[key] = value
-		}
-	}
-	return extraData, nil
 }
 
 func (msg *MsgDeSoTxn) FromBytes(data []byte) error {
@@ -2727,18 +3158,20 @@ func (msg *MsgDeSoTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, error)
 // SignTransactionWithDerivedKey the signature contains solution iteration,
 // which allows us to recover signer public key from the signature.
 // Returns (new txn bytes, txn signature, error)
-func SignTransactionWithDerivedKey(txnBytes []byte, privateKey *btcec.PrivateKey) ([]byte, []byte, error) {
+func SignTransactionBytes(txnBytes []byte, privateKey *btcec.PrivateKey, isDerived bool) ([]byte, []byte, error) {
 	// As we're signing the transaction using a derived key, we
 	// pass the key to extraData.
 	rr := bytes.NewReader(txnBytes)
 	txn, err := _readTransaction(rr)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "SignTransactionWithDerivedKey: Problem reading txn: ")
+		return nil, nil, errors.Wrapf(err, "SignTransactionBytes: Problem reading txn: ")
 	}
-	if txn.ExtraData == nil {
-		txn.ExtraData = make(map[string][]byte)
+	if isDerived {
+		if txn.ExtraData == nil {
+			txn.ExtraData = make(map[string][]byte)
+		}
+		txn.ExtraData[DerivedPublicKey] = privateKey.PubKey().SerializeCompressed()
 	}
-	txn.ExtraData[DerivedPublicKey] = privateKey.PubKey().SerializeCompressed()
 
 	// Sign the transaction with the passed private key.
 	txnSignature, err := txn.Sign(privateKey)
@@ -2813,7 +3246,7 @@ func (msg *MsgDeSoTxn) UnmarshalJSON(data []byte) error {
 		TxOutputs []*DeSoOutput
 		TxnMeta   DeSoTxnMetadata
 		PublicKey []byte
-		Signature *btcec.Signature
+		Signature DeSoSignature
 		TxnType   uint64
 	}{
 		TxInputs:  msg.TxInputs,
@@ -2911,7 +3344,10 @@ func (txnData *BlockRewardMetadataa) FromBytes(dataa []byte) error {
 			"BLOCK_REWARD txn ExtraData length (%d) cannot be longer than "+
 				"(%d) bytes", numExtraDataBytes, MaxBlockRewardDataSizeBytes)
 	}
-	ret.ExtraData = make([]byte, numExtraDataBytes)
+	ret.ExtraData, err = SafeMakeSliceWithLength[byte](numExtraDataBytes)
+	if err != nil {
+		return errors.Wrapf(err, "BlockRewardMetadataa.FromBytes: Problem creating slice for extradata")
+	}
 	_, err = io.ReadFull(rr, ret.ExtraData[:])
 	if err != nil {
 		return errors.Wrapf(err, "BlockRewardMetadataa.FromBytes: Problem reading ExtraData")
@@ -3028,7 +3464,10 @@ func (txnData *BitcoinExchangeMetadata) FromBytes(data []byte) error {
 		return fmt.Errorf("BitcoinExchangeMetadata.FromBytes: txnBytesLen %d "+
 			"exceeds max %d", txnBytesLen, MaxMessagePayload)
 	}
-	txnBytes := make([]byte, txnBytesLen)
+	txnBytes, err := SafeMakeSliceWithLength[byte](txnBytesLen)
+	if err != nil {
+		return fmt.Errorf("BitcoinExchangeMetadata.FromBytes: Problem making slice for txnBytes")
+	}
 	_, err = io.ReadFull(rr, txnBytes)
 	if err != nil {
 		return fmt.Errorf("BitcoinExchangeMetadata.FromBytes: Error reading txnBytes: %v", err)
@@ -3171,7 +3610,10 @@ func (txnData *PrivateMessageMetadata) FromBytes(data []byte) error {
 		return fmt.Errorf("PrivateMessageMetadata.FromBytes: encryptedTextLen %d "+
 			"exceeds max %d", encryptedTextLen, MaxMessagePayload)
 	}
-	ret.EncryptedText = make([]byte, encryptedTextLen)
+	ret.EncryptedText, err = SafeMakeSliceWithLength[byte](encryptedTextLen)
+	if err != nil {
+		return errors.Wrapf(err, "PrivateMessageMetadata.FromBytes: Problem making slice for encrypted text")
+	}
 	_, err = io.ReadFull(rr, ret.EncryptedText)
 	if err != nil {
 		return fmt.Errorf("PrivateMessageMetadata.FromBytes: Error reading EncryptedText: %v", err)
@@ -3249,7 +3691,10 @@ func (txnData *LikeMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsUnlike
-	ret.IsUnlike = ReadBoolByte(rr)
+	ret.IsUnlike, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "LikeMetadata.FromBytes: Problem reading IsUnlike")
+	}
 
 	*txnData = ret
 
@@ -3321,7 +3766,10 @@ func (txnData *FollowMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsUnfollow
-	ret.IsUnfollow = ReadBoolByte(rr)
+	ret.IsUnfollow, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "FollowMetadata.FromBytes: Problem reading IsUnfollow")
+	}
 
 	*txnData = ret
 
@@ -3340,15 +3788,15 @@ func (txnData *FollowMetadata) New() DeSoTxnMetadata {
 // SubmitPostMetadata
 // ==================================================================
 
-func ReadBoolByte(rr *bytes.Reader) bool {
+func ReadBoolByte(rr *bytes.Reader) (bool, error) {
 	boolByte, err := rr.ReadByte()
 	if err != nil {
-		return false
+		return false, err
 	}
 	if boolByte != 0 {
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 func BoolToByte(val bool) byte {
@@ -3437,17 +3885,20 @@ func (txnData *SubmitPostMetadata) ToBytes(preSignature bool) ([]byte, error) {
 func ReadVarString(rr io.Reader) ([]byte, error) {
 	StringLen, err := ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "SubmitPostMetadata.FromBytes: Problem "+
+		return nil, errors.Wrapf(err, "ReadVarString: Problem "+
 			"decoding String length")
 	}
 	if StringLen > MaxMessagePayload {
-		return nil, fmt.Errorf("SubmitPostMetadata.FromBytes: StringLen %d "+
+		return nil, fmt.Errorf("ReadVarString: StringLen %d "+
 			"exceeds max %d", StringLen, MaxMessagePayload)
 	}
-	ret := make([]byte, StringLen)
+	ret, err := SafeMakeSliceWithLength[byte](StringLen)
+	if err != nil {
+		return nil, errors.Wrapf(err, "ReadVarString: Problem making slice for var string")
+	}
 	_, err = io.ReadFull(rr, ret)
 	if err != nil {
-		return nil, fmt.Errorf("SubmitPostMetadata.FromBytes: Error reading StringText: %v", err)
+		return nil, fmt.Errorf("ReadVarString: Error reading StringText: %v", err)
 	}
 
 	return ret, nil
@@ -3496,10 +3947,12 @@ func (txnData *SubmitPostMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsHidden
-	ret.IsHidden = ReadBoolByte(rr)
+	ret.IsHidden, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SubmitPostMetadata.FromBytes: Problem reading IsHidden")
+	}
 
 	*txnData = ret
-
 	return nil
 }
 
@@ -3631,7 +4084,10 @@ func (txnData *UpdateProfileMetadata) FromBytes(data []byte) error {
 	}
 
 	// IsHidden
-	ret.IsHidden = ReadBoolByte(rr)
+	ret.IsHidden, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateProfileMetadata.FromBytes: Problem reading IsHidden")
+	}
 
 	*txnData = ret
 
@@ -3979,10 +4435,16 @@ func (txnData *CreateNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// HasUnlockable
-	ret.HasUnlockable = ReadBoolByte(rr)
+	ret.HasUnlockable, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateNFTMetadata.FromBytes: Problem reading HasUnlockable")
+	}
 
 	// IsForSale
-	ret.IsForSale = ReadBoolByte(rr)
+	ret.IsForSale, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateNFTMetadata.FromBytes: Problem reading IsForSale")
+	}
 
 	// MinBidAmountNanos uint64
 	ret.MinBidAmountNanos, err = ReadUvarint(rr)
@@ -4070,7 +4532,10 @@ func (txnData *UpdateNFTMetadata) FromBytes(dataa []byte) error {
 	}
 
 	// IsForSale
-	ret.IsForSale = ReadBoolByte(rr)
+	ret.IsForSale, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UpdateNFTMetadata.FromBytes: Problem reading IsForSale")
+	}
 
 	// SerialNumber uint64
 	ret.MinBidAmountNanos, err = ReadUvarint(rr)
@@ -4191,7 +4656,10 @@ func (txnData *AcceptNFTBidMetadata) FromBytes(dataa []byte) error {
 		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: unlockableTextLen %d "+
 			"exceeds max %d", unlockableTextLen, MaxMessagePayload)
 	}
-	ret.UnlockableText = make([]byte, unlockableTextLen)
+	ret.UnlockableText, err = SafeMakeSliceWithLength[byte](unlockableTextLen)
+	if err != nil {
+		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Problem making slice for unlockable text")
+	}
 	_, err = io.ReadFull(rr, ret.UnlockableText)
 	if err != nil {
 		return fmt.Errorf("AcceptNFTBidMetadata.FromBytes: Error reading EncryptedText: %v", err)
@@ -4375,7 +4843,10 @@ func (txnData *NFTTransferMetadata) FromBytes(dataa []byte) error {
 		return fmt.Errorf("NFTTransferMetadata.FromBytes: unlockableTextLen %d "+
 			"exceeds max %d", unlockableTextLen, MaxMessagePayload)
 	}
-	ret.UnlockableText = make([]byte, unlockableTextLen)
+	ret.UnlockableText, err = SafeMakeSliceWithLength[byte](unlockableTextLen)
+	if err != nil {
+		return errors.Wrapf(err, "NFTTransferMetadata.FromBytes: Problem making slice for unlockable text")
+	}
 	_, err = io.ReadFull(rr, ret.UnlockableText)
 	if err != nil {
 		return fmt.Errorf("NFTTransferMetadata.FromBytes: Error reading EncryptedText: %v", err)
@@ -4622,11 +5093,298 @@ type TransactionSpendingLimit struct {
 
 	// NFTOperationLimitMap is a map with keys composed of
 	// PostHash || Serial Num || NFTLimitOperation to number
-	// of transaction
+	// of transactions
 	NFTOperationLimitMap map[NFTOperationLimitKey]uint64
+
+	// DAOCoinLimitOrderLimitMap is a map with keys composed of
+	// BuyingCreatorPKID || SellingCreatorPKID to number of
+	// transactions
+	DAOCoinLimitOrderLimitMap map[DAOCoinLimitOrderLimitKey]uint64
+
+	// AccessGroupMap is a map with keys composed of
+	// AccessGroupOwnerPublicKey || AccessGroupKeyName || AccessGroupOperationType
+	// to number of transactions.
+	AccessGroupMap map[AccessGroupLimitKey]uint64
+
+	// AccessGroupMemberMap is a map with keys composed of
+	// AccessGroupOwnerPublicKey || AccessGroupKeyName || AccessGroupMemberOperationType
+	// to number of transactions.
+	AccessGroupMemberMap map[AccessGroupMemberLimitKey]uint64
+
+	// ===== ENCODER MIGRATION UnlimitedDerivedKeysMigration =====
+	// IsUnlimited field determines whether this derived key has no spending limit.
+	IsUnlimited bool
+
+	// ===== ENCODER MIGRATION AssociationsMigration =====
+	// AssociationClass || AssociationType || AppPKID || AppScopeType || AssociationOperation
+	// to number of transactions
+	//   - AssociationClass: one of { User, Post }
+	//   - AssociationType: a byte slice to scope by AssociationType or an empty byte slice to signify Any
+	//   - AppPKID: a PKID to scope by App, if AppScopeType == Any then AppPKID has to be the ZeroPKID
+	//   - AppScopeType: one of { Any, Scoped }
+	//   - AssociationOperation: one of { Any, Create, Delete }
+	AssociationLimitMap map[AssociationLimitKey]uint64
 }
 
-func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
+// ToMetamaskString encodes the TransactionSpendingLimit into a Metamask-compatible string. The encoded string will
+// be a part of Access Bytes Encoding 2.0 for derived keys, which creates a human-readable string that MM can sign.
+// The idea behind this function is to create an injective mapping from the TransactionSpendingLimit -> string.
+// This mapping is not intended to be invertible, rather we would also call this function while verifying access bytes.
+// Basically, to verify signature on a derived key, we will call this function as well, instead of attempting to revert
+// the metamask string.
+func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string {
+	var str string
+	var indentationCounter int
+
+	str += "Spending limits on the derived key:\n"
+	indentationCounter++
+
+	// GlobalDESOLimit
+	if tsl.GlobalDESOLimit > 0 {
+		str += _indt(indentationCounter) + "Total $DESO Limit: " + FormatScaledUint256AsDecimalString(
+			big.NewInt(0).SetUint64(tsl.GlobalDESOLimit), big.NewInt(int64(NanosPerUnit))) + " $DESO\n"
+	}
+
+	// Sort an array of strings and add them to the spending limit string str. This will come in handy below,
+	// simplifying the construction of the metamask spending limit string.
+	sortStringsAndAddToLimitStr := func(strList []string) {
+		sort.Strings(strList)
+		for _, limitStr := range strList {
+			str += limitStr
+		}
+	}
+
+	// TransactionCountLimitMap
+	if len(tsl.TransactionCountLimitMap) > 0 {
+		var txnCountStr []string
+		str += _indt(indentationCounter) + "Transaction Count Limit: \n"
+		indentationCounter++
+		for txnType, limit := range tsl.TransactionCountLimitMap {
+			txnCountStr = append(txnCountStr, _indt(indentationCounter)+txnType.String()+": "+
+				strconv.FormatUint(limit, 10)+"\n")
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(txnCountStr)
+		indentationCounter--
+	}
+
+	// CreatorCoinOperationLimitMap
+	if len(tsl.CreatorCoinOperationLimitMap) > 0 {
+		var creatorCoinLimitStr []string
+		str += _indt(indentationCounter) + "Creator Coin Operation Limits:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.CreatorCoinOperationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Creator PKID: " +
+				Base58CheckEncode(limitKey.CreatorPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			creatorCoinLimitStr = append(creatorCoinLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(creatorCoinLimitStr)
+		indentationCounter--
+	}
+
+	// DAOCoinOperationLimitMap
+	if len(tsl.DAOCoinOperationLimitMap) > 0 {
+		var daoCoinOperationLimitStr []string
+		str += _indt(indentationCounter) + "DAO Coin Operation Limits:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.DAOCoinOperationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Creator PKID: " +
+				Base58CheckEncode(limitKey.CreatorPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			daoCoinOperationLimitStr = append(daoCoinOperationLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(daoCoinOperationLimitStr)
+		indentationCounter--
+	}
+
+	// NFTOperationLimitMap
+	if len(tsl.NFTOperationLimitMap) > 0 {
+		var nftOperationLimitKey []string
+		str += _indt(indentationCounter) + "NFT Operation Limits:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.NFTOperationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Block Hash: " + limitKey.BlockHash.String() + "\n"
+			opString += _indt(indentationCounter) + "Serial Number: " +
+				strconv.FormatUint(limitKey.SerialNumber, 10) + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			nftOperationLimitKey = append(nftOperationLimitKey, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(nftOperationLimitKey)
+		indentationCounter--
+	}
+
+	// DAOCoinLimitOrderLimitMap
+	if len(tsl.DAOCoinLimitOrderLimitMap) > 0 {
+		var daoCoinLimitOrderStr []string
+		str += _indt(indentationCounter) + "DAO Coin Limit Order Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.DAOCoinLimitOrderLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Buying DAO Creator PKID: " +
+				Base58CheckEncode(limitKey.BuyingDAOCoinCreatorPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Selling DAO Creator PKID: " +
+				Base58CheckEncode(limitKey.SellingDAOCoinCreatorPKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			daoCoinLimitOrderStr = append(daoCoinLimitOrderStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(daoCoinLimitOrderStr)
+		indentationCounter--
+	}
+
+	// AssociationLimitMap
+	if len(tsl.AssociationLimitMap) > 0 {
+		var associationLimitStr []string
+		str += _indt(indentationCounter) + "Association Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.AssociationLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Association Class: " +
+				limitKey.AssociationClass.ToString() + "\n"
+			associationType := strings.ToUpper(limitKey.AssociationType)
+			if associationType == "" {
+				associationType = "Any"
+			}
+			opString += _indt(indentationCounter) + "Association Type: " +
+				associationType + "\n"
+			appPublicKeyBase58Check := "Any"
+			if limitKey.AppScopeType == AssociationAppScopeTypeScoped {
+				appPublicKeyBase58Check = Base58CheckEncode(limitKey.AppPKID.ToBytes(), false, params)
+			}
+			opString += _indt(indentationCounter) + "App PKID: " +
+				appPublicKeyBase58Check + "\n"
+			opString += _indt(indentationCounter) + "Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			associationLimitStr = append(associationLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(associationLimitStr)
+		indentationCounter--
+	}
+
+	// AccessGroupMap
+	if len(tsl.AccessGroupMap) > 0 {
+		var accessGroupStr []string
+		str += _indt(indentationCounter) + "Access Group Restrictions:\n"
+		indentationCounter++
+		for accessGroupKey, limit := range tsl.AccessGroupMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
+				Base58CheckEncode(accessGroupKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
+			groupKeyName := string(AccessKeyNameDecode(&accessGroupKey.AccessGroupKeyName))
+			if accessGroupKey.AccessGroupScopeType == AccessGroupScopeTypeAny {
+				groupKeyName = "Any"
+			}
+			opString += _indt(indentationCounter) + "Access Group Key Name: " +
+				groupKeyName + "\n"
+			opString += _indt(indentationCounter) + "Access Group Operation: " +
+				accessGroupKey.OperationType.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+
+			indentationCounter--
+			opString += _indt(indentationCounter) + "]\n"
+			accessGroupStr = append(accessGroupStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(accessGroupStr)
+		indentationCounter--
+	}
+
+	// AccessGroupMemberMap
+	if len(tsl.AccessGroupMemberMap) > 0 {
+		var accessGroupMemberStr []string
+		str += _indt(indentationCounter) + "Access Group Member Restrictions:\n"
+		indentationCounter++
+		for accessGroupMemberKey, limit := range tsl.AccessGroupMemberMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Access Group Owner Public Key: " +
+				Base58CheckEncode(accessGroupMemberKey.AccessGroupOwnerPublicKey.ToBytes(), false, params) + "\n"
+			groupKeyName := string(AccessKeyNameDecode(&accessGroupMemberKey.AccessGroupKeyName))
+			if accessGroupMemberKey.AccessGroupScopeType == AccessGroupScopeTypeAny {
+				groupKeyName = "Any"
+			}
+			opString += _indt(indentationCounter) + "Access Group Key Name: " +
+				groupKeyName + "\n"
+			opString += _indt(indentationCounter) + "Access Group Member Operation Type: " +
+				accessGroupMemberKey.OperationType.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+
+			indentationCounter--
+			opString += _indt(indentationCounter) + "]\n"
+			accessGroupMemberStr = append(accessGroupMemberStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(accessGroupMemberStr)
+		indentationCounter--
+	}
+
+	// IsUnlimited
+	if tsl.IsUnlimited {
+		str += "Unlimited"
+	}
+
+	return str
+}
+
+func _indt(counter int) string {
+	var indentationString string
+	for ; counter > 0; counter-- {
+		indentationString += "\t"
+	}
+	return indentationString
+}
+
+func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error) {
 	data := []byte{}
 
 	if tsl == nil {
@@ -4641,7 +5399,10 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 	data = append(data, UintToBuf(transactionCountLimitMapLength)...)
 	if transactionCountLimitMapLength > 0 {
 		// Sort the keys
-		keys := make([]TxnType, 0, transactionCountLimitMapLength)
+		keys, err := SafeMakeSliceWithLengthAndCapacity[TxnType](0, transactionCountLimitMapLength)
+		if err != nil {
+			return nil, err
+		}
 		for key := range tsl.TransactionCountLimitMap {
 			keys = append(keys, key)
 		}
@@ -4659,7 +5420,10 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 	ccOperationLimitMapLength := uint64(len(tsl.CreatorCoinOperationLimitMap))
 	data = append(data, UintToBuf(ccOperationLimitMapLength)...)
 	if ccOperationLimitMapLength > 0 {
-		keys := make([]CreatorCoinOperationLimitKey, 0, ccOperationLimitMapLength)
+		keys, err := SafeMakeSliceWithLengthAndCapacity[CreatorCoinOperationLimitKey](0, ccOperationLimitMapLength)
+		if err != nil {
+			return nil, err
+		}
 		for key := range tsl.CreatorCoinOperationLimitMap {
 			keys = append(keys, key)
 		}
@@ -4676,7 +5440,10 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 	daoCoinOperationLimitMapLength := uint64(len(tsl.DAOCoinOperationLimitMap))
 	data = append(data, UintToBuf(daoCoinOperationLimitMapLength)...)
 	if daoCoinOperationLimitMapLength > 0 {
-		keys := make([]DAOCoinOperationLimitKey, 0, daoCoinOperationLimitMapLength)
+		keys, err := SafeMakeSliceWithLengthAndCapacity[DAOCoinOperationLimitKey](0, daoCoinOperationLimitMapLength)
+		if err != nil {
+			return nil, err
+		}
 		for key := range tsl.DAOCoinOperationLimitMap {
 			keys = append(keys, key)
 		}
@@ -4693,7 +5460,10 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 	nftOperationLimitMapLength := uint64(len(tsl.NFTOperationLimitMap))
 	data = append(data, UintToBuf(nftOperationLimitMapLength)...)
 	if nftOperationLimitMapLength > 0 {
-		keys := make([]NFTOperationLimitKey, 0, nftOperationLimitMapLength)
+		keys, err := SafeMakeSliceWithLengthAndCapacity[NFTOperationLimitKey](0, nftOperationLimitMapLength)
+		if err != nil {
+			return nil, err
+		}
 		for key := range tsl.NFTOperationLimitMap {
 			keys = append(keys, key)
 		}
@@ -4706,14 +5476,97 @@ func (tsl *TransactionSpendingLimit) ToBytes() ([]byte, error) {
 		}
 	}
 
+	// DAOCoinLimitOrderLimitMap
+	daoCoinLimitOrderLimitMapLength := uint64(len(tsl.DAOCoinLimitOrderLimitMap))
+	data = append(data, UintToBuf(daoCoinLimitOrderLimitMapLength)...)
+	if daoCoinLimitOrderLimitMapLength > 0 {
+		keys, err := SafeMakeSliceWithLengthAndCapacity[DAOCoinLimitOrderLimitKey](0, daoCoinLimitOrderLimitMapLength)
+		if err != nil {
+			return nil, err
+		}
+		for key := range tsl.DAOCoinLimitOrderLimitMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+		})
+		for _, key := range keys {
+			data = append(data, key.Encode()...)
+			data = append(data, UintToBuf(tsl.DAOCoinLimitOrderLimitMap[key])...)
+		}
+	}
+
+	// IsUnlimited, gated by the encoder migration.
+	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
+		data = append(data, BoolToByte(tsl.IsUnlimited))
+	}
+
+	// AssociationLimitMap, gated by the encoder migration
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
+		associationLimitMapLength := uint64(len(tsl.AssociationLimitMap))
+		data = append(data, UintToBuf(associationLimitMapLength)...)
+		if associationLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[AssociationLimitKey](0, associationLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.AssociationLimitMap {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.AssociationLimitMap[key])...)
+			}
+		}
+	}
+
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
+		accessGroupLimitMapLength := uint64(len(tsl.AccessGroupMap))
+		data = append(data, UintToBuf(accessGroupLimitMapLength)...)
+		if accessGroupLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[AccessGroupLimitKey](0, accessGroupLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.AccessGroupMap {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for key := range tsl.AccessGroupMap {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.AccessGroupMap[key])...)
+			}
+		}
+
+		accessGroupMemberLimitMapLength := uint64(len(tsl.AccessGroupMemberMap))
+		data = append(data, UintToBuf(accessGroupMemberLimitMapLength)...)
+		if accessGroupMemberLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[AccessGroupMemberLimitKey](0, accessGroupMemberLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.AccessGroupMemberMap {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.AccessGroupMemberMap[key])...)
+			}
+		}
+	}
+
 	return data, nil
 }
 
-func (tsl *TransactionSpendingLimit) FromBytes(data []byte) error {
-	if len(data) == 0 {
-		return nil
-	}
-	rr := bytes.NewReader(data)
+func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Reader) error {
 	globalDESOLimit, err := ReadUvarint(rr)
 	if err != nil {
 		return err
@@ -4811,6 +5664,112 @@ func (tsl *TransactionSpendingLimit) FromBytes(data []byte) error {
 			tsl.NFTOperationLimitMap[*nftOperationLimitMapKey] = operationCount
 		}
 	}
+
+	daoCoinLimitOrderMapLen, err := ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	tsl.DAOCoinLimitOrderLimitMap = make(map[DAOCoinLimitOrderLimitKey]uint64)
+	if daoCoinLimitOrderMapLen > 0 {
+		for ii := uint64(0); ii < daoCoinLimitOrderMapLen; ii++ {
+			daoCoinLimitOrderLimitKey := &DAOCoinLimitOrderLimitKey{}
+			if err = daoCoinLimitOrderLimitKey.Decode(rr); err != nil {
+				return errors.Wrap(err, "Error decoding DAO Coin Limit Order Key")
+			}
+			var operationCount uint64
+			operationCount, err = ReadUvarint(rr)
+			if err != nil {
+				return err
+			}
+			if _, exists := tsl.DAOCoinLimitOrderLimitMap[*daoCoinLimitOrderLimitKey]; exists {
+				return fmt.Errorf("DAO Coin Limit Order Key already exists in map")
+			}
+			tsl.DAOCoinLimitOrderLimitMap[*daoCoinLimitOrderLimitKey] = operationCount
+		}
+	}
+
+	if MigrationTriggered(blockHeight, UnlimitedDerivedKeysMigration) {
+		tsl.IsUnlimited, err = ReadBoolByte(rr)
+		if err != nil {
+			return errors.Wrapf(err, "TransactionSpendingLimit.FromBytes: Problem reading IsUnlimited")
+		}
+	}
+
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
+		associationMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
+		if associationMapLen > 0 {
+			for ii := uint64(0); ii < associationMapLen; ii++ {
+				associationLimitKey := &AssociationLimitKey{}
+				if err = associationLimitKey.Decode(rr); err != nil {
+					return errors.Wrap(err, "Error decoding Association Key")
+				}
+				var operationCount uint64
+				operationCount, err = ReadUvarint(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.AssociationLimitMap[*associationLimitKey]; exists {
+					return errors.New("Association Key already exists in map")
+				}
+				tsl.AssociationLimitMap[*associationLimitKey] = operationCount
+			}
+		}
+	}
+
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
+		// Access Group Map
+		accessGroupLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.AccessGroupMap = make(map[AccessGroupLimitKey]uint64)
+		if accessGroupLimitMapLen > 0 {
+			for ii := uint64(0); ii < accessGroupLimitMapLen; ii++ {
+				accessGroupLimitKey := &AccessGroupLimitKey{}
+				if err = accessGroupLimitKey.Decode(rr); err != nil {
+					return errors.Wrapf(err, "Error decoding access group limit key")
+				}
+				var operationCount uint64
+				operationCount, err = ReadUvarint(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.AccessGroupMap[*accessGroupLimitKey]; exists {
+					return fmt.Errorf("Access group limit key already exists")
+				}
+				tsl.AccessGroupMap[*accessGroupLimitKey] = operationCount
+			}
+		}
+
+		// Access Group Member Map
+		accessGroupMemberLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.AccessGroupMemberMap = make(map[AccessGroupMemberLimitKey]uint64)
+		if accessGroupMemberLimitMapLen > 0 {
+			for ii := uint64(0); ii < accessGroupMemberLimitMapLen; ii++ {
+				accessGroupMemberLimitKey := &AccessGroupMemberLimitKey{}
+				if err = accessGroupMemberLimitKey.Decode(rr); err != nil {
+					return errors.Wrapf(err, "Error decoding access group member limit key")
+				}
+				var operationCount uint64
+				operationCount, err = ReadUvarint(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.AccessGroupMemberMap[*accessGroupMemberLimitKey]; exists {
+					return fmt.Errorf("Access group member limit key already exists")
+				}
+				tsl.AccessGroupMemberMap[*accessGroupMemberLimitKey] = operationCount
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -4821,6 +5780,10 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
 		DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 		NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
+		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
+		AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
+		AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
+		IsUnlimited:                  tsl.IsUnlimited,
 	}
 
 	for txnType, txnCount := range tsl.TransactionCountLimitMap {
@@ -4839,7 +5802,52 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		copyTSL.NFTOperationLimitMap[nftOp] = nftOpCount
 	}
 
+	for daoCoinLimitOrderLimitKey, daoCoinLimitOrderCount := range tsl.DAOCoinLimitOrderLimitMap {
+		copyTSL.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = daoCoinLimitOrderCount
+	}
+
+	if tsl.AssociationLimitMap != nil {
+		// Before the AssociationsAndAccessGroupsBlockHeight, this map will
+		// be null. So we should ensure this is the case in the copy too.
+		copyTSL.AssociationLimitMap = make(map[AssociationLimitKey]uint64)
+		for associationLimitKey, associationCount := range tsl.AssociationLimitMap {
+			copyTSL.AssociationLimitMap[associationLimitKey] = associationCount
+		}
+	}
+
+	for accessGroupLimitKey, accessGroupCount := range tsl.AccessGroupMap {
+		copyTSL.AccessGroupMap[accessGroupLimitKey] = accessGroupCount
+	}
+
+	for accessGroupMemberLimitKey, accessGroupMemberCount := range tsl.AccessGroupMemberMap {
+		copyTSL.AccessGroupMemberMap[accessGroupMemberLimitKey] = accessGroupMemberCount
+	}
+
 	return copyTSL
+}
+
+func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpendingLimit, blockHeight uint32) (_isUnlimited bool, _err error) {
+	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 10)
+
+	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight {
+		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
+	}
+
+	// Note: We don't need a blockheight here to gate access group nor access group member maps. They will always be
+	// empty prior to the fork block height, and should be empty after the blockheight for the unlimited spending limit.
+	if tsl.IsUnlimited && (tsl.GlobalDESOLimit > 0 ||
+		len(tsl.TransactionCountLimitMap) > 0 ||
+		len(tsl.CreatorCoinOperationLimitMap) > 0 ||
+		len(tsl.DAOCoinOperationLimitMap) > 0 ||
+		len(tsl.NFTOperationLimitMap) > 0 ||
+		len(tsl.DAOCoinLimitOrderLimitMap) > 0 ||
+		len(tsl.AssociationLimitMap) > 0 ||
+		len(tsl.AccessGroupMap) > 0 ||
+		len(tsl.AccessGroupMemberMap) > 0) {
+		return tsl.IsUnlimited, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
+	}
+
+	return tsl.IsUnlimited, nil
 }
 
 type NFTLimitOperation uint8
@@ -4940,7 +5948,10 @@ func (nftOperationLimitKey *NFTOperationLimitKey) Decode(rr *bytes.Reader) error
 		return err
 	}
 	// De-serialize the key
-	blockhashBytes := make([]byte, blockHashLen)
+	blockhashBytes, err := SafeMakeSliceWithLength[byte](blockHashLen)
+	if err != nil {
+		return err
+	}
 	if _, err = io.ReadFull(rr, blockhashBytes); err != nil {
 		return err
 	}
@@ -5049,7 +6060,10 @@ func (creatorCoinOperationLimitKey *CreatorCoinOperationLimitKey) Decode(rr *byt
 		return err
 	}
 	// De-serialize the key
-	creatorPKIDBytes := make([]byte, creatorPKIDBytesLen)
+	creatorPKIDBytes, err := SafeMakeSliceWithLength[byte](creatorPKIDBytesLen)
+	if err != nil {
+		return err
+	}
 	if _, err = io.ReadFull(rr, creatorPKIDBytes); err != nil {
 		return err
 	}
@@ -5163,7 +6177,10 @@ func (daoCoinOperationLimitKey *DAOCoinOperationLimitKey) Decode(rr *bytes.Reade
 		return err
 	}
 	// De-serialize the key
-	creatorPKIDBytes := make([]byte, creatorPKIDBytesLen)
+	creatorPKIDBytes, err := SafeMakeSliceWithLength[byte](creatorPKIDBytesLen)
+	if err != nil {
+		return err
+	}
 	if _, err = io.ReadFull(rr, creatorPKIDBytes); err != nil {
 		return err
 	}
@@ -5184,6 +6201,368 @@ func MakeDAOCoinOperationLimitKey(creatorPKID PKID, operation DAOCoinLimitOperat
 	return DAOCoinOperationLimitKey{
 		creatorPKID,
 		operation,
+	}
+}
+
+type DAOCoinLimitOrderLimitKey struct {
+	// The PKID of the coin that we're going to buy
+	BuyingDAOCoinCreatorPKID PKID
+	// The PKID of the coin that we're going to sell
+	SellingDAOCoinCreatorPKID PKID
+}
+
+func (daoCoinLimitOrderLimitKey DAOCoinLimitOrderLimitKey) Encode() []byte {
+	var data []byte
+	data = append(data, daoCoinLimitOrderLimitKey.BuyingDAOCoinCreatorPKID.ToBytes()...)
+	data = append(data, daoCoinLimitOrderLimitKey.SellingDAOCoinCreatorPKID.ToBytes()...)
+	return data
+}
+
+func (daoCoinLimitOrderLimitKey *DAOCoinLimitOrderLimitKey) Decode(rr *bytes.Reader) error {
+	buyingDAOCoinCreatorPKID := &PKID{}
+	if err := buyingDAOCoinCreatorPKID.FromBytes(rr); err != nil {
+		return err
+	}
+	daoCoinLimitOrderLimitKey.BuyingDAOCoinCreatorPKID = *buyingDAOCoinCreatorPKID
+
+	sellingDAOCoinCreatorPKID := &PKID{}
+	if err := sellingDAOCoinCreatorPKID.FromBytes(rr); err != nil {
+		return err
+	}
+	daoCoinLimitOrderLimitKey.SellingDAOCoinCreatorPKID = *sellingDAOCoinCreatorPKID
+	return nil
+}
+
+func MakeDAOCoinLimitOrderLimitKey(buyingDAOCoinCreatorPKID PKID, sellingDAOCoinCreatorPKID PKID) DAOCoinLimitOrderLimitKey {
+	return DAOCoinLimitOrderLimitKey{
+		BuyingDAOCoinCreatorPKID:  buyingDAOCoinCreatorPKID,
+		SellingDAOCoinCreatorPKID: sellingDAOCoinCreatorPKID,
+	}
+}
+
+type AssociationLimitKey struct {
+	AssociationClass AssociationClass // User || Post
+	AssociationType  string
+	AppPKID          PKID
+	AppScopeType     AssociationAppScopeType // Any || Scoped
+	Operation        AssociationOperation    // Any || Create || Delete
+}
+
+type AssociationClass uint8
+type AssociationClassString string
+type AssociationAppScopeType uint8
+type AssociationAppScopeTypeString string
+type AssociationOperation uint8
+type AssociationOperationString string
+
+const (
+	UndefinedAssociationClassString AssociationClassString = "Undefined"
+	UserAssociationClassString      AssociationClassString = "User"
+	PostAssociationClassString      AssociationClassString = "Post"
+)
+
+func (associationClass AssociationClass) ToString() string {
+	return string(associationClass.ToAssociationClassString())
+}
+
+func (associationClass AssociationClass) ToAssociationClassString() AssociationClassString {
+	switch associationClass {
+	case AssociationClassUser:
+		return UserAssociationClassString
+	case AssociationClassPost:
+		return PostAssociationClassString
+	default:
+		return UndefinedAssociationClassString
+	}
+}
+
+func (associationClassString AssociationClassString) ToAssociationClass() AssociationClass {
+	switch associationClassString {
+	case UserAssociationClassString:
+		return AssociationClassUser
+	case PostAssociationClassString:
+		return AssociationClassPost
+	default:
+		return AssociationClassUndefined
+	}
+}
+
+const (
+	UndefinedAssociationAppScopeTypeString AssociationAppScopeTypeString = "Undefined"
+	AnyAssociationAppScopeTypeString       AssociationAppScopeTypeString = "Any"
+	ScopedAssociationAppScopeTypeString    AssociationAppScopeTypeString = "Scoped"
+)
+
+func (associationAppScopeType AssociationAppScopeType) ToString() string {
+	return string(associationAppScopeType.ToAssociationAppScopeTypeString())
+}
+
+func (associationAppScopeType AssociationAppScopeType) ToAssociationAppScopeTypeString() AssociationAppScopeTypeString {
+	switch associationAppScopeType {
+	case AssociationAppScopeTypeAny:
+		return AnyAssociationAppScopeTypeString
+	case AssociationAppScopeTypeScoped:
+		return ScopedAssociationAppScopeTypeString
+	default:
+		return UndefinedAssociationAppScopeTypeString
+	}
+}
+
+func (associationAppScopeTypeString AssociationAppScopeTypeString) ToAssociationAppScopeType() AssociationAppScopeType {
+	switch associationAppScopeTypeString {
+	case AnyAssociationAppScopeTypeString:
+		return AssociationAppScopeTypeAny
+	case ScopedAssociationAppScopeTypeString:
+		return AssociationAppScopeTypeScoped
+	default:
+		return AssociationAppScopeTypeUndefined
+	}
+}
+
+const (
+	UndefinedAssociationOperation AssociationOperationString = "Undefined"
+	AnyAssociationOperation       AssociationOperationString = "Any"
+	CreateAssociationOperation    AssociationOperationString = "Create"
+	DeleteAssociationOperation    AssociationOperationString = "Delete"
+)
+
+func (associationOperation AssociationOperation) ToString() string {
+	return string(associationOperation.ToAssociationOperationString())
+}
+
+func (associationOperation AssociationOperation) ToAssociationOperationString() AssociationOperationString {
+	switch associationOperation {
+	case AssociationOperationAny:
+		return AnyAssociationOperation
+	case AssociationOperationCreate:
+		return CreateAssociationOperation
+	case AssociationOperationDelete:
+		return DeleteAssociationOperation
+	default:
+		return UndefinedAssociationOperation
+	}
+}
+
+func (associationOperationString AssociationOperationString) ToAssociationOperation() AssociationOperation {
+	switch associationOperationString {
+	case AnyAssociationOperation:
+		return AssociationOperationAny
+	case CreateAssociationOperation:
+		return AssociationOperationCreate
+	case DeleteAssociationOperation:
+		return AssociationOperationDelete
+	default:
+		return AssociationOperationUndefined
+	}
+}
+
+const (
+	// AssociationClass: User || Post
+	AssociationClassUndefined AssociationClass = 0
+	AssociationClassUser      AssociationClass = 1
+	AssociationClassPost      AssociationClass = 2
+	// AssociationScope: Any || Scoped
+	AssociationAppScopeTypeUndefined AssociationAppScopeType = 0
+	AssociationAppScopeTypeAny       AssociationAppScopeType = 1
+	AssociationAppScopeTypeScoped    AssociationAppScopeType = 2
+	// AssociationOperation: Any || Create || Delete
+	AssociationOperationUndefined AssociationOperation = 0
+	AssociationOperationAny       AssociationOperation = 1
+	AssociationOperationCreate    AssociationOperation = 2
+	AssociationOperationDelete    AssociationOperation = 3
+)
+
+func (associationLimitKey AssociationLimitKey) Encode() []byte {
+	var data []byte
+	data = append(data, UintToBuf(uint64(associationLimitKey.AssociationClass))...)
+	data = append(data, EncodeByteArray([]byte(associationLimitKey.AssociationType))...)
+	data = append(data, associationLimitKey.AppPKID.ToBytes()...)
+	data = append(data, UintToBuf(uint64(associationLimitKey.AppScopeType))...)
+	data = append(data, UintToBuf(uint64(associationLimitKey.Operation))...)
+	return data
+}
+
+func (associationLimitKey *AssociationLimitKey) Decode(rr *bytes.Reader) error {
+	var err error
+	// AssociationClass: User || Post
+	associationClass, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AssociationLimitKey.Decode: Problem reading AssociationClass: ")
+	}
+	associationLimitKey.AssociationClass = AssociationClass(associationClass)
+	// AssociationType
+	associationType, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AssociationType: ")
+	}
+	associationLimitKey.AssociationType = string(associationType)
+	// AppPKID
+	appPKID := &PKID{}
+	if err = appPKID.FromBytes(rr); err != nil {
+		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AppPKID: ")
+	}
+	associationLimitKey.AppPKID = *appPKID
+	// AppScopeType: Any || Scoped
+	appScopeType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrap(err, "AssociationLimitKey.Decode: Problem reading AppScopeType: ")
+	}
+	associationLimitKey.AppScopeType = AssociationAppScopeType(appScopeType)
+	// Operation: Any || Create || Delete
+	operation, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AssociationLimitKey.Decode: Problem reading Operation: ")
+	}
+	associationLimitKey.Operation = AssociationOperation(operation)
+	return nil
+}
+
+func MakeAssociationLimitKey(
+	associationClass AssociationClass,
+	associationType []byte,
+	appPKID PKID,
+	appScopeType AssociationAppScopeType,
+	operation AssociationOperation,
+) AssociationLimitKey {
+	// Note: AssociationType is case-insensitive.
+	return AssociationLimitKey{
+		AssociationClass: associationClass,
+		AssociationType:  string(bytes.ToLower(associationType)),
+		AppPKID:          appPKID,
+		AppScopeType:     appScopeType,
+		Operation:        operation,
+	}
+}
+
+type AccessGroupLimitKey struct {
+	// AccessGroupOwnerPublicKey is the public key of the owner of the access group.
+	AccessGroupOwnerPublicKey PublicKey
+
+	// AccessGroupScopeType is the scope of the access group.
+	AccessGroupScopeType AccessGroupScopeType
+
+	// AccessGroupKeyName is the name of the access group.
+	AccessGroupKeyName GroupKeyName
+
+	// OperationType is the type of operation for which the spending limit count will apply
+	OperationType AccessGroupOperationType
+}
+
+func (accessGroupLimitKey *AccessGroupLimitKey) Encode() []byte {
+	var data []byte
+	data = append(data, EncodeByteArray(accessGroupLimitKey.AccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, UintToBuf(uint64(accessGroupLimitKey.AccessGroupScopeType))...)
+	data = append(data, EncodeByteArray(accessGroupLimitKey.AccessGroupKeyName.ToBytes())...)
+	data = append(data, UintToBuf(uint64(accessGroupLimitKey.OperationType))...)
+	return data
+}
+
+func (accessGroupLimitKey *AccessGroupLimitKey) Decode(rr *bytes.Reader) error {
+	accessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: "+
+			"Problem reading AccessGroupOwnerPublicKey")
+	}
+	accessGroupLimitKey.AccessGroupOwnerPublicKey = *NewPublicKey(accessGroupOwnerPublicKeyBytes)
+
+	scopeType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: Problem decoding AccessGroupScopeType")
+	}
+	accessGroupLimitKey.AccessGroupScopeType = AccessGroupScopeType(scopeType)
+
+	accessGroupKeyNameBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: "+
+			"Problem reading AccessGroupKeyName")
+	}
+	accessGroupLimitKey.AccessGroupKeyName = *NewGroupKeyName(accessGroupKeyNameBytes)
+
+	operationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupLimitKey.Decode: Problem decoding OperationType")
+	}
+	accessGroupLimitKey.OperationType = AccessGroupOperationType(operationType)
+	return nil
+}
+
+func MakeAccessGroupLimitKey(
+	accessGroupOwnerPublicKey PublicKey,
+	accessGroupScopeType AccessGroupScopeType,
+	accessGroupKeyName GroupKeyName,
+	operationType AccessGroupOperationType,
+) AccessGroupLimitKey {
+	return AccessGroupLimitKey{
+		AccessGroupOwnerPublicKey: accessGroupOwnerPublicKey,
+		AccessGroupScopeType:      accessGroupScopeType,
+		AccessGroupKeyName:        accessGroupKeyName,
+		OperationType:             operationType,
+	}
+}
+
+type AccessGroupMemberLimitKey struct {
+	// AccessGroupOwnerPublicKey is the public key of the owner of the access group.
+	AccessGroupOwnerPublicKey PublicKey
+
+	// AccessGroupScopeType is the scope of the access group member.
+	AccessGroupScopeType AccessGroupScopeType
+
+	// AccessGroupKeyName is the name of the access group.
+	AccessGroupKeyName GroupKeyName
+
+	// OperationType is the type of operation for which the spending limit count will apply to.
+	OperationType AccessGroupMemberOperationType
+}
+
+func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Encode() []byte {
+	var data []byte
+	data = append(data, EncodeByteArray(accessGroupMemberLimitKey.AccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, UintToBuf(uint64(accessGroupMemberLimitKey.AccessGroupScopeType))...)
+	data = append(data, EncodeByteArray(accessGroupMemberLimitKey.AccessGroupKeyName.ToBytes())...)
+	data = append(data, UintToBuf(uint64(accessGroupMemberLimitKey.OperationType))...)
+	return data
+}
+
+func (accessGroupMemberLimitKey *AccessGroupMemberLimitKey) Decode(rr *bytes.Reader) error {
+	accessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMemberLimitKey.Decode: "+
+			"Problem reading AccessGroupOwnerPublicKey")
+	}
+	accessGroupMemberLimitKey.AccessGroupOwnerPublicKey = *NewPublicKey(accessGroupOwnerPublicKeyBytes)
+
+	scopeType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMemberLimitKey.Decode: Problem reading AccessGroupScopeType")
+	}
+	accessGroupMemberLimitKey.AccessGroupScopeType = AccessGroupScopeType(scopeType)
+
+	accessGroupKeyNameBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMemberLimitKey.Decode: "+
+			"Problem reading AccessGroupKeyName")
+	}
+	accessGroupMemberLimitKey.AccessGroupKeyName = *NewGroupKeyName(accessGroupKeyNameBytes)
+
+	operationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMemberLimitKey.Decode: Problem reading operation type")
+	}
+	accessGroupMemberLimitKey.OperationType = AccessGroupMemberOperationType(operationType)
+	return nil
+}
+
+func MakeAccessGroupMemberLimitKey(
+	accessGroupOwnerPublicKey PublicKey,
+	accessGroupScopeType AccessGroupScopeType,
+	accessGroupKeyName GroupKeyName,
+	operationType AccessGroupMemberOperationType,
+) AccessGroupMemberLimitKey {
+	return AccessGroupMemberLimitKey{
+		AccessGroupOwnerPublicKey: accessGroupOwnerPublicKey,
+		AccessGroupScopeType:      accessGroupScopeType,
+		AccessGroupKeyName:        accessGroupKeyName,
+		OperationType:             operationType,
 	}
 }
 
@@ -5352,7 +6731,10 @@ func (txnData *DAOCoinMetadata) FromBytes(data []byte) error {
 			return fmt.Errorf("DAOCoinMetadata.FromBytes: coinsToMintLen %d "+
 				"exceeds max %d", intLen, MaxMessagePayload)
 		}
-		coinsToMintBytes := make([]byte, intLen)
+		coinsToMintBytes, err := SafeMakeSliceWithLength[byte](intLen)
+		if err != nil {
+			return errors.Wrapf(err, "DAOCoinMetadata.FromBytes: Problem making slice for coinsToMintBytes")
+		}
 		_, err = io.ReadFull(rr, coinsToMintBytes)
 		if err != nil {
 			return fmt.Errorf("DAOCoinMetadata.FromBytes: Error reading coinsToMintBytes: %v", err)
@@ -5370,7 +6752,10 @@ func (txnData *DAOCoinMetadata) FromBytes(data []byte) error {
 			return fmt.Errorf("DAOCoinMetadata.FromBytes: coinsToBurnLen %d "+
 				"exceeds max %d", intLen, MaxMessagePayload)
 		}
-		coinsToBurnBytes := make([]byte, intLen)
+		coinsToBurnBytes, err := SafeMakeSliceWithLength[byte](intLen)
+		if err != nil {
+			return errors.Wrapf(err, "DAOCoinMetadata.FromBytes: Problem making slice for coinsToBurnBytes")
+		}
 		_, err = io.ReadFull(rr, coinsToBurnBytes)
 		if err != nil {
 			return fmt.Errorf("DAOCoinMetadata.FromBytes: Error reading coinsToBurnBytes: %v", err)
@@ -5455,7 +6840,11 @@ func (txnData *DAOCoinTransferMetadata) FromBytes(data []byte) error {
 			return fmt.Errorf("DAOCoinTransferMetadata.FromBytes: coinsToTransferLen %d "+
 				"exceeds max %d", intLen, MaxMessagePayload)
 		}
-		coinsToTransferBytes := make([]byte, intLen)
+		coinsToTransferBytes, err := SafeMakeSliceWithLength[byte](intLen)
+		if err != nil {
+			return errors.Wrapf(err,
+				"DAOCoinTransferMetadata.FromBytes: Problem creating slice for coinsToTransfer")
+		}
 		_, err = io.ReadFull(rr, coinsToTransferBytes)
 		if err != nil {
 			return fmt.Errorf("DAOCoinTransferMetadata.FromBytes: Error reading coinsToTransferBytes: %v", err)
@@ -5478,6 +6867,204 @@ func (txnData *DAOCoinTransferMetadata) New() DeSoTxnMetadata {
 	return &DAOCoinTransferMetadata{}
 }
 
+// ==================================================================
+// DAOCoinLimitOrderMetadata
+// ==================================================================
+
+type DeSoInputsByTransactor struct {
+	TransactorPublicKey *PublicKey
+	Inputs              []*DeSoInput
+}
+
+type DAOCoinLimitOrderMetadata struct {
+	BuyingDAOCoinCreatorPublicKey             *PublicKey
+	SellingDAOCoinCreatorPublicKey            *PublicKey
+	ScaledExchangeRateCoinsToSellPerCoinToBuy *uint256.Int
+	QuantityToFillInBaseUnits                 *uint256.Int
+	OperationType                             DAOCoinLimitOrderOperationType
+	FillType                                  DAOCoinLimitOrderFillType
+
+	// If set, we will find and delete the
+	// order with the given OrderID.
+	CancelOrderID *BlockHash
+
+	// This is only populated when this order is selling a DAO coin for
+	// $DESO, and is immediately matched with an existing bid-side order
+	// at time of creation. This field contains the transactor and their
+	// utxo inputs that can be used to immediately execute this trade.
+	BidderInputs []*DeSoInputsByTransactor
+
+	// Since a DAO Coin Limit Order may spend DESO or yield DESO to the
+	// transactor, we specify FeeNanos in the transaction metadata in
+	// order to ensure the transactor pays the standard fee rate for the size
+	// of the transaction AND ensures the internal balance model of the
+	// DAO Coin Limit Order transaction connection logic remains valid.
+	FeeNanos uint64
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
+	return TxnTypeDAOCoinLimitOrder
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	data := append([]byte{}, EncodeOptionalPublicKey(txnData.BuyingDAOCoinCreatorPublicKey)...)
+	data = append(data, EncodeOptionalPublicKey(txnData.SellingDAOCoinCreatorPublicKey)...)
+	data = append(data, EncodeOptionalUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, EncodeOptionalUint256(txnData.QuantityToFillInBaseUnits)...)
+	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
+	data = append(data, UintToBuf(uint64(txnData.FillType))...)
+	data = append(data, EncodeOptionalBlockHash(txnData.CancelOrderID)...)
+	data = append(data, UintToBuf(uint64(len(txnData.BidderInputs)))...)
+
+	// we use a sorted copy internally, so we don't modify the original struct from underneath the caller
+	for _, transactor := range txnData.BidderInputs {
+		data = append(data, transactor.TransactorPublicKey[:]...)
+
+		data = append(data, UintToBuf(uint64(len(transactor.Inputs)))...)
+		for _, input := range transactor.Inputs {
+			data = append(data, input.TxID[:]...)
+			data = append(data, UintToBuf(uint64(input.Index))...)
+		}
+	}
+
+	data = append(data, UintToBuf(txnData.FeeNanos)...)
+	return data, nil
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+
+	ret := DAOCoinLimitOrderMetadata{}
+	rr := bytes.NewReader(data)
+	var err error
+
+	// Parse BuyingDAOCoinCreatorPublicKey
+	ret.BuyingDAOCoinCreatorPublicKey, err = ReadOptionalPublicKey(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinLimitOrderMetadata.FromBytes: Error "+
+				"reading BuyingDAOCoinCreatorPublicKey: %v", err)
+	}
+
+	// Parse SellingDAOCoinCreatorPublicKey
+	ret.SellingDAOCoinCreatorPublicKey, err = ReadOptionalPublicKey(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading "+
+				"SellingDAOCoinCreatorPKID: %v", err)
+	}
+
+	// Parse ScaledExchangeRateCoinsToSellPerCoinToBuy
+	ret.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = ReadOptionalUint256(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading ScaledPrice: %v", err)
+	}
+
+	// Parse QuantityToFillInBaseUnits
+	ret.QuantityToFillInBaseUnits, err = ReadOptionalUint256(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading QuantityToFillInBaseUnits: %v", err)
+	}
+
+	// Parse OperationType
+	operationType, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading OperationType: %v", err)
+	}
+	if operationType > math.MaxUint8 {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: OperationType exceeds "+
+			"uint8 max: %v vs %v", operationType, math.MaxUint8)
+	}
+	ret.OperationType = DAOCoinLimitOrderOperationType(operationType)
+
+	// Parse FillType
+	fillType, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading FillType: %v", err)
+	}
+	if fillType > math.MaxUint8 {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: FillType exceeds "+
+			"uint8 max: %v vs %v", fillType, math.MaxUint8)
+	}
+	ret.FillType = DAOCoinLimitOrderFillType(fillType)
+
+	// Parse CancelOrderID
+	ret.CancelOrderID, err = ReadOptionalBlockHash(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading CancelOrderID: %v", err)
+	}
+
+	// Parse MatchingBidsTransactors
+	matchingBidsTransactorsLength, err := ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf(
+			"DAOCoinLimitOrderMetadata.FromBytes: Error reading length of matching bids input: %v", err)
+	}
+
+	for ii := uint64(0); ii < matchingBidsTransactorsLength; ii++ {
+		pubKey, err := ReadPublicKey(rr)
+		if err != nil {
+			return fmt.Errorf(
+				"DAOCoinLimitOrderMetadata.FromBytes: Error reading PKID at index %v: %v", ii, err)
+		}
+		var inputsLength uint64
+		inputsLength, err = ReadUvarint(rr)
+		if err != nil {
+			return fmt.Errorf(
+				"DAOCoinLimitOrderMetadata.FromBytes: Error reading inputs length at index %v: %v", ii, err)
+		}
+		inputs := []*DeSoInput{}
+		for jj := uint64(0); jj < inputsLength; jj++ {
+			currentInput := NewDeSoInput()
+			_, err = io.ReadFull(rr, currentInput.TxID[:])
+			if err != nil {
+				return fmt.Errorf(
+					"DAOCoinLimitOrderMetadata.FromBytes: Error reading input txId at ii %v, jj %v: %v",
+					ii, jj, err)
+			}
+			var inputIndex uint64
+			inputIndex, err = ReadUvarint(rr)
+			if err != nil {
+				return fmt.Errorf(
+					"DAOCoinLimitOrderMetadata.FromBytes: Error reading input index at ii %v, jj %v: %v",
+					ii, jj, err)
+			}
+			if inputIndex > uint64(math.MaxUint32) {
+				return fmt.Errorf(
+					"DAOCoinLimitOrderMetadata.FromBytes: Input index at ii %v, jj %v must not exceed %d",
+					ii, jj, math.MaxUint32)
+			}
+			currentInput.Index = uint32(inputIndex)
+
+			inputs = append(inputs, currentInput)
+		}
+
+		pubKeyCopy := *pubKey
+		ret.BidderInputs = append(
+			ret.BidderInputs,
+			&DeSoInputsByTransactor{
+				TransactorPublicKey: &pubKeyCopy,
+				Inputs:              inputs,
+			},
+		)
+	}
+
+	// Parse FeeNanos
+	ret.FeeNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading FeeNanos: %v", err)
+	}
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *DAOCoinLimitOrderMetadata) New() DeSoTxnMetadata {
+	return &DAOCoinLimitOrderMetadata{}
+}
+
 func SerializePubKeyToUint64Map(mm map[PublicKey]uint64) ([]byte, error) {
 	data := []byte{}
 	// Encode the number of key/value pairs
@@ -5488,7 +7075,10 @@ func SerializePubKeyToUint64Map(mm map[PublicKey]uint64) ([]byte, error) {
 	if numKeys > 0 {
 		// Sort the keys of the map based on the mainnet public key encoding.
 		// This ensures a deterministic sorting.
-		keys := make([]string, 0, numKeys)
+		keys, err := SafeMakeSliceWithLengthAndCapacity[string](0, numKeys)
+		if err != nil {
+			return nil, err
+		}
 		for key := range mm {
 			keys = append(keys, PkToStringMainnet(key[:]))
 		}
@@ -5527,7 +7117,11 @@ func DeserializePubKeyToUint64Map(data []byte) (map[PublicKey]uint64, error) {
 		return nil, errors.Wrapf(err, "DeserializePubKeyToUint64Map.FromBytes: Problem "+
 			"reading num keys")
 	}
-	mm := make(map[PublicKey]uint64, numKeys)
+	mm, err := SafeMakeMapWithCapacity[PublicKey, uint64](numKeys)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializePubKeyToUint64Map.FromBytes: Problem creating "+
+			"map")
+	}
 	for ii := uint64(0); ii < numKeys; ii++ {
 		// Read in the public key bytes
 		pkBytes := make([]byte, btcec.PubKeyBytesLenCompressed)
@@ -5559,7 +7153,7 @@ type MessagingGroupMetadata struct {
 	MessagingPublicKey    []byte
 	MessagingGroupKeyName []byte
 	// This value is the signature of the following using the private key
-	// of the GroupOwnerPublicKey (aka txn.PublicKey):
+	// of the AccessGroupOwnerPublicKey (aka txn.PublicKey):
 	// - Sha256DoubleHash(MessagingPublicKey || MessagingGroupKeyName)
 	//
 	// This signature is only required when setting up a group where
@@ -5594,7 +7188,7 @@ func (txnData *MessagingGroupMetadata) ToBytes(preSignature bool) ([]byte, error
 
 	data = append(data, UintToBuf(uint64(len(txnData.MessagingGroupMembers)))...)
 	for _, recipient := range txnData.MessagingGroupMembers {
-		data = append(data, recipient.Encode()...)
+		data = append(data, recipient.ToBytes()...)
 	}
 
 	return data, nil
@@ -5625,13 +7219,12 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 
 	numRecipients, err := ReadUvarint(rr)
 	for ; numRecipients > 0; numRecipients-- {
-		recipient := MessagingGroupMember{}
-		err = recipient.Decode(rr)
-		if err != nil {
+		recipient := &MessagingGroupMember{}
+		if err := recipient.FromBytes(rr); err != nil {
 			return errors.Wrapf(err, "MessagingGroupMetadata.FromBytes: "+
 				"error reading recipient")
 		}
-		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, &recipient)
+		ret.MessagingGroupMembers = append(ret.MessagingGroupMembers, recipient)
 	}
 
 	*txnData = ret
@@ -5640,4 +7233,741 @@ func (txnData *MessagingGroupMetadata) FromBytes(data []byte) error {
 
 func (txnData *MessagingGroupMetadata) New() DeSoTxnMetadata {
 	return &MessagingGroupMetadata{}
+}
+
+// ==================================================================
+// Associations Metadata
+// ==================================================================
+
+type CreateUserAssociationMetadata struct {
+	TargetUserPublicKey *PublicKey
+	AppPublicKey        *PublicKey
+	AssociationType     []byte
+	AssociationValue    []byte
+}
+
+type DeleteUserAssociationMetadata struct {
+	AssociationID *BlockHash
+}
+
+type CreatePostAssociationMetadata struct {
+	PostHash         *BlockHash
+	AppPublicKey     *PublicKey
+	AssociationType  []byte
+	AssociationValue []byte
+}
+
+type DeletePostAssociationMetadata struct {
+	AssociationID *BlockHash
+}
+
+func (txnData *CreateUserAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeCreateUserAssociation
+}
+
+func (txnData *DeleteUserAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeDeleteUserAssociation
+}
+
+func (txnData *CreatePostAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeCreatePostAssociation
+}
+
+func (txnData *DeletePostAssociationMetadata) GetTxnType() TxnType {
+	return TxnTypeDeletePostAssociation
+}
+
+func (txnData *CreateUserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.TargetUserPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AppPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AssociationType)...)
+	data = append(data, EncodeByteArray(txnData.AssociationValue)...)
+	return data, nil
+}
+
+func (txnData *DeleteUserAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.AssociationID.ToBytes())...)
+	return data, nil
+}
+
+func (txnData *CreatePostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.PostHash.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AppPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.AssociationType)...)
+	data = append(data, EncodeByteArray(txnData.AssociationValue)...)
+	return data, nil
+}
+
+func (txnData *DeletePostAssociationMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.AssociationID.ToBytes())...)
+	return data, nil
+}
+
+func (txnData *CreateUserAssociationMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// TargetUserPublicKey
+	targetUserPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading TargetUserPublicKey: ")
+	}
+	txnData.TargetUserPublicKey = NewPublicKey(targetUserPublicKeyBytes)
+
+	// AppPublicKey
+	appPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AppPublicKey: ")
+	}
+	txnData.AppPublicKey = NewPublicKey(appPublicKeyBytes)
+
+	// AssociationType
+	txnData.AssociationType, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AssociationType: ")
+	}
+
+	// AssociationValue
+	txnData.AssociationValue, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreateUserAssociationMetadata.FromBytes: Problem reading AssociationValue: ")
+	}
+
+	return nil
+}
+
+func (txnData *DeleteUserAssociationMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// AssociationID
+	associationIDBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeleteUserAssociationMetadata.FromBytes: Problem reading AssociationID: ")
+	}
+	txnData.AssociationID = NewBlockHash(associationIDBytes)
+
+	return nil
+}
+
+func (txnData *CreatePostAssociationMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// PostHash
+	postHashBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading PostHash: ")
+	}
+	txnData.PostHash = NewBlockHash(postHashBytes)
+
+	// AppPublicKey
+	appPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AppPublicKey: ")
+	}
+	txnData.AppPublicKey = NewPublicKey(appPublicKeyBytes)
+
+	// AssociationType
+	txnData.AssociationType, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AssociationType: ")
+	}
+
+	// AssociationValue
+	txnData.AssociationValue, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationMetadata.FromBytes: Problem reading AssociationValue: ")
+	}
+
+	return nil
+}
+
+func (txnData *DeletePostAssociationMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// AssociationID
+	associationIDBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DeletePostAssociationMetadata.FromBytes: Problem reading AssociationID: ")
+	}
+	txnData.AssociationID = NewBlockHash(associationIDBytes)
+
+	return nil
+}
+
+func (txnData *CreateUserAssociationMetadata) New() DeSoTxnMetadata {
+	return &CreateUserAssociationMetadata{}
+}
+
+func (txnData *DeleteUserAssociationMetadata) New() DeSoTxnMetadata {
+	return &DeleteUserAssociationMetadata{}
+}
+
+func (txnData *CreatePostAssociationMetadata) New() DeSoTxnMetadata {
+	return &CreatePostAssociationMetadata{}
+}
+
+func (txnData *DeletePostAssociationMetadata) New() DeSoTxnMetadata {
+	return &DeletePostAssociationMetadata{}
+}
+
+type UserAssociationQuery struct {
+	TransactorPKID         *PKID
+	TargetUserPKID         *PKID
+	AppPKID                *PKID
+	AssociationType        []byte
+	AssociationTypePrefix  []byte
+	AssociationValue       []byte
+	AssociationValuePrefix []byte
+	Limit                  int
+	LastSeenAssociationID  *BlockHash
+	SortDescending         bool
+}
+
+type PostAssociationQuery struct {
+	TransactorPKID         *PKID
+	PostHash               *BlockHash
+	AppPKID                *PKID
+	AssociationType        []byte
+	AssociationTypePrefix  []byte
+	AssociationValue       []byte
+	AssociationValuePrefix []byte
+	Limit                  int
+	LastSeenAssociationID  *BlockHash
+	SortDescending         bool
+}
+
+// =======================================================================================
+// AccessGroupMetadata
+// =======================================================================================
+
+type AccessGroupScopeType uint8
+type AccessGroupScopeString string
+
+const (
+	AccessGroupScopeTypeAny     AccessGroupScopeType = 0
+	AccessGroupScopeTypeScoped  AccessGroupScopeType = 1
+	AccessGroupScopeTypeUnknown AccessGroupScopeType = 2
+)
+
+const (
+	AccessGroupScopeStringAny     AccessGroupScopeString = "Any"
+	AccessGroupScopeStringScoped  AccessGroupScopeString = "Scoped"
+	AccessGroupScopeStringUnknown AccessGroupScopeString = "Unknown"
+)
+
+func (scopeType AccessGroupScopeType) ToAccessGroupScopeString() AccessGroupScopeString {
+	switch scopeType {
+	case AccessGroupScopeTypeAny:
+		return AccessGroupScopeStringAny
+	case AccessGroupScopeTypeScoped:
+		return AccessGroupScopeStringScoped
+	default:
+		return AccessGroupScopeStringUnknown
+	}
+}
+
+func (scopeString AccessGroupScopeString) ToAccessGroupScopeType() AccessGroupScopeType {
+	switch scopeString {
+	case AccessGroupScopeStringAny:
+		return AccessGroupScopeTypeAny
+	case AccessGroupScopeStringScoped:
+		return AccessGroupScopeTypeScoped
+	default:
+		return AccessGroupScopeTypeUnknown
+	}
+}
+
+func (scopeType AccessGroupScopeType) ToString() string {
+	switch scopeType {
+	case AccessGroupScopeTypeAny:
+		return "Any"
+	case AccessGroupScopeTypeScoped:
+		return "Scoped"
+	default:
+		return ""
+	}
+}
+
+type AccessGroupOperationType uint8
+type AccessGroupOperationString string
+
+const (
+	AccessGroupOperationTypeUnknown AccessGroupOperationType = 0
+	AccessGroupOperationTypeAny     AccessGroupOperationType = 1
+	AccessGroupOperationTypeCreate  AccessGroupOperationType = 2
+	AccessGroupOperationTypeUpdate  AccessGroupOperationType = 3
+)
+
+const (
+	AccessGroupOperationStringUnknown AccessGroupOperationString = "Unknown"
+	AccessGroupOperationStringAny     AccessGroupOperationString = "Any"
+	AccessGroupOperationStringCreate  AccessGroupOperationString = "Create"
+	AccessGroupOperationStringUpdate  AccessGroupOperationString = "Update"
+)
+
+func (groupOp AccessGroupOperationType) ToAccessGroupOperationString() AccessGroupOperationString {
+	switch groupOp {
+	case AccessGroupOperationTypeAny:
+		return AccessGroupOperationStringAny
+	case AccessGroupOperationTypeCreate:
+		return AccessGroupOperationStringCreate
+	case AccessGroupOperationTypeUpdate:
+		return AccessGroupOperationStringUpdate
+	default:
+		return AccessGroupOperationStringUnknown
+	}
+}
+
+func (opString AccessGroupOperationString) ToAccessGroupOperationType() AccessGroupOperationType {
+	switch opString {
+	case AccessGroupOperationStringAny:
+		return AccessGroupOperationTypeAny
+	case AccessGroupOperationStringCreate:
+		return AccessGroupOperationTypeCreate
+	case AccessGroupOperationStringUpdate:
+		return AccessGroupOperationTypeUpdate
+	default:
+		return AccessGroupOperationTypeUnknown
+	}
+}
+
+func (groupOp AccessGroupOperationType) ToString() string {
+	if groupOp == AccessGroupOperationTypeUnknown {
+		return ""
+	}
+	return string(groupOp.ToAccessGroupOperationString())
+}
+
+type AccessGroupMetadata struct {
+	AccessGroupOwnerPublicKey []byte
+	AccessGroupPublicKey      []byte
+	AccessGroupKeyName        []byte
+	AccessGroupOperationType  AccessGroupOperationType
+}
+
+func (txnData *AccessGroupMetadata) GetTxnType() TxnType {
+	return TxnTypeAccessGroup
+}
+
+func (txnData *AccessGroupMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+
+	data = append(data, EncodeByteArray(txnData.AccessGroupOwnerPublicKey)...)
+	data = append(data, EncodeByteArray(txnData.AccessGroupPublicKey)...)
+	data = append(data, EncodeByteArray(txnData.AccessGroupKeyName)...)
+	data = append(data, UintToBuf(uint64(txnData.AccessGroupOperationType))...)
+	return data, nil
+}
+
+func (txnData *AccessGroupMetadata) FromBytes(data []byte) error {
+	ret := AccessGroupMetadata{}
+	rr := bytes.NewReader(data)
+
+	var err error
+	ret.AccessGroupOwnerPublicKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
+			"Problem reading AccessGroupOwnerPublicKey")
+	}
+
+	ret.AccessGroupPublicKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
+			"Problem reading AccessGroupPublicKey")
+	}
+
+	ret.AccessGroupKeyName, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
+			"Problem reading AccessGroupKeyName")
+	}
+
+	accessGroupOperationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMetadata.FromBytes: "+
+			"Problem reading AccessGroupOperationType")
+	}
+	ret.AccessGroupOperationType = AccessGroupOperationType(accessGroupOperationType)
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *AccessGroupMetadata) New() DeSoTxnMetadata {
+	return &AccessGroupMetadata{}
+}
+
+// =======================================================================================
+// AccessGroupMembersMetadata
+// =======================================================================================
+
+type AccessGroupMemberOperationType uint8
+type AccessGroupMemberOperationString string
+
+const (
+	AccessGroupMemberOperationTypeUnknown AccessGroupMemberOperationType = 0
+	AccessGroupMemberOperationTypeAny     AccessGroupMemberOperationType = 1
+	AccessGroupMemberOperationTypeAdd     AccessGroupMemberOperationType = 2
+	AccessGroupMemberOperationTypeRemove  AccessGroupMemberOperationType = 3
+	AccessGroupMemberOperationTypeUpdate  AccessGroupMemberOperationType = 4
+)
+
+const (
+	AccessGroupMemberOperationStringUnknown AccessGroupMemberOperationString = "Unknown"
+	AccessGroupMemberOperationStringAny     AccessGroupMemberOperationString = "Any"
+	AccessGroupMemberOperationStringAdd     AccessGroupMemberOperationString = "Add"
+	AccessGroupMemberOperationStringRemove  AccessGroupMemberOperationString = "Remove"
+	AccessGroupMemberOperationStringUpdate  AccessGroupMemberOperationString = "Update"
+)
+
+func (groupOp AccessGroupMemberOperationType) ToAccessGroupMemberOperationString() AccessGroupMemberOperationString {
+	switch groupOp {
+	case AccessGroupMemberOperationTypeAny:
+		return AccessGroupMemberOperationStringAny
+	case AccessGroupMemberOperationTypeAdd:
+		return AccessGroupMemberOperationStringAdd
+	case AccessGroupMemberOperationTypeRemove:
+		return AccessGroupMemberOperationStringRemove
+	case AccessGroupMemberOperationTypeUpdate:
+		return AccessGroupMemberOperationStringUpdate
+	default:
+		return AccessGroupMemberOperationStringUnknown
+	}
+}
+
+func (opString AccessGroupMemberOperationString) ToAccessGroupMemberOperation() AccessGroupMemberOperationType {
+	switch opString {
+	case AccessGroupMemberOperationStringAny:
+		return AccessGroupMemberOperationTypeAny
+	case AccessGroupMemberOperationStringAdd:
+		return AccessGroupMemberOperationTypeAdd
+	case AccessGroupMemberOperationStringRemove:
+		return AccessGroupMemberOperationTypeRemove
+	case AccessGroupMemberOperationStringUpdate:
+		return AccessGroupMemberOperationTypeUpdate
+	default:
+		return AccessGroupMemberOperationTypeUnknown
+	}
+}
+
+func (groupOp AccessGroupMemberOperationType) ToString() string {
+	if groupOp == AccessGroupMemberOperationTypeUnknown {
+		return ""
+	}
+	return string(groupOp.ToAccessGroupMemberOperationString())
+}
+
+// AccessGroupMembersMetadata is the metadata for a transaction to update the members of an access group.
+type AccessGroupMembersMetadata struct {
+	AccessGroupOwnerPublicKey []byte
+	AccessGroupKeyName        []byte
+	// The list of members to add/remove from the access group.
+	AccessGroupMembersList []*AccessGroupMember
+	// The operation to perform on the members.
+	AccessGroupMemberOperationType
+}
+
+type AccessGroupMember struct {
+	// AccessGroupMemberPublicKey is the public key of the user in the access group
+	AccessGroupMemberPublicKey []byte
+
+	// AccessGroupMemberKeyName is the name of the user in the access group
+	AccessGroupMemberKeyName []byte
+
+	EncryptedKey []byte
+
+	ExtraData map[string][]byte
+}
+
+func (txnData *AccessGroupMembersMetadata) GetTxnType() TxnType {
+	return TxnTypeAccessGroupMembers
+}
+
+func (txnData *AccessGroupMembersMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+
+	// AccessPublicKey
+	data = append(data, EncodeByteArray(txnData.AccessGroupOwnerPublicKey)...)
+	// AccessGroupKeyName
+	data = append(data, EncodeByteArray(txnData.AccessGroupKeyName)...)
+	// AccessGroupMembersList
+	data = append(data, encodeAccessGroupMembersList(txnData.AccessGroupMembersList)...)
+	// AccessGroupMemberOperationType
+	data = append(data, UintToBuf(uint64(txnData.AccessGroupMemberOperationType))...)
+
+	return data, nil
+}
+
+func (txnData *AccessGroupMembersMetadata) FromBytes(data []byte) error {
+	var err error
+	ret := AccessGroupMembersMetadata{}
+	rr := bytes.NewReader(data)
+
+	// AccessPublicKey
+	ret.AccessGroupOwnerPublicKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
+			"Problem reading AccessPublicKey")
+	}
+
+	// AccessGroupKeyName
+	ret.AccessGroupKeyName, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
+			"Problem reading AccessGroupKeyName")
+	}
+
+	// AccessGroupMembersList
+	ret.AccessGroupMembersList, err = decodeAccessGroupMembersList(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
+			"Problem reading AccessGroupMembersList")
+	}
+
+	// AccessGroupMemberOperationType
+	accessGroupMemberOperationType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMembersMetadata.FromBytes: "+
+			"Problem reading AccessGroupMemberOperationType")
+	}
+	ret.AccessGroupMemberOperationType = AccessGroupMemberOperationType(accessGroupMemberOperationType)
+
+	*txnData = ret
+	return nil
+}
+
+func (txnData *AccessGroupMembersMetadata) New() DeSoTxnMetadata {
+	return &AccessGroupMembersMetadata{}
+}
+
+func (member *AccessGroupMember) ToBytes() []byte {
+	var data []byte
+
+	data = append(data, EncodeByteArray(member.AccessGroupMemberPublicKey[:])...)
+	data = append(data, EncodeByteArray(member.AccessGroupMemberKeyName[:])...)
+	data = append(data, EncodeByteArray(member.EncryptedKey)...)
+	data = append(data, EncodeExtraData(member.ExtraData)...)
+
+	return data
+}
+
+func (member *AccessGroupMember) FromBytes(rr *bytes.Reader) error {
+
+	accessGroupMemberPublicKey, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMember.FromBytes: Problem decoding AccessGroupMemberPublicKey")
+	}
+
+	accessGroupMemberKeyName, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMember.FromBytes: Problem decoding AccessGroupMemberKeyName")
+	}
+
+	encryptedKey, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMember.FromBytes: Problem decoding EncryptedKey")
+	}
+
+	extraData, err := DecodeExtraData(rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMember.FromBytes: Problem decoding ExtraData")
+	}
+
+	member.AccessGroupMemberPublicKey = accessGroupMemberPublicKey
+	member.AccessGroupMemberKeyName = accessGroupMemberKeyName
+	member.EncryptedKey = encryptedKey
+	member.ExtraData = extraData
+
+	return nil
+}
+
+func encodeAccessGroupMembersList(members []*AccessGroupMember) []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(uint64(len(members)))...)
+	for _, accessGroupMember := range members {
+		data = append(data, accessGroupMember.ToBytes()...)
+	}
+	return data
+}
+
+func decodeAccessGroupMembersList(rr *bytes.Reader) ([]*AccessGroupMember, error) {
+	var members []*AccessGroupMember
+
+	numAccessGroupMembers, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "decodeAccessGroupMembersList: "+
+			"Problem reading numAccessGroupMembers")
+	}
+	members = make([]*AccessGroupMember, numAccessGroupMembers)
+	for ii := uint64(0); ii < numAccessGroupMembers; ii++ {
+		members[ii] = &AccessGroupMember{}
+		err = members[ii].FromBytes(rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "decodeAccessGroupMembersList: "+
+				"Problem reading AccessGroupMembersList[%d]", ii)
+		}
+	}
+
+	return members, nil
+}
+
+// =======================================================================================
+// NewMessageMetadata
+// =======================================================================================
+
+type NewMessageType byte
+type NewMessageOperation byte
+
+const (
+	// Message Types
+	NewMessageTypeDm        NewMessageType = 0
+	NewMessageTypeGroupChat NewMessageType = 1
+
+	// Message Operations
+	NewMessageOperationCreate NewMessageOperation = 0
+	NewMessageOperationUpdate NewMessageOperation = 1
+)
+
+type NewMessageMetadata struct {
+	SenderAccessGroupOwnerPublicKey    PublicKey
+	SenderAccessGroupKeyName           GroupKeyName
+	SenderAccessGroupPublicKey         PublicKey
+	RecipientAccessGroupOwnerPublicKey PublicKey
+	RecipientAccessGroupKeyName        GroupKeyName
+	RecipientAccessGroupPublicKey      PublicKey
+	EncryptedText                      []byte
+	TimestampNanos                     uint64
+	// TODO: Add operation type create/update
+	NewMessageType
+	NewMessageOperation
+}
+
+func (txnData *NewMessageMetadata) GetTxnType() TxnType {
+	return TxnTypeNewMessage
+}
+
+func (txnData *NewMessageMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+
+	data = append(data, EncodeByteArray(txnData.SenderAccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.SenderAccessGroupKeyName.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.SenderAccessGroupPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.RecipientAccessGroupOwnerPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.RecipientAccessGroupKeyName.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.RecipientAccessGroupPublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.EncryptedText)...)
+	data = append(data, UintToBuf(txnData.TimestampNanos)...)
+	data = append(data, UintToBuf(uint64(txnData.NewMessageType))...)
+	data = append(data, UintToBuf(uint64(txnData.NewMessageOperation))...)
+
+	return data, nil
+}
+
+func (txnData *NewMessageMetadata) FromBytes(data []byte) error {
+	var err error
+	ret := NewMessageMetadata{}
+	rr := bytes.NewReader(data)
+
+	// MinorAccessGroupOwnerPublicKey
+	senderAccessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading SenderAccessGroupOwnerPublicKey")
+	}
+	// SenderAccessGroupKeyName
+	senderAccessGroupKeyName, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading SenderAccessGroupKeyName")
+	}
+	if err = ValidateAccessGroupPublicKeyAndName(senderAccessGroupOwnerPublicKeyBytes, senderAccessGroupKeyName); err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Invalid sender access group public key and name")
+	}
+	ret.SenderAccessGroupOwnerPublicKey = *NewPublicKey(senderAccessGroupOwnerPublicKeyBytes)
+	ret.SenderAccessGroupKeyName = *NewGroupKeyName(senderAccessGroupKeyName)
+
+	// SenderAccessGroupPublicKey
+	senderAccessPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading SenderAccessGroupPublicKey")
+	}
+	if err = IsByteArrayValidPublicKey(senderAccessPublicKeyBytes); err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Invalid sender access public key")
+	}
+	ret.SenderAccessGroupPublicKey = *NewPublicKey(senderAccessPublicKeyBytes)
+
+	// RecipientAccessGroupOwnerPublicKey
+	recipientAccessGroupOwnerPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading RecipientAccessGroupOwnerPublicKey")
+	}
+	// RecipientAccessGroupKeyName
+	recipientAccessGroupKeyName, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading RecipientAccessGroupKeyName")
+	}
+	if err = ValidateAccessGroupPublicKeyAndName(recipientAccessGroupOwnerPublicKeyBytes, recipientAccessGroupKeyName); err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Invalid recipient access group public key and name")
+	}
+	ret.RecipientAccessGroupOwnerPublicKey = *NewPublicKey(recipientAccessGroupOwnerPublicKeyBytes)
+	ret.RecipientAccessGroupKeyName = *NewGroupKeyName(recipientAccessGroupKeyName)
+
+	// RecipientAccessGroupPublicKey
+	recipientAccessPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading RecipientAccessGroupPublicKey")
+	}
+	if err = IsByteArrayValidPublicKey(recipientAccessPublicKeyBytes); err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Invalid recipient access public key")
+	}
+	ret.RecipientAccessGroupPublicKey = *NewPublicKey(recipientAccessPublicKeyBytes)
+
+	// EncryptedText
+	ret.EncryptedText, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading EncryptedText")
+	}
+
+	// TimestampNanos
+	ret.TimestampNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading TimestampNanos")
+	}
+
+	// NewMessageType
+	messageType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading NewMessageType")
+	}
+	ret.NewMessageType = NewMessageType(messageType)
+
+	// NewMessageOperation
+	messageOperation, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageMetadata.FromBytes: "+
+			"Problem reading NewMessageOperation")
+	}
+	ret.NewMessageOperation = NewMessageOperation(messageOperation)
+	*txnData = ret
+
+	return nil
+}
+
+func (txnData *NewMessageMetadata) New() DeSoTxnMetadata {
+	return &NewMessageMetadata{}
 }

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/sha3"
 	"reflect"
 	"sort"
 	"strings"
@@ -26,7 +28,7 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 	//
 	// TODO(performance): This currently fetches all profiles. We should implement
 	// some kind of pagination instead though.
-	_, _, dbProfileEntries, err := DBGetAllProfilesByCoinValue(bav.Handle, true /*fetchEntries*/)
+	_, _, dbProfileEntries, err := DBGetAllProfilesByCoinValue(bav.Handle, bav.Snapshot, true)
 	if err != nil {
 		return nil, nil, nil, nil, errors.Wrapf(
 			err, "GetAllProfiles: Problem fetching ProfileEntrys from db: ")
@@ -51,7 +53,7 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 		}
 		commentsByProfilePublicKey[MakePkMapKey(profileEntry.PublicKey)] = []*PostEntry{}
 		_, dbCommentHashes, _, err := DBGetCommentPostHashesForParentStakeID(
-			bav.Handle, profileEntry.PublicKey, false /*fetchEntries*/)
+			bav.Handle, bav.Snapshot, profileEntry.PublicKey, false)
 		if err != nil {
 			return nil, nil, nil, nil, errors.Wrapf(err, "GetAllPosts: Problem fetching comment PostEntry's from db: ")
 		}
@@ -63,7 +65,7 @@ func (bav *UtxoView) GetAllProfiles(readerPK []byte) (
 	// has made, just go ahead and load *all* the posts into the view so that
 	// they'll get returned in the mapping. Later, we should use the db index
 	// to do this.
-	_, _, dbPostEntries, err := DBGetAllPostsByTstamp(bav.Handle, true /*fetchEntries*/)
+	_, _, dbPostEntries, err := DBGetAllPostsByTstamp(bav.Handle, bav.Snapshot, true)
 	if err != nil {
 		return nil, nil, nil, nil, errors.Wrapf(
 			err, "GetAllPosts: Problem fetching PostEntry's from db: ")
@@ -154,7 +156,7 @@ func (bav *UtxoView) GetProfileEntryForUsername(nonLowercaseUsername []byte) *Pr
 		profileEntry, _ := bav.setProfileMappings(profile)
 		return profileEntry
 	} else {
-		dbProfileEntry := DBGetProfileEntryForUsername(bav.Handle, nonLowercaseUsername)
+		dbProfileEntry := DBGetProfileEntryForUsername(bav.Handle, bav.Snapshot, nonLowercaseUsername)
 		if dbProfileEntry != nil {
 			bav._setProfileEntryMappings(dbProfileEntry)
 		}
@@ -193,7 +195,7 @@ func (bav *UtxoView) GetPKIDForPublicKey(publicKeyArg []byte) *PKIDEntry {
 		_, pkidEntry := bav.setProfileMappings(profile)
 		return pkidEntry
 	} else {
-		dbPKIDEntry := DBGetPKIDEntryForPublicKey(bav.Handle, publicKey)
+		dbPKIDEntry := DBGetPKIDEntryForPublicKey(bav.Handle, bav.Snapshot, publicKey)
 		if dbPKIDEntry != nil {
 			bav._setPKIDMappings(dbPKIDEntry)
 		}
@@ -235,7 +237,7 @@ func (bav *UtxoView) GetPublicKeyForPKID(pkidArg *PKID) []byte {
 		_, pkidEntry := bav.setProfileMappings(profile)
 		return pkidEntry.PublicKey
 	} else {
-		dbPublicKey := DBGetPublicKeyForPKID(bav.Handle, pkid)
+		dbPublicKey := DBGetPublicKeyForPKID(bav.Handle, bav.Snapshot, pkid)
 		if len(dbPublicKey) != 0 {
 			bav._setPKIDMappings(&PKIDEntry{
 				PKID:      pkid,
@@ -299,7 +301,7 @@ func (bav *UtxoView) GetProfileEntryForPKID(pkid *PKID) *ProfileEntry {
 		profileEntry, _ := bav.setProfileMappings(profile)
 		return profileEntry
 	} else {
-		dbProfileEntry := DBGetProfileEntryForPKID(bav.Handle, pkid)
+		dbProfileEntry := DBGetProfileEntryForPKID(bav.Handle, bav.Snapshot, pkid)
 		if dbProfileEntry != nil {
 			bav._setProfileEntryMappings(dbProfileEntry)
 		}
@@ -333,8 +335,8 @@ func (bav *UtxoView) _deleteProfileEntryMappings(profileEntry *ProfileEntry) {
 	bav._setProfileEntryMappings(&tombstoneProfileEntry)
 }
 
-// _getDerivedKeyMappingForOwner fetches the derived key mapping from the utxoView
-func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
+// GetDerivedKeyMappingForOwner fetches the derived key mapping from the utxoView
+func (bav *UtxoView) GetDerivedKeyMappingForOwner(ownerPublicKey []byte, derivedPublicKey []byte) *DerivedKeyEntry {
 	// Check if the entry exists in utxoView.
 	ownerPk := NewPublicKey(ownerPublicKey)
 	derivedPk := NewPublicKey(derivedPublicKey)
@@ -345,15 +347,7 @@ func (bav *UtxoView) _getDerivedKeyMappingForOwner(ownerPublicKey []byte, derive
 	}
 
 	// Check if the entry exists in the DB.
-	if bav.Postgres != nil {
-		if entryPG := bav.Postgres.GetDerivedKey(ownerPk, derivedPk); entryPG != nil {
-			entry = entryPG.NewDerivedKeyEntry()
-		} else {
-			entry = nil
-		}
-	} else {
-		entry = DBGetOwnerToDerivedKeyMapping(bav.Handle, *ownerPk, *derivedPk)
-	}
+	entry = bav.GetDbAdapter().GetOwnerToDerivedKeyMapping(*ownerPk, *derivedPk)
 
 	// If an entry exists, update the UtxoView map.
 	if entry != nil {
@@ -577,7 +571,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 	}
 
 	profilePublicKey := txn.PublicKey
-	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
+	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
 	if len(txMeta.ProfilePublicKey) != 0 {
 		if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
 			return 0, 0, nil, errors.Wrapf(RuleErrorProfilePublicKeySize, "_connectUpdateProfile: %#v", txMeta.ProfilePublicKey)
@@ -669,7 +663,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 		// Modifying a profile is only allowed if the transaction public key equals
 		// the profile public key or if the public key belongs to a paramUpdater.
-		_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
+		_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
 		if !reflect.DeepEqual(txn.PublicKey, existingProfileEntry.PublicKey) &&
 			!updaterIsParamUpdater {
 
@@ -678,7 +672,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 				"_connectUpdateProfile: Profile: %v, profile public key: %v, "+
 					"txn public key: %v, paramUpdater: %v", existingProfileEntry,
 				PkToStringBoth(existingProfileEntry.PublicKey),
-				PkToStringBoth(txn.PublicKey), spew.Sdump(bav.Params.ParamUpdaterPublicKeys))
+				PkToStringBoth(txn.PublicKey), spew.Sdump(GetParamUpdaterPublicKeys(blockHeight, bav.Params)))
 		}
 
 		// Only set the fields if they have non-zero length. Otherwise leave
@@ -805,7 +799,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 	txMeta := txn.TxnMeta.(*SwapIdentityMetadataa)
 
 	// The txn.PublicKey must be paramUpdater
-	_, updaterIsParamUpdater := bav.Params.ParamUpdaterPublicKeys[MakePkMapKey(txn.PublicKey)]
+	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
 	if !updaterIsParamUpdater {
 		return 0, 0, nil, RuleErrorSwapIdentityIsParamUpdaterOnly
 	}
@@ -937,7 +931,29 @@ func (bav *UtxoView) _connectSwapIdentity(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
-func _verifyBytesSignature(signer, data, signature []byte) error {
+// _verifyBytesSignature will try to verify the provided signature assuming it's either a DeSo or an Eth signature.
+func _verifyBytesSignature(signer, data, signature []byte, blockHeight uint32, params *DeSoParams) error {
+	var desoErr, ethErr error
+
+	// Check if the provided signature is a DeSo signature.
+	desoErr = _verifyDeSoSignature(signer, data, signature)
+	if desoErr == nil {
+		return nil
+	}
+
+	if blockHeight >= params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight {
+		// Check if the provided signature is an Eth signature.
+		ethErr = VerifyEthPersonalSignature(signer, data, signature)
+		if ethErr == nil {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("_verifyBytesSignature: failed to verify signature. DeSo signature error (%v). "+
+		"Eth signature error (%v)", desoErr, ethErr)
+}
+
+func _verifyDeSoSignature(signer, data, signature []byte) error {
 	bytes := Sha256DoubleHash(data)
 
 	// Convert signature to *btcec.Signature.
@@ -952,6 +968,53 @@ func _verifyBytesSignature(signer, data, signature []byte) error {
 		return fmt.Errorf("_verifyBytesSignature: Invalid signature")
 	}
 	return nil
+}
+
+// TextAndHash corresponds to the Eth's accounts/account.go TextAndHash. Copied it here for security reasons.
+func TextAndHash(data []byte) ([]byte, string) {
+	msg := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(data), string(data))
+	hasher := sha3.NewLegacyKeccak256()
+	hasher.Write([]byte(msg))
+	return hasher.Sum(nil), msg
+}
+
+// VerifyEthPersonalSignature checks the signature assuming it follows Ethereum's personal_sign standard. This is used
+// for the MetaMask DeSo integration.
+func VerifyEthPersonalSignature(signer, data, signature []byte) error {
+	// Ethereum likes uncompressed public keys while we use compressed keys a lot. Make sure we have uncompressed pk bytes.
+	var uncompressedSigner []byte
+	pubKey, err := btcec.ParsePubKey(signer, btcec.S256())
+	if err != nil {
+		return errors.Wrapf(err, "VerifyEthPersonalSignature: Problem parsing signer public key")
+	}
+	if len(signer) == btcec.PubKeyBytesLenCompressed {
+		uncompressedSigner = pubKey.SerializeUncompressed()
+	} else if len(signer) == btcec.PubKeyBytesLenUncompressed {
+		uncompressedSigner = signer
+	} else {
+		return fmt.Errorf("VerifyEthPersonalSignature: Public key has incorrect length. It should be either "+
+			"(%v) for compressed key or (%v) for uncompressed key", btcec.PubKeyBytesLenCompressed, btcec.PubKeyBytesLenUncompressed)
+	}
+
+	// Change the data bytes into Ethereum's personal_sign message standard. This will prepend the message prefix and hash
+	// the prepended message using keccak256.
+	hash, _ := TextAndHash(data)
+
+	// Make sure signature has the correct length. If signature has 65 bytes then it contains the recovery ID, we can
+	// slice it off since we already know the signer public key.
+	formattedSignature := make([]byte, 64)
+	if len(signature) == 64 || len(signature) == 65 {
+		copy(formattedSignature, signature[:64])
+	} else {
+		return fmt.Errorf("VerifyEthPersonalSignature: Signature must be 64 or 65 bytes in size. Got (%v) instead", len(signature))
+	}
+
+	// Now, verify the signature.
+	if crypto.VerifySignature(uncompressedSigner, hash, formattedSignature) {
+		return nil
+	} else {
+		return fmt.Errorf("VerifyEthPersonalSignature: Signature verification failed")
+	}
 }
 
 func (bav *UtxoView) _disconnectUpdateProfile(

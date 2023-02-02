@@ -14,6 +14,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Check that all state db prefixes have been correctly mapped to DeSoEncoder types via StatePrefixToDeSoEncoder
+func TestStatePrefixToDeSoEncoder(t *testing.T) {
+	for prefixByte, isState := range StatePrefixes.StatePrefixesMap {
+		prefix := []byte{prefixByte}
+		isEncoder, encoder := StatePrefixToDeSoEncoder(prefix)
+		if isState {
+			if isEncoder && encoder == nil {
+				t.Fatalf("State prefix (%v) mapped to an incorrect encoder, isEncoder is true and encoder is nil", prefix)
+			} else if !isEncoder && encoder != nil {
+				t.Fatalf("State prefix (%v) mapped to an incorrect encoder, isEncoder is false and encoder is not nil", prefix)
+			}
+		} else {
+			if !isEncoder || (isEncoder && encoder != nil) {
+				t.Fatalf("Non-state prefix (%v) mapped to an incorrect encoder", prefix)
+			}
+		}
+	}
+}
+
 func _GetTestBlockNode() *BlockNode {
 	bs := BlockNode{}
 
@@ -57,10 +76,9 @@ func GetTestBadgerDb() (_db *badger.DB, _dir string) {
 	}
 
 	// Open a badgerdb in a temporary directory.
-	opts := badger.DefaultOptions(dir)
+	opts := PerformanceBadgerOptions(dir)
 	opts.Dir = dir
 	opts.ValueDir = dir
-	opts.MemTableSize = 1024 << 20
 	db, err := badger.Open(opts)
 	if err != nil {
 		log.Fatal(err)
@@ -114,16 +132,16 @@ func TestBlockNodePutGet(t *testing.T) {
 	b4.Header.PrevBlockHash = b1.Hash
 	b4.Height = 1
 
-	err := PutHeightHashToNodeInfo(b1, db, false /*bitcoinNodes*/)
+	err := PutHeightHashToNodeInfo(db, nil, b1, false /*bitcoinNodes*/)
 	require.NoError(err)
 
-	err = PutHeightHashToNodeInfo(b2, db, false /*bitcoinNodes*/)
+	err = PutHeightHashToNodeInfo(db, nil, b2, false /*bitcoinNodes*/)
 	require.NoError(err)
 
-	err = PutHeightHashToNodeInfo(b3, db, false /*bitcoinNodes*/)
+	err = PutHeightHashToNodeInfo(db, nil, b3, false /*bitcoinNodes*/)
 	require.NoError(err)
 
-	err = PutHeightHashToNodeInfo(b4, db, false /*bitcoinNodes*/)
+	err = PutHeightHashToNodeInfo(db, nil, b4, false /*bitcoinNodes*/)
 	require.NoError(err)
 
 	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/)
@@ -175,7 +193,7 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	db, dir := GetTestBadgerDb()
 	defer os.RemoveAll(dir)
 
-	err := InitDbWithDeSoGenesisBlock(&DeSoTestnetParams, db, nil)
+	err := InitDbWithDeSoGenesisBlock(&DeSoTestnetParams, db, nil, nil)
 	require.NoError(err)
 
 	// Check the block index.
@@ -292,76 +310,76 @@ func TestPrivateMessages(t *testing.T) {
 
 	// pk1 -> pk2: message1Str, tstamp1
 	require.NoError(DBPutMessageEntry(
-		db, MessageKey{
+		db, nil, 0, MessageKey{
 			PublicKey:   *NewPublicKey(pk1),
 			TstampNanos: tstamp1,
 		}, message1))
 	// same message but also store for pk2
 	require.NoError(DBPutMessageEntry(
-		db, MessageKey{
+		db, nil, 0, MessageKey{
 			PublicKey:   *NewPublicKey(pk2),
 			TstampNanos: tstamp1,
 		}, message1))
 
 	// pk2 -> pk1: message2Str, tstamp2
 	require.NoError(DBPutMessageEntry(
-		db, MessageKey{
+		db, nil, 0, MessageKey{
 			PublicKey:   *NewPublicKey(pk2),
 			TstampNanos: tstamp2,
 		}, message2))
 	// same message but also store for pk1
 	require.NoError(DBPutMessageEntry(
-		db, MessageKey{
+		db, nil, 0, MessageKey{
 			PublicKey:   *NewPublicKey(pk1),
 			TstampNanos: tstamp2,
 		}, message2))
 
 	// pk3 -> pk1: message3Str, tstamp3
 	require.NoError(DBPutMessageEntry(
-		db, MessageKey{
+		db, nil, 0, MessageKey{
 			PublicKey:   *NewPublicKey(pk3),
 			TstampNanos: tstamp3,
 		}, message3))
 	// same message but also store for pk1
 	require.NoError(DBPutMessageEntry(
-		db, MessageKey{
+		db, nil, 0, MessageKey{
 			PublicKey:   *NewPublicKey(pk1),
 			TstampNanos: tstamp3,
 		}, message3))
 
 	// pk2 -> pk1: message4Str, tstamp4
 	require.NoError(DBPutMessageEntry(
-		db, MessageKey{
+		db, nil, 0, MessageKey{
 			PublicKey:   *NewPublicKey(pk2),
 			TstampNanos: tstamp4,
 		}, message4))
 	// same message but also store for pk1
 	require.NoError(DBPutMessageEntry(
-		db, MessageKey{
+		db, nil, 0, MessageKey{
 			PublicKey:   *NewPublicKey(pk1),
 			TstampNanos: tstamp4,
 		}, message4))
 
 	// pk1 -> pk3: message5Str, tstamp5
 	require.NoError(DBPutMessageEntry(
-		db, MessageKey{
+		db, nil, 0, MessageKey{
 			PublicKey:   *NewPublicKey(pk1),
 			TstampNanos: tstamp5,
 		}, message5))
 	// same message but also store for pk3
 	require.NoError(DBPutMessageEntry(
-		db, MessageKey{
+		db, nil, 0, MessageKey{
 			PublicKey:   *NewPublicKey(pk3),
 			TstampNanos: tstamp5,
 		}, message5))
 
 	// Fetch message3 directly using both public keys.
 	{
-		msg := DBGetMessageEntry(db, pk3, tstamp3)
+		msg := DBGetMessageEntry(db, nil, pk3, tstamp3)
 		require.Equal(message3, msg)
 	}
 	{
-		msg := DBGetMessageEntry(db, pk1, tstamp3)
+		msg := DBGetMessageEntry(db, nil, pk1, tstamp3)
 		require.Equal(message3, msg)
 	}
 
@@ -403,8 +421,8 @@ func TestPrivateMessages(t *testing.T) {
 	}
 
 	// Delete message3
-	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp3))
-	require.NoError(DBDeleteMessageEntryMappings(db, pk3, tstamp3))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp3))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk3, tstamp3))
 
 	// Now all the messages returned should exclude message3
 	{
@@ -439,17 +457,17 @@ func TestPrivateMessages(t *testing.T) {
 
 	// Delete all remaining messages
 	// message1
-	require.NoError(DBDeleteMessageEntryMappings(db, pk2, tstamp1))
-	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp1))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp1))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp1))
 	// message2
-	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp2))
-	require.NoError(DBDeleteMessageEntryMappings(db, pk2, tstamp2))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp2))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp2))
 	// message4
-	require.NoError(DBDeleteMessageEntryMappings(db, pk2, tstamp4))
-	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp4))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp4))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp4))
 	// message5
-	require.NoError(DBDeleteMessageEntryMappings(db, pk1, tstamp5))
-	require.NoError(DBDeleteMessageEntryMappings(db, pk3, tstamp5))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp5))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk3, tstamp5))
 
 	// Now all public keys should have zero messages.
 	{
@@ -492,26 +510,26 @@ func TestFollows(t *testing.T) {
 	pk3 := priv3.PubKey().SerializeCompressed()
 
 	// Get the PKIDs for all the public keys
-	pkid1 := DBGetPKIDEntryForPublicKey(db, pk1).PKID
-	pkid2 := DBGetPKIDEntryForPublicKey(db, pk2).PKID
-	pkid3 := DBGetPKIDEntryForPublicKey(db, pk3).PKID
+	pkid1 := DBGetPKIDEntryForPublicKey(db, nil, pk1).PKID
+	pkid2 := DBGetPKIDEntryForPublicKey(db, nil, pk2).PKID
+	pkid3 := DBGetPKIDEntryForPublicKey(db, nil, pk3).PKID
 
 	// PK2 follows everyone. Make sure "get" works properly.
-	require.Nil(DbGetFollowerToFollowedMapping(db, pkid2, pkid1))
-	require.NoError(DbPutFollowMappings(db, pkid2, pkid1))
-	require.NotNil(DbGetFollowerToFollowedMapping(db, pkid2, pkid1))
-	require.Nil(DbGetFollowerToFollowedMapping(db, pkid2, pkid3))
-	require.NoError(DbPutFollowMappings(db, pkid2, pkid3))
-	require.NotNil(DbGetFollowerToFollowedMapping(db, pkid2, pkid3))
+	require.Nil(DbGetFollowerToFollowedMapping(db, nil, pkid2, pkid1))
+	require.NoError(DbPutFollowMappings(db, nil, pkid2, pkid1))
+	require.NotNil(DbGetFollowerToFollowedMapping(db, nil, pkid2, pkid1))
+	require.Nil(DbGetFollowerToFollowedMapping(db, nil, pkid2, pkid3))
+	require.NoError(DbPutFollowMappings(db, nil, pkid2, pkid3))
+	require.NotNil(DbGetFollowerToFollowedMapping(db, nil, pkid2, pkid3))
 
 	// pkid3 only follows pkid1. Make sure "get" works properly.
-	require.Nil(DbGetFollowerToFollowedMapping(db, pkid3, pkid1))
-	require.NoError(DbPutFollowMappings(db, pkid3, pkid1))
-	require.NotNil(DbGetFollowerToFollowedMapping(db, pkid3, pkid1))
+	require.Nil(DbGetFollowerToFollowedMapping(db, nil, pkid3, pkid1))
+	require.NoError(DbPutFollowMappings(db, nil, pkid3, pkid1))
+	require.NotNil(DbGetFollowerToFollowedMapping(db, nil, pkid3, pkid1))
 
 	// Check PK1's followers.
 	{
-		pubKeys, err := DbGetPubKeysFollowingYou(db, pk1)
+		pubKeys, err := DbGetPubKeysFollowingYou(db, nil, pk1)
 		require.NoError(err)
 		for i := 0; i < len(pubKeys); i++ {
 			require.Contains([][]byte{pk2, pk3}, pubKeys[i])
@@ -520,21 +538,21 @@ func TestFollows(t *testing.T) {
 
 	// Check PK1's follows.
 	{
-		pubKeys, err := DbGetPubKeysYouFollow(db, pk1)
+		pubKeys, err := DbGetPubKeysYouFollow(db, nil, pk1)
 		require.NoError(err)
 		require.Equal(len(pubKeys), 0)
 	}
 
 	// Check PK2's followers.
 	{
-		pubKeys, err := DbGetPubKeysFollowingYou(db, pk2)
+		pubKeys, err := DbGetPubKeysFollowingYou(db, nil, pk2)
 		require.NoError(err)
 		require.Equal(len(pubKeys), 0)
 	}
 
 	// Check PK2's follows.
 	{
-		pubKeys, err := DbGetPubKeysYouFollow(db, pk2)
+		pubKeys, err := DbGetPubKeysYouFollow(db, nil, pk2)
 		require.NoError(err)
 		for i := 0; i < len(pubKeys); i++ {
 			require.Contains([][]byte{pk1, pk3}, pubKeys[i])
@@ -543,7 +561,7 @@ func TestFollows(t *testing.T) {
 
 	// Check PK3's followers.
 	{
-		pubKeys, err := DbGetPubKeysFollowingYou(db, pk3)
+		pubKeys, err := DbGetPubKeysFollowingYou(db, nil, pk3)
 		require.NoError(err)
 		for i := 0; i < len(pubKeys); i++ {
 			require.Contains([][]byte{pk2}, pubKeys[i])
@@ -552,7 +570,7 @@ func TestFollows(t *testing.T) {
 
 	// Check PK3's follows.
 	{
-		pubKeys, err := DbGetPubKeysYouFollow(db, pk3)
+		pubKeys, err := DbGetPubKeysYouFollow(db, nil, pk3)
 		require.NoError(err)
 		for i := 0; i < len(pubKeys); i++ {
 			require.Contains([][]byte{pk1, pk1}, pubKeys[i])
@@ -560,12 +578,12 @@ func TestFollows(t *testing.T) {
 	}
 
 	// Delete PK2's follows.
-	require.NoError(DbDeleteFollowMappings(db, pkid2, pkid1))
-	require.NoError(DbDeleteFollowMappings(db, pkid2, pkid3))
+	require.NoError(DbDeleteFollowMappings(db, nil, pkid2, pkid1))
+	require.NoError(DbDeleteFollowMappings(db, nil, pkid2, pkid3))
 
 	// Check PK2's follows were actually deleted.
 	{
-		pubKeys, err := DbGetPubKeysYouFollow(db, pk2)
+		pubKeys, err := DbGetPubKeysYouFollow(db, nil, pk2)
 		require.NoError(err)
 		require.Equal(len(pubKeys), 0)
 	}

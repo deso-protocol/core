@@ -1,6 +1,8 @@
 package lib
 
 import (
+	"bytes"
+	"encoding/hex"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
@@ -43,7 +45,7 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateSwapIdentityTxn(
@@ -84,7 +86,7 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeSwapIdentity, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -115,7 +117,7 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(
@@ -163,7 +165,7 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeUpdateProfile, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -211,7 +213,7 @@ func TestUpdateProfile(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain()
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 
 	// For testing purposes, we set the fix block height to be 0 for the ParamUpdaterProfileUpdateFixBlockHeight.
 	params.ForkHeights.ParamUpdaterProfileUpdateFixBlockHeight = 0
@@ -886,7 +888,7 @@ func TestUpdateProfile(t *testing.T) {
 			require.NoError(err)
 			txns = append(txns, currentTxn)
 			txnOps = append(txnOps, currentOps)
-			utxoView, err := NewUtxoView(db, params, nil)
+			utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 			require.NoError(err)
 			m4ProfileEntry := utxoView.GetProfileEntryForPublicKey(m4PkBytes)
 			require.Equal(len(m4ProfileEntry.ExtraData), 2)
@@ -922,7 +924,7 @@ func TestUpdateProfile(t *testing.T) {
 			require.NoError(err)
 			txns = append(txns, currentTxn)
 			txnOps = append(txnOps, currentOps)
-			utxoView, err := NewUtxoView(db, params, nil)
+			utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 			require.NoError(err)
 			m4ProfileEntry := utxoView.GetProfileEntryForPublicKey(m4PkBytes)
 			require.Equal(len(m4ProfileEntry.ExtraData), 3)
@@ -951,7 +953,7 @@ func TestUpdateProfile(t *testing.T) {
 	// user5
 	// m5Pub, m5_paramUpdater, m5 created by paramUpdater, otherShortPic, 11*100, 1.5*100*100, false
 	checkProfilesExist := func() {
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 		profileEntriesByPublicKey, _, _, _, err := utxoView.GetAllProfiles(nil)
 		require.NoError(err)
@@ -1006,7 +1008,7 @@ func TestUpdateProfile(t *testing.T) {
 	checkProfilesExist()
 
 	checkProfilesDeleted := func() {
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 		profileEntriesByPublicKey, _, _, _, err := utxoView.GetAllProfiles(nil)
 		require.NoError(err)
@@ -1050,14 +1052,14 @@ func TestUpdateProfile(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
@@ -1081,7 +1083,7 @@ func TestUpdateProfile(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -1095,14 +1097,14 @@ func TestUpdateProfile(t *testing.T) {
 		require.NoError(err)
 	}
 	// Flush the utxoView after having added all the transactions.
-	require.NoError(utxoView.FlushToDb())
+	require.NoError(utxoView.FlushToDb(0))
 
 	// Verify the profiles exist.
 	checkProfilesExist()
 
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil)
+	utxoView2, err := NewUtxoView(db, params, nil, chain.snapshot)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -1114,7 +1116,7 @@ func TestUpdateProfile(t *testing.T) {
 		err = utxoView2.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
 		require.NoError(err)
 	}
-	require.NoError(utxoView2.FlushToDb())
+	require.NoError(utxoView2.FlushToDb(0))
 	require.Equal(expectedSenderBalances[0], _getBalance(t, chain, nil, senderPkString))
 
 	// Verify that all the profiles have been deleted.
@@ -1129,23 +1131,23 @@ func TestUpdateProfile(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.
 		hash, err := block.Header.Hash()
 		require.NoError(err)
-		utxoOps, err := GetUtxoOperationsForBlock(db, hash)
+		utxoOps, err := GetUtxoOperationsForBlock(db, chain.snapshot, hash)
 		require.NoError(err)
 
 		// Compute the hashes for all the transactions.
 		txHashes, err := ComputeTransactionHashes(block.Txns)
 		require.NoError(err)
-		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps))
+		require.NoError(utxoView.DisconnectBlock(block, txHashes, utxoOps, 0))
 
 		// Flushing the view after applying and rolling back should work.
-		require.NoError(utxoView.FlushToDb())
+		require.NoError(utxoView.FlushToDb(0))
 	}
 
 	// Verify that all the profiles have been deleted.
@@ -2001,7 +2003,7 @@ func TestSwapIdentityFailureCases(t *testing.T) {
 		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 
 	// Create a paramUpdater for this test
-	params.ParamUpdaterPublicKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
 	// Swapping identities with a key that is not paramUpdater should fail.
 	_, _, _, err := _swapIdentity(
@@ -3025,7 +3027,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 		chain, params, db := NewLowDifficultyBlockchain()
 		mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 		// Make m3 a paramUpdater for this test
-		params.ParamUpdaterPublicKeys[MakePkMapKey(m3PkBytes)] = true
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 
 		// Mine a few blocks to give the senderPkString some money.
 		_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -3259,4 +3261,52 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 			require.Equal(0, len(mempoolTxsAdded))
 		}
 	}
+}
+
+// Check that Eth personal_sign works on some test data.
+func TestEthSignature(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	// Make sure encoder migrations are not triggered yet.
+	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
+		if GlobalDeSoParams.EncoderMigrationHeightsList[ii].Version == 0 {
+			continue
+		}
+		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 1
+	}
+
+	// This data was taken directly from MetaMask personal_sign.
+	signatureHex := "d1f84f38ce47c0ea6d67d0cf2c228dbb9f46aca12db514aaf7d8442978334e8f1547cd1999d9e84fe3f4ba3b92fc8d57bf982ebcab8227e94c7650f36c0dd7ad1b"
+	transactionSpendingLimitHex := "80c2d72f0305809f4909a08d06138aa41f0000000000"
+	expirationBlock := uint64(45639)
+	derivedPublicKeyBase58Check := "tBCKYV1wrcCgDhXY3ZnvcX3L1yrFNbYjYzTBFnkxHUcjM9vt84NpbT"
+	ownerPublicKeyBase58Check := "tBCKW6GJpevX6g9kfVz4opSb7gVsJMhES67z4k5Bntxnd7zHcHdgFM"
+
+	// parse signature
+	signature, err := hex.DecodeString(signatureHex)
+	require.NoError(err)
+
+	// parse spending limits
+	transactionSpendingLimit := &TransactionSpendingLimit{}
+	transactionSpendingLimitBytes, err := hex.DecodeString(transactionSpendingLimitHex)
+	require.NoError(err)
+	rr := bytes.NewReader(transactionSpendingLimitBytes)
+	// This error is fine because transaction should fail anyway if spending limit cannot be decoded.
+	require.NoError(transactionSpendingLimit.FromBytes(0, rr))
+
+	// parse derived public key
+	derivedPublicKeyBytes, _, err := Base58CheckDecode(derivedPublicKeyBase58Check)
+	require.NoError(err)
+
+	// parse owner public key
+	ownerPublicKeyBytes, _, err := Base58CheckDecode(ownerPublicKeyBase58Check)
+	require.NoError(err)
+
+	// assemble the message
+	accessBytes := AssembleAccessBytesWithMetamaskStrings(derivedPublicKeyBytes, expirationBlock,
+		transactionSpendingLimit, &DeSoTestnetParams)
+
+	// verify signature
+	require.NoError(VerifyEthPersonalSignature(ownerPublicKeyBytes, accessBytes, signature))
 }

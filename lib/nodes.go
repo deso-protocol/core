@@ -41,8 +41,8 @@ var NODES = map[uint64]DeSoNode{
 		Owner: "Zordon",
 	},
 	4: {
-		Name:  "CloutFeed",
-		URL:   "https://apps.apple.com/app/id1561532815",
+		Name:  "Desofy",
+		URL:   "https://desofy.app",
 		Owner: "Ribal",
 	},
 	5: {
@@ -82,7 +82,7 @@ var NODES = map[uint64]DeSoNode{
 	},
 	12: {
 		Name:  "NFTz",
-		URL:   "https://nftz.zone",
+		URL:   "https://nftz.me",
 		Owner: "mvanhalen",
 	},
 	13: {
@@ -126,9 +126,9 @@ var NODES = map[uint64]DeSoNode{
 		Owner: "Nordian",
 	},
 	21: {
-		Name:  "NinjaNode",
-		URL:   "https://node.bitcloutapps.ninja",
-		Owner: "mattpitts",
+		Name:  "VoSocial",
+		URL:   "https://vosoapp.com",
+		Owner: "voso",
 	},
 	22: {
 		Name:  "Tunel",
@@ -154,5 +154,20 @@ var NODES = map[uint64]DeSoNode{
 		Name:  "Overclout",
 		URL:   "https://overclout.com",
 		Owner: "Overclout",
+	},
+	27: {
+		Name:  "DesoNoCode",
+		URL:   "https://node.desonocode.com",
+		Owner: "DeSoNoCode",
+	},
+	28: {
+		Name:  "Post2EarnDao",
+		URL:   "https://node.post2earndao.com",
+		Owner: "edokoevoet",
+	},
+	29: {
+		Name:  "Pearl",
+		URL:   "https://pearl.app",
+		Owner: "pearl",
 	},
 }
