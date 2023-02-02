@@ -2743,18 +2743,18 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	case TxnTypeAccessGroup:
 		totalInput, totalOutput, utxoOpsForTxn, err =
-		bav._connectAccessGroup(
-		txn, txHash, blockHeight, verifySignatures)
+			bav._connectAccessGroup(
+				txn, txHash, blockHeight, verifySignatures)
 
 	case TxnTypeAccessGroupMembers:
 		totalInput, totalOutput, utxoOpsForTxn, err =
-		bav._connectAccessGroupMembers(
-		txn, txHash, blockHeight, verifySignatures)
+			bav._connectAccessGroupMembers(
+				txn, txHash, blockHeight, verifySignatures)
 
 	case TxnTypeNewMessage:
 		totalInput, totalOutput, utxoOpsForTxn, err =
-		bav._connectNewMessage(
-		txn, txHash, blockHeight, verifySignatures)
+			bav._connectNewMessage(
+				txn, txHash, blockHeight, verifySignatures)
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}

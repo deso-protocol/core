@@ -1825,9 +1825,9 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 				NewMessageOperation:                uint8(txMeta.NewMessageOperation),
 			})
 
-			case TxnTypeMessagingGroup:
-			// FIXME: Skip PGMetadataMessagingGroup for now since it's not used downstream
-			default:
+		case TxnTypeMessagingGroup:
+		// FIXME: Skip PGMetadataMessagingGroup for now since it's not used downstream
+		default:
 			return fmt.Errorf("InsertTransactionTx: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 		}
 	}
