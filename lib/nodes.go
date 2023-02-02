@@ -82,7 +82,7 @@ var NODES = map[uint64]DeSoNode{
 	},
 	12: {
 		Name:  "NFTz",
-		URL:   "https://nftz.zone",
+		URL:   "https://nftz.me",
 		Owner: "mvanhalen",
 	},
 	13: {

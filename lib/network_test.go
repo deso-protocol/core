@@ -1525,7 +1525,7 @@ func TestUnlimitedSpendingLimitMetamaskEncoding(t *testing.T) {
 	// Test the spending limit encoding using the standard scheme.
 	spendingLimitBytes, err := spendingLimit.ToBytes(1)
 	require.NoError(err)
-	require.Equal(true, reflect.DeepEqual(spendingLimitBytes, []byte{0, 0, 0, 0, 0, 0, 1}))
+	require.Equal(true, reflect.DeepEqual(spendingLimitBytes, []byte{0, 0, 0, 0, 0, 0, 1, 0, 0, 0}))
 
 	// Test the spending limit encoding using the metamask scheme.
 	require.Equal(true, reflect.DeepEqual(

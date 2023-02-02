@@ -32,7 +32,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
 
 	body, err := json.Marshal(bodyObj)
@@ -224,7 +224,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(UpdaterPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
 
 	txn, totalInputMake, _, _, err := chain.CreateSubmitPostTxn(
@@ -269,7 +269,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeSubmitPost, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb(0))
+	require.NoError(utxoView.FlushToDb(uint64(blockHeight)))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -2071,4 +2071,109 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBasicTransferInsufficientDeSoForDiamondLevel)
 	}
+}
+
+func TestFreezingPosts(t *testing.T) {
+	// Initialize blockchain.
+	chain, params, db := NewLowDifficultyBlockchain()
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
+	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	GlobalDeSoParams = *params
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err := miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       chain.blockTip().Height + 1,
+		feeRateNanosPerKb: 100,
+	}
+
+	// Fund m0.
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m0Pub, senderPrivString, 1e9)
+
+	// Helper functions.
+	utxoView := func() *UtxoView {
+		// The UTXO view in these tests differs from the UTXO view used to connect
+		// transactions. To avoid retrieving stale data in the UTXO view used in
+		// these tests, we re-create a new UTXO view each time we need one.
+		newUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		return newUtxoView
+	}
+
+	submitPost := func(isFrozen byte, postHashToModify []byte) ([]byte, error) {
+		// Wrapper for constructing and connecting a SubmitPost transaction.
+		originalBalance := _getBalance(t, chain, mempool, m0Pub)
+		utxoOps, txn, _, err := _doSubmitPostTxn(
+			t,
+			chain,
+			db,
+			params,
+			testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			postHashToModify,
+			nil,
+			"test post #1",
+			map[string][]byte{IsFrozenKey: {isFrozen}},
+			false,
+		)
+		if err != nil {
+			return nil, err
+		}
+		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, originalBalance)
+		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+		testMeta.txns = append(testMeta.txns, txn)
+		return txn.Hash().ToBytes(), nil
+	}
+
+	// Tests
+	var postHash []byte
+	var err error
+	{
+		// Happy path: creating a frozen post should succeed.
+		postHash, err = submitPost(1, nil)
+		require.NoError(t, err)
+		postEntry := utxoView().GetPostEntryForPostHash(NewBlockHash(postHash))
+		require.True(t, postEntry.IsFrozen)
+	}
+	{
+		// Sad path: trying to modify a frozen post should fail.
+		_, err = submitPost(0, postHash)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorSubmitPostModifyingFrozenPost)
+	}
+	{
+		// Happy path: creating an unfrozen post should succeed.
+		postHash, err = submitPost(0, nil)
+		require.NoError(t, err)
+		postEntry := utxoView().GetPostEntryForPostHash(NewBlockHash(postHash))
+		require.False(t, postEntry.IsFrozen)
+	}
+	{
+		// Happy path: updating a post to be frozen should succeed.
+		_, err = submitPost(1, postHash)
+		require.NoError(t, err)
+		postEntry := utxoView().GetPostEntryForPostHash(NewBlockHash(postHash))
+		require.True(t, postEntry.IsFrozen)
+	}
+	{
+		// Sad path: trying to modify a frozen post should fail.
+		_, err = submitPost(0, postHash)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorSubmitPostModifyingFrozenPost)
+	}
+	_executeAllTestRollbackAndFlush(testMeta)
 }

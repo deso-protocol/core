@@ -1,14 +1,19 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/decred/dcrd/lru"
 	"github.com/dgraph-io/badger/v3"
+	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
+	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "net/http/pprof"
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -60,6 +65,719 @@ var (
 	paramUpdaterPriv          = "tbc1jF5hXKspbYUVqkSwyyrs9oSho8yA6vZURvBNLySVESFsRmaGf"
 	paramUpdaterPkBytes, _, _ = Base58CheckDecode(paramUpdaterPub)
 )
+
+// ================================== TRANSACTION TEST FRAMEWORK ==============================================
+// transactionTest is a new testing framework intended to streamline testing of blockchain transactions.
+// The idea behind this framework is to create a unified unit testing structure that can be used to test different
+// edge-cases of how transactions are connected/disconnected without having to write a lot of boilerplate code. Most
+// of our current unit tests are written in a way that's hard to read and non-intuitive to maintain. While this worked
+// well when our transaction set was small, as we expand DeSo adding more and more complex abstractions, we also need
+// to keep simplifying the development process, minimizing the range of potential errors, and lowering the amount of
+// brain RAM required to cover all edge-cases. Right now, adding a new transaction involves accommodating multiple
+// components of the codebase such as utxoOps, DeSoEncoders, badger, postgres, snapshot, txindex, etc. The transactionTest
+// framework is supposed to make it easy to test all of these components for a newly-added transaction, and somewhat
+// "guide" you in testing them. The framework is designed with simplicity and modularity in mind. It also allows for
+// easy debugging and test isolation. The framework is meant to be used in conjunction with the existing unit tests,
+// and not replace them. Ideally, we could write additional parallel tests for the current unit tests that will stress-test
+// the existing transactions even more.
+//
+// The general premise for the transactionTest framework is that real-life transactions follow a rather simple life-cycle.
+// Transactions are assembled into a block via a mempool and once all of them are connected, the block is mined and
+// everything is flushed at once to the db (be it badger or postgres). There is no other way that transactions can be
+// connected. In particular, it will never be the case that transaction will be flushed without a whole block being mined;
+// however, this is what we do in our unit tests, which is counter-intuitive, and (on a side-note) has created a lot of
+// overhead when developing complex features such as postgres or hypersync. When a transaction is connected, it will create
+// UtxoView and UtxoOps mappings; which will be persisted to the db when the block is mined and the mempool is flushed. Next,
+// transaction can be disconnected when the block is disconnected. There is no other way for a transaction to be
+// disconnected, and the order in which transactions are disconnected is always the reverse of the order in which they were
+// connected. When a transaction is disconnected, it will either set a "isDeleted" entry in UtxoView, which will indicate
+// that a db record should be deleted, or it will set a "previous" entry in UtxoView according to the UtxoOps, which will
+// be flushed to the db. The transactionTest framework is essentially trying to verify that all of these steps are properly
+// followed, and all the utxoView entries are properly set and then flushed to the db.
+//
+// When using the transactionTest framework the developer will be defining a list of transactions that he wants to test
+// in-order. These transactions will be described by creating transactionTestVector structs that will contain all the
+// information needed to create a transaction and verify the utxoView mappings and db records after the transaction is
+// connected and flushed. Once a collection of testVectors is defined, the developer will need to create a transactionTestSuite
+// object containing previously defined testVectors. Finally, the developer will need to call the Run() method on the
+// transactionTestSuite object. This will run the test suite and verify that all the testVectors are properly connected
+// and disconnected.
+// ============================================================================================================
+
+// TransactionTestInputType specifies the type of input that a transactionTestVector will use.
+type transactionTestInputType byte
+
+const (
+	transactionTestInputTypeAccessGroup transactionTestInputType = iota
+	transactionTestInputTypeAccessGroupMembers
+	transactionTestInputTypeNewMessage
+	transactionTestInputTypeDerivedKey
+)
+
+type transactionTestInputSpace interface {
+	// IsDependency should return true if the other input space will have overlapping utxoView/utxoOps mappings or db records
+	// with the current input space. This is used by the transactionTest framework to determine which transactionTestVector
+	// will describe entries that will be flushed to the db after both test vectors are applied.
+	// We assume that IsDependant is a symmetric relation, i.e. IsDependency(TV1, TV2) == IsDependency(TV2, TV1); however,
+	// it is not necessarily a transitive relation, i.e. IsDependency(TV1, TV2) && IsDependency(TV2, TV3) does
+	// not have to imply IsDependency(TV1, TV3).
+	IsDependency(other transactionTestInputSpace) bool
+	// Get input type should just return a unique transactionTestInputType associated with the particular input space.
+	GetInputType() transactionTestInputType
+}
+
+// transactionTestMeta defines some environment variables about the blockchain.
+type transactionTestMeta struct {
+	t       *testing.T
+	chain   *Blockchain
+	db      *badger.DB
+	pg      *Postgres
+	embpg   *embeddedpostgres.EmbeddedPostgres
+	params  *DeSoParams
+	mempool *DeSoMempool
+	miner   *DeSoMiner
+}
+
+func (tm *transactionTestMeta) Quit() {
+	require := require.New(tm.t)
+
+	if tm.miner != nil {
+		tm.miner.Stop()
+	}
+
+	if tm.mempool != nil {
+		if tm.mempool.mempoolDir != "" {
+			tm.mempool.DumpTxnsToDB()
+		}
+		tm.mempool.Stop()
+	}
+
+	if tm.chain.snapshot != nil {
+		tm.chain.snapshot.Stop()
+	}
+
+	if tm.chain.db != nil {
+		require.NoError(tm.chain.db.Close())
+	}
+}
+
+type transactionTestConfig struct {
+	t                          *testing.T
+	testBadger                 bool
+	testPostgres               bool
+	testPostgresPort           uint32
+	disableLogging             bool
+	initialBlocksMined         int
+	fundPublicKeysWithNanosMap map[PublicKey]uint64
+	initChainCallback          func(tm *transactionTestMeta)
+}
+
+// transactionTestIdentifier is a unique identifier for a transactionTestVector.
+type transactionTestIdentifier string
+
+// transactionTestVector is the main struct that comprises the unit tests for the transaction testing framework.
+// It contains the transactionTestMetadata, the test's id, the inputSpace for the test -- the data that will be used to
+// construct the transaction when the test vector is processed by the test suite's run. In addition, the test vector
+// contains a methods such as getTransaction, which will be called to get the transaction out of this test vector.
+// It's worth noting that getTransaction should return both the _transaction and the _expectedConnectUtxoViewError in case
+// we want to check a failing transaction and make sure it returns the anticipated error.
+// The test vector also contains validation functions verifyConnectUtxoViewEntry and verifyDbEntry which will be used to verify
+// that a correct entry exists in the mempool and the db after the transaction has been connected/disconnected (in the
+// latter case, the expectDeleted bool will be passed as true).
+// The testVector also allows specifying two callback functions connectCallback, which will be called once the transaction
+// acquired from getTransaction has been connected, and disconnectCallback, which will be called when the transaction
+// gets disconnected.
+type transactionTestVector struct {
+	id             transactionTestIdentifier
+	inputSpace     transactionTestInputSpace
+	getTransaction func(tv *transactionTestVector, tm *transactionTestMeta) (
+		_transaction *MsgDeSoTxn, _expectedConnectUtxoViewError error)
+	verifyConnectUtxoViewEntry    func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView)
+	verifyDisconnectUtxoViewEntry func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView, utxoOps []*UtxoOperation)
+	verifyDbEntry                 func(tv *transactionTestVector, tm *transactionTestMeta, dbAdapter *DbAdapter)
+	connectCallback               func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView)
+	disconnectCallback            func(tv *transactionTestVector, tm *transactionTestMeta, utxoView *UtxoView)
+	getDerivedPrivateKey          func(tv *transactionTestVector, tm *transactionTestMeta) (_derivedPriv *btcec.PrivateKey, _signatureType int)
+}
+
+type transactionTestVectorBlock struct {
+	testVectors        []*transactionTestVector
+	connectCallback    func(tvb *transactionTestVectorBlock, tm *transactionTestMeta)
+	disconnectCallback func(tvb *transactionTestVectorBlock, tm *transactionTestMeta)
+}
+
+func NewTransactionTestVectorBlock(
+	testVectors []*transactionTestVector,
+	connectCallback func(tvb *transactionTestVectorBlock, tm *transactionTestMeta),
+	disconnectCallback func(tvb *transactionTestVectorBlock, tm *transactionTestMeta)) *transactionTestVectorBlock {
+	return &transactionTestVectorBlock{
+		testVectors:        testVectors,
+		connectCallback:    connectCallback,
+		disconnectCallback: disconnectCallback,
+	}
+}
+
+// transactionTestSuite is the main component of the transaction testing framework. It contains the test metadata
+// transactionTestMeta, and the test vectors ordered sequentially block by block in the order in which they should be
+// connected to the blockchain.
+// The remaining fields are for internal use only: _testVectorsInDb keeps track of test vectors that have already been
+// flushed to the db, while _testVectorsInMempool keeps track of all the test vectors that have currently been connected
+// to the mempool. Lastly, _testVectorDependency keeps track of all the test vectors which should be skipped from checking
+// verifyConnectUtxoViewEntry and verifyDbEntry because there has been a later test vector (test vector identified by map key id) that
+// had a pairwise IsDependency evaluate to true. This is used to avoid checking the same utxoView or db records repeatedly:
+// once for the latest testVector, and twice, thrice, etc. for the earlier, dependent testVectors.
+type transactionTestSuite struct {
+	t                *testing.T
+	testVectorBlocks []*transactionTestVectorBlock
+	config           *transactionTestConfig
+
+	_testVectorsInDb      []*transactionTestVector
+	_testVectorsInMempool []*transactionTestVector
+	_testVectorDependency map[transactionTestIdentifier][]transactionTestIdentifier
+}
+
+func NewTransactionTestSuite(t *testing.T, testVectorBlocks []*transactionTestVectorBlock,
+	config *transactionTestConfig) *transactionTestSuite {
+
+	return &transactionTestSuite{
+		t:                     t,
+		testVectorBlocks:      testVectorBlocks,
+		config:                config,
+		_testVectorDependency: make(map[transactionTestIdentifier][]transactionTestIdentifier),
+	}
+}
+
+// Run is the main method of the transactionTestSuite. It will run the test suite and verify that all the testVectors are
+// pass a variety of tests.
+func (tes *transactionTestSuite) Run() {
+	// Make sure all test vectors have unique Ids.
+	tes.ValidateTestVectors()
+
+	if tes.config.testBadger {
+		tes.RunBadgerTest()
+	}
+	if tes.config.testPostgres {
+		tes.RunPostgresTest()
+	}
+}
+
+// Iterate over all testVectors and ensure all of them have unique Ids.
+func (tes *transactionTestSuite) ValidateTestVectors() {
+	testVectorsIds := make(map[transactionTestIdentifier]struct{})
+	for _, testVectorBlocks := range tes.testVectorBlocks {
+		for _, testVectors := range testVectorBlocks.testVectors {
+			if _, exists := testVectorsIds[testVectors.id]; exists {
+				tes.t.Fatalf("Duplicate test vector id: %v", testVectors.id)
+			}
+			testVectorsIds[testVectors.id] = struct{}{}
+		}
+	}
+}
+
+func (tes *transactionTestSuite) RunBadgerTest() {
+	glog.Infof(CLog(Yellow, "RunBadgerTest: TESTING BADGER"))
+
+	tm := tes.InitializeChainAndGetTestMeta(true, false)
+	tes._testVectorsInDb = []*transactionTestVector{}
+	tes._testVectorsInMempool = []*transactionTestVector{}
+	tes._testVectorDependency = make(map[transactionTestIdentifier][]transactionTestIdentifier)
+
+	for _, testVectorBlock := range tes.testVectorBlocks {
+		// Run all the test vectors for this block.
+		beforeConnectBlockHeight := tm.chain.blockTip().Height
+		dbEntriesBefore := tes.GetAllStateDbEntries(tm, beforeConnectBlockHeight)
+		tes.testConnectBlock(tm, testVectorBlock)
+		afterConnectBlockHeight := tm.chain.blockTip().Height
+		tes.testDisconnectBlock(tm, testVectorBlock)
+		dbEntriesAfter := tes.GetAllStateDbEntries(tm, beforeConnectBlockHeight)
+		tes.compareBeforeAfterDbEntries(dbEntriesBefore, dbEntriesAfter, afterConnectBlockHeight)
+		glog.Infof(CLog(Yellow, "RunBadgerTest: successfully connected/disconnected block and verified db state"))
+		tes.testConnectBlock(tm, testVectorBlock)
+		glog.Infof(CLog(Yellow, "RunBadgerTest: successfully connected block"))
+	}
+	tm.Quit()
+}
+
+func (tes *transactionTestSuite) RunPostgresTest() {
+	glog.Infof(CLog(Yellow, "RunPostgresTest: TESTING POSTGRES"))
+
+	require := require.New(tes.t)
+	tm := tes.InitializeChainAndGetTestMeta(false, true)
+	tes._testVectorsInDb = []*transactionTestVector{}
+	tes._testVectorsInMempool = []*transactionTestVector{}
+	tes._testVectorDependency = make(map[transactionTestIdentifier][]transactionTestIdentifier)
+
+	defer func() {
+		// Note that deferred function will be called even if the rest of the function panics.
+		glog.Infof("RunPostgresTest: Got into deferred cleanup function")
+		require.NoError(StopTestEmbeddedPostgresDB(tm.embpg))
+		glog.Infof(CLog(Yellow, "RunPostgresTest: successfully stopped embedded postgres db"))
+	}()
+
+	for _, testVectorBlock := range tes.testVectorBlocks {
+		// Run all the test vectors for this block.
+		tes.testConnectBlock(tm, testVectorBlock)
+		tes.testDisconnectBlock(tm, testVectorBlock)
+		glog.Infof(CLog(Yellow, "RunPostgresTest: successfully connected/disconnected block"))
+		tes.testConnectBlock(tm, testVectorBlock)
+		glog.Infof(CLog(Yellow, "RunPostgresTest: successfully connected block"))
+	}
+	tm.Quit()
+}
+
+func (tes *transactionTestSuite) InitializeChainAndGetTestMeta(useBadger bool, usePostgres bool) *transactionTestMeta {
+
+	var chain *Blockchain
+	var db *badger.DB
+	var pg *Postgres
+	var embpg *embeddedpostgres.EmbeddedPostgres
+	var params *DeSoParams
+	var mempool *DeSoMempool
+	var miner *DeSoMiner
+
+	config := tes.config
+	require := require.New(config.t)
+	require.Equal(true, useBadger || usePostgres)
+
+	// Initialize the blockchain, database, mempool, and miner.
+	if useBadger {
+		chain, params, db = NewLowDifficultyBlockchain()
+		mempool, miner = NewTestMiner(config.t, chain, params, true /*isSender*/)
+	} else if usePostgres {
+		pgPort := uint32(5433)
+		if config.testPostgresPort != 0 {
+			pgPort = config.testPostgresPort
+		}
+		chain, params, embpg = NewLowDifficultyBlockchainWithParamsAndDb(&DeSoTestnetParams,
+			true, pgPort)
+		mempool, miner = NewTestMiner(config.t, chain, params, true /*isSender*/)
+		pg = chain.postgres
+		db = chain.db
+	}
+
+	// Construct the transaction test meta object.
+	tm := &transactionTestMeta{
+		t:       config.t,
+		chain:   chain,
+		db:      db,
+		pg:      pg,
+		embpg:   embpg,
+		params:  params,
+		mempool: mempool,
+		miner:   miner,
+	}
+
+	// Call the initChainCallback if it is provided in the config.
+	if config.initChainCallback != nil {
+		config.initChainCallback(tm)
+	}
+
+	// Mine a few blocks according to the configuration.
+	for ii := 0; ii < config.initialBlocksMined; ii++ {
+		_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+		require.NoError(err)
+	}
+
+	// Fund public keys in fundPublicKeysWithNanosMap.
+	for publicKey, amountNanos := range config.fundPublicKeysWithNanosMap {
+		tes.fundPublicKey(tm, publicKey, amountNanos)
+	}
+
+	return tm
+}
+
+// Fund provided public key with the desired amount of DeSo in nanos.
+func (tes *transactionTestSuite) fundPublicKey(tm *transactionTestMeta, publicKey PublicKey, amountNanos uint64) {
+	// Note we don't need to pass Postgres here, because _doBasicTransferWithVieFlush takes it from Blockchain.
+	publicKeyBytes := publicKey.ToBytes()
+	publicKeyBase58Check := Base58CheckEncode(publicKeyBytes, false, tm.params)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		tes.t, tm.chain, tm.db, tm.params, senderPkString, publicKeyBase58Check,
+		senderPrivString, amountNanos, 11)
+}
+
+func (tes *transactionTestSuite) GetAllStateDbEntries(tm *transactionTestMeta, blockHeight uint32) (_dbEntries []*DBEntry) {
+	var dbEntries []*DBEntry
+	require := require.New(tes.t)
+
+	// Get all state prefixes and sort them.
+	var prefixes [][]byte
+	for prefix, isState := range StatePrefixes.StatePrefixesMap {
+		if !isState {
+			continue
+		}
+		prefixes = append(prefixes, []byte{prefix})
+	}
+	sort.Slice(prefixes, func(ii, jj int) bool {
+		return prefixes[ii][0] < prefixes[jj][0]
+	})
+
+	// Fetch all db entries.
+	require.NoError(tm.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		for _, prefix := range prefixes {
+			it := txn.NewIterator(opts)
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				item := it.Item()
+				key := item.Key()
+				err := item.Value(func(value []byte) error {
+					dbEntryCopy := DBEntry{
+						Key:   append([]byte{}, key...),
+						Value: append([]byte{}, value...),
+					}
+					dbEntries = append(dbEntries, &dbEntryCopy)
+					return nil
+				})
+				if err != nil {
+					return err
+				}
+			}
+			it.Close()
+		}
+		return nil
+	}))
+
+	return dbEntries
+}
+
+func (tes *transactionTestSuite) compareBeforeAfterDbEntries(beforeDbEntries []*DBEntry, afterDbEntries []*DBEntry,
+	afterConnectBlockHeight uint32) {
+	beforeDbEntriesMap := make(map[string]DBEntry)
+	afterDbEntriesMap := make(map[string]DBEntry)
+	for _, dbEntry := range beforeDbEntries {
+		beforeDbEntryCopy := *dbEntry
+		beforeDbEntriesMap[string(beforeDbEntryCopy.Key)] = beforeDbEntryCopy
+	}
+	for _, dbEntry := range afterDbEntries {
+		afterDbEntryCopy := *dbEntry
+		afterDbEntriesMap[string(afterDbEntryCopy.Key)] = afterDbEntryCopy
+	}
+
+	// Check for db entries present in the beforeDbEntries state. Look for missing entries.
+	for keyIter, beforeDbEntryIter := range beforeDbEntriesMap {
+		key := keyIter
+		beforeDbEntry := beforeDbEntryIter
+		afterDbEntryIter, ok := afterDbEntriesMap[key]
+		afterDbEntry := afterDbEntryIter
+		if !ok {
+			tes.t.Errorf("compareBeforeAfterDbEntries: Key %v is missing in the db after connect and a disconnect", []byte(key))
+			continue
+		}
+
+		// Make sure either both entries are nil or both are non-nil.
+		if (beforeDbEntry.Value != nil) != (afterDbEntry.Value != nil) {
+			tes.t.Errorf("compareBeforeAfterDbEntries: Key %v has an uneven non-nil XOR for before and after value: "+
+				"before (%v) (blockheight: %v), after (%v) (blockheight: %v)", []byte(key), beforeDbEntry.Value, afterDbEntry.Value,
+				afterConnectBlockHeight-1, afterConnectBlockHeight)
+		}
+		// Make sure to compare db entries using the same migration if entries are non-nil.
+		var beforeChecksumEncodedEntry, afterChecksumEncodedEntry []byte
+		if beforeDbEntry.Value != nil && afterDbEntry.Value != nil {
+			beforeChecksumEncodedEntry = EncodeKeyAndValueForChecksum(beforeDbEntry.Key, beforeDbEntry.Value, uint64(afterConnectBlockHeight))
+			afterChecksumEncodedEntry = EncodeKeyAndValueForChecksum(afterDbEntry.Key, afterDbEntry.Value, uint64(afterConnectBlockHeight))
+		}
+
+		if !bytes.Equal(beforeChecksumEncodedEntry, afterChecksumEncodedEntry) {
+			tes.t.Errorf("compareBeforeAfterDbEntries: Key %v has different values before and after connect and a disconnect: "+
+				"before (%v) (blockheight: %v), after (%v) (blockheight: %v)", []byte(key), beforeDbEntry.Value, afterConnectBlockHeight-1,
+				afterDbEntry.Value, afterConnectBlockHeight)
+		}
+	}
+
+	// Check for db entries present in the afterDbEntries state. Look for extra entries.
+	for key := range afterDbEntriesMap {
+		_, ok := beforeDbEntriesMap[key]
+		if !ok {
+			tes.t.Fatalf("compareBeforeAfterDbEntries: Key %v didn't exist in the db before connect and disconnect", []byte(key))
+		}
+	}
+}
+
+func (tes *transactionTestSuite) testConnectBlock(tm *transactionTestMeta, testVectorBlock *transactionTestVectorBlock) (
+	_validTransactions []bool, _addedBlock *MsgDeSoBlock) {
+	require := require.New(tes.t)
+
+	testVectors := testVectorBlock.testVectors
+	validTransactions := make([]bool, len(testVectors))
+	for ii, tv := range testVectors {
+		if !tes.config.disableLogging {
+			glog.Infof("Running test vector: %v", tv.id)
+		}
+		txn, _expectedErr := tv.getTransaction(tv, tm)
+		if tv.getDerivedPrivateKey != nil {
+			derivedPriv, signatureType := tv.getDerivedPrivateKey(tv, tm)
+			derivedPrivString := Base58CheckEncode(derivedPriv.Serialize(), true, tm.params)
+			_signTxnWithDerivedKeyAndType(tm.t, txn, derivedPrivString, signatureType)
+		}
+		_, err := tm.mempool.ProcessTransaction(txn, false, false, 0, true)
+		utxoView, _err := tm.mempool.GetAugmentedUniversalView()
+		require.NoError(_err)
+		if _expectedErr != nil {
+			if err == nil {
+				require.Fail(fmt.Sprintf("Expected error (%v) but got nil", _expectedErr))
+			}
+			require.Contains(err.Error(), _expectedErr.Error())
+			validTransactions[ii] = false
+		} else {
+			require.NoError(err)
+			if !tes.config.disableLogging {
+				glog.Infof("Verifying UtxoView entry for test vector: %v", tv.id)
+			}
+			if tv.verifyConnectUtxoViewEntry != nil {
+				tv.verifyConnectUtxoViewEntry(tv, tm, utxoView)
+			}
+			validTransactions[ii] = true
+		}
+		if tv.connectCallback != nil {
+			tv.connectCallback(tv, tm, utxoView)
+		}
+		tes.addTestVectorToMempool(tv)
+	}
+	addedBlock, err := tm.miner.MineAndProcessSingleBlock(0, tm.mempool)
+	require.NoError(err)
+	dbAdapter := tm.chain.NewDbAdapter()
+
+	// Get the map of all testVector Ids that will be overwritten by other testVectors in this block.
+	idsToSkip := make(map[transactionTestIdentifier]struct{})
+	for ii := 0; ii < len(testVectors); ii++ {
+		if dependencyList, exists := tes._testVectorDependency[testVectors[ii].id]; exists {
+			for _, dependency := range dependencyList {
+				idsToSkip[dependency] = struct{}{}
+			}
+		}
+	}
+	for ii, tv := range testVectors {
+		if !validTransactions[ii] {
+			continue
+		}
+		// Verify db entries for testVectors that have no later dependencies.
+		if _, exists := idsToSkip[tv.id]; !exists {
+			if !tes.config.disableLogging {
+				glog.Infof("Verifying db entries for test vector: %v", tv.id)
+			}
+			if tv.verifyDbEntry != nil {
+				tv.verifyDbEntry(tv, tm, dbAdapter)
+			}
+		} else {
+			if !tes.config.disableLogging {
+				glog.Infof("Skipping verifying db entries for test vector %v because it has later dependencies", tv.id)
+			}
+		}
+	}
+	if testVectorBlock.connectCallback != nil {
+		testVectorBlock.connectCallback(testVectorBlock, tm)
+	}
+	tes.moveTestVectorsFromMempoolToDb()
+
+	return validTransactions, addedBlock
+}
+
+// Note: snapshot might be broken after calling this function.
+func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, testVectorBlock *transactionTestVectorBlock) {
+	require := require.New(tes.t)
+
+	// Gather all valid expectedTxns and expectedTvs from the test vector block.
+	expectedTvs := []*transactionTestVector{}
+	expectedTxns := []*MsgDeSoTxn{}
+	for _, tv := range testVectorBlock.testVectors {
+		txn, err := tv.getTransaction(tv, tm)
+		if tv.getDerivedPrivateKey != nil {
+			derivedPriv, signatureType := tv.getDerivedPrivateKey(tv, tm)
+			derivedPrivString := Base58CheckEncode(derivedPriv.Serialize(), true, tm.params)
+			_signTxnWithDerivedKeyAndType(tm.t, txn, derivedPrivString, signatureType)
+		}
+		if err != nil {
+			if tv.disconnectCallback != nil {
+				glog.Fatalf("testDisconnectBlock: disconnectCallback should be nil for test vectors that fail on connecting")
+			}
+			continue
+		}
+		expectedTxns = append(expectedTxns, txn)
+		expectedTvs = append(expectedTvs, tv)
+	}
+
+	// Get the latest block from the db.
+	// Note: we will not pass snapshot to the below functions because we don't really need to, and it might cause some issues.
+	lastBlockNode := tm.chain.BlockTip()
+	lastBlockHash := lastBlockNode.Hash
+	lastBlock, err := GetBlock(lastBlockHash, tm.db, nil)
+	utxoOps, err := GetUtxoOperationsForBlock(tm.db, nil, lastBlockHash)
+	blockHeight := lastBlock.Header.Height
+	require.NoError(err)
+	// sanity-check that the last block hash is the same as the last header hash.
+	require.Equal(true, bytes.Equal(
+		tm.chain.bestChain[len(tm.chain.bestChain)-1].Hash.ToBytes(),
+		tm.chain.bestHeaderChain[len(tm.chain.bestHeaderChain)-1].Hash.ToBytes()))
+	// Last block shouldn't be nil, and the number of expectedTxns should be the same as in the testVectorBlock + 1,
+	// because of the additional block reward.
+	require.NotNil(lastBlock)
+	require.Equal(len(expectedTxns)+1, len(lastBlock.Txns))
+
+	// Verify that we're trying to disconnect the latest block.
+	for ii := 0; ii < len(expectedTxns); ii++ {
+		// Make sure that the block transaction metadata matches the expected transaction.
+		expectedTxnMetaBytes, err := expectedTxns[ii].TxnMeta.ToBytes(true)
+		require.NoError(err)
+		blockTxnMetaBytes, err := lastBlock.Txns[ii+1].TxnMeta.ToBytes(true)
+		require.NoError(err)
+		require.Equal(true, bytes.Equal(expectedTxnMetaBytes, blockTxnMetaBytes))
+
+		// Now make sure the block transaction public key matches the expected transaction.
+		require.Equal(true, bytes.Equal(expectedTxns[ii].PublicKey, lastBlock.Txns[ii+1].PublicKey))
+	}
+
+	// Disconnect the block on a dummy UtxoView using DisconnectBlock to run all sanity-checks on the block.
+	{
+		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, nil)
+		require.NoError(err)
+		txHashes, err := ComputeTransactionHashes(lastBlock.Txns)
+		require.NoError(err)
+		err = utxoView.DisconnectBlock(lastBlock, txHashes, utxoOps, blockHeight)
+		require.NoError(err)
+	}
+
+	// Disconnect the block transaction by transaction using DisconnectTransaction.
+	utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot)
+	require.NoError(err)
+	for ii := len(lastBlock.Txns) - 1; ii >= 0; ii-- {
+		currentTxn := lastBlock.Txns[ii]
+		txnHash := currentTxn.Hash()
+		utxoOpsForTxn := utxoOps[ii]
+		err := utxoView.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(blockHeight))
+		require.NoError(err)
+
+		// Verify that the UtxoView is correct after disconnecting each transaction. Skip block reward txn.
+		if ii > 0 {
+			expectedTv := expectedTvs[ii-1]
+			if expectedTv.verifyDisconnectUtxoViewEntry != nil {
+				expectedTv.verifyDisconnectUtxoViewEntry(expectedTv, tm, utxoView, utxoOpsForTxn)
+			}
+			if expectedTv.disconnectCallback != nil {
+				expectedTv.disconnectCallback(expectedTv, tm, utxoView)
+			}
+		}
+	}
+
+	// Move all disconnected transactions to our transactionTestSuite mempool map.
+	// TODO: should we be doing this while we disconnect transaction by transaction?
+	require.Equal(0, len(tes._testVectorsInMempool))
+	tes.moveTestVectorsFromDbToMempoolForDisconnect(testVectorBlock)
+
+	// Update the tip to point to the parent of this block since we've managed
+	// to successfully disconnect it.
+	prevHash := lastBlock.Header.PrevBlockHash
+	utxoView.TipHash = prevHash
+
+	// Now flush to db.
+	require.NoError(utxoView.FlushToDb(blockHeight))
+
+	// Set the best node hash to the new tip.
+	if tm.pg != nil {
+		require.NoError(tm.pg.UpsertChain(MAIN_CHAIN, prevHash))
+	} else {
+		require.NoError(PutBestHash(tm.db, nil, prevHash, ChainTypeDeSoBlock))
+	}
+
+	// Delete the utxo operations for the blocks we're detaching since we don't need them anymore.
+	require.NoError(tm.db.Update(func(txn *badger.Txn) error {
+		require.NoError(DeleteUtxoOperationsForBlockWithTxn(txn, nil, lastBlockHash))
+		require.NoError(DeleteBlockRewardWithTxn(txn, nil, lastBlock))
+		return nil
+	}))
+
+	// Revert the detached block's status to StatusHeaderValidated and save the blockNode to the db.
+	lastBlockNode.Status = StatusHeaderValidated
+	if tm.pg != nil {
+		require.NoError(tm.pg.DeleteTransactionsForBlock(lastBlock, lastBlockNode))
+		require.NoError(tm.pg.UpsertBlock(lastBlockNode))
+	} else {
+		require.NoError(PutHeightHashToNodeInfo(tm.db, nil, lastBlockNode, false))
+	}
+
+	// TODO: if ever needed we can call tm.chain.eventManager.blockDisconnected() here.
+
+	// Update the block and header metadata chains.
+	tm.chain.bestChain = tm.chain.bestChain[:len(tm.chain.bestChain)-1]
+	tm.chain.bestHeaderChain = tm.chain.bestHeaderChain[:len(tm.chain.bestHeaderChain)-1]
+	delete(tm.chain.bestChainMap, *lastBlockHash)
+	delete(tm.chain.bestHeaderChainMap, *lastBlockHash)
+
+	// We don't pass the chain's snapshot above to prevent certain concurrency issues. As a
+	// result, we need to reset the snapshot's db cache to get rid of stale data.
+	if tm.chain.snapshot != nil {
+		tm.chain.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
+	}
+
+	// Note that unlike connecting test vectors, when disconnecting, we don't need to verify db entries.
+	// This is because, we know that the db state after a disconnect should be the same as before.
+	// Because of that, we can run a generic db sweep to verify that the db is in a consistent state
+	// after a disconnect. So because of that, developer doesn't need to write a db verifier for disconnects.
+
+	// Call disconnect callback
+	if testVectorBlock.disconnectCallback != nil {
+		testVectorBlock.disconnectCallback(testVectorBlock, tm)
+	}
+	tes.removeTestVectorsInMempool()
+}
+
+func (tes *transactionTestSuite) addTestVectorToMempool(tv *transactionTestVector) {
+	require := require.New(tes.t)
+	require.NotNil(tes._testVectorDependency)
+	require.Nil(tes._testVectorDependency[tv.id])
+
+	for _, tvInDb := range tes._testVectorsInDb {
+		if tvInDb.inputSpace.GetInputType() != tv.inputSpace.GetInputType() {
+			continue
+		}
+		if tvInDb.inputSpace.IsDependency(tv.inputSpace) {
+			tes._testVectorDependency[tv.id] = append(tes._testVectorDependency[tv.id], tvInDb.id)
+		}
+	}
+	for _, tvInMempool := range tes._testVectorsInMempool {
+		if tvInMempool.inputSpace.GetInputType() != tv.inputSpace.GetInputType() {
+			continue
+		}
+		if tvInMempool.inputSpace.IsDependency(tv.inputSpace) {
+			tes._testVectorDependency[tv.id] = append(tes._testVectorDependency[tv.id], tvInMempool.id)
+		}
+	}
+	tes._testVectorsInMempool = append(tes._testVectorsInMempool, tv)
+}
+
+func (tes *transactionTestSuite) moveTestVectorsFromMempoolToDb() {
+
+	for ii := 0; ii < len(tes._testVectorsInMempool); ii++ {
+		tes._testVectorsInDb = append(tes._testVectorsInDb, tes._testVectorsInMempool[ii])
+	}
+	tes._testVectorsInMempool = []*transactionTestVector{}
+}
+
+func (tes *transactionTestSuite) moveTestVectorsFromDbToMempoolForDisconnect(tvb *transactionTestVectorBlock) {
+
+	blocksTestVectors := make(map[transactionTestIdentifier]struct{})
+	for _, tv := range tvb.testVectors {
+		blocksTestVectors[tv.id] = struct{}{}
+	}
+	smallestIndex := -1
+	for ii := 0; ii < len(tes._testVectorsInDb); ii++ {
+		if _, exists := blocksTestVectors[tes._testVectorsInDb[ii].id]; exists {
+			tes._testVectorsInMempool = append(tes._testVectorsInMempool, tes._testVectorsInDb[ii])
+			if smallestIndex == -1 {
+				smallestIndex = ii
+			}
+		}
+	}
+	if smallestIndex != -1 {
+		tes._testVectorsInDb = tes._testVectorsInDb[:smallestIndex]
+	}
+}
+
+func (tes *transactionTestSuite) removeTestVectorsInMempool() {
+	for _, tv := range tes._testVectorsInMempool {
+		delete(tes._testVectorDependency, tv.id)
+	}
+	tes._testVectorsInMempool = []*transactionTestVector{}
+}
 
 func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, pkSenderStr string, pkReceiverStr string, privStr string,
@@ -222,6 +940,7 @@ type TestMeta struct {
 	txns                   []*MsgDeSoTxn
 	expectedSenderBalances []uint64
 	savedHeight            uint32
+	feeRateNanosPerKb      uint64
 }
 
 func _executeAllTestRollbackAndFlush(testMeta *TestMeta) {

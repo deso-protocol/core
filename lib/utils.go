@@ -202,3 +202,12 @@ func SafeMakeRecover(outputError *error) {
 		*outputError = errors.New(fmt.Sprintf("Error in make: %v", err))
 	}
 }
+
+func MapKeysToNonDeterministicPointerSlice[K comparable, V any](inputMap map[K]V) []*K {
+	outputSlice := []*K{}
+	for k := range inputMap {
+		kCopy := k
+		outputSlice = append(outputSlice, &kCopy)
+	}
+	return outputSlice
+}

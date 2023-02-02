@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/pkg/errors"
 	"log"
 	"math/big"
 	"os"
@@ -252,11 +253,18 @@ type ForkHeights struct {
 	// we introduce derived keys without a spending limit.
 	DeSoUnlimitedDerivedKeysBlockHeight uint32
 
+	// AssociationsAndAccessGroupsBlockHeight defines the height at which we introduced:
+	//   - Access Groups
+	//   - User and Post Associations
+	//   - Editable NFT posts
+	//   - Frozen posts
+	AssociationsAndAccessGroupsBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
 
-// EncoderMigrationHeights is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
+// MigrationName is used to store migration heights for DeSoEncoder types. To properly migrate a DeSoEncoder,
 // you should:
 //  0. Typically, encoder migrations should align with hard fork heights. So the first
 //     step is to define a new value in ForkHeights, and set the value accordingly for
@@ -312,8 +320,9 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration              MigrationName = "DefaultMigration"
-	UnlimitedDerivedKeysMigration MigrationName = "UnlimitedDerivedKeysMigration"
+	DefaultMigration                     MigrationName = "DefaultMigration"
+	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
+	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -321,6 +330,9 @@ type EncoderMigrationHeights struct {
 
 	// DeSoUnlimitedDerivedKeys coincides with the DeSoUnlimitedDerivedKeysBlockHeight block
 	DeSoUnlimitedDerivedKeys MigrationHeight
+
+	// This coincides with the AssociationsAndAccessGroups block
+	AssociationsAndAccessGroups MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -334,6 +346,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 1,
 			Height:  uint64(forkHeights.DeSoUnlimitedDerivedKeysBlockHeight),
 			Name:    UnlimitedDerivedKeysMigration,
+		},
+		AssociationsAndAccessGroups: MigrationHeight{
+			Version: 2,
+			Height:  uint64(forkHeights.AssociationsAndAccessGroupsBlockHeight),
+			Name:    AssociationsAndAccessGroupsMigration,
 		},
 	}
 }
@@ -492,6 +509,7 @@ type DeSoParams struct {
 	MaxProfilePicLengthBytes      uint64
 	MaxProfilePicDimensions       uint64
 	MaxPrivateMessageLengthBytes  uint64
+	MaxNewMessageLengthBytes      uint64
 
 	StakeFeeBasisPoints         uint64
 	MaxPostBodyLengthBytes      uint64
@@ -574,6 +592,7 @@ var RegtestForkHeights = ForkHeights{
 	OrderBookDBFetchOptimizationBlockHeight:              uint32(0),
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
+	AssociationsAndAccessGroupsBlockHeight:               uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -698,7 +717,7 @@ var MainnetForkHeights = ForkHeights{
 	DeSoDiamondsBlockHeight:                              uint32(52112),
 	NFTTransferOrBurnAndDerivedKeysBlockHeight:           uint32(60743),
 
-	// Mon Jan 24 @ 12pm PST
+	// Mon Jan 24 2022 @ 12pm PST
 	DeSoV3MessagesBlockHeight:     uint32(98474),
 	BuyNowAndNFTSplitsBlockHeight: uint32(98474),
 	DAOCoinBlockHeight:            uint32(98474),
@@ -708,14 +727,17 @@ var MainnetForkHeights = ForkHeights{
 	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(130901),
 	DAOCoinLimitOrderBlockHeight:             uint32(130901),
 
-	// Fri Jun 9 @ 12pm PT
+	// Fri Jun 9 2022 @ 12pm PT
 	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(137173),
 	OrderBookDBFetchOptimizationBlockHeight:        uint32(137173),
 
 	ParamUpdaterRefactorBlockHeight: uint32(141193),
 
-	// Mon Sept 19 @ 12pm PST
+	// Mon Sept 19 2022 @ 12pm PST
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(166066),
+
+	// Mon Feb 6 2023 @ 9am PST
+	AssociationsAndAccessGroupsBlockHeight: uint32(205386),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -862,6 +884,10 @@ var DeSoMainnetParams = DeSoParams{
 	// data a private message is allowed to include in an PrivateMessage transaction.
 	MaxPrivateMessageLengthBytes: 10000,
 
+	// MaxNewMessageLengthBytes is the maximum number of bytes of encrypted
+	// data a new message is allowed to include in an NewMessage transaction.
+	MaxNewMessageLengthBytes: 10000,
+
 	// Set the stake fee to 10%
 	StakeFeeBasisPoints: 10 * 100,
 	// TODO(performance): We're currently storing posts using HTML, which is
@@ -904,7 +930,7 @@ var DeSoMainnetParams = DeSoParams{
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
 	hash, err := chainhash.NewHashFromStr(ss)
 	if err != nil {
-		panic(err)
+		panic(any(errors.Wrapf(err, "mustDecodeHexBlockHashBitcoin: Problem decoding block hash: %v", ss)))
 	}
 	return (*BlockHash)(hash)
 }
@@ -945,12 +971,12 @@ var TestnetForkHeights = ForkHeights{
 
 	// Flags after this point can differ from mainnet
 
-	// Thu Jan 20 @ 12pm PST
+	// Thu Jan 20 2022 @ 12pm PST
 	DeSoV3MessagesBlockHeight:     uint32(97322),
 	BuyNowAndNFTSplitsBlockHeight: uint32(97322),
 	DAOCoinBlockHeight:            uint32(97322),
 
-	// Wed Apr 20 @ 9am ET
+	// Wed Apr 20 2022 @ 9am ET
 	ExtraDataOnEntriesBlockHeight:          uint32(304087),
 	DerivedKeySetSpendingLimitsBlockHeight: uint32(304087),
 	// Add 18h for the spending limits to be checked, since this is how we're
@@ -958,14 +984,17 @@ var TestnetForkHeights = ForkHeights{
 	DerivedKeyTrackSpendingLimitsBlockHeight: uint32(304087 + 18*60),
 	DAOCoinLimitOrderBlockHeight:             uint32(304087),
 
-	// Thu Jun 9 @ 11:59pm PT
+	// Thu Jun 9 2022 @ 11:59pm PT
 	DerivedKeyEthSignatureCompatibilityBlockHeight: uint32(360584),
 	OrderBookDBFetchOptimizationBlockHeight:        uint32(360584),
 
 	ParamUpdaterRefactorBlockHeight: uint32(373536),
 
-	// Tues Sept 13 @ 10am PT
+	// Tues Sept 13 2022 @ 10am PT
 	DeSoUnlimitedDerivedKeysBlockHeight: uint32(467217),
+
+	// Tues Jan 24 2023 @ 1pm PT
+	AssociationsAndAccessGroupsBlockHeight: uint32(596555),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1073,6 +1102,10 @@ var DeSoTestnetParams = DeSoParams{
 	// data a private message is allowed to include in an PrivateMessage transaction.
 	MaxPrivateMessageLengthBytes: 10000,
 
+	// MaxNewMessageLengthBytes is the maximum number of bytes of encrypted
+	// data a new message is allowed to include in an NewMessage transaction.
+	MaxNewMessageLengthBytes: 10000,
+
 	// Set the stake fee to 5%
 	StakeFeeBasisPoints: 5 * 100,
 	// TODO(performance): We're currently storing posts using HTML, which
@@ -1141,6 +1174,8 @@ const (
 	RepostedPostHash = "RecloutedPostHash"
 	// Key in transaction's extra map -- The presence of this key indicates that this post is a repost with a quote.
 	IsQuotedRepostKey = "IsQuotedReclout"
+	// Key in transaction's extra data map that freezes a post rendering it immutable.
+	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
 	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"
@@ -1200,6 +1235,7 @@ var (
 var (
 	QuotedRepostVal    = []byte{1}
 	NotQuotedRepostVal = []byte{0}
+	IsFrozenPostVal    = []byte{1}
 )
 
 var (
@@ -1243,4 +1279,20 @@ const (
 	// Messaging key constants
 	MinMessagingKeyNameCharacters = 1
 	MaxMessagingKeyNameCharacters = 32
+	// Access group key constants
+	MinAccessGroupKeyNameCharacters = 1
+	MaxAccessGroupKeyNameCharacters = 32
+
+	// TODO: Are these fields needed?
+	// Access group enumeration max recursion depth.
+	MaxAccessGroupMemberEnumerationRecursionDepth = 10
+	// Dm and group chat message entries paginated fetch max recursion depth
+	MaxDmMessageRecursionDepth        = 10
+	MaxGroupChatMessageRecursionDepth = 10
 )
+
+// Constants for UserAssociation and PostAssociation txn types.
+const MaxAssociationTypeByteLength int = 64
+const MaxAssociationValueByteLength int = 256
+const AssociationTypeReservedPrefix = "DESO"
+const AssociationNullTerminator = byte(0)
