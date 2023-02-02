@@ -369,7 +369,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	}
 
 	// Force the input to be non-zero so that we can prevent replay attacks.
-	if totalInput == 0 {
+	if totalInput == 0 && blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		// Since we've failed, we revert the UtxoView mapping to what it was previously.
 		// We're doing this manually because we've set a temporary entry in UtxoView.
 		bav._deleteDerivedKeyMapping(&derivedKeyEntry)

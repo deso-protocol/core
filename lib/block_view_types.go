@@ -569,11 +569,14 @@ const (
 	OperationTypeAccessGroup                  OperationType = 33
 	OperationTypeAccessGroupMembers           OperationType = 34
 	OperationTypeNewMessage                   OperationType = 35
+	OperationTypeAddBalance				      OperationType = 36
+	OperationTypeSpendBalance			      OperationType = 37
 
-	// NEXT_TAG = 36
+	// NEXT_TAG = 38
 )
 
 func (op OperationType) String() string {
+	// TODO: get rid of unnecessary braces
 	switch op {
 	case OperationTypeAddUtxo:
 		{
@@ -715,6 +718,10 @@ func (op OperationType) String() string {
 		{
 			return "OperationTypeNewMessage"
 		}
+	case OperationTypeAddBalance:
+		return "OperationTypeAddBalance"
+	case OperationTypeSpendBalance:
+		return "OperationTypeSpendBalance"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -892,6 +899,10 @@ type UtxoOperation struct {
 	PrevNewMessageEntry *NewMessageEntry
 	// PrevDmThreadEntry is used for disconnecting DM message threads.
 	PrevDmThreadEntry *DmThreadEntry
+
+	// When we add to or spend balance, we keep track of the public key and amount.
+	BalancePublicKey []byte
+	AmountNanos      uint64
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {

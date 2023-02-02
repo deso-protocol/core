@@ -350,7 +350,7 @@ func (bav *UtxoView) _connectUpdateBitcoinUSDExchangeRate(
 	}
 
 	// Output must be non-zero
-	if totalOutput == 0 {
+	if totalOutput == 0 && blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil, RuleErrorUserOutputMustBeNonzero
 	}
 

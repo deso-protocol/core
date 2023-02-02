@@ -137,6 +137,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushDAOCoinLimitOrderEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
+	if err := bav._flushNextNoncesToDbWithTxn(txn); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1406,5 +1409,19 @@ func (bav *UtxoView) _flushPostAssociationEntriesToDbWithTxn(txn *badger.Txn, bl
 			}
 		}
 	}
+	return nil
+}
+
+func (bav *UtxoView) _flushNextNoncesToDbWithTxn(txn *badger.Txn) error {
+
+	// Go through all the entries in the PublicKeyToNextNonce map and update the database.
+	// Note that there is no need to delete the mappings first since we never delete
+	// nonce mappings.
+	for pkMapKey, nextNonce := range bav.PublicKeyToNextNonce {
+		if err := DbPutNextNonceForPublicKeyWithTxn(txn, pkMapKey[:], nextNonce); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

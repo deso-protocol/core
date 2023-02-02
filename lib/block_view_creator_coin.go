@@ -244,13 +244,23 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 	// These are "implicit" outputs that always occur at the end of the
 	// list of UtxoOperations. The number of implicit outputs is equal to
 	// the total number of "Add" operations minus the explicit outputs.
-	numUtxoAdds := 0
+	numUtxoOrBalanceAdds := 0
 	for _, utxoOp := range utxoOpsForTxn {
 		if utxoOp.Type == OperationTypeAddUtxo {
-			numUtxoAdds += 1
+			numUtxoOrBalanceAdds += 1
+		}
+		// Under the balance model, there may be an "Add Balance" operation baked into the UTXO
+		// operations for this transaction.  These ops are added when a founder reward is paid
+		// or when the signer sells creator coins.  We handle the "unAddBalance" here since the
+		// operation data tells us how much to unAdd and from which public key.
+		if utxoOp.Type == OperationTypeAddBalance {
+			if err := bav._unAddBalance(utxoOp.AmountNanos, utxoOp.BalancePublicKey); err != nil {
+				return errors.Wrapf(err, "_disconnectBitcoinExchange: Problem unAdding balance (%d, %s): ",
+					utxoOp.AmountNanos, PkToStringBoth(utxoOp.BalancePublicKey))
+			}
 		}
 	}
-	operationIndex -= numUtxoAdds - len(currentTxn.TxOutputs)
+	operationIndex -= numUtxoOrBalanceAdds - len(currentTxn.TxOutputs)
 
 	// Get the profile corresponding to the creator coin txn.
 	existingProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey)
@@ -342,7 +352,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 			*creatorBalanceEntry = *operationData.PrevCreatorBalanceEntry
 			bav._setCreatorCoinBalanceEntryMappings(creatorBalanceEntry)
 		} else {
-			// We do a simliar sanity-check as above, but in this case we don't need to
+			// We do a similar sanity-check as above, but in this case we don't need to
 			// reset the creator mappings.
 			//
 			// CreeatorCoin balances can never exceed uint64
@@ -364,8 +374,8 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		*transactorBalanceEntry = *operationData.PrevTransactorBalanceEntry
 		bav._setCreatorCoinBalanceEntryMappings(transactorBalanceEntry)
 
-		// If a DeSo founder reward was created, revert it.
-		if operationData.FounderRewardUtxoKey != nil {
+		// If a DeSo founder reward UTXO was created, revert it (not relevant for balance model).
+		if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight && operationData.FounderRewardUtxoKey != nil {
 			if err := bav._unAddUtxo(operationData.FounderRewardUtxoKey); err != nil {
 				return errors.Wrapf(err, "_disconnectBitcoinExchange: Problem unAdding utxo %v: ", operationData.FounderRewardUtxoKey)
 			}
@@ -404,20 +414,22 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		*transactorBalanceEntry = *operationData.PrevTransactorBalanceEntry
 		bav._setCreatorCoinBalanceEntryMappings(transactorBalanceEntry)
 
-		// Un-add the UTXO taht was created as a result of this transaction. It should
-		// be the one at the end of our UTXO list at this point.
-		//
-		// The UtxoKey is simply the transaction hash with index set to the end of the
-		// transaction list.
-		utxoKey := UtxoKey{
-			TxID: *currentTxn.Hash(),
-			// We give all UTXOs that are created as a result of BitcoinExchange transactions
-			// an index of zero. There is generally only one UTXO created in a BitcoinExchange
-			// transaction so this field doesn't really matter.
-			Index: uint32(len(currentTxn.TxOutputs)),
-		}
-		if err := bav._unAddUtxo(&utxoKey); err != nil {
-			return errors.Wrapf(err, "_disconnectBitcoinExchange: Problem unAdding utxo %v: ", utxoKey)
+		if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
+			// Un-add the UTXO that was created as a result of this transaction. It should
+			// be the one at the end of our UTXO list at this point.
+			//
+			// The UtxoKey is simply the transaction hash with index set to the end of the
+			// transaction list.
+			utxoKey := UtxoKey{
+				TxID: *currentTxn.Hash(),
+				// We give all UTXOs that are created as a result of BitcoinExchange transactions
+				// an index of zero. There is generally only one UTXO created in a BitcoinExchange
+				// transaction so this field doesn't really matter.
+				Index: uint32(len(currentTxn.TxOutputs)),
+			}
+			if err := bav._unAddUtxo(&utxoKey); err != nil {
+				return errors.Wrapf(err, "_disconnectBitcoinExchange: Problem unAdding utxo %v: ", utxoKey)
+			}
 		}
 	} else if txMeta.OperationType == CreatorCoinOperationTypeAddDeSo {
 		return fmt.Errorf("_disconnectCreatorCoin: Add DeSo operation txn not implemented")
@@ -606,7 +618,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// Force the input to be non-zero so that we can prevent replay attacks. If
 	// we didn't do this then someone could replay your sell over and over again
 	// to force-convert all your creator coin into DeSo. Think about it.
-	if totalInput == 0 {
+	if totalInput == 0 && blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinRequiresNonZeroInput
 	}
 
@@ -986,34 +998,22 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Finally, if the creator is getting a deso founder reward, add a UTXO for it.
 	var outputKey *UtxoKey
-	if blockHeight > bav.Params.ForkHeights.DeSoFounderRewardBlockHeight {
-		if desoFounderRewardNanos > 0 {
-			// Create a new entry for this output and add it to the view. It should be
-			// added at the end of the utxo list.
-			outputKey = &UtxoKey{
+	if blockHeight > bav.Params.ForkHeights.DeSoFounderRewardBlockHeight && desoFounderRewardNanos > 0 {
+		utxoOp, err := bav._addUtxoOrBalance(
+			existingProfileEntry.PublicKey,
+			desoFounderRewardNanos,
+			blockHeight,
+			UtxoTypeCreatorCoinFounderReward,
+			UtxoKey{
 				TxID: *txHash,
 				// The output is like an extra virtual output at the end of the transaction.
 				Index: uint32(len(txn.TxOutputs)),
-			}
-
-			utxoEntry := UtxoEntry{
-				AmountNanos: desoFounderRewardNanos,
-				PublicKey:   existingProfileEntry.PublicKey,
-				BlockHeight: blockHeight,
-				UtxoType:    UtxoTypeCreatorCoinFounderReward,
-				UtxoKey:     outputKey,
-				// We leave the position unset and isSpent to false by default.
-				// The position will be set in the call to _addUtxo.
-			}
-
-			utxoOp, err := bav._addUtxo(&utxoEntry)
-			if err != nil {
-				return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Problem adding output utxo")
-			}
-
-			// Rosetta uses this UtxoOperation to provide INPUT amounts
-			utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
+		})
+		if err != nil {
+			return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Problem adding utxo or balance")
 		}
+		// Rosetta uses this UtxoOperation to provide INPUT amounts
+		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 	}
 
 	// Compute the change in DESO locked. This information is needed by Rosetta
@@ -1058,7 +1058,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// Force the input to be non-zero so that we can prevent replay attacks. If
 	// we didn't do this then someone could replay your sell over and over again
 	// to force-convert all your creator coin into DeSo. Think about it.
-	if totalInput == 0 {
+	if totalInput == 0 && blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, 0, nil, RuleErrorCreatorCoinRequiresNonZeroInput
 	}
 
@@ -1293,29 +1293,17 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 			desoAfterFeesNanos, txMeta.MinDeSoExpectedNanos)
 	}
 
-	// Now that we have all the information we need, save a UTXO allowing the user to
-	// spend the DeSo from the sale in the future.
-	outputKey := UtxoKey{
-		TxID: *txn.Hash(),
-		// The output is like an extra virtual output at the end of the transaction.
-		Index: uint32(len(txn.TxOutputs)),
-	}
-	utxoEntry := UtxoEntry{
-		AmountNanos: desoAfterFeesNanos,
-		PublicKey:   txn.PublicKey,
-		BlockHeight: blockHeight,
-		UtxoType:    UtxoTypeCreatorCoinSale,
-		UtxoKey:     &outputKey,
-		// We leave the position unset and isSpent to false by default.
-		// The position will be set in the call to _addUtxo.
-	}
-	// If we have a problem adding this utxo return an error but don't
-	// mark this block as invalid since it's not a rule error and the block
-	// could therefore benefit from being processed in the future.
-	utxoOp, err := bav._addUtxo(&utxoEntry)
+	utxoOp, err := bav._addUtxoOrBalance(
+		txn.PublicKey,
+		desoAfterFeesNanos,
+		blockHeight,
+		UtxoTypeCreatorCoinSale,
+		UtxoKey{
+			TxID: *txn.Hash(),
+			Index: uint32(len(txn.TxOutputs)),
+		})
 	if err != nil {
-		return 0, 0, 0, nil, errors.Wrapf(
-			err, "_connectBitcoinExchange: Problem adding output utxo")
+		return 0, 0, 0, nil, errors.Wrapf(err, "_connectCreatorCoin: Problem adding utxo or balance")
 	}
 
 	// Rosetta uses this UtxoOperation to provide INPUT amounts
