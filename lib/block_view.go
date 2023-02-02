@@ -1946,7 +1946,6 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 	return utxoOpsForTxn, nil
 }
 
-
 // _checkSpendingLimitMapAndDecrementOrDelete returns false if spending limit isn't valid and true if it is
 // valid. If it is valid, we decrement the amount of operations remaining or delete the key-value
 // mapping from the map if this is the last allowed operation.

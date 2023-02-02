@@ -257,7 +257,6 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap,
 					)
 
-
 					// ====== Associations And Access Groups Fork ======
 					// Note that we don't really need to gate this logic by the blockheight because the to/from bytes
 					// encoding/decoding will never overwrite these maps prior to the fork blockheight. We do it
