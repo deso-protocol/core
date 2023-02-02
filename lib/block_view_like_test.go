@@ -21,7 +21,7 @@ func _doLikeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	senderPkBytes, _, err := Base58CheckDecode(senderPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateLikeTxn(
@@ -472,7 +472,7 @@ func TestLikeTxns(t *testing.T) {
 			"Disconnecting transaction with type %v index %d (going backwards)\n",
 			currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
@@ -557,7 +557,7 @@ func TestLikeTxns(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -677,7 +677,7 @@ func TestLikeTxns(t *testing.T) {
 
 	// Disconnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil, chain.snapshot)
+	utxoView2, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -720,7 +720,7 @@ func TestLikeTxns(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
