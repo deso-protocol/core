@@ -340,33 +340,33 @@ func _helpTestCreatorCoinBuySell(
 			"m0+m1+m2+m3+m4+m5+m6 != CoinsInCirculationNanos: %v", message)
 
 		// DeSo balances
-		if _getBalanceWithView(t, utxoView, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m0DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m0Pub)), "m0 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m0Pub)), "m0 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m1DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m1Pub)), "m1 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m1Pub)), "m1 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m2DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m2Pub)), "m2 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m2Pub)), "m2 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m3DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m3Pub)), "m3 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m3Pub)), "m3 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m4DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m4Pub)), "m4 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m4Pub)), "m4 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m5DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m5Pub)), "m5 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m5Pub)), "m5 DeSo balance: %v", message)
 		}
-		if _getBalanceWithView(t, utxoView, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
+		if _getBalanceWithView(t, chain, utxoView, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
 			assert.Equalf(int64(testData.m6DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m6Pub)), "m6 DeSo balance: %v", message)
+				int64(_getBalanceWithView(t, chain, utxoView, m6Pub)), "m6 DeSo balance: %v", message)
 		}
 
 		for ii, profilePubStr := range testData.ProfilesToCheckPublicKeysBase58Check {
@@ -4056,7 +4056,10 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 
-	if OperationType == CreatorCoinOperationTypeBuy {
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	if OperationType == CreatorCoinOperationTypeBuy && blockHeight < params.ForkHeights.BalanceModelBlockHeight {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake+DeSoToSellNanos))
 	} else {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake))
@@ -4066,9 +4069,6 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	_signTxn(t, txn, UpdaterPrivateKeyBase58Check)
 
 	txHash := txn.Hash()
-	// Always use height+1 for validation since it's assumed the transaction will
-	// get mined into the next block.
-	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	// ConnectTransaction should treat the amount locked as contributing to the
@@ -4079,15 +4079,23 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.GreaterOrEqual(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreatorCoin operation at the end.
-	numInputs := len(txn.TxInputs)
 	numOps := len(utxoOps)
-	for ii := 0; ii < numInputs; ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
-	}
-	for ii := numInputs; ii < numOps-1; ii++ {
-		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeCreatorCoin operation at the end.
+		numInputs := len(txn.TxInputs)
+		for ii := 0; ii < numInputs; ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		for ii := numInputs; ii < numOps-1; ii++ {
+			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		if numOps == 3 {
+			// Founder reward case.
+			require.Equal(OperationTypeAddBalance, utxoOps[1].Type)
+		}
 	}
 	require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)
 
@@ -4243,11 +4251,15 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreatorCoinTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeCreatorCoinTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeCreatorCoinTransfer, utxoOps[len(utxoOps)-1].Type)
 

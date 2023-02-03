@@ -1008,7 +1008,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 				TxID: *txHash,
 				// The output is like an extra virtual output at the end of the transaction.
 				Index: uint32(len(txn.TxOutputs)),
-		})
+			})
 		if err != nil {
 			return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Problem adding utxo or balance")
 		}
@@ -1299,7 +1299,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		blockHeight,
 		UtxoTypeCreatorCoinSale,
 		UtxoKey{
-			TxID: *txn.Hash(),
+			TxID:  *txn.Hash(),
 			Index: uint32(len(txn.TxOutputs)),
 		})
 	if err != nil {

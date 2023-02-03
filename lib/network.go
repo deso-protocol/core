@@ -79,7 +79,9 @@ const (
 	MsgTypeGetTransactions MsgType = 12
 	// MsgTypeTransactionBundle contains transactions from a peer.
 	MsgTypeTransactionBundle MsgType = 13
-	MsgTypeMempool           MsgType = 14
+	// MsgTypeTransactionBundleV2 contains transactions after the balance model block height from a peer.
+	MsgTypeTransactionBundleV2 MsgType = 19
+	MsgTypeMempool             MsgType = 14
 	// MsgTypeAddr is used by peers to share addresses of nodes they're aware about
 	// with other peers.
 	MsgTypeAddr MsgType = 15
@@ -90,7 +92,7 @@ const (
 	MsgTypeGetSnapshot  MsgType = 17
 	MsgTypeSnapshotData MsgType = 18
 
-	// NEXT_TAG = 19
+	// NEXT_TAG = 20
 
 	// Below are control messages used to signal to the Server from other parts of
 	// the code but not actually sent among peers.
@@ -146,6 +148,8 @@ func (msgType MsgType) String() string {
 		return "GET_TRANSACTIONS"
 	case MsgTypeTransactionBundle:
 		return "TRANSACTION_BUNDLE"
+	case MsgTypeTransactionBundleV2:
+		return "TRANSACTION_BUNDLE_V2"
 	case MsgTypeMempool:
 		return "MEMPOOL"
 	case MsgTypeAddr:
@@ -662,82 +666,48 @@ func ReadMessage(rr io.Reader, networkType NetworkType) (DeSoMessage, []byte, er
 func NewMessage(msgType MsgType) DeSoMessage {
 	switch msgType {
 	case MsgTypeVersion:
-		{
-			return &MsgDeSoVersion{}
-		}
+		return &MsgDeSoVersion{}
 	case MsgTypeVerack:
-		{
-			return &MsgDeSoVerack{}
-		}
+		return &MsgDeSoVerack{}
 	case MsgTypeHeader:
-		{
-			return &MsgDeSoHeader{
-				PrevBlockHash:         &BlockHash{},
-				TransactionMerkleRoot: &BlockHash{},
-			}
+		return &MsgDeSoHeader{
+			PrevBlockHash:         &BlockHash{},
+			TransactionMerkleRoot: &BlockHash{},
 		}
 	case MsgTypeBlock:
-		{
-			return &MsgDeSoBlock{
-				Header: NewMessage(MsgTypeHeader).(*MsgDeSoHeader),
-			}
+		return &MsgDeSoBlock{
+			Header: NewMessage(MsgTypeHeader).(*MsgDeSoHeader),
 		}
 	case MsgTypeTxn:
-		{
-			return &MsgDeSoTxn{}
-		}
+		return &MsgDeSoTxn{}
 	case MsgTypePing:
-		{
-			return &MsgDeSoPing{}
-		}
+		return &MsgDeSoPing{}
 	case MsgTypePong:
-		{
-			return &MsgDeSoPong{}
-		}
+		return &MsgDeSoPong{}
 	case MsgTypeInv:
-		{
-			return &MsgDeSoInv{}
-		}
+		return &MsgDeSoInv{}
 	case MsgTypeGetBlocks:
-		{
-			return &MsgDeSoGetBlocks{}
-		}
+		return &MsgDeSoGetBlocks{}
 	case MsgTypeGetTransactions:
-		{
-			return &MsgDeSoGetTransactions{}
-		}
+		return &MsgDeSoGetTransactions{}
 	case MsgTypeTransactionBundle:
-		{
-			return &MsgDeSoTransactionBundle{}
-		}
+		return &MsgDeSoTransactionBundle{}
+	case MsgTypeTransactionBundleV2:
+		return &MsgDeSoTransactionBundleV2{}
 	case MsgTypeMempool:
-		{
-			return &MsgDeSoMempool{}
-		}
+		return &MsgDeSoMempool{}
 	case MsgTypeGetHeaders:
-		{
-			return &MsgDeSoGetHeaders{}
-		}
+		return &MsgDeSoGetHeaders{}
 	case MsgTypeHeaderBundle:
-		{
-			return &MsgDeSoHeaderBundle{}
-		}
+		return &MsgDeSoHeaderBundle{}
 	case MsgTypeAddr:
-		{
-			return &MsgDeSoAddr{}
-		}
+		return &MsgDeSoAddr{}
 	case MsgTypeGetAddr:
-		{
-			return &MsgDeSoGetAddr{}
-		}
+		return &MsgDeSoGetAddr{}
 	case MsgTypeGetSnapshot:
-		{
-			return &MsgDeSoGetSnapshot{}
-		}
+		return &MsgDeSoGetSnapshot{}
 	case MsgTypeSnapshotData:
-		{
-			return &MsgDeSoSnapshotData{}
-		}
+		return &MsgDeSoSnapshotData{}
 	default:
 		{
 			return nil
@@ -1073,7 +1043,8 @@ func (msg *MsgDeSoGetTransactions) String() string {
 }
 
 // ==================================================================
-// TransactionBundle message
+// (DEPRECATED) TransactionBundle message
+// 	- After the BalanceModelBlockHeight, nodes shouls rely on TransactionBundleV2.
 // ==================================================================
 
 type MsgDeSoTransactionBundle struct {
@@ -1112,7 +1083,7 @@ func (msg *MsgDeSoTransactionBundle) FromBytes(data []byte) error {
 		return errors.Wrapf(err, "MsgDeSoTransactionBundle.FromBytes: Problem decoding number of transaction")
 	}
 
-	// Read in all of the transactions.
+	// Read in all the transactions.
 	for ii := uint64(0); ii < numTransactions; ii++ {
 		retTransaction, err := _readTransaction(rr)
 		if err != nil {
@@ -1127,6 +1098,82 @@ func (msg *MsgDeSoTransactionBundle) FromBytes(data []byte) error {
 }
 
 func (msg *MsgDeSoTransactionBundle) String() string {
+	return fmt.Sprintf("Num txns: %v, Txns: %v", len(msg.Transactions), msg.Transactions)
+}
+
+// ==================================================================
+// TransactionBundleV2 message
+//   - Note that the crucial difference between the original TransactionBundle and
+//     TransactionBundleV2 is that TransactionBundleV2 includes the number of bytes per
+//     transaction in the transaction serialization.
+// ==================================================================
+
+type MsgDeSoTransactionBundleV2 struct {
+	Transactions []*MsgDeSoTxn
+}
+
+func (msg *MsgDeSoTransactionBundleV2) GetMsgType() MsgType {
+	return MsgTypeTransactionBundleV2
+}
+
+func (msg *MsgDeSoTransactionBundleV2) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// Encode the number of transactions in the bundle.
+	data = append(data, UintToBuf(uint64(len(msg.Transactions)))...)
+
+	// Encode all the transactions.
+	for _, transaction := range msg.Transactions {
+		transactionBytes, err := transaction.ToBytes(preSignature)
+		if err != nil {
+			return nil, errors.Wrapf(err, "MsgDeSoTransactionBundleV2.ToBytes: Problem encoding transaction")
+		}
+		data = append(data, UintToBuf(uint64(len(transactionBytes)))...)
+		data = append(data, transactionBytes...)
+	}
+
+	return data, nil
+}
+
+func (msg *MsgDeSoTransactionBundleV2) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+	retBundle := NewMessage(MsgTypeTransactionBundleV2).(*MsgDeSoTransactionBundleV2)
+
+	// Read in the number of transactions in the bundle.
+	numTransactions, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoTransactionBundleV2.FromBytes: Problem decoding number of transaction")
+	}
+
+	retBundle.Transactions = make([]*MsgDeSoTxn, 0)
+	for ii := uint64(0); ii < numTransactions; ii++ {
+		txBytesLen, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding txn length")
+		}
+		if txBytesLen > MaxMessagePayload {
+			return fmt.Errorf(
+				"MsgDeSoBlock.FromBytes: Txn %d length %d longer than max %d",
+				ii, txBytesLen, MaxMessagePayload)
+		}
+		txBytes := make([]byte, txBytesLen)
+		_, err = io.ReadFull(rr, txBytes)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem reading tx bytes")
+		}
+		currentTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
+		err = currentTxn.FromBytes(txBytes)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding txn")
+		}
+		retBundle.Transactions = append(retBundle.Transactions, currentTxn)
+	}
+
+	*msg = *retBundle
+	return nil
+}
+
+func (msg *MsgDeSoTransactionBundleV2) String() string {
 	return fmt.Sprintf("Num txns: %v, Txns: %v", len(msg.Transactions), msg.Transactions)
 }
 
@@ -2291,7 +2338,7 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding txn length")
 		}
 		if txBytesLen > MaxMessagePayload {
-			return fmt.Errorf("MsgDeSoBlock.FromBytes: Txn %d length %d longer than max %d", ii, hdrLen, MaxMessagePayload)
+			return fmt.Errorf("MsgDeSoBlock.FromBytes: Txn %d length %d longer than max %d", ii, txBytesLen, MaxMessagePayload)
 		}
 		txBytes, err := SafeMakeSliceWithLength[byte](txBytesLen)
 		if err != nil {
@@ -2817,8 +2864,20 @@ func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) (*DeSoSignature, e
 }
 
 type MsgDeSoTxn struct {
+	// TxnVersion 0: UTXO model transactions.
+	// TxnVersion 1: balance model transactions, which include a nonce and fee nanos.
+	TxnVersion uint64
+
 	TxInputs  []*DeSoInput
 	TxOutputs []*DeSoOutput
+
+	// In the UTXO model, a transaction's "fee" is simply the DESO input nanos that aren't
+	// spent in the transaction outputs. Since the balance model does not use inputs, each
+	// transaction must explicitly its fee nanos.
+	TxnFeeNanos uint64
+	// In the balance model, a unique nonce is required for each transaction that a single
+	// public key makes.  This prevents transactions from being used in replay attacks.
+	TxnNonce uint64
 
 	// DeSoTxnMetadata is an interface type that will give us information on how
 	// we should handle the transaction, including what type of transaction this
@@ -2876,6 +2935,7 @@ func (msg *MsgDeSoTxn) String() string {
 		msg.Hash(), msg.TxnMeta.GetTxnType(), PkToStringMainnet(pubKey))
 }
 
+// TODO: need to pass block height in here to handle migration
 func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
@@ -2945,6 +3005,14 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, UintToBuf(uint64(len(sigBytes)))...)
 	data = append(data, sigBytes...)
 
+	// TODO: migration triggered check here. Probably safer than txn version.
+	// If txnFee is non-zero, this is a post-UTXO model transaction and we must encode the
+	// fee and the nonce.
+	if msg.TxnVersion != 0 {
+		data = append(data, UintToBuf(msg.TxnVersion)...)
+		data = append(data, UintToBuf(msg.TxnFeeNanos)...)
+		data = append(data, UintToBuf(msg.TxnNonce)...)
+	}
 	return data, nil
 }
 
@@ -3083,6 +3151,33 @@ func _readTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 			return nil, errors.Wrapf(err, "_readTransaction: Problem parsing DeSoTxn.Signature bytes")
 		}
 	}
+	txnVersion, err := ReadUvarint(rr)
+	if err == io.EOF {
+		return ret, nil
+	}
+	if err != nil {
+		return nil, errors.Wrapf(err, "_readTransaction: Problem parsing DeSoTxn.TxnVersion bytes")
+	}
+
+	ret.TxnVersion = txnVersion
+	// We don't read the rest of the fields for txnVersion == 0
+	if txnVersion == 0 {
+		return ret, nil
+	}
+
+	txnFeeNanos, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(
+			err, "_readTransaction: Problem parsing DeSoTxn.TxnFeeNanos bytes")
+	}
+	ret.TxnFeeNanos = txnFeeNanos
+
+	txnNonce, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(
+			err, "_readTransaction: Problem parsing DeSoTxn.TxnNonce bytes")
+	}
+	ret.TxnNonce = txnNonce
 
 	return ret, nil
 }
@@ -3186,6 +3281,8 @@ func SignTransactionBytes(txnBytes []byte, privateKey *btcec.PrivateKey, isDeriv
 
 	return newTxnBytes, txnSignature.Serialize(), nil
 }
+
+// TODO: SignTransactionBytes based on block height. Need different _readTransaction
 
 // MarshalJSON and UnmarshalJSON implement custom JSON marshaling/unmarshaling
 // to support transaction metadata. The reason this needs to exist is because

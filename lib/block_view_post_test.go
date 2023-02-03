@@ -69,6 +69,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
+	utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	// ConnectTransaction should treat the amount locked as contributing to the
@@ -79,11 +80,17 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeSubmitPost operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		// Under the balance model, the UTXO ops should only include a spend and a submit post.
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeSubmitPost, utxoOps[1].Type)
 	}
 	require.Equal(OperationTypeSubmitPost, utxoOps[len(utxoOps)-1].Type)
 
@@ -168,14 +175,19 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 	require.Equal(t, totalInput, totalOutput+fees)
 	require.Equal(t, totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeDeSoDiamond operation at the end.
-	require.Equal(t, len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(t, OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeDeSoDiamond operation at the end.
+		require.Equal(t, len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(t, OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(t, OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(t, OperationTypeAddBalance, utxoOps[0].Type)
+		require.Equal(t, OperationTypeSpendBalance, utxoOps[1].Type)
+		require.Equal(t, OperationTypeDeSoDiamond, utxoOps[2].Type)
 	}
-	require.Equal(t, OperationTypeDeSoDiamond, utxoOps[len(utxoOps)-1].Type)
-
 	require.NoError(t, utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
@@ -558,7 +570,12 @@ func TestSubmitPost(t *testing.T) {
 			1502947011*1e9, /*tstampNanos*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		blockHeight := chain.blockTip().Height + 1
+		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		} else {
+			require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
+		}
 	}
 
 	// PostHashToModify with bad length
@@ -1936,7 +1953,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 
 		// We want our transaction to have at least one input, even if it all
 		// goes to change. This ensures that the transaction will not be "replayable."
-		if len(txn.TxInputs) == 0 {
+		if len(txn.TxInputs) == 0 && chain.blockTip().Height+1 < chain.params.ForkHeights.BalanceModelBlockHeight {
 			return fmt.Errorf(
 				"giveCustomDeSoDiamondTxn: BasicTransfer txn must have at" +
 					" least one input but had zero inputs instead. Try increasing the fee rate.")

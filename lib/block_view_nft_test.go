@@ -2,6 +2,7 @@ package lib
 
 import (
 	"github.com/dgraph-io/badger/v3"
+	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"math"
@@ -73,8 +74,16 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 		return nil, nil, 0, err
 	}
 
-	// Note: the "nftFee" is the "spendAmount" and therefore must be added to feesMake.
-	require.Equal(totalInputMake, changeAmountMake+feesMake+nftFee)
+	blockHeight := chain.blockTip().Height + 1
+
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// Note: the "nftFee" is the "spendAmount" and therefore must be added to feesMake.
+		require.Equal(totalInputMake, changeAmountMake+feesMake+nftFee)
+	} else {
+		// The balance model does not have "implicit" outputs  or "change" like the UTXO model.
+		// Instead, all fees are explicitly baked into the "feesMake".
+		require.Equal(totalInputMake, feesMake)
+	}
 
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(t, txn, updaterPrivBase58Check)
@@ -82,7 +91,6 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
-	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	if err != nil {
@@ -91,13 +99,18 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreateNFT operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeCreateNFT operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeCreateNFT, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeCreateNFT, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeCreateNFT, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb(0))
 
@@ -302,12 +315,18 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeNFTBid operation at the end.
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeNFTBid operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeNFTBid, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeNFTBid, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeNFTBid, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb(0))
 
@@ -398,19 +417,32 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	numTxnOutputs := len(txn.TxOutputs)
 	numBidderInputs := len(txn.TxnMeta.(*AcceptNFTBidMetadata).BidderInputs)
 	numOps := len(utxoOps)
-	ii := 0
-	for ; ii < numTxnInputs; ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		ii := 0
+		for ; ii < numTxnInputs; ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		for ; ii < numTxnInputs+numTxnOutputs; ii++ {
+			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+		}
+		for ; ii < numTxnInputs+numTxnOutputs+numBidderInputs; ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		for ; ii < numOps-1; ii++ {
+			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type) // Basic transfer spend.
+		require.Equal(OperationTypeSpendBalance, utxoOps[1].Type) // Spend bidder balance.
+		require.Equal(OperationTypeAddBalance, utxoOps[2].Type)   // Pay the seller.
+		if numOps == 5 {
+			if OperationTypeAddBalance != utxoOps[3].Type {
+				glog.Info("WEE WOO WEE WOO") // lol RPH
+			}
+			require.Equal(OperationTypeAddBalance, utxoOps[3].Type) // Pay creator royalty (optional).
+		}
 	}
-	for ; ii < numTxnInputs+numTxnOutputs; ii++ {
-		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
-	}
-	for ; ii < numTxnInputs+numTxnOutputs+numBidderInputs; ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
-	}
-	for ; ii < numOps-1; ii++ {
-		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
-	}
+
 	require.Equal(OperationTypeAcceptNFTBid, utxoOps[numOps-1].Type)
 
 	require.NoError(utxoView.FlushToDb(0))
@@ -495,11 +527,15 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeUpdateNFT operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeUpdateNFT operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeUpdateNFT, utxoOps[len(utxoOps)-1].Type)
 
@@ -587,11 +623,15 @@ func _transferNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPa
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeNFTTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeNFTTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeNFTTransfer, utxoOps[len(utxoOps)-1].Type)
 
@@ -670,11 +710,15 @@ func _acceptNFTTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeNFTTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeNFTTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeAcceptNFTTransfer, utxoOps[len(utxoOps)-1].Type)
 
@@ -749,11 +793,15 @@ func _burnNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeNFTTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeNFTTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeBurnNFT, utxoOps[len(utxoOps)-1].Type)
 

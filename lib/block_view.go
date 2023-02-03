@@ -560,6 +560,12 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKeyArg *UtxoKey) *UtxoEntry {
 func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKeyArg []byte) (uint64, error) {
 	publicKey := publicKeyArg
 
+	if bav == nil {
+		fmt.Printf("hereee")
+	}
+	if publicKeyArg == nil {
+		fmt.Printf("other here")
+	}
 	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)]
 	if hasBalance {
 		return balanceNanos, nil
@@ -769,7 +775,7 @@ func (bav *UtxoView) _addBalance(amountNanos uint64, balancePublicKey []byte,
 	if err != nil {
 		return nil, errors.Wrapf(err, "_addBalance: ")
 	}
-	if desoBalanceNanos + amountNanos < desoBalanceNanos {
+	if desoBalanceNanos+amountNanos < desoBalanceNanos {
 		return nil, fmt.Errorf(
 			"_addBalance: adding %d nanos to balance %d overflows uint64", amountNanos, desoBalanceNanos)
 	}
@@ -845,7 +851,7 @@ func (bav *UtxoView) _unSpendBalance(amountNanos uint64, balancePublicKey []byte
 	if err != nil {
 		return errors.Wrapf(err, "_unSpendBalance: ")
 	}
-	if desoBalanceNanos + amountNanos < desoBalanceNanos {
+	if desoBalanceNanos+amountNanos < desoBalanceNanos {
 		return fmt.Errorf(
 			"_unSpendBalance: adding %d nanos to balance %d overflows uint64", amountNanos, desoBalanceNanos)
 	}
@@ -857,16 +863,16 @@ func (bav *UtxoView) _unSpendBalance(amountNanos uint64, balancePublicKey []byte
 
 func (bav *UtxoView) _addUtxoOrBalance(
 	publicKey []byte, amountNanos uint64, blockHeight uint32, utxoType UtxoType, outputKey UtxoKey,
-	) (*UtxoOperation, error) {
+) (*UtxoOperation, error) {
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return bav._addBalance(amountNanos, publicKey)
 	}
 	return bav._addUtxo(&UtxoEntry{
 		AmountNanos: amountNanos,
-		PublicKey: publicKey,
+		PublicKey:   publicKey,
 		BlockHeight: blockHeight,
-		UtxoType: utxoType,
-		UtxoKey: &outputKey,
+		UtxoType:    utxoType,
+		UtxoKey:     &outputKey,
 	})
 }
 
@@ -960,14 +966,17 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 	// loop over the outputs and subtract the amounts from each recipients balance, then
 	// we add the spent DESO + txn fees back to the sender's balance. In the balance model
 	// no UTXOs are stored so outputs do not need to be looked up or deleted.
-	if blockHeight >= bav.Params.ForkHeights. {
+	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 		totalSpend := currentTxn.TxnFeeNanos
 		for outputIndex := len(currentTxn.TxOutputs) - 1; outputIndex >= 0; outputIndex-- {
 			currentOutput := currentTxn.TxOutputs[outputIndex]
 			if err := bav._unAddBalance(currentOutput.AmountNanos, currentOutput.PublicKey); err != nil {
-				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding output %v: ", currentOutput)
+				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding balance %v: ", currentOutput)
 			}
 			totalSpend += currentOutput.AmountNanos
+		}
+		if err := bav._unSpendBalance(totalSpend, currentTxn.PublicKey); err != nil {
+			return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unSpending total spend %v: ", totalSpend)
 		}
 		return nil
 	}
@@ -1686,22 +1695,41 @@ func (bav *UtxoView) _connectBasicTransfer(
 		currentAmount, _ := amountsByPublicKey[*NewPublicKey(desoOutput.PublicKey)]
 		amountsByPublicKey[*NewPublicKey(desoOutput.PublicKey)] = currentAmount + desoOutput.AmountNanos
 
-		utxoType := UtxoTypeOutput
-		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
-			utxoType = UtxoTypeBlockReward
-		}
-		newUtxoOp, err := bav._addUtxoOrBalance(
-			desoOutput.PublicKey,
-			desoOutput.AmountNanos,
-			blockHeight,
-			utxoType,
-			UtxoKey{
-				TxID: *txHash,
+		var newUtxoOp *UtxoOperation
+		var err error
+		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+			newUtxoOp, err = bav._addBalance(desoOutput.AmountNanos, desoOutput.PublicKey)
+		} else {
+			// Create a new entry for this output and add it to the view. It should be
+			// added at the end of the utxo list.
+			outputKey := UtxoKey{
+				TxID:  *txHash,
 				Index: uint32(outputIndex),
-			},
-		)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding utxo or balance")
+			}
+			utxoType := UtxoTypeOutput
+			if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+				utxoType = UtxoTypeBlockReward
+			}
+			// A basic transfer cannot create any output other than a "normal" output
+			// or a BlockReward. Outputs of other types must be created after processing
+			// the "basic" outputs.
+
+			utxoEntry := UtxoEntry{
+				AmountNanos: desoOutput.AmountNanos,
+				PublicKey:   desoOutput.PublicKey,
+				BlockHeight: blockHeight,
+				UtxoType:    utxoType,
+				UtxoKey:     &outputKey,
+				// We leave the position unset and isSpent to false by default.
+				// The position will be set in the call to _addUtxo.
+			}
+			// If we have a problem adding this utxo return an error but don't
+			// mark this block as invalid since it's not a rule error and the block
+			// could therefore benefit from being processed in the future.
+			newUtxoOp, err = bav._addUtxo(&utxoEntry)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding output utxo")
+			}
 		}
 
 		// Rosetta uses this UtxoOperation to provide INPUT amounts
@@ -2838,7 +2866,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	_fees uint64, _err error) {
 
 	// Do a quick sanity check before trying to connect.
-	if err := CheckTransactionSanity(txn, blockHeight); err != nil {
+	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "_connectTransaction: ")
 	}
 

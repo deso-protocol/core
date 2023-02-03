@@ -469,6 +469,13 @@ const (
 	RuleErrorUserAssociationInvalidTargetUser RuleError = "RuleErrorUserAssociationInvalidTargetUser"
 	RuleErrorPostAssociationInvalidPost       RuleError = "RuleErrorPostAssociationInvalidPost"
 
+	// Balance Model
+	RuleErrorBalanceModelDoesNotUseUTXOInputs    RuleError = "RuleErrorBalanceModelDoesNotUseUTXOInputs"
+	RuleErrorInsufficientBalance                 RuleError = "RuleErrorInsufficientBalance"
+	RuleErrorCreateProfileTxnWithInsufficientFee RuleError = "RuleErrorCreateProfileTxnWithInsufficientFee"
+	RuleErrorCreateNFTTxnWithInsufficientFee     RuleError = "RuleErrorCreateNFTTxnWithInsufficientFee"
+	RuleErrorCreatorCoinBuyWithInsufficientFee   RuleError = "RuleErrorCreatorCoinBuyWithInsufficientFee"
+
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"
 	HeaderErrorNilPrevHash                                                       RuleError = "HeaderErrorNilPrevHash"
 	HeaderErrorInvalidParent                                                     RuleError = "HeaderErrorInvalidParent"

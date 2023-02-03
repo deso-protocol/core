@@ -469,7 +469,11 @@ type DBPrefixes struct {
 	// It's worth noting that two of these entries are stored for each Dm thread, one being the inverse of the other.
 	PrefixDmThreadIndex []byte `prefix_id:"[76]" is_state:"true"`
 
-	// NEXT_TAG: 77
+	// PrefixPublicKeyToNextNonce tracks the next nonce a user should use when constructing a transaction
+	// <prefix, PublicKey [33]byte> -> uint64
+	PrefixPublicKeyToNextNonce []byte `prefix_id:"[77]" is_state:"true"`
+
+	// NEXT_TAG: 78
 
 }
 
@@ -669,6 +673,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
 		// prefix_id:"[76]"
 		return true, &DmThreadEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPublicKeyToNextNonce) {
+		// prefix_id:"[77]"
+		return false, nil
 	}
 
 	return true, nil
@@ -10449,6 +10456,85 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 	}
 	return nil
 }
+
+// -------------------------------------------------------------------------------------
+// DeSo nonce mapping functions
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForPublicKeyToNextNonce(publicKey []byte) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixPublicKeyToNextNonce...)
+	key := append(prefixCopy, publicKey...)
+	return key
+}
+
+func DbGetNextNonceForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte,
+) (_balance uint64, _err error) {
+
+	key := _dbKeyForPublicKeyToNextNonce(publicKey)
+	nextNonceItem, err := txn.Get(key)
+	if err != nil {
+		return uint64(0), nil
+	}
+	nextNonceBytes, err := nextNonceItem.ValueCopy(nil)
+	if err != nil {
+		return uint64(0), errors.Wrapf(
+			err, "DbGetNextNonceForPublicKeyWithTxn: Problem getting next nonce for: %s ",
+			PkToStringBoth(publicKey))
+	}
+
+	nextNonce := DecodeUint64(nextNonceBytes)
+
+	return nextNonce, nil
+}
+
+func DbGetNextNonceForPublicKey(db *badger.DB, publicKey []byte,
+) (_balance uint64, _err error) {
+	ret := uint64(0)
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DbGetNextNonceForPublicKeyWithTxn(txn, publicKey)
+		if err != nil {
+			return fmt.Errorf("DbGetNextNonceForPublicKey: %v", err)
+		}
+		return nil
+	})
+	if dbErr != nil {
+		return ret, dbErr
+	}
+	return ret, nil
+}
+
+func DbPutNextNonceForPublicKeyWithTxn(
+	txn *badger.Txn, publicKey []byte, nextNonce uint64) error {
+
+	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbPutNextNonceForPublicKeyWithTxn: Public key "+
+			"length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
+	}
+
+	nextNonceBytes := EncodeUint64(nextNonce)
+
+	if err := txn.Set(_dbKeyForPublicKeyToNextNonce(publicKey), nextNonceBytes); err != nil {
+
+		return errors.Wrapf(
+			err, "DbPutNextNonceForPublicKeyWithTxn: Problem adding next nonce of %d for: %s ",
+			nextNonce, PkToStringBoth(publicKey))
+	}
+
+	return nil
+}
+
+func DbPutNextNonceForPublicKey(handle *badger.DB, publicKey []byte, nextNonce uint64) error {
+
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbPutNextNonceForPublicKeyWithTxn(txn, publicKey, nextNonce)
+	})
+}
+
+// -------------------------------------------------------------------------------------
+// Badger seek functions
+// -------------------------------------------------------------------------------------
 
 func EnumerateKeysForPrefixWithLimitOffsetOrder(
 	db *badger.DB,

@@ -569,8 +569,8 @@ const (
 	OperationTypeAccessGroup                  OperationType = 33
 	OperationTypeAccessGroupMembers           OperationType = 34
 	OperationTypeNewMessage                   OperationType = 35
-	OperationTypeAddBalance				      OperationType = 36
-	OperationTypeSpendBalance			      OperationType = 37
+	OperationTypeAddBalance                   OperationType = 36
+	OperationTypeSpendBalance                 OperationType = 37
 
 	// NEXT_TAG = 38
 )

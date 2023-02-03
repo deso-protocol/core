@@ -321,6 +321,17 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 		pkBytes, chain.headerTip().Height)
 	require.NoError(t, err)
 
+	blockHeight := chain.blockTip().Height + 1
+
+	if blockHeight < chain.params.ForkHeights.BalanceModelBlockHeight {
+		// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
+		require.Equal(t, balanceForUserNanos, balanceNanos)
+	} else {
+		// After the BalanceModelBlockHeight, UTXOs are no longer stored so the UTXO balance
+		// for the user will be incorrect.
+		return balanceNanos
+	}
+
 	// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
 	require.Equal(t, balanceForUserNanos, balanceNanos)
 
@@ -345,19 +356,29 @@ func _getCreatorCoinInfo(t *testing.T, chain *Blockchain, params *DeSoParams, pk
 	return creatorProfile.CreatorCoinEntry.DeSoLockedNanos, creatorProfile.CreatorCoinEntry.CoinsInCirculationNanos.Uint64()
 }
 
-func _getBalanceWithView(t *testing.T, utxoView *UtxoView, pkStr string) uint64 {
+func _getBalanceWithView(t *testing.T, chain *Blockchain, utxoView *UtxoView, pkStr string) uint64 {
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
 	utxoEntriesFound, err := utxoView.GetUnspentUtxoEntrysForPublicKey(pkBytes)
 	require.NoError(t, err)
 
-	totalBalanceNanos := uint64(0)
+	totalUtxoBalanceNanos := uint64(0)
 	for _, utxoEntry := range utxoEntriesFound {
-		totalBalanceNanos += utxoEntry.AmountNanos
+		totalUtxoBalanceNanos += utxoEntry.AmountNanos
 	}
 
-	return totalBalanceNanos
+	balanceNanos, err := utxoView.GetDeSoBalanceNanosForPublicKey(pkBytes)
+	require.NoError(t, err)
+
+	blockHeight := chain.blockTip().Height + 1
+
+	if blockHeight < chain.params.ForkHeights.BalanceModelBlockHeight {
+		// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
+		require.Equal(t, totalUtxoBalanceNanos, balanceNanos)
+	}
+
+	return balanceNanos
 }
 
 func TestBasicTransferReorg(t *testing.T) {
@@ -505,8 +526,8 @@ func TestBasicTransferReorg(t *testing.T) {
 	lastForkBlockHash, _ := forkBlocks[len(forkBlocks)-1].Hash()
 	require.Equal(*lastForkBlockHash, *chain1.blockTip().Hash)
 
-	// After the reorg, all of the transactions should have been undone
-	// expcept the single spend from the sender to the recipient that
+	// After the reorg, all the transactions should have been undone
+	// except the single spend from the sender to the recipient that
 	/// occurred in the fork. As such the fork chain's balance should now
 	// reflect the updated balance.
 	require.Equal(uint64(5), _getBalance(t, chain1, nil, recipientPkString))
@@ -1021,10 +1042,10 @@ func TestValidateBasicTransfer(t *testing.T) {
 		txn := _assembleBasicTransferTxnFullySigned(t, chain, spendAmount, feeRateNanosPerKB,
 			senderPkString, recipientPkString, senderPrivString, nil)
 		{
-			senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+			recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
 			require.NoError(err)
 			txn.TxOutputs = append(txn.TxOutputs, &DeSoOutput{
-				PublicKey: senderPkBytes,
+				PublicKey: recipientPkBytes,
 				// Guaranteed to be more than we're allowed to spend.
 				AmountNanos: firstBlockReward,
 			})
@@ -1032,9 +1053,15 @@ func TestValidateBasicTransfer(t *testing.T) {
 			_signTxn(t, txn, senderPrivString)
 		}
 
-		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1, true, nil)
+		blockHeight := chain.blockTip().Height + 1
+
+		err := chain.ValidateTransaction(txn, blockHeight, true, nil)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnOutputExceedsInput)
+		if blockHeight < chain.params.ForkHeights.BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorTxnOutputExceedsInput)
+		} else {
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
+		}
 	}
 
 	// Verify that a transaction spending an immature block reward is shot down.
@@ -1053,9 +1080,14 @@ func TestValidateBasicTransfer(t *testing.T) {
 		})
 		// Re-sign the transaction.
 		_signTxn(t, txn, senderPrivString)
-		err := chain.ValidateTransaction(txn, chain.blockTip().Height+1, true, nil)
+		blockHeight := chain.blockTip().Height + 1
+		err := chain.ValidateTransaction(txn, blockHeight, true, nil)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorInputSpendsImmatureBlockReward)
+		if blockHeight < chain.params.ForkHeights.BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorInputSpendsImmatureBlockReward)
+		} else {
+			require.Contains(err.Error(), RuleErrorBalanceModelDoesNotUseUTXOInputs)
+		}
 	}
 }
 

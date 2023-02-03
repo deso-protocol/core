@@ -66,6 +66,148 @@ var (
 	paramUpdaterPkBytes, _, _ = Base58CheckDecode(paramUpdaterPub)
 )
 
+func resetBlockHeightGlobals() {
+	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1000000
+	DeSoTestnetParams.ForkHeights.DeSoDiamondsBlockHeight = 1000000
+}
+
+func TestBalanceModelBasicTransfer(t *testing.T) {
+	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1 // Skip the genesis block.
+	defer resetBlockHeightGlobals()
+
+	// Basic transfers.
+	TestBasicTransfer(t)
+	TestBasicTransferReorg(t)
+	TestValidateBasicTransfer(t)
+}
+
+func TestBalanceModelDiamonds(t *testing.T) {
+	// Diamonds.
+	TestDeSoDiamonds(t)
+	TestDeSoDiamondErrorCases(t)
+}
+
+func TestBalanceModelSocial(t *testing.T) {
+	// Posts, profiles, likes, follows, messages.
+	TestSubmitPost(t)
+	TestUpdateProfile(t)
+	TestSpamUpdateProfile(t)
+	TestUpdateProfileChangeBack(t)
+	TestLikeTxns(t)
+	TestFollowTxns(t)
+	TestPrivateMessage(t)
+}
+
+func TestBalanceModelDerivedKeys(t *testing.T) {
+	TestAuthorizeDerivedKeyBasic(t)
+}
+
+func TestBalanceModelCreatorCoins(t *testing.T) {
+	// Creator coins.
+	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
+	TestSalomonSequence(t)
+	TestCreatorCoinBigBigBuyBigSell(t)
+	TestCreatorCoinBigBuyAfterSmallBuy(t)
+	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
+	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
+	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
+	TestCreatorCoinAroundThresholdBuySellAmounts(t)
+	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
+	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
+	TestCreatorCoinTransferBelowMinThreshold(t)
+	TestCreatorCoinTransferWithMaxTransfers(t)
+	TestCreatorCoinTransferWithSwapIdentity(t)
+}
+
+func TestBalanceModelSwapIdentity(t *testing.T) {
+	// Swap identity.
+	TestSwapIdentityMain(t)
+	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
+	TestSwapIdentityCreatorCoinBuySimple(t)
+	TestSwapIdentityFailureCases(t)
+	TestSwapIdentityWithFollows(t)
+}
+
+func TestBalanceModelNFT(t *testing.T) {
+	// NFTs.
+	TestNFTBasic(t)
+	TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t)
+	TestNFTMoreErrorCases(t)
+	TestNFTCreatedIsNotForSale(t)
+	TestNFTBidsAreCanceledAfterAccept(t)
+	TestNFTPreviousOwnersCantAcceptBids(t)
+	TestNFTMaxCopiesGlobalParam(t)
+	TestNFTSerialNumberZeroBid(t)
+	TestNFTMinimumBidAmount(t)
+	TestNFTDifferentMinBidAmountSerialNumbers(t)
+	TestNFTTransfersAndBurns(t)
+}
+
+func TestBalanceModel(t *testing.T) {
+	t.Skip("temporarily skip big balance model test - running small ones to debug")
+	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1 // Skip the genesis block.
+	defer resetBlockHeightGlobals()
+
+	// Basic transfers.
+	TestBasicTransfer(t)
+	TestBasicTransferReorg(t)
+	TestValidateBasicTransfer(t)
+
+	// Diamonds.
+	TestDeSoDiamonds(t)
+	TestDeSoDiamondErrorCases(t)
+
+	// Global params.
+	TestUpdateGlobalParams(t)
+
+	// Posts, profiles, likes, follows, messages.
+	TestSubmitPost(t)
+	TestUpdateProfile(t)
+	TestSpamUpdateProfile(t)
+	TestUpdateProfileChangeBack(t)
+	TestLikeTxns(t)
+	TestFollowTxns(t)
+	TestPrivateMessage(t)
+
+	// Derived keys.
+	TestAuthorizeDerivedKeyBasic(t)
+
+	// Creator coins.
+	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
+	TestSalomonSequence(t)
+	TestCreatorCoinBigBigBuyBigSell(t)
+	TestCreatorCoinBigBuyAfterSmallBuy(t)
+	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
+	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
+	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
+	TestCreatorCoinAroundThresholdBuySellAmounts(t)
+	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
+	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
+	TestCreatorCoinTransferBelowMinThreshold(t)
+	TestCreatorCoinTransferWithMaxTransfers(t)
+	TestCreatorCoinTransferWithSwapIdentity(t)
+
+	// Swap identity.
+	TestSwapIdentityMain(t)
+	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
+	TestSwapIdentityCreatorCoinBuySimple(t)
+	TestSwapIdentityFailureCases(t)
+	TestSwapIdentityWithFollows(t)
+
+	// NFTs.
+	TestNFTBasic(t)
+	TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t)
+	TestNFTMoreErrorCases(t)
+	TestNFTCreatedIsNotForSale(t)
+	TestNFTBidsAreCanceledAfterAccept(t)
+	TestNFTPreviousOwnersCantAcceptBids(t)
+	TestNFTMaxCopiesGlobalParam(t)
+	TestNFTSerialNumberZeroBid(t)
+	TestNFTMinimumBidAmount(t)
+	TestNFTDifferentMinBidAmountSerialNumbers(t)
+	TestNFTTransfersAndBurns(t)
+}
+
 // ================================== TRANSACTION TEST FRAMEWORK ==============================================
 // transactionTest is a new testing framework intended to streamline testing of blockchain transactions.
 // The idea behind this framework is to create a unified unit testing structure that can be used to test different
@@ -804,12 +946,20 @@ func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.D
 	require.GreaterOrEqual(totalOutput, amountNanos)
 	require.Equal(totalInput, totalOutput+fees)
 
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs), len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
-	}
-	for ii := len(txn.TxInputs); ii < len(txn.TxInputs)+len(txn.TxOutputs); ii++ {
-		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs), len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		for ii := len(txn.TxInputs); ii < len(txn.TxInputs)+len(txn.TxOutputs); ii++ {
+			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(0, len(txn.TxInputs))
+		for ii := 0; ii < len(txn.TxOutputs); ii++ {
+			require.Equal(OperationTypeAddBalance, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeSpendBalance, utxoOps[len(txn.TxOutputs)].Type)
 	}
 
 	require.NoError(utxoView.FlushToDb(0))
@@ -883,14 +1033,19 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypePrivateMessage operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(
+			OperationTypeUpdateGlobalParams, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeUpdateGlobalParams, utxoOps[1].Type)
 	}
-	require.Equal(
-		OperationTypeUpdateGlobalParams, utxoOps[len(utxoOps)-1].Type)
 	if flushToDb {
 		require.NoError(utxoView.FlushToDb(0))
 	}
@@ -1262,7 +1417,11 @@ func TestBasicTransfer(t *testing.T) {
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignatures*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
+		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
+		} else {
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
+		}
 	}
 
 	// Just a basic transfer with a bad signature.
@@ -1280,18 +1439,21 @@ func TestBasicTransfer(t *testing.T) {
 			TxnMeta:   &BasicTransferMetadata{},
 		}
 
-		totalInput, spendAmount, changeAmount, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
-		require.NoError(err)
-		require.Equal(totalInput, spendAmount+changeAmount+fees)
-		require.Greater(totalInput, uint64(0))
-
+		blockHeight := chain.blockTip().Height + 1
+		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+			totalInput, spendAmount, changeAmount, fees, err :=
+				chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+			require.NoError(err)
+			require.Equal(totalInput, spendAmount+changeAmount+fees)
+			require.Greater(totalInput, uint64(0))
+		} else {
+			txn.TxnVersion = 1
+		}
 		// Sign the transaction with the recipient's key rather than the
 		// sender's key.
 		_signTxn(t, txn, recipientPrivString)
 		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
 		txHash := txn.Hash()
-		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignature*/, false /*ignoreUtxos*/)
@@ -1358,7 +1520,13 @@ func TestBasicTransfer(t *testing.T) {
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
 				true /*verifySignature*/, false /*ignoreUtxos*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveInputs)
+		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveInputs)
+		} else {
+			// AddInputsAndChange() does not add inputs in the balance model case so this
+			// transaction fails with a different error.
+			require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveSignature)
+		}
 	}
 
 	// A block with too much block reward should fail.
@@ -1383,6 +1551,10 @@ func TestBasicTransfer(t *testing.T) {
 
 	// A block with less than the max block reward should be OK.
 	{
+
+		utxoView, _ := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		minerBalanceBefore, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
+
 		blockToMine.Txns[0].TxOutputs[0].AmountNanos = allowedBlockReward - 1
 		// One iteration should be sufficient to find us a good block.
 		_, bestNonce, err := FindLowestHash(blockToMine.Header, 10000)
@@ -1391,9 +1563,59 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
+		utxoView, _ = NewUtxoView(db, params, postgres, chain.snapshot)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil, 0)
 		require.NoError(err)
+
+
+		minerBalanceAfter, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
+
+		// The miner starts with two DESO from two blocks being mined.
+		require.Equal(uint64(2000000000), minerBalanceBefore)
+		// Then mines another block reward worth .999999999 DESO.
+		require.Equal(uint64(999999999), blockToMine.Txns[0].TxOutputs[0].AmountNanos)
+		// Therefore the balance after mining should be 2.999999999 DESO.
+		require.Equal(uint64(2999999999), minerBalanceAfter)
+
+		err = utxoView.FlushToDb(uint64(chain.BlockTip().Height + 1))
+		require.NoError(err)
+	}
+
+	// A regular (non-BlockReward) basic transfer with sufficient balance should work.
+	{
+		txn := &MsgDeSoTxn{
+			// The inputs will be set below.
+			TxInputs: []*DeSoInput{},
+			TxOutputs: []*DeSoOutput{
+				{
+					PublicKey:   recipientPkBytes,
+					AmountNanos: 1,
+				},
+			},
+			PublicKey: senderPkBytes,
+			TxnMeta:   &BasicTransferMetadata{},
+		}
+
+		blockHeight := chain.blockTip().Height + 1
+
+		totalInput, spendAmount, changeAmount, fees, err :=
+			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+		require.NoError(err)
+		require.Equal(totalInput, spendAmount+changeAmount+fees)
+		require.Greater(totalInput, uint64(0))
+
+		_signTxn(t, txn, senderPrivString)
+		utxoView, _ := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		txHash := txn.Hash()
+		_, _, _, _, err =
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
+				true /*verifySignature*/, false /*ignoreUtxos*/)
+		require.NoError(err)
+
+		senderBalance, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
+		recipientBalance, _ := utxoView.GetDeSoBalanceNanosForPublicKey(recipientPkBytes)
+		require.Equal(uint64(2999999997), senderBalance)
+		require.Equal(uint64(1), recipientBalance)
 	}
 }
 

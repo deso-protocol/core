@@ -78,11 +78,15 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeSwapIdentity operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeSwapIdentity operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeSwapIdentity, utxoOps[len(utxoOps)-1].Type)
 
@@ -119,6 +123,16 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
+
+	// Some wacky stuff from the previous version of this PR
+	if utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB == 0 {
+		utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
+	}
+	//
+	//additionalFees := utxoView.GlobalParamsEntry.CreateProfileFeeNanos
+	//if forceZeroAdditionalFee {
+	//	additionalFees = 0
+	//}
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(
 		updaterPkBytes,
@@ -157,11 +171,16 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeUpdateProfile operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeUpdateProfile operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeUpdateProfile, utxoOps[len(utxoOps)-1].Type)
 
@@ -332,7 +351,12 @@ func TestUpdateProfile(t *testing.T) {
 			2*100*100,     /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		blockHeight := chain.blockTip().Height
+		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		} else {
+			require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
+		}
 	}
 
 	// Username too long should fail.
@@ -820,9 +844,45 @@ func TestUpdateProfile(t *testing.T) {
 			1.5*100*100,
 			false)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
-		// Reduce the create profile fee, Set minimum network fee to 10 nanos per kb
+		blockHeight := chain.blockTip().Height + 1
+		require.Error(err)
+		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+			require.Contains(err.Error(),
+				"Total input 70 is not sufficient to cover the spend amount (=100) plus the fee")
+		} else {
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
+		}
 
+		// For the balance model, check the new RuleErrorCreateProfileTxnWithInsufficientFee
+		if blockHeight >= params.ForkHeights.BalanceModelBlockHeight {
+			// Reduce the minimum network fee to 1 nanos per kb but make the create profile fee 50.
+			updateGlobalParamsEntry(
+				100,
+				m3Pub,
+				m3Priv,
+				int64(InitialUSDCentsPerBitcoinExchangeRate),
+				1,
+				50)
+
+			// Update profile fails as the fee is too low
+			_, _, _, err = _updateProfile(
+				t, chain, db, params,
+				10,
+				m4Pub,
+				m4Priv,
+				m4PkBytes,
+				"m4_username",
+				"m4 description",
+				otherShortPic,
+				11*100,
+				1.5*100*100,
+				false,
+			)
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
+		}
+
+		// Reduce the create profile fee, Set minimum network fee to 10 nanos per kb
 		updateGlobalParamsEntry(
 			100,
 			m3Pub,

@@ -1370,7 +1370,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		publicKey := publicKeyArg
 		nextUtxoIndex += 1
 		royaltyOutputKey := UtxoKey{
-			TxID: *args.TxHash,
+			TxID:  *args.TxHash,
 			Index: uint32(nextUtxoIndex),
 		}
 		utxoOp, err := bav._addUtxoOrBalance(

@@ -257,7 +257,21 @@ func TestReadWrite(t *testing.T) {
 
 var expectedBlock = &MsgDeSoBlock{
 	Header: expectedBlockHeader,
-	Txns: []*MsgDeSoTxn{
+	Txns: expectedTransactions(true), // originally was effectively false
+
+	BlockProducerInfo: &BlockProducerInfo{
+		PublicKey: []byte{
+			// random bytes
+			0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x30,
+			0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x10,
+			0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30,
+			0x21, 0x22, 0x23,
+		},
+	},
+}
+
+func expectedTransactions(includeV1Fields bool) []*MsgDeSoTxn {
+	txns := []*MsgDeSoTxn{
 		{
 			TxInputs: []*DeSoInput{
 				{
@@ -371,17 +385,15 @@ var expectedBlock = &MsgDeSoBlock{
 			PublicKey: []byte{0x55, 0x66, 0x77, 0x88, 0x11, 0x22, 0x33, 0x44, 0x99},
 			//Signature: []byte{0x50, 0x60, 0x70, 0x80, 0x90, 0x10, 0x20, 0x30, 0x40},
 		},
-	},
+	}
 
-	BlockProducerInfo: &BlockProducerInfo{
-		PublicKey: []byte{
-			// random bytes
-			0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x30,
-			0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x10,
-			0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30,
-			0x21, 0x22, 0x23,
-		},
-	},
+	if includeV1Fields {
+		txns[1].TxnVersion = 1
+		txns[1].TxnFeeNanos = 123
+		txns[1].TxnNonce = 456
+	}
+
+	return txns
 }
 
 var expectedV0Header = &MsgDeSoHeader{
@@ -592,12 +604,27 @@ func TestSerializeTransactionBundle(t *testing.T) {
 	require := require.New(t)
 
 	msg := &MsgDeSoTransactionBundle{
-		Transactions: expectedBlock.Txns,
+		Transactions: expectedTransactions(false),
 	}
 
 	bb, err := msg.ToBytes(false)
 	require.NoError(err)
 	parsedMsg := &MsgDeSoTransactionBundle{}
+	err = parsedMsg.FromBytes(bb)
+	require.NoError(err)
+	require.Equal(msg, parsedMsg)
+}
+
+func TestSerializeTransactionBundleV2(t *testing.T) {
+	require := require.New(t)
+
+	msg := &MsgDeSoTransactionBundleV2{
+		Transactions: expectedTransactions(true),
+	}
+
+	bb, err := msg.ToBytes(false)
+	require.NoError(err)
+	parsedMsg := &MsgDeSoTransactionBundleV2{}
 	err = parsedMsg.FromBytes(bb)
 	require.NoError(err)
 	require.Equal(msg, parsedMsg)
@@ -1274,6 +1301,7 @@ func TestDecodeHeaderVersion0(t *testing.T) {
 	require.Equal(expectedBytes, headerBytes)
 }
 
+// Need to figure out why this test fails
 func TestDecodeBlockVersion0(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
