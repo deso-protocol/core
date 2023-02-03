@@ -144,7 +144,7 @@ func TestBalanceModelNFT(t *testing.T) {
 }
 
 func TestBalanceModel(t *testing.T) {
-	t.Skip("temporarily skip big balance model test - running small ones to debug")
+	//t.Skip("temporarily skip big balance model test - running small ones to debug")
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1 // Skip the genesis block.
 	defer resetBlockHeightGlobals()
 

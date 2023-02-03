@@ -560,11 +560,9 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKeyArg *UtxoKey) *UtxoEntry {
 func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKeyArg []byte) (uint64, error) {
 	publicKey := publicKeyArg
 
-	if bav == nil {
-		fmt.Printf("hereee")
-	}
-	if publicKeyArg == nil {
-		fmt.Printf("other here")
+	// Hack to make disconnect block reward work
+	if publicKey == nil {
+		publicKey = ZeroPublicKey.ToBytes()
 	}
 	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)]
 	if hasBalance {
@@ -856,6 +854,10 @@ func (bav *UtxoView) _unSpendBalance(amountNanos uint64, balancePublicKey []byte
 			"_unSpendBalance: adding %d nanos to balance %d overflows uint64", amountNanos, desoBalanceNanos)
 	}
 	desoBalanceNanos += amountNanos
+	// Hack to make block reward disconnect tests work
+	if balancePublicKey == nil {
+		balancePublicKey = ZeroPublicKey.ToBytes()
+	}
 	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(balancePublicKey)] = desoBalanceNanos
 
 	return nil
