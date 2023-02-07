@@ -2221,30 +2221,6 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		}
 	}
 
-	if len(metadataCreateUserAssociations) > 0 {
-		if _, err := tx.Model(&metadataCreateUserAssociations).Returning("NULL").Insert(); err != nil {
-			return err
-		}
-	}
-
-	if len(metadataDeleteUserAssociations) > 0 {
-		if _, err := tx.Model(&metadataDeleteUserAssociations).Returning("NULL").Insert(); err != nil {
-			return err
-		}
-	}
-
-	if len(metadataCreatePostAssociations) > 0 {
-		if _, err := tx.Model(&metadataCreatePostAssociations).Returning("NULL").Insert(); err != nil {
-			return err
-		}
-	}
-
-	if len(metadataDeletePostAssociations) > 0 {
-		if _, err := tx.Model(&metadataDeletePostAssociations).Returning("NULL").Insert(); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
