@@ -11,14 +11,19 @@ import (
 )
 
 func TestAssociations(t *testing.T) {
-	// Run all tests twice: once flushing all txns to the
-	// db, and once just keeping all txns in the mempool.
-	_testAssociations(t, true)
-	_testAssociations(t, false)
+	// Test badger + flushing to the db.
+	_testAssociations(t, false, true)
+	// Test badger + keeping all txns in the mempool.
+	_testAssociations(t, false, false)
+	// Test postgres + flushing to the db.
+	_testAssociations(t, true, true)
+	// Test postgres + keeping all txns in the mempool.
+	_testAssociations(t, true, false)
+	// Test using derived keys.
 	_testAssociationsWithDerivedKey(t)
 }
 
-func _testAssociations(t *testing.T, flushToDB bool) {
+func _testAssociations(t *testing.T, usePostgres bool, flushToDB bool) {
 	// -----------------------
 	// Initialization
 	// -----------------------
@@ -39,7 +44,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	var err error
 
 	// Initialize test chain and miner.
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, _ := NewLowDifficultyBlockchainWithParamsAndDb(&DeSoTestnetParams, usePostgres, 5432)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
@@ -62,7 +67,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		t:                 t,
 		chain:             chain,
 		params:            params,
-		db:                db,
+		db:                chain.db,
 		mempool:           mempool,
 		miner:             miner,
 		savedHeight:       chain.blockTip().Height + 1,
@@ -76,11 +81,11 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 1e3)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
 
-	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
-	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
-	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes).PKID
-	m3PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m3PkBytes).PKID
-	m4PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m4PkBytes).PKID
+	m0PKID := DBGetPKIDEntryForPublicKey(chain.db, chain.snapshot, m0PkBytes).PKID
+	m1PKID := DBGetPKIDEntryForPublicKey(chain.db, chain.snapshot, m1PkBytes).PKID
+	m2PKID := DBGetPKIDEntryForPublicKey(chain.db, chain.snapshot, m2PkBytes).PKID
+	m3PKID := DBGetPKIDEntryForPublicKey(chain.db, chain.snapshot, m3PkBytes).PKID
+	m4PKID := DBGetPKIDEntryForPublicKey(chain.db, chain.snapshot, m4PkBytes).PKID
 	_, _, _, _, _ = m0PKID, m1PKID, m2PKID, m3PKID, m4PKID
 
 	{
