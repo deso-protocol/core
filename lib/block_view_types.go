@@ -3485,6 +3485,10 @@ type FollowEntry struct {
 	isDeleted bool
 }
 
+func (fe *FollowEntry) IsDeleted() bool {
+	return fe.isDeleted
+}
+
 type DiamondKey struct {
 	SenderPKID      PKID
 	ReceiverPKID    PKID
