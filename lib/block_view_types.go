@@ -4064,13 +4064,17 @@ type BalanceEntry struct {
 	isDeleted bool
 }
 
-func (entry *BalanceEntry) Copy() *BalanceEntry {
+func (be *BalanceEntry) IsDeleted() bool {
+	return be.isDeleted
+}
+
+func (be *BalanceEntry) Copy() *BalanceEntry {
 	return &BalanceEntry{
-		HODLerPKID:   entry.HODLerPKID.NewPKID(),
-		CreatorPKID:  entry.CreatorPKID.NewPKID(),
-		BalanceNanos: *entry.BalanceNanos.Clone(),
-		HasPurchased: entry.HasPurchased,
-		isDeleted:    entry.isDeleted,
+		HODLerPKID:   be.HODLerPKID.NewPKID(),
+		CreatorPKID:  be.CreatorPKID.NewPKID(),
+		BalanceNanos: *be.BalanceNanos.Clone(),
+		HasPurchased: be.HasPurchased,
+		isDeleted:    be.isDeleted,
 	}
 }
 
