@@ -1926,7 +1926,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		})
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
 			PublicKeyBase58Check: PkToString(realTxMeta.RecipientAccessGroupOwnerPublicKey.ToBytes(), utxoView.Params),
-			Metadata:             "NewMessageRecipientAccessGroupOwnerPublicKe",
+			Metadata:             "NewMessageRecipientAccessGroupOwnerPublicKey",
 		})
 	}
 	return txnMeta
