@@ -789,8 +789,8 @@ func (bav *UtxoView) _addBalance(amountNanos uint64, balancePublicKey []byte,
 	}, nil
 }
 
-func (bav *UtxoView) _addDESO(amountNanos uint64, publicKey []byte, getUtxoEntry func () *UtxoEntry, blockHeight uint32,
-	)( *UtxoOperation, error) {
+func (bav *UtxoView) _addDESO(amountNanos uint64, publicKey []byte, getUtxoEntry func() *UtxoEntry, blockHeight uint32,
+) (*UtxoOperation, error) {
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return bav._addBalance(amountNanos, publicKey)
 	}
@@ -859,7 +859,7 @@ func (bav *UtxoView) _spendBalance(
 }
 
 func (bav *UtxoView) _spendDESO(amountNanos uint64, publicKey []byte, getUtxoKeys func() []*UtxoKey, blockHeight uint32,
-	) ([]*UtxoOperation, error) {
+) ([]*UtxoOperation, error) {
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 		utxoOp, err := bav._spendBalance(amountNanos, publicKey, blockHeight)
 		if err != nil {
@@ -910,6 +910,7 @@ func (bav *UtxoView) _unSpendDESO(amountNanos uint64, publicKey []byte, getUtxoE
 	}
 	return nil
 }
+
 //
 //func (bav *UtxoView) _addUtxoOrBalance(
 //	publicKey []byte, amountNanos uint64, blockHeight uint32, utxoType UtxoType, outputKey UtxoKey,

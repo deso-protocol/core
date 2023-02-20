@@ -574,25 +574,25 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
 					"num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.Transactions), pp)
 				pp.HandleTransactionBundleMessage(msg)
-			case  MsgTypeTransactionBundleV2:
+			case MsgTypeTransactionBundleV2:
 				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
 					"type %v with num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
 					len(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundleV2).Transactions), pp)
 				pp.HandleTransactionBundleMessageV2(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundleV2))
 
-			case  MsgTypeInv:
+			case MsgTypeInv:
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoInv)
 				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
 					"num invs %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.InvList), pp)
 				pp.HandleInv(msg)
 
-			case  MsgTypeGetBlocks:
+			case MsgTypeGetBlocks:
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks)
 				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
 					"num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.HashList), pp)
 				pp.HandleGetBlocks(msg)
 
-			case  MsgTypeGetSnapshot:
+			case MsgTypeGetSnapshot:
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetSnapshot)
 				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with start key %v "+
 					"and prefix %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), msg.SnapshotStartKey, msg.GetPrefix(), pp)

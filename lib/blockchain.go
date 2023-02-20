@@ -4934,7 +4934,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			feeAmountNanos = _computeMaxTxFee(txArg, minFeeRateNanosPerKB)
 		}
 		// TODO: CHECK FOR UNDERFLOW AND OVERFLOW HERE!!!
-		if math.MaxUint64 - feeAmountNanos < additionalFees {
+		if math.MaxUint64-feeAmountNanos < additionalFees {
 			return 0, 0, 0, 0, fmt.Errorf(
 				"AddInputsAndChangeToTransaction: overflow detected")
 		}
@@ -4950,12 +4950,12 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		}
 		explicitSpendAmount := spendAmount - additionalFees
 
-		if math.MaxUint64 - explicitSpendAmount < totalInput {
+		if math.MaxUint64-explicitSpendAmount < totalInput {
 			return 0, 0, 0, 0, fmt.Errorf(
 				"AddInputsAndChangeToTransaction: overflow detected")
 		}
 		totalInput += explicitSpendAmount
-		if math.MaxUint64 - txArg.TxnFeeNanos < totalInput {
+		if math.MaxUint64-txArg.TxnFeeNanos < totalInput {
 			return 0, 0, 0, 0, fmt.Errorf(
 				"AddInputsAndChangeToTransaction: overflow detected")
 		}

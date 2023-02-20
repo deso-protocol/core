@@ -5039,7 +5039,6 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 			}
 		}
 
-
 		if _, err = utxoView._addDESO(txOutput.AmountNanos, txOutput.PublicKey, getUtxoEntry, 0); err != nil {
 			return fmt.Errorf("InitDbWithDeSoGenesisBlock: Error adding "+
 				"seed balance at index %v ; output: %v: %v", index, txOutput, err)

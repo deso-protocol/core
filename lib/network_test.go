@@ -257,7 +257,7 @@ func TestReadWrite(t *testing.T) {
 
 var expectedBlock = &MsgDeSoBlock{
 	Header: expectedBlockHeader,
-	Txns: expectedTransactions(true), // originally was effectively false
+	Txns:   expectedTransactions(true), // originally was effectively false
 
 	BlockProducerInfo: &BlockProducerInfo{
 		PublicKey: []byte{

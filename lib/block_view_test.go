@@ -1586,7 +1586,6 @@ func TestBasicTransfer(t *testing.T) {
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil, 0)
 		require.NoError(err)
 
-
 		minerBalanceAfter, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
 
 		// The miner starts with two DESO from two blocks being mined.

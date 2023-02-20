@@ -1006,7 +1006,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 			// Create a new entry for this output and add it to the view. It should be
 			// added at the end of the utxo list.
 			outputKey = &UtxoKey{
-				TxID:  *txHash,
+				TxID: *txHash,
 				// The output is like an extra virtual output at the end of the transaction.
 				Index: uint32(len(txn.TxOutputs)),
 			}

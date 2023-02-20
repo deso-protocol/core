@@ -171,7 +171,6 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-
 	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
 		// We should have one SPEND UtxoOperation for each input, one ADD operation
 		// for each output, and one OperationTypeUpdateProfile operation at the end.
