@@ -1120,18 +1120,19 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	bidderChangeNanos := uint64(0)
 	totalBidderInput := uint64(0)
 	spentUtxoEntries := []*UtxoEntry{}
+	utxoKeys := []*UtxoKey{}
 	// We only need to validate the bidder UTXOs when connecting an AcceptNFTBid transaction since the transactor and
 	// the bidder are different users.  For NFTBid transactions on Buy Now NFTs, there are additional inputs to cover
 	// the bid amount. We do not need to make explicitly make change for the bidder in that situation either.
 	switch args.Txn.TxnMeta.GetTxnType() {
 	case TxnTypeAcceptNFTBid:
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-			utxoOp, err := bav._spendBalance(args.BidAmountNanos, bidderPublicKey, tipHeight)
-			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem spending bidder balance")
-			}
+			//utxoOp, err := bav._spendBalance(args.BidAmountNanos, bidderPublicKey, tipHeight)
+			//if err != nil {
+			//	return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem spending bidder balance")
+			//}
 			totalBidderInput = args.BidAmountNanos
-			utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
+			//utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 		} else {
 			//
 			// Validate bidder UTXOs.
@@ -1141,6 +1142,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 			}
 			for _, bidderInput := range args.BidderInputs {
 				bidderUtxoKey := UtxoKey(*bidderInput)
+				utxoKeys = append(utxoKeys, &bidderUtxoKey)
 				bidderUtxoEntry := bav.GetUtxoEntryForUtxoKey(&bidderUtxoKey)
 				if bidderUtxoEntry == nil || bidderUtxoEntry.isSpent {
 					return 0, 0, nil, errors.Wrapf(RuleErrorBidderInputForAcceptedNFTBidNoLongerExists, "_helpConnectNFTSold: ")
@@ -1158,15 +1160,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 				}
 				totalBidderInput += bidderUtxoEntry.AmountNanos
 
-				// Make sure we spend the utxo so that the bidder can't reuse it.
-				utxoOp, err := bav._spendUtxo(&bidderUtxoKey)
-				if err != nil {
-					return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: Problem spending bidder utxo")
-				}
 				spentUtxoEntries = append(spentUtxoEntries, bidderUtxoEntry)
-
-				// Track the UtxoOperations so we can rollback, and for Rosetta
-				utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 			}
 
 			if totalBidderInput < args.BidAmountNanos {
@@ -1177,6 +1171,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 			bidderChangeNanos = totalBidderInput - args.BidAmountNanos
 		}
 	case TxnTypeNFTBid:
+		// TODO: any changes needed for balance model?
 		// If we're here, we know we're dealing with a "buy now" NFT because that is
 		// the only situation in which a bid would result in an NFT being sold vs the
 		// bid resting on the NFT (and waiting for AcceptNFTBid to trigger).
@@ -1213,6 +1208,14 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	default:
 		return 0, 0, nil, fmt.Errorf("_helpConnectNFTSold: invalid TxnType %v", args.Txn.TxnMeta.GetTxnType().String())
 	}
+
+	// Make sure we spend the utxo or balance so that the bidder can't reuse it.
+	bidderDESOUtxoOperations, err := bav._spendDESO(args.BidAmountNanos, bidderPublicKey, func() []*UtxoKey { return utxoKeys }, blockHeight)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: Problem spending bidder DESO")
+	}
+	// Track the UtxoOperations so we can rollback, and for Rosetta
+	utxoOpsForTxn = append(utxoOpsForTxn, bidderDESOUtxoOperations...)
 
 	// The amount of deso that should go to the original creator from this purchase.
 	// Calculated as: (BidAmountNanos * NFTRoyaltyToCreatorBasisPoints) / (100 * 100)
@@ -1373,12 +1376,20 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 			TxID:  *args.TxHash,
 			Index: uint32(nextUtxoIndex),
 		}
-		utxoOp, err := bav._addUtxoOrBalance(
-			publicKey,
+		getUtxoEntry := func() *UtxoEntry {
+			return &UtxoEntry{
+				AmountNanos: amountNanos,
+				PublicKey:   publicKey,
+				BlockHeight: blockHeight,
+				UtxoType:    utxoType,
+				UtxoKey:     &royaltyOutputKey,
+			}
+		}
+		utxoOp, err := bav._addDESO(
 			amountNanos,
-			blockHeight,
-			utxoType,
-			royaltyOutputKey)
+			publicKey,
+			getUtxoEntry,
+			blockHeight)
 		if err != nil {
 			return errors.Wrapf(err, "_helpConnectNFTSold: Problem adding utxo or balance")
 		}
@@ -1420,6 +1431,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 
 	// (5) Give any change back to the bidder.
 	if bidderChangeNanos > 0 {
+		// There should never be change in a balance model transaction
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 			return 0, 0, nil, fmt.Errorf(
 				"_helpConnectNFTSold: Unexpected balance model bidderChangeNanos (%d)", bidderChangeNanos)
@@ -1489,6 +1501,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		PrevAcceptedNFTBidEntries:  prevAcceptedBidHistory,
 		PrevNFTBidEntry:            args.PrevNFTBidEntry,
 	}
+	// TODO: does this need to change at all for balance model
 	if args.Txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 		transactionUtxoOp.Type = OperationTypeAcceptNFTBid
 		// Rosetta fields
@@ -2334,6 +2347,7 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 					"this should never happen")
 			}
 
+			// TODO: balance model
 			// Note: these UTXOs need to be unspent in reverse order.
 			for ii := len(operationData.NFTSpentUtxoEntries) - 1; ii >= 0; ii-- {
 				spentUtxoEntry := operationData.NFTSpentUtxoEntries[ii]

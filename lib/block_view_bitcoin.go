@@ -266,30 +266,34 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	feeNanos := feeNanosBigint.Uint64()
 	userNanos := nanosToCreate - feeNanos
 
-	// Now that we have all the information we need, save a UTXO allowing the user to
-	// spend the DeSo she's purchased in the future.
-	outputKey := UtxoKey{
-		TxID: *txn.Hash(),
-		// We give all UTXOs that are created as a result of BitcoinExchange transactions
-		// an index of zero. There is generally only one UTXO created in a BitcoinExchange
-		// transaction so this field doesn't really matter.
-		Index: 0,
+	getUtxoEntry := func() *UtxoEntry {
+		// Now that we have all the information we need, save a UTXO allowing the user to
+		// spend the DeSo she's purchased in the future.
+		outputKey := UtxoKey{
+			TxID: *txn.Hash(),
+			// We give all UTXOs that are created as a result of BitcoinExchange transactions
+			// an index of zero. There is generally only one UTXO created in a BitcoinExchange
+			// transaction so this field doesn't really matter.
+			Index: 0,
+		}
+		return &UtxoEntry{
+			AmountNanos: userNanos,
+			PublicKey:   publicKey.SerializeCompressed(),
+			BlockHeight: blockHeight,
+			UtxoType:    UtxoTypeBitcoinBurn,
+			UtxoKey:     &outputKey,
+			// We leave the position unset and isSpent to false by default.
+			// The position will be set in the call to _addUtxo.
+		}
 	}
-	utxoEntry := UtxoEntry{
-		AmountNanos: userNanos,
-		PublicKey:   publicKey.SerializeCompressed(),
-		BlockHeight: blockHeight,
-		UtxoType:    UtxoTypeBitcoinBurn,
-		UtxoKey:     &outputKey,
-		// We leave the position unset and isSpent to false by default.
-		// The position will be set in the call to _addUtxo.
-	}
+
+	// TODO: update comment for balance model
 	// If we have a problem adding this utxo return an error but don't
 	// mark this block as invalid since it's not a rule error and the block
 	// could therefore benefit from being processed in the future.
-	newUtxoOp, err := bav._addUtxo(&utxoEntry)
+	newUtxoOp, err := bav._addDESO(userNanos, publicKey.SerializeCompressed(), getUtxoEntry, blockHeight)
 	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectBitcoinExchange: Problem adding output utxo")
+		return 0, 0, nil, errors.Wrapf(err, "_connectBitcoinExchange: Problem adding output DESO")
 	}
 
 	// Rosetta uses this UtxoOperation to provide INPUT amounts
@@ -404,10 +408,12 @@ func (bav *UtxoView) _disconnectBitcoinExchange(
 	bitcoinTxHash := (BlockHash)(txMeta.BitcoinTransaction.TxHash())
 	bav._deleteBitcoinBurnTxIDMappings(&bitcoinTxHash)
 
-	// Un-add the UTXO taht was created as a result of this transaction. It should
+	// Un-add the UTXO that was created as a result of this transaction. It should
 	// be the one at the end of our UTXO list at this point.
 	//
 	// The UtxoKey is simply the transaction hash with index zero.
+	// We skip balance model logic here
+	// TODO: maybe we don't?
 	utxoKey := UtxoKey{
 		TxID: *currentTxn.Hash(),
 		// We give all UTXOs that are created as a result of BitcoinExchange transactions

@@ -485,7 +485,7 @@ func TestSubmitPost(t *testing.T) {
 	// Creating a post from a registered profile should succeed
 	{
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,             /*feeRateNanosPerKB*/
 			m2Pub,         /*updaterPkBase58Check*/
 			m2Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -513,7 +513,7 @@ func TestSubmitPost(t *testing.T) {
 
 	{
 		updateProfile(
-			1,             /*feeRateNanosPerKB*/
+			10,             /*feeRateNanosPerKB*/
 			m3Pub,         /*updaterPkBase58Check*/
 			m3Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/

@@ -658,6 +658,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder: ")
 			}
 
+			// TODO: balance model
 			// Make sure we spend the UTXO so that the bidder can't reuse it.
 			utxoOp, err := bav._spendUtxo(&utxoKey)
 			if err != nil {
@@ -1061,6 +1062,7 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 		numMatchingOrderInputs += len(transactor.Inputs)
 	}
 
+	// TODO: balance model support
 	// Unspend utxos for matched bid transactors.
 	for jj := operationIndex; jj > operationIndex-numMatchingOrderInputs; jj-- {
 		utxoOp := utxoOpsForTxn[jj]

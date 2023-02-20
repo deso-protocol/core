@@ -789,6 +789,14 @@ func (bav *UtxoView) _addBalance(amountNanos uint64, balancePublicKey []byte,
 	}, nil
 }
 
+func (bav *UtxoView) _addDESO(amountNanos uint64, publicKey []byte, getUtxoEntry func () *UtxoEntry, blockHeight uint32,
+	)( *UtxoOperation, error) {
+	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+		return bav._addBalance(amountNanos, publicKey)
+	}
+	return bav._addUtxo(getUtxoEntry())
+}
+
 func (bav *UtxoView) _unAddBalance(amountNanos uint64, balancePublicKey []byte) error {
 	// Get the current balance and then remove the added balance.
 	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(balancePublicKey)
@@ -804,6 +812,13 @@ func (bav *UtxoView) _unAddBalance(amountNanos uint64, balancePublicKey []byte) 
 	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(balancePublicKey)] = desoBalanceNanos
 
 	return nil
+}
+
+func (bav *UtxoView) _unAddDESO(amountNanos uint64, publicKey []byte, getUtxoKey func() *UtxoKey, blockHeight uint32) error {
+	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+		return bav._unAddBalance(amountNanos, publicKey)
+	}
+	return bav._unAddUtxo(getUtxoKey())
 }
 
 func (bav *UtxoView) _spendBalance(
@@ -843,6 +858,26 @@ func (bav *UtxoView) _spendBalance(
 	}, nil
 }
 
+func (bav *UtxoView) _spendDESO(amountNanos uint64, publicKey []byte, getUtxoKeys func() []*UtxoKey, blockHeight uint32,
+	) ([]*UtxoOperation, error) {
+	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+		utxoOp, err := bav._spendBalance(amountNanos, publicKey, blockHeight)
+		if err != nil {
+			return nil, err
+		}
+		return []*UtxoOperation{utxoOp}, nil
+	}
+	utxoOperations := []*UtxoOperation{}
+	for _, utxoKey := range getUtxoKeys() {
+		utxoOperation, err := bav._spendUtxo(utxoKey)
+		if err != nil {
+			return nil, err
+		}
+		utxoOperations = append(utxoOperations, utxoOperation)
+	}
+	return utxoOperations, nil
+}
+
 func (bav *UtxoView) _unSpendBalance(amountNanos uint64, balancePublicKey []byte) error {
 	// Get the current balance and add back the spent amountNanos.
 	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(balancePublicKey)
@@ -863,20 +898,33 @@ func (bav *UtxoView) _unSpendBalance(amountNanos uint64, balancePublicKey []byte
 	return nil
 }
 
-func (bav *UtxoView) _addUtxoOrBalance(
-	publicKey []byte, amountNanos uint64, blockHeight uint32, utxoType UtxoType, outputKey UtxoKey,
-) (*UtxoOperation, error) {
+func (bav *UtxoView) _unSpendDESO(amountNanos uint64, publicKey []byte, getUtxoEntries func() []*UtxoEntry, blockHeight uint32) error {
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-		return bav._addBalance(amountNanos, publicKey)
+		return bav._unSpendBalance(amountNanos, publicKey)
 	}
-	return bav._addUtxo(&UtxoEntry{
-		AmountNanos: amountNanos,
-		PublicKey:   publicKey,
-		BlockHeight: blockHeight,
-		UtxoType:    utxoType,
-		UtxoKey:     &outputKey,
-	})
+	for _, utxoEntry := range getUtxoEntries() {
+		err := bav._unSpendUtxo(utxoEntry)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
+//
+//func (bav *UtxoView) _addUtxoOrBalance(
+//	publicKey []byte, amountNanos uint64, blockHeight uint32, utxoType UtxoType, outputKey UtxoKey,
+//) (*UtxoOperation, error) {
+//	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+//		return bav._addBalance(amountNanos, publicKey)
+//	}
+//	return bav._addUtxo(&UtxoEntry{
+//		AmountNanos: amountNanos,
+//		PublicKey:   publicKey,
+//		BlockHeight: blockHeight,
+//		UtxoType:    utxoType,
+//		UtxoKey:     &outputKey,
+//	})
+//}
 
 func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *BlockHash, utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 	// First we check to see if we're passed the derived key spending limit block height.
@@ -973,15 +1021,134 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 		for outputIndex := len(currentTxn.TxOutputs) - 1; outputIndex >= 0; outputIndex-- {
 			currentOutput := currentTxn.TxOutputs[outputIndex]
 			if err := bav._unAddBalance(currentOutput.AmountNanos, currentOutput.PublicKey); err != nil {
-				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding balance %v: ", currentOutput)
+				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding output %v: ", currentOutput)
 			}
 			totalSpend += currentOutput.AmountNanos
 		}
 		if err := bav._unSpendBalance(totalSpend, currentTxn.PublicKey); err != nil {
 			return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unSpending total spend %v: ", totalSpend)
 		}
-		return nil
+	} else {
+		// Loop through the transaction's outputs backwards and remove them
+		// from the view. Since the outputs will have been added to the view
+		// at the end of the utxo list, removing them from the view amounts to
+		// removing the last element from the utxo list.
+		//
+		// Loop backwards over the utxo operations as we go along.
+		for outputIndex := len(currentTxn.TxOutputs) - 1; outputIndex >= 0; outputIndex-- {
+			currentOutput := currentTxn.TxOutputs[outputIndex]
+
+			// Compute the utxo key for this output so we can reference it in our
+			// data structures.
+			outputKey := &UtxoKey{
+				TxID:  *txnHash,
+				Index: uint32(outputIndex),
+			}
+
+			// Verify that the utxo operation we're undoing is an add and advance
+			// our index to the next operation.
+			currentOperation := utxoOpsForTxn[operationIndex]
+			operationIndex--
+			if currentOperation.Type != OperationTypeAddUtxo {
+				return fmt.Errorf(
+					"_disconnectBasicTransfer: Output with key %v does not line up to an "+
+						"ADD operation in the passed utxoOps", outputKey)
+			}
+
+			// The current output should be at the end of the utxo list so go
+			// ahead and fetch it. Do some sanity checks to make sure the view
+			// is in sync with the operations we're trying to perform.
+			outputEntry := bav.GetUtxoEntryForUtxoKey(outputKey)
+			if outputEntry == nil {
+				return fmt.Errorf(
+					"_disconnectBasicTransfer: Output with key %v is missing from "+
+						"utxo view", outputKey)
+			}
+			if outputEntry.isSpent {
+				return fmt.Errorf(
+					"_disconnectBasicTransfer: Output with key %v was spent before "+
+						"being removed from the utxo view. This should never "+
+						"happen", outputKey)
+			}
+			if outputEntry.AmountNanos != currentOutput.AmountNanos {
+				return fmt.Errorf(
+					"_disconnectBasicTransfer: Output with key %v has amount (%d) "+
+						"that differs from the amount for the output in the "+
+						"view (%d)", outputKey, currentOutput.AmountNanos,
+					outputEntry.AmountNanos)
+			}
+			if !reflect.DeepEqual(outputEntry.PublicKey, currentOutput.PublicKey) {
+				return fmt.Errorf(
+					"_disconnectBasicTransfer: Output with key %v has public key (%v) "+
+						"that differs from the public key for the output in the "+
+						"view (%v)", outputKey, currentOutput.PublicKey,
+					outputEntry.PublicKey)
+			}
+			if outputEntry.BlockHeight != blockHeight {
+				return fmt.Errorf(
+					"_disconnectBasicTransfer: Output with key %v has block height (%d) "+
+						"that differs from the block we're disconnecting (%d)",
+					outputKey, outputEntry.BlockHeight, blockHeight)
+			}
+			if outputEntry.UtxoType == UtxoTypeBlockReward && (currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward) {
+
+				return fmt.Errorf(
+					"_disconnectBasicTransfer: Output with key %v is a block reward txn according "+
+						"to the view, yet is not the first transaction referenced in "+
+						"the block", outputKey)
+			}
+
+			if err := bav._unAddUtxo(outputKey); err != nil {
+				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding utxo %v: ", outputKey)
+			}
+		}
+
+		// At this point we should have rolled back all of the transaction's outputs
+		// in the view. Now we roll back its inputs, similarly processing them in
+		// backwards order.
+		for inputIndex := len(currentTxn.TxInputs) - 1; inputIndex >= 0; inputIndex-- {
+			currentInput := currentTxn.TxInputs[inputIndex]
+
+			// Convert this input to a utxo key.
+			inputKey := UtxoKey(*currentInput)
+
+			// Get the output entry for this input from the utxoOps that were
+			// passed in and check its type. For every input that we're restoring
+			// we need a SPEND operation that lines up with it.
+			currentOperation := utxoOpsForTxn[operationIndex]
+			operationIndex--
+			if currentOperation.Type != OperationTypeSpendUtxo {
+				return fmt.Errorf(
+					"_disconnectBasicTransfer: Input with key %v does not line up with a "+
+						"SPEND operation in the passed utxoOps", inputKey)
+			}
+
+			// Check that the input matches the key of the spend we're rolling
+			// back.
+			if inputKey != *currentOperation.Key {
+				return fmt.Errorf(
+					"_disconnectBasicTransfer: Input with key %v does not match the key of the "+
+						"corresponding SPEND operation in the passed utxoOps %v",
+					inputKey, *currentOperation.Key)
+			}
+
+			// Unspend the entry using the information in the UtxoOperation. If the entry
+			// was de-serialized from the db it will have its utxoKey unset so we need to
+			// set it here in order to make it unspendable.
+			currentOperation.Entry.UtxoKey = currentOperation.Key
+			if err := bav._unSpendUtxo(currentOperation.Entry); err != nil {
+				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unspending utxo %v: ", currentOperation.Key)
+			}
+		}
 	}
+
+	return nil
+
+	// TODO: Clean up comment
+	// If this is a balance model basic transfer, the disconnect is simplified.  We first
+	// loop over the outputs and subtract the amounts from each recipients balance, then
+	// we add the spent DESO + txn fees back to the sender's balance. In the balance model
+	// no UTXOs are stored so outputs do not need to be looked up or deleted.
 
 	// Loop through the transaction's outputs backwards and remove them
 	// from the view. Since the outputs will have been added to the view
@@ -989,113 +1156,126 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 	// removing the last element from the utxo list.
 	//
 	// Loop backwards over the utxo operations as we go along.
-	for outputIndex := len(currentTxn.TxOutputs) - 1; outputIndex >= 0; outputIndex-- {
-		currentOutput := currentTxn.TxOutputs[outputIndex]
-
-		// Compute the utxo key for this output so we can reference it in our
-		// data structures.
-		outputKey := &UtxoKey{
-			TxID:  *txnHash,
-			Index: uint32(outputIndex),
-		}
-
-		// Verify that the utxo operation we're undoing is an add and advance
-		// our index to the next operation.
-		currentOperation := utxoOpsForTxn[operationIndex]
-		operationIndex--
-		if currentOperation.Type != OperationTypeAddUtxo {
-			return fmt.Errorf(
-				"_disconnectBasicTransfer: Output with key %v does not line up to an "+
-					"ADD operation in the passed utxoOps", outputKey)
-		}
-
-		// The current output should be at the end of the utxo list so go
-		// ahead and fetch it. Do some sanity checks to make sure the view
-		// is in sync with the operations we're trying to perform.
-		outputEntry := bav.GetUtxoEntryForUtxoKey(outputKey)
-		if outputEntry == nil {
-			return fmt.Errorf(
-				"_disconnectBasicTransfer: Output with key %v is missing from "+
-					"utxo view", outputKey)
-		}
-		if outputEntry.isSpent {
-			return fmt.Errorf(
-				"_disconnectBasicTransfer: Output with key %v was spent before "+
-					"being removed from the utxo view. This should never "+
-					"happen", outputKey)
-		}
-		if outputEntry.AmountNanos != currentOutput.AmountNanos {
-			return fmt.Errorf(
-				"_disconnectBasicTransfer: Output with key %v has amount (%d) "+
-					"that differs from the amount for the output in the "+
-					"view (%d)", outputKey, currentOutput.AmountNanos,
-				outputEntry.AmountNanos)
-		}
-		if !reflect.DeepEqual(outputEntry.PublicKey, currentOutput.PublicKey) {
-			return fmt.Errorf(
-				"_disconnectBasicTransfer: Output with key %v has public key (%v) "+
-					"that differs from the public key for the output in the "+
-					"view (%v)", outputKey, currentOutput.PublicKey,
-				outputEntry.PublicKey)
-		}
-		if outputEntry.BlockHeight != blockHeight {
-			return fmt.Errorf(
-				"_disconnectBasicTransfer: Output with key %v has block height (%d) "+
-					"that differs from the block we're disconnecting (%d)",
-				outputKey, outputEntry.BlockHeight, blockHeight)
-		}
-		if outputEntry.UtxoType == UtxoTypeBlockReward && (currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward) {
-
-			return fmt.Errorf(
-				"_disconnectBasicTransfer: Output with key %v is a block reward txn according "+
-					"to the view, yet is not the first transaction referenced in "+
-					"the block", outputKey)
-		}
-
-		if err := bav._unAddUtxo(outputKey); err != nil {
-			return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding utxo %v: ", outputKey)
-		}
-	}
-
-	// At this point we should have rolled back all of the transaction's outputs
-	// in the view. Now we roll back its inputs, similarly processing them in
-	// backwards order.
-	for inputIndex := len(currentTxn.TxInputs) - 1; inputIndex >= 0; inputIndex-- {
-		currentInput := currentTxn.TxInputs[inputIndex]
-
-		// Convert this input to a utxo key.
-		inputKey := UtxoKey(*currentInput)
-
-		// Get the output entry for this input from the utxoOps that were
-		// passed in and check its type. For every input that we're restoring
-		// we need a SPEND operation that lines up with it.
-		currentOperation := utxoOpsForTxn[operationIndex]
-		operationIndex--
-		if currentOperation.Type != OperationTypeSpendUtxo {
-			return fmt.Errorf(
-				"_disconnectBasicTransfer: Input with key %v does not line up with a "+
-					"SPEND operation in the passed utxoOps", inputKey)
-		}
-
-		// Check that the input matches the key of the spend we're rolling
-		// back.
-		if inputKey != *currentOperation.Key {
-			return fmt.Errorf(
-				"_disconnectBasicTransfer: Input with key %v does not match the key of the "+
-					"corresponding SPEND operation in the passed utxoOps %v",
-				inputKey, *currentOperation.Key)
-		}
-
-		// Unspend the entry using the information in the UtxoOperation. If the entry
-		// was de-serialized from the db it will have its utxoKey unset so we need to
-		// set it here in order to make it unspendable.
-		currentOperation.Entry.UtxoKey = currentOperation.Key
-		if err := bav._unSpendUtxo(currentOperation.Entry); err != nil {
-			return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unspending utxo %v: ", currentOperation.Key)
-		}
-	}
-
-	return nil
+	//totalSpend := currentTxn.TxnFeeNanos
+	//for outputIndex := len(currentTxn.TxOutputs) - 1; outputIndex >= 0; outputIndex-- {
+	//	getUtxoKey := func() *UtxoKey {
+	//		return &UtxoKey{
+	//			TxID:  *txnHash,
+	//			Index: uint32(outputIndex),
+	//		}
+	//	}
+	//	currentOutput := currentTxn.TxOutputs[outputIndex]
+	//	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+	//		totalSpend += currentOutput.AmountNanos
+	//	} else {
+	//		outputKey := getUtxoKey()
+	//		// Verify that the utxo operation we're undoing is an add and advance
+	//		// our index to the next operation.
+	//		currentOperation := utxoOpsForTxn[operationIndex]
+	//		operationIndex--
+	//		if currentOperation.Type != OperationTypeAddUtxo {
+	//			return fmt.Errorf(
+	//				"_disconnectBasicTransfer: Output with key %v does not line up to an "+
+	//					"ADD operation in the passed utxoOps", outputKey)
+	//		}
+	//
+	//		// The current output should be at the end of the utxo list so go
+	//		// ahead and fetch it. Do some sanity checks to make sure the view
+	//		// is in sync with the operations we're trying to perform.
+	//		outputEntry := bav.GetUtxoEntryForUtxoKey(outputKey)
+	//		if outputEntry == nil {
+	//			return fmt.Errorf(
+	//				"_disconnectBasicTransfer: Output with key %v is missing from "+
+	//					"utxo view", outputKey)
+	//		}
+	//		if outputEntry.isSpent {
+	//			return fmt.Errorf(
+	//				"_disconnectBasicTransfer: Output with key %v was spent before "+
+	//					"being removed from the utxo view. This should never "+
+	//					"happen", outputKey)
+	//		}
+	//		if outputEntry.AmountNanos != currentOutput.AmountNanos {
+	//			return fmt.Errorf(
+	//				"_disconnectBasicTransfer: Output with key %v has amount (%d) "+
+	//					"that differs from the amount for the output in the "+
+	//					"view (%d)", outputKey, currentOutput.AmountNanos,
+	//				outputEntry.AmountNanos)
+	//		}
+	//		if !reflect.DeepEqual(outputEntry.PublicKey, currentOutput.PublicKey) {
+	//			return fmt.Errorf(
+	//				"_disconnectBasicTransfer: Output with key %v has public key (%v) "+
+	//					"that differs from the public key for the output in the "+
+	//					"view (%v)", outputKey, currentOutput.PublicKey,
+	//				outputEntry.PublicKey)
+	//		}
+	//		if outputEntry.BlockHeight != blockHeight {
+	//			return fmt.Errorf(
+	//				"_disconnectBasicTransfer: Output with key %v has block height (%d) "+
+	//					"that differs from the block we're disconnecting (%d)",
+	//				outputKey, outputEntry.BlockHeight, blockHeight)
+	//		}
+	//		if outputEntry.UtxoType == UtxoTypeBlockReward && (currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward) {
+	//
+	//			return fmt.Errorf(
+	//				"_disconnectBasicTransfer: Output with key %v is a block reward txn according "+
+	//					"to the view, yet is not the first transaction referenced in "+
+	//					"the block", outputKey)
+	//		}
+	//		if err := bav._unAddDESO(currentOutput.AmountNanos, currentOutput.PublicKey, getUtxoKey, blockHeight); err != nil {
+	//			return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding DESO %v: ", currentOutput)
+	//		}
+	//	}
+	//}
+	//
+	//if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+	//	if err := bav._unAddDESO(totalSpend, currentTxn.PublicKey, nil, blockHeight); err != nil {
+	//		return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding DESO %v: ", totalSpend)
+	//	}
+	//}
+	//
+	//
+	//utxoEntries := []*UtxoEntry{}
+	//// At this point we should have rolled back all of the transaction's outputs
+	//// in the view. Now we roll back its inputs, similarly processing them in
+	//// backwards order.
+	//for inputIndex := len(currentTxn.TxInputs) - 1; inputIndex >= 0; inputIndex-- {
+	//	currentInput := currentTxn.TxInputs[inputIndex]
+	//
+	//	// Convert this input to a utxo key.
+	//	inputKey := UtxoKey(*currentInput)
+	//
+	//	// Get the output entry for this input from the utxoOps that were
+	//	// passed in and check its type. For every input that we're restoring
+	//	// we need a SPEND operation that lines up with it.
+	//	currentOperation := utxoOpsForTxn[operationIndex]
+	//	operationIndex--
+	//	if currentOperation.Type != OperationTypeSpendUtxo {
+	//		return fmt.Errorf(
+	//			"_disconnectBasicTransfer: Input with key %v does not line up with a "+
+	//				"SPEND operation in the passed utxoOps", inputKey)
+	//	}
+	//
+	//	// Check that the input matches the key of the spend we're rolling
+	//	// back.
+	//	if inputKey != *currentOperation.Key {
+	//		return fmt.Errorf(
+	//			"_disconnectBasicTransfer: Input with key %v does not match the key of the "+
+	//				"corresponding SPEND operation in the passed utxoOps %v",
+	//			inputKey, *currentOperation.Key)
+	//	}
+	//	// Unspend the entry using the information in the UtxoOperation. If the entry
+	//	// was de-serialized from the db it will have its utxoKey unset so we need to
+	//	// set it here in order to make it unspendable.
+	//	// TODO: need to check this?
+	//	// TODO: should we use unSpendDESO or unSpendUTXO here?
+	//	if err := bav._unSpendDESO(currentTxn.TxnFeeNanos, currentTxn.PublicKey, func() []*UtxoEntry { return utxoEntries }, blockHeight); err != nil {
+	//		return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unSpendDESO %v: ", totalSpend)
+	//	}
+	//
+	//	utxoEntries = append(utxoEntries, currentOperation.Entry)
+	//}
+	//
+	//return nil
 }
 
 func (bav *UtxoView) _disconnectUpdateGlobalParams(
@@ -1697,11 +1877,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		currentAmount, _ := amountsByPublicKey[*NewPublicKey(desoOutput.PublicKey)]
 		amountsByPublicKey[*NewPublicKey(desoOutput.PublicKey)] = currentAmount + desoOutput.AmountNanos
 
-		var newUtxoOp *UtxoOperation
-		var err error
-		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-			newUtxoOp, err = bav._addBalance(desoOutput.AmountNanos, desoOutput.PublicKey)
-		} else {
+		getUtxoEntry := func() *UtxoEntry {
 			// Create a new entry for this output and add it to the view. It should be
 			// added at the end of the utxo list.
 			outputKey := UtxoKey{
@@ -1712,32 +1888,24 @@ func (bav *UtxoView) _connectBasicTransfer(
 			if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 				utxoType = UtxoTypeBlockReward
 			}
-			// A basic transfer cannot create any output other than a "normal" output
-			// or a BlockReward. Outputs of other types must be created after processing
-			// the "basic" outputs.
-
-			utxoEntry := UtxoEntry{
+			return &UtxoEntry{
 				AmountNanos: desoOutput.AmountNanos,
 				PublicKey:   desoOutput.PublicKey,
-				BlockHeight: blockHeight,
 				UtxoType:    utxoType,
 				UtxoKey:     &outputKey,
-				// We leave the position unset and isSpent to false by default.
-				// The position will be set in the call to _addUtxo.
+				BlockHeight: blockHeight,
 			}
-			// If we have a problem adding this utxo return an error but don't
-			// mark this block as invalid since it's not a rule error and the block
-			// could therefore benefit from being processed in the future.
-			newUtxoOp, err = bav._addUtxo(&utxoEntry)
-			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding output utxo")
-			}
+		}
+		newUtxoOp, err := bav._addDESO(desoOutput.AmountNanos, desoOutput.PublicKey, getUtxoEntry, blockHeight)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding DESO")
 		}
 
 		// Rosetta uses this UtxoOperation to provide INPUT amounts
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
 	}
 
+	// TODO: consolidate spending of UTXOs and spending balance.
 	// After the BalanceModelBlockHeight, we no longer spend UTXO inputs. Instead, we must
 	// spend the sender's balance. Note that we don't need to explicitly check that the
 	// sender's balance is sufficient because _spendBalance will error if it is insufficient.

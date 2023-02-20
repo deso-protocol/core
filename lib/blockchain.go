@@ -4933,15 +4933,32 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 			feeAmountNanos = _computeMaxTxFee(txArg, minFeeRateNanosPerKB)
 		}
+		// TODO: CHECK FOR UNDERFLOW AND OVERFLOW HERE!!!
+		if math.MaxUint64 - feeAmountNanos < additionalFees {
+			return 0, 0, 0, 0, fmt.Errorf(
+				"AddInputsAndChangeToTransaction: overflow detected")
+		}
 		txArg.TxnFeeNanos = feeAmountNanos + additionalFees
 
 		// Prior to the BalanceModelBlockHeight, "additionalFees" such as the create profile
 		// fee were backed into the spend amount in order to create an "implicit" fee. However,
 		// in the balance model, all outputs and fees must be set explicitly, so it is included
 		// in TxnFeeNanos here instead.
+		if additionalFees > spendAmount {
+			return 0, 0, 0, 0, fmt.Errorf("AddInputsAndChangeToTransaction: " +
+				"underflow detected")
+		}
 		explicitSpendAmount := spendAmount - additionalFees
 
+		if math.MaxUint64 - explicitSpendAmount < totalInput {
+			return 0, 0, 0, 0, fmt.Errorf(
+				"AddInputsAndChangeToTransaction: overflow detected")
+		}
 		totalInput += explicitSpendAmount
+		if math.MaxUint64 - txArg.TxnFeeNanos < totalInput {
+			return 0, 0, 0, 0, fmt.Errorf(
+				"AddInputsAndChangeToTransaction: overflow detected")
+		}
 		totalInput += txArg.TxnFeeNanos
 		return totalInput, spendAmount, 0, txArg.TxnFeeNanos, nil
 	}
