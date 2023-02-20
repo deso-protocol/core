@@ -417,6 +417,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		glog.V(1).Infof("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v"+
 			"because he already requested a GetSnapshot", pp)
 		pp.Disconnect()
+		return
 	}
 	pp.snapshotChunkRequestInFlight = true
 	defer func(pp *Peer) { pp.snapshotChunkRequestInFlight = false }(pp)
@@ -426,6 +427,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		glog.Errorf("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
 			"and disconnecting because node doesn't support HyperSync", pp)
 		pp.Disconnect()
+		return
 	}
 
 	// Ignore GetSnapshot requests if we're still syncing. We will only serve snapshot chunk when our

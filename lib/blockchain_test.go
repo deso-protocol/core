@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/go-pg/pg/v10"
 	"log"
 	"math/big"
@@ -171,17 +172,60 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	db, dbDir := GetTestBadgerDb()
-	timesource := chainlib.NewMedianTime()
-	var postgresDb *Postgres
+	chain, params, _ := NewLowDifficultyBlockchainWithParamsAndDb(params, len(os.Getenv("POSTGRES_URI")) > 0, 0)
+	return chain, params, chain.db
+}
 
-	if len(os.Getenv("POSTGRES_URI")) > 0 {
-		postgresDb = NewPostgres(pg.Connect(ParsePostgresURI(os.Getenv("POSTGRES_URI"))))
+func NewLowDifficultyBlockchainWithParamsAndDb(params *DeSoParams, usePostgres bool, postgresPort uint32) (
+	*Blockchain, *DeSoParams, *embeddedpostgres.EmbeddedPostgres) {
+
+	// Set the number of txns per view regeneration to one while creating the txns
+	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
+
+	var postgresDb *Postgres
+	var embpg *embeddedpostgres.EmbeddedPostgres
+	var err error
+
+	db, dbDir := GetTestBadgerDb()
+	if usePostgres {
+		if len(os.Getenv("POSTGRES_URI")) > 0 {
+			glog.Infof("NewLowDifficultyBlockchainWithParamsAndDb: Using Postgres DB from provided POSTGRES_URI")
+			postgresDb = NewPostgres(pg.Connect(ParsePostgresURI(os.Getenv("POSTGRES_URI"))))
+		} else {
+			glog.Infof("NewLowDifficultyBlockchainWithParamsAndDb: Using Postgres DB from embedded postgres")
+			postgresDb, embpg, err = StartTestEmbeddedPostgresDB("", postgresPort)
+			if err != nil {
+				log.Fatal(err, " | If the error says that a process is already listening on the port, go into task manager "+
+					"and kill the postgres process listening to said port. Otherwise remove the /tmp/pg_bin directory, or similar.")
+			}
+		}
 	}
 
+	timesource := chainlib.NewMedianTime()
+	testParams := NewTestParams(params)
+
+	// Temporarily modify the seed balances to make a specific public
+	// key have some DeSo
+	var snap *Snapshot
+	if !usePostgres {
+		snap, err, _ = NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &testParams, false)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0,
+		&testParams, timesource, db, postgresDb, nil, snap, false)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return chain, &testParams, embpg
+}
+
+func NewTestParams(inputParams *DeSoParams) DeSoParams {
 	// Set some special parameters for testing. If the blocks above are changed
 	// these values should be updated to reflect the latest testnet values.
-	paramsCopy := *params
+	paramsCopy := *inputParams
 	paramsCopy.GenesisBlock = &MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
 			Version:               0,
@@ -222,16 +266,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	}
 	paramsCopy.ExtraRegtestParamUpdaterKeys = map[PkMapKey]bool{}
 
-	// Temporarily modify the seed balances to make a specific public
-	// key have some DeSo
-	snap, err, _ := NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &paramsCopy, false)
-	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0,
-		&paramsCopy, timesource, db, postgresDb, nil, snap, false)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return chain, &paramsCopy, db
+	return paramsCopy
 }
 
 func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender bool) (*DeSoMempool, *DeSoMiner) {
