@@ -77,8 +77,7 @@ func TestBalanceModelBasicTransfer(t *testing.T) {
 
 	// Basic transfers.
 	TestBasicTransfer(t)
-	// TODO: reorg test isn't working right now.
-	//TestBasicTransferReorg(t)
+	TestBasicTransferReorg(t)
 	TestValidateBasicTransfer(t)
 }
 
@@ -113,6 +112,8 @@ func TestBalanceModelDerivedKeys(t *testing.T) {
 }
 
 func TestBalanceModelCreatorCoins(t *testing.T) {
+	// TODO: a lot of little small fixes to these tests are needed to get them to pass as balance calculations
+	// are hard coded
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
 	defer resetBlockHeightGlobals()
 

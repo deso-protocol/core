@@ -768,6 +768,7 @@ func _helpTestCreatorCoinBuySell(
 		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
+		// This fails because public key is not defined in one of the creator coin sell transactions
 		disconnectSingleBlock(finalBlock2, utxoView)
 		disconnectSingleBlock(finalBlock1, utxoView)
 

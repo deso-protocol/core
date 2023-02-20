@@ -846,7 +846,7 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(t *testing.T, chain *Blockcha
 	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
 		// We should have one SPEND UtxoOperation for each input, one ADD operation
 		// for each output, and one OperationTypeUpdateProfile operation at the end.
-		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+transactionSpendingLimitCount+1, len(utxoOps))
 		for ii := 0; ii < len(txn.TxInputs); ii++ {
 			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 		}
@@ -1588,6 +1588,8 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	{
 		utxoView, err := mempool.GetAugmentedUniversalView()
 		require.NoError(err)
+		// TODO: this fails because the mempool thinks the next nonce should be 7
+		// when it really expects it to be 4. The chain and the constructed view have different mempools?
 		_, _, _, err = _doAuthorizeTxn(
 			t,
 			chain,
