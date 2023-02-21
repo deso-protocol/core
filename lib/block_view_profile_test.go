@@ -844,16 +844,9 @@ func TestUpdateProfile(t *testing.T) {
 			1.5*100*100,
 			false)
 		require.Error(err)
+		require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
+
 		blockHeight := chain.blockTip().Height + 1
-		require.Error(err)
-		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
-			require.Contains(err.Error(),
-				"Total input 70 is not sufficient to cover the spend amount (=100) plus the fee")
-		} else {
-			// TODO: investigate
-			require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
-			//require.Contains(err.Error(), RuleErrorInsufficientBalance)
-		}
 
 		// For the balance model, check the new RuleErrorCreateProfileTxnWithInsufficientFee
 		if blockHeight >= params.ForkHeights.BalanceModelBlockHeight {

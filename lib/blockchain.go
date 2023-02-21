@@ -4884,6 +4884,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 		if nftEntry != nil && nftEntry.IsBuyNow && nftEntry.BuyNowPriceNanos <= txMeta.BidAmountNanos {
 			spendAmount += txMeta.BidAmountNanos
+			// Does this make sense to do?
+			additionalFees += txMeta.BidAmountNanos
 		}
 	}
 

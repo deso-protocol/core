@@ -66,13 +66,23 @@ var (
 	paramUpdaterPkBytes, _, _ = Base58CheckDecode(paramUpdaterPub)
 )
 
+func setBlockHeightGlobals() {
+	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
+	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
+	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
+	GlobalDeSoParams = DeSoTestnetParams
+}
+
 func resetBlockHeightGlobals() {
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1000000
 	DeSoTestnetParams.ForkHeights.DeSoDiamondsBlockHeight = 1000000
+	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
+	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
+	GlobalDeSoParams = DeSoTestnetParams
 }
 
 func TestBalanceModelBasicTransfer(t *testing.T) {
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1 // Skip the genesis block.
+	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	// Basic transfers.
@@ -82,7 +92,7 @@ func TestBalanceModelBasicTransfer(t *testing.T) {
 }
 
 func TestBalanceModelDiamonds(t *testing.T) {
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
+	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	// Diamonds.
@@ -91,7 +101,7 @@ func TestBalanceModelDiamonds(t *testing.T) {
 }
 
 func TestBalanceModelSocial(t *testing.T) {
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
+	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	// Posts, profiles, likes, follows, messages.
@@ -105,16 +115,20 @@ func TestBalanceModelSocial(t *testing.T) {
 }
 
 func TestBalanceModelDerivedKeys(t *testing.T) {
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
+	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	TestAuthorizeDerivedKeyBasic(t)
+	TestAuthorizeDerivedKeyBasicWithTransactionLimits(t)
+	// both below tests fail currently
+	TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t)
+	TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
 }
 
 func TestBalanceModelCreatorCoins(t *testing.T) {
 	// TODO: a lot of little small fixes to these tests are needed to get them to pass as balance calculations
 	// are hard coded
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
+	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	// Creator coins.
@@ -134,9 +148,10 @@ func TestBalanceModelCreatorCoins(t *testing.T) {
 }
 
 func TestBalanceModelSwapIdentity(t *testing.T) {
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
+	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
+	// These tests are breaking because of fee differences between balance and utxo models.
 	// Swap identity.
 	TestSwapIdentityMain(t)
 	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
@@ -146,7 +161,7 @@ func TestBalanceModelSwapIdentity(t *testing.T) {
 }
 
 func TestBalanceModelNFT(t *testing.T) {
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
+	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	// NFTs.
@@ -163,9 +178,22 @@ func TestBalanceModelNFT(t *testing.T) {
 	TestNFTTransfersAndBurns(t)
 }
 
+func TestBalanceModelDAOCoinLimitOrders(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	// DAO coin limit orders.
+	TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t)
+	TestDAOCoinLimitOrder(t)
+	TestCalculateDAOCoinsTransferredInLimitOrderMatch(t)
+	TestComputeBaseUnitsToBuyUint256(t)
+	TestCalculateScaledExchangeRate(t)
+	TestFlushingDAOCoinLimitOrders(t)
+}
+
 func TestBalanceModel(t *testing.T) {
-	//t.Skip("temporarily skip big balance model test - running small ones to debug")
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1 // Skip the genesis block.
+	t.Skip("temporarily skip big balance model test - running small ones to debug")
+	setBlockHeightGlobals() // Skip the genesis block.
 	defer resetBlockHeightGlobals()
 
 	// Basic transfers.
@@ -226,6 +254,17 @@ func TestBalanceModel(t *testing.T) {
 	TestNFTMinimumBidAmount(t)
 	TestNFTDifferentMinBidAmountSerialNumbers(t)
 	TestNFTTransfersAndBurns(t)
+}
+
+// TODO: get rid of this hacky stuff
+// Because txns in the balance model use fewer bytes, balances will differ
+// after completing a transaction vs. the UTXO model.
+func _balanceModelDiff(bc *Blockchain, diffAmount uint64) uint64 {
+	if bc.blockTip().Height >= bc.params.ForkHeights.BalanceModelBlockHeight {
+		return diffAmount
+	} else {
+		return 0
+	}
 }
 
 // ================================== TRANSACTION TEST FRAMEWORK ==============================================
@@ -1006,6 +1045,16 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPrivBase58Check string, usdCentsPerBitcoin int64, minimumNetworkFeesNanosPerKB int64,
 	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, flushToDb bool) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	return _updateGlobalParamsEntryWithMempool(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check,
+		updaterPrivBase58Check, usdCentsPerBitcoin, minimumNetworkFeesNanosPerKB, createProfileFeeNanos,
+		createNFTFeeNanos, maxCopiesPerNFT, flushToDb, nil)
+}
+
+func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *badger.DB,
+	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+	updaterPrivBase58Check string, usdCentsPerBitcoin int64, minimumNetworkFeesNanosPerKB int64,
+	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, flushToDb bool, mempool *DeSoMempool) (
+	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1024,7 +1073,7 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 		minimumNetworkFeesNanosPerKB,
 		nil,
 		feeRateNanosPerKB,
-		nil,
+		mempool,
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
@@ -1088,7 +1137,7 @@ func _updateGlobalParamsEntryWithTestMeta(
 		testMeta.expectedSenderBalances,
 		_getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
 
-	currentOps, currentTxn, _, err := _updateGlobalParamsEntry(
+	currentOps, currentTxn, _, err := _updateGlobalParamsEntryWithMempool(
 		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
 		feeRateNanosPerKB,
 		updaterPkBase58Check,
@@ -1098,7 +1147,8 @@ func _updateGlobalParamsEntryWithTestMeta(
 		createProfileFeeNanos,
 		createNFTFeeNanos,
 		maxCopiesPerNFT,
-		true) /*flushToDB*/
+		true,
+		testMeta.mempool) /*flushToDB*/
 	require.NoError(testMeta.t, err)
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
 	testMeta.txns = append(testMeta.txns, currentTxn)

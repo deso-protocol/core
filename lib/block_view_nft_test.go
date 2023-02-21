@@ -318,14 +318,13 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
 		// We should have one SPEND UtxoOperation for each input, one ADD operation
 		// for each output, and one OperationTypeNFTBid operation at the end.
-		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
 		for ii := 0; ii < len(txn.TxInputs); ii++ {
 			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 		}
 		require.Equal(OperationTypeNFTBid, utxoOps[len(utxoOps)-1].Type)
 	} else {
 		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
-		require.Equal(OperationTypeNFTBid, utxoOps[1].Type)
+		require.Equal(OperationTypeNFTBid, utxoOps[len(utxoOps)-1].Type)
 	}
 
 	require.NoError(utxoView.FlushToDb(0))

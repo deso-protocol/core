@@ -715,9 +715,9 @@ func TestLikeTxns(t *testing.T) {
 		// higher. And with a high minfee the value returned should be equal to the
 		// fee.
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)))
+		require.Equal(int64(4)+int64(_balanceModelDiff(chain, 2)), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)))
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 1)))
+		require.Equal(int64(4)-int64(_balanceModelDiff(chain, 3)), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 1)))
 	}
 
 	testConnectedState()

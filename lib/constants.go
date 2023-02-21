@@ -328,6 +328,7 @@ const (
 	DefaultMigration                     MigrationName = "DefaultMigration"
 	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
 	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
+	BalanceModelMigration                MigrationName = "BalanceModelMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -338,6 +339,9 @@ type EncoderMigrationHeights struct {
 
 	// This coincides with the AssociationsAndAccessGroups block
 	AssociationsAndAccessGroups MigrationHeight
+
+	// This coincides with the BalanceModel block
+	BalanceModel MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -356,6 +360,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 2,
 			Height:  uint64(forkHeights.AssociationsAndAccessGroupsBlockHeight),
 			Name:    AssociationsAndAccessGroupsMigration,
+		},
+		BalanceModel: MigrationHeight{
+			Version: 3,
+			Height:  uint64(forkHeights.BalanceModelBlockHeight),
+			Name:    BalanceModelMigration,
 		},
 	}
 }

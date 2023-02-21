@@ -2261,10 +2261,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		derivedKeyAuthPrivBase58Check := Base58CheckEncode(derivedKeyAuthPriv.Serialize(), true, params)
 
 		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraDataAndSpendingLimits(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			testMeta.feeRateNanosPerKb,
 			senderPkBytes,

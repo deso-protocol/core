@@ -1210,6 +1210,12 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, op.PrevDmThreadEntry, skipMetadata...)...)
 	}
 
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+
+		data = append(data, EncodeByteArray(op.BalancePublicKey)...)
+		data = append(data, UintToBuf(op.AmountNanos)...)
+	}
+
 	return data
 }
 
@@ -1800,11 +1806,22 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 	}
 
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		op.BalancePublicKey, err = DecodeByteArray(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PublicKeyBytes")
+		}
+		op.AmountNanos, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AmountNanos")
+		}
+	}
+
 	return nil
 }
 
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration)
+	return GetMigrationVersion(blockHeight, BalanceModelMigration)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {

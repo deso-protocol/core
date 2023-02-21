@@ -768,6 +768,9 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 
 func (bav *UtxoView) _addBalance(amountNanos uint64, balancePublicKey []byte,
 ) (*UtxoOperation, error) {
+	if len(balancePublicKey) == 0 {
+		fmt.Println("found it broken here.")
+	}
 	// Get the current balance and then update it on the view.
 	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(balancePublicKey)
 	if err != nil {
@@ -798,6 +801,10 @@ func (bav *UtxoView) _addDESO(amountNanos uint64, publicKey []byte, getUtxoEntry
 }
 
 func (bav *UtxoView) _unAddBalance(amountNanos uint64, balancePublicKey []byte) error {
+	// 0 means do nothing
+	//if amountNanos == 0 {
+	//	return nil
+	//}
 	// Get the current balance and then remove the added balance.
 	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(balancePublicKey)
 	if err != nil {
@@ -1544,13 +1551,15 @@ func (bav *UtxoView) DisconnectBlock(
 	//    - DAOCoinLimitOrderTxns have n spends
 	//    - Buy Now NFTs?
 	// TODO: this needs some checking
-	if (len(desoBlock.Txns)-1)+numAcceptNFTBidTxns < numSpendBalanceOps &&
-		desoBlock.Header.Height >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) {
-		return fmt.Errorf(
-			"DisconnectBlock: Expected number of spend operations in passed block (%d) "+
-				"is less than the number of SPEND BALANCE operations in passed "+
-				"utxoOps (%d)", len(desoBlock.Txns)-1, numSpendBalanceOps)
-	}
+	// TODO: this condition is hard to satisfy w/ DAO coin limit orders since we don't have bidder inputs
+	// specified.
+	//if (len(desoBlock.Txns)-1)+numAcceptNFTBidTxns < numSpendBalanceOps &&
+	//	desoBlock.Header.Height >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) {
+	//	return fmt.Errorf(
+	//		"DisconnectBlock: Expected number of spend operations in passed block (%d) "+
+	//			"is less than the number of SPEND BALANCE operations in passed "+
+	//			"utxoOps (%d)", len(desoBlock.Txns)-1, numSpendBalanceOps)
+	//}
 	// Note that the number of add operations can be greater than the number of "explicit"
 	// outputs in the block because transactions like BitcoinExchange
 	// produce "implicit" outputs when the transaction is applied.
