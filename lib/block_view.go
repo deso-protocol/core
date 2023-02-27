@@ -1869,7 +1869,7 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
 		}
 	case TxnTypeCreatePostAssociation:
-		txnMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
+		txnMeta := txn.TxnMeta.(*CreatePostAssociationMetadata)
 		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
 			derivedKeyEntry,
 			AssociationClassPost,
