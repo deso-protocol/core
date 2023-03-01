@@ -1006,7 +1006,7 @@ var TestnetForkHeights = ForkHeights{
 	AssociationsAndAccessGroupsBlockHeight: uint32(596555),
 
 	// FIXME: set to real BlockHeight when ready to enable
-	AssociationsDerivedKeySpendingLimitBlockHeight: math.MaxUint32,
+	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(211232),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
