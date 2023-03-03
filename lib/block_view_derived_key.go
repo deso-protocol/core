@@ -236,68 +236,44 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 					// Always overwrite the global DESO limit...
 					newTransactionSpendingLimit.GlobalDESOLimit = transactionSpendingLimit.GlobalDESOLimit
 					// Iterate over transaction types and update the counts. Delete keys if the transaction count is zero.
-					for txnType, transactionCount := range transactionSpendingLimit.TransactionCountLimitMap {
-						if transactionCount == 0 {
-							delete(newTransactionSpendingLimit.TransactionCountLimitMap, txnType)
-						} else {
-							newTransactionSpendingLimit.TransactionCountLimitMap[txnType] = transactionCount
-						}
-					}
-					for ccLimitKey, transactionCount := range transactionSpendingLimit.CreatorCoinOperationLimitMap {
-						if transactionCount == 0 {
-							delete(newTransactionSpendingLimit.CreatorCoinOperationLimitMap, ccLimitKey)
-						} else {
-							newTransactionSpendingLimit.CreatorCoinOperationLimitMap[ccLimitKey] = transactionCount
-						}
-					}
-					for daoCoinLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinOperationLimitMap {
-						if transactionCount == 0 {
-							delete(newTransactionSpendingLimit.DAOCoinOperationLimitMap, daoCoinLimitKey)
-						} else {
-							newTransactionSpendingLimit.DAOCoinOperationLimitMap[daoCoinLimitKey] = transactionCount
-						}
-					}
-					for nftLimitKey, transactionCount := range transactionSpendingLimit.NFTOperationLimitMap {
-						if transactionCount == 0 {
-							delete(newTransactionSpendingLimit.NFTOperationLimitMap, nftLimitKey)
-						} else {
-							newTransactionSpendingLimit.NFTOperationLimitMap[nftLimitKey] = transactionCount
-						}
-					}
-					for daoCoinLimitOrderLimitKey, transactionCount := range transactionSpendingLimit.DAOCoinLimitOrderLimitMap {
-						if transactionCount == 0 {
-							delete(newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap, daoCoinLimitOrderLimitKey)
-						} else {
-							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
-						}
-					}
+					_copySpendingLimitMap(
+						transactionSpendingLimit.TransactionCountLimitMap,
+						newTransactionSpendingLimit.TransactionCountLimitMap,
+					)
+					_copySpendingLimitMap(
+						transactionSpendingLimit.CreatorCoinOperationLimitMap,
+						newTransactionSpendingLimit.CreatorCoinOperationLimitMap,
+					)
+					_copySpendingLimitMap(
+						transactionSpendingLimit.DAOCoinOperationLimitMap,
+						newTransactionSpendingLimit.DAOCoinOperationLimitMap,
+					)
+					_copySpendingLimitMap(
+						transactionSpendingLimit.NFTOperationLimitMap,
+						newTransactionSpendingLimit.NFTOperationLimitMap,
+					)
+					_copySpendingLimitMap(
+						transactionSpendingLimit.DAOCoinLimitOrderLimitMap,
+						newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap,
+					)
 
 					// ====== Associations And Access Groups Fork ======
 					// Note that we don't really need to gate this logic by the blockheight because the to/from bytes
 					// encoding/decoding will never overwrite these maps prior to the fork blockheight. We do it
 					// anyway as a sanity-check.
 					if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
-						for associationLimitKey, transactionCount := range transactionSpendingLimit.AssociationLimitMap {
-							if transactionCount == 0 {
-								delete(newTransactionSpendingLimit.AssociationLimitMap, associationLimitKey)
-							} else {
-								newTransactionSpendingLimit.AssociationLimitMap[associationLimitKey] = transactionCount
-							}
-						}
-						for accessGroupLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMap {
-							if transactionCount == 0 {
-								delete(newTransactionSpendingLimit.AccessGroupMap, accessGroupLimitKey)
-							} else {
-								newTransactionSpendingLimit.AccessGroupMap[accessGroupLimitKey] = transactionCount
-							}
-						}
-						for accessGroupMemberLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMemberMap {
-							if transactionCount == 0 {
-								delete(newTransactionSpendingLimit.AccessGroupMemberMap, accessGroupMemberLimitKey)
-							} else {
-								newTransactionSpendingLimit.AccessGroupMemberMap[accessGroupMemberLimitKey] = transactionCount
-							}
-						}
+						_copySpendingLimitMap(
+							transactionSpendingLimit.AssociationLimitMap,
+							newTransactionSpendingLimit.AssociationLimitMap,
+						)
+						_copySpendingLimitMap(
+							transactionSpendingLimit.AccessGroupMap,
+							newTransactionSpendingLimit.AccessGroupMap,
+						)
+						_copySpendingLimitMap(
+							transactionSpendingLimit.AccessGroupMemberMap,
+							newTransactionSpendingLimit.AccessGroupMemberMap,
+						)
 					}
 				}
 			}
@@ -402,6 +378,16 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func _copySpendingLimitMap[K comparable](input map[K]uint64, newMap map[K]uint64) {
+	for k, v := range input {
+		if v == 0 {
+			delete(newMap, k)
+		} else {
+			newMap[k] = v
+		}
+	}
 }
 
 func (bav *UtxoView) _disconnectAuthorizeDerivedKey(

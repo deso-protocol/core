@@ -1946,109 +1946,61 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 	return utxoOpsForTxn, nil
 }
 
-// _checkNFTKeyAndUpdateDerivedKeyEntry checks if the NFTOperationLimitKey is present
-// in the DerivedKeyEntry's TransactionSpendingLimitTracker's NFTOperationLimitMap.
-// If the key is present, the operation is allowed and we decrement the number of
-// operations remaining. If there are no operation remaining after this one, we
-// delete the key. Returns true if the key was found and the derived key entry
-// was updated.
-func _checkNFTKeyAndUpdateDerivedKeyEntry(key NFTOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
-	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
-		derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap == nil {
+// _checkSpendingLimitMapAndDecrementOrDelete returns false if spending limit isn't valid and true if it is
+// valid. If it is valid, we decrement the amount of operations remaining or delete the key-value
+// mapping from the map if this is the last allowed operation.
+func _checkSpendingLimitMapAndDecrementOrDelete[K comparable](sourceMap map[K]uint64, key K) bool {
+	spendingLimit, exists := sourceMap[key]
+	if !exists || spendingLimit <= 0 {
 		return false
 	}
-	// If the key is present in the NFTOperationLimitMap...
-	nftLimit, nftLimitExist := derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap[key]
-	// Return false because we didn't find the key
-	if !nftLimitExist || nftLimit <= 0 {
-		return false
-	}
-	// If this is the last operation allowed for this key, we delete the key from the map.
-	if nftLimit == 1 {
-		delete(derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap, key)
+	if spendingLimit == 1 {
+		delete(sourceMap, key)
 	} else {
-		// Otherwise, we decrement the number of operations remaining for this key
-		derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap[key]--
+		sourceMap[key]--
 	}
-	// Return true because we found the key and decremented the remaining operations
 	return true
 }
 
 func _checkNFTLimitAndUpdateDerivedKeyEntry(
 	derivedKeyEntry DerivedKeyEntry, nftPostHash *BlockHash, serialNumber uint64, operation NFTLimitOperation) (
 	_derivedKeyEntry DerivedKeyEntry, _err error) {
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap == nil {
+		return derivedKeyEntry, RuleErrorDerivedKeyNFTOperationNotAuthorized
+	}
+
 	// We allow you to set permissions on NFTs at multiple levels: Post hash, serial number,
 	// operation type. In checking permissions, we start by trying to use up the quota from
 	// the most specific possible combination, and then work our way up to the more general
 	// combinations. This ensures that the quota is used most efficiently.
 
-	// Start by checking (specific post hash || specific serial number || specific operation key)
-	postHashSerialNumberOperationKey := MakeNFTOperationLimitKey(*nftPostHash, serialNumber, operation)
-	if _checkNFTKeyAndUpdateDerivedKeyEntry(postHashSerialNumberOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
-	}
-
-	// Next check (specific post hash || specific serial number || any operation key)
-	postHashSerialNumberAnyOpKey := MakeNFTOperationLimitKey(*nftPostHash, serialNumber, AnyNFTOperation)
-	if _checkNFTKeyAndUpdateDerivedKeyEntry(postHashSerialNumberAnyOpKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
-	}
-
-	// Next check (specific post hash || any serial number (= 0 to check this) || specific operation key)
-	postHashZeroSerialNumOperationKey := MakeNFTOperationLimitKey(*nftPostHash, 0, operation)
-	if _checkNFTKeyAndUpdateDerivedKeyEntry(postHashZeroSerialNumOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
-	}
-
-	// Next check (specific post hash || any serial number (= 0 to check this) || any operation key)
-	postHashZeroSerialNumAnyOperationKey := MakeNFTOperationLimitKey(*nftPostHash, 0, AnyNFTOperation)
-	if _checkNFTKeyAndUpdateDerivedKeyEntry(postHashZeroSerialNumAnyOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
-	}
-
-	// Next, check (any post hash || any serial number (= 0 to check this) || specific operation key)
-	nilPostHashZeroSerialNumOperationKey := MakeNFTOperationLimitKey(ZeroBlockHash, 0, operation)
-	if _checkNFTKeyAndUpdateDerivedKeyEntry(nilPostHashZeroSerialNumOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
-	}
-
-	// Lastly, check (any post hash || any serial number (= 0 to check this) || any operation key)
-	nilPostHashZeroSerialNumAnyOperationKey := MakeNFTOperationLimitKey(ZeroBlockHash, 0, AnyNFTOperation)
-	if _checkNFTKeyAndUpdateDerivedKeyEntry(nilPostHashZeroSerialNumAnyOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
+	// Order of checks: (specific post hash || specific serial number || specific operation key)
+	// (specific post hash || specific serial number || any operation key)
+	// (specific post hash || any serial number (= 0 to check this) || specific operation key
+	// (specific post hash || any serial number (= 0 to check this) || any operation key)
+	// (any post hash || any serial number (= 0 to check this) || specific operation key)
+	// (any post hash || any serial number (= 0 to check this) || any operation key)
+	for _, postHash := range []BlockHash{*nftPostHash, ZeroBlockHash} {
+		for _, sn := range []uint64{serialNumber, 0} {
+			if postHash.IsEqual(&ZeroBlockHash) && sn != 0 {
+				continue
+			}
+			for _, op := range []NFTLimitOperation{operation, AnyNFTOperation} {
+				key := MakeNFTOperationLimitKey(postHash, sn, op)
+				if _checkSpendingLimitMapAndDecrementOrDelete(
+					derivedKeyEntry.TransactionSpendingLimitTracker.NFTOperationLimitMap,
+					key,
+				) {
+					return derivedKeyEntry, nil
+				}
+			}
+		}
 	}
 
 	// Note we don't check nil post hash + serial number cases, because that
 	// doesn't really make sense. Think about it.
 	return derivedKeyEntry, RuleErrorDerivedKeyNFTOperationNotAuthorized
-}
-
-// _checkCreatorCoinKeyAndUpdateDerivedKeyEntry checks if the CreatorCoinOperationLimitKey is present
-// in the DerivedKeyEntry's TransactionSpendingLimitTracker's CreatorCoinOperationLimitMap.
-// If the key is present, the operation is allowed and we decrement the number of operation remaining.
-// If there are no operation remaining after this one, we delete the key.
-// Returns true if the key was found and the derived key entry was updated.
-func _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(key CreatorCoinOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
-	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
-		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap == nil {
-		return false
-	}
-	// If the key is present in the CreatorCoinOperationLimitMap...
-	ccOperationLimit, ccOperationLimitExists :=
-		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[key]
-	// Return false because we didn't find the key
-	if !ccOperationLimitExists || ccOperationLimit <= 0 {
-		return false
-	}
-	// If this is the last operation allowed for this key, we delete the key from the map.
-	if ccOperationLimit == 1 {
-		delete(derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap, key)
-	} else {
-		// Otherwise, we decrement the number of operations remaining for this key
-		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap[key]--
-	}
-	// Return true because we found the key and decremented the remaining operations
-	return true
 }
 
 func (bav *UtxoView) _checkCreatorCoinLimitAndUpdateDerivedKeyEntry(
@@ -2060,59 +2012,27 @@ func (bav *UtxoView) _checkCreatorCoinLimitAndUpdateDerivedKeyEntry(
 			"_checkCreatorCoinLimitAndUpdateDerivedKeyEntry: creator pkid is deleted")
 	}
 
-	// First check (creator pkid || operation) key
-	creatorOperationKey := MakeCreatorCoinOperationLimitKey(*pkidEntry.PKID, operation)
-	if _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(creatorOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap == nil {
+		return derivedKeyEntry, errors.Wrapf(RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized,
+			"_checkCreatorCoinLimitAndUpdateDerivedKeyEntry: cc operation not authorized: ")
 	}
 
-	// Next check (creator pkid || any operation) key
-	creatorAnyOperationKey := MakeCreatorCoinOperationLimitKey(*pkidEntry.PKID, AnyCreatorCoinOperation)
-	if _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(creatorAnyOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
-	}
-
-	// Next check (any creator pkid || operation) key
-	nilCreatorOperationKey := MakeCreatorCoinOperationLimitKey(ZeroPKID, operation)
-	if _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(nilCreatorOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
-	}
-
-	// Finally, check (any creator pkid || any operation) key
-	nilCreatorAnyOperationKey := MakeCreatorCoinOperationLimitKey(ZeroPKID, AnyCreatorCoinOperation)
-	if _checkCreatorCoinKeyAndUpdateDerivedKeyEntry(nilCreatorAnyOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
+	// Order of checks: (creator pkid || operation), (creator pkid || any operation)
+	// (any pkid || operation), (any pkid || any operation)
+	for _, pkid := range []PKID{*pkidEntry.PKID, ZeroPKID} {
+		for _, op := range []CreatorCoinLimitOperation{operation, AnyCreatorCoinOperation} {
+			key := MakeCreatorCoinOperationLimitKey(pkid, op)
+			if _checkSpendingLimitMapAndDecrementOrDelete(
+				derivedKeyEntry.TransactionSpendingLimitTracker.CreatorCoinOperationLimitMap,
+				key,
+			) {
+				return derivedKeyEntry, nil
+			}
+		}
 	}
 	return derivedKeyEntry, errors.Wrapf(RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized,
 		"_checkCreatorCoinLimitAndUpdateDerivedKeyEntry: cc operation not authorized: ")
-}
-
-// _checkDAOCoinKeyAndUpdateDerivedKeyEntry checks if the DAOCoinOperationLimitKey is present
-// in the DerivedKeyEntry's TransactionSpendingLimitTracker's DAOCoinOperationLimitMap.
-// If the key is present, the operation is allowed and we decrement the number of operation remaining.
-// If there are no operation remaining after this one, we delete the key.
-// Returns true if the key was found and the derived key entry was updated.
-func _checkDAOCoinKeyAndUpdateDerivedKeyEntry(key DAOCoinOperationLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
-	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
-		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap == nil {
-		return false
-	}
-	// If the key is present in the DAOCoinOperationLimitMap...
-	daoCoinOperationLimit, daoCoinOperationLimitExists :=
-		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap[key]
-	// Return false because we didn't find the key
-	if !daoCoinOperationLimitExists || daoCoinOperationLimit <= 0 {
-		return false
-	}
-	// If this is the last operation allowed for this key, we delete the key from the map.
-	if daoCoinOperationLimit == 1 {
-		delete(derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap, key)
-	} else {
-		// Otherwise, we decrement the number of operations remaining for this key
-		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap[key]--
-	}
-	// Return true because we found the key and decremented the remaining operations
-	return true
 }
 
 // _checkDAOCoinLimitAndUpdateDerivedKeyEntry checks that the DAO coin operation being performed has
@@ -2125,64 +2045,25 @@ func (bav *UtxoView) _checkDAOCoinLimitAndUpdateDerivedKeyEntry(
 		return derivedKeyEntry, fmt.Errorf("_checkDAOCoinLimitAndUpdateDerivedKeyEntry: creator pkid is deleted")
 	}
 
-	// First check (creator pkid || operation) key
-	creatorOperationKey := MakeDAOCoinOperationLimitKey(*pkidEntry.PKID, operation)
-	if _checkDAOCoinKeyAndUpdateDerivedKeyEntry(creatorOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
-	}
-
-	// Next check (creator pkid || any operation) key
-	creatorAnyOperationKey := MakeDAOCoinOperationLimitKey(*pkidEntry.PKID, AnyDAOCoinOperation)
-	if _checkDAOCoinKeyAndUpdateDerivedKeyEntry(creatorAnyOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
-	}
-
-	// Next check (any creator pkid || operation) key
-	nilCreatorOperationKey := MakeDAOCoinOperationLimitKey(ZeroPKID, operation)
-	if _checkDAOCoinKeyAndUpdateDerivedKeyEntry(nilCreatorOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
-	}
-
-	// Finally, check (any creator pkid || any operation) key
-	nilCreatorAnyOperationKey := MakeDAOCoinOperationLimitKey(ZeroPKID, AnyDAOCoinOperation)
-	if _checkDAOCoinKeyAndUpdateDerivedKeyEntry(nilCreatorAnyOperationKey, derivedKeyEntry) {
-		return derivedKeyEntry, nil
-	}
-	return derivedKeyEntry, RuleErrorDerivedKeyDAOCoinOperationNotAuthorized
-}
-
-// _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry checks if the DAOCoinLimitOrderLimitKey is present
-// in the DerivedKeyEntry's TransactionSpendingLimitTracker's DAOCoinLimitOrderLimitMap.
-// If the key is present, the operation is allowed and we decrement the number of operations remaining.
-// If there are no operations remaining after this one, we delete the key.
-// Returns true if the key was found and the derived key entry was updated.
-//
-// TODO: Right now, the "buy" and "sell" DAO coins that the user is transacting must be
-// specified explicitly. There is no way to specify "any" DAO coins in the spending limit
-// because ZeroPKID, which we use to specify "any" in other spending limits, corresponds
-// to DESO for order book operations. We should fix this down the road.
-func _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(
-	key DAOCoinLimitOrderLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
 	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
 		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap == nil {
-		return false
+		return derivedKeyEntry, RuleErrorDerivedKeyDAOCoinOperationNotAuthorized
 	}
-	// Check if the key is present in the DAOCoinLimitOrderLimitMap...
-	daoCoinLimitOrderLimit, daoCoinLimitOrderLimitExists :=
-		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap[key]
-	// If the key doesn't exist or the value is <= 0, return false.
-	if !daoCoinLimitOrderLimitExists || daoCoinLimitOrderLimit <= 0 {
-		return false
+
+	// Order of checks: (creator pkid || operation), (creator pkid || any operation)
+	// (any pkid || operation), (any pkid || any operation)
+	for _, pkid := range []PKID{*pkidEntry.PKID, ZeroPKID} {
+		for _, op := range []DAOCoinLimitOperation{operation, AnyDAOCoinOperation} {
+			key := MakeDAOCoinOperationLimitKey(pkid, op)
+			if _checkSpendingLimitMapAndDecrementOrDelete(
+				derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinOperationLimitMap,
+				key,
+			) {
+				return derivedKeyEntry, nil
+			}
+		}
 	}
-	// If this is the last operation allowed for this key, we delete the key from the map.
-	if daoCoinLimitOrderLimit == 1 {
-		delete(derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap, key)
-	} else {
-		// Otherwise, we decrement the number of operations remaining for this key
-		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap[key]--
-	}
-	// Return true because we found the key and decremented the remaining operations
-	return true
+	return derivedKeyEntry, RuleErrorDerivedKeyDAOCoinOperationNotAuthorized
 }
 
 // _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry checks that the DAO Coin Limit Order
@@ -2206,9 +2087,18 @@ func (bav *UtxoView) _checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry(
 			"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntry: selling pkid is deleted")
 	}
 
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap == nil {
+		return derivedKeyEntry, errors.Wrapf(RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized,
+			"_checkDAOCoinLimitOrderLimitAndUpdateDerivedKeyEntr: DAO Coin limit order not authorized: ")
+	}
+
 	// Check (buying DAO Creator PKID || selling DAO Creator PKID) key
 	buyingAndSellingKey := MakeDAOCoinLimitOrderLimitKey(*buyingPKIDEntry.PKID, *sellingPKIDEntry.PKID)
-	if _checkDAOCoinLimitOrderLimitKeyAndUpdateDerivedKeyEntry(buyingAndSellingKey, derivedKeyEntry) {
+	if _checkSpendingLimitMapAndDecrementOrDelete(
+		derivedKeyEntry.TransactionSpendingLimitTracker.DAOCoinLimitOrderLimitMap,
+		buyingAndSellingKey,
+	) {
 		return derivedKeyEntry, nil
 	}
 
@@ -2269,22 +2159,13 @@ func _checkAssociationLimitAndUpdateDerivedKey(
 		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap == nil {
 		return derivedKeyEntry, errMsg
 	}
-	// Check if the key is present in the AssociationLimitMap.
-	associationLimit, associationLimitExists :=
-		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap[associationLimitKey]
-	// If the key doesn't exist or the value is <= 0, return unauthorized.
-	if !associationLimitExists || associationLimit <= 0 {
-		return derivedKeyEntry, errMsg
+	if _checkSpendingLimitMapAndDecrementOrDelete(
+		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap,
+		associationLimitKey,
+	) {
+		return derivedKeyEntry, nil
 	}
-	// If this is the last operation allowed for this key, we delete the key from the map.
-	if associationLimit == 1 {
-		delete(derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap, associationLimitKey)
-	} else {
-		// Otherwise, we decrement the number of operations remaining for this key.
-		derivedKeyEntry.TransactionSpendingLimitTracker.AssociationLimitMap[associationLimitKey]--
-	}
-	// Happy path: we found the key and decremented the remaining operations.
-	return derivedKeyEntry, nil
+	return derivedKeyEntry, errMsg
 }
 
 // _checkAccessGroupSpendingLimitKeyAndUpdateDerivedKeyEntry checks that the access group spending limit is sufficient
@@ -2330,19 +2211,12 @@ func (bav *UtxoView) _checkAccessGroupSpendingLimitAndUpdateDerivedKeyEntry(deri
 				groupKeyName,
 				operationTypeIter,
 			)
-			spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap[accessGroupLimitKey]
-			// If spending limit is non-positive, continue.
-			if !exists || spendingLimit <= 0 {
-				continue
+			if _checkSpendingLimitMapAndDecrementOrDelete(
+				derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap,
+				accessGroupLimitKey,
+			) {
+				return derivedKeyEntry, nil
 			}
-
-			// Delete the spending limit entry if we've exhausted the spending limit for this key, otherwise decrement it by 1.
-			if spendingLimit == 1 {
-				delete(derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap, accessGroupLimitKey)
-			} else {
-				derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMap[accessGroupLimitKey]--
-			}
-			return derivedKeyEntry, nil
 		}
 	}
 
@@ -2397,19 +2271,12 @@ func (bav *UtxoView) _checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEnt
 				groupKeyName,
 				operationTypeIter,
 			)
-			spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap[accessGroupMembersLimitKey]
-			// If spending limit is non-positive, continue.
-			if !exists || spendingLimit <= 0 {
-				continue
+			if _checkSpendingLimitMapAndDecrementOrDelete(
+				derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap,
+				accessGroupMembersLimitKey,
+			) {
+				return derivedKeyEntry, nil
 			}
-
-			// Delete the spending limit entry if we've exhausted the spending limit for this key, otherwise decrement it by 1.
-			if spendingLimit == 1 {
-				delete(derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap, accessGroupMembersLimitKey)
-			} else {
-				derivedKeyEntry.TransactionSpendingLimitTracker.AccessGroupMemberMap[accessGroupMembersLimitKey]--
-			}
-			return derivedKeyEntry, nil
 		}
 	}
 
