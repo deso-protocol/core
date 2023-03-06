@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"log"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -746,7 +745,7 @@ var MainnetForkHeights = ForkHeights{
 	AssociationsAndAccessGroupsBlockHeight: uint32(205386),
 
 	// FIXME: set to real BlockHeight when ready to enable
-	AssociationsDerivedKeySpendingLimitBlockHeight: math.MaxUint32,
+	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(212881),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
