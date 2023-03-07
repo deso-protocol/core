@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"log"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -745,8 +744,8 @@ var MainnetForkHeights = ForkHeights{
 	// Mon Feb 6 2023 @ 9am PST
 	AssociationsAndAccessGroupsBlockHeight: uint32(205386),
 
-	// FIXME: set to real BlockHeight when ready to enable
-	AssociationsDerivedKeySpendingLimitBlockHeight: math.MaxUint32,
+	// Wed Mar 8 2023 @ 5pm PST
+	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(213487),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1005,8 +1004,8 @@ var TestnetForkHeights = ForkHeights{
 	// Tues Jan 24 2023 @ 1pm PT
 	AssociationsAndAccessGroupsBlockHeight: uint32(596555),
 
-	// FIXME: set to real BlockHeight when ready to enable
-	AssociationsDerivedKeySpendingLimitBlockHeight: math.MaxUint32,
+	// Mon Mar 6 2023 @ 7pm PT
+	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(642270),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
