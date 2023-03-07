@@ -769,7 +769,7 @@ func (bav *UtxoView) _addUtxo(utxoEntryy *UtxoEntry) (*UtxoOperation, error) {
 func (bav *UtxoView) _addBalance(amountNanos uint64, balancePublicKey []byte,
 ) (*UtxoOperation, error) {
 	if len(balancePublicKey) == 0 {
-		fmt.Println("found it broken here.")
+		return nil, fmt.Errorf("_addBalance: balancePublicKey must be non-empty")
 	}
 	// Get the current balance and then update it on the view.
 	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(balancePublicKey)
@@ -805,6 +805,9 @@ func (bav *UtxoView) _unAddBalance(amountNanos uint64, balancePublicKey []byte) 
 	//if amountNanos == 0 {
 	//	return nil
 	//}
+	if len(balancePublicKey) == 0 {
+		return fmt.Errorf(" no pub key provided")
+	}
 	// Get the current balance and then remove the added balance.
 	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(balancePublicKey)
 	if err != nil {
@@ -839,6 +842,9 @@ func (bav *UtxoView) _spendBalance(
 			"_spendBalance: amountNanos (%d) exceeds spendable balance (%d) at tipHeight (%d)",
 			amountNanos, spendableBalanceNanos, tipHeight,
 		)
+	}
+	if len(balancePublicKey) == 0 {
+		return nil, fmt.Errorf(" no pub key provided")
 	}
 
 	// Now that we know we can spend amountNanos, get the current balance and spend it.
@@ -894,6 +900,10 @@ func (bav *UtxoView) _unSpendBalance(amountNanos uint64, balancePublicKey []byte
 	if desoBalanceNanos+amountNanos < desoBalanceNanos {
 		return fmt.Errorf(
 			"_unSpendBalance: adding %d nanos to balance %d overflows uint64", amountNanos, desoBalanceNanos)
+	}
+	// Hack to make block reward disconnects work
+	if balancePublicKey == nil {
+		return nil
 	}
 	desoBalanceNanos += amountNanos
 	// Hack to make block reward disconnect tests work
@@ -1031,7 +1041,9 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 			if err := bav._unAddBalance(currentOutput.AmountNanos, currentOutput.PublicKey); err != nil {
 				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding output %v: ", currentOutput)
 			}
+			//if reflect.DeepEqual(currentOutput.PublicKey, currentTxn.PublicKey) {
 			totalSpend += currentOutput.AmountNanos
+			//}
 		}
 		if err := bav._unSpendBalance(totalSpend, currentTxn.PublicKey); err != nil {
 			return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unSpending total spend %v: ", totalSpend)
@@ -2119,6 +2131,18 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 				return utxoOpsForTxn, fmt.Errorf("_checkAndUpdateDerivedKeySpendingLimit: Underflow on spend amount")
 			}
 			spendAmount -= utxoOp.Entry.AmountNanos
+		}
+		//if utxoOp.Type == OperationTypeSpendBalance && reflect.DeepEqual(utxoOp.BalancePublicKey, txn.PublicKey) {
+		//	if math.MaxUint64-utxoOp.AmountNanos < spendAmount {
+		//		return utxoOpsForTxn, fmt.Errorf("_checkAndUpdateDerivedKeySpendingLimit: overflow on spend amount")
+		//	}
+		//	spendAmount += utxoOp.AmountNanos
+		//}
+		if utxoOp.Type == OperationTypeAddBalance && reflect.DeepEqual(utxoOp.BalancePublicKey, txn.PublicKey) {
+			if utxoOp.AmountNanos > spendAmount {
+				return utxoOpsForTxn, fmt.Errorf("_checkAndUpdateDerivedKeySpendingLimit: Underflow on spend amount")
+			}
+			spendAmount -= utxoOp.AmountNanos
 		}
 	}
 

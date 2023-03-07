@@ -3519,10 +3519,14 @@ REPEAT:
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
 	}
-	// M0 increases the global DESO limit to 6
+	// M0 increases the global DESO limit to 11 nanos (enough to buy now)
 	{
+		globalDesoLimit := uint64(11)
+		if blockHeight >= uint64(params.ForkHeights.BalanceModelBlockHeight) {
+			globalDesoLimit = 6
+		}
 		globalDESOSpendingLimit := &TransactionSpendingLimit{
-			GlobalDESOLimit: 6,
+			GlobalDESOLimit: globalDesoLimit,
 		}
 		blockHeight, err := GetBlockTipHeight(db, false)
 		require.NoError(err)
@@ -3565,7 +3569,8 @@ REPEAT:
 		// Let's confirm that the global deso limit has been reduced on the tracker
 		derivedKeyEntry := dbAdapter.GetOwnerToDerivedKeyMapping(*NewPublicKey(m0PkBytes), *NewPublicKey(m0AuthTxnMeta.DerivedPublicKey))
 		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit,
-			uint64(0)) // 6 - (5 + 1) (Buy Now Price + fee)
+			uint64(0)) // 11 - (5 + 6) (Buy Now Price + fee), 6-(5+1) for balance model
+
 		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.
 			NFTOperationLimitMap[MakeNFTOperationLimitKey(*post1Hash, 1, NFTBidOperation)],
 			uint64(0))
@@ -4171,6 +4176,7 @@ func _setTestDerivedKeyWithAccessGroupParams(tm *transactionTestMeta) {
 	tm.params.EncoderMigrationHeights = GetEncoderMigrationHeights(&tm.params.ForkHeights)
 	tm.params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&tm.params.ForkHeights)
 	tm.params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	tm.params.BlockRewardMaturity = time.Second
 	GlobalDeSoParams = *tm.params
 }
 

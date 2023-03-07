@@ -2165,7 +2165,7 @@ func (bav *UtxoView) _disconnectCreateNFT(
 	}
 
 	// Now revert the basic transfer with the remaining operations. Cut off
-	// the CreatorCoin operation at the end since we just reverted it.
+	// the CreateNFT operation at the end since we just reverted it.
 	return bav._disconnectBasicTransfer(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
 }

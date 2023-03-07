@@ -4970,8 +4970,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -9032,7 +9032,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -9159,7 +9159,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -10531,6 +10531,21 @@ func DbPutNextNonceForPublicKey(handle *badger.DB, publicKey []byte, nextNonce u
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbPutNextNonceForPublicKeyWithTxn(txn, publicKey, nextNonce)
 	})
+}
+
+func DbDeleteNextNonceForPublicKeyWithTxn(
+	txn *badger.Txn, publicKey []byte) error {
+	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbDeleteNextNonceForPublicKeyWithTxn: Public key "+
+			"length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
+	}
+
+	if err := txn.Delete(_dbKeyForPublicKeyToNextNonce(publicKey)); err != nil {
+		return errors.Wrapf(
+			err, "DbDeleteNextNonceForPublicKeyWithTxn: Problem deleting next nonce for: %s ",
+			PkToStringBoth(publicKey))
+	}
+	return nil
 }
 
 // -------------------------------------------------------------------------------------

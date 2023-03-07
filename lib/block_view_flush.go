@@ -1418,6 +1418,13 @@ func (bav *UtxoView) _flushNextNoncesToDbWithTxn(txn *badger.Txn) error {
 	// Note that there is no need to delete the mappings first since we never delete
 	// nonce mappings.
 	for pkMapKey, nextNonce := range bav.PublicKeyToNextNonce {
+		// If next nonce is 0, we delete it to maintain the same state in the db after disconnects
+		if nextNonce == 0 {
+			if err := DbDeleteNextNonceForPublicKeyWithTxn(txn, pkMapKey[:]); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := DbPutNextNonceForPublicKeyWithTxn(txn, pkMapKey[:], nextNonce); err != nil {
 			return err
 		}

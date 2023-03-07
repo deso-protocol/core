@@ -78,6 +78,13 @@ type _CreatorCoinTestData struct {
 	m4DeSoBalance           uint64
 	m5DeSoBalance           uint64
 	m6DeSoBalance           uint64
+	m0BalanceModelBalance   uint64
+	m1BalanceModelBalance   uint64
+	m2BalanceModelBalance   uint64
+	m3BalanceModelBalance   uint64
+	m4BalanceModelBalance   uint64
+	m5BalanceModelBalance   uint64
+	m6BalanceModelBalance   uint64
 	m0HasPurchased          bool
 	m1HasPurchased          bool
 	m2HasPurchased          bool
@@ -126,8 +133,12 @@ func _helpTestCreatorCoinBuySell(
 	if !desoFounderReward {
 		params.ForkHeights.DeSoFounderRewardBlockHeight = 1e9
 	}
+	// Mine a block
+	var err error
+	finalBlock1, err := miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(err)
 
-	// Give paramUpdater some mony
+	// Give paramUpdater some money
 	_, _, _ = _doBasicTransferWithViewFlush(
 		t, chain, db, params, moneyPkString, paramUpdaterPub,
 		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
@@ -175,34 +186,66 @@ func _helpTestCreatorCoinBuySell(
 
 		// If a mempool object is provided then just check balances and return
 		if mempool != nil {
-			// DeSo balances
-			if _getBalance(t, chain, mempool, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m0DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m0Pub)), "MempoolIncrementalBalanceCheck: m0 DeSo balance: %v", message)
-			}
-			if _getBalance(t, chain, mempool, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m1DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m1Pub)), "MempoolIncrementalBalanceCheck: m1 DeSo balance: %v", message)
-			}
-			if _getBalance(t, chain, mempool, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m2DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m2Pub)), "MempoolIncrementalBalanceCheck: m2 DeSo balance: %v", message)
-			}
-			if _getBalance(t, chain, mempool, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m3DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m3Pub)), "MempoolIncrementalBalanceCheck: m3 DeSo balance: %v", message)
-			}
-			if _getBalance(t, chain, mempool, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m4DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m4Pub)), "MempoolIncrementalBalanceCheck: m4 DeSo balance: %v", message)
-			}
-			if _getBalance(t, chain, mempool, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m5DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m5Pub)), "MempoolIncrementalBalanceCheck: m5 DeSo balance: %v", message)
-			}
-			if _getBalance(t, chain, mempool, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m6DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m6Pub)), "MempoolIncrementalBalanceCheck: m6 DeSo balance: %v", message)
+			if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
+				// DeSo balances
+				if _getBalance(t, chain, mempool, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
+					assert.Equalf(int64(testData.m0DeSoBalance),
+						int64(_getBalance(t, chain, mempool, m0Pub)), "MempoolIncrementalBalanceCheck: m0 DeSo balance: %v", message)
+				}
+				if _getBalance(t, chain, mempool, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
+					assert.Equalf(int64(testData.m1DeSoBalance),
+						int64(_getBalance(t, chain, mempool, m1Pub)), "MempoolIncrementalBalanceCheck: m1 DeSo balance: %v", message)
+				}
+				if _getBalance(t, chain, mempool, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
+					assert.Equalf(int64(testData.m2DeSoBalance),
+						int64(_getBalance(t, chain, mempool, m2Pub)), "MempoolIncrementalBalanceCheck: m2 DeSo balance: %v", message)
+				}
+				if _getBalance(t, chain, mempool, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
+					assert.Equalf(int64(testData.m3DeSoBalance),
+						int64(_getBalance(t, chain, mempool, m3Pub)), "MempoolIncrementalBalanceCheck: m3 DeSo balance: %v", message)
+				}
+				if _getBalance(t, chain, mempool, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
+					assert.Equalf(int64(testData.m4DeSoBalance),
+						int64(_getBalance(t, chain, mempool, m4Pub)), "MempoolIncrementalBalanceCheck: m4 DeSo balance: %v", message)
+				}
+				if _getBalance(t, chain, mempool, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
+					assert.Equalf(int64(testData.m5DeSoBalance),
+						int64(_getBalance(t, chain, mempool, m5Pub)), "MempoolIncrementalBalanceCheck: m5 DeSo balance: %v", message)
+				}
+				if _getBalance(t, chain, mempool, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
+					assert.Equalf(int64(testData.m6DeSoBalance),
+						int64(_getBalance(t, chain, mempool, m6Pub)), "MempoolIncrementalBalanceCheck: m6 DeSo balance: %v", message)
+				}
+			} else {
+				// DeSo balances
+				if _getBalance(t, chain, mempool, m0Pub) != 6*NanosPerUnit && testData.m0BalanceModelBalance != 0 {
+					assert.Equalf(int64(testData.m0BalanceModelBalance),
+						int64(_getBalance(t, chain, mempool, m0Pub)), "MempoolIncrementalBalanceCheck: m0 DeSo balance: %v", message)
+				}
+				if _getBalance(t, chain, mempool, m1Pub) != 6*NanosPerUnit && testData.m1BalanceModelBalance != 0 {
+					assert.Equalf(int64(testData.m1BalanceModelBalance),
+						int64(_getBalance(t, chain, mempool, m1Pub)), "MempoolIncrementalBalanceCheck: m1 DeSo balance: %v", message)
+				}
+				if _getBalance(t, chain, mempool, m2Pub) != 6*NanosPerUnit && testData.m2BalanceModelBalance != 0 {
+					assert.Equalf(int64(testData.m2BalanceModelBalance),
+						int64(_getBalance(t, chain, mempool, m2Pub)), "MempoolIncrementalBalanceCheck: m2 DeSo balance: %v", message)
+				}
+				if _getBalance(t, chain, mempool, m3Pub) != 6*NanosPerUnit && testData.m3BalanceModelBalance != 0 {
+					assert.Equalf(int64(testData.m3BalanceModelBalance),
+						int64(_getBalance(t, chain, mempool, m3Pub)), "MempoolIncrementalBalanceCheck: m3 DeSo balance: %v", message)
+				}
+				if _getBalance(t, chain, mempool, m4Pub) != 6*NanosPerUnit && testData.m4BalanceModelBalance != 0 {
+					assert.Equalf(int64(testData.m4BalanceModelBalance),
+						int64(_getBalance(t, chain, mempool, m4Pub)), "MempoolIncrementalBalanceCheck: m4 DeSo balance: %v", message)
+				}
+				if _getBalance(t, chain, mempool, m5Pub) != 6*NanosPerUnit && testData.m5BalanceModelBalance != 0 {
+					assert.Equalf(int64(testData.m5BalanceModelBalance),
+						int64(_getBalance(t, chain, mempool, m5Pub)), "MempoolIncrementalBalanceCheck: m5 DeSo balance: %v", message)
+				}
+				if _getBalance(t, chain, mempool, m6Pub) != 6*NanosPerUnit && testData.m6BalanceModelBalance != 0 {
+					assert.Equalf(int64(testData.m6BalanceModelBalance),
+						int64(_getBalance(t, chain, mempool, m6Pub)), "MempoolIncrementalBalanceCheck: m6 DeSo balance: %v", message)
+				}
 			}
 
 			return
@@ -339,34 +382,66 @@ func _helpTestCreatorCoinBuySell(
 			int64(creatorProfile.CreatorCoinEntry.CoinsInCirculationNanos.Uint64()),
 			"m0+m1+m2+m3+m4+m5+m6 != CoinsInCirculationNanos: %v", message)
 
-		// DeSo balances
-		if _getBalanceWithView(t, chain, utxoView, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m0DeSoBalance),
-				int64(_getBalanceWithView(t, chain, utxoView, m0Pub)), "m0 DeSo balance: %v", message)
-		}
-		if _getBalanceWithView(t, chain, utxoView, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m1DeSoBalance),
-				int64(_getBalanceWithView(t, chain, utxoView, m1Pub)), "m1 DeSo balance: %v", message)
-		}
-		if _getBalanceWithView(t, chain, utxoView, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m2DeSoBalance),
-				int64(_getBalanceWithView(t, chain, utxoView, m2Pub)), "m2 DeSo balance: %v", message)
-		}
-		if _getBalanceWithView(t, chain, utxoView, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m3DeSoBalance),
-				int64(_getBalanceWithView(t, chain, utxoView, m3Pub)), "m3 DeSo balance: %v", message)
-		}
-		if _getBalanceWithView(t, chain, utxoView, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m4DeSoBalance),
-				int64(_getBalanceWithView(t, chain, utxoView, m4Pub)), "m4 DeSo balance: %v", message)
-		}
-		if _getBalanceWithView(t, chain, utxoView, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m5DeSoBalance),
-				int64(_getBalanceWithView(t, chain, utxoView, m5Pub)), "m5 DeSo balance: %v", message)
-		}
-		if _getBalanceWithView(t, chain, utxoView, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m6DeSoBalance),
-				int64(_getBalanceWithView(t, chain, utxoView, m6Pub)), "m6 DeSo balance: %v", message)
+		if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
+			// DeSo balances
+			if _getBalanceWithView(t, chain, utxoView, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m0DeSoBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m0Pub)), "m0 DeSo balance: %v", message)
+			}
+			if _getBalanceWithView(t, chain, utxoView, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m1DeSoBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m1Pub)), "m1 DeSo balance: %v", message)
+			}
+			if _getBalanceWithView(t, chain, utxoView, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m2DeSoBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m2Pub)), "m2 DeSo balance: %v", message)
+			}
+			if _getBalanceWithView(t, chain, utxoView, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m3DeSoBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m3Pub)), "m3 DeSo balance: %v", message)
+			}
+			if _getBalanceWithView(t, chain, utxoView, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m4DeSoBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m4Pub)), "m4 DeSo balance: %v", message)
+			}
+			if _getBalanceWithView(t, chain, utxoView, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m5DeSoBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m5Pub)), "m5 DeSo balance: %v", message)
+			}
+			if _getBalanceWithView(t, chain, utxoView, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m6DeSoBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m6Pub)), "m6 DeSo balance: %v", message)
+			}
+		} else {
+			// Balance Model DESO balances
+			if _getBalanceWithView(t, chain, utxoView, m0Pub) != 6*NanosPerUnit && testData.m0BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m0BalanceModelBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m0Pub)), "m0 DeSo balance: %v", message)
+			}
+			if _getBalanceWithView(t, chain, utxoView, m1Pub) != 6*NanosPerUnit && testData.m1BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m1BalanceModelBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m1Pub)), "m1 DeSo balance: %v", message)
+			}
+			if _getBalanceWithView(t, chain, utxoView, m2Pub) != 6*NanosPerUnit && testData.m2BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m2BalanceModelBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m2Pub)), "m2 DeSo balance: %v", message)
+			}
+			if _getBalanceWithView(t, chain, utxoView, m3Pub) != 6*NanosPerUnit && testData.m3BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m3BalanceModelBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m3Pub)), "m3 DeSo balance: %v", message)
+			}
+			if _getBalanceWithView(t, chain, utxoView, m4Pub) != 6*NanosPerUnit && testData.m4BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m4BalanceModelBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m4Pub)), "m4 DeSo balance: %v", message)
+			}
+			if _getBalanceWithView(t, chain, utxoView, m5Pub) != 6*NanosPerUnit && testData.m5BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m5BalanceModelBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m5Pub)), "m5 DeSo balance: %v", message)
+			}
+			if _getBalanceWithView(t, chain, utxoView, m6Pub) != 6*NanosPerUnit && testData.m6BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m6BalanceModelBalance),
+					int64(_getBalanceWithView(t, chain, utxoView, m6Pub)), "m6 DeSo balance: %v", message)
+			}
 		}
 
 		for ii, profilePubStr := range testData.ProfilesToCheckPublicKeysBase58Check {
@@ -453,7 +528,7 @@ func _helpTestCreatorCoinBuySell(
 				testData.UpdaterPrivateKeyBase58Check, profilePkBytes, testData.ProfileUsername,
 				testData.ProfileDescription, testData.ProfilePic,
 				testData.ProfileCreatorBasisPoints, /*CreatorBasisPoints*/
-				12500 /*stakeMultipleBasisPoints*/, testData.ProfileIsHidden /*isHidden*/)
+				12500                               /*stakeMultipleBasisPoints*/, testData.ProfileIsHidden /*isHidden*/)
 			require.NoError(err)
 		} else if testData.TxnType == TxnTypeFollow {
 			utxoOps, txn, _, err = _doFollowTxn(
@@ -526,7 +601,7 @@ func _helpTestCreatorCoinBuySell(
 				testData.CreatorCoinToSellNanos,      /*CreatorCoinToSellNanos*/
 				testData.DeSoToAddNanos,              /*DeSoToAddNanos*/
 				testData.MinDeSoExpectedNanos,        /*MinDeSoExpectedNanos*/
-				testData.MinCreatorCoinExpectedNanos /*MinCreatorCoinExpectedNanos*/)
+				testData.MinCreatorCoinExpectedNanos  /*MinCreatorCoinExpectedNanos*/)
 			require.NoError(err)
 		}
 
@@ -700,17 +775,13 @@ func _helpTestCreatorCoinBuySell(
 	// Mine a block with all the mempool transactions.
 	//
 	// All the txns should be in the mempool already so mining a block should put
-	// all those transactions in it. Note we need to mine two blocks since the first
-	// one just makes the DeSo chain time-current.
-	finalBlock1, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	_ = finalBlock1
+	// all those transactions in it.
+
 	finalBlock2, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 	require.Equal(0, len(mempool.poolMap))
 
 	// Add one for the block reward. Now we have a meaty block.
-	require.Equal(len(finalBlock1.Txns), 1)
 	require.Equal(len(finalBlock2.Txns), len(creatorCoinTests)+1)
 
 	// The balances after mining the block should match the last testData
@@ -718,36 +789,67 @@ func _helpTestCreatorCoinBuySell(
 		// Check that the state matches the final testData.
 		testIndex := len(creatorCoinTests) - 1
 		testData := creatorCoinTests[testIndex]
-		// DeSo balances
-		if _getBalance(t, chain, nil, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m0DeSoBalance),
-				int64(_getBalance(t, chain, nil, m0Pub)), "BlockConnect: m0 DeSo balance: %v", testIndex)
+		if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
+			// DeSo balances
+			if _getBalance(t, chain, nil, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m0DeSoBalance),
+					int64(_getBalance(t, chain, nil, m0Pub)), "BlockConnect: m0 DeSo balance: %v", testIndex)
+			}
+			if _getBalance(t, chain, nil, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m1DeSoBalance),
+					int64(_getBalance(t, chain, nil, m1Pub)), "BlockConnect: m1 DeSo balance: %v", testIndex)
+			}
+			if _getBalance(t, chain, nil, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m2DeSoBalance),
+					int64(_getBalance(t, chain, nil, m2Pub)), "BlockConnect: m2 DeSo balance: %v", testIndex)
+			}
+			if _getBalance(t, chain, nil, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m3DeSoBalance),
+					int64(_getBalance(t, chain, nil, m3Pub)), "BlockConnect: m3 DeSo balance: %v", testIndex)
+			}
+			if _getBalance(t, chain, nil, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m4DeSoBalance),
+					int64(_getBalance(t, chain, nil, m4Pub)), "BlockConnect: m4 DeSo balance: %v", testIndex)
+			}
+			if _getBalance(t, chain, nil, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m5DeSoBalance),
+					int64(_getBalance(t, chain, nil, m5Pub)), "BlockConnect: m5 DeSo balance: %v", testIndex)
+			}
+			if _getBalance(t, chain, nil, m6Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
+				assert.Equalf(int64(testData.m6DeSoBalance),
+					int64(_getBalance(t, chain, nil, m6Pub)), "BlockConnect: m6 DeSo balance: %v", testIndex)
+			}
+		} else {
+			// Balance Model balances
+			if _getBalance(t, chain, nil, m0Pub) != 6*NanosPerUnit && testData.m0BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m0BalanceModelBalance),
+					int64(_getBalance(t, chain, nil, m0Pub)), "BlockConnect: m0 DeSo balance: %v", testIndex)
+			}
+			if _getBalance(t, chain, nil, m1Pub) != 6*NanosPerUnit && testData.m1BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m1BalanceModelBalance),
+					int64(_getBalance(t, chain, nil, m1Pub)), "BlockConnect: m1 DeSo balance: %v", testIndex)
+			}
+			if _getBalance(t, chain, nil, m2Pub) != 6*NanosPerUnit && testData.m2BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m2BalanceModelBalance),
+					int64(_getBalance(t, chain, nil, m2Pub)), "BlockConnect: m2 DeSo balance: %v", testIndex)
+			}
+			if _getBalance(t, chain, nil, m3Pub) != 6*NanosPerUnit && testData.m3BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m3BalanceModelBalance),
+					int64(_getBalance(t, chain, nil, m3Pub)), "BlockConnect: m3 DeSo balance: %v", testIndex)
+			}
+			if _getBalance(t, chain, nil, m4Pub) != 6*NanosPerUnit && testData.m4BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m4BalanceModelBalance),
+					int64(_getBalance(t, chain, nil, m4Pub)), "BlockConnect: m4 DeSo balance: %v", testIndex)
+			}
+			if _getBalance(t, chain, nil, m5Pub) != 6*NanosPerUnit && testData.m5BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m5BalanceModelBalance),
+					int64(_getBalance(t, chain, nil, m5Pub)), "BlockConnect: m5 DeSo balance: %v", testIndex)
+			}
+			if _getBalance(t, chain, nil, m6Pub) != 6*NanosPerUnit && testData.m5BalanceModelBalance != 0 {
+				assert.Equalf(int64(testData.m6BalanceModelBalance),
+					int64(_getBalance(t, chain, nil, m6Pub)), "BlockConnect: m6 DeSo balance: %v", testIndex)
+			}
 		}
-		if _getBalance(t, chain, nil, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m1DeSoBalance),
-				int64(_getBalance(t, chain, nil, m1Pub)), "BlockConnect: m1 DeSo balance: %v", testIndex)
-		}
-		if _getBalance(t, chain, nil, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m2DeSoBalance),
-				int64(_getBalance(t, chain, nil, m2Pub)), "BlockConnect: m2 DeSo balance: %v", testIndex)
-		}
-		if _getBalance(t, chain, nil, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m3DeSoBalance),
-				int64(_getBalance(t, chain, nil, m3Pub)), "BlockConnect: m3 DeSo balance: %v", testIndex)
-		}
-		if _getBalance(t, chain, nil, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m4DeSoBalance),
-				int64(_getBalance(t, chain, nil, m4Pub)), "BlockConnect: m4 DeSo balance: %v", testIndex)
-		}
-		if _getBalance(t, chain, nil, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m5DeSoBalance),
-				int64(_getBalance(t, chain, nil, m5Pub)), "BlockConnect: m5 DeSo balance: %v", testIndex)
-		}
-		if _getBalance(t, chain, nil, m6Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m6DeSoBalance),
-				int64(_getBalance(t, chain, nil, m6Pub)), "BlockConnect: m6 DeSo balance: %v", testIndex)
-		}
-
 	}
 
 	// Roll back the blocks and make sure we don't hit any errors.
@@ -1042,7 +1144,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*DeSoToAddNanos*/
 			0,                           /*MinDeSoExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0                            /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 	// Have m0 buy some m1 as well
@@ -1056,7 +1158,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*DeSoToAddNanos*/
 			0,                           /*MinDeSoExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0                            /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 
@@ -1438,7 +1540,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*DeSoToAddNanos*/
 			0,                           /*MinDeSoExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0                            /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 	// Have m0 buy some m1 as well.
@@ -1452,7 +1554,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*DeSoToAddNanos*/
 			0,                           /*MinDeSoExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0                            /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 
@@ -2353,7 +2455,7 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 
 	_, _, _, err := _updateProfile(
 		t, chain, db, params,
-		feeRateNanosPerKB /*feerate*/, m0Pub, m0Priv, m0PkBytes, "m0",
+		feeRateNanosPerKB                  /*feerate*/, m0Pub, m0Priv, m0PkBytes, "m0",
 		"i am m0", "m0 profile pic", 2500, /*CreatorBasisPoints*/
 		12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
 	require.NoError(err)
@@ -2368,7 +2470,7 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 		0,                           /*CreatorCoinToSellNanos*/
 		0,                           /*DeSoToAddNanos*/
 		0,                           /*MinDeSoExpectedNanos*/
-		0 /*MinCreatorCoinExpectedNanos*/)
+		0                            /*MinCreatorCoinExpectedNanos*/)
 	require.NoError(err)
 
 	_, _, _, err = _doCreatorCoinTransferTxn(
@@ -4016,7 +4118,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string,
 	UpdaterPrivateKeyBase58Check string,
-	// See CreatorCoinMetadataa for an explanation of these fields.
+// See CreatorCoinMetadataa for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
 	OperationType CreatorCoinOperationType,
 	DeSoToSellNanos uint64,
@@ -4110,7 +4212,7 @@ func _creatorCoinTxnWithTestMeta(
 	feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string,
 	UpdaterPrivateKeyBase58Check string,
-	// See CreatorCoinMetadataa for an explanation of these fields.
+// See CreatorCoinMetadataa for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
 	OperationType CreatorCoinOperationType,
 	DeSoToSellNanos uint64,
@@ -4200,7 +4302,7 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string, UpdaterPrivateKeyBase58Check string,
-	// See CreatorCoinTransferMetadataa for an explanation of these fields.
+// See CreatorCoinTransferMetadataa for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
 	ReceiverPublicKeyBase58Check string,
 	CreatorCoinToTransferNanos uint64) (
