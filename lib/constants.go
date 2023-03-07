@@ -261,6 +261,10 @@ type ForkHeights struct {
 	//   - Frozen posts
 	AssociationsAndAccessGroupsBlockHeight uint32
 
+	// AssociationsDerivedKeySpendingLimitBlockHeight defines the height at which we
+	// introduced a few improvements for associations' derived key spending limits.
+	AssociationsDerivedKeySpendingLimitBlockHeight uint32
+
 	// BalanceModelBlockHeight defines the height at which we convert from a UTXO model
 	// to an account balance model for accounting.
 	BalanceModelBlockHeight uint32
@@ -607,6 +611,7 @@ var RegtestForkHeights = ForkHeights{
 	ParamUpdaterRefactorBlockHeight:                      uint32(0),
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
 	AssociationsAndAccessGroupsBlockHeight:               uint32(0),
+	AssociationsDerivedKeySpendingLimitBlockHeight:       uint32(0),
 	BalanceModelBlockHeight:                              uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -753,6 +758,9 @@ var MainnetForkHeights = ForkHeights{
 
 	// Mon Feb 6 2023 @ 9am PST
 	AssociationsAndAccessGroupsBlockHeight: uint32(205386),
+
+	// Wed Mar 8 2023 @ 5pm PST
+	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(213487),
 
 	// TODO: set to real height
 	BalanceModelBlockHeight: math.MaxUint32,
@@ -1013,6 +1021,9 @@ var TestnetForkHeights = ForkHeights{
 
 	// Tues Jan 24 2023 @ 1pm PT
 	AssociationsAndAccessGroupsBlockHeight: uint32(596555),
+
+	// Mon Mar 6 2023 @ 7pm PT
+	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(642270),
 
 	// TODO: set to real height
 	BalanceModelBlockHeight: math.MaxUint32,

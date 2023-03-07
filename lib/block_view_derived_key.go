@@ -278,6 +278,12 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 					// anyway as a sanity-check.
 					if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 						for associationLimitKey, transactionCount := range transactionSpendingLimit.AssociationLimitMap {
+							// Validate association spending limit.
+							if blockHeight >= bav.Params.ForkHeights.AssociationsDerivedKeySpendingLimitBlockHeight &&
+								associationLimitKey.AppScopeType == AssociationAppScopeTypeAny &&
+								!associationLimitKey.AppPKID.IsZeroPKID() {
+								return 0, 0, nil, errors.New("error creating Association spending limit: cannot specify an AppPublicKey if ScopeType is Any")
+							}
 							if transactionCount == 0 {
 								delete(newTransactionSpendingLimit.AssociationLimitMap, associationLimitKey)
 							} else {

@@ -172,7 +172,7 @@ func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	chain, params, _ := NewLowDifficultyBlockchainWithParamsAndDb(params, false, 0)
+	chain, params, _ := NewLowDifficultyBlockchainWithParamsAndDb(params, len(os.Getenv("POSTGRES_URI")) > 0, 0)
 	return chain, params, chain.db
 }
 

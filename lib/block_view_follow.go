@@ -127,7 +127,9 @@ func (bav *UtxoView) GetFollowEntriesForPublicKey(publicKey []byte, getEntriesFo
 		}
 
 		for _, follow := range follows {
-			bav._setFollowEntryMappings(follow.NewFollowEntry())
+			if _, exists := bav.FollowKeyToFollowEntry[MakeFollowKey(follow.FollowerPKID, follow.FollowedPKID)]; !exists {
+				bav._setFollowEntryMappings(follow.NewFollowEntry())
+			}
 		}
 	} else {
 		var dbPKIDs []*PKID

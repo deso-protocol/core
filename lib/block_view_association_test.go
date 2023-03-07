@@ -2240,7 +2240,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
 
 	// Helper funcs
-	_submitAuthorizeDerivedKeyTxn := func(txnType TxnType, associationLimitKey AssociationLimitKey, count int) string {
+	_submitAuthorizeDerivedKeyTxn := func(txnType TxnType, associationLimitKey AssociationLimitKey, count int) (string, error) {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
 
@@ -2274,14 +2274,16 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			nil,
 			txnSpendingLimit,
 		)
-		require.NoError(t, err)
+		if err != nil {
+			return "", err
+		}
 		require.NoError(t, utxoView.FlushToDb(0))
 		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 		testMeta.txns = append(testMeta.txns, txn)
 
 		err = utxoView.ValidateDerivedKey(senderPkBytes, derivedKeyMetadata.DerivedPublicKey, blockHeight)
 		require.NoError(t, err)
-		return derivedKeyAuthPrivBase58Check
+		return derivedKeyAuthPrivBase58Check, nil
 	}
 
 	_submitAssociationTxnWithDerivedKey := func(
@@ -2355,7 +2357,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	}
 	{
 		// Create derived key for creating ENDORSEMENT user associations on m0's app.
-		derivedKeyPriv := _submitAuthorizeDerivedKeyTxn(
+		derivedKeyPriv, err := _submitAuthorizeDerivedKeyTxn(
 			TxnTypeCreateUserAssociation,
 			MakeAssociationLimitKey(
 				AssociationClassUser,
@@ -2366,6 +2368,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			),
 			1,
 		)
+		require.NoError(t, err)
 
 		// Sad path: try to create FLAG user association, unauthorized
 		createUserAssociationMetadata := &CreateUserAssociationMetadata{
@@ -2413,7 +2416,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		require.Contains(t, err.Error(), "association not authorized for derived key")
 
 		// Create derived key for creating ANY user associations in the GLOBAL app namespace only.
-		derivedKeyPriv = _submitAuthorizeDerivedKeyTxn(
+		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(
 			TxnTypeCreateUserAssociation,
 			MakeAssociationLimitKey(
 				AssociationClassUser,
@@ -2424,6 +2427,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			),
 			1,
 		)
+		require.NoError(t, err)
 
 		// Sad path: creating ENDORSEMENT user association on m0's app
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
@@ -2458,7 +2462,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		require.Contains(t, err.Error(), "association not authorized for derived key")
 
 		// Create derived key for creating ANY user associations on ANY app.
-		derivedKeyPriv = _submitAuthorizeDerivedKeyTxn(
+		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(
 			TxnTypeCreateUserAssociation,
 			MakeAssociationLimitKey(
 				AssociationClassUser,
@@ -2469,6 +2473,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			),
 			2,
 		)
+		require.NoError(t, err)
 
 		// Happy path: creating ENDORSEMENT user association on m0's app
 		createUserAssociationMetadata = &CreateUserAssociationMetadata{
@@ -2520,8 +2525,23 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "association not authorized for derived key")
 
+		// Sad path: create derived key with AppScopeTypeAny but specify an AppPKID
+		associationLimitKey := MakeAssociationLimitKey(
+			AssociationClassUser,
+			[]byte(""),                 // AssociationType == Any
+			*m0PKID,                    // AppPKID == m0
+			AssociationAppScopeTypeAny, // ScopeType == Any
+			AssociationOperationAny,    // OperationType == Any
+		)
+		_, err = _submitAuthorizeDerivedKeyTxn(TxnTypeCreateUserAssociation, associationLimitKey, 1)
+		require.NoError(t, err)
+		params.ForkHeights.AssociationsDerivedKeySpendingLimitBlockHeight = uint32(0)
+		_, err = _submitAuthorizeDerivedKeyTxn(TxnTypeCreateUserAssociation, associationLimitKey, 1)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cannot specify an AppPublicKey if ScopeType is Any")
+
 		// Create derived key for creating or deleting ANY user associations on ANY app.
-		derivedKeyPriv = _submitAuthorizeDerivedKeyTxn(
+		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(
 			TxnTypeCreateUserAssociation,
 			MakeAssociationLimitKey(
 				AssociationClassUser,
@@ -2532,6 +2552,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			),
 			1,
 		)
+		require.NoError(t, err)
 
 		// Happy path: delete user association
 		err = _submitAssociationTxnWithDerivedKey(
