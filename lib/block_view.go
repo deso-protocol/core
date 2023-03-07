@@ -1653,7 +1653,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 			// against the provided derived key. We will now verify that the spending limit for this derived key allows for
 			// this transaction, and error otherwise. If everything checks out, we will update the spending limit for this
 			// derived key to reflect the new spending limit after the transaction has been performed.
-			utxoOpsForTxn, err = bav._checkAndUpdateDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn)
+			utxoOpsForTxn, err = bav._checkAndUpdateDerivedKeySpendingLimit(txn, derivedPkBytes, totalInput, utxoOpsForTxn, blockHeight)
 			if err != nil {
 				return 0, 0, nil, err
 			}
@@ -1666,7 +1666,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 }
 
 func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
-	txn *MsgDeSoTxn, derivedPkBytes []byte, totalInput uint64, utxoOpsForTxn []*UtxoOperation) (
+	txn *MsgDeSoTxn, derivedPkBytes []byte, totalInput uint64, utxoOpsForTxn []*UtxoOperation, blockHeight uint32) (
 	_utxoOpsForTxn []*UtxoOperation, _err error) {
 
 	// Get the derived key entry
@@ -1869,12 +1869,22 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
 		}
 	case TxnTypeCreatePostAssociation:
-		txnMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
+		var associationType []byte
+		var appPublicKey *PublicKey
+		if blockHeight >= bav.Params.ForkHeights.AssociationsDerivedKeySpendingLimitBlockHeight {
+			txnMeta := txn.TxnMeta.(*CreatePostAssociationMetadata)
+			associationType = txnMeta.AssociationType
+			appPublicKey = txnMeta.AppPublicKey
+		} else {
+			txnMeta := txn.TxnMeta.(*CreateUserAssociationMetadata)
+			associationType = txnMeta.AssociationType
+			appPublicKey = txnMeta.AppPublicKey
+		}
 		if derivedKeyEntry, err = bav._checkAssociationLimitAndUpdateDerivedKey(
 			derivedKeyEntry,
 			AssociationClassPost,
-			txnMeta.AssociationType,
-			txnMeta.AppPublicKey,
+			associationType,
+			appPublicKey,
 			AssociationOperationCreate,
 		); err != nil {
 			return utxoOpsForTxn, errors.Wrapf(err, "_checkDerivedKeySpendingLimit: ")
