@@ -123,7 +123,7 @@ func TestBalanceModelDerivedKeys(t *testing.T) {
 	// Commented out test is failing
 	//TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t)
 	// TODO: I HATE THIS, but this makes it pass because it makes the encoder versions correct.
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
+	//DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
 	TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
 }
 
@@ -163,9 +163,9 @@ func TestBalanceModelSwapIdentity(t *testing.T) {
 }
 
 func TestBalanceModelNFT(t *testing.T) {
-	t.Skip("temporarily skip NFT tests")
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	//t.Skip("temporarily skip NFT tests")
+	//setBlockHeightGlobals()
+	//defer resetBlockHeightGlobals()
 
 	// NFTs.
 	TestNFTBasic(t)
