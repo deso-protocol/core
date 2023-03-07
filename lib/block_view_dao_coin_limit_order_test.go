@@ -2276,7 +2276,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_, _, _, _, err = _connectDAOCoinLimitOrderTxn(
 			testMeta, m1Pub, m1Priv, currentTxn, totalInputMake)
 		require.Error(err)
-		if testMeta.chain.blockTip().Height + 1 >= params.ForkHeights.BalanceModelBlockHeight {
+		if testMeta.chain.blockTip().Height+1 >= params.ForkHeights.BalanceModelBlockHeight {
 			require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee)
 		} else {
 			require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderOverspendingDESO)
@@ -2290,7 +2290,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	}
 
 	// This test isn't relevant for balance model
-	if testMeta.chain.blockTip().Height + 1 < params.ForkHeights.BalanceModelBlockHeight {
+	if testMeta.chain.blockTip().Height+1 < params.ForkHeights.BalanceModelBlockHeight {
 		// Scenario: unused bidder inputs get refunded
 
 		// Confirm existing orders in the order book.
@@ -2352,7 +2352,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Empty(orderEntries)
 	}
 
-	if testMeta.chain.blockTip().Height + 1 < params.ForkHeights.BalanceModelBlockHeight {
+	if testMeta.chain.blockTip().Height+1 < params.ForkHeights.BalanceModelBlockHeight {
 		// Scenario: invalid BidderInputs should fail
 
 		// Confirm existing orders in the order book.
@@ -2604,7 +2604,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(originalM2DESOBalance, updatedM2DESOBalance)
 	}
 
-	if testMeta.chain.blockTip().Height + 1 < params.ForkHeights.BalanceModelBlockHeight{
+	if testMeta.chain.blockTip().Height+1 < params.ForkHeights.BalanceModelBlockHeight {
 		// Scenario: unused BidderInputs in DAO <--> DAO coin trade
 
 		// Confirm existing orders in the order book.
@@ -3056,7 +3056,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
 			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
 		require.Error(err)
-		if testMeta.chain.blockTip().Height + 1 < params.ForkHeights.BalanceModelBlockHeight {
+		if testMeta.chain.blockTip().Height+1 < params.ForkHeights.BalanceModelBlockHeight {
 			require.Contains(err.Error(), "AddInputsAndChangeToTransaction: Sanity check failed")
 		} else {
 			require.Contains(err.Error(), "is not enough to cover the amount")
@@ -3068,7 +3068,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		_, _, _, err = _doDAOCoinLimitOrderTxn(
 			t, chain, db, params, feeRateNanosPerKb, m0Pub, m0Priv, metadataM0)
 		require.Error(err)
-		if testMeta.chain.BlockTip().Height + 1 < params.ForkHeights.BalanceModelBlockHeight {
+		if testMeta.chain.BlockTip().Height+1 < params.ForkHeights.BalanceModelBlockHeight {
 			require.Contains(err.Error(), "AddInputsAndChangeToTransaction: Sanity check failed")
 		} else {
 			require.Contains(err.Error(), "is not enough to cover the amount")
