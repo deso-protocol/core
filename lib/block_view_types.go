@@ -1821,7 +1821,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 }
 
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, BalanceModelMigration)
+	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration, BalanceModelMigration)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {
