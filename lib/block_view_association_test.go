@@ -88,7 +88,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 		_updateGlobalParamsEntryWithTestMeta(
 			testMeta,
-			testMeta.feeRateNanosPerKb,
+			testMeta.feeRateNanosPerKb+2,
 			paramUpdaterPub,
 			paramUpdaterPriv,
 			-1,
@@ -2154,6 +2154,9 @@ func _submitAssociationTxn(
 	_signTxn(testMeta.t, txn, TransactorPrivateKeyBase58Check)
 
 	// Connect the transaction.
+	//utxoView, err := testMeta.mempool.GetAugmentedUniversalView()
+	//require.NoError(testMeta.t, err)
+	//require.NoError(testMeta.t, testMeta.mempool.RegenerateReadOnlyView())
 	utxoOps, totalInput, totalOutput, fees, err := testMeta.mempool.universalUtxoView.ConnectTransaction(
 		txn,
 		txn.Hash(),

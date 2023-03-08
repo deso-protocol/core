@@ -802,9 +802,9 @@ func (bav *UtxoView) _addDESO(amountNanos uint64, publicKey []byte, getUtxoEntry
 
 func (bav *UtxoView) _unAddBalance(amountNanos uint64, balancePublicKey []byte) error {
 	// 0 means do nothing
-	//if amountNanos == 0 {
-	//	return nil
-	//}
+	if amountNanos == 0 {
+		return nil
+	}
 	if len(balancePublicKey) == 0 {
 		return fmt.Errorf(" no pub key provided")
 	}

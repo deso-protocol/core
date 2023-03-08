@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
@@ -1534,6 +1535,7 @@ func _setAccessGroupParams(tm *transactionTestMeta) {
 	tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
 	tm.params.EncoderMigrationHeights = GetEncoderMigrationHeights(&tm.params.ForkHeights)
 	tm.params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&tm.params.ForkHeights)
+	tm.params.BlockRewardMaturity = time.Second
 	GlobalDeSoParams = *tm.params
 }
 
