@@ -1304,7 +1304,7 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4728876542,
+			m1BalanceModelBalance:   4728876543,
 			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m2 buy some of m0's coins
@@ -1334,8 +1334,8 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           4827626815,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4728876542,
-			m2BalanceModelBalance:   4827626815,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// Have m1 sell half of their stake
 		{
@@ -1365,8 +1365,8 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2DeSoBalance:           4827626815,
 			m3DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6355836621,
-			m2BalanceModelBalance:   4827626815,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
 			m3BalanceModelBalance:   6000000000,
 		},
 		// Swap m0 and m3
@@ -1399,8 +1399,8 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2DeSoBalance:           4827626815,
 			m3DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6355836621,
-			m2BalanceModelBalance:   4827626815,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
 			m3BalanceModelBalance:   6000000000,
 		},
 		// Swap m3 and m1
@@ -1434,8 +1434,8 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2DeSoBalance:           4827626815,
 			m3DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6355836621,
-			m2BalanceModelBalance:   4827626815,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
 			m3BalanceModelBalance:   6000000000,
 		},
 		// Swap m0 and m1. Should restore m0's profile to it.
@@ -1469,8 +1469,8 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2DeSoBalance:           4827626815,
 			m3DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6355836621,
-			m2BalanceModelBalance:   4827626815,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
 			m3BalanceModelBalance:   6000000000,
 		},
 		// Swap m1 and m3. Should restore everything back to normal.
@@ -1504,8 +1504,8 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m2DeSoBalance:           4827626815,
 			m3DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6355836621,
-			m2BalanceModelBalance:   4827626815,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
 			m3BalanceModelBalance:   6000000000,
 		},
 		// Have m2 sell all of their stake
@@ -1535,8 +1535,8 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           5243756077,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6355836621,
-			m2BalanceModelBalance:   5243756077,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   5243756079,
 		},
 		// Have m1 buy more, m0 should receive 25% of the minted coins as a founders reward
 		{
@@ -1565,8 +1565,8 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           4232379830,
 			m2DeSoBalance:           5243756077,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4232379830,
-			m2BalanceModelBalance:   5243756077,
+			m1BalanceModelBalance:   4232379833,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m1 sell the rest of their stake
@@ -1596,8 +1596,8 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6635615128,
-			m2BalanceModelBalance:   5243756077,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m0 sell all of their stake except leave 1 DeSo locked
@@ -1626,9 +1626,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           6119715429,
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
-			m0BalanceModelBalance:   6119715429,
-			m1BalanceModelBalance:   6635615128,
-			m2BalanceModelBalance:   5243756077,
+			m0BalanceModelBalance:   6119715430,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		{
@@ -1657,12 +1657,12 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           6119715427,
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
-			m0BalanceModelBalance:   6119715427,
-			m1BalanceModelBalance:   6635615128,
-			m2BalanceModelBalance:   5243756077,
+			m0BalanceModelBalance:   6119715429,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
 		},
 
-		// Have m1 buy a little more, m0 should receieve some
+		// Have m1 buy a little more, m0 should receive some
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -1688,9 +1688,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           6119715427,
 			m1DeSoBalance:           4512158337,
 			m2DeSoBalance:           5243756077,
-			m0BalanceModelBalance:   6119715427,
-			m1BalanceModelBalance:   4512158337,
-			m2BalanceModelBalance:   5243756077,
+			m0BalanceModelBalance:   6119715429,
+			m1BalanceModelBalance:   4512158342,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m1 sell their creator coins. m0 should be the only one left with coins.
@@ -1721,9 +1721,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           6119715427,
 			m1DeSoBalance:           6602018090,
 			m2DeSoBalance:           5243756077,
-			m0BalanceModelBalance:   6119715427,
-			m1BalanceModelBalance:   6602018090,
-			m2BalanceModelBalance:   5243756077,
+			m0BalanceModelBalance:   6119715429,
+			m1BalanceModelBalance:   6602018096,
+			m2BalanceModelBalance:   5243756079,
 		},
 	}
 
@@ -1778,7 +1778,7 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4728876542,
+			m1BalanceModelBalance:   4728876543,
 			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m2 buy some of m0's coins
@@ -1808,8 +1808,8 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           4827626815,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4728876542,
-			m2BalanceModelBalance:   4827626815,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// Have m1 sell half of their stake
 		{
@@ -1838,8 +1838,8 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           4827626815,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6355836621,
-			m2BalanceModelBalance:   4827626815,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
 		},
 
 		// Swap m0 and m3
@@ -1868,8 +1868,8 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           4827626815,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6355836621,
-			m2BalanceModelBalance:   4827626815,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
 		},
 
 		// Have m2 sell all of their stake
@@ -1901,10 +1901,10 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           5243756077,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6355836621,
-			m2BalanceModelBalance:   5243756077,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   5243756079,
 		},
-		// Have m1 buy more, m3 should receieve a founders reward
+		// Have m1 buy more, m3 should receive a founders reward
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -1933,8 +1933,8 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           4232379830,
 			m2DeSoBalance:           5243756077,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4232379830,
-			m2BalanceModelBalance:   5243756077,
+			m1BalanceModelBalance:   4232379833,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m1 sell the rest of their stake
@@ -1966,8 +1966,8 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6635615128,
-			m2BalanceModelBalance:   5243756077,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m3 sell all of their stake except leave 1 DeSo locked
@@ -2000,9 +2000,9 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2DeSoBalance:           5243756077,
 			m3DeSoBalance:           6119715431,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6635615128,
-			m2BalanceModelBalance:   5243756077,
-			m3BalanceModelBalance:   6119715431,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
+			m3BalanceModelBalance:   6119715432,
 		},
 
 		{
@@ -2036,9 +2036,9 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2DeSoBalance:           5243756077,
 			m3DeSoBalance:           6119715429,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6635615128,
-			m2BalanceModelBalance:   5243756077,
-			m3BalanceModelBalance:   6119715429,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
+			m3BalanceModelBalance:   6119715431,
 		},
 
 		// Have m1 buy a little more, m3 should receieve a founders reward
@@ -2071,9 +2071,9 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2DeSoBalance:           5243756077,
 			m3DeSoBalance:           6119715429,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4512158337,
-			m2BalanceModelBalance:   5243756077,
-			m3BalanceModelBalance:   6119715429,
+			m1BalanceModelBalance:   4512158342,
+			m2BalanceModelBalance:   5243756079,
+			m3BalanceModelBalance:   6119715431,
 		},
 
 		// Have m1 sell their creator coins except CreatorCoinAutoSellThresholdNanos - 1. This should
@@ -2107,9 +2107,9 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m2DeSoBalance:           5243756077,
 			m3DeSoBalance:           6119715429,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6602018090,
-			m2BalanceModelBalance:   5243756077,
-			m3BalanceModelBalance:   6119715429,
+			m1BalanceModelBalance:   6602018096,
+			m2BalanceModelBalance:   5243756079,
+			m3BalanceModelBalance:   6119715431,
 		},
 	}
 
@@ -2335,7 +2335,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance:   6000000000,
 			m3BalanceModelBalance:   5999999998,
 			m4BalanceModelBalance:   6000000000,
-			m5BalanceModelBalance:   4728876542,
+			m5BalanceModelBalance:   4728876543,
 			m6BalanceModelBalance:   6000000000,
 
 			// Profile check
@@ -2384,7 +2384,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance:   6000000000,
 			m3BalanceModelBalance:   5999999998,
 			m4BalanceModelBalance:   6000000000,
-			m5BalanceModelBalance:   4728876542,
+			m5BalanceModelBalance:   4728876543,
 			m6BalanceModelBalance:   6000000000,
 
 			// Profile check. Note m2 is the public key that owns the profile now.
@@ -2436,7 +2436,7 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance:   6000000000,
 			m3BalanceModelBalance:   5999999996,
 			m4BalanceModelBalance:   6000000000,
-			m5BalanceModelBalance:   4728876542,
+			m5BalanceModelBalance:   4728876543,
 			m6BalanceModelBalance:   6000000000,
 
 			// Profile check
@@ -2487,8 +2487,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance:   6000000000,
 			m3BalanceModelBalance:   5999999996,
 			m4BalanceModelBalance:   6000000000,
-			m5BalanceModelBalance:   4728876542,
-			m6BalanceModelBalance:   3999999997,
+			m5BalanceModelBalance:   4728876543,
+			m6BalanceModelBalance:   3999999998,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m2Pub, m3Pub},
@@ -2538,8 +2538,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance:   6000000000,
 			m3BalanceModelBalance:   5999999996,
 			m4BalanceModelBalance:   6000000000,
-			m5BalanceModelBalance:   4728876542,
-			m6BalanceModelBalance:   3999999985,
+			m5BalanceModelBalance:   4728876543,
+			m6BalanceModelBalance:   3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m2Pub, m3Pub},
@@ -2587,8 +2587,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance: 6000000000,
 			m3BalanceModelBalance: 5999999996,
 			m4BalanceModelBalance: 6000000000,
-			m5BalanceModelBalance: 4728876542,
-			m6BalanceModelBalance: 3999999985,
+			m5BalanceModelBalance: 4728876543,
+			m6BalanceModelBalance: 3999999987,
 
 			// Profile check. Note m2 is the public key that owns the profile now.
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub},
@@ -2638,8 +2638,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance:   6000000000,
 			m3BalanceModelBalance:   5999999996,
 			m4BalanceModelBalance:   6000000000,
-			m5BalanceModelBalance:   4728876530,
-			m6BalanceModelBalance:   3999999985,
+			m5BalanceModelBalance:   4728876532,
+			m6BalanceModelBalance:   3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub},
@@ -2687,8 +2687,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance:   6000000000,
 			m3BalanceModelBalance:   5999999996,
 			m4BalanceModelBalance:   6000000000,
-			m5BalanceModelBalance:   4728876530,
-			m6BalanceModelBalance:   3999999985,
+			m5BalanceModelBalance:   4728876532,
+			m6BalanceModelBalance:   3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m4Pub, m2Pub, m3Pub},
@@ -2736,8 +2736,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance: 6000000000,
 			m3BalanceModelBalance: 5999999996,
 			m4BalanceModelBalance: 6000000000,
-			m5BalanceModelBalance: 4728876530,
-			m6BalanceModelBalance: 3999999985,
+			m5BalanceModelBalance: 4728876532,
+			m6BalanceModelBalance: 3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m4Pub, m3Pub, m2Pub},
@@ -2782,8 +2782,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance: 6000000000,
 			m3BalanceModelBalance: 5999999996,
 			m4BalanceModelBalance: 6000000000,
-			m5BalanceModelBalance: 4728876530,
-			m6BalanceModelBalance: 3999999985,
+			m5BalanceModelBalance: 4728876532,
+			m6BalanceModelBalance: 3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m4Pub, m2Pub},
@@ -2832,8 +2832,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance:   6000000000,
 			m3BalanceModelBalance:   5999999996,
 			m4BalanceModelBalance:   6000000000,
-			m5BalanceModelBalance:   4728876518,
-			m6BalanceModelBalance:   3999999985,
+			m5BalanceModelBalance:   4728876521,
+			m6BalanceModelBalance:   3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m4Pub, m2Pub},
@@ -2883,8 +2883,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance:   5999999998,
 			m3BalanceModelBalance:   5999999996,
 			m4BalanceModelBalance:   6000000000,
-			m5BalanceModelBalance:   4728876518,
-			m6BalanceModelBalance:   3999999985,
+			m5BalanceModelBalance:   4728876521,
+			m6BalanceModelBalance:   3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m4Pub, m2Pub},
@@ -2929,8 +2929,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance: 5999999998,
 			m3BalanceModelBalance: 5999999996,
 			m4BalanceModelBalance: 6000000000,
-			m5BalanceModelBalance: 4728876518,
-			m6BalanceModelBalance: 3999999985,
+			m5BalanceModelBalance: 4728876521,
+			m6BalanceModelBalance: 3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub, m4Pub},
@@ -2981,8 +2981,8 @@ func TestSwapIdentityMain(t *testing.T) {
 			m2BalanceModelBalance:   5999999998,
 			m3BalanceModelBalance:   5999999996,
 			m4BalanceModelBalance:   6000000000,
-			m5BalanceModelBalance:   4728876506,
-			m6BalanceModelBalance:   3999999985,
+			m5BalanceModelBalance:   4728876510,
+			m6BalanceModelBalance:   3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub, m4Pub},
