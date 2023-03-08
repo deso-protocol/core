@@ -174,6 +174,13 @@ func _daoCoinTransferTxnWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
+func TestBalanceModelDAOCoinBasic(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestDAOCoinBasic(t)
+}
+
 func TestDAOCoinBasic(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

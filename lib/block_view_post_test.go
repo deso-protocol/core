@@ -291,6 +291,13 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	return utxoOps, txn, blockHeight, nil
 }
 
+func TestBalanceModelSubmitPost(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestSubmitPost(t)
+}
+
 func TestSubmitPost(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1664,6 +1671,13 @@ func findPostByPostHash(posts []*PostEntry, targetPostHash *BlockHash) (_targetP
 	return targetPost
 }
 
+func TestBalanceModelDeSoDiamonds(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestDeSoDiamonds(t)
+}
+
 func TestDeSoDiamonds(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1870,6 +1884,13 @@ func TestDeSoDiamonds(t *testing.T) {
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
+}
+
+func TestBalanceModelDeSoDiamondErrorCases(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestDeSoDiamondErrorCases(t)
 }
 
 func TestDeSoDiamondErrorCases(t *testing.T) {
@@ -2093,6 +2114,13 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBasicTransferInsufficientDeSoForDiamondLevel)
 	}
+}
+
+func TestBalanceModelFreezingPosts(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestFreezingPosts(t)
 }
 
 func TestFreezingPosts(t *testing.T) {

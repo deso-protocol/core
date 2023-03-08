@@ -69,6 +69,12 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	return utxoOps, txn, blockHeight, nil
 }
 
+func TestBalanceModelFollowTxns(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestFollowTxns(t)
+}
 func TestFollowTxns(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

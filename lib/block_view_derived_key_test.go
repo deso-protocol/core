@@ -870,6 +870,13 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(testMeta *TestMeta, utxoView 
 	return utxoOps, txn, blockHeight, nil
 }
 
+func TestBalanceModelAuthorizeDerivedKeyBasic(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestAuthorizeDerivedKeyBasic(t)
+}
+
 func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1702,6 +1709,12 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	_derivedKeyVerifyTest(t, db, chain, transactionSpendingLimit,
 		authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
 	fmt.Println("Successfuly run TestAuthorizeDerivedKeyBasic()")
+}
+func TestBalanceModelAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestAuthorizeDerivedKeyBasicWithTransactionLimits(t)
 }
 
 func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
@@ -2591,6 +2604,14 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	_derivedKeyVerifyTest(t, db, chain, transactionSpendingLimit,
 		authTxnMeta.DerivedPublicKey, 0, 0, AuthorizeDerivedKeyOperationValid, nil)
 	fmt.Println("Successfuly run TestAuthorizeDerivedKeyBasicWithTransactionLimits()")
+}
+
+func TestBalanceModelAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
+	t.Skip("skip me!")
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t)
 }
 
 func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
@@ -3916,6 +3937,13 @@ REPEAT:
 		goto REPEAT
 	}
 	_executeAllTestRollbackAndFlush(testMeta)
+}
+
+func TestBalanceModelAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
 }
 
 func TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing.T) {

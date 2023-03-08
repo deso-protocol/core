@@ -48,6 +48,13 @@ func (data *accessGroupMembersTestData) GetInputType() transactionTestInputType 
 	return transactionTestInputTypeAccessGroupMembers
 }
 
+func TestBalanceModelAccessGroupMembersAdd(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestAccessGroupMembersAdd(t)
+}
+
 func TestAccessGroupMembersAdd(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -393,6 +400,13 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	tvbb := []*transactionTestVectorBlock{tvb1, tvb2, tvb3}
 	tes := NewTransactionTestSuite(t, tvbb, tConfig)
 	tes.Run()
+}
+
+func TestBalanceModelAccessGroupMembersRemove(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestAccessGroupMembersRemove(t)
 }
 
 func TestAccessGroupMembersRemove(t *testing.T) {
@@ -869,6 +883,13 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	tvbb := []*transactionTestVectorBlock{tvb1, tvb2, tvb3}
 	tes := NewTransactionTestSuite(t, tvbb, tConfig)
 	tes.Run()
+}
+
+func TestBalanceModelAccessGroupMembersUpdate(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestAccessGroupMembersUpdate(t)
 }
 
 func TestAccessGroupMembersUpdate(t *testing.T) {
@@ -1602,6 +1623,13 @@ func TestAccessGroupMemberTxnSpendingLimitToMetamaskString(t *testing.T) {
 			"			Transaction Count: 1\n"+
 			"		]\n",
 	)
+}
+
+func TestBalanceModelAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestAccessGroupMembersTxnWithDerivedKey(t)
 }
 
 func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {

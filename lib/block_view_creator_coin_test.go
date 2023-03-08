@@ -894,6 +894,13 @@ func _helpTestCreatorCoinBuySell(
 		int64(_getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after BlockDisconnect is incorrect")
 }
 
+func TestBalanceModelCreatorCoinWithDiamonds(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinWithDiamonds(t)
+}
+
 func TestCreatorCoinWithDiamonds(t *testing.T) {
 	// Set up a blockchain
 	assert := assert.New(t)
@@ -1079,6 +1086,13 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 	}
 
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
+}
+
+func TestBalanceModelCreatorCoinWithDiamondsFailureCases(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinWithDiamondsFailureCases(t)
 }
 
 func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
@@ -1474,6 +1488,13 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 	}
 }
 
+func TestBalanceModelCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t)
+}
+
 func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 	// Set up a blockchain.
 	assert := assert.New(t)
@@ -1604,6 +1625,12 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 	}
 }
 
+func TestBalanceModelCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t)
+}
 func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 	// Set up a blockchain
 	assert := assert.New(t)
@@ -1820,6 +1847,13 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 	}
 
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false /*desoFounderReward*/)
+}
+
+func TestBalanceModelCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
 }
 
 func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
@@ -2040,6 +2074,13 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, true /*desoFounderReward*/)
 }
 
+func TestBalanceModelCreatorCoinTransferWithSwapIdentity(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinTransferWithSwapIdentity(t)
+}
+
 func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 	// Set up a blockchain
 	assert := assert.New(t)
@@ -2211,6 +2252,13 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 }
 
+func TestBalanceModelCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
+}
+
 func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 	// Set up a blockchain
 	assert := assert.New(t)
@@ -2375,6 +2423,13 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 }
 
+func TestBalanceModelCreatorCoinTransferWithMaxTransfers(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinTransferWithMaxTransfers(t)
+}
+
 func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 	// Set up a blockchain
 	assert := assert.New(t)
@@ -2515,6 +2570,13 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 }
 
+func TestBalanceModelCreatorCoinTransferBelowMinThreshold(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinTransferBelowMinThreshold(t)
+}
+
 func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -2574,6 +2636,13 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 		m1Pub, m1Priv, m0Pub, m2Pub,
 		mempool.bc.params.CreatorCoinAutoSellThresholdNanos-1)
 	require.Contains(err.Error(), RuleErrorCreatorCoinTransferMustBeGreaterThanMinThreshold)
+}
+
+func TestBalanceModelCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t)
 }
 
 func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
@@ -2878,6 +2947,13 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 	}
 
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
+}
+
+func TestBalanceModelCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
 }
 
 func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
@@ -3215,6 +3291,13 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, true)
 }
 
+func TestBalanceModelCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
+}
+
 // This test exercises some logic whereby a creator buys and
 // sells their own coin before anybody else.
 func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
@@ -3366,6 +3449,13 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, true /*desoFounderReward*/)
 }
 
+func TestBalanceModelCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t)
+}
+
 func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *testing.T) {
 	// Set up a blockchain
 	assert := assert.New(t)
@@ -3512,6 +3602,13 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 }
 
+func TestBalanceModelCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
+}
+
 func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing.T) {
 	// Set up a blockchain
 	assert := assert.New(t)
@@ -3628,6 +3725,13 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, true /*desoFounderReward*/)
 }
 
+func TestBalanceModelCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t)
+}
+
 func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *testing.T) {
 	// Set up a blockchain
 	assert := assert.New(t)
@@ -3711,6 +3815,13 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 	}
 
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
+}
+
+func TestBalanceModelCreatorCoinLargeFounderRewardBuySellAmounts(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
 }
 
 func TestCreatorCoinLargeFounderRewardBuySellAmounts(t *testing.T) {
@@ -3800,6 +3911,13 @@ func TestCreatorCoinLargeFounderRewardBuySellAmounts(t *testing.T) {
 	}
 
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
+}
+
+func TestBalanceModelCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinAroundThresholdBuySellAmounts(t)
 }
 
 func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
@@ -4035,6 +4153,13 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, true /*desoFounderReward*/)
 }
 
+func TestBalanceModelSalomonSequence(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestSalomonSequence(t)
+}
+
 // The salomon sequence is a sequence of transactions known to
 // cause Bancor curve errors in the earlier days of the chain.
 // The sequence is named after @salomon, the finder of the sequence.
@@ -4156,6 +4281,13 @@ func TestSalomonSequence(t *testing.T) {
 	}
 
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
+}
+
+func TestBalanceModelCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinBigBuyAfterSmallBuy(t)
 }
 
 // This test stress-tests our Bancor equation by doing the smallest
@@ -4302,6 +4434,13 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 	}
 
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
+}
+
+func TestBalanceModelCreatorCoinBigBigBuyBigSell(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestCreatorCoinBigBigBuyBigSell(t)
 }
 
 func TestCreatorCoinBigBigBuyBigSell(t *testing.T) {

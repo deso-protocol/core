@@ -67,6 +67,13 @@ func _doLikeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	return utxoOps, txn, blockHeight, nil
 }
 
+func TestBalanceModelLikeTxns(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestLikeTxns(t)
+}
+
 func TestLikeTxns(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
