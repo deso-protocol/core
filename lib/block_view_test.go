@@ -145,6 +145,8 @@ func TestBalanceModelCreatorCoins(t *testing.T) {
 	TestCreatorCoinTransferBelowMinThreshold(t)
 	TestCreatorCoinTransferWithMaxTransfers(t)
 	TestCreatorCoinTransferWithSwapIdentity(t)
+	TestCreatorCoinWithDiamonds(t)
+	TestCreatorCoinWithDiamondsFailureCases(t)
 }
 
 func TestBalanceModelSwapIdentity(t *testing.T) {

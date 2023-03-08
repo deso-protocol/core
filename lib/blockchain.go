@@ -4856,6 +4856,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	//	}
 	//}
 
+	// I don't love this, but it works
+	var nftBidAmount uint64
 	// If this is an NFT Bid txn and the NFT entry is a Buy Now, we add inputs to cover the bid amount.
 	if txArg.TxnMeta.GetTxnType() == TxnTypeNFTBid && txArg.TxnMeta.(*NFTBidMetadata).SerialNumber > 0 {
 		// Create a new UtxoView. If we have access to a mempool object, use it to
@@ -4887,8 +4889,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 		if nftEntry != nil && nftEntry.IsBuyNow && nftEntry.BuyNowPriceNanos <= txMeta.BidAmountNanos {
 			spendAmount += txMeta.BidAmountNanos
-			// Does this make sense to do?
-			//additionalFees += txMeta.BidAmountNanos
+			nftBidAmount = txMeta.BidAmountNanos
 		}
 	}
 
@@ -4943,17 +4944,17 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			return 0, 0, 0, 0, fmt.Errorf(
 				"AddInputsAndChangeToTransaction: overflow detected")
 		}
-		txArg.TxnFeeNanos = feeAmountNanos + additionalFees
+		txArg.TxnFeeNanos = feeAmountNanos + additionalFees + nftBidAmount
 
 		// Prior to the BalanceModelBlockHeight, "additionalFees" such as the create profile
 		// fee were backed into the spend amount in order to create an "implicit" fee. However,
 		// in the balance model, all outputs and fees must be set explicitly, so it is included
 		// in TxnFeeNanos here instead.
-		if additionalFees > spendAmount {
+		if additionalFees+nftBidAmount > spendAmount {
 			return 0, 0, 0, 0, fmt.Errorf("AddInputsAndChangeToTransaction: " +
 				"underflow detected")
 		}
-		explicitSpendAmount := spendAmount - additionalFees
+		explicitSpendAmount := spendAmount - additionalFees - nftBidAmount
 
 		if math.MaxUint64-explicitSpendAmount < totalInput {
 			return 0, 0, 0, 0, fmt.Errorf(
