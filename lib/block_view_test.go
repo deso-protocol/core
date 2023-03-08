@@ -123,7 +123,7 @@ func TestBalanceModelDerivedKeys(t *testing.T) {
 	// Commented out test is failing
 	//TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t)
 	// TODO: I HATE THIS, but this makes it pass because it makes the encoder versions correct.
-	//DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
+	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
 	TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
 }
 
