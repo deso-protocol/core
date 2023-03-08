@@ -2863,6 +2863,7 @@ func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) (*DeSoSignature, e
 	}, nil
 }
 
+// TODO: unfortunately I think we need a separate struct, which is annoying
 type MsgDeSoTxn struct {
 	// TxnVersion 0: UTXO model transactions.
 	// TxnVersion 1: balance model transactions, which include a nonce and fee nanos.
