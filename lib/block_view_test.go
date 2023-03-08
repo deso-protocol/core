@@ -82,8 +82,6 @@ func resetBlockHeightGlobals() {
 }
 
 func TestBalanceModelBasicTransfer(t *testing.T) {
-	t.Skip("skip to make sure old test pass")
-
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
@@ -94,8 +92,6 @@ func TestBalanceModelBasicTransfer(t *testing.T) {
 }
 
 func TestBalanceModelDiamonds(t *testing.T) {
-	t.Skip("skip to make sure old test pass")
-
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
@@ -105,8 +101,6 @@ func TestBalanceModelDiamonds(t *testing.T) {
 }
 
 func TestBalanceModelSocial(t *testing.T) {
-	t.Skip("skip to make sure old test pass")
-
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
@@ -121,7 +115,6 @@ func TestBalanceModelSocial(t *testing.T) {
 }
 
 func TestBalanceModelDerivedKeys(t *testing.T) {
-	t.Skip("skip to make sure old test pass")
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
@@ -135,10 +128,6 @@ func TestBalanceModelDerivedKeys(t *testing.T) {
 }
 
 func TestBalanceModelCreatorCoins(t *testing.T) {
-	// TODO: a lot of little small fixes to these tests are needed to get them to pass as balance calculations
-	// are hard coded
-	t.Skip("skip to make sure old test pass")
-
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
@@ -159,8 +148,6 @@ func TestBalanceModelCreatorCoins(t *testing.T) {
 }
 
 func TestBalanceModelSwapIdentity(t *testing.T) {
-	t.Skip("skip to make sure old test pass")
-
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
@@ -174,9 +161,9 @@ func TestBalanceModelSwapIdentity(t *testing.T) {
 }
 
 func TestBalanceModelNFT(t *testing.T) {
-	t.Skip("skip to make sure old test pass")
+	//t.Skip("skip to make sure old test pass")
 
-	//t.Skip("temporarily skip NFT tests")
+	t.Skip("temporarily skip NFT tests")
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
@@ -195,8 +182,6 @@ func TestBalanceModelNFT(t *testing.T) {
 }
 
 func TestBalanceModelDAOCoinLimitOrders(t *testing.T) {
-	t.Skip("skip to make sure old test pass")
-
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
