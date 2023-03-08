@@ -138,6 +138,21 @@ func TestBalanceModelCreatorCoins(t *testing.T) {
 	TestCreatorCoinBigBuyAfterSmallBuy(t)
 	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
 	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
+	//TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
+	//TestCreatorCoinAroundThresholdBuySellAmounts(t)
+	//TestCreatorCoinTransferSimple_DeSoFounderReward(t)
+	//TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
+	//TestCreatorCoinTransferBelowMinThreshold(t)
+	//TestCreatorCoinTransferWithMaxTransfers(t)
+	//TestCreatorCoinTransferWithSwapIdentity(t)
+	//TestCreatorCoinWithDiamonds(t)
+	//TestCreatorCoinWithDiamondsFailureCases(t)
+}
+
+func TestBalanceModelCreatorCoins2(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
 	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
 	TestCreatorCoinAroundThresholdBuySellAmounts(t)
 	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
