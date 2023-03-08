@@ -3521,12 +3521,8 @@ REPEAT:
 	}
 	// M0 increases the global DESO limit to 11 nanos (enough to buy now)
 	{
-		globalDesoLimit := uint64(11)
-		if blockHeight >= uint64(params.ForkHeights.BalanceModelBlockHeight) {
-			globalDesoLimit = 6
-		}
 		globalDESOSpendingLimit := &TransactionSpendingLimit{
-			GlobalDESOLimit: globalDesoLimit,
+			GlobalDESOLimit: 6,
 		}
 		blockHeight, err := GetBlockTipHeight(db, false)
 		require.NoError(err)
