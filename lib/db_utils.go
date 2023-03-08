@@ -9660,6 +9660,9 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 	opts.MemTableSize = PerformanceMemTableSize
 	opts.ValueLogFileSize = PerformanceLogValueSize
 
+	// TODO: turn this off?
+	opts.Logger = nil
+
 	return opts
 }
 
