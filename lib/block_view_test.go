@@ -157,6 +157,12 @@ func TestBalanceModelCreatorCoins2(t *testing.T) {
 	TestCreatorCoinAroundThresholdBuySellAmounts(t)
 	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
 	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
+}
+
+func TestBalanceModelCreatorCoin3(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
 	TestCreatorCoinTransferBelowMinThreshold(t)
 	TestCreatorCoinTransferWithMaxTransfers(t)
 	TestCreatorCoinTransferWithSwapIdentity(t)
@@ -168,10 +174,15 @@ func TestBalanceModelSwapIdentity(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
-	// These tests are breaking because of fee differences between balance and utxo models.
 	// Swap identity.
 	TestSwapIdentityMain(t)
 	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
+}
+
+func TestBalanceModelSwapIdentity2(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
 	TestSwapIdentityCreatorCoinBuySimple(t)
 	TestSwapIdentityFailureCases(t)
 	TestSwapIdentityWithFollows(t)
