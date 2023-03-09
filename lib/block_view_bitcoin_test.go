@@ -67,7 +67,7 @@ func GetTestParamsCopy(
 	return &paramsCopy
 }
 
-func _dumpAndLoadMempool(mempool *DeSoMempool) {
+func _dumpAndLoadMempool(t *testing.T, mempool *DeSoMempool) {
 	mempoolDir := os.TempDir()
 	mempool.mempoolDir = mempoolDir
 	mempool.DumpTxnsToDB()
@@ -79,6 +79,14 @@ func _dumpAndLoadMempool(mempool *DeSoMempool) {
 	newMempool.mempoolDir = mempoolDir
 	newMempool.LoadTxnsFromDB()
 	mempool.resetPool(newMempool)
+	t.Cleanup(func() {
+		if !newMempool.stopped {
+			newMempool.Stop()
+		}
+		if !mempool.stopped {
+			mempool.Stop()
+		}
+	})
 }
 
 func _readBitcoinExchangeTestData(t *testing.T) (
@@ -359,10 +367,11 @@ func TestBitcoinExchange(t *testing.T) {
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
 	chain.params = paramsCopy
 	// Reset the pool to give the mempool access to the new BitcoinManager object.
-	mempool.resetPool(NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
+	newMP := NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, ""))
+		"" /*dataDir*/, "")
+	mempool.resetPool(newMP)
 
 	// Validating the first Bitcoin burn transaction via a UtxoView should
 	// fail because the block corresponding to it is not yet in the BitcoinManager.
@@ -701,7 +710,7 @@ func TestBitcoinExchange(t *testing.T) {
 
 	// Test that the mempool can be backed up properly by dumping them and then
 	// reloading them.
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	// The balances according to the mempool after applying all the transactions
 	// should be correct.
@@ -736,7 +745,7 @@ func TestBitcoinExchange(t *testing.T) {
 
 	// Check that removals hit the database properly by calling a dump and
 	// then reloading the db state into the view.
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	// The balances should be zero after removing transactions from the mempool.
 	{
@@ -768,7 +777,7 @@ func TestBitcoinExchange(t *testing.T) {
 	}
 
 	// Check the db one more time after adding back all the txns.
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	// Mine a block with all the mempool transactions.
 	miner.params = paramsCopy
@@ -781,19 +790,19 @@ func TestBitcoinExchange(t *testing.T) {
 	require.NoError(err)
 	_ = finalBlock1
 	// Check the mempool dumps and loads from the db properly each time
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	finalBlock2, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	finalBlock3, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	finalBlock4, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	// Add one for the block reward.
 	assert.Equal(len(finalBlock1.Txns), 1)
@@ -907,7 +916,11 @@ func TestBitcoinExchange(t *testing.T) {
 		require.NoError(err)
 		require.Equal(0, len(utxoEntries))
 	}
-
+	t.Cleanup(func() {
+		if !newMP.stopped {
+			newMP.Stop()
+		}
+	})
 	_, _, _, _, _, _ = db, mempool, miner, bitcoinBlocks, bitcoinHeaders, bitcoinHeaderHeights
 }
 
@@ -1059,10 +1072,11 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
 	chain.params = paramsCopy
 	// Reset the pool to give the mempool access to the new BitcoinManager object.
-	mempool.resetPool(NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
+	newMP := NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, ""))
+		"" /*dataDir*/, "")
+	mempool.resetPool(newMP)
 
 	//// Validating the first Bitcoin burn transaction via a UtxoView should
 	//// fail because the block corresponding to it is not yet in the BitcoinManager.
@@ -1429,7 +1443,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 	// Test that the mempool can be backed up properly by dumping them and then
 	// reloading them.
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	// The balances according to the mempool after applying all the transactions
 	// should be correct.
@@ -1464,7 +1478,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 	// Check that removals hit the database properly by calling a dump and
 	// then reloading the db state into the view.
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	// The balances should be zero after removing transactions from the mempool.
 	{
@@ -1496,7 +1510,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	}
 
 	// Check the db one more time after adding back all the txns.
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	miner.params = paramsCopy
 	miner.BlockProducer.params = paramsCopy
@@ -1508,19 +1522,19 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	require.NoError(err)
 	_ = finalBlock1
 	// Check the mempool dumps and loads from the db properly each time
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	finalBlock2, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	finalBlock3, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	finalBlock4, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
-	_dumpAndLoadMempool(mempool)
+	_dumpAndLoadMempool(t, mempool)
 
 	// Add one for the block reward.
 	assert.Equal(len(finalBlock1.Txns), 1)
@@ -1635,6 +1649,11 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		require.Equal(0, len(utxoEntries))
 	}
 
+	t.Cleanup(func() {
+		if !newMP.stopped {
+			newMP.Stop()
+		}
+	})
 	_, _, _, _, _, _ = db, mempool, miner, bitcoinBlocks, bitcoinHeaders, bitcoinHeaderHeights
 }
 
@@ -1785,10 +1804,11 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
 	chain.params = paramsCopy
 	// Reset the pool to give the mempool access to the new BitcoinManager object.
-	mempool.resetPool(NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
+	newMP := NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, ""))
+		"" /*dataDir*/, "")
+	mempool.resetPool(newMP)
 
 	// The amount of work on the first burn transaction should be zero.
 	burnTxn1 := bitcoinExchangeTxns[0]
@@ -2235,6 +2255,11 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 		assert.Equal(int64(16517205024), int64(totalBalance))
 	}
 
+	t.Cleanup(func() {
+		if !newMP.stopped {
+			newMP.Stop()
+		}
+	})
 	_, _, _, _, _, _ = db, mempool, miner, bitcoinBlocks, bitcoinHeaders, bitcoinHeaderHeights
 }
 
@@ -2388,10 +2413,11 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
 	chain.params = paramsCopy
 	// Reset the pool to give the mempool access to the new BitcoinManager object.
-	mempool.resetPool(NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
+	newMP := NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, ""))
+		"" /*dataDir*/, "")
+	mempool.resetPool(newMP)
 
 	// The amount of work on the first burn transaction should be zero.
 	burnTxn1 := bitcoinExchangeTxns[0]
@@ -2902,6 +2928,11 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		require.Equal(0, len(utxoEntries))
 	}
 
+	t.Cleanup(func() {
+		if !newMP.stopped {
+			newMP.Stop()
+		}
+	})
 	_, _, _, _, _, _ = db, mempool, miner, bitcoinBlocks, bitcoinHeaders, bitcoinHeaderHeights
 }
 

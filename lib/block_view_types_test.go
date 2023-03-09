@@ -256,10 +256,11 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 	paramsCopy.BitcoinBurnAddress = BitcoinTestnetBurnAddress
 	chain.params = paramsCopy
 	// Reset the pool to give the mempool access to the new BitcoinManager object.
-	mempool.resetPool(NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
+	newMP := NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, ""))
+		"" /*dataDir*/, "")
+	mempool.resetPool(newMP)
 
 	// Validating the first Bitcoin burn transaction via a UtxoView should
 	// fail because the block corresponding to it is not yet in the BitcoinManager.
@@ -383,4 +384,9 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 		// Flushing the UtxoView should work.
 		require.NoError(utxoView.FlushToDb(0))
 	}
+	t.Cleanup(func() {
+		if !newMP.stopped {
+			newMP.Stop()
+		}
+	})
 }

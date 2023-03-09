@@ -137,7 +137,7 @@ func getForkedChain(t *testing.T) (blockA1, blockA2, blockB1, blockB2,
 	return
 }
 
-func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
+func NewTestBlockchain(t *testing.T) (*Blockchain, *DeSoParams, *badger.DB) {
 	db, _ := GetTestBadgerDb()
 	timesource := chainlib.NewMedianTime()
 
@@ -153,6 +153,10 @@ func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	t.Cleanup(func() {
+		CleanUpBadger(db)
+	})
 
 	return chain, &paramsCopy, db
 }
@@ -335,10 +339,11 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 	require.NoError(err)
 
 	t.Cleanup(func() {
-		//newMiner.Stop()
-		//blockProducer.Stop()
-		//mempool.Stop()
-
+		newMiner.Stop()
+		blockProducer.Stop()
+		if !mempool.stopped {
+			mempool.Stop()
+		}
 	})
 	return mempool, newMiner
 }
@@ -621,7 +626,7 @@ func TestSeedBalancesTest(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewTestBlockchain()
+	chain, params, db := NewTestBlockchain(t)
 	for _, seedBalance := range params.SeedBalances {
 		require.Equal(int64(482), int64(GetUtxoNumEntries(db, chain.snapshot)))
 		foundUtxos, err := chain.GetSpendableUtxosForPublicKey(seedBalance.PublicKey, nil, nil)

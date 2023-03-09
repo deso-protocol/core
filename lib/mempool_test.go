@@ -94,6 +94,11 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 		prevTxn = newTxn
 	}
 	_, _ = require, senderPkBytes
+	t.Cleanup(func() {
+		if !mp.stopped {
+			mp.Stop()
+		}
+	})
 }
 
 // Create a chain of transactions with zero fees. Have one public key just
@@ -195,6 +200,13 @@ func TestMempoolRateLimit(t *testing.T) {
 	require.Contains(processingErrors, TxErrorInsufficientFeeRateLimit)
 
 	_, _ = require, senderPkBytes
+	t.Cleanup(func() {
+		for _, mempool := range []*DeSoMempool{mpNoMinFees, mpWithMinFee, mpWithRateLimit} {
+			if !mempool.stopped {
+				mempool.Stop()
+			}
+		}
+	})
 }
 
 // A chain of transactions one after the other each spending the change
@@ -421,4 +433,8 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	}
 
 	_, _, _, _, _ = mempoolTx1, mempoolTx2, mempoolTx3, mempoolTx4, params
+
+	t.Cleanup(func() {
+		mp.Stop()
+	})
 }
