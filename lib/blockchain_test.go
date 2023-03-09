@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
-	"runtime"
 	"testing"
 	"time"
 
@@ -174,7 +173,6 @@ func CleanUpBadger(db *badger.DB) {
 func AppendToMemLog(t *testing.T, prefix string) {
 	//var mem runtime.MemStats
 	//runtime.ReadMemStats(&mem)
-	//fmt.Printf("Memory usage: %d bytes\n", mem.Alloc)
 	//f, err := os.OpenFile("mem.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	//if err == nil {
 	//	defer f.Close()
@@ -191,8 +189,6 @@ func NewLowDifficultyBlockchain(t *testing.T) (
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
 	bc, params, db := NewLowDifficultyBlockchainWithParams(t, &DeSoTestnetParams)
-
-	//t.Cleanup(CleanUpBadger(db, t))
 
 	return bc, params, db
 }
@@ -258,7 +254,6 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 			CleanUpBadger(snap.SnapshotDb)
 		}
 		CleanUpBadger(db)
-		runtime.GC()
 		AppendToMemLog(t, "CLEANUP_END")
 	})
 
