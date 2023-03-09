@@ -916,6 +916,7 @@ func TestBitcoinExchange(t *testing.T) {
 		require.NoError(err)
 		require.Equal(0, len(utxoEntries))
 	}
+
 	t.Cleanup(func() {
 		if !newMP.stopped {
 			newMP.Stop()

@@ -192,9 +192,7 @@ func NewLowDifficultyBlockchain(t *testing.T) (
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	bc, params, db := NewLowDifficultyBlockchainWithParams(t, &DeSoTestnetParams)
-
-	return bc, params, db
+	return NewLowDifficultyBlockchainWithParams(t, &DeSoTestnetParams)
 }
 
 func NewLowDifficultyBlockchainWithParams(t *testing.T, params *DeSoParams) (
