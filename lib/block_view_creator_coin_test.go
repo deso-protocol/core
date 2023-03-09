@@ -3675,7 +3675,7 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           5899999998,
 			m2DeSoBalance:           6000000000,
-			m0BalanceModelBalance:   5999999999,
+			m0BalanceModelBalance:   5999999998,
 			m1BalanceModelBalance:   5899999999,
 			m2BalanceModelBalance:   6000000000,
 		},
