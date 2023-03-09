@@ -39,7 +39,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	var err error
 
 	// Initialize test chain and miner.
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
@@ -2196,7 +2196,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	var err error
 
 	// Initialize test chain and miner.
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Initialize fork heights.

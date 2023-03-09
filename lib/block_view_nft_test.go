@@ -791,7 +791,7 @@ func TestNFTBasic(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -852,7 +852,7 @@ func TestNFTBasic(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -891,7 +891,7 @@ func TestNFTBasic(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Error case: m0 cannot turn a vanilla repost of their post into an NFT.
@@ -906,7 +906,7 @@ func TestNFTBasic(t *testing.T) {
 			&DeSoBodySchema{}, /*body*/
 			post1Hash[:],      /*repostedPostHash*/
 			1502947011*1e9,    /*tstampNanos*/
-			false /*isHidden*/)
+			false              /*isHidden*/)
 
 		vanillaRepostPostHash := testMeta.txns[len(testMeta.txns)-1].Hash()
 		_, _, _, err := _createNFT(
@@ -1164,7 +1164,7 @@ func TestNFTBasic(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post2Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -1269,7 +1269,7 @@ func TestNFTBasic(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 3"}, /*body*/
 			[]byte{},
 			1502947013*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post3Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -1675,7 +1675,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -1732,7 +1732,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -1749,7 +1749,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Make sure that m0 has coins in circulation so that creator coin royalties can be paid.
@@ -2210,7 +2210,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -2268,7 +2268,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 
 		_submitPostWithTestMeta(
 			testMeta,
@@ -2280,7 +2280,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-2].Hash()
 	post2Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
@@ -2298,7 +2298,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Create NFT: Let's have m0 create two NFTs for testing.
@@ -2538,7 +2538,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -2596,7 +2596,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -2613,7 +2613,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Create NFT with a minimum bid amount.
@@ -2790,7 +2790,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -2848,7 +2848,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -2865,7 +2865,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Create NFT with IsForSale=false.
@@ -3006,7 +3006,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -3064,7 +3064,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -3081,7 +3081,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Error case: CreatorBasisPoints / CoinBasisPoints greater than max.
@@ -3354,7 +3354,7 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -3412,7 +3412,7 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -3429,7 +3429,7 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Finally, have m0 turn post1 into an NFT. Woohoo!
@@ -3640,7 +3640,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -3698,7 +3698,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -3715,7 +3715,7 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Finally, have m0 turn post1 into an NFT. Woohoo!
@@ -3931,7 +3931,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -3989,7 +3989,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 
 		_submitPostWithTestMeta(
 			testMeta,
@@ -4001,7 +4001,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 
 		_submitPostWithTestMeta(
 			testMeta,
@@ -4013,7 +4013,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 3"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 	post2Hash := testMeta.txns[len(testMeta.txns)-2].Hash()
@@ -4032,7 +4032,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Error case: creating an NFT with 1001 copies should fail since the default max is 1000.
@@ -4141,7 +4141,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			m3Priv,
 			-1, -1, -1, -1,
 			MaxMaxCopiesPerNFT+1, /*maxCopiesPerNFT*/
-			true)                 /*flushToDB*/
+			true) /*flushToDB*/
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorMaxCopiesPerNFTTooHigh)
 
@@ -4152,7 +4152,7 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 			m3Priv,
 			-1, -1, -1, -1,
 			MinMaxCopiesPerNFT-1, /*maxCopiesPerNFT*/
-			true)                 /*flushToDB*/
+			true) /*flushToDB*/
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorMaxCopiesPerNFTTooLow)
 	}
@@ -4245,7 +4245,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -4303,7 +4303,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -4321,7 +4321,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 
 		// We only need 1 copy for this test.
 		_createNFTWithTestMeta(
@@ -4539,7 +4539,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -4619,7 +4619,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 
 		_submitPostWithTestMeta(
 			testMeta,
@@ -4631,7 +4631,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-2].Hash()
 	post2Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
@@ -4649,7 +4649,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Have m0 turn both post1 and post2 into NFTs.
@@ -5046,7 +5046,7 @@ func TestBidAmountZero(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -5104,7 +5104,7 @@ func TestBidAmountZero(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -5122,7 +5122,7 @@ func TestBidAmountZero(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 
 		// We only need 1 copy for this test.
 		_createNFTWithTestMeta(
@@ -5256,7 +5256,7 @@ func TestNFTBuyNow(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -5315,7 +5315,7 @@ func TestNFTBuyNow(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -5333,7 +5333,7 @@ func TestNFTBuyNow(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 	// Make sure that m0 has coins in circulation so that creator coin royalties can be paid.
 	{
@@ -6273,7 +6273,7 @@ func TestNFTSplits(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -6338,7 +6338,7 @@ func TestNFTSplits(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -6356,7 +6356,7 @@ func TestNFTSplits(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		// You need a profile in order to receive royalties to your coin
 		_updateProfileWithTestMeta(
 			testMeta,
@@ -6369,7 +6369,7 @@ func TestNFTSplits(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 
 		_updateProfileWithTestMeta(
 			testMeta,
@@ -6382,7 +6382,7 @@ func TestNFTSplits(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 	// Make sure that m0 has coins in circulation so that creator coin royalties can be paid.
 	{
@@ -6994,7 +6994,7 @@ func TestNFTSplits(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 2"}, /*body*/
 			[]byte{},
 			1502947012*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post2Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -7249,7 +7249,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -7315,7 +7315,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			&DeSoBodySchema{Body: "m0 post 1"}, /*body*/
 			[]byte{},
 			1502947011*1e9, /*tstampNanos*/
-			false /*isHidden*/)
+			false           /*isHidden*/)
 	}
 	post1Hash := testMeta.txns[len(testMeta.txns)-1].Hash()
 
@@ -7334,7 +7334,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		_updateProfileWithTestMeta(
 			testMeta,
 			10,            /*feeRateNanosPerKB*/
@@ -7346,7 +7346,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 
 		_updateProfileWithTestMeta(
 			testMeta,
@@ -7359,7 +7359,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		_updateProfileWithTestMeta(
 			testMeta,
 			10,            /*feeRateNanosPerKB*/
@@ -7371,7 +7371,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 		_updateProfileWithTestMeta(
 			testMeta,
 			10,            /*feeRateNanosPerKB*/
@@ -7383,7 +7383,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 			shortPic,      /*newProfilePic*/
 			10*100,        /*newCreatorBasisPoints*/
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+			false          /*isHidden*/)
 	}
 
 	// Make a really, really complicated NFT
