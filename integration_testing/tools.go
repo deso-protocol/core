@@ -369,6 +369,9 @@ func startNode(t *testing.T, node *cmd.Node) *cmd.Node {
 	}
 	// Start the node.
 	node.Start()
+	t.Cleanup(func() {
+		node.Stop()
+	})
 	return node
 }
 
