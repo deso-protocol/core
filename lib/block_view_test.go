@@ -629,7 +629,7 @@ func (tes *transactionTestSuite) InitializeChainAndGetTestMeta(useBadger bool, u
 
 	// Initialize the blockchain, database, mempool, and miner.
 	if useBadger {
-		chain, params, db = NewLowDifficultyBlockchain(t)
+		chain, params, db = NewLowDifficultyBlockchain(tes.t)
 		mempool, miner = NewTestMiner(config.t, chain, params, true /*isSender*/)
 	} else if usePostgres {
 		pgPort := uint32(5433)
