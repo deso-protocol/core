@@ -5439,7 +5439,6 @@ func TestBidAmountZero(t *testing.T) {
 }
 
 func TestBalanceModelNFTBuyNow(t *testing.T) {
-	t.Skip("broken")
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
