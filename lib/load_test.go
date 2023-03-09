@@ -20,7 +20,7 @@ func TestComputeMaxTPS(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_, _ = mempool, db
 
@@ -185,7 +185,7 @@ func TestComputeMaxTPS(t *testing.T) {
 	// Apply the blocks to a new chain with timings
 	{
 
-		newChain, newParams, newDB := NewLowDifficultyBlockchain()
+		newChain, newParams, newDB := NewLowDifficultyBlockchain(t)
 		_, _ = newParams, newDB
 		timeStart := time.Now()
 		for _, blockToConnect := range blocksMined {
@@ -206,7 +206,7 @@ func TestConnectBlocksLoadTest(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_, _ = mempool, db
 
@@ -224,7 +224,7 @@ func TestConnectBlocksLoadTest(t *testing.T) {
 
 	// Apply the blocks to a new chain with timings
 	{
-		newChain, newParams, newDB := NewLowDifficultyBlockchain()
+		newChain, newParams, newDB := NewLowDifficultyBlockchain(t)
 		_, _ = newParams, newDB
 		ff, err := os.Create("/tmp/block-processing-profile")
 		require.NoError(err)

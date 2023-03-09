@@ -126,7 +126,7 @@ func TestPrivateMessage(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Allow extra data
@@ -662,12 +662,17 @@ func _messagingKeyWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, 
 	}
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypePrivateMessage operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypePrivateMessage operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
+
 	require.Equal(OperationTypeMessagingKey, utxoOps[len(utxoOps)-1].Type)
 	require.NoError(utxoView.FlushToDb(0))
 	return utxoOps, txn, err
@@ -773,7 +778,7 @@ func TestMessagingKeys(t *testing.T) {
 	_ = require
 	_ = assert
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Allow extra data
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
@@ -1698,10 +1703,15 @@ func _connectPrivateMessageWithPartyWithExtraData(testMeta *TestMeta, senderPkBy
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < testMeta.params.ForkHeights.BalanceModelBlockHeight {
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
+
 	require.Equal(OperationTypePrivateMessage, utxoOps[len(utxoOps)-1].Type)
 	require.NoError(utxoView.FlushToDb(0))
 
@@ -1818,7 +1828,7 @@ func TestGroupMessages(t *testing.T) {
 	_ = require
 	_ = assert
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_ = miner
 

@@ -629,14 +629,14 @@ func (tes *transactionTestSuite) InitializeChainAndGetTestMeta(useBadger bool, u
 
 	// Initialize the blockchain, database, mempool, and miner.
 	if useBadger {
-		chain, params, db = NewLowDifficultyBlockchain()
+		chain, params, db = NewLowDifficultyBlockchain(tes.t)
 		mempool, miner = NewTestMiner(config.t, chain, params, true /*isSender*/)
 	} else if usePostgres {
 		pgPort := uint32(5433)
 		if config.testPostgresPort != 0 {
 			pgPort = config.testPostgresPort
 		}
-		chain, params, embpg = NewLowDifficultyBlockchainWithParamsAndDb(&DeSoTestnetParams,
+		chain, params, embpg = NewLowDifficultyBlockchainWithParamsAndDb(tes.t, &DeSoTestnetParams,
 			true, pgPort)
 		mempool, miner = NewTestMiner(config.t, chain, params, true /*isSender*/)
 		pg = chain.postgres
@@ -1397,7 +1397,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	postgres := chain.postgres
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_, _ = mempool, miner
@@ -1545,7 +1545,7 @@ func TestBasicTransfer(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	postgres := chain.postgres
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Mine two blocks to give the sender some DeSo.
@@ -1819,7 +1819,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	postgres := chain.postgres
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)

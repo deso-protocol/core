@@ -5,6 +5,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"strconv"
 	"testing"
 )
 
@@ -118,7 +119,7 @@ func _helpTestCreatorCoinBuySell(
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
@@ -174,6 +175,28 @@ func _helpTestCreatorCoinBuySell(
 	m5StartNanos := _getBalance(t, chain, nil, m5Pub)
 	m6StartNanos := _getBalance(t, chain, nil, m6Pub)
 
+	checkBal := func(testBalance uint64, pubKey string, prefix string, message string) {
+		if testBalance == 0 {
+			return
+		}
+		bal := _getBalance(t, chain, mempool, pubKey)
+		if bal == 6*NanosPerUnit {
+			return
+		}
+		assert.Equalf(int64(testBalance), int64(bal), "%v: %v", prefix, message)
+	}
+
+	checkBalWithView := func(view *UtxoView, testBalance uint64, pubKey string, prefix string, message string) {
+		if testBalance == 0 {
+			return
+		}
+		bal := _getBalanceWithView(t, chain, view, pubKey)
+		if bal == 6*NanosPerUnit {
+			return
+		}
+		assert.Equalf(int64(testBalance), int64(bal), "%v: %v", prefix, message)
+	}
+
 	testUtxoOps := [][]*UtxoOperation{}
 	testTxns := []*MsgDeSoTxn{}
 	_checkTestData := func(
@@ -188,64 +211,22 @@ func _helpTestCreatorCoinBuySell(
 		if mempool != nil {
 			if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
 				// DeSo balances
-				if _getBalance(t, chain, mempool, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
-					assert.Equalf(int64(testData.m0DeSoBalance),
-						int64(_getBalance(t, chain, mempool, m0Pub)), "MempoolIncrementalBalanceCheck: m0 DeSo balance: %v", message)
-				}
-				if _getBalance(t, chain, mempool, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
-					assert.Equalf(int64(testData.m1DeSoBalance),
-						int64(_getBalance(t, chain, mempool, m1Pub)), "MempoolIncrementalBalanceCheck: m1 DeSo balance: %v", message)
-				}
-				if _getBalance(t, chain, mempool, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
-					assert.Equalf(int64(testData.m2DeSoBalance),
-						int64(_getBalance(t, chain, mempool, m2Pub)), "MempoolIncrementalBalanceCheck: m2 DeSo balance: %v", message)
-				}
-				if _getBalance(t, chain, mempool, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
-					assert.Equalf(int64(testData.m3DeSoBalance),
-						int64(_getBalance(t, chain, mempool, m3Pub)), "MempoolIncrementalBalanceCheck: m3 DeSo balance: %v", message)
-				}
-				if _getBalance(t, chain, mempool, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
-					assert.Equalf(int64(testData.m4DeSoBalance),
-						int64(_getBalance(t, chain, mempool, m4Pub)), "MempoolIncrementalBalanceCheck: m4 DeSo balance: %v", message)
-				}
-				if _getBalance(t, chain, mempool, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
-					assert.Equalf(int64(testData.m5DeSoBalance),
-						int64(_getBalance(t, chain, mempool, m5Pub)), "MempoolIncrementalBalanceCheck: m5 DeSo balance: %v", message)
-				}
-				if _getBalance(t, chain, mempool, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
-					assert.Equalf(int64(testData.m6DeSoBalance),
-						int64(_getBalance(t, chain, mempool, m6Pub)), "MempoolIncrementalBalanceCheck: m6 DeSo balance: %v", message)
-				}
+				checkBal(testData.m0DeSoBalance, m0Pub, "MempoolIncrementalBalanceCheck: m0 DeSo balance", message)
+				checkBal(testData.m1DeSoBalance, m1Pub, "MempoolIncrementalBalanceCheck: m1 DeSo balance", message)
+				checkBal(testData.m2DeSoBalance, m2Pub, "MempoolIncrementalBalanceCheck: m2 DeSo balance", message)
+				checkBal(testData.m3DeSoBalance, m3Pub, "MempoolIncrementalBalanceCheck: m3 DeSo balance", message)
+				checkBal(testData.m4DeSoBalance, m4Pub, "MempoolIncrementalBalanceCheck: m4 DeSo balance", message)
+				checkBal(testData.m5DeSoBalance, m5Pub, "MempoolIncrementalBalanceCheck: m5 DeSo balance", message)
+				checkBal(testData.m6DeSoBalance, m6Pub, "MempoolIncrementalBalanceCheck: m6 DeSo balance", message)
 			} else {
 				// DeSo balances
-				if _getBalance(t, chain, mempool, m0Pub) != 6*NanosPerUnit && testData.m0BalanceModelBalance != 0 {
-					assert.Equalf(int64(testData.m0BalanceModelBalance),
-						int64(_getBalance(t, chain, mempool, m0Pub)), "MempoolIncrementalBalanceCheck: m0 DeSo balance: %v", message)
-				}
-				if _getBalance(t, chain, mempool, m1Pub) != 6*NanosPerUnit && testData.m1BalanceModelBalance != 0 {
-					assert.Equalf(int64(testData.m1BalanceModelBalance),
-						int64(_getBalance(t, chain, mempool, m1Pub)), "MempoolIncrementalBalanceCheck: m1 DeSo balance: %v", message)
-				}
-				if _getBalance(t, chain, mempool, m2Pub) != 6*NanosPerUnit && testData.m2BalanceModelBalance != 0 {
-					assert.Equalf(int64(testData.m2BalanceModelBalance),
-						int64(_getBalance(t, chain, mempool, m2Pub)), "MempoolIncrementalBalanceCheck: m2 DeSo balance: %v", message)
-				}
-				if _getBalance(t, chain, mempool, m3Pub) != 6*NanosPerUnit && testData.m3BalanceModelBalance != 0 {
-					assert.Equalf(int64(testData.m3BalanceModelBalance),
-						int64(_getBalance(t, chain, mempool, m3Pub)), "MempoolIncrementalBalanceCheck: m3 DeSo balance: %v", message)
-				}
-				if _getBalance(t, chain, mempool, m4Pub) != 6*NanosPerUnit && testData.m4BalanceModelBalance != 0 {
-					assert.Equalf(int64(testData.m4BalanceModelBalance),
-						int64(_getBalance(t, chain, mempool, m4Pub)), "MempoolIncrementalBalanceCheck: m4 DeSo balance: %v", message)
-				}
-				if _getBalance(t, chain, mempool, m5Pub) != 6*NanosPerUnit && testData.m5BalanceModelBalance != 0 {
-					assert.Equalf(int64(testData.m5BalanceModelBalance),
-						int64(_getBalance(t, chain, mempool, m5Pub)), "MempoolIncrementalBalanceCheck: m5 DeSo balance: %v", message)
-				}
-				if _getBalance(t, chain, mempool, m6Pub) != 6*NanosPerUnit && testData.m6BalanceModelBalance != 0 {
-					assert.Equalf(int64(testData.m6BalanceModelBalance),
-						int64(_getBalance(t, chain, mempool, m6Pub)), "MempoolIncrementalBalanceCheck: m6 DeSo balance: %v", message)
-				}
+				checkBal(testData.m0BalanceModelBalance, m0Pub, "MempoolIncrementalBalanceCheck: m0 DeSo balance", message)
+				checkBal(testData.m1BalanceModelBalance, m1Pub, "MempoolIncrementalBalanceCheck: m1 DeSo balance", message)
+				checkBal(testData.m2BalanceModelBalance, m2Pub, "MempoolIncrementalBalanceCheck: m2 DeSo balance", message)
+				checkBal(testData.m3BalanceModelBalance, m3Pub, "MempoolIncrementalBalanceCheck: m3 DeSo balance", message)
+				checkBal(testData.m4BalanceModelBalance, m4Pub, "MempoolIncrementalBalanceCheck: m4 DeSo balance", message)
+				checkBal(testData.m5BalanceModelBalance, m5Pub, "MempoolIncrementalBalanceCheck: m5 DeSo balance", message)
+				checkBal(testData.m6BalanceModelBalance, m6Pub, "MempoolIncrementalBalanceCheck: m6 DeSo balance", message)
 			}
 
 			return
@@ -384,64 +365,22 @@ func _helpTestCreatorCoinBuySell(
 
 		if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
 			// DeSo balances
-			if _getBalanceWithView(t, chain, utxoView, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m0DeSoBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m0Pub)), "m0 DeSo balance: %v", message)
-			}
-			if _getBalanceWithView(t, chain, utxoView, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m1DeSoBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m1Pub)), "m1 DeSo balance: %v", message)
-			}
-			if _getBalanceWithView(t, chain, utxoView, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m2DeSoBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m2Pub)), "m2 DeSo balance: %v", message)
-			}
-			if _getBalanceWithView(t, chain, utxoView, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m3DeSoBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m3Pub)), "m3 DeSo balance: %v", message)
-			}
-			if _getBalanceWithView(t, chain, utxoView, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m4DeSoBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m4Pub)), "m4 DeSo balance: %v", message)
-			}
-			if _getBalanceWithView(t, chain, utxoView, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m5DeSoBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m5Pub)), "m5 DeSo balance: %v", message)
-			}
-			if _getBalanceWithView(t, chain, utxoView, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m6DeSoBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m6Pub)), "m6 DeSo balance: %v", message)
-			}
+			checkBalWithView(utxoView, testData.m0DeSoBalance, m0Pub, "m0 DeSo balance", message)
+			checkBalWithView(utxoView, testData.m1DeSoBalance, m1Pub, "m1 DeSo balance", message)
+			checkBalWithView(utxoView, testData.m2DeSoBalance, m2Pub, "m2 DeSo balance", message)
+			checkBalWithView(utxoView, testData.m3DeSoBalance, m3Pub, "m3 DeSo balance", message)
+			checkBalWithView(utxoView, testData.m4DeSoBalance, m4Pub, "m4 DeSo balance", message)
+			checkBalWithView(utxoView, testData.m5DeSoBalance, m5Pub, "m5 DeSo balance", message)
+			checkBalWithView(utxoView, testData.m6DeSoBalance, m6Pub, "m6 DeSo balance", message)
 		} else {
 			// Balance Model DESO balances
-			if _getBalanceWithView(t, chain, utxoView, m0Pub) != 6*NanosPerUnit && testData.m0BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m0BalanceModelBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m0Pub)), "m0 DeSo balance: %v", message)
-			}
-			if _getBalanceWithView(t, chain, utxoView, m1Pub) != 6*NanosPerUnit && testData.m1BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m1BalanceModelBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m1Pub)), "m1 DeSo balance: %v", message)
-			}
-			if _getBalanceWithView(t, chain, utxoView, m2Pub) != 6*NanosPerUnit && testData.m2BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m2BalanceModelBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m2Pub)), "m2 DeSo balance: %v", message)
-			}
-			if _getBalanceWithView(t, chain, utxoView, m3Pub) != 6*NanosPerUnit && testData.m3BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m3BalanceModelBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m3Pub)), "m3 DeSo balance: %v", message)
-			}
-			if _getBalanceWithView(t, chain, utxoView, m4Pub) != 6*NanosPerUnit && testData.m4BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m4BalanceModelBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m4Pub)), "m4 DeSo balance: %v", message)
-			}
-			if _getBalanceWithView(t, chain, utxoView, m5Pub) != 6*NanosPerUnit && testData.m5BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m5BalanceModelBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m5Pub)), "m5 DeSo balance: %v", message)
-			}
-			if _getBalanceWithView(t, chain, utxoView, m6Pub) != 6*NanosPerUnit && testData.m6BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m6BalanceModelBalance),
-					int64(_getBalanceWithView(t, chain, utxoView, m6Pub)), "m6 DeSo balance: %v", message)
-			}
+			checkBalWithView(utxoView, testData.m0BalanceModelBalance, m0Pub, "m0 Balance Model balance", message)
+			checkBalWithView(utxoView, testData.m1BalanceModelBalance, m1Pub, "m1 Balance Model balance", message)
+			checkBalWithView(utxoView, testData.m2BalanceModelBalance, m2Pub, "m2 Balance Model balance", message)
+			checkBalWithView(utxoView, testData.m3BalanceModelBalance, m3Pub, "m3 Balance Model balance", message)
+			checkBalWithView(utxoView, testData.m4BalanceModelBalance, m4Pub, "m4 Balance Model balance", message)
+			checkBalWithView(utxoView, testData.m5BalanceModelBalance, m5Pub, "m5 Balance Model balance", message)
+			checkBalWithView(utxoView, testData.m6BalanceModelBalance, m6Pub, "m6 Balance Model balance", message)
 		}
 
 		for ii, profilePubStr := range testData.ProfilesToCheckPublicKeysBase58Check {
@@ -791,64 +730,22 @@ func _helpTestCreatorCoinBuySell(
 		testData := creatorCoinTests[testIndex]
 		if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
 			// DeSo balances
-			if _getBalance(t, chain, nil, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m0DeSoBalance),
-					int64(_getBalance(t, chain, nil, m0Pub)), "BlockConnect: m0 DeSo balance: %v", testIndex)
-			}
-			if _getBalance(t, chain, nil, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m1DeSoBalance),
-					int64(_getBalance(t, chain, nil, m1Pub)), "BlockConnect: m1 DeSo balance: %v", testIndex)
-			}
-			if _getBalance(t, chain, nil, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m2DeSoBalance),
-					int64(_getBalance(t, chain, nil, m2Pub)), "BlockConnect: m2 DeSo balance: %v", testIndex)
-			}
-			if _getBalance(t, chain, nil, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m3DeSoBalance),
-					int64(_getBalance(t, chain, nil, m3Pub)), "BlockConnect: m3 DeSo balance: %v", testIndex)
-			}
-			if _getBalance(t, chain, nil, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m4DeSoBalance),
-					int64(_getBalance(t, chain, nil, m4Pub)), "BlockConnect: m4 DeSo balance: %v", testIndex)
-			}
-			if _getBalance(t, chain, nil, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m5DeSoBalance),
-					int64(_getBalance(t, chain, nil, m5Pub)), "BlockConnect: m5 DeSo balance: %v", testIndex)
-			}
-			if _getBalance(t, chain, nil, m6Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m6DeSoBalance),
-					int64(_getBalance(t, chain, nil, m6Pub)), "BlockConnect: m6 DeSo balance: %v", testIndex)
-			}
+			checkBal(testData.m0DeSoBalance, m0Pub, "BlockConnect: m0 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m1DeSoBalance, m1Pub, "BlockConnect: m1 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m2DeSoBalance, m2Pub, "BlockConnect: m2 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m3DeSoBalance, m3Pub, "BlockConnect: m3 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m4DeSoBalance, m4Pub, "BlockConnect: m4 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m5DeSoBalance, m5Pub, "BlockConnect: m5 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m6DeSoBalance, m6Pub, "BlockConnect: m6 DeSo balance", strconv.Itoa(testIndex))
 		} else {
 			// Balance Model balances
-			if _getBalance(t, chain, nil, m0Pub) != 6*NanosPerUnit && testData.m0BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m0BalanceModelBalance),
-					int64(_getBalance(t, chain, nil, m0Pub)), "BlockConnect: m0 DeSo balance: %v", testIndex)
-			}
-			if _getBalance(t, chain, nil, m1Pub) != 6*NanosPerUnit && testData.m1BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m1BalanceModelBalance),
-					int64(_getBalance(t, chain, nil, m1Pub)), "BlockConnect: m1 DeSo balance: %v", testIndex)
-			}
-			if _getBalance(t, chain, nil, m2Pub) != 6*NanosPerUnit && testData.m2BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m2BalanceModelBalance),
-					int64(_getBalance(t, chain, nil, m2Pub)), "BlockConnect: m2 DeSo balance: %v", testIndex)
-			}
-			if _getBalance(t, chain, nil, m3Pub) != 6*NanosPerUnit && testData.m3BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m3BalanceModelBalance),
-					int64(_getBalance(t, chain, nil, m3Pub)), "BlockConnect: m3 DeSo balance: %v", testIndex)
-			}
-			if _getBalance(t, chain, nil, m4Pub) != 6*NanosPerUnit && testData.m4BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m4BalanceModelBalance),
-					int64(_getBalance(t, chain, nil, m4Pub)), "BlockConnect: m4 DeSo balance: %v", testIndex)
-			}
-			if _getBalance(t, chain, nil, m5Pub) != 6*NanosPerUnit && testData.m5BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m5BalanceModelBalance),
-					int64(_getBalance(t, chain, nil, m5Pub)), "BlockConnect: m5 DeSo balance: %v", testIndex)
-			}
-			if _getBalance(t, chain, nil, m6Pub) != 6*NanosPerUnit && testData.m5BalanceModelBalance != 0 {
-				assert.Equalf(int64(testData.m6BalanceModelBalance),
-					int64(_getBalance(t, chain, nil, m6Pub)), "BlockConnect: m6 DeSo balance: %v", testIndex)
-			}
+			checkBal(testData.m0BalanceModelBalance, m0Pub, "BlockConnect: m0 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m1BalanceModelBalance, m1Pub, "BlockConnect: m1 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m2BalanceModelBalance, m2Pub, "BlockConnect: m2 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m3BalanceModelBalance, m3Pub, "BlockConnect: m3 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m4BalanceModelBalance, m4Pub, "BlockConnect: m4 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m5BalanceModelBalance, m5Pub, "BlockConnect: m5 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m6BalanceModelBalance, m6Pub, "BlockConnect: m6 BalanceModel balance", strconv.Itoa(testIndex))
 		}
 	}
 
@@ -1101,7 +998,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
@@ -1501,7 +1398,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
@@ -1679,7 +1576,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4728876542,
+			m1BalanceModelBalance:   4728876543,
 			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 transfer some creator coins to m2
@@ -1706,7 +1603,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           4728876540,
 			m2DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4728876540,
+			m1BalanceModelBalance:   4728876541,
 			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 transfer some more creator coins to m2
@@ -1733,7 +1630,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           4728876538,
 			m2DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4728876538,
+			m1BalanceModelBalance:   4728876539,
 			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 transfer some more creator coins to m0
@@ -1760,7 +1657,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           4728876536,
 			m2DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4728876536,
+			m1BalanceModelBalance:   4728876537,
 			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 transfer the rest of her creator coins to m0
@@ -1787,7 +1684,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           4728876534,
 			m2DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4728876534,
+			m1BalanceModelBalance:   4728876535,
 			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m0 transfer all coins back to m2
@@ -1814,7 +1711,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           4728876534,
 			m2DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999996,
-			m1BalanceModelBalance:   4728876534,
+			m1BalanceModelBalance:   4728876535,
 			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m2 transfer all coins back to m1. Weeeeee!!!
@@ -1841,7 +1738,7 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           4728876534,
 			m2DeSoBalance:           5999999998,
 			m0BalanceModelBalance:   5999999996,
-			m1BalanceModelBalance:   4728876534,
+			m1BalanceModelBalance:   4728876535,
 			m2BalanceModelBalance:   5999999998,
 		},
 	}
@@ -2583,7 +2480,7 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 	_, _ = assert, require
 
 	// Set up a blockchain
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
@@ -2693,7 +2590,7 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4728876542,
+			m1BalanceModelBalance:   4728876543,
 			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m2 buy some of m0's coins
@@ -2723,8 +2620,8 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           4827626815,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4728876542,
-			m2BalanceModelBalance:   4827626815,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// Have m1 sell half of their stake
 		{
@@ -2753,8 +2650,8 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           4827626815,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6355836621,
-			m2BalanceModelBalance:   4827626815,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// Have m2 sell all of their stake
 		{
@@ -2783,8 +2680,8 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           5243756077,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6355836621,
-			m2BalanceModelBalance:   5243756077,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   5243756079,
 		},
 		// Have m1 buy more
 		// Following SalomonFixBlockHeight, this should continue
@@ -2816,8 +2713,8 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           4232379830,
 			m2DeSoBalance:           5243756077,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   4232379830,
-			m2BalanceModelBalance:   5243756077,
+			m1BalanceModelBalance:   4232379833,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m1 sell the rest of their stake
@@ -2847,8 +2744,8 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   6635615128,
-			m2BalanceModelBalance:   5243756077,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		{
@@ -2878,9 +2775,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           6119715430,
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
-			m0BalanceModelBalance:   6119715430,
-			m1BalanceModelBalance:   6635615128,
-			m2BalanceModelBalance:   5243756077,
+			m0BalanceModelBalance:   6119715431,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m1 buy a little more, again m0 should receive some more as a founders reward
@@ -2909,9 +2806,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           6119715430,
 			m1DeSoBalance:           4512158337,
 			m2DeSoBalance:           5243756077,
-			m0BalanceModelBalance:   6119715430,
-			m1BalanceModelBalance:   4512158337,
-			m2BalanceModelBalance:   5243756077,
+			m0BalanceModelBalance:   6119715431,
+			m1BalanceModelBalance:   4512158342,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m1 sell their creator coins.
@@ -2940,9 +2837,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           6119715430,
 			m1DeSoBalance:           6602018090,
 			m2DeSoBalance:           5243756077,
-			m0BalanceModelBalance:   6119715430,
-			m1BalanceModelBalance:   6602018090,
-			m2BalanceModelBalance:   524375607,
+			m0BalanceModelBalance:   6119715431,
+			m1BalanceModelBalance:   6602018096,
+			m2BalanceModelBalance:   5243756079,
 		},
 	}
 
@@ -3502,8 +3399,8 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           5899999998,
 			m2DeSoBalance:           6000000000,
-			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   5899999998,
+			m0BalanceModelBalance:   5999999999,
+			m1BalanceModelBalance:   5899999999,
 			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m0 sell all their coins such that they're below the autosell threshold
@@ -3531,8 +3428,8 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m0DeSoBalance:           6000029986,
 			m1DeSoBalance:           5899999998,
 			m2DeSoBalance:           6000000000,
-			m0BalanceModelBalance:   6000029986,
-			m1BalanceModelBalance:   5899999998,
+			m0BalanceModelBalance:   6000029988,
+			m1BalanceModelBalance:   5899999999,
 			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 buy more just up till CoinsInCirculationNanos is almost CoinWatermarkNanos
@@ -3562,8 +3459,8 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m0DeSoBalance:         6000029986,
 			m1DeSoBalance:         5899989996,
 			m2DeSoBalance:         6000000000,
-			m0BalanceModelBalance: 6000029986,
-			m1BalanceModelBalance: 5899989996,
+			m0BalanceModelBalance: 6000029988,
+			m1BalanceModelBalance: 5899989998,
 			m2BalanceModelBalance: 6000000000,
 		},
 		// Now we have m2 buy a tiny amount of m0
@@ -3593,9 +3490,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m0DeSoBalance:           6000029986,
 			m1DeSoBalance:           5899989996,
 			m2DeSoBalance:           5999998998,
-			m0BalanceModelBalance:   6000029986,
-			m1BalanceModelBalance:   5899989996,
-			m2BalanceModelBalance:   5999998998,
+			m0BalanceModelBalance:   6000029988,
+			m1BalanceModelBalance:   5899989998,
+			m2BalanceModelBalance:   5999998999,
 		},
 	}
 
@@ -3779,7 +3676,7 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m1DeSoBalance:           5899999998,
 			m2DeSoBalance:           6000000000,
 			m0BalanceModelBalance:   5999999998,
-			m1BalanceModelBalance:   5899999998,
+			m1BalanceModelBalance:   5899999999,
 			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m0 sell. The DeSo should've effectively
@@ -3808,8 +3705,8 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m0DeSoBalance:           6099979997,
 			m1DeSoBalance:           5899999998,
 			m2DeSoBalance:           6000000000,
-			m0BalanceModelBalance:   6099979997,
-			m1BalanceModelBalance:   5899999998,
+			m0BalanceModelBalance:   6099979998,
+			m1BalanceModelBalance:   5899999999,
 			m2BalanceModelBalance:   6000000000,
 		},
 	}

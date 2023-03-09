@@ -227,7 +227,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 
 	paramsTmp := DeSoTestnetParams
 	paramsTmp.DeSoNanosPurchasedAtGenesis = 0
-	chain, params, db := NewLowDifficultyBlockchainWithParams(&paramsTmp)
+	chain, params, db := NewLowDifficultyBlockchainWithParams(t, &paramsTmp)
 	mempool, _ := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Read in the test Bitcoin blocks and headers.

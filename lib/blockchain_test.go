@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -105,7 +106,7 @@ func getForkedChain(t *testing.T) (blockA1, blockA2, blockB1, blockB2,
 
 	var err error
 	{
-		chain1, params, _ := NewLowDifficultyBlockchain()
+		chain1, params, _ := NewLowDifficultyBlockchain(t)
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
 		_ = mempool1
 
@@ -116,7 +117,7 @@ func getForkedChain(t *testing.T) (blockA1, blockA2, blockB1, blockB2,
 		require.NoError(err)
 	}
 	{
-		chain1, params, _ := NewLowDifficultyBlockchain()
+		chain1, params, _ := NewLowDifficultyBlockchain(t)
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
 		_ = mempool1
 
@@ -157,27 +158,58 @@ func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
 	return chain, &paramsCopy, db
 }
 
-func NewLowDifficultyBlockchain() (
-	*Blockchain, *DeSoParams, *badger.DB) {
-
-	// Set the number of txns per view regeneration to one while creating the txns
-	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
-
-	return NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+func CleanUpBadger(db *badger.DB) {
+	// Close the database.
+	err := db.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Delete the database directory.
+	err = os.RemoveAll(db.Opts().Dir)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
-func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
+func AppendToMemLog(t *testing.T, prefix string) {
+	//var mem runtime.MemStats
+	//runtime.ReadMemStats(&mem)
+	//fmt.Printf("Memory usage: %d bytes\n", mem.Alloc)
+	//f, err := os.OpenFile("mem.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	//if err == nil {
+	//	defer f.Close()
+	//	if _, err := f.WriteString(fmt.Sprintf("%s\t%s\tMemory Usage\t%v\n", prefix, t.Name(), float64(mem.Alloc)/float64(1e9))); err != nil {
+	//		log.Println(err)
+	//	}
+	//}
+}
+
+func NewLowDifficultyBlockchain(t *testing.T) (
 	*Blockchain, *DeSoParams, *badger.DB) {
 
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	chain, params, _ := NewLowDifficultyBlockchainWithParamsAndDb(params, len(os.Getenv("POSTGRES_URI")) > 0, 0)
+	bc, params, db := NewLowDifficultyBlockchainWithParams(t, &DeSoTestnetParams)
+
+	//t.Cleanup(CleanUpBadger(db, t))
+
+	return bc, params, db
+}
+
+func NewLowDifficultyBlockchainWithParams(t *testing.T, params *DeSoParams) (
+	*Blockchain, *DeSoParams, *badger.DB) {
+
+	// Set the number of txns per view regeneration to one while creating the txns
+	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
+
+	chain, params, _ := NewLowDifficultyBlockchainWithParamsAndDb(t, params, len(os.Getenv("POSTGRES_URI")) > 0, 0)
 	return chain, params, chain.db
 }
 
-func NewLowDifficultyBlockchainWithParamsAndDb(params *DeSoParams, usePostgres bool, postgresPort uint32) (
+func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams, usePostgres bool, postgresPort uint32) (
 	*Blockchain, *DeSoParams, *embeddedpostgres.EmbeddedPostgres) {
+	AppendToMemLog(t, "START")
 
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
@@ -218,6 +250,17 @@ func NewLowDifficultyBlockchainWithParamsAndDb(params *DeSoParams, usePostgres b
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	t.Cleanup(func() {
+		AppendToMemLog(t, "CLEANUP_START")
+		if snap != nil {
+			snap.Stop()
+			CleanUpBadger(snap.SnapshotDb)
+		}
+		CleanUpBadger(db)
+		runtime.GC()
+		AppendToMemLog(t, "CLEANUP_END")
+	})
 
 	return chain, &testParams, embpg
 }
@@ -295,6 +338,13 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 
 	newMiner, err := NewDeSoMiner(minerPubKeys, 1 /*numThreads*/, blockProducer, params)
 	require.NoError(err)
+
+	t.Cleanup(func() {
+		//newMiner.Stop()
+		//blockProducer.Stop()
+		//mempool.Stop()
+
+	})
 	return mempool, newMiner
 }
 
@@ -302,18 +352,12 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
-	utxoEntriesFound, err := chain.GetSpendableUtxosForPublicKey(pkBytes, mempool, nil)
-	require.NoError(t, err)
-
-	balanceForUserNanos := uint64(0)
-	for _, utxoEntry := range utxoEntriesFound {
-		balanceForUserNanos += utxoEntry.AmountNanos
-	}
-
-	utxoView, err := NewUtxoView(chain.db, chain.params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
+	var utxoView *UtxoView
 	if mempool != nil {
 		utxoView, err = mempool.GetAugmentedUniversalView()
+		require.NoError(t, err)
+	} else {
+		utxoView, err = NewUtxoView(chain.db, chain.params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
 	}
 
@@ -324,6 +368,14 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 	blockHeight := chain.blockTip().Height + 1
 
 	if blockHeight < chain.params.ForkHeights.BalanceModelBlockHeight {
+
+		utxoEntriesFound, err := chain.GetSpendableUtxosForPublicKey(pkBytes, mempool, nil)
+		require.NoError(t, err)
+
+		balanceForUserNanos := uint64(0)
+		for _, utxoEntry := range utxoEntriesFound {
+			balanceForUserNanos += utxoEntry.AmountNanos
+		}
 		// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
 		require.Equal(t, balanceForUserNanos, balanceNanos)
 	} else {
@@ -333,9 +385,9 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 	}
 
 	// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
-	require.Equal(t, balanceForUserNanos, balanceNanos)
+	//require.Equal(t, balanceForUserNanos, balanceNanos)
 
-	return balanceForUserNanos
+	return balanceNanos
 }
 
 func _getCreatorCoinInfo(t *testing.T, chain *Blockchain, params *DeSoParams, pkStr string,
@@ -387,7 +439,7 @@ func TestBasicTransferReorg(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain1, params, _ := NewLowDifficultyBlockchain()
+	chain1, params, _ := NewLowDifficultyBlockchain(t)
 	{
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
 
@@ -461,7 +513,7 @@ func TestBasicTransferReorg(t *testing.T) {
 	// Mine enough blocks to create a fork. Throw in a transaction
 	// from the sender to the recipient right before the third block
 	// just to make things interesting.
-	chain2, _, _ := NewLowDifficultyBlockchain()
+	chain2, _, _ := NewLowDifficultyBlockchain(t)
 	forkBlocks := []*MsgDeSoBlock{}
 	{
 		mempool2, miner2 := NewTestMiner(t, chain2, params, true /*isSender*/)
@@ -540,7 +592,7 @@ func TestProcessBlockConnectBlocks(t *testing.T) {
 
 	var blockA1 *MsgDeSoBlock
 	{
-		chain1, params, _ := NewLowDifficultyBlockchain()
+		chain1, params, _ := NewLowDifficultyBlockchain(t)
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
 		_ = mempool1
 
@@ -550,7 +602,7 @@ func TestProcessBlockConnectBlocks(t *testing.T) {
 		require.NoError(err)
 	}
 
-	chain, _, _ := NewLowDifficultyBlockchain()
+	chain, _, _ := NewLowDifficultyBlockchain(t)
 	_shouldConnectBlock(blockA1, t, chain)
 }
 
@@ -597,7 +649,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 
 	blockA1, blockA2, blockB1, blockB2, blockB3, _, _ := getForkedChain(t)
 
-	chain, _, db := NewLowDifficultyBlockchain()
+	chain, _, db := NewLowDifficultyBlockchain(t)
 
 	{
 		// These should connect without issue.
@@ -691,7 +743,7 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 
 	blockA1, blockA2, blockB1, blockB2, blockB3, _, _ := getForkedChain(t)
 
-	chain, _, db := NewLowDifficultyBlockchain()
+	chain, _, db := NewLowDifficultyBlockchain(t)
 
 	{
 		// These should connect without issue.
@@ -893,7 +945,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, _, db := NewLowDifficultyBlockchain()
+	chain, _, db := NewLowDifficultyBlockchain(t)
 	_ = db
 
 	_, _, blockB1, blockB2, blockB3, _, _ := getForkedChain(t)
@@ -1009,7 +1061,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, _, db := NewLowDifficultyBlockchain()
+	chain, _, db := NewLowDifficultyBlockchain(t)
 	_ = db
 
 	_, _, blockB1, blockB2, _, _, _ := getForkedChain(t)
@@ -1552,7 +1604,7 @@ func TestBadBlockSignature(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+	chain, params, db := NewLowDifficultyBlockchainWithParams(t, &DeSoTestnetParams)
 
 	// Change the trusted public keys expected by the blockchain.
 	chain.trustedBlockProducerPublicKeys = make(map[PkMapKey]bool)
@@ -1607,7 +1659,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, _ := NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+	chain, params, _ := NewLowDifficultyBlockchainWithParams(t, &DeSoTestnetParams)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Make the senderPk a paramUpdater for this test

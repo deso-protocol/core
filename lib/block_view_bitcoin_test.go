@@ -233,7 +233,7 @@ func TestBitcoinExchange(t *testing.T) {
 
 	paramsTmp := DeSoTestnetParams
 	paramsTmp.DeSoNanosPurchasedAtGenesis = 0
-	chain, params, db := NewLowDifficultyBlockchainWithParams(&paramsTmp)
+	chain, params, db := NewLowDifficultyBlockchainWithParams(t, &paramsTmp)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Read in the test Bitcoin blocks and headers.
@@ -930,7 +930,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 	paramsTmp := DeSoTestnetParams
 	paramsTmp.DeSoNanosPurchasedAtGenesis = 0
-	chain, params, db := NewLowDifficultyBlockchainWithParams(&paramsTmp)
+	chain, params, db := NewLowDifficultyBlockchainWithParams(t, &paramsTmp)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Read in the test Bitcoin blocks and headers.
@@ -1652,7 +1652,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 
 	paramsTmp := DeSoTestnetParams
 	paramsTmp.DeSoNanosPurchasedAtGenesis = 0
-	chain, params, db := NewLowDifficultyBlockchainWithParams(&paramsTmp)
+	chain, params, db := NewLowDifficultyBlockchainWithParams(t, &paramsTmp)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Read in the test Bitcoin blocks and headers.
@@ -2257,7 +2257,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 
 	paramsTmp := DeSoTestnetParams
 	paramsTmp.DeSoNanosPurchasedAtGenesis = 500000123456789
-	chain, params, db := NewLowDifficultyBlockchainWithParams(&paramsTmp)
+	chain, params, db := NewLowDifficultyBlockchainWithParams(t, &paramsTmp)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Read in the test Bitcoin blocks and headers.
@@ -2911,7 +2911,7 @@ func TestUpdateExchangeRate(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_, _ = mempool, miner
 

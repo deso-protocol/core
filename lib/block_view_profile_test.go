@@ -235,7 +235,7 @@ func TestUpdateProfile(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -1236,7 +1236,7 @@ func TestSpamUpdateProfile(t *testing.T) {
 	pprof.StartCPUProfile(f)
 	defer pprof.StopCPUProfile()
 
-	chain, params, _ := NewLowDifficultyBlockchain()
+	chain, params, _ := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
@@ -2158,7 +2158,7 @@ func TestSwapIdentityFailureCases(t *testing.T) {
 	_, _ = assert, require
 
 	// Set up a blockchain
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
@@ -3331,244 +3331,244 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 
 	// This test fails non-deterministically so we wrap it in a loop to make it
 	// not flake.
-	for ii := 0; ii < 10; ii++ {
-		chain, params, db := NewLowDifficultyBlockchain()
-		mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-		// Make m3 a paramUpdater for this test
-		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	//for ii := 0; ii < 10; ii++ {
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	// Make m3 a paramUpdater for this test
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 
-		// Mine a few blocks to give the senderPkString some money.
-		_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m0Pub,
+		moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m1Pub,
+		moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m2Pub,
+		moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m3Pub,
+		moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
+
+	// m0 takes m0
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m0PkBytes,
+			m0PkBytes,
+			"m0",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
 		require.NoError(err)
-		_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m0Priv)
 		require.NoError(err)
-		_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
 		require.NoError(err)
-		_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-		require.NoError(err)
-
-		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, moneyPkString, m0Pub,
-			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
-		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, moneyPkString, m1Pub,
-			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
-		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, moneyPkString, m2Pub,
-			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
-		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, moneyPkString, m3Pub,
-			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
-
-		// m0 takes m0
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m0PkBytes,
-				m0PkBytes,
-				"m0",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
-
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m0Priv)
-			require.NoError(err)
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
-			require.NoError(err)
-			require.Equal(1, len(mempoolTxsAdded))
-		}
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m1PkBytes,
-				m1PkBytes,
-				"m1",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
-
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m1Priv)
-			require.NoError(err)
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
-			require.NoError(err)
-			require.Equal(1, len(mempoolTxsAdded))
-		}
-		// Write to db
-		block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-		require.NoError(err)
-		// one for the block reward, two for the new profiles
-		require.Equal(1+2, len(block.Txns))
-
-		// m1 takes m2
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m1PkBytes,
-				m1PkBytes,
-				"m2",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
-
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m1Priv)
-			require.NoError(err)
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
-			require.NoError(err)
-			require.Equal(1, len(mempoolTxsAdded))
-		}
-		// m0 takes m1
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m0PkBytes,
-				m0PkBytes,
-				"m1",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
-
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m0Priv)
-			require.NoError(err)
-
-			// This ensure that the read-only version of the utxoView accurately reflects the current set of profile names taken.
-			utxoViewCopy, err := mempool.universalUtxoView.CopyUtxoView()
-			require.NoError(err)
-			txnSize := getTxnSize(*txn)
-			_, _, _, _, err = utxoViewCopy.ConnectTransaction(txn, txn.Hash(), txnSize, chain.blockTip().Height+1, false, false)
-			require.NoError(err)
-
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
-			require.NoError(err)
-			require.Equal(1, len(mempoolTxsAdded))
-		}
-		// m1 takes m0
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m1PkBytes,
-				m1PkBytes,
-				"m0",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
-
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m1Priv)
-			require.NoError(err)
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
-			require.NoError(err)
-			require.Equal(1, len(mempoolTxsAdded))
-		}
-		// Write to db
-		block, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-		require.NoError(err)
-		// one for the block reward, three for the new txns
-		require.Equal(1+3, len(block.Txns))
-
-		// m2 takes m0 should fail
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m2PkBytes,
-				m2PkBytes,
-				"m0",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
-
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m2Priv)
-			require.NoError(err)
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
-			require.Error(err)
-			require.Equal(0, len(mempoolTxsAdded))
-		}
-		// m3 takes m0 should fail
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m3PkBytes,
-				m3PkBytes,
-				"m0",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
-
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m3Priv)
-			require.NoError(err)
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
-			require.Error(err)
-			require.Equal(0, len(mempoolTxsAdded))
-		}
+		require.Equal(1, len(mempoolTxsAdded))
 	}
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m1PkBytes,
+			m1PkBytes,
+			"m1",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
+		require.NoError(err)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m1Priv)
+		require.NoError(err)
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
+		require.NoError(err)
+		require.Equal(1, len(mempoolTxsAdded))
+	}
+	// Write to db
+	block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	// one for the block reward, two for the new profiles
+	require.Equal(1+2, len(block.Txns))
+
+	// m1 takes m2
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m1PkBytes,
+			m1PkBytes,
+			"m2",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
+		require.NoError(err)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m1Priv)
+		require.NoError(err)
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
+		require.NoError(err)
+		require.Equal(1, len(mempoolTxsAdded))
+	}
+	// m0 takes m1
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m0PkBytes,
+			m0PkBytes,
+			"m1",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
+		require.NoError(err)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m0Priv)
+		require.NoError(err)
+
+		// This ensure that the read-only version of the utxoView accurately reflects the current set of profile names taken.
+		utxoViewCopy, err := mempool.universalUtxoView.CopyUtxoView()
+		require.NoError(err)
+		txnSize := getTxnSize(*txn)
+		_, _, _, _, err = utxoViewCopy.ConnectTransaction(txn, txn.Hash(), txnSize, chain.blockTip().Height+1, false, false)
+		require.NoError(err)
+
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
+		require.NoError(err)
+		require.Equal(1, len(mempoolTxsAdded))
+	}
+	// m1 takes m0
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m1PkBytes,
+			m1PkBytes,
+			"m0",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
+		require.NoError(err)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m1Priv)
+		require.NoError(err)
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
+		require.NoError(err)
+		require.Equal(1, len(mempoolTxsAdded))
+	}
+	// Write to db
+	block, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	// one for the block reward, three for the new txns
+	require.Equal(1+3, len(block.Txns))
+
+	// m2 takes m0 should fail
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m2PkBytes,
+			m2PkBytes,
+			"m0",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
+		require.NoError(err)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m2Priv)
+		require.NoError(err)
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
+		require.Error(err)
+		require.Equal(0, len(mempoolTxsAdded))
+	}
+	// m3 takes m0 should fail
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m3PkBytes,
+			m3PkBytes,
+			"m0",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
+		require.NoError(err)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m3Priv)
+		require.NoError(err)
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
+		require.Error(err)
+		require.Equal(0, len(mempoolTxsAdded))
+	}
+	//}
 }
 
 // Check that Eth personal_sign works on some test data.

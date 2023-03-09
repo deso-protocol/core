@@ -10,6 +10,14 @@ import (
 	"testing"
 )
 
+func TestBalanceModelAssociations(t *testing.T) {
+	t.Skip("skip me for now")
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestAssociations(t)
+}
+
 func TestAssociations(t *testing.T) {
 	// Run all tests twice: once flushing all txns to the
 	// db, and once just keeping all txns in the mempool.
@@ -39,7 +47,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 	var err error
 
 	// Initialize test chain and miner.
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
@@ -2199,7 +2207,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	var err error
 
 	// Initialize test chain and miner.
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Initialize fork heights.
