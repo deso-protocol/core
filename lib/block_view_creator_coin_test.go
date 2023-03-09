@@ -5,6 +5,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"strconv"
 	"testing"
 )
 
@@ -729,22 +730,22 @@ func _helpTestCreatorCoinBuySell(
 		testData := creatorCoinTests[testIndex]
 		if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
 			// DeSo balances
-			checkBal(testData.m0DeSoBalance, m0Pub, "BlockConnect: m0 DeSo balance", string(testIndex))
-			checkBal(testData.m1DeSoBalance, m1Pub, "BlockConnect: m1 DeSo balance", string(testIndex))
-			checkBal(testData.m2DeSoBalance, m2Pub, "BlockConnect: m2 DeSo balance", string(testIndex))
-			checkBal(testData.m3DeSoBalance, m3Pub, "BlockConnect: m3 DeSo balance", string(testIndex))
-			checkBal(testData.m4DeSoBalance, m4Pub, "BlockConnect: m4 DeSo balance", string(testIndex))
-			checkBal(testData.m5DeSoBalance, m5Pub, "BlockConnect: m5 DeSo balance", string(testIndex))
-			checkBal(testData.m6DeSoBalance, m6Pub, "BlockConnect: m6 DeSo balance", string(testIndex))
+			checkBal(testData.m0DeSoBalance, m0Pub, "BlockConnect: m0 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m1DeSoBalance, m1Pub, "BlockConnect: m1 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m2DeSoBalance, m2Pub, "BlockConnect: m2 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m3DeSoBalance, m3Pub, "BlockConnect: m3 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m4DeSoBalance, m4Pub, "BlockConnect: m4 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m5DeSoBalance, m5Pub, "BlockConnect: m5 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m6DeSoBalance, m6Pub, "BlockConnect: m6 DeSo balance", strconv.Itoa(testIndex))
 		} else {
 			// Balance Model balances
-			checkBal(testData.m0BalanceModelBalance, m0Pub, "BlockConnect: m0 BalanceModel balance", string(testIndex))
-			checkBal(testData.m1BalanceModelBalance, m1Pub, "BlockConnect: m1 BalanceModel balance", string(testIndex))
-			checkBal(testData.m2BalanceModelBalance, m2Pub, "BlockConnect: m2 BalanceModel balance", string(testIndex))
-			checkBal(testData.m3BalanceModelBalance, m3Pub, "BlockConnect: m3 BalanceModel balance", string(testIndex))
-			checkBal(testData.m4BalanceModelBalance, m4Pub, "BlockConnect: m4 BalanceModel balance", string(testIndex))
-			checkBal(testData.m5BalanceModelBalance, m5Pub, "BlockConnect: m5 BalanceModel balance", string(testIndex))
-			checkBal(testData.m6BalanceModelBalance, m6Pub, "BlockConnect: m6 BalanceModel balance", string(testIndex))
+			checkBal(testData.m0BalanceModelBalance, m0Pub, "BlockConnect: m0 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m1BalanceModelBalance, m1Pub, "BlockConnect: m1 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m2BalanceModelBalance, m2Pub, "BlockConnect: m2 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m3BalanceModelBalance, m3Pub, "BlockConnect: m3 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m4BalanceModelBalance, m4Pub, "BlockConnect: m4 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m5BalanceModelBalance, m5Pub, "BlockConnect: m5 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m6BalanceModelBalance, m6Pub, "BlockConnect: m6 BalanceModel balance", strconv.Itoa(testIndex))
 		}
 	}
 
