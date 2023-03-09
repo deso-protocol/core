@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -157,19 +158,31 @@ func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
 	return chain, &paramsCopy, db
 }
 
-func CleanUpBadger(db *badger.DB) func() {
-	return func() {
-		// Close the database.
-		err := db.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-		// Delete the database directory.
-		err = os.RemoveAll(db.Opts().Dir)
-		if err != nil {
-			log.Fatal(err)
-		}
+func CleanUpBadger(db *badger.DB) {
+	// Close the database.
+	err := db.Close()
+	if err != nil {
+		log.Fatal(err)
 	}
+	// Delete the database directory.
+	err = os.RemoveAll(db.Opts().Dir)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func AppendToMemLog(t *testing.T, prefix string) {
+	//
+	//var mem runtime.MemStats
+	//runtime.ReadMemStats(&mem)
+	//fmt.Printf("Memory usage: %d bytes\n", mem.Alloc)
+	//f, err := os.OpenFile("mem.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	//if err == nil {
+	//	defer f.Close()
+	//	if _, err := f.WriteString(fmt.Sprintf("%s\t%s\tMemory Usage\t%v\n", prefix, t.Name(), float64(mem.Alloc)/float64(1e9))); err != nil {
+	//		log.Println(err)
+	//	}
+	//}
 }
 
 func NewLowDifficultyBlockchain(t *testing.T) (
@@ -178,25 +191,26 @@ func NewLowDifficultyBlockchain(t *testing.T) (
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	bc, params, db := NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+	bc, params, db := NewLowDifficultyBlockchainWithParams(t, &DeSoTestnetParams)
 
-	t.Cleanup(CleanUpBadger(db))
+	//t.Cleanup(CleanUpBadger(db, t))
 
 	return bc, params, db
 }
 
-func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
+func NewLowDifficultyBlockchainWithParams(t *testing.T, params *DeSoParams) (
 	*Blockchain, *DeSoParams, *badger.DB) {
 
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	chain, params, _ := NewLowDifficultyBlockchainWithParamsAndDb(params, len(os.Getenv("POSTGRES_URI")) > 0, 0)
+	chain, params, _ := NewLowDifficultyBlockchainWithParamsAndDb(t, params, len(os.Getenv("POSTGRES_URI")) > 0, 0)
 	return chain, params, chain.db
 }
 
-func NewLowDifficultyBlockchainWithParamsAndDb(params *DeSoParams, usePostgres bool, postgresPort uint32) (
+func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams, usePostgres bool, postgresPort uint32) (
 	*Blockchain, *DeSoParams, *embeddedpostgres.EmbeddedPostgres) {
+	AppendToMemLog(t, "START")
 
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
@@ -237,6 +251,15 @@ func NewLowDifficultyBlockchainWithParamsAndDb(params *DeSoParams, usePostgres b
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	t.Cleanup(func() {
+		AppendToMemLog(t, "CLEANUP_START")
+		snap.Stop()
+		CleanUpBadger(snap.SnapshotDb)
+		CleanUpBadger(db)
+		runtime.GC()
+		AppendToMemLog(t, "CLEANUP_END")
+	})
 
 	return chain, &testParams, embpg
 }
@@ -314,6 +337,13 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 
 	newMiner, err := NewDeSoMiner(minerPubKeys, 1 /*numThreads*/, blockProducer, params)
 	require.NoError(err)
+
+	t.Cleanup(func() {
+		//newMiner.Stop()
+		//blockProducer.Stop()
+		//mempool.Stop()
+
+	})
 	return mempool, newMiner
 }
 
@@ -1573,7 +1603,7 @@ func TestBadBlockSignature(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+	chain, params, db := NewLowDifficultyBlockchainWithParams(t, &DeSoTestnetParams)
 
 	// Change the trusted public keys expected by the blockchain.
 	chain.trustedBlockProducerPublicKeys = make(map[PkMapKey]bool)
@@ -1628,7 +1658,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, _ := NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+	chain, params, _ := NewLowDifficultyBlockchainWithParams(t, &DeSoTestnetParams)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Make the senderPk a paramUpdater for this test

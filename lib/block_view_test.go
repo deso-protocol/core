@@ -636,7 +636,7 @@ func (tes *transactionTestSuite) InitializeChainAndGetTestMeta(useBadger bool, u
 		if config.testPostgresPort != 0 {
 			pgPort = config.testPostgresPort
 		}
-		chain, params, embpg = NewLowDifficultyBlockchainWithParamsAndDb(&DeSoTestnetParams,
+		chain, params, embpg = NewLowDifficultyBlockchainWithParamsAndDb(tes.t, &DeSoTestnetParams,
 			true, pgPort)
 		mempool, miner = NewTestMiner(config.t, chain, params, true /*isSender*/)
 		pg = chain.postgres
