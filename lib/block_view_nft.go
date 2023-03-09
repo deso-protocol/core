@@ -2357,7 +2357,6 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 					"this should never happen")
 			}
 
-			// TODO: balance model
 			// Note: these UTXOs need to be unspent in reverse order.
 			for ii := len(operationData.NFTSpentUtxoEntries) - 1; ii >= 0; ii-- {
 				spentUtxoEntry := operationData.NFTSpentUtxoEntries[ii]
@@ -2450,13 +2449,18 @@ func (bav *UtxoView) _disconnectNFTBid(
 	// These are "implicit" outputs that always occur at the end of the
 	// list of UtxoOperations. The number of implicit outputs is equal to
 	// the total number of "Add" operations minus the explicit outputs.
-	numUtxoAdds := 0
+	numUtxoAddsOrUnspends := 0
 	for _, utxoOp := range utxoOpsForTxn {
 		if utxoOp.Type == OperationTypeAddUtxo {
-			numUtxoAdds += 1
+			numUtxoAddsOrUnspends += 1
+		}
+		if utxoOp.Type == OperationTypeAddBalance {
+			numUtxoAddsOrUnspends += 1
+			if err := bav._unAddBalance(utxoOp.AmountNanos, utxoOp.BalancePublicKey); err != nil {
+				return errors.Wrapf(err, "_disconnectNFTBid: Problem unAdding balance: ")
+			}
 		}
 	}
-	operationIndex -= numUtxoAdds - len(currentTxn.TxOutputs)
 
 	// Get the NFTBidEntry corresponding to this txn.
 	bidderPKID := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
@@ -2497,6 +2501,8 @@ func (bav *UtxoView) _disconnectNFTBid(
 		bav._setNFTBidEntryMappings(operationData.PrevNFTBidEntry)
 	}
 
+	numNFTOperations := numUtxoAddsOrUnspends - len(currentTxn.TxOutputs)
+	operationIndex -= numNFTOperations
 	// Now revert the basic transfer with the remaining operations.
 	return bav._disconnectBasicTransfer(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
