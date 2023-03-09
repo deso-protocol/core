@@ -2607,7 +2607,6 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 }
 
 func TestBalanceModelAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
-	t.Skip("skip me!")
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
