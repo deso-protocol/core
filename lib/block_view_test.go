@@ -1273,9 +1273,6 @@ func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 		fmt.Printf(
 			"Disconnecting transaction with type %v index %d (going backwards)\n",
 			currentTxn.TxnMeta.GetTxnType(), backwardIter)
-		if backwardIter == 25 {
-			fmt.Println("here")
-		}
 		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
 		require.NoError(testMeta.t, err)
 
@@ -1288,10 +1285,6 @@ func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
-		currBal := _getBalance(testMeta.t, testMeta.chain, nil, PkToStringTestnet(currentTxn.PublicKey))
-		if currBal != testMeta.expectedSenderBalances[backwardIter] {
-			fmt.Println("here")
-		}
 		require.Equal(
 			testMeta.t,
 			testMeta.expectedSenderBalances[backwardIter],
