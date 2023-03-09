@@ -1635,7 +1635,7 @@ func TestBalanceModelAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
 func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
 	// Initialize test chain and miner.
 	var err error
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Initialize fork heights.

@@ -118,7 +118,7 @@ func _helpTestCreatorCoinBuySell(
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
@@ -528,7 +528,7 @@ func _helpTestCreatorCoinBuySell(
 				testData.UpdaterPrivateKeyBase58Check, profilePkBytes, testData.ProfileUsername,
 				testData.ProfileDescription, testData.ProfilePic,
 				testData.ProfileCreatorBasisPoints, /*CreatorBasisPoints*/
-				12500 /*stakeMultipleBasisPoints*/, testData.ProfileIsHidden /*isHidden*/)
+				12500                               /*stakeMultipleBasisPoints*/, testData.ProfileIsHidden /*isHidden*/)
 			require.NoError(err)
 		} else if testData.TxnType == TxnTypeFollow {
 			utxoOps, txn, _, err = _doFollowTxn(
@@ -601,7 +601,7 @@ func _helpTestCreatorCoinBuySell(
 				testData.CreatorCoinToSellNanos,      /*CreatorCoinToSellNanos*/
 				testData.DeSoToAddNanos,              /*DeSoToAddNanos*/
 				testData.MinDeSoExpectedNanos,        /*MinDeSoExpectedNanos*/
-				testData.MinCreatorCoinExpectedNanos /*MinCreatorCoinExpectedNanos*/)
+				testData.MinCreatorCoinExpectedNanos  /*MinCreatorCoinExpectedNanos*/)
 			require.NoError(err)
 		}
 
@@ -1101,7 +1101,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
@@ -1170,7 +1170,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*DeSoToAddNanos*/
 			0,                           /*MinDeSoExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0                            /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 	// Have m0 buy some m1 as well
@@ -1184,7 +1184,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*DeSoToAddNanos*/
 			0,                           /*MinDeSoExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0                            /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 
@@ -1501,7 +1501,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 	require := require.New(t)
 	_, _ = assert, require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
@@ -1573,7 +1573,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*DeSoToAddNanos*/
 			0,                           /*MinDeSoExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0                            /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 	// Have m0 buy some m1 as well.
@@ -1587,7 +1587,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			0,                           /*CreatorCoinToSellNanos*/
 			0,                           /*DeSoToAddNanos*/
 			0,                           /*MinDeSoExpectedNanos*/
-			0 /*MinCreatorCoinExpectedNanos*/)
+			0                            /*MinCreatorCoinExpectedNanos*/)
 		require.NoError(err)
 	}
 
@@ -2583,7 +2583,7 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 	_, _ = assert, require
 
 	// Set up a blockchain
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
@@ -2613,7 +2613,7 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 
 	_, _, _, err := _updateProfile(
 		t, chain, db, params,
-		feeRateNanosPerKB /*feerate*/, m0Pub, m0Priv, m0PkBytes, "m0",
+		feeRateNanosPerKB                  /*feerate*/, m0Pub, m0Priv, m0PkBytes, "m0",
 		"i am m0", "m0 profile pic", 2500, /*CreatorBasisPoints*/
 		12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
 	require.NoError(err)
@@ -2628,7 +2628,7 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 		0,                           /*CreatorCoinToSellNanos*/
 		0,                           /*DeSoToAddNanos*/
 		0,                           /*MinDeSoExpectedNanos*/
-		0 /*MinCreatorCoinExpectedNanos*/)
+		0                            /*MinCreatorCoinExpectedNanos*/)
 	require.NoError(err)
 
 	_, _, _, err = _doCreatorCoinTransferTxn(
@@ -4497,7 +4497,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string,
 	UpdaterPrivateKeyBase58Check string,
-	// See CreatorCoinMetadataa for an explanation of these fields.
+// See CreatorCoinMetadataa for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
 	OperationType CreatorCoinOperationType,
 	DeSoToSellNanos uint64,
@@ -4591,7 +4591,7 @@ func _creatorCoinTxnWithTestMeta(
 	feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string,
 	UpdaterPrivateKeyBase58Check string,
-	// See CreatorCoinMetadataa for an explanation of these fields.
+// See CreatorCoinMetadataa for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
 	OperationType CreatorCoinOperationType,
 	DeSoToSellNanos uint64,
@@ -4686,7 +4686,7 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string, UpdaterPrivateKeyBase58Check string,
-	// See CreatorCoinTransferMetadataa for an explanation of these fields.
+// See CreatorCoinTransferMetadataa for an explanation of these fields.
 	ProfilePublicKeyBase58Check string,
 	ReceiverPublicKeyBase58Check string,
 	CreatorCoinToTransferNanos uint64) (

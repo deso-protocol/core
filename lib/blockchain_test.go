@@ -105,7 +105,7 @@ func getForkedChain(t *testing.T) (blockA1, blockA2, blockB1, blockB2,
 
 	var err error
 	{
-		chain1, params, _ := NewLowDifficultyBlockchain()
+		chain1, params, _ := NewLowDifficultyBlockchain(t)
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
 		_ = mempool1
 
@@ -116,7 +116,7 @@ func getForkedChain(t *testing.T) (blockA1, blockA2, blockB1, blockB2,
 		require.NoError(err)
 	}
 	{
-		chain1, params, _ := NewLowDifficultyBlockchain()
+		chain1, params, _ := NewLowDifficultyBlockchain(t)
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
 		_ = mempool1
 
@@ -157,13 +157,32 @@ func NewTestBlockchain() (*Blockchain, *DeSoParams, *badger.DB) {
 	return chain, &paramsCopy, db
 }
 
-func NewLowDifficultyBlockchain() (
+func CleanUpBadger(db *badger.DB) func() {
+	return func() {
+		// Close the database.
+		err := db.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+		// Delete the database directory.
+		err = os.RemoveAll(db.Opts().Dir)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
+func NewLowDifficultyBlockchain(t *testing.T) (
 	*Blockchain, *DeSoParams, *badger.DB) {
 
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	return NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+	bc, params, db := NewLowDifficultyBlockchainWithParams(&DeSoTestnetParams)
+
+	t.Cleanup(CleanUpBadger(db))
+
+	return bc, params, db
 }
 
 func NewLowDifficultyBlockchainWithParams(params *DeSoParams) (
@@ -387,7 +406,7 @@ func TestBasicTransferReorg(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain1, params, _ := NewLowDifficultyBlockchain()
+	chain1, params, _ := NewLowDifficultyBlockchain(t)
 	{
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
 
@@ -461,7 +480,7 @@ func TestBasicTransferReorg(t *testing.T) {
 	// Mine enough blocks to create a fork. Throw in a transaction
 	// from the sender to the recipient right before the third block
 	// just to make things interesting.
-	chain2, _, _ := NewLowDifficultyBlockchain()
+	chain2, _, _ := NewLowDifficultyBlockchain(t)
 	forkBlocks := []*MsgDeSoBlock{}
 	{
 		mempool2, miner2 := NewTestMiner(t, chain2, params, true /*isSender*/)
@@ -540,7 +559,7 @@ func TestProcessBlockConnectBlocks(t *testing.T) {
 
 	var blockA1 *MsgDeSoBlock
 	{
-		chain1, params, _ := NewLowDifficultyBlockchain()
+		chain1, params, _ := NewLowDifficultyBlockchain(t)
 		mempool1, miner1 := NewTestMiner(t, chain1, params, true /*isSender*/)
 		_ = mempool1
 
@@ -550,7 +569,7 @@ func TestProcessBlockConnectBlocks(t *testing.T) {
 		require.NoError(err)
 	}
 
-	chain, _, _ := NewLowDifficultyBlockchain()
+	chain, _, _ := NewLowDifficultyBlockchain(t)
 	_shouldConnectBlock(blockA1, t, chain)
 }
 
@@ -597,7 +616,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 
 	blockA1, blockA2, blockB1, blockB2, blockB3, _, _ := getForkedChain(t)
 
-	chain, _, db := NewLowDifficultyBlockchain()
+	chain, _, db := NewLowDifficultyBlockchain(t)
 
 	{
 		// These should connect without issue.
@@ -691,7 +710,7 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 
 	blockA1, blockA2, blockB1, blockB2, blockB3, _, _ := getForkedChain(t)
 
-	chain, _, db := NewLowDifficultyBlockchain()
+	chain, _, db := NewLowDifficultyBlockchain(t)
 
 	{
 		// These should connect without issue.
@@ -893,7 +912,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, _, db := NewLowDifficultyBlockchain()
+	chain, _, db := NewLowDifficultyBlockchain(t)
 	_ = db
 
 	_, _, blockB1, blockB2, blockB3, _, _ := getForkedChain(t)
@@ -1009,7 +1028,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, _, db := NewLowDifficultyBlockchain()
+	chain, _, db := NewLowDifficultyBlockchain(t)
 	_ = db
 
 	_, _, blockB1, blockB2, _, _, _ := getForkedChain(t)
