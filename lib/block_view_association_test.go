@@ -10,6 +10,14 @@ import (
 	"testing"
 )
 
+func TestBalanceModelAssociations(t *testing.T) {
+	t.Skip("skip me for now")
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestAssociations(t)
+}
+
 func TestAssociations(t *testing.T) {
 	// Run all tests twice: once flushing all txns to the
 	// db, and once just keeping all txns in the mempool.
