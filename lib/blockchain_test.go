@@ -172,7 +172,6 @@ func CleanUpBadger(db *badger.DB) {
 }
 
 func AppendToMemLog(t *testing.T, prefix string) {
-	//
 	//var mem runtime.MemStats
 	//runtime.ReadMemStats(&mem)
 	//fmt.Printf("Memory usage: %d bytes\n", mem.Alloc)
@@ -254,8 +253,10 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 
 	t.Cleanup(func() {
 		AppendToMemLog(t, "CLEANUP_START")
-		snap.Stop()
-		CleanUpBadger(snap.SnapshotDb)
+		if snap != nil {
+			snap.Stop()
+			CleanUpBadger(snap.SnapshotDb)
+		}
 		CleanUpBadger(db)
 		runtime.GC()
 		AppendToMemLog(t, "CLEANUP_END")
