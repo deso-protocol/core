@@ -1217,7 +1217,6 @@ func TestUpdateProfile(t *testing.T) {
 }
 
 func TestBalanceModelSpamUpdateProfile(t *testing.T) {
-	t.Skip("skip me")
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
