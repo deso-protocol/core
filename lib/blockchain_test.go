@@ -329,10 +329,12 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 		balanceForUserNanos += utxoEntry.AmountNanos
 	}
 
-	utxoView, err := NewUtxoView(chain.db, chain.params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
+	var utxoView *UtxoView
 	if mempool != nil {
 		utxoView, err = mempool.GetAugmentedUniversalView()
+		require.NoError(t, err)
+	} else {
+		utxoView, err = NewUtxoView(chain.db, chain.params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
 	}
 
