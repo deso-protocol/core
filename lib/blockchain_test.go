@@ -321,14 +321,6 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
-	utxoEntriesFound, err := chain.GetSpendableUtxosForPublicKey(pkBytes, mempool, nil)
-	require.NoError(t, err)
-
-	balanceForUserNanos := uint64(0)
-	for _, utxoEntry := range utxoEntriesFound {
-		balanceForUserNanos += utxoEntry.AmountNanos
-	}
-
 	var utxoView *UtxoView
 	if mempool != nil {
 		utxoView, err = mempool.GetAugmentedUniversalView()
@@ -345,6 +337,14 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 	blockHeight := chain.blockTip().Height + 1
 
 	if blockHeight < chain.params.ForkHeights.BalanceModelBlockHeight {
+
+		utxoEntriesFound, err := chain.GetSpendableUtxosForPublicKey(pkBytes, mempool, nil)
+		require.NoError(t, err)
+
+		balanceForUserNanos := uint64(0)
+		for _, utxoEntry := range utxoEntriesFound {
+			balanceForUserNanos += utxoEntry.AmountNanos
+		}
 		// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
 		require.Equal(t, balanceForUserNanos, balanceNanos)
 	} else {
@@ -354,9 +354,9 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 	}
 
 	// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
-	require.Equal(t, balanceForUserNanos, balanceNanos)
+	//require.Equal(t, balanceForUserNanos, balanceNanos)
 
-	return balanceForUserNanos
+	return balanceNanos
 }
 
 func _getCreatorCoinInfo(t *testing.T, chain *Blockchain, params *DeSoParams, pkStr string,
