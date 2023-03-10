@@ -9661,7 +9661,7 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 	opts.ValueLogFileSize = PerformanceLogValueSize
 
 	// Uncomment to hide all badger logging.
-	// opts.Logger = nil
+	opts.Logger = nil
 
 	return opts
 }

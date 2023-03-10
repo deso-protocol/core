@@ -725,7 +725,7 @@ func TestLikeTxns(t *testing.T) {
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 7)))
 		require.Equal(getConditionalBalance(4, 6), chain.EstimateDefaultFeeRateNanosPerKB(0, 0))
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 7)))
-		require.Equal(getConditionalBalance(4, 7), chain.EstimateDefaultFeeRateNanosPerKB(.01, 1))
+		require.Equal(getConditionalBalance(4, 1), chain.EstimateDefaultFeeRateNanosPerKB(.01, 1))
 	}
 
 	testConnectedState()
