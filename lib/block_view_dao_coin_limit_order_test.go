@@ -34,7 +34,6 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
-	// TODO: I really don't like making this change.
 	params.BlockRewardMaturity = time.Second
 
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
@@ -626,7 +625,6 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
-	// TODO: I don't like making this change. It's a hack to get the test to pass.
 	params.BlockRewardMaturity = time.Second
 
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)

@@ -618,7 +618,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	} else {
 		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = 0
 	}
-	// TODO: better error message
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && len(txMeta.BidderInputs) != 0 {
 		return 0, 0, nil, fmt.Errorf("_connectDAOCoinLimitOrder: BidderInputs should be empty for balance model %d", blockHeight)
 	}
@@ -662,7 +661,6 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder: ")
 			}
 
-			// TODO: balance model
 			// Make sure we spend the UTXO so that the bidder can't reuse it.
 			utxoOp, err := bav._spendUtxo(&utxoKey)
 			if err != nil {

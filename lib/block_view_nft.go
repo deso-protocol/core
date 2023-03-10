@@ -1178,7 +1178,6 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		// Track the UtxoOperations so we can rollback, and for Rosetta
 		utxoOpsForTxn = append(utxoOpsForTxn, bidderDESOUtxoOperations...)
 	case TxnTypeNFTBid:
-		// TODO: any changes needed for balance model?
 		// If we're here, we know we're dealing with a "buy now" NFT because that is
 		// the only situation in which a bid would result in an NFT being sold vs the
 		// bid resting on the NFT (and waiting for AcceptNFTBid to trigger).
@@ -2259,7 +2258,6 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 	// the total number of "Add" operations minus the explicit outputs.
 	numAddsOrUnSpends := 0
 	for utxoOpIdx, utxoOp := range utxoOpsForTxn {
-		// TODO: should we have block height gated logic here?
 		if utxoOp.Type == OperationTypeAddUtxo {
 			numAddsOrUnSpends += 1
 		}

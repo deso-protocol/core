@@ -240,7 +240,6 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 	operationData := utxoOpsForTxn[operationIndex]
 	operationIndex--
 
-	// TODO: can we consolidate to using _unAddDESO?
 	// We sometimes have some extra AddUtxo operations we need to remove
 	// These are "implicit" outputs that always occur at the end of the
 	// list of UtxoOperations. The number of implicit outputs is equal to
@@ -375,7 +374,6 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		*transactorBalanceEntry = *operationData.PrevTransactorBalanceEntry
 		bav._setCreatorCoinBalanceEntryMappings(transactorBalanceEntry)
 
-		// TODO: Balance model comments
 		// If a DeSo founder reward UTXO was created, revert it (not relevant for balance model).
 		if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight && operationData.FounderRewardUtxoKey != nil {
 			if err := bav._unAddUtxo(operationData.FounderRewardUtxoKey); err != nil {
@@ -429,7 +427,6 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 				// transaction so this field doesn't really matter.
 				Index: uint32(len(currentTxn.TxOutputs)),
 			}
-			// TODO: balance model comments
 			if err := bav._unAddUtxo(&utxoKey); err != nil {
 				return errors.Wrapf(err, "_disconnectBitcoinExchange: Problem unAdding utxo %v: ", utxoKey)
 			}
