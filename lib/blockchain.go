@@ -3984,9 +3984,37 @@ func (bc *Blockchain) CreateNFTBidTxn(
 		// inputs and change.
 	}
 
+	var utxoView *UtxoView
+	var err error
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"CreateNFTBidTxn: Problem getting augmented universal view: ")
+		}
+	} else {
+		utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"CreateNFTBidTxn: Problem creating new utxo view: ")
+		}
+	}
+
+	nftKey := MakeNFTKey(NFTPostHash, SerialNumber)
+	nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
+
+	if nftEntry != nil && nftEntry.isDeleted {
+		return nil, 0, 0, 0, errors.New(
+			"_computeInputsForTxn: nftEntry is deleted")
+	}
+	var additionalFees uint64
+	if nftEntry != nil && nftEntry.IsBuyNow && nftEntry.BuyNowPriceNanos <= BidAmountNanos {
+		additionalFees = BidAmountNanos
+	}
+
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, additionalFees)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNFTBidTxn: Problem adding inputs: ")
 	}
@@ -4842,57 +4870,6 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		spendAmount += desoOutput.AmountNanos
 	}
 
-	// TODO: this was removed in the balance model PR. Is it okay to get rid of it really? Should we instead
-	// gate it on a block height.
-	// If this is a CreatorCoin buy transaction, add the amount of DeSo the
-	// user wants to spend on the buy to the amount of output we're asking this
-	// function to provide for us.
-	//if txArg.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
-	//	txMeta := txArg.TxnMeta.(*CreatorCoinMetadataa)
-	//	if txMeta.OperationType == CreatorCoinOperationTypeBuy {
-	//		// If this transaction is a buy then we need enough DeSo to
-	//		// cover the buy.
-	//		spendAmount += txMeta.DeSoToSellNanos
-	//	}
-	//}
-
-	// I don't love this, but it works
-	var nftBidAmount uint64
-	// If this is an NFT Bid txn and the NFT entry is a Buy Now, we add inputs to cover the bid amount.
-	if txArg.TxnMeta.GetTxnType() == TxnTypeNFTBid && txArg.TxnMeta.(*NFTBidMetadata).SerialNumber > 0 {
-		// Create a new UtxoView. If we have access to a mempool object, use it to
-		// get an augmented view that factors in pending transactions.
-		var err error
-		var utxoView *UtxoView
-		if mempool != nil {
-			utxoView, err = mempool.GetAugmentedUniversalView()
-			if err != nil {
-				return 0, 0, 0, 0, errors.Wrapf(err,
-					"_computeInputsForTxn: Problem getting augmented UtxoView from mempool: ")
-			}
-		} else {
-			utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
-			if err != nil {
-				return 0, 0, 0, 0, errors.Wrapf(err,
-					"_computeInputsForTxn: Problem creating new utxo view: ")
-			}
-		}
-
-		txMeta := txArg.TxnMeta.(*NFTBidMetadata)
-		nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
-		nftEntry := utxoView.GetNFTEntryForNFTKey(&nftKey)
-
-		if nftEntry != nil && nftEntry.isDeleted {
-			return 0, 0, 0, 0, errors.New(
-				"_computeInputsForTxn: nftEntry is deleted")
-		}
-
-		if nftEntry != nil && nftEntry.IsBuyNow && nftEntry.BuyNowPriceNanos <= txMeta.BidAmountNanos {
-			spendAmount += txMeta.BidAmountNanos
-			nftBidAmount = txMeta.BidAmountNanos
-		}
-	}
-
 	// Add additional fees to the spend amount.
 	spendAmount += additionalFees
 	// The public key of the transaction is assumed to be the one set at its
@@ -4944,17 +4921,17 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			return 0, 0, 0, 0, fmt.Errorf(
 				"AddInputsAndChangeToTransaction: overflow detected")
 		}
-		txArg.TxnFeeNanos = feeAmountNanos + additionalFees + nftBidAmount
+		txArg.TxnFeeNanos = feeAmountNanos + additionalFees
 
 		// Prior to the BalanceModelBlockHeight, "additionalFees" such as the create profile
 		// fee were backed into the spend amount in order to create an "implicit" fee. However,
 		// in the balance model, all outputs and fees must be set explicitly, so it is included
 		// in TxnFeeNanos here instead.
-		if additionalFees+nftBidAmount > spendAmount {
+		if additionalFees > spendAmount {
 			return 0, 0, 0, 0, fmt.Errorf("AddInputsAndChangeToTransaction: " +
 				"underflow detected")
 		}
-		explicitSpendAmount := spendAmount - additionalFees - nftBidAmount
+		explicitSpendAmount := spendAmount - additionalFees
 
 		if math.MaxUint64-explicitSpendAmount < totalInput {
 			return 0, 0, 0, 0, fmt.Errorf(
