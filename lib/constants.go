@@ -349,7 +349,7 @@ type EncoderMigrationHeights struct {
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
-	return &EncoderMigrationHeights{
+	encoderMigrationHeights := &EncoderMigrationHeights{
 		DefaultMigration: MigrationHeight{
 			Version: 0,
 			Height:  forkHeights.DefaultHeight,
@@ -371,6 +371,39 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Name:    BalanceModelMigration,
 		},
 	}
+	// The sorting below addresses the fact that the encoder versions should
+	// increase as migration height increases. This ensures tests that
+	// set migration heights differently than mainnet have encoder migrations are applied properly.
+	// For example, if the balance model migration is set to block 1 and the associations
+	// and access groups migration is set to block 2, the balance model migration should
+	// have version = 2 and the associations and access groups migration should have
+	// version = 3. Otherwise, the encoder will not be able to decode the data properly.
+	sortedEncoderMigrationHeights := []MigrationHeight{}
+	for _, mh := range []MigrationHeight{encoderMigrationHeights.DefaultMigration, encoderMigrationHeights.DeSoUnlimitedDerivedKeys, encoderMigrationHeights.AssociationsAndAccessGroups, encoderMigrationHeights.BalanceModel} {
+		sortedEncoderMigrationHeights = append(sortedEncoderMigrationHeights, mh)
+	}
+	sort.Slice(sortedEncoderMigrationHeights, func(ii, jj int) bool {
+		mhii := sortedEncoderMigrationHeights[ii]
+		mhjj := sortedEncoderMigrationHeights[jj]
+		if mhii.Height == mhjj.Height {
+			return mhii.Version < mhjj.Version
+		}
+		return mhii.Height < mhjj.Height
+	})
+	for idx, mh := range sortedEncoderMigrationHeights {
+		version := byte(idx)
+		switch mh.Name {
+		case DefaultMigration:
+			encoderMigrationHeights.DefaultMigration.Version = version
+		case UnlimitedDerivedKeysMigration:
+			encoderMigrationHeights.DeSoUnlimitedDerivedKeys.Version = version
+		case AssociationsAndAccessGroupsMigration:
+			encoderMigrationHeights.AssociationsAndAccessGroups.Version = version
+		case BalanceModelMigration:
+			encoderMigrationHeights.BalanceModel.Version = version
+		}
+	}
+	return encoderMigrationHeights
 }
 func GetEncoderMigrationHeightsList(forkHeights *ForkHeights) (
 	_migrationHeightsList []*MigrationHeight) {

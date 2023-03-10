@@ -3940,7 +3940,6 @@ REPEAT:
 func TestBalanceModelAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
 	TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
 }
 
