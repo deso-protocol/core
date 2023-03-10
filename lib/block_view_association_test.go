@@ -2355,7 +2355,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 		_updateGlobalParamsEntryWithTestMeta(
 			testMeta,
-			testMeta.feeRateNanosPerKb - 4,
+			testMeta.feeRateNanosPerKb-4,
 			paramUpdaterPub,
 			paramUpdaterPriv,
 			-1,
