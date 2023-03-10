@@ -78,6 +78,8 @@ func GetTestBadgerDb() (_db *badger.DB, _dir string) {
 	opts := PerformanceBadgerOptions(dir)
 	opts.Dir = dir
 	opts.ValueDir = dir
+	// Turn off logging for tests.
+	opts.Logger = nil
 	db, err := badger.Open(opts)
 	if err != nil {
 		log.Fatal(err)
