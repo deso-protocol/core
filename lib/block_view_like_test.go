@@ -706,6 +706,7 @@ func TestLikeTxns(t *testing.T) {
 
 	testDisconnectedState()
 
+	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
 	// All the txns should be in the mempool already so mining a block should put
 	// all those transactions in it.
 	block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -722,9 +723,9 @@ func TestLikeTxns(t *testing.T) {
 		// higher. And with a high minfee the value returned should be equal to the
 		// fee.
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 7)))
-		require.Equal(int64(4)+int64(_balanceModelDiff(chain, 2)), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)))
+		require.Equal(getConditionalBalance(4, 6), chain.EstimateDefaultFeeRateNanosPerKB(0, 0))
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 7)))
-		require.Equal(int64(4)-int64(_balanceModelDiff(chain, 3)), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 1)))
+		require.Equal(getConditionalBalance(4, 7), chain.EstimateDefaultFeeRateNanosPerKB(.01, 1))
 	}
 
 	testConnectedState()

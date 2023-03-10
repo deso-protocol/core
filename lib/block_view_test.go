@@ -343,17 +343,6 @@ func resetBlockHeightGlobals() {
 //
 //}
 
-// TODO: get rid of this hacky stuff
-// Because txns in the balance model use fewer bytes, balances will differ
-// after completing a transaction vs. the UTXO model.
-func _balanceModelDiff(bc *Blockchain, diffAmount uint64) uint64 {
-	if bc.blockTip().Height >= bc.params.ForkHeights.BalanceModelBlockHeight {
-		return diffAmount
-	} else {
-		return 0
-	}
-}
-
 // ================================== TRANSACTION TEST FRAMEWORK ==============================================
 // transactionTest is a new testing framework intended to streamline testing of blockchain transactions.
 // The idea behind this framework is to create a unified unit testing structure that can be used to test different

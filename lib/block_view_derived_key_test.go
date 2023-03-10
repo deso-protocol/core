@@ -3906,7 +3906,6 @@ REPEAT:
 		)
 	}
 
-	// Balance model gets messed up here.
 	_rollBackTestMetaTxnsAndFlush(testMeta)
 	_applyTestMetaTxnsToMempool(testMeta)
 	_applyTestMetaTxnsToViewAndFlush(testMeta)

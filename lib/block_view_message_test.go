@@ -393,6 +393,8 @@ func TestPrivateMessage(t *testing.T) {
 	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
 	registerOrTransfer("", m0Pub, m1Pub, m0Priv)
 
+	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
+
 	// Roll back all of the above using the utxoOps from each.
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -556,9 +558,9 @@ func TestPrivateMessage(t *testing.T) {
 		// higher. And with a high minfee the value returned should be equal to the
 		// fee.
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 7)))
-		require.Equal(int64(4)+int64(_balanceModelDiff(chain, 2)), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)))
+		require.Equal(getConditionalBalance(4, 6), chain.EstimateDefaultFeeRateNanosPerKB(0, 0))
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 7)))
-		require.Equal(int64(4)-int64(_balanceModelDiff(chain, 3)), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 1)))
+		require.Equal(getConditionalBalance(4, 7), chain.EstimateDefaultFeeRateNanosPerKB(.01, 1))
 	}
 
 	// Roll back the block and make sure we don't hit any errors.
