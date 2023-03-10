@@ -1127,12 +1127,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	switch args.Txn.TxnMeta.GetTxnType() {
 	case TxnTypeAcceptNFTBid:
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-			//utxoOp, err := bav._spendBalance(args.BidAmountNanos, bidderPublicKey, tipHeight)
-			//if err != nil {
-			//	return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid: Problem spending bidder balance")
-			//}
 			totalBidderInput = args.BidAmountNanos
-			//utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 		} else {
 			//
 			// Validate bidder UTXOs.
@@ -1208,13 +1203,6 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		totalOutput += bidAmountNanos
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 			totalBidderInput += bidAmountNanos
-			// Here we explicitly spend the bid.
-			//utxoOperation, err := bav._spendBalance(bidAmountNanos, bidderPublicKey, blockHeight - 1)
-			//if err != nil {
-			//	return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: Problem spending bidder DESO")
-			//}
-			totalInput += bidAmountNanos
-			//utxoOpsForTxn = append(utxoOpsForTxn, utxoOperation)
 		} else {
 			// It's assumed the caller code will check that things like output <= input,
 			// we check it here just in case...

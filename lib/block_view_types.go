@@ -576,148 +576,77 @@ const (
 )
 
 func (op OperationType) String() string {
-	// TODO: get rid of unnecessary braces
 	switch op {
 	case OperationTypeAddUtxo:
-		{
-			return "OperationTypeAddUtxo"
-		}
+		return "OperationTypeAddUtxo"
 	case OperationTypeSpendUtxo:
-		{
-			return "OperationTypeSpendUtxo"
-		}
+		return "OperationTypeSpendUtxo"
 	case OperationTypeBitcoinExchange:
-		{
-			return "OperationTypeBitcoinExchange"
-		}
+		return "OperationTypeBitcoinExchange"
 	case OperationTypePrivateMessage:
-		{
-			return "OperationTypePrivateMessage"
-		}
+		return "OperationTypePrivateMessage"
 	case OperationTypeSubmitPost:
-		{
-			return "OperationTypeSubmitPost"
-		}
+		return "OperationTypeSubmitPost"
 	case OperationTypeUpdateProfile:
-		{
-			return "OperationTypeUpdateProfile"
-		}
+		return "OperationTypeUpdateProfile"
 	case OperationTypeDeletePost:
-		{
-			return "OperationTypeDeletePost"
-		}
+		return "OperationTypeDeletePost"
 	case OperationTypeUpdateBitcoinUSDExchangeRate:
-		{
-			return "OperationTypeUpdateBitcoinUSDExchangeRate"
-		}
+		return "OperationTypeUpdateBitcoinUSDExchangeRate"
 	case OperationTypeFollow:
-		{
-			return "OperationTypeFollow"
-		}
+		return "OperationTypeFollow"
 	case OperationTypeLike:
-		{
-			return "OperationTypeLike"
-		}
+		return "OperationTypeLike"
 	case OperationTypeCreatorCoin:
-		{
-			return "OperationTypeCreatorCoin"
-		}
+		return "OperationTypeCreatorCoin"
 	case OperationTypeSwapIdentity:
-		{
-			return "OperationTypeSwapIdentity"
-		}
+		return "OperationTypeSwapIdentity"
 	case OperationTypeUpdateGlobalParams:
-		{
-			return "OperationTypeUpdateGlobalParams"
-		}
+		return "OperationTypeUpdateGlobalParams"
 	case OperationTypeCreatorCoinTransfer:
-		{
-			return "OperationTypeCreatorCoinTransfer"
-		}
+		return "OperationTypeCreatorCoinTransfer"
 	case OperationTypeCreateNFT:
-		{
-			return "OperationTypeCreateNFT"
-		}
+		return "OperationTypeCreateNFT"
 	case OperationTypeUpdateNFT:
-		{
-			return "OperationTypeUpdateNFT"
-		}
+		return "OperationTypeUpdateNFT"
 	case OperationTypeAcceptNFTBid:
-		{
-			return "OperationTypeAcceptNFTBid"
-		}
+		return "OperationTypeAcceptNFTBid"
 	case OperationTypeNFTBid:
-		{
-			return "OperationTypeNFTBid"
-		}
+		return "OperationTypeNFTBid"
 	case OperationTypeDeSoDiamond:
-		{
-			return "OperationTypeDeSoDiamond"
-		}
+		return "OperationTypeDeSoDiamond"
 	case OperationTypeNFTTransfer:
-		{
-			return "OperationTypeNFTTransfer"
-		}
+		return "OperationTypeNFTTransfer"
 	case OperationTypeAcceptNFTTransfer:
-		{
-			return "OperationTypeAcceptNFTTransfer"
-		}
+		return "OperationTypeAcceptNFTTransfer"
 	case OperationTypeBurnNFT:
-		{
-			return "OperationTypeBurnNFT"
-		}
+		return "OperationTypeBurnNFT"
 	case OperationTypeAuthorizeDerivedKey:
-		{
-			return "OperationTypeAuthorizeDerivedKey"
-		}
+		return "OperationTypeAuthorizeDerivedKey"
 	case OperationTypeMessagingKey:
-		{
-			return "OperationTypeMessagingKey"
-		}
+		return "OperationTypeMessagingKey"
 	case OperationTypeDAOCoin:
-		{
-			return "OperationTypeDAOCoin"
-		}
+		return "OperationTypeDAOCoin"
 	case OperationTypeDAOCoinTransfer:
-		{
-			return "OperationTypeDAOCoinTransfer"
-		}
+		return "OperationTypeDAOCoinTransfer"
 	case OperationTypeSpendingLimitAccounting:
-		{
-			return "OperationTypeSpendingLimitAccounting"
-		}
+		return "OperationTypeSpendingLimitAccounting"
 	case OperationTypeDAOCoinLimitOrder:
-		{
-			return "OperationTypeDAOCoinLimitOrder"
-		}
+		return "OperationTypeDAOCoinLimitOrder"
 	case OperationTypeCreateUserAssociation:
-		{
-			return "OperationTypeCreateUserAssociation"
-		}
+		return "OperationTypeCreateUserAssociation"
 	case OperationTypeDeleteUserAssociation:
-		{
-			return "OperationTypeDeleteUserAssociation"
-		}
+		return "OperationTypeDeleteUserAssociation"
 	case OperationTypeCreatePostAssociation:
-		{
-			return "OperationTypeCreatePostAssociation"
-		}
+		return "OperationTypeCreatePostAssociation"
 	case OperationTypeDeletePostAssociation:
-		{
-			return "OperationTypeDeletePostAssociation"
-		}
+		return "OperationTypeDeletePostAssociation"
 	case OperationTypeAccessGroup:
-		{
-			return "OperationTypeAccessGroup"
-		}
+		return "OperationTypeAccessGroup"
 	case OperationTypeAccessGroupMembers:
-		{
-			return "OperationTypeAccessGroupMembers"
-		}
+		return "OperationTypeAccessGroupMembers"
 	case OperationTypeNewMessage:
-		{
-			return "OperationTypeNewMessage"
-		}
+		return "OperationTypeNewMessage"
 	case OperationTypeAddBalance:
 		return "OperationTypeAddBalance"
 	case OperationTypeSpendBalance:

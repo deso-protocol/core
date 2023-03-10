@@ -382,9 +382,6 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 		return balanceNanos
 	}
 
-	// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
-	//require.Equal(t, balanceForUserNanos, balanceNanos)
-
 	return balanceNanos
 }
 

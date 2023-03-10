@@ -1211,126 +1211,127 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		bav.SetNextNonceForPublicKey(currentTxn.PublicKey, currentTxn.TxnNonce)
 	}
 
-	if currentTxn.TxnMeta.GetTxnType() == TxnTypeBlockReward || currentTxn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
+	switch currentTxn.TxnMeta.GetTxnType() {
+	case TxnTypeBlockReward, TxnTypeBasicTransfer:
 		return bav._disconnectBasicTransfer(
 			currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
+	case TxnTypeBitcoinExchange:
 		return bav._disconnectBitcoinExchange(
 			OperationTypeBitcoinExchange, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypePrivateMessage {
+	case TxnTypePrivateMessage:
 		return bav._disconnectPrivateMessage(
 			OperationTypePrivateMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
+	case TxnTypeMessagingGroup:
 		return bav._disconnectMessagingGroup(
 			OperationTypeMessagingKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
+	case TxnTypeSubmitPost:
 		return bav._disconnectSubmitPost(
 			OperationTypeSubmitPost, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
+	case TxnTypeUpdateProfile:
 		return bav._disconnectUpdateProfile(
 			OperationTypeUpdateProfile, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeUpdateBitcoinUSDExchangeRate {
+	case TxnTypeUpdateBitcoinUSDExchangeRate:
 		return bav._disconnectUpdateBitcoinUSDExchangeRate(
 			OperationTypeUpdateBitcoinUSDExchangeRate, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeUpdateGlobalParams {
+	case TxnTypeUpdateGlobalParams:
 		return bav._disconnectUpdateGlobalParams(
 			OperationTypeUpdateGlobalParams, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeFollow {
+	case TxnTypeFollow:
 		return bav._disconnectFollow(
 			OperationTypeFollow, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeLike {
+	case TxnTypeLike:
 		return bav._disconnectLike(
 			OperationTypeLike, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
+	case TxnTypeCreatorCoin:
 		return bav._disconnectCreatorCoin(
 			OperationTypeCreatorCoin, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreatorCoinTransfer {
+	case TxnTypeCreatorCoinTransfer:
 		return bav._disconnectCreatorCoinTransfer(
 			OperationTypeCreatorCoinTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDAOCoin {
+	case TxnTypeDAOCoin:
 		return bav._disconnectDAOCoin(
 			OperationTypeDAOCoin, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDAOCoinTransfer {
+	case TxnTypeDAOCoinTransfer:
 		return bav._disconnectDAOCoinTransfer(
 			OperationTypeDAOCoinTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+	case TxnTypeDAOCoinLimitOrder:
 		return bav._disconnectDAOCoinLimitOrder(
 			OperationTypeDAOCoinLimitOrder, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
+	case TxnTypeSwapIdentity:
 		return bav._disconnectSwapIdentity(
 			OperationTypeSwapIdentity, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreateNFT {
+	case TxnTypeCreateNFT:
 		return bav._disconnectCreateNFT(
 			OperationTypeCreateNFT, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeUpdateNFT {
+	case TxnTypeUpdateNFT:
 		return bav._disconnectUpdateNFT(
 			OperationTypeUpdateNFT, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+	case TxnTypeAcceptNFTBid:
 		return bav._disconnectAcceptNFTBid(
 			OperationTypeAcceptNFTBid, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+	case TxnTypeNFTBid:
 		return bav._disconnectNFTBid(
 			OperationTypeNFTBid, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
+	case TxnTypeNFTTransfer:
 		return bav._disconnectNFTTransfer(
 			OperationTypeNFTTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTTransfer {
+	case TxnTypeAcceptNFTTransfer:
 		return bav._disconnectAcceptNFTTransfer(
 			OperationTypeAcceptNFTTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeBurnNFT {
+	case TxnTypeBurnNFT:
 		return bav._disconnectBurnNFT(
 			OperationTypeBurnNFT, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
+	case TxnTypeAuthorizeDerivedKey:
 		return bav._disconnectAuthorizeDerivedKey(
 			OperationTypeAuthorizeDerivedKey, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreateUserAssociation {
+	case TxnTypeCreateUserAssociation:
 		return bav._disconnectCreateUserAssociation(
 			OperationTypeCreateUserAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDeleteUserAssociation {
+	case TxnTypeDeleteUserAssociation:
 		return bav._disconnectDeleteUserAssociation(
 			OperationTypeDeleteUserAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeCreatePostAssociation {
+	case TxnTypeCreatePostAssociation:
 		return bav._disconnectCreatePostAssociation(
 			OperationTypeCreatePostAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeDeletePostAssociation {
+	case TxnTypeDeletePostAssociation:
 		return bav._disconnectDeletePostAssociation(
 			OperationTypeDeletePostAssociation, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAccessGroup {
+	case TxnTypeAccessGroup:
 		return bav._disconnectAccessGroup(
 			OperationTypeAccessGroup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {
+	case TxnTypeAccessGroupMembers:
 		return bav._disconnectAccessGroupMembers(
 			OperationTypeAccessGroupMembers, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
-	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeNewMessage {
+	case TxnTypeNewMessage:
 		return bav._disconnectNewMessage(
 			OperationTypeNewMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	}
@@ -1366,11 +1367,9 @@ func (bav *UtxoView) DisconnectBlock(
 		numInputs += len(txn.TxInputs)
 		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 			numInputs += len(txn.TxnMeta.(*AcceptNFTBidMetadata).BidderInputs)
-			// TODO: not sure if this converts properly from previous version of PR
 			numAcceptNFTBidTxns++
 		}
 		if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
-			// TODO: not sure if this converts properly from previous version of PR
 			numDAOCoinLimitOrderTxns++
 			numMatchingOrderInputs := 0
 
@@ -2939,153 +2938,152 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	var totalInput, totalOutput uint64
 	var utxoOpsForTxn []*UtxoOperation
-	// TODO: Switch this to a switch-case
-	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward || txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
+	switch txn.TxnMeta.GetTxnType() {
+	case TxnTypeBlockReward, TxnTypeBasicTransfer:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectBasicTransfer(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
+	case TxnTypeBitcoinExchange:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectBitcoinExchange(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage {
+	case TxnTypePrivateMessage:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectPrivateMessage(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
+	case TxnTypeMessagingGroup:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectMessagingGroup(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
+	case TxnTypeSubmitPost:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectSubmitPost(
 				txn, txHash, blockHeight, verifySignatures, ignoreUtxos)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
+	case TxnTypeUpdateProfile:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectUpdateProfile(
 				txn, txHash, blockHeight, verifySignatures, ignoreUtxos)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateBitcoinUSDExchangeRate {
+	case TxnTypeUpdateBitcoinUSDExchangeRate:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectUpdateBitcoinUSDExchangeRate(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateGlobalParams {
+	case TxnTypeUpdateGlobalParams:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectUpdateGlobalParams(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
+	case TxnTypeFollow:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectFollow(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeLike {
+	case TxnTypeLike:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectLike(txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
+	case TxnTypeCreatorCoin:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectCreatorCoin(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoinTransfer {
+	case TxnTypeCreatorCoinTransfer:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectCreatorCoinTransfer(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoin {
+	case TxnTypeDAOCoin:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectDAOCoin(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinTransfer {
+	case TxnTypeDAOCoinTransfer:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectDAOCoinTransfer(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+	case TxnTypeDAOCoinLimitOrder:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectDAOCoinLimitOrder(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeSwapIdentity {
+	case TxnTypeSwapIdentity:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectSwapIdentity(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateNFT {
+	case TxnTypeCreateNFT:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectCreateNFT(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateNFT {
+	case TxnTypeUpdateNFT:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectUpdateNFT(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+	case TxnTypeAcceptNFTBid:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAcceptNFTBid(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+	case TxnTypeNFTBid:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNFTBid(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
+	case TxnTypeNFTTransfer:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNFTTransfer(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTTransfer {
+	case TxnTypeAcceptNFTTransfer:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAcceptNFTTransfer(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeBurnNFT {
+	case TxnTypeBurnNFT:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectBurnNFT(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
+	case TxnTypeAuthorizeDerivedKey:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAuthorizeDerivedKey(
 				txn, txHash, blockHeight, verifySignatures)
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateUserAssociation {
+	case TxnTypeCreateUserAssociation:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCreateUserAssociation(txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeDeleteUserAssociation {
+	case TxnTypeDeleteUserAssociation:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeleteUserAssociation(txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatePostAssociation {
+	case TxnTypeCreatePostAssociation:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCreatePostAssociation(txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeDeletePostAssociation {
+	case TxnTypeDeletePostAssociation:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeletePostAssociation(txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroup {
+	case TxnTypeAccessGroup:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAccessGroup(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {
+	case TxnTypeAccessGroupMembers:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAccessGroupMembers(
 				txn, txHash, blockHeight, verifySignatures)
 
-	} else if txn.TxnMeta.GetTxnType() == TxnTypeNewMessage {
+	case TxnTypeNewMessage:
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNewMessage(
 				txn, txHash, blockHeight, verifySignatures)
-
-	} else {
+	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}
 	if err != nil {
