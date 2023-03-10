@@ -2161,9 +2161,6 @@ func _submitAssociationTxn(
 	_signTxn(testMeta.t, txn, TransactorPrivateKeyBase58Check)
 
 	// Connect the transaction.
-	//utxoView, err := testMeta.mempool.GetAugmentedUniversalView()
-	//require.NoError(testMeta.t, err)
-	//require.NoError(testMeta.t, testMeta.mempool.RegenerateReadOnlyView())
 	utxoOps, totalInput, totalOutput, fees, err := testMeta.mempool.universalUtxoView.ConnectTransaction(
 		txn,
 		txn.Hash(),
