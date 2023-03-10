@@ -1056,8 +1056,6 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 		}
 	}
 
-	// TODO: something isn't quite right in the disconnect logic
-
 	// We sometimes have some extra AddUtxo operations we need to remove
 	// These are "implicit" outputs that always occur at the end of the
 	// list of UtxoOperations. The number of implicit outputs is equal to
@@ -1098,7 +1096,6 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 		numMatchingOrderInputs += len(transactor.Inputs)
 	}
 
-	// TODO: balance model support
 	// Unspend utxos for matched bid transactors.
 	if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		for jj := operationIndex; jj > operationIndex-numMatchingOrderInputs; jj-- {

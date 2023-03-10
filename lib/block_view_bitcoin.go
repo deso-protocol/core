@@ -413,7 +413,6 @@ func (bav *UtxoView) _disconnectBitcoinExchange(
 	//
 	// The UtxoKey is simply the transaction hash with index zero.
 	// We skip balance model logic here
-	// TODO: maybe we don't?
 	utxoKey := UtxoKey{
 		TxID: *currentTxn.Hash(),
 		// We give all UTXOs that are created as a result of BitcoinExchange transactions
