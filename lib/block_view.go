@@ -3094,24 +3094,6 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		return nil, 0, 0, 0, RuleErrorTxnTooBig
 	}
 
-	// For all transactions other than block rewards, validate the nonce.
-	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-		expectedNonce, err := bav.GetNextNonceForPublicKey(txn.PublicKey)
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(
-				err, "_connectTransaction: Error getting nonce for pub key %s",
-				PkToStringBoth(txn.PublicKey))
-		}
-		if txn.TxnNonce != expectedNonce {
-			return nil, 0, 0, 0, fmt.Errorf(
-				"_connectTransaction: Txn nonce %d does not match expected nonce %d for pub key %s",
-				txn.TxnNonce, expectedNonce, PkToStringBoth(txn.PublicKey))
-		}
-
-		// Now that we've confirmed we have the correct nonce, increment.
-		bav.SetNextNonceForPublicKey(txn.PublicKey, expectedNonce+1)
-	}
-
 	var totalInput, totalOutput uint64
 	var utxoOpsForTxn []*UtxoOperation
 	// TODO: Switch this to a switch-case
@@ -3302,6 +3284,24 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		if (fees*1000)/uint64(txnSizeBytes) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
 			return nil, 0, 0, 0, RuleErrorTxnFeeBelowNetworkMinimum
 		}
+	}
+
+	// For all transactions other than block rewards, validate the nonce.
+	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		expectedNonce, err := bav.GetNextNonceForPublicKey(txn.PublicKey)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(
+				err, "_connectTransaction: Error getting nonce for pub key %s",
+				PkToStringBoth(txn.PublicKey))
+		}
+		if txn.TxnNonce != expectedNonce {
+			return nil, 0, 0, 0, fmt.Errorf(
+				"_connectTransaction: Txn nonce %d does not match expected nonce %d for pub key %s",
+				txn.TxnNonce, expectedNonce, PkToStringBoth(txn.PublicKey))
+		}
+
+		// Now that we've confirmed we have the correct nonce, increment.
+		bav.SetNextNonceForPublicKey(txn.PublicKey, expectedNonce+1)
 	}
 
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil

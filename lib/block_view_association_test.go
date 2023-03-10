@@ -11,7 +11,6 @@ import (
 )
 
 func TestBalanceModelAssociations(t *testing.T) {
-	t.Skip("skip me for now")
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
@@ -74,15 +73,15 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		mempool:           mempool,
 		miner:             miner,
 		savedHeight:       chain.blockTip().Height + 1,
-		feeRateNanosPerKb: uint64(101),
+		feeRateNanosPerKb: uint64(1000),
 	}
 
-	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e3)
-	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 1e3)
-	_registerOrTransferWithTestMeta(testMeta, "m2", senderPkString, m2Pub, senderPrivString, 1e3)
-	_registerOrTransferWithTestMeta(testMeta, "m3", senderPkString, m3Pub, senderPrivString, 1e3)
-	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 1e3)
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e5)
+	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 1e5)
+	_registerOrTransferWithTestMeta(testMeta, "m2", senderPkString, m2Pub, senderPrivString, 1e5)
+	_registerOrTransferWithTestMeta(testMeta, "m3", senderPkString, m3Pub, senderPrivString, 1e5)
+	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 1e5)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e5)
 
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
@@ -96,7 +95,7 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 		_updateGlobalParamsEntryWithTestMeta(
 			testMeta,
-			testMeta.feeRateNanosPerKb+2,
+			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
 			-1,
@@ -2236,7 +2235,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		mempool:           mempool,
 		miner:             miner,
 		savedHeight:       uint32(blockHeight),
-		feeRateNanosPerKb: uint64(101),
+		feeRateNanosPerKb: uint64(105),
 	}
 
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
@@ -2356,7 +2355,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 		_updateGlobalParamsEntryWithTestMeta(
 			testMeta,
-			testMeta.feeRateNanosPerKb,
+			testMeta.feeRateNanosPerKb - 4,
 			paramUpdaterPub,
 			paramUpdaterPriv,
 			-1,
