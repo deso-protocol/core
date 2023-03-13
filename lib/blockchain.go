@@ -4776,6 +4776,44 @@ func (bc *Blockchain) CreateMaxSpend(
 		// This function does not compute a signature.
 	}
 
+	if bc.BlockTip().Height >= bc.params.ForkHeights.BalanceModelBlockHeight {
+		var utxoView *UtxoView
+		var err error
+		if mempool != nil {
+			utxoView, err = mempool.GetAugmentedUniversalView()
+			if err != nil {
+				return nil, 0, 0, 0, errors.Wrapf(err,
+					"Blockchain.CreateMaxSpend: Problem getting augmented UtxoView from mempool: ")
+			}
+		} else {
+			utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+			if err != nil {
+				return nil, 0, 0, 0, errors.Wrapf(err,
+					"Blockchain.CreateMaxSpend: Problem getting UtxoView: ")
+			}
+		}
+		spendableBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(senderPkBytes, bc.BlockTip().Height)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateMaxSpend: Problem getting spendable balance: ")
+		}
+		txn.TxOutputs[0].AmountNanos = spendableBalance
+		txn.TxnVersion = 1
+		// Set these to max values so we can compute a proper max fee
+		nextNonce, err := utxoView.GetNextNonceForPublicKey(senderPkBytes)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"Blockchain.CreateMaxSpend: Problem getting next nonce: ")
+		}
+		txn.TxnNonce = nextNonce
+		txn.TxnFeeNanos = math.MaxUint64
+
+		txnFee := _computeMaxTxFee(txn, minFeeRateNanosPerKB)
+		txn.TxnFeeNanos = txnFee
+		txn.TxOutputs[len(txn.TxOutputs)-1].AmountNanos = spendableBalance - txnFee
+		return txn, spendableBalance, spendableBalance - txnFee, txnFee, nil
+	}
+
 	// Get the spendable UtxoEntrys.
 	spendableUtxos, err := bc.GetSpendableUtxosForPublicKey(senderPkBytes, mempool, nil)
 	if err != nil {
