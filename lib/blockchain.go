@@ -4944,6 +4944,9 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		}
 		txArg.TxnNonce = nextNonce
 
+		// Set to max uint64 so we can compute max fee
+		txArg.TxnFeeNanos = math.MaxUint64
+
 		feeAmountNanos := uint64(0)
 		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 			feeAmountNanos = _computeMaxTxFee(txArg, minFeeRateNanosPerKB)
