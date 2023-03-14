@@ -4945,18 +4945,21 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		txArg.TxnNonce = nextNonce
 
 		// Set to max uint64 so we can compute max fee
-		txArg.TxnFeeNanos = math.MaxUint64
+		txArg.TxnFeeNanos = additionalFees
 
 		feeAmountNanos := uint64(0)
 		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-			feeAmountNanos = _computeMaxTxFee(txArg, minFeeRateNanosPerKB)
+			prevFeeAmountNanos := uint64(0)
+			for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
+				prevFeeAmountNanos = feeAmountNanos
+				feeAmountNanos = _computeMaxTxFee(txArg, minFeeRateNanosPerKB)
+				if math.MaxUint64-feeAmountNanos < additionalFees {
+					return 0, 0, 0, 0, fmt.Errorf(
+						"AddInputsAndChangeToTransaction: overflow detected")
+				}
+				txArg.TxnFeeNanos = additionalFees + feeAmountNanos
+			}
 		}
-		// TODO: CHECK FOR UNDERFLOW AND OVERFLOW HERE!!!
-		if math.MaxUint64-feeAmountNanos < additionalFees {
-			return 0, 0, 0, 0, fmt.Errorf(
-				"AddInputsAndChangeToTransaction: overflow detected")
-		}
-		txArg.TxnFeeNanos = feeAmountNanos + additionalFees
 
 		// Prior to the BalanceModelBlockHeight, "additionalFees" such as the create profile
 		// fee were backed into the spend amount in order to create an "implicit" fee. However,
