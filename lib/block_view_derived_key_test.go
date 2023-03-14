@@ -20,6 +20,27 @@ const (
 	BasicTransferAmount    = "AMOUNT"
 )
 
+type AuthorizeDerivedKeyTestData struct {
+	userPrivateKey           string
+	userPublicKey            []byte
+	expectedConnectError     error
+	transactionSpendingLimit TransactionSpendingLimit
+	memo                     []byte
+	derivedKeySignature      bool
+	derivedPrivateKey        *btcec.PrivateKey
+	operationType            AuthorizeDerivedKeyOperationType
+	expirationBlock          uint64
+	extraData                map[string][]byte
+}
+
+func (data *AuthorizeDerivedKeyTestData) IsDependency(other transactionTestInputSpace) bool {
+	return false
+}
+
+func (data *AuthorizeDerivedKeyTestData) GetInputType() transactionTestInputType {
+	return transactionTestInputTypeDerivedKey
+}
+
 // We create this inline function for attempting a basic transfer.
 // This helps us test that the DeSoChain recognizes a derived key.
 func _derivedKeyBasicTransfer(t *testing.T, db *badger.DB, chain *Blockchain, params *DeSoParams,
@@ -509,6 +530,8 @@ func _doTxnWithBlockHeight(
 	utxoOpExpectation := len(txn.TxInputs) + len(txn.TxOutputs) + 1
 	if isDerivedTransactor && blockHeight >= testMeta.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		// If we got an unlimited derived key, we will not have an additional spending limit utxoop.
+		// ====== Access Group Fork ======
+		// We will only have utxoop expectation if spending limit contains CC, DAO, or NFT spending limits.
 		transactorPrivBytes, _, err := Base58CheckDecode(TransactorPrivKeyBase58Check)
 		_, transactorPub := btcec.PrivKeyFromBytes(btcec.S256(), transactorPrivBytes)
 		transactorPubBytes := transactorPub.SerializeCompressed()
@@ -773,7 +796,10 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(t *testing.T, chain *Blockcha
 	_ = assert
 	_ = require
 
-	transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes(0)
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
+	transactionSpendingLimitBytes, err := transactionSpendingLimit.ToBytes(uint64(blockHeight))
 	require.NoError(err)
 	txn, totalInput, changeAmount, fees, err := chain.CreateAuthorizeDerivedKeyTxn(
 		ownerPublicKey,
@@ -800,9 +826,6 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(t *testing.T, chain *Blockcha
 	_signTxnWithDerivedKey(t, txn, derivedPrivBase58Check)
 
 	txHash := txn.Hash()
-	// Always use height+1 for validation since it's assumed the transaction will
-	// get mined into the next block.
-	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	// ConnectTransaction should treat the amount locked as contributing to the
@@ -1692,6 +1715,17 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
+	params.ForkHeights.DAOCoinLimitOrderBlockHeight = 0
+	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = 0
+	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = 0
+	params.ForkHeights.ParamUpdaterRefactorBlockHeight = 0
+	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = 0
+	// Setting DeSoAccessGroupsBlockHeight to 100 because flushToDb in this test uses hard-coded blockheight of 0, which
+	// breaks the encoding.
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 100
+	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	GlobalDeSoParams = *params
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -2598,17 +2632,6 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	)
 	testStage := TestStageBeforeUnlimitedDerivedBlockHeight
 
-	GlobalDeSoParams = *params
-	GlobalDeSoParams.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = unlimitedDerivedKeysBlockHeight
-	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
-		migration := GlobalDeSoParams.EncoderMigrationHeightsList[ii]
-		if migration.Name == UnlimitedDerivedKeysMigration {
-			GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = uint64(unlimitedDerivedKeysBlockHeight)
-		} else {
-			GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 0
-		}
-	}
-
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
@@ -2616,8 +2639,12 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
-	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
+	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = unlimitedDerivedKeysBlockHeight
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 100
+	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	GlobalDeSoParams = *params
 
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 
@@ -3904,4 +3931,323 @@ REPEAT:
 		goto REPEAT
 	}
 	_executeAllTestRollbackAndFlush(testMeta)
+}
+
+func TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing.T) {
+	require := require.New(t)
+
+	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	m0PublicKey := NewPublicKey(m0PubBytes)
+	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
+	m1PublicKey := NewPublicKey(m1PubBytes)
+	fundPublicKeysWithNanosMap := make(map[PublicKey]uint64)
+	fundPublicKeysWithNanosMap[*m0PublicKey] = 1000
+	initChainCallback := func(tm *transactionTestMeta) {
+		_setTestDerivedKeyWithAccessGroupParams(tm)
+	}
+	tConfig := &transactionTestConfig{
+		t:                          t,
+		testBadger:                 true,
+		testPostgres:               false,
+		testPostgresPort:           5433,
+		disableLogging:             true,
+		initialBlocksMined:         4,
+		fundPublicKeysWithNanosMap: fundPublicKeysWithNanosMap,
+		initChainCallback:          initChainCallback,
+	}
+	// Test the following spending limits:
+	// - spending limit for AccessGroupLimit
+	// - spending limit for AccessGroupMemberLimit
+	// - spending limit for AccessGroupLimit & AccessGroupMemberLimit
+	// - spending limit for new message txns
+	// - unlimited spending limit
+	//
+	// For each spending limit, we will submit a bunch of txns to make sure the limit works properly.
+	// We will also try updating a spending limit.
+	groupPriv1, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	groupPk1 := groupPriv1.PubKey().SerializeCompressed()
+	_ = groupPk1
+	derivedPriv1, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	groupKeyName1 := NewGroupKeyName([]byte("group 1"))
+	groupKeyName2 := NewGroupKeyName([]byte("group 2"))
+	groupKeyName3 := NewGroupKeyName([]byte("group 3"))
+	tv1SpendingLimit := TransactionSpendingLimit{
+		GlobalDESOLimit: 10,
+		AccessGroupMap: map[AccessGroupLimitKey]uint64{
+			{
+				AccessGroupOwnerPublicKey: *m0PublicKey,
+				AccessGroupKeyName:        *groupKeyName1,
+				OperationType:             AccessGroupOperationTypeCreate,
+			}: 10,
+		},
+	}
+	tv1 := _createDerivedKeyTestVector("TEST 1: (PASS) Try connecting an authorize derived key transaction "+
+		"test vector for m0PublicKey before the block height authorizing access group transaction", m0Priv, m0PubBytes,
+		derivedPriv1, tv1SpendingLimit, []byte{}, false, AuthorizeDerivedKeyOperationValid, 100,
+		nil, nil)
+	derivedPriv2, err := btcec.NewPrivateKey(btcec.S256())
+	tv2SpendingLimit := TransactionSpendingLimit{
+		GlobalDESOLimit: 10,
+		AccessGroupMemberMap: map[AccessGroupMemberLimitKey]uint64{
+			{
+				AccessGroupOwnerPublicKey: *m0PublicKey,
+				AccessGroupKeyName:        *groupKeyName1,
+				OperationType:             AccessGroupMemberOperationTypeAdd,
+			}: 10,
+		},
+	}
+	tv2 := _createDerivedKeyTestVector("TEST 2: (PASS) Try connecting an authorize derived key transaction "+
+		"test vector for m0PublicKey before the block height authorizing access group member transaction", m0Priv, m0PubBytes,
+		derivedPriv2, tv2SpendingLimit, []byte{}, false, AuthorizeDerivedKeyOperationValid, 100,
+		nil, nil)
+	derivedPriv3, err := btcec.NewPrivateKey(btcec.S256())
+	tv3SpendingLimit := TransactionSpendingLimit{
+		GlobalDESOLimit:      10,
+		AccessGroupMap:       tv1SpendingLimit.AccessGroupMap,
+		AccessGroupMemberMap: tv2SpendingLimit.AccessGroupMemberMap,
+	}
+	tv3 := _createDerivedKeyTestVector("TEST 3: (PASS) Try connecting an authorize derived key transaction "+
+		"test vector for m0PublicKey before the block height authorizing access group and access group member transactions",
+		m0Priv, m0PubBytes, derivedPriv3, tv3SpendingLimit, []byte{}, false, AuthorizeDerivedKeyOperationValid, 100,
+		nil, nil)
+	derivedPriv4, err := btcec.NewPrivateKey(btcec.S256())
+	tv4SpendingLimit := TransactionSpendingLimit{
+		GlobalDESOLimit: 10,
+		TransactionCountLimitMap: map[TxnType]uint64{
+			TxnTypeNewMessage: 10,
+		},
+	}
+	tv4 := _createDerivedKeyTestVector("TEST 4: (PASS) Try connecting an authorize derived key transaction "+
+		"test vector for m0PublicKey before the block height authorizing new message transactions", m0Priv, m0PubBytes,
+		derivedPriv4, tv4SpendingLimit, []byte{}, false, AuthorizeDerivedKeyOperationValid, 100,
+		nil, nil)
+
+	derivedPriv4p5, err := btcec.NewPrivateKey(btcec.S256())
+	tv4p5SpendingLimit := TransactionSpendingLimit{
+		IsUnlimited: true,
+	}
+	tv4p5 := _createDerivedKeyTestVector("Test 4.5: (PASS) Try connecting an authorize derived key transaction "+
+		"test vector for m0PublicKey before the block height authorizing unlimited transactions", m0Priv, m0PubBytes,
+		derivedPriv4p5, tv4p5SpendingLimit, []byte{}, false, AuthorizeDerivedKeyOperationValid, 100,
+		nil, nil)
+
+	tvv1 := []*transactionTestVector{tv1, tv2, tv3, tv4, tv4p5}
+	tvb1 := NewTransactionTestVectorBlock(tvv1, nil, nil)
+
+	// Mine 2 blocks atop of this block so that we trigger the access group fork.
+	tvb2 := NewTransactionTestVectorBlock([]*transactionTestVector{}, nil, nil)
+	tvb3 := NewTransactionTestVectorBlock([]*transactionTestVector{}, nil, nil)
+
+	// Make sure neither of access group nor access group member spending limits worked prior to the block height.
+
+	tv5 := _createAccessGroupTestVector("TEST 5: (FAIL) Try connecting an access group transaction made by "+
+		"m0 registering (m0, groupName1) signed by a derived key derivedPriv1", m0Priv, m0PubBytes, m0PubBytes, groupPk1,
+		groupKeyName1.ToBytes(), AccessGroupOperationTypeCreate, nil, RuleErrorAccessGroupTransactionSpendingLimitInvalid)
+	tv5.getDerivedPrivateKey = func(tv *transactionTestVector, tm *transactionTestMeta) (*btcec.PrivateKey, int) {
+		// Use DeSo-DER signature scheme to prevent writing anything to transaction extra data.
+		return derivedPriv1, 1
+	}
+	// Now create access group (m0, groupName1) using m0 main private key.
+	tv6 := _createAccessGroupTestVector("TEST 6: (PASS) Try connecting access group transaction made by "+
+		"m0 registering (m0, groupName1) signed by m0", m0Priv, m0PubBytes, m0PubBytes, groupPk1, groupKeyName1.ToBytes(),
+		AccessGroupOperationTypeCreate, nil, nil)
+	// Try adding members to (m0, groupName1) from a derived key.
+	//  update spending limits after block height and re-send access group and access group member transactions.
+	tv7Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: groupKeyName1.ToBytes(), EncryptedKey: []byte{}, ExtraData: nil},
+	}
+	tv7 := _createAccessGroupMembersTestVector("TEST 7: (FAIL) Try connecting an access group member transaction made by "+
+		"m0 registering (m0, groupName1) signed by a derived key derivedPriv2", m0Priv, m0PubBytes, groupKeyName1.ToBytes(), tv7Members,
+		AccessGroupMemberOperationTypeAdd, RuleErrorAccessGroupMemberSpendingLimitInvalid)
+	tv7.getDerivedPrivateKey = func(tv *transactionTestVector, tm *transactionTestMeta) (*btcec.PrivateKey, int) {
+		// Use DeSo-DER signature scheme to prevent writing anything to transaction extra data.
+		return derivedPriv2, 1
+	}
+
+	// Try creating an access group or adding members from derivedPriv3.
+	tv8 := _createAccessGroupTestVector("TEST 8: (FAIL) Try connecting an access group transaction made by "+
+		"m0 registering (m0, groupName2) signed by a derived key derivedPriv3", m0Priv, m0PubBytes, m0PubBytes, groupPk1,
+		groupKeyName2.ToBytes(), AccessGroupOperationTypeCreate, nil, RuleErrorAccessGroupTransactionSpendingLimitInvalid)
+	tv8.getDerivedPrivateKey = func(tv *transactionTestVector, tm *transactionTestMeta) (*btcec.PrivateKey, int) {
+		// Use DeSo-DER signature scheme to prevent writing anything to transaction extra data.
+		return derivedPriv3, 1
+	}
+	// Try adding members to (m0, groupName1) from a derived key.
+	tv9Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: groupKeyName1.ToBytes(), EncryptedKey: []byte{}, ExtraData: nil},
+	}
+	tv9 := _createAccessGroupMembersTestVector("TEST 9: (FAIL) Try connecting an access group member transaction made by "+
+		"m0 registering (m0, groupName1) signed by a derived key derivedPriv3", m0Priv, m0PubBytes, groupKeyName1.ToBytes(), tv9Members,
+		AccessGroupMemberOperationTypeAdd, RuleErrorAccessGroupMemberSpendingLimitInvalid)
+	tv9.getDerivedPrivateKey = func(tv *transactionTestVector, tm *transactionTestMeta) (*btcec.PrivateKey, int) {
+		// Use DeSo-DER signature scheme to prevent writing anything to transaction extra data.
+		return derivedPriv3, 1
+	}
+
+	// Authorizing new message transaction before the fork height should work because we don't restrict it.
+	tv10Message := _createMessageEntry(*m0PublicKey, *groupKeyName1, *m0PublicKey, *m1PublicKey, *BaseGroupKeyName(), *m1PublicKey, []byte{1}, 1, nil)
+	tv10 := _createNewMessageTestVector("TEST 10: (PASS) Try connecting a new message transaction made by m0, sending "+
+		"a DM message to m1 signed by a derived key derivedPriv4", m0Priv, m0PubBytes, tv10Message, NewMessageTypeDm, NewMessageOperationCreate,
+		nil)
+	tv10.getDerivedPrivateKey = func(tv *transactionTestVector, tm *transactionTestMeta) (*btcec.PrivateKey, int) {
+		// Use DeSo-DER signature scheme to prevent writing anything to transaction extra data.
+		return derivedPriv4, 1
+	}
+
+	// Creating an access group or adding members to an access group should work for unlimited derived key 4p5
+	// Try creating an access group or adding members from derivedPriv4p5.
+	tv11 := _createAccessGroupTestVector("TEST 11: (PASS) Try connecting an access group transaction made by "+
+		"m0 registering (m0, groupName2) signed by a derived key derivedPriv4p5", m0Priv, m0PubBytes, m0PubBytes, groupPk1,
+		groupKeyName2.ToBytes(), AccessGroupOperationTypeCreate, nil, nil)
+	tv11.getDerivedPrivateKey = func(tv *transactionTestVector, tm *transactionTestMeta) (*btcec.PrivateKey, int) {
+		// Use DeSo-DER signature scheme to prevent writing anything to transaction extra data.
+		return derivedPriv4p5, 1
+	}
+	// Try adding members to (m0, groupName1) from a derivedPriv4p5
+	tv12Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m1PubBytes, AccessGroupMemberKeyName: BaseGroupKeyName().ToBytes(), EncryptedKey: []byte{1}, ExtraData: nil},
+	}
+	tv12 := _createAccessGroupMembersTestVector("TEST 12: (PASS) Try connecting an access group member transaction made by "+
+		"m0 adding member (m1, BaseKey) to group (m0, groupName1) signed by a derived key derivedPriv4p5", m0Priv, m0PubBytes,
+		groupKeyName1.ToBytes(), tv12Members, AccessGroupMemberOperationTypeAdd, nil)
+	tv12.getDerivedPrivateKey = func(tv *transactionTestVector, tm *transactionTestMeta) (*btcec.PrivateKey, int) {
+		// Use DeSo-DER signature scheme to prevent writing anything to transaction extra data.
+		return derivedPriv4p5, 1
+	}
+
+	// Try updating the spending limit for derivedPriv3 to unlimited and make sure it can add and update members.
+	tv13SpendingLimit := TransactionSpendingLimit{
+		IsUnlimited: true,
+	}
+	tv13 := _createDerivedKeyTestVector("TEST 13: (PASS) Try connecting a derived key transaction made by "+
+		"m0 updating the spending limit for derivedPriv3 to unlimited", m0Priv, m0PubBytes, derivedPriv3,
+		tv13SpendingLimit, []byte{}, false, AuthorizeDerivedKeyOperationValid, 100,
+		nil, nil)
+
+	// Now try creating an access group or adding members to an access group from derivedPriv3.
+	// Create access group (m0, groupName3) from derivedPriv3.
+	tv14 := _createAccessGroupTestVector("TEST 14: (PASS) Try connecting an access group transaction made by "+
+		"m0 registering (m0, groupName2) signed by a derived key derivedPriv3", m0Priv, m0PubBytes, m0PubBytes, groupPk1,
+		groupKeyName3.ToBytes(), AccessGroupOperationTypeCreate, nil, nil)
+	tv14.getDerivedPrivateKey = func(tv *transactionTestVector, tm *transactionTestMeta) (*btcec.PrivateKey, int) {
+		// Use DeSo-DER signature scheme to prevent writing anything to transaction extra data.
+		return derivedPriv3, 1
+	}
+	// Try adding members to (m0, groupName1) from a derived key.
+	tv15Members := []*AccessGroupMember{
+		{AccessGroupMemberPublicKey: m0PubBytes, AccessGroupMemberKeyName: groupKeyName1.ToBytes(), EncryptedKey: []byte{}, ExtraData: nil},
+	}
+	tv15 := _createAccessGroupMembersTestVector("TEST 15: (PASS) Try connecting an access group member transaction made by "+
+		"m0 adding member (m0, groupName1) to group (m0, groupName3) signed by a derived key derivedPriv3", m0Priv, m0PubBytes,
+		groupKeyName3.ToBytes(), tv15Members, AccessGroupMemberOperationTypeAdd, nil)
+	tv15.getDerivedPrivateKey = tv14.getDerivedPrivateKey
+
+	tvv4 := []*transactionTestVector{tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14, tv15}
+	tvb4 := NewTransactionTestVectorBlock(tvv4, nil, nil)
+
+	tvbb := []*transactionTestVectorBlock{tvb1, tvb2, tvb3, tvb4}
+	tes := NewTransactionTestSuite(t, tvbb, tConfig)
+	tes.Run()
+}
+
+func _getDerivedKeyMetadata(t *testing.T, ownerPrivateKeyString string, derivedPublicKey []byte, expirationBlock uint64,
+	limit TransactionSpendingLimit, blockHeight uint64) *AuthorizeDerivedKeyMetadata {
+	require := require.New(t)
+
+	ownerPriv, _, err := Base58CheckDecode(ownerPrivateKeyString)
+	require.NoError(err)
+	ownerPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), ownerPriv)
+	spendingLimit := limit
+	accessSignature, err := _getAccessSignature(
+		derivedPublicKey, expirationBlock, &spendingLimit, ownerPrivKey, blockHeight)
+	require.NoError(err)
+	metadata := &AuthorizeDerivedKeyMetadata{
+		DerivedPublicKey: derivedPublicKey,
+		ExpirationBlock:  expirationBlock,
+		OperationType:    AuthorizeDerivedKeyOperationNotValid,
+		AccessSignature:  accessSignature,
+	}
+	return metadata
+}
+
+func _setTestDerivedKeyWithAccessGroupParams(tm *transactionTestMeta) {
+	tm.params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	tm.params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
+	tm.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
+	tm.params.ForkHeights.DAOCoinBlockHeight = uint32(0)
+	tm.params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
+	tm.params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
+	tm.params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
+	tm.params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
+	tm.params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = 0
+	// TODO: Note that there a laziness comment in the spending limit transaction creation code.
+	tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 7
+	tm.params.EncoderMigrationHeights = GetEncoderMigrationHeights(&tm.params.ForkHeights)
+	tm.params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&tm.params.ForkHeights)
+	tm.params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	GlobalDeSoParams = *tm.params
+}
+
+func _createDerivedKeyTestVector(id string, userPrivateKey string, userPublicKey []byte, derivedPrivateKey *btcec.PrivateKey,
+	limit TransactionSpendingLimit, memo []byte, derivedKeySignature bool, operationType AuthorizeDerivedKeyOperationType,
+	expirationBlock uint64, extraData map[string][]byte, expectedConnectError error) (_tv *transactionTestVector) {
+
+	testData := &AuthorizeDerivedKeyTestData{
+		userPrivateKey:           userPrivateKey,
+		userPublicKey:            userPublicKey,
+		expectedConnectError:     expectedConnectError,
+		extraData:                extraData,
+		transactionSpendingLimit: limit,
+		memo:                     memo,
+		operationType:            operationType,
+		expirationBlock:          expirationBlock,
+		derivedKeySignature:      derivedKeySignature,
+		derivedPrivateKey:        derivedPrivateKey,
+	}
+	return &transactionTestVector{
+		id:         transactionTestIdentifier(id),
+		inputSpace: testData,
+		getTransaction: func(tv *transactionTestVector, tm *transactionTestMeta) (*MsgDeSoTxn, error) {
+			dataSpace := tv.inputSpace.(*AuthorizeDerivedKeyTestData)
+			txn, err := _createSignedAuthorizeDerivedKeyTransaction(tm.t, tm.chain, tm.mempool, dataSpace)
+			require.NoError(tm.t, err)
+			return txn, dataSpace.expectedConnectError
+		},
+		verifyConnectUtxoViewEntry:    nil,
+		verifyDisconnectUtxoViewEntry: nil,
+		verifyDbEntry:                 nil,
+	}
+}
+
+func _createSignedAuthorizeDerivedKeyTransaction(t *testing.T, chain *Blockchain, mempool *DeSoMempool,
+	dataSpace *AuthorizeDerivedKeyTestData) (_txn *MsgDeSoTxn, _err error) {
+
+	require := require.New(t)
+	// Create the transaction.
+	// TODO: This is a little lazy and will result in a disconnect error if the transaction is submitted in the
+	// 	blockheight that's 1 lesser than the fork height.
+	blockHeight := uint64(chain.blockTip().Height + 1)
+	spendingLimitBytes, err := dataSpace.transactionSpendingLimit.ToBytes(blockHeight)
+	require.NoError(err)
+	spendingLimitsHex := hex.EncodeToString(spendingLimitBytes)
+	derivedPk := dataSpace.derivedPrivateKey.PubKey().SerializeCompressed()
+	derivedKeyMetadata := _getDerivedKeyMetadata(t, m0Priv, derivedPk, dataSpace.expirationBlock,
+		dataSpace.transactionSpendingLimit, blockHeight)
+	deleteKey := dataSpace.operationType == AuthorizeDerivedKeyOperationNotValid
+	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateAuthorizeDerivedKeyTxn(
+		dataSpace.userPublicKey, derivedPk, dataSpace.expirationBlock, derivedKeyMetadata.AccessSignature,
+		deleteKey, dataSpace.derivedKeySignature, dataSpace.extraData, dataSpace.memo, spendingLimitsHex,
+		10, mempool, []*DeSoOutput{})
+	require.NoError(err)
+	require.Equal(totalInputMake, changeAmountMake+feesMake)
+
+	if dataSpace.derivedKeySignature {
+		derivedPriv := Base58CheckEncode(dataSpace.derivedPrivateKey.Serialize(), true, chain.params)
+		_signTxnWithDerivedKey(t, txn, derivedPriv)
+	} else {
+		_signTxn(t, txn, dataSpace.userPrivateKey)
+	}
+	return txn, nil
 }

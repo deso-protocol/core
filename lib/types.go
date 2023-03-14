@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"github.com/golang/protobuf/proto"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"io"
@@ -17,6 +18,7 @@ import (
 const PublicKeyLenCompressed int = 33
 
 type PKID [PublicKeyLenCompressed]byte
+
 type PublicKey [PublicKeyLenCompressed]byte
 
 func NewPKID(pkidBytes []byte) *PKID {
@@ -72,6 +74,10 @@ func (pkid *PKID) GetVersionByte(blockHeight uint64) byte {
 
 func (pkid *PKID) GetEncoderType() EncoderType {
 	return EncoderTypePKID
+}
+
+func (pkid *PKID) GetProtobufEncoderType() proto.Message {
+	return nil
 }
 
 func (pkid *PKID) ToBytes() []byte {
@@ -153,8 +159,16 @@ func (publicKey *PublicKey) GetEncoderType() EncoderType {
 	return EncoderTypePublicKey
 }
 
+func (publicKey *PublicKey) GetProtobufEncoderType() proto.Message {
+	return nil
+}
+
 func (publicKey *PublicKey) IsZeroPublicKey() bool {
 	return bytes.Equal(publicKey.ToBytes(), ZeroPublicKey.ToBytes())
+}
+
+func (publicKey *PublicKey) Equal(other PublicKey) bool {
+	return bytes.Equal(publicKey.ToBytes(), other.ToBytes())
 }
 
 func PublicKeyToPKID(publicKey []byte) *PKID {
@@ -226,6 +240,10 @@ func (bh *BlockHash) GetVersionByte(blockHeight uint64) byte {
 
 func (bh *BlockHash) GetEncoderType() EncoderType {
 	return EncoderTypeBlockHash
+}
+
+func (bh *BlockHash) GetProtobufEncoderType() proto.Message {
+	return nil
 }
 
 func (bh *BlockHash) String() string {

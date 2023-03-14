@@ -107,7 +107,7 @@ func TestStateRollback(t *testing.T) {
 	//	require.Equal(true, reflect.DeepEqual(checksumAfterTransactionBytes, checksumFinalFinalBytes))
 	//}
 
-	require.NoError(node2.Server.GetBlockchain().DisconnectBlocksToHeight(5000))
+	require.NoError(node2.Server.GetBlockchain().DisconnectBlocksToHeight(5000, nil))
 	//compareNodesByState(t, node1, node2, 0)
 
 	node1Bytes := computeNodeStateChecksum(t, node1, 5000)

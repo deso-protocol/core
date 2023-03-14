@@ -168,19 +168,31 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	var newTransactionSpendingLimit *TransactionSpendingLimit
 	var memo []byte
 	if blockHeight >= bav.Params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight {
+		// TODO: Break the logic in this if out into its own function at some point.
+
 		// Extract TransactionSpendingLimit from extra data
 		// We need to merge the new transaction spending limit struct into the old one
 		//
 		// This will get overwritten if there's an existing spending limit struct.
+		//
+		// ====== Access Group Fork ======
+		// We set the mappings for access group map and access group member map to avoid nil pointer reference in
+		// validation checks such as unlimited spending limit. This won't affect the spending limit prior to the fork
+		// block height because the entry will always be encoded based on the current block height.
 		newTransactionSpendingLimit = &TransactionSpendingLimit{
 			TransactionCountLimitMap:     make(map[TxnType]uint64),
 			CreatorCoinOperationLimitMap: make(map[CreatorCoinOperationLimitKey]uint64),
 			DAOCoinOperationLimitMap:     make(map[DAOCoinOperationLimitKey]uint64),
 			NFTOperationLimitMap:         make(map[NFTOperationLimitKey]uint64),
 			DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
+			AssociationLimitMap:          make(map[AssociationLimitKey]uint64),
+			AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
+			AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
 		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
-			newTransactionSpendingLimit = prevDerivedKeyEntry.TransactionSpendingLimitTracker
+			// Copy the existing transaction spending limit.
+			newTransactionSpendingLimitCopy := *prevDerivedKeyEntry.TransactionSpendingLimitTracker
+			newTransactionSpendingLimit = &newTransactionSpendingLimitCopy
 			memo = prevDerivedKeyEntry.Memo
 		}
 		// This is the transaction spending limit object passed in the extra data field. This is required for verifying the
@@ -189,13 +201,20 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		var transactionSpendingLimitBytes []byte
 		if txn.ExtraData != nil {
 			// Only overwrite the memo if the key exists in extra data
-			if memoBytes, exists := txn.ExtraData[DerivedPublicKey]; exists {
+			if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
+				if memoBytes, exists := txn.ExtraData[DerivedKeyMemoKey]; exists {
+					memo = memoBytes
+				}
+			} else if memoBytes, exists := txn.ExtraData[DerivedPublicKey]; exists {
 				memo = memoBytes
 			}
 			exists := false
 			// If the transaction spending limit key exists, parse it and merge it into the existing transaction
 			// spending limit tracker.
 			if transactionSpendingLimitBytes, exists = txn.ExtraData[TransactionSpendingLimitKey]; exists {
+				// ====== Access Group Fork ======
+				// We've previously set access group mappings; however, to/from byte encoding/decoding will never overwrite these
+				// mappings prior to the fork blockheight.
 				transactionSpendingLimit = &TransactionSpendingLimit{}
 				rr := bytes.NewReader(transactionSpendingLimitBytes)
 				if err := transactionSpendingLimit.FromBytes(uint64(blockHeight), rr); err != nil {
@@ -252,11 +271,39 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 							newTransactionSpendingLimit.DAOCoinLimitOrderLimitMap[daoCoinLimitOrderLimitKey] = transactionCount
 						}
 					}
+
+					// ====== Associations And Access Groups Fork ======
+					// Note that we don't really need to gate this logic by the blockheight because the to/from bytes
+					// encoding/decoding will never overwrite these maps prior to the fork blockheight. We do it
+					// anyway as a sanity-check.
+					if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
+						for associationLimitKey, transactionCount := range transactionSpendingLimit.AssociationLimitMap {
+							if transactionCount == 0 {
+								delete(newTransactionSpendingLimit.AssociationLimitMap, associationLimitKey)
+							} else {
+								newTransactionSpendingLimit.AssociationLimitMap[associationLimitKey] = transactionCount
+							}
+						}
+						for accessGroupLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMap {
+							if transactionCount == 0 {
+								delete(newTransactionSpendingLimit.AccessGroupMap, accessGroupLimitKey)
+							} else {
+								newTransactionSpendingLimit.AccessGroupMap[accessGroupLimitKey] = transactionCount
+							}
+						}
+						for accessGroupMemberLimitKey, transactionCount := range transactionSpendingLimit.AccessGroupMemberMap {
+							if transactionCount == 0 {
+								delete(newTransactionSpendingLimit.AccessGroupMemberMap, accessGroupMemberLimitKey)
+							} else {
+								newTransactionSpendingLimit.AccessGroupMemberMap[accessGroupMemberLimitKey] = transactionCount
+							}
+						}
+					}
 				}
 			}
 		}
 		// We skip verifying the access signature if the transaction is signed by the owner.
-		_, isDerived, err := IsDerivedSignature(txn)
+		_, isDerived, err := IsDerivedSignature(txn, blockHeight)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAuthorizeDerivedKey: "+
 				"It looks like this transaction was signed with a derived key, but the signature is malformed: ")

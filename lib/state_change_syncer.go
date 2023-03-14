@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/golang/glog"
+	"github.com/golang/protobuf/proto"
 	"os"
 )
 
@@ -59,8 +60,13 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 		encoderType = encoder.GetEncoderType()
 		// Extract the DeSo entry struct interface from the bytes.
 		if exists, err := DecodeFromBytes(encoder, rr); exists && err == nil {
-			// Encode the entry to protobuf bytes.
-			protobufBytes, err = encoder.RawEncodeToProtobufBytes(stateChangeSyncer.DeSoParams)
+			// Get the protobuf struct type for this encoder.
+			protoStruct := encoder.GetProtobufEncoderType()
+			// Copy the values from the encoder to the protobuf struct.
+			CopyStruct(encoder, protoStruct, stateChangeSyncer.DeSoParams)
+			// Serialize the protobuf struct to bytes.
+			protobufBytes, err = proto.Marshal(protoStruct)
+
 			if err != nil {
 				glog.Errorf("Server._handleDbTransaction: Problem encoding protobuf bytes: %v", err)
 				return
