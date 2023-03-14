@@ -2320,7 +2320,9 @@ func (srv *Server) Stop() {
 			glog.Info("Final mempool dump complete!")
 		}
 
-		srv.mempool.Stop()
+		if !srv.mempool.stopped {
+			srv.mempool.Stop()
+		}
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed Mempool"))
 	}
 
