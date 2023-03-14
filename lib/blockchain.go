@@ -4948,7 +4948,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		txArg.TxnFeeNanos = additionalFees
 
 		feeAmountNanos := uint64(0)
-		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward && minFeeRateNanosPerKB != 0 {
 			prevFeeAmountNanos := uint64(0)
 			for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 				prevFeeAmountNanos = feeAmountNanos
