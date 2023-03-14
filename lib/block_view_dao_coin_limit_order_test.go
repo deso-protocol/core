@@ -24,7 +24,7 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 	// -----------------------
 
 	// Test constants
-	const feeRateNanosPerKb = uint64(105)
+	const feeRateNanosPerKb = uint64(101)
 
 	// Initialize test chain and miner.
 	require := require.New(t)
@@ -79,7 +79,7 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 			feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1, int64(feeRateNanosPerKb)-4, -1, -1,
+			-1, int64(feeRateNanosPerKb), -1, -1,
 			-1, /*maxCopiesPerNFT*/
 		)
 	}
@@ -615,7 +615,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// -----------------------
 
 	// Test constants
-	const feeRateNanosPerKb = uint64(105)
+	const feeRateNanosPerKb = uint64(101)
 
 	// Initialize test chain and miner.
 	require := require.New(t)
@@ -670,7 +670,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1, int64(feeRateNanosPerKb)-4, -1, -1,
+			-1, int64(feeRateNanosPerKb), -1, -1,
 			-1, /*maxCopiesPerNFT*/
 		)
 	}
@@ -4224,7 +4224,7 @@ func (txnData *DAOCoinLimitOrderMetadata) ToEntry(
 
 func TestFlushingDAOCoinLimitOrders(t *testing.T) {
 	// Test constants
-	const feeRateNanosPerKb = uint64(105)
+	const feeRateNanosPerKb = uint64(101)
 	var err error
 
 	// Initialize test chain and miner.
@@ -4365,7 +4365,7 @@ func TestFlushingDAOCoinLimitOrders(t *testing.T) {
 
 		_updateGlobalParamsEntryWithTestMeta(
 			testMeta, feeRateNanosPerKb, paramUpdaterPub,
-			paramUpdaterPriv, -1, int64(feeRateNanosPerKb)-4, -1, -1, -1,
+			paramUpdaterPriv, -1, int64(feeRateNanosPerKb), -1, -1, -1,
 		)
 	}
 	{

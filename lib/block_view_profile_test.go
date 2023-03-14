@@ -128,11 +128,6 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	if utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB == 0 {
 		utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
 	}
-	//
-	//additionalFees := utxoView.GlobalParamsEntry.CreateProfileFeeNanos
-	//if forceZeroAdditionalFee {
-	//	additionalFees = 0
-	//}
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(
 		updaterPkBytes,
@@ -3328,9 +3323,6 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 	_ = assert
 	_ = require
 
-	// This test fails non-deterministically so we wrap it in a loop to make it
-	// not flake.
-	//for ii := 0; ii < 10; ii++ {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
@@ -3567,7 +3559,6 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 		require.Error(err)
 		require.Equal(0, len(mempoolTxsAdded))
 	}
-	//}
 }
 
 // Check that Eth personal_sign works on some test data.

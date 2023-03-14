@@ -2948,6 +2948,20 @@ func _computeMaxTxFee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	return maxSizeBytes * minFeeRateNanosPerKB / 1000
 }
 
+func _computeMaxTxV1Fee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
+	if minFeeRateNanosPerKB <= 100 {
+		return _computeMaxTxFee(_tx, minFeeRateNanosPerKB)
+	}
+
+	maxSizeBytes := _computeMaxTxSize(_tx)
+	res := maxSizeBytes * minFeeRateNanosPerKB / 1000
+
+	if maxSizeBytes*minFeeRateNanosPerKB%1000 != 0 {
+		res++
+	}
+	return res
+}
+
 // Computing maximum fee for tx that doesn't include change output yet.
 func _computeMaxTxFeeWithMaxChange(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	// TODO: This is a hack that we implement in order to remain backward-compatible with
@@ -4952,7 +4966,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			prevFeeAmountNanos := uint64(0)
 			for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 				prevFeeAmountNanos = feeAmountNanos
-				feeAmountNanos = _computeMaxTxFee(txArg, minFeeRateNanosPerKB)
+				feeAmountNanos = _computeMaxTxV1Fee(txArg, minFeeRateNanosPerKB)
 				if math.MaxUint64-feeAmountNanos < additionalFees {
 					return 0, 0, 0, 0, fmt.Errorf(
 						"AddInputsAndChangeToTransaction: overflow detected")

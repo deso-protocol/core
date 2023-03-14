@@ -600,8 +600,6 @@ func TestSerializeGetTransactions(t *testing.T) {
 	require.Equal(msg, parsedMsg)
 }
 
-// TODO: this is messed up - we don't have a marker for the end of a transaction in a v1 bundle. We will likely just
-// need a separate serialization for v2 bundles all together.
 func TestSerializeTransactionBundle(t *testing.T) {
 	require := require.New(t)
 

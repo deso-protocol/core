@@ -67,10 +67,6 @@ func _derivedKeyBasicTransfer(t *testing.T, db *badger.DB, chain *Blockchain, pa
 	totalInput, spendAmount, changeAmount, fees, err :=
 		chain.AddInputsAndChangeToTransaction(txn, 10, mempool)
 	require.NoError(err)
-	if totalInput != spendAmount+changeAmount+fees {
-		x := 1
-		fmt.Println(x)
-	}
 	require.Equal(totalInput, spendAmount+changeAmount+fees)
 	require.Greater(totalInput, uint64(0))
 
@@ -1596,7 +1592,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Attempt re-authorizing a previously de-authorized derived key.
 	// Since we've already deleted this derived key, this must fail.
 	{
-		utxoView, err := mempool.GetAugmentedUniversalView() // NewUtxoView(db, params, chain.postgres, chain.snapshot) // mempool.GetAugmentedUniversalView()
+		utxoView, err := mempool.GetAugmentedUniversalView()
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
 			testMeta,
@@ -3539,7 +3535,7 @@ REPEAT:
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
 	}
-	// M0 increases the global DESO limit to 11 nanos (enough to buy now)
+	// M0 increases the global DESO limit to 6
 	{
 		globalDESOSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: 6,
@@ -3585,7 +3581,7 @@ REPEAT:
 		// Let's confirm that the global deso limit has been reduced on the tracker
 		derivedKeyEntry := dbAdapter.GetOwnerToDerivedKeyMapping(*NewPublicKey(m0PkBytes), *NewPublicKey(m0AuthTxnMeta.DerivedPublicKey))
 		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit,
-			uint64(0)) // 11 - (5 + 6) (Buy Now Price + fee), 6-(5+1) for balance model
+			uint64(0)) // 6-(5+1) for balance model
 
 		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.
 			NFTOperationLimitMap[MakeNFTOperationLimitKey(*post1Hash, 1, NFTBidOperation)],

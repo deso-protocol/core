@@ -2,7 +2,6 @@ package lib
 
 import (
 	"github.com/dgraph-io/badger/v3"
-	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"math"
@@ -436,9 +435,6 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 		require.Equal(OperationTypeSpendBalance, utxoOps[1].Type) // Spend bidder balance.
 		require.Equal(OperationTypeAddBalance, utxoOps[2].Type)   // Pay the seller.
 		if numOps == 5 {
-			if OperationTypeAddBalance != utxoOps[3].Type {
-				glog.Info("WEE WOO WEE WOO") // lol RPH
-			}
 			require.Equal(OperationTypeAddBalance, utxoOps[3].Type) // Pay creator royalty (optional).
 		}
 	}
@@ -1997,7 +1993,6 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		require.Equal(uint64(0), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 		require.Equal(m0BalBefore-txnFee+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		//require.Equal(m0Before-1, m0BalAfter)
 		// Make sure that the bidder's balance decreased by the bid amount.
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(m1BalBefore-bidAmountNanos, m1BalAfter)
@@ -2059,11 +2054,9 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		require.Equal(uint64(2), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 		require.Equal(m0BalBefore-txnFee+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		//require.Equal(m0BalBefore-, m0BalAfter)
 		// Make sure that the bidder's balance decreased by the bid amount.
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(m1BalBefore-bidAmountNanos, m1BalAfter)
-		//require.Equal(uint64(987), m1BalAfter)
 		// Creator coin.
 		desoLocked, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
 		require.Equal(m0InitialDeSoLocked+expectedCoinRoyalty, desoLocked)
@@ -2122,11 +2115,9 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		require.Equal(uint64(20), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 		require.Equal(m0BalBefore-txnFee+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		//require.Equal(uint64(112), m0BalAfter)
 		// Make sure that the bidder's balance decreased by the bid amount.
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(m1BalBefore-bidAmountNanos, m1BalAfter)
-		//require.Equal(uint64(886), m1BalAfter)
 		// Creator coin.
 		desoLocked, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
 		require.Equal(m0DeSoLocked+expectedCoinRoyalty, desoLocked)
@@ -6517,9 +6508,6 @@ func TestNFTSplits(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m6Pub, senderPrivString, 1000)
 
 	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
-	//m4PKID := DBGetPKIDEntryForPublicKey(db, m4PkBytes)
-	//m5PKID := DBGetPKIDEntryForPublicKey(db, m5PkBytes)
-	//m6PKID := DBGetPKIDEntryForPublicKey(db, m6PkBytes)
 
 	// Set max copies to a non-zero value to activate NFTs.
 	{
@@ -7504,9 +7492,6 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 10000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m5Pub, senderPrivString, 10000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m6Pub, senderPrivString, 10000)
-
-	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
-	_ = getConditionalBalance
 
 	// Set max copies to a non-zero value to activate NFTs.
 	{
