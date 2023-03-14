@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/golang/protobuf/proto"
 	"github.com/holiman/uint256"
 	"io"
 	"log"
@@ -5537,20 +5536,12 @@ func (pk *AffectedPublicKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	return nil
 }
 
-func (pk *AffectedPublicKey) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (pk *AffectedPublicKey) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (pk *AffectedPublicKey) GetEncoderType() EncoderType {
 	return EncoderTypeAffectedPublicKey
-}
-
-func (pk *AffectedPublicKey) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type BasicTransferTxindexMetadata struct {
@@ -5630,20 +5621,12 @@ func (txnMeta *BasicTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 	return nil
 }
 
-func (txnMeta *BasicTransferTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *BasicTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *BasicTransferTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeBasicTransferTxindexMetadata
-}
-
-func (txnMeta *BasicTransferTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type BitcoinExchangeTxindexMetadata struct {
@@ -5707,20 +5690,12 @@ func (txnMeta *BitcoinExchangeTxindexMetadata) RawDecodeWithoutMetadata(blockHei
 	return nil
 }
 
-func (txnMeta *BitcoinExchangeTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *BitcoinExchangeTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *BitcoinExchangeTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeBitcoinExchangeTxindexMetadata
-}
-
-func (txnMeta *BitcoinExchangeTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type CreatorCoinTxindexMetadata struct {
@@ -5782,20 +5757,12 @@ func (txnMeta *CreatorCoinTxindexMetadata) RawDecodeWithoutMetadata(blockHeight 
 	return nil
 }
 
-func (txnMeta *CreatorCoinTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *CreatorCoinTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *CreatorCoinTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeCreatorCoinTxindexMetadata
-}
-
-func (txnMeta *CreatorCoinTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type CreatorCoinTransferTxindexMetadata struct {
@@ -5844,20 +5811,12 @@ func (txnMeta *CreatorCoinTransferTxindexMetadata) RawDecodeWithoutMetadata(bloc
 	return nil
 }
 
-func (txnMeta *CreatorCoinTransferTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *CreatorCoinTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *CreatorCoinTransferTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeCreatorCoinTransferTxindexMetadata
-}
-
-func (txnMeta *CreatorCoinTransferTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type DAOCoinTransferTxindexMetadata struct {
@@ -5890,20 +5849,12 @@ func (txnMeta *DAOCoinTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHei
 	return nil
 }
 
-func (txnMeta *DAOCoinTransferTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *DAOCoinTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *DAOCoinTransferTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeDAOCoinTransferTxindexMetadata
-}
-
-func (txnMeta *DAOCoinTransferTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type DAOCoinTxindexMetadata struct {
@@ -5961,20 +5912,12 @@ func (txnMeta *DAOCoinTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint
 	return nil
 }
 
-func (txnMeta *DAOCoinTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *DAOCoinTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *DAOCoinTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeDAOCoinTxindexMetadata
-}
-
-func (txnMeta *DAOCoinTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type FilledDAOCoinLimitOrderMetadata struct {
@@ -6041,20 +5984,12 @@ func (orderMeta *FilledDAOCoinLimitOrderMetadata) RawDecodeWithoutMetadata(block
 	return nil
 }
 
-func (orderMeta *FilledDAOCoinLimitOrderMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (orderMeta *FilledDAOCoinLimitOrderMetadata) GetVersionByte(blockHeight uint64) byte {
 	return byte(0)
 }
 
 func (orderMeta *FilledDAOCoinLimitOrderMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeFilledDAOCoinLimitOrderMetadata
-}
-
-func (orderMeta *FilledDAOCoinLimitOrderMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type DAOCoinLimitOrderTxindexMetadata struct {
@@ -6118,20 +6053,12 @@ func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawDecodeWithoutMetadata(blockH
 	return nil
 }
 
-func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (daoMeta *DAOCoinLimitOrderTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return byte(0)
 }
 
 func (daoMeta *DAOCoinLimitOrderTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeDAOCoinLimitOrderTxindexMetadata
-}
-
-func (daoMeta *DAOCoinLimitOrderTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type UpdateProfileTxindexMetadata struct {
@@ -6206,20 +6133,12 @@ func (txnMeta *UpdateProfileTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 	return nil
 }
 
-func (txnMeta *UpdateProfileTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *UpdateProfileTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *UpdateProfileTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeUpdateProfileTxindexMetadata
-}
-
-func (txnMeta *UpdateProfileTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type SubmitPostTxindexMetadata struct {
@@ -6258,20 +6177,12 @@ func (txnMeta *SubmitPostTxindexMetadata) RawDecodeWithoutMetadata(blockHeight u
 	return nil
 }
 
-func (txnMeta *SubmitPostTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *SubmitPostTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *SubmitPostTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeSubmitPostTxindexMetadata
-}
-
-func (txnMeta *SubmitPostTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type LikeTxindexMetadata struct {
@@ -6306,20 +6217,12 @@ func (txnMeta *LikeTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	return nil
 }
 
-func (txnMeta *LikeTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *LikeTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *LikeTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeLikeTxindexMetadata
-}
-
-func (txnMeta *LikeTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type FollowTxindexMetadata struct {
@@ -6345,20 +6248,12 @@ func (txnMeta *FollowTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint6
 	return nil
 }
 
-func (txnMeta *FollowTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *FollowTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *FollowTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeFollowTxindexMetadata
-}
-
-func (txnMeta *FollowTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type PrivateMessageTxindexMetadata struct {
@@ -6385,20 +6280,12 @@ func (txnMeta *PrivateMessageTxindexMetadata) RawDecodeWithoutMetadata(blockHeig
 	return nil
 }
 
-func (txnMeta *PrivateMessageTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *PrivateMessageTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *PrivateMessageTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypePrivateMessageTxindexMetadata
-}
-
-func (txnMeta *PrivateMessageTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type SwapIdentityTxindexMetadata struct {
@@ -6448,20 +6335,12 @@ func (txnMeta *SwapIdentityTxindexMetadata) RawDecodeWithoutMetadata(blockHeight
 	return nil
 }
 
-func (txnMeta *SwapIdentityTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *SwapIdentityTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *SwapIdentityTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeSwapIdentityTxindexMetadata
-}
-
-func (txnMeta *SwapIdentityTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type NFTRoyaltiesMetadata struct {
@@ -6512,20 +6391,12 @@ func (txnMeta *NFTRoyaltiesMetadata) RawDecodeWithoutMetadata(blockHeight uint64
 	return nil
 }
 
-func (txnMeta *NFTRoyaltiesMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *NFTRoyaltiesMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *NFTRoyaltiesMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeNFTRoyaltiesMetadata
-}
-
-func (txnMeta *NFTRoyaltiesMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type NFTBidTxindexMetadata struct {
@@ -6586,20 +6457,12 @@ func (txnMeta *NFTBidTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint6
 	return nil
 }
 
-func (txnMeta *NFTBidTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *NFTBidTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *NFTBidTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeNFTBidTxindexMetadata
-}
-
-func (txnMeta *NFTBidTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type AcceptNFTBidTxindexMetadata struct {
@@ -6644,20 +6507,12 @@ func (txnMeta *AcceptNFTBidTxindexMetadata) RawDecodeWithoutMetadata(blockHeight
 	return nil
 }
 
-func (txnMeta *AcceptNFTBidTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *AcceptNFTBidTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *AcceptNFTBidTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeAcceptNFTBidTxindexMetadata
-}
-
-func (txnMeta *AcceptNFTBidTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type NFTTransferTxindexMetadata struct {
@@ -6691,20 +6546,12 @@ func (txnMeta *NFTTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHeight 
 	return nil
 }
 
-func (txnMeta *NFTTransferTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *NFTTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *NFTTransferTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeNFTTransferTxindexMetadata
-}
-
-func (txnMeta *NFTTransferTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type AcceptNFTTransferTxindexMetadata struct {
@@ -6736,20 +6583,12 @@ func (txnMeta *AcceptNFTTransferTxindexMetadata) RawDecodeWithoutMetadata(blockH
 	return nil
 }
 
-func (txnMeta *AcceptNFTTransferTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *AcceptNFTTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *AcceptNFTTransferTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeAcceptNFTTransferTxindexMetadata
-}
-
-func (txnMeta *AcceptNFTTransferTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type BurnNFTTxindexMetadata struct {
@@ -6782,20 +6621,12 @@ func (txnMeta *BurnNFTTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint
 	return nil
 }
 
-func (txnMeta *BurnNFTTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *BurnNFTTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *BurnNFTTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeBurnNFTTxindexMetadata
-}
-
-func (txnMeta *BurnNFTTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type CreateNFTTxindexMetadata struct {
@@ -6835,20 +6666,12 @@ func (txnMeta *CreateNFTTxindexMetadata) RawDecodeWithoutMetadata(blockHeight ui
 	return nil
 }
 
-func (txnMeta *CreateNFTTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *CreateNFTTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *CreateNFTTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeCreateNFTTxindexMetadata
-}
-
-func (txnMeta *CreateNFTTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type UpdateNFTTxindexMetadata struct {
@@ -6881,20 +6704,12 @@ func (txnMeta *UpdateNFTTxindexMetadata) RawDecodeWithoutMetadata(blockHeight ui
 	return nil
 }
 
-func (txnMeta *UpdateNFTTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *UpdateNFTTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txnMeta *UpdateNFTTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeUpdateNFTTxindexMetadata
-}
-
-func (txnMeta *UpdateNFTTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type TransactionMetadata struct {
@@ -7271,20 +7086,12 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	return nil
 }
 
-func (txnMeta *TransactionMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
 	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration)
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeTransactionMetadata
-}
-
-func (txnMeta *TransactionMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func DBCheckTxnExistenceWithTxn(txn *badger.Txn, snap *Snapshot, txID *BlockHash) bool {

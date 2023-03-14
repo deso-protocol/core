@@ -3,7 +3,6 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/golang/protobuf/proto"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"io"
@@ -64,20 +63,12 @@ func (pkid *PKID) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader)
 	return nil
 }
 
-func (pkid *PKID) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (pkid *PKID) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (pkid *PKID) GetEncoderType() EncoderType {
 	return EncoderTypePKID
-}
-
-func (pkid *PKID) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func (pkid *PKID) ToBytes() []byte {
@@ -147,20 +138,12 @@ func (publicKey *PublicKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 	return nil
 }
 
-func (publicKey *PublicKey) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (publicKey *PublicKey) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (publicKey *PublicKey) GetEncoderType() EncoderType {
 	return EncoderTypePublicKey
-}
-
-func (publicKey *PublicKey) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func (publicKey *PublicKey) IsZeroPublicKey() bool {
@@ -230,20 +213,12 @@ func (bh *BlockHash) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	return nil
 }
 
-func (bh *BlockHash) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (bh *BlockHash) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (bh *BlockHash) GetEncoderType() EncoderType {
 	return EncoderTypeBlockHash
-}
-
-func (bh *BlockHash) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func (bh *BlockHash) String() string {

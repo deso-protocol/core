@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/golang/protobuf/proto"
 	"io"
 	"math"
 	"math/big"
@@ -2529,20 +2528,12 @@ func (utxoKey *UtxoKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	return nil
 }
 
-func (utxoKey *UtxoKey) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (utxoKey *UtxoKey) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (utxoKey *UtxoKey) GetEncoderType() EncoderType {
 	return EncoderTypeUtxoKey
-}
-
-func (utxoKey *UtxoKey) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 const (
@@ -2609,20 +2600,12 @@ func (desoOutput *DeSoOutput) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 	return nil
 }
 
-func (desoOutput *DeSoOutput) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (desoOutput *DeSoOutput) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (desoOutput *DeSoOutput) GetEncoderType() EncoderType {
 	return EncoderTypeDeSoOutput
-}
-
-func (desoOutput *DeSoOutput) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 const (

@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/golang/glog"
-	"github.com/golang/protobuf/proto"
 	"os"
 )
 
@@ -45,40 +44,24 @@ func NewStateChangeSyncer(desoParams *DeSoParams) *StateChangeSyncer {
 // particular entry index in the state change file.
 func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransactionEvent) {
 	key := event.Key
-	value := event.Value
+	entryBytes := event.Value
 	// Check to see if the index in question has a "core_state" annotation in it's definition.
 	if !isCoreStateKey(key) {
 		return
 	}
 
-	// Decode the value to a DeSo encoder, and encode the entry to protobuf bytes.
-	var protobufBytes []byte
+	// Get the encoder type for this key.
 	var encoderType EncoderType
 	// Get the relevant deso encoder for this key.
 	if isEncoder, encoder := StateKeyToDeSoEncoder(key); isEncoder && encoder != nil {
-		rr := bytes.NewReader(value)
 		encoderType = encoder.GetEncoderType()
-		// Extract the DeSo entry struct interface from the bytes.
-		if exists, err := DecodeFromBytes(encoder, rr); exists && err == nil {
-			// Get the protobuf struct type for this encoder.
-			protoStruct := encoder.GetProtobufEncoderType()
-			// Copy the values from the encoder to the protobuf struct.
-			CopyStruct(encoder, protoStruct, stateChangeSyncer.DeSoParams)
-			// Serialize the protobuf struct to bytes.
-			protobufBytes, err = proto.Marshal(protoStruct)
-
-			if err != nil {
-				glog.Errorf("Server._handleDbTransaction: Problem encoding protobuf bytes: %v", err)
-				return
-			}
-		} else if err != nil {
-			glog.Errorf("Some odd problem: isEncoder %v encoder %v, key bytes (%v), value bytes (%v)",
-				isEncoder, encoder, key, value)
-		}
+	} else {
+		glog.Errorf("Server._handleDbTransaction: Problem getting deso encoder from key")
+		return
 	}
 
 	// Get byte length of value.
-	valueLen := uint16(len(protobufBytes))
+	valueLen := uint16(len(entryBytes))
 
 	// Convert the value length to a byte slice.
 	valueLenBytes := make([]byte, 2)
@@ -97,7 +80,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	// Append the value length and encoder type to the protobuf bytes.
 	valueWithLengthAndEncoderTypeBytes := append(valueLenBytes, encoderTypeBytes...)
 	valueWithLengthAndEncoderTypeBytes = append(valueWithLengthAndEncoderTypeBytes, operationTypeBytes...)
-	valueWithLengthAndEncoderTypeBytes = append(valueWithLengthAndEncoderTypeBytes, protobufBytes...)
+	valueWithLengthAndEncoderTypeBytes = append(valueWithLengthAndEncoderTypeBytes, entryBytes...)
 
 	fmt.Printf("\n\n*****Printing to file: %+v\n\n", valueWithLengthAndEncoderTypeBytes)
 	// Write the bytes to file.
@@ -120,6 +103,6 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	fmt.Printf("\n\n*****Printing to index file: %+v\n\n", dbOperationIndexBytes)
 
 	// Update the state change file size.
-	transactionLen := uint32(len(protobufBytes) + 5)
+	transactionLen := uint32(len(entryBytes) + 5)
 	stateChangeSyncer.StateChangeFileSize += transactionLen
 }

@@ -5,8 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/deso-protocol/core/proto_schemas/entries"
-	"github.com/golang/protobuf/proto"
 	"io"
 	"math"
 	"math/big"
@@ -314,7 +312,6 @@ type DeSoEncoder interface {
 	// always be passed if we're nesting EncodeToBytes in the method implementation.
 	RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte
 	RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error
-	RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error)
 
 	// GetVersionByte should return the version of the DeSoEncoder as a function of EncoderMigrationHeights and blockHeight.
 	// For instance, if we added a new migration at height H and version byte V, we should implement the GetVersionByte
@@ -323,7 +320,6 @@ type DeSoEncoder interface {
 
 	// GetEncoderType should return the EncoderType corresponding to the DeSoEncoder.
 	GetEncoderType() EncoderType
-	GetProtobufEncoderType() proto.Message
 }
 
 // EncodeToBytes encodes a DeSoEncoder type to bytes, including encoder metadata such as existence byte, the encoder
@@ -520,14 +516,6 @@ func (utxo *UtxoEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 		return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading UtxoKey")
 	}
 
-	return nil
-}
-
-func (utxo *UtxoEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
-func (utxo *UtxoEntry) GetProtobufEncoderType() proto.Message {
 	return nil
 }
 
@@ -1804,20 +1792,12 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	return nil
 }
 
-func (op *UtxoOperation) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
 	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {
 	return EncoderTypeUtxoOperation
-}
-
-func (op *UtxoOperation) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type UtxoOperationBundle struct {
@@ -1864,20 +1844,12 @@ func (opBundle *UtxoOperationBundle) RawDecodeWithoutMetadata(blockHeight uint64
 	return nil
 }
 
-func (opBundle *UtxoOperationBundle) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (opBundle *UtxoOperationBundle) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (opBundle *UtxoOperationBundle) GetEncoderType() EncoderType {
 	return EncoderTypeUtxoOperationBundle
-}
-
-func (opBundle *UtxoOperationBundle) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 // Have to define these because Go doesn't let you use raw byte slices as map keys.
@@ -2066,20 +2038,12 @@ func (message *MessageEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	return nil
 }
 
-func (message *MessageEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (message *MessageEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (message *MessageEntry) GetEncoderType() EncoderType {
 	return EncoderTypeMessageEntry
-}
-
-func (message *MessageEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 //
@@ -2140,10 +2104,6 @@ func (message *NewMessageEntry) RawEncodeWithoutMetadata(blockHeight uint64, ski
 	data = append(data, UintToBuf(message.TimestampNanos)...)
 	data = append(data, EncodeExtraData(message.ExtraData)...)
 	return data
-}
-
-func (message *NewMessageEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
 }
 
 func (message *NewMessageEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
@@ -2215,10 +2175,6 @@ func (message *NewMessageEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (message *NewMessageEntry) GetEncoderType() EncoderType {
 	return EncoderTypeNewMessageEntry
-}
-
-func (message *NewMessageEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type GroupChatMessageKey struct {
@@ -2341,10 +2297,6 @@ func (entry *AccessGroupMemberEnumerationEntry) RawEncodeWithoutMetadata(blockHe
 	return []byte{}
 }
 
-func (entry *AccessGroupMemberEnumerationEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (entry *AccessGroupMemberEnumerationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	return nil
 }
@@ -2355,10 +2307,6 @@ func (entry *AccessGroupMemberEnumerationEntry) GetVersionByte(blockHeight uint6
 
 func (entry *AccessGroupMemberEnumerationEntry) GetEncoderType() EncoderType {
 	return EncoderTypeAccessGroupMemberEnumerationEntry
-}
-
-func (entry *AccessGroupMemberEnumerationEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 // DmThreadEntry
@@ -2377,10 +2325,6 @@ func (entry *DmThreadEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMet
 	return data
 }
 
-func (entry *DmThreadEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (entry *DmThreadEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	return nil
 }
@@ -2391,10 +2335,6 @@ func (entry *DmThreadEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (entry *DmThreadEntry) GetEncoderType() EncoderType {
 	return EncoderTypeDmThreadEntry
-}
-
-func (entry *DmThreadEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 // GroupKeyName helps with handling key names in AccessGroups
@@ -2417,20 +2357,12 @@ func (name *GroupKeyName) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes
 	return nil
 }
 
-func (name *GroupKeyName) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (name *GroupKeyName) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (name *GroupKeyName) GetEncoderType() EncoderType {
 	return EncoderTypeGroupKeyName
-}
-
-func (name *GroupKeyName) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 // Encode message key from varying length to a MaxAccessKeyNameCharacters.
@@ -2582,10 +2514,6 @@ func (key *AccessGroupMembershipKey) RawEncodeWithoutMetadata(blockHeight uint64
 	return data
 }
 
-func (key *AccessGroupMembershipKey) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (key *AccessGroupMembershipKey) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 
 	groupMemberPublicKey := &PublicKey{}
@@ -2621,10 +2549,6 @@ func (key *AccessGroupMembershipKey) GetVersionByte(blockHeight uint64) byte {
 
 func (key *AccessGroupMembershipKey) GetEncoderType() EncoderType {
 	return EncoderTypeGroupMembershipKey
-}
-
-func (key *AccessGroupMembershipKey) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func NewGroupMembershipKey(groupMemberPublicKey PublicKey, groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName) *AccessGroupMembershipKey {
@@ -2675,10 +2599,6 @@ func (entry *AccessGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, skip
 	return data
 }
 
-func (entry *AccessGroupEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (entry *AccessGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	accessGroupOwnerPublicKey := &PublicKey{}
 	if exist, err := DecodeFromBytes(accessGroupOwnerPublicKey, rr); exist && err == nil {
@@ -2720,10 +2640,6 @@ func (entry *AccessGroupEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (entry *AccessGroupEntry) GetEncoderType() EncoderType {
 	return EncoderTypeAccessGroupEntry
-}
-
-func (entry *AccessGroupEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 // AccessGroupEntry is used to update access keys for a user, this was added in
@@ -2847,20 +2763,12 @@ func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, r
 	return nil
 }
 
-func (entry *MessagingGroupEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (entry *MessagingGroupEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (entry *MessagingGroupEntry) GetEncoderType() EncoderType {
 	return EncoderTypeMessagingGroupEntry
-}
-
-func (entry *MessagingGroupEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type AccessGroupMemberEntry struct {
@@ -2905,10 +2813,6 @@ func (entry *AccessGroupMemberEntry) RawEncodeWithoutMetadata(blockHeight uint64
 	return entryBytes
 }
 
-func (entry *AccessGroupMemberEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (entry *AccessGroupMemberEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	accessGroupMemberPublicKeyBytes := &PublicKey{}
 	if exist, err := DecodeFromBytes(accessGroupMemberPublicKeyBytes, rr); exist && err == nil {
@@ -2950,10 +2854,6 @@ func (entry *AccessGroupMemberEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (entry *AccessGroupMemberEntry) GetEncoderType() EncoderType {
 	return EncoderTypeAccessGroupMemberEntry
-}
-
-func (entry *AccessGroupMemberEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 // MessagingGroupMember is used to store information about a group chat member.
@@ -3043,20 +2943,12 @@ func (rec *MessagingGroupMember) RawDecodeWithoutMetadata(blockHeight uint64, rr
 	return nil
 }
 
-func (rec *MessagingGroupMember) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (rec *MessagingGroupMember) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (rec *MessagingGroupMember) GetEncoderType() EncoderType {
 	return EncoderTypeMessagingGroupMember
-}
-
-func (rec *MessagingGroupMember) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 // Entry for a public key forbidden from signing blocks.
@@ -3082,20 +2974,12 @@ func (entry *ForbiddenPubKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, 
 	return nil
 }
 
-func (entry *ForbiddenPubKeyEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (entry *ForbiddenPubKeyEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (entry *ForbiddenPubKeyEntry) GetEncoderType() EncoderType {
 	return EncoderTypeForbiddenPubKeyEntry
-}
-
-func (entry *ForbiddenPubKeyEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func MakeLikeKey(userPk []byte, LikedPostHash BlockHash) LikeKey {
@@ -3143,20 +3027,12 @@ func (likeEntry *LikeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 	return nil
 }
 
-func (likeEntry *LikeEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (likeEntry *LikeEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (likeEntry *LikeEntry) GetEncoderType() EncoderType {
 	return EncoderTypeLikeEntry
-}
-
-func (likeEntry *LikeEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func MakeNFTKey(nftPostHash *BlockHash, serialNumber uint64) NFTKey {
@@ -3289,20 +3165,12 @@ func (nft *NFTEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	return nil
 }
 
-func (nft *NFTEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (nft *NFTEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (nft *NFTEntry) GetEncoderType() EncoderType {
 	return EncoderTypeNFTEntry
-}
-
-func (nft *NFTEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func MakeNFTBidKey(bidderPKID *PKID, nftPostHash *BlockHash, serialNumber uint64) NFTBidKey {
@@ -3384,20 +3252,12 @@ func (be *NFTBidEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 	return nil
 }
 
-func (be *NFTBidEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (be *NFTBidEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (be *NFTBidEntry) GetEncoderType() EncoderType {
 	return EncoderTypeNFTBidEntry
-}
-
-func (be *NFTBidEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func (nftBidEntry *NFTBidEntry) Copy() *NFTBidEntry {
@@ -3455,20 +3315,12 @@ func (bundle *NFTBidEntryBundle) RawDecodeWithoutMetadata(blockHeight uint64, rr
 	return nil
 }
 
-func (bundle *NFTBidEntryBundle) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (bundle *NFTBidEntryBundle) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (bundle *NFTBidEntryBundle) GetEncoderType() EncoderType {
 	return EncoderTypeNFTBidEntryBundle
-}
-
-func (bundle *NFTBidEntryBundle) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type DerivedKeyEntry struct {
@@ -3576,20 +3428,12 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 	return nil
 }
 
-func (key *DerivedKeyEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
 	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration, AssociationsAndAccessGroupsMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {
 	return EncoderTypeDerivedKeyEntry
-}
-
-func (key *DerivedKeyEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func (dk *DerivedKeyEntry) Copy() *DerivedKeyEntry {
@@ -3720,20 +3564,12 @@ func (de *DiamondEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	return nil
 }
 
-func (de *DiamondEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (de *DiamondEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (de *DiamondEntry) GetEncoderType() EncoderType {
 	return EncoderTypeDiamondEntry
-}
-
-func (de *DiamondEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func MakeRepostKey(userPk []byte, RepostedPostHash BlockHash) RepostKey {
@@ -3798,20 +3634,12 @@ func (re *RepostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 	return nil
 }
 
-func (re *RepostEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (re *RepostEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (re *RepostEntry) GetEncoderType() EncoderType {
 	return EncoderTypeRepostEntry
-}
-
-func (re *RepostEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type GlobalParamsEntry struct {
@@ -3870,20 +3698,12 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	return nil
 }
 
-func (gp *GlobalParamsEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {
 	return EncoderTypeGlobalParamsEntry
-}
-
-func (gp *GlobalParamsEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 // This struct holds info on a readers interactions (e.g. likes) with a post.
@@ -4199,66 +4019,12 @@ func (pe *PostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	return nil
 }
 
-func (pe *PostEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	protoPost := &entries.Post{
-		PostHash:                       EncodeBlockhashToHexString(pe.PostHash),
-		PosterPublicKey:                PkToString(pe.PosterPublicKey, desoParams),
-		ParentStakeID:                  EncodeHexToStringIfNotNull(pe.ParentStakeID),
-		RepostedPostHash:               EncodeBlockhashToHexString(pe.RepostedPostHash),
-		IsQuotedRepost:                 pe.IsQuotedRepost,
-		CreatorBasisPoints:             pe.CreatorBasisPoints,
-		StakeMultipleBasisPoints:       pe.StakeMultipleBasisPoints,
-		ConfirmationBlockHeight:        pe.ConfirmationBlockHeight,
-		TimestampNanos:                 pe.TimestampNanos,
-		IsHidden:                       pe.IsHidden,
-		LikeCount:                      pe.LikeCount,
-		RepostCount:                    pe.RepostCount,
-		QuoteRepostCount:               pe.QuoteRepostCount,
-		DiamondCount:                   pe.DiamondCount,
-		IsDeleted:                      pe.isDeleted,
-		CommentCount:                   pe.CommentCount,
-		IsPinned:                       pe.IsPinned,
-		IsNFT:                          pe.IsNFT,
-		NumNFTCopies:                   pe.NumNFTCopies,
-		NumNFTCopiesForSale:            pe.NumNFTCopiesForSale,
-		NumNFTCopiesBurned:             pe.NumNFTCopiesBurned,
-		HasUnlockable:                  pe.HasUnlockable,
-		NFTRoyaltyToCreatorBasisPoints: pe.NFTRoyaltyToCreatorBasisPoints,
-		NFTRoyaltyToCoinBasisPoints:    pe.NFTRoyaltyToCoinBasisPoints,
-	}
-
-	bodyJSONObj := &DeSoBodySchema{}
-	err := json.Unmarshal(pe.Body, bodyJSONObj)
-	if err != nil {
-		return nil, fmt.Errorf("Error decoding postEntry.Body: %w", err)
-	}
-
-	protoPostBody := &entries.DeSoBodySchema{
-		Body:      bodyJSONObj.Body,
-		ImageURLs: bodyJSONObj.ImageURLs,
-		VideoURLs: bodyJSONObj.VideoURLs,
-	}
-
-	protoPost.Body = protoPostBody
-
-	protoBufBytes, err := proto.Marshal(protoPost)
-	if err != nil {
-		return nil, fmt.Errorf("Error marshalling protobuf post: %w", err)
-	}
-
-	return protoBufBytes, nil
-}
-
 func (pe *PostEntry) GetVersionByte(blockHeight uint64) byte {
 	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration)
 }
 
 func (pe *PostEntry) GetEncoderType() EncoderType {
 	return EncoderTypePostEntry
-}
-
-func (pe *PostEntry) GetProtobufEncoderType() proto.Message {
-	return &entries.Post{}
 }
 
 type BalanceEntryMapKey struct {
@@ -4352,20 +4118,12 @@ func (be *BalanceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	return nil
 }
 
-func (be *BalanceEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (be *BalanceEntry) GetVersionByte(blockHeight uint64) byte {
 	return byte(0)
 }
 
 func (be *BalanceEntry) GetEncoderType() EncoderType {
 	return EncoderTypeBalanceEntry
-}
-
-func (be *BalanceEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type TransferRestrictionStatus uint8
@@ -4508,20 +4266,12 @@ func (ce *CoinEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	return nil
 }
 
-func (ce *CoinEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (ce *CoinEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (ce *CoinEntry) GetEncoderType() EncoderType {
 	return EncoderTypeCoinEntry
-}
-
-func (ce *CoinEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type PublicKeyRoyaltyPair struct {
@@ -4552,20 +4302,12 @@ func (pair *PublicKeyRoyaltyPair) RawDecodeWithoutMetadata(blockHeight uint64, r
 	return nil
 }
 
-func (pair *PublicKeyRoyaltyPair) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (pair *PublicKeyRoyaltyPair) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (pair *PublicKeyRoyaltyPair) GetEncoderType() EncoderType {
 	return EncoderTypePublicKeyRoyaltyPair
-}
-
-func (pair *PublicKeyRoyaltyPair) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type PKIDEntry struct {
@@ -4608,20 +4350,12 @@ func (pkid *PKIDEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 	return nil
 }
 
-func (pkid *PKIDEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (pkid *PKIDEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (pkid *PKIDEntry) GetEncoderType() EncoderType {
 	return EncoderTypePKIDEntry
-}
-
-func (pkid *PKIDEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type ProfileEntry struct {
@@ -4738,20 +4472,12 @@ func (pe *ProfileEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	return nil
 }
 
-func (pe *ProfileEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (pe *ProfileEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (pe *ProfileEntry) GetEncoderType() EncoderType {
 	return EncoderTypeProfileEntry
-}
-
-func (pe *ProfileEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func EncodeByteArray(bytes []byte) []byte {
@@ -5310,20 +5036,12 @@ func (order *DAOCoinLimitOrderEntry) RawDecodeWithoutMetadata(blockHeight uint64
 	return nil
 }
 
-func (order *DAOCoinLimitOrderEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (order *DAOCoinLimitOrderEntry) GetVersionByte(blockHeight uint64) byte {
 	return byte(0)
 }
 
 func (order *DAOCoinLimitOrderEntry) GetEncoderType() EncoderType {
 	return EncoderTypeDAOCoinLimitOrderEntry
-}
-
-func (order *DAOCoinLimitOrderEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func (order *DAOCoinLimitOrderEntry) IsMarketOrder() bool {
@@ -5584,20 +5302,12 @@ func (order *FilledDAOCoinLimitOrder) RawDecodeWithoutMetadata(blockHeight uint6
 	return nil
 }
 
-func (order *FilledDAOCoinLimitOrder) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
 func (order *FilledDAOCoinLimitOrder) GetVersionByte(blockHeight uint64) byte {
 	return byte(0)
 }
 
 func (order *FilledDAOCoinLimitOrder) GetEncoderType() EncoderType {
 	return EncoderTypeFilledDAOCoinLimitOrder
-}
-
-func (order *FilledDAOCoinLimitOrder) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 // -----------------------------------
@@ -5706,14 +5416,6 @@ func (associationEntry *PostAssociationEntry) RawEncodeWithoutMetadata(blockHeig
 	data = append(data, EncodeExtraData(associationEntry.ExtraData)...)
 	data = append(data, UintToBuf(uint64(associationEntry.BlockHeight))...)
 	return data
-}
-
-func (associationEntry *UserAssociationEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
-func (associationEntry *PostAssociationEntry) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
 }
 
 func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
@@ -5862,16 +5564,8 @@ func (associationEntry *UserAssociationEntry) GetEncoderType() EncoderType {
 	return EncoderTypeUserAssociationEntry
 }
 
-func (associationEntry *UserAssociationEntry) GetProtobufEncoderType() proto.Message {
-	return nil
-}
-
 func (associationEntry *PostAssociationEntry) GetEncoderType() EncoderType {
 	return EncoderTypePostAssociationEntry
-}
-
-func (associationEntry *PostAssociationEntry) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type AssociationMapKey struct {
@@ -5980,22 +5674,6 @@ func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) RawEncodeWit
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
 	return data
-}
-
-func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
-func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
-func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
-}
-
-func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
 }
 
 func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
@@ -6160,32 +5838,16 @@ func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) GetEncoderTy
 	return EncoderTypeCreateUserAssociationTxindexMetadata
 }
 
-func (associationTxindexMeta *CreateUserAssociationTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
-}
-
 func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeDeleteUserAssociationTxindexMetadata
-}
-
-func (associationTxindexMeta *DeleteUserAssociationTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeCreatePostAssociationTxindexMetadata
 }
 
-func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
-}
-
 func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeDeletePostAssociationTxindexMetadata
-}
-
-func (associationTxindexMeta *DeletePostAssociationTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }
 
 type AccessGroupTxindexMetadata struct {
@@ -6202,10 +5864,6 @@ func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) RawEncodeWithoutMe
 	data = append(data, EncodeToBytes(blockHeight, &accessGroupTxindexMetadata.AccessGroupKeyName, skipMetadata...)...)
 	data = append(data, UintToBuf(uint64(accessGroupTxindexMetadata.AccessGroupOperationType))...)
 	return data
-}
-
-func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
 }
 
 func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
@@ -6252,10 +5910,6 @@ func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) GetEncoderType() E
 	return EncoderTypeAccessGroupTxindexMetadata
 }
 
-func (accessGroupTxindexMetadata *AccessGroupTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
-}
-
 type AccessGroupMembersTxindexMetadata struct {
 	AccessGroupOwnerPublicKey PublicKey
 	AccessGroupKeyName        GroupKeyName
@@ -6270,10 +5924,6 @@ func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) RawE
 	data = append(data, encodeAccessGroupMembersList(accessGroupMembersTxindexMetadata.AccessGroupMembersList)...)
 	data = append(data, UintToBuf(uint64(accessGroupMembersTxindexMetadata.AccessGroupMemberOperationType))...)
 	return data
-}
-
-func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
 }
 
 func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
@@ -6319,10 +5969,6 @@ func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) GetE
 	return EncoderTypeAccessGroupMembersTxindexMetadata
 }
 
-func (accessGroupMembersTxindexMetadata *AccessGroupMembersTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
-}
-
 type NewMessageTxindexMetadata struct {
 	SenderAccessGroupOwnerPublicKey    PublicKey
 	SenderAccessGroupKeyName           GroupKeyName
@@ -6343,10 +5989,6 @@ func (newMessageTxindexMetadata *NewMessageTxindexMetadata) RawEncodeWithoutMeta
 	data = append(data, UintToBuf(uint64(newMessageTxindexMetadata.NewMessageType))...)
 	data = append(data, UintToBuf(uint64(newMessageTxindexMetadata.NewMessageOperation))...)
 	return data
-}
-
-func (newMessageTxindexMetadata *NewMessageTxindexMetadata) RawEncodeToProtobufBytes(desoParams *DeSoParams) ([]byte, error) {
-	return nil, nil
 }
 
 func (newMessageTxindexMetadata *NewMessageTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
@@ -6413,8 +6055,4 @@ func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetVersionByte(block
 
 func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeNewMessageTxindexMetadata
-}
-
-func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetProtobufEncoderType() proto.Message {
-	return nil
 }

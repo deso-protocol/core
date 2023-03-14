@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/deso-protocol/core/proto_schemas/entries"
-	"github.com/golang/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	"math"
 	"testing"
@@ -76,38 +75,5 @@ func TestCopyStruct(t *testing.T) {
 
 	err = CopyStruct(struct1, struct2, &DeSoParams{})
 	fmt.Printf("struct2: %+v\n", struct2.Body)
-
-}
-
-func TestProtoPost(t *testing.T) {
-	postBody := &DeSoBodySchema{
-		Body:      "Test string",
-		ImageURLs: []string{"https://test.com/image1.jpg", "https://test.com/image2.jpg"},
-		VideoURLs: []string{"https://test.com/video1.mp4", "https://test.com/video2.mp4"},
-	}
-
-	bodyBytes, err := json.Marshal(postBody)
-	require.NoError(t, err)
-	postEntry := &PostEntry{
-		PostHash:        NewBlockHash([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}),
-		PosterPublicKey: []byte{2, 57, 123, 26, 128, 235, 160, 166, 6, 68, 101, 10, 241, 60, 42, 111, 253, 251, 191, 56, 131, 12, 175, 195, 73, 55, 167, 93, 221, 68, 184, 206, 82},
-		Body:            bodyBytes,
-	}
-
-	desoParams := &DeSoParams{}
-	protoPost := postEntry.GetProtobufEncoderType()
-	CopyStruct(postEntry, protoPost, desoParams)
-
-	protobufBytes, err := proto.Marshal(protoPost)
-
-	decodedPost := &entries.Post{}
-
-	proto.Unmarshal(protobufBytes, decodedPost)
-
-	require.Equal(t, EncodeBlockhashToHexString(postEntry.PostHash), decodedPost.PostHash)
-	require.Equal(t, PkToString(postEntry.PosterPublicKey, desoParams), decodedPost.PosterPublicKey)
-	require.Equal(t, postBody.Body, decodedPost.Body.Body)
-	require.Equal(t, postBody.ImageURLs, decodedPost.Body.ImageURLs)
-	require.Equal(t, postBody.VideoURLs, decodedPost.Body.VideoURLs)
 
 }
