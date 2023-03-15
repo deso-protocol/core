@@ -3494,13 +3494,14 @@ func (bav *UtxoView) GetNextNonceForPublicKey(pkBytes []byte) (uint64, error) {
 
 func (bav *UtxoView) GetNextNonceForPKID(pkid PKID) (uint64, error) {
 	nextNonce, nonceFound := bav.PKIDToNextNonce[pkid]
-	if !nonceFound {
-		var err error
-		nextNonce, err = DbGetNextNonceForPKID(bav.Handle, pkid)
-		if err != nil {
-			return 0, errors.Wrapf(err, "UtxoView.GetNextNonceForPKID: Problem fetching "+
-				"next nonce for public key %s", PkToString(pkid[:], bav.Params))
-		}
+	if nonceFound {
+		return nextNonce, nil
+	}
+	var err error
+	nextNonce, err = DbGetNextNonceForPKID(bav.Handle, pkid)
+	if err != nil {
+		return 0, errors.Wrapf(err, "UtxoView.GetNextNonceForPKID: Problem fetching "+
+			"next nonce for public key %s", PkToString(pkid[:], bav.Params))
 	}
 	return nextNonce, nil
 }

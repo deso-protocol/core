@@ -83,8 +83,6 @@ func GetTestBadgerDb() (_db *badger.DB, _dir string) {
 	db, err := badger.Open(opts)
 	if err != nil {
 		log.Fatal(err)
-		// TODO: this is messed up - we don't have a marker for the end of a transaction in a v1 bundle. We will likely just
-		// need a separate serialization for v2 bundles all together.
 	}
 
 	return db, dir
