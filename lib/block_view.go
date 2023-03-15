@@ -3590,7 +3590,7 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 		for _, output := range outputs {
 			immatureBlockRewards, err = SafeUint64().Add(immatureBlockRewards, output.AmountNanos)
 			if err != nil {
-				return 0, errors.Wrap(err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem " +
+				return 0, errors.Wrap(err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem "+
 					"adding immature block rewards")
 			}
 		}
