@@ -469,9 +469,9 @@ type DBPrefixes struct {
 	// It's worth noting that two of these entries are stored for each Dm thread, one being the inverse of the other.
 	PrefixDmThreadIndex []byte `prefix_id:"[76]" is_state:"true"`
 
-	// PrefixPublicKeyToNextNonce tracks the next nonce a user should use when constructing a transaction
+	// PrefixPKIDToNextNonce tracks the next nonce a user should use when constructing a transaction
 	// <prefix, PublicKey [33]byte> -> uint64
-	PrefixPublicKeyToNextNonce []byte `prefix_id:"[77]" is_state:"true"`
+	PrefixPKIDToNextNonce []byte `prefix_id:"[77]" is_state:"true"`
 
 	// NEXT_TAG: 78
 
@@ -673,7 +673,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
 		// prefix_id:"[76]"
 		return true, &DmThreadEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixPublicKeyToNextNonce) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixPKIDToNextNonce) {
 		// prefix_id:"[77]"
 		return false, nil
 	}
@@ -10462,17 +10462,17 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 // DeSo nonce mapping functions
 // -------------------------------------------------------------------------------------
 
-func _dbKeyForPublicKeyToNextNonce(publicKey []byte) []byte {
+func _dbKeyForPKIDToNextNonce(pkid PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, Prefixes.PrefixPublicKeyToNextNonce...)
-	key := append(prefixCopy, publicKey...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixPKIDToNextNonce...)
+	key := append(prefixCopy, pkid[:]...)
 	return key
 }
 
-func DbGetNextNonceForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte,
+func DbGetNextNonceForPKIDWithTxn(txn *badger.Txn, pkid PKID,
 ) (_balance uint64, _err error) {
 
-	key := _dbKeyForPublicKeyToNextNonce(publicKey)
+	key := _dbKeyForPKIDToNextNonce(pkid)
 	nextNonceItem, err := txn.Get(key)
 	if err != nil {
 		return uint64(0), nil
@@ -10480,8 +10480,8 @@ func DbGetNextNonceForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte,
 	nextNonceBytes, err := nextNonceItem.ValueCopy(nil)
 	if err != nil {
 		return uint64(0), errors.Wrapf(
-			err, "DbGetNextNonceForPublicKeyWithTxn: Problem getting next nonce for: %s ",
-			PkToStringBoth(publicKey))
+			err, "DbGetNextNonceForPKIDWithTxn: Problem getting next nonce for: %s ",
+			PkToStringBoth(pkid[:]))
 	}
 
 	nextNonce := DecodeUint64(nextNonceBytes)
@@ -10489,14 +10489,14 @@ func DbGetNextNonceForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte,
 	return nextNonce, nil
 }
 
-func DbGetNextNonceForPublicKey(db *badger.DB, publicKey []byte,
+func DbGetNextNonceForPKID(db *badger.DB, pkid PKID,
 ) (_balance uint64, _err error) {
 	ret := uint64(0)
 	dbErr := db.View(func(txn *badger.Txn) error {
 		var err error
-		ret, err = DbGetNextNonceForPublicKeyWithTxn(txn, publicKey)
+		ret, err = DbGetNextNonceForPKIDWithTxn(txn, pkid)
 		if err != nil {
-			return fmt.Errorf("DbGetNextNonceForPublicKey: %v", err)
+			return fmt.Errorf("DbGetNextNonceForPKID: %v", err)
 		}
 		return nil
 	})
@@ -10506,44 +10506,35 @@ func DbGetNextNonceForPublicKey(db *badger.DB, publicKey []byte,
 	return ret, nil
 }
 
-func DbPutNextNonceForPublicKeyWithTxn(
-	txn *badger.Txn, publicKey []byte, nextNonce uint64) error {
-
-	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DbPutNextNonceForPublicKeyWithTxn: Public key "+
-			"length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
-	}
+func DbPutNextNonceForPKIDWithTxn(
+	txn *badger.Txn, pkid PKID, nextNonce uint64) error {
 
 	nextNonceBytes := EncodeUint64(nextNonce)
 
-	if err := txn.Set(_dbKeyForPublicKeyToNextNonce(publicKey), nextNonceBytes); err != nil {
+	if err := txn.Set(_dbKeyForPKIDToNextNonce(pkid), nextNonceBytes); err != nil {
 
 		return errors.Wrapf(
-			err, "DbPutNextNonceForPublicKeyWithTxn: Problem adding next nonce of %d for: %s ",
-			nextNonce, PkToStringBoth(publicKey))
+			err, "DbPutNextNonceForPKIDWithTxn: Problem adding next nonce of %d for: %s ",
+			nextNonce, PkToStringBoth(pkid[:]))
 	}
 
 	return nil
 }
 
-func DbPutNextNonceForPublicKey(handle *badger.DB, publicKey []byte, nextNonce uint64) error {
+func DbPutNextNonceForPKID(handle *badger.DB, pkid PKID, nextNonce uint64) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutNextNonceForPublicKeyWithTxn(txn, publicKey, nextNonce)
+		return DbPutNextNonceForPKIDWithTxn(txn, pkid, nextNonce)
 	})
 }
 
-func DbDeleteNextNonceForPublicKeyWithTxn(
-	txn *badger.Txn, publicKey []byte) error {
-	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
-		return fmt.Errorf("DbDeleteNextNonceForPublicKeyWithTxn: Public key "+
-			"length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
-	}
+func DbDeleteNextNonceForPKIDWithTxn(
+	txn *badger.Txn, pkid PKID) error {
 
-	if err := txn.Delete(_dbKeyForPublicKeyToNextNonce(publicKey)); err != nil {
+	if err := txn.Delete(_dbKeyForPKIDToNextNonce(pkid)); err != nil {
 		return errors.Wrapf(
-			err, "DbDeleteNextNonceForPublicKeyWithTxn: Problem deleting next nonce for: %s ",
-			PkToStringBoth(publicKey))
+			err, "DbDeleteNextNonceForPKIDfoWithTxn: Problem deleting next nonce for: %s ",
+			PkToStringBoth(pkid[:]))
 	}
 	return nil
 }

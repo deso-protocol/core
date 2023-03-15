@@ -1414,18 +1414,18 @@ func (bav *UtxoView) _flushPostAssociationEntriesToDbWithTxn(txn *badger.Txn, bl
 
 func (bav *UtxoView) _flushNextNoncesToDbWithTxn(txn *badger.Txn) error {
 
-	// Go through all the entries in the PublicKeyToNextNonce map and update the database.
+	// Go through all the entries in the PKIDToNextNonce map and update the database.
 	// Note that there is no need to delete the mappings first since we never delete
 	// nonce mappings.
-	for pkMapKey, nextNonce := range bav.PublicKeyToNextNonce {
+	for pkid, nextNonce := range bav.PKIDToNextNonce {
 		// If next nonce is 0, we delete it to maintain the same state in the db after disconnects
 		if nextNonce == 0 {
-			if err := DbDeleteNextNonceForPublicKeyWithTxn(txn, pkMapKey[:]); err != nil {
+			if err := DbDeleteNextNonceForPKIDWithTxn(txn, pkid); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := DbPutNextNonceForPublicKeyWithTxn(txn, pkMapKey[:], nextNonce); err != nil {
+		if err := DbPutNextNonceForPKIDWithTxn(txn, pkid, nextNonce); err != nil {
 			return err
 		}
 	}

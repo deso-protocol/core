@@ -2814,7 +2814,7 @@ func ComputeMerkleRoot(txns []*MsgDeSoTxn) (_merkle *BlockHash, _txHashes []*Blo
 	return rootHash, txHashes, nil
 }
 
-func (bc *Blockchain) GetNextNonceForPublicKey(
+func (bc *Blockchain) GetNextNonceForPKID(
 	publicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView,
 ) (uint64, error) {
 
@@ -2828,12 +2828,12 @@ func (bc *Blockchain) GetNextNonceForPublicKey(
 		utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(publicKeyBytes, nil)
 		if err != nil {
 			return 0, errors.Wrapf(
-				err, "Blockchain.GetNextNonceForPublicKey: Problem getting augmented UtxoView from mempool: ")
+				err, "Blockchain.GetNextNonceForPKID: Problem getting augmented UtxoView from mempool: ")
 		}
 	} else {
 		utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 		if err != nil {
-			return 0, errors.Wrapf(err, "Blockchain.GetNextNonceForPublicKey: Problem initializing UtxoView: ")
+			return 0, errors.Wrapf(err, "Blockchain.GetNextNonceForPKID: Problem initializing UtxoView: ")
 		}
 	}
 
@@ -4811,21 +4811,25 @@ func (bc *Blockchain) CreateMaxSpend(
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateMaxSpend: Problem getting spendable balance: ")
 		}
-		txn.TxOutputs[0].AmountNanos = spendableBalance
+		txn.TxOutputs[len(txn.TxOutputs)-1].AmountNanos = spendableBalance
 		txn.TxnVersion = 1
-		// Set these to max values so we can compute a proper max fee
 		nextNonce, err := utxoView.GetNextNonceForPublicKey(senderPkBytes)
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateMaxSpend: Problem getting next nonce: ")
 		}
 		txn.TxnNonce = nextNonce
-		txn.TxnFeeNanos = math.MaxUint64
 
-		txnFee := _computeMaxTxFee(txn, minFeeRateNanosPerKB)
-		txn.TxnFeeNanos = txnFee
-		txn.TxOutputs[len(txn.TxOutputs)-1].AmountNanos = spendableBalance - txnFee
-		return txn, spendableBalance, spendableBalance - txnFee, txnFee, nil
+		feeAmountNanos := uint64(0)
+		prevFeeAmountNanos := uint64(0)
+		for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
+			prevFeeAmountNanos = feeAmountNanos
+			feeAmountNanos = _computeMaxTxV1Fee(txn, minFeeRateNanosPerKB)
+			txn.TxnFeeNanos = feeAmountNanos
+			txn.TxOutputs[len(txn.TxOutputs)-1].AmountNanos = spendableBalance - feeAmountNanos
+		}
+
+		return txn, spendableBalance, spendableBalance - feeAmountNanos, feeAmountNanos, nil
 	}
 
 	// Get the spendable UtxoEntrys.
@@ -4949,7 +4953,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	blockHeight := bc.blockTip().Height + 1
 	if blockHeight >= bc.params.ForkHeights.BalanceModelBlockHeight {
 		txArg.TxnVersion = 1
-		nextNonce, err := bc.GetNextNonceForPublicKey(txArg.PublicKey, mempool, nil)
+		nextNonce, err := bc.GetNextNonceForPKID(txArg.PublicKey, mempool, nil)
 		if err != nil {
 			return 0, 0, 0, 0, errors.Wrapf(
 				err, "AddInputsAndChangeToTransaction: Problem getting next nonce for public key %s: ",

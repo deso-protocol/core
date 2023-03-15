@@ -106,9 +106,8 @@ type UtxoView struct {
 	AssociationMapKeyToUserAssociationEntry map[AssociationMapKey]*UserAssociationEntry
 	AssociationMapKeyToPostAssociationEntry map[AssociationMapKey]*PostAssociationEntry
 
-	// Map of PublicKey to the next nonce to use for a transaction.
-	// TODO: this was PkMapKey in the original PR. Should we use PKID instead of PublicKey? I think not.
-	PublicKeyToNextNonce map[PublicKey]uint64
+	// Map of PKID to the next nonce to use for a transaction.
+	PKIDToNextNonce map[PKID]uint64
 
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
@@ -197,7 +196,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.AssociationMapKeyToPostAssociationEntry = make(map[AssociationMapKey]*PostAssociationEntry)
 
 	// Transaction nonce map
-	bav.PublicKeyToNextNonce = make(map[PublicKey]uint64)
+	bav.PKIDToNextNonce = make(map[PKID]uint64)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -443,9 +442,9 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	}
 
 	// Copy the nonce map
-	newView.PublicKeyToNextNonce = make(map[PublicKey]uint64, len(bav.PublicKeyToNextNonce))
-	for pkid, nonce := range bav.PublicKeyToNextNonce {
-		newView.PublicKeyToNextNonce[pkid] = nonce
+	newView.PKIDToNextNonce = make(map[PKID]uint64, len(bav.PKIDToNextNonce))
+	for pkid, nonce := range bav.PKIDToNextNonce {
+		newView.PKIDToNextNonce[pkid] = nonce
 	}
 
 	return newView, nil
@@ -558,26 +557,22 @@ func (bav *UtxoView) GetUtxoEntryForUtxoKey(utxoKeyArg *UtxoKey) *UtxoEntry {
 }
 
 func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKeyArg []byte) (uint64, error) {
+	if publicKeyArg == nil {
+		return 0, errors.New("GetDeSoBalanceNanosForPublicKey: Called with nil publicKeyArg")
+	}
 	publicKey := publicKeyArg
 
-	// Hack to make disconnect block reward work
-	if publicKey == nil {
-		publicKey = ZeroPublicKey.ToBytes()
-	}
 	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)]
 	if hasBalance {
 		return balanceNanos, nil
 	}
 
-	// If the utxo entry isn't in our in-memory data structure, fetch it from the db.
-	if bav.Postgres != nil {
-		balanceNanos = bav.Postgres.GetBalance(NewPublicKey(publicKey))
-	} else {
-		var err error
-		balanceNanos, err = DbGetDeSoBalanceNanosForPublicKey(bav.Handle, bav.Snapshot, publicKey)
-		if err != nil {
-			return uint64(0), errors.Wrap(err, "GetDeSoBalanceNanosForPublicKey: ")
-		}
+	var err error
+	balanceNanos, err = bav.GetDbAdapter().GetDeSoBalanceForPublicKey(publicKey)
+	if err != nil {
+		return 0, errors.Wrapf(err,
+			"GetDeSoBalanceNanosForPublicKey: Problem getting balance for public key %v",
+			PkToString(publicKey, bav.Params))
 	}
 
 	// Add the balance to memory for future references.
@@ -776,11 +771,10 @@ func (bav *UtxoView) _addBalance(amountNanos uint64, balancePublicKey []byte,
 	if err != nil {
 		return nil, errors.Wrapf(err, "_addBalance: ")
 	}
-	if desoBalanceNanos+amountNanos < desoBalanceNanos {
-		return nil, fmt.Errorf(
-			"_addBalance: adding %d nanos to balance %d overflows uint64", amountNanos, desoBalanceNanos)
+	desoBalanceNanos, err = SafeUint64().Add(desoBalanceNanos, amountNanos)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_addBalance: add %d nanos to balance %d for public key %s: ", amountNanos, desoBalanceNanos, PkToStringBoth(balancePublicKey))
 	}
-	desoBalanceNanos += amountNanos
 	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(balancePublicKey)] = desoBalanceNanos
 
 	// Finally record a UtxoOperation in case we want to roll back this ADD
@@ -801,24 +795,16 @@ func (bav *UtxoView) _addDESO(amountNanos uint64, publicKey []byte, getUtxoEntry
 }
 
 func (bav *UtxoView) _unAddBalance(amountNanos uint64, balancePublicKey []byte) error {
-	// 0 means do nothing
-	if amountNanos == 0 {
-		return nil
-	}
-	if len(balancePublicKey) == 0 {
-		return fmt.Errorf(" no pub key provided")
-	}
 	// Get the current balance and then remove the added balance.
 	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(balancePublicKey)
 	if err != nil {
 		return errors.Wrapf(err, "_unAddBalance: ")
 	}
-	// Make sure that the amount we are unAdding is reasonable, then unAdd it.
-	if amountNanos > desoBalanceNanos {
-		return fmt.Errorf("_unAddBalance: amount to unAdd (%d) exceeds balance (%d)",
-			amountNanos, desoBalanceNanos)
+	desoBalanceNanos, err = SafeUint64().Sub(desoBalanceNanos, amountNanos)
+	if err != nil {
+		return fmt.Errorf("_unAddBalance: amount to unAdd (%d) exceeds balance (%d) for public key %s",
+			amountNanos, desoBalanceNanos, PkToStringBoth(balancePublicKey))
 	}
-	desoBalanceNanos -= amountNanos
 	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(balancePublicKey)] = desoBalanceNanos
 
 	return nil
@@ -852,14 +838,12 @@ func (bav *UtxoView) _spendBalance(
 	if err != nil {
 		return nil, errors.Wrapf(err, "_spendBalance: ")
 	}
-	// Sanity check: we SHOULD NEVER have desoBalanceNanos < spendableBalanceNanos, but better
-	// to be safe that we won't underflow.
-	if desoBalanceNanos < amountNanos {
+	desoBalanceNanos, err = SafeUint64().Sub(desoBalanceNanos, amountNanos)
+	if err != nil {
 		return nil, errors.Wrapf(RuleErrorInsufficientBalance,
-			"_spendBalance: amountNanos (%d) exceeds deso balance (%d) - this should never happen",
-			amountNanos, desoBalanceNanos)
+			"_spendBalance: amountNanos (%d) exceeds deso balance (%d) for public key %s - this should never happen, %v",
+			amountNanos, desoBalanceNanos, PkToStringBoth(balancePublicKey), err)
 	}
-	desoBalanceNanos -= amountNanos
 	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(balancePublicKey)] = desoBalanceNanos
 
 	// Finally record a UtxoOperation in case we want to roll back this ADD
@@ -897,18 +881,11 @@ func (bav *UtxoView) _unSpendBalance(amountNanos uint64, balancePublicKey []byte
 	if err != nil {
 		return errors.Wrapf(err, "_unSpendBalance: ")
 	}
-	if desoBalanceNanos+amountNanos < desoBalanceNanos {
-		return fmt.Errorf(
-			"_unSpendBalance: adding %d nanos to balance %d overflows uint64", amountNanos, desoBalanceNanos)
-	}
-	// Hack to make block reward disconnects work
-	if balancePublicKey == nil {
-		return nil
-	}
-	desoBalanceNanos += amountNanos
-	// Hack to make block reward disconnect tests work
-	if balancePublicKey == nil {
-		balancePublicKey = ZeroPublicKey.ToBytes()
+	desoBalanceNanos, err = SafeUint64().Add(desoBalanceNanos, amountNanos)
+	if err != nil {
+		return errors.Wrapf(err,
+			"_unSpendBalance: adding %d nanos to balance %d for public key %s",
+			amountNanos, desoBalanceNanos, balancePublicKey)
 	}
 	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(balancePublicKey)] = desoBalanceNanos
 
@@ -1025,10 +1002,18 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 			if err := bav._unAddBalance(currentOutput.AmountNanos, currentOutput.PublicKey); err != nil {
 				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding output %v: ", currentOutput)
 			}
-			totalSpend += currentOutput.AmountNanos
+			var err error
+			totalSpend, err = SafeUint64().Add(totalSpend, currentOutput.AmountNanos)
+			if err != nil {
+				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem adding %d to total spend %d", currentOutput.AmountNanos, totalSpend)
+			}
 		}
-		if err := bav._unSpendBalance(totalSpend, currentTxn.PublicKey); err != nil {
-			return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unSpending total spend %v: ", totalSpend)
+		// Block reward transactions don't unspend DESO since it is newly created DESO
+		// and no input DESO was provided.
+		if currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+			if err := bav._unSpendBalance(totalSpend, currentTxn.PublicKey); err != nil {
+				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unSpending total spend %v: ", totalSpend)
+			}
 		}
 	} else {
 		// Loop through the transaction's outputs backwards and remove them
@@ -3500,20 +3485,37 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock, blockHeight uint64) error 
 }
 
 func (bav *UtxoView) GetNextNonceForPublicKey(pkBytes []byte) (uint64, error) {
-	var err error
-	nextNonce, nonceFound := bav.PublicKeyToNextNonce[*NewPublicKey(pkBytes)]
+	pkidEntry := bav.GetPKIDForPublicKey(pkBytes)
+	if pkidEntry == nil || pkidEntry.isDeleted {
+		return 0, fmt.Errorf("GetNextNonceForPublicKey: PKID entry is deleted for public key %s", PkToStringBoth(pkBytes))
+	}
+	return bav.GetNextNonceForPKID(*pkidEntry.PKID)
+}
+
+func (bav *UtxoView) GetNextNonceForPKID(pkid PKID) (uint64, error) {
+	nextNonce, nonceFound := bav.PKIDToNextNonce[pkid]
 	if !nonceFound {
-		nextNonce, err = DbGetNextNonceForPublicKey(bav.Handle, pkBytes)
+		var err error
+		nextNonce, err = DbGetNextNonceForPKID(bav.Handle, pkid)
 		if err != nil {
-			return 0, errors.Wrapf(err, "UtxoView.GetNextNonceForPublicKey: Problem fetching "+
-				"next nonce for public key %s", PkToString(pkBytes, bav.Params))
+			return 0, errors.Wrapf(err, "UtxoView.GetNextNonceForPKID: Problem fetching "+
+				"next nonce for public key %s", PkToString(pkid[:], bav.Params))
 		}
 	}
 	return nextNonce, nil
 }
 
 func (bav *UtxoView) SetNextNonceForPublicKey(pkBytes []byte, nextNonce uint64) {
-	bav.PublicKeyToNextNonce[*NewPublicKey(pkBytes)] = nextNonce
+	pkidEntry := bav.GetPKIDForPublicKey(pkBytes)
+	if pkidEntry == nil || pkidEntry.isDeleted {
+		glog.Errorf("SetNextNonceForPublicKey: PKID entry is deleted for public key %s", PkToStringBoth(pkBytes))
+		return
+	}
+	bav.SetNextNonceForPKID(*pkidEntry.PKID, nextNonce)
+}
+
+func (bav *UtxoView) SetNextNonceForPKID(pkid PKID, nextNonce uint64) {
+	bav.PKIDToNextNonce[pkid] = nextNonce
 }
 
 // GetUnspentUtxoEntrysForPublicKey returns the UtxoEntrys corresponding to the
@@ -3571,17 +3573,26 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	tipHeight uint32) (_spendableBalance uint64, _err error) {
 	// In order to get the spendable balance, we need to account for any immature block rewards.
 	// We get these by starting at the chain tip and iterating backwards until we have collected
-	// all of the immature block rewards for this public key.
+	// all the immature block rewards for this public key.
 	nextBlockHash := bav.TipHash
 	numImmatureBlocks := uint32(bav.Params.BlockRewardMaturity / bav.Params.TimeBetweenBlocks)
 	immatureBlockRewards := uint64(0)
 
 	if bav.Postgres != nil {
 		// Filter out immature block rewards in postgres. UtxoType needs to be set correctly when importing blocks
-		outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), tipHeight-numImmatureBlocks, tipHeight)
+		var startHeight uint32
+		if tipHeight > numImmatureBlocks {
+			startHeight = tipHeight - numImmatureBlocks
+		}
+		outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), startHeight, tipHeight)
 
+		var err error
 		for _, output := range outputs {
-			immatureBlockRewards += output.AmountNanos
+			immatureBlockRewards, err = SafeUint64().Add(immatureBlockRewards, output.AmountNanos)
+			if err != nil {
+				return 0, errors.Wrap(err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem " +
+					"adding immature block rewards")
+			}
 		}
 	} else {
 		for ii := uint64(1); ii < uint64(numImmatureBlocks); ii++ {
@@ -3592,17 +3603,21 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 
 			blockNode := GetHeightHashToNodeInfo(bav.Handle, bav.Snapshot, tipHeight, nextBlockHash, false)
 			if blockNode == nil {
-				return uint64(0), fmt.Errorf(
+				return 0, fmt.Errorf(
 					"GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block for blockhash %s",
 					nextBlockHash.String())
 			}
 			blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, bav.Snapshot, pkBytes, nextBlockHash)
 			if err != nil {
-				return uint64(0), errors.Wrapf(
+				return 0, errors.Wrapf(
 					err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block reward for "+
 						"public key %s blockhash %s", PkToString(pkBytes, bav.Params), nextBlockHash.String())
 			}
-			immatureBlockRewards += blockRewardForPK
+			immatureBlockRewards, err = SafeUint64().Add(immatureBlockRewards, blockRewardForPK)
+			if err != nil {
+				return 0, errors.Wrapf(err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem adding "+
+					"block reward (%d) to immature block rewards (%d)", blockRewardForPK, immatureBlockRewards)
+			}
 			if blockNode.Parent != nil {
 				nextBlockHash = blockNode.Parent.Hash
 			} else {
@@ -3612,15 +3627,17 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	}
 
 	balanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(pkBytes)
+
 	if err != nil {
-		return uint64(0), errors.Wrap(err, "GetSpendableDeSoBalanceNanosForPublicKey: ")
+		return 0, errors.Wrap(err, "GetSpendableDeSoBalanceNanosForPublicKey: ")
 	}
-	// Sanity check that the balanceNanos >= immatureBlockRewards to prevent underflow.
-	if balanceNanos < immatureBlockRewards {
-		return uint64(0), fmt.Errorf(
-			"GetSpendableDeSoBalanceNanosForPublicKey: balance underflow (%d,%d)", balanceNanos, immatureBlockRewards)
+	spendableBalanceNanos, err := SafeUint64().Sub(balanceNanos, immatureBlockRewards)
+	if err != nil {
+		return 0, errors.Wrapf(err,
+			"GetSpendableDeSoBalanceNanosForPublicKey: error subtract immature block rewards (%d) from "+
+				"balance nanos (%d)", immatureBlockRewards, balanceNanos)
 	}
-	return balanceNanos - immatureBlockRewards, nil
+	return spendableBalanceNanos, nil
 }
 
 func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[string][]byte {
