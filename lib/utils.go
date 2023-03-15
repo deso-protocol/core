@@ -2,16 +2,13 @@ package lib
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil/hdkeychain"
-	"github.com/deso-protocol/core/proto_schemas/entries"
 	"github.com/pkg/errors"
 	"github.com/unrolled/secure"
 	"math/big"
-	"reflect"
 	"strings"
 )
 
@@ -228,59 +225,4 @@ func MapKeysToNonDeterministicPointerSlice[K comparable, V any](inputMap map[K]V
 		outputSlice = append(outputSlice, &kCopy)
 	}
 	return outputSlice
-}
-
-// CopyStruct takes 2 structs and copies values from fields of the same name from the source struct to the destination struct.
-// This is used to copy values from a deso entry struct to a protobuf entry struct.
-func CopyStruct(src interface{}, dst interface{}, desoParams *DeSoParams) error {
-	srcValue := reflect.ValueOf(src).Elem()
-	dstValue := reflect.ValueOf(dst).Elem()
-
-	if srcValue.Kind() != reflect.Struct || dstValue.Kind() != reflect.Struct {
-		return fmt.Errorf("both srcValue and dst must be structs")
-	}
-
-	// Loop through all the fields in the source struct, and copy them over to the destination struct
-	// if the destination struct contains a field of the same name and type.
-	for i := 0; i < srcValue.NumField(); i++ {
-		// Get properties of the source field.
-		srcFieldValue := srcValue.Field(i)
-		srcFieldName := srcValue.Type().Field(i).Name
-		srcFieldType := srcValue.Type().Field(i).Type
-		srcFieldEncode := srcValue.Type().Field(i).Tag.Get("proto_encode")
-		dstField := dstValue.FieldByName(srcFieldName)
-
-		// If the field needs to be decoded in some way, handle that here.
-		if srcFieldEncode == "blockhash" {
-			postHashBytes := srcValue.FieldByName(srcFieldName).Elem().Slice(0, HashSizeBytes).Bytes()
-			dstValue.FieldByName(srcFieldName).SetString(hex.EncodeToString(postHashBytes))
-		} else if srcFieldEncode == "deso_body_schema" {
-			bodyField := srcValue.FieldByName(srcFieldName)
-			bodyBytes := bodyField.Bytes()
-			var body DeSoBodySchema
-			err := json.Unmarshal(bodyBytes, &body)
-			if err != nil {
-				return err
-			}
-
-			destBody := &entries.DeSoBodySchema{
-				Body:      body.Body,
-				ImageURLs: body.ImageURLs,
-				VideoURLs: body.VideoURLs,
-			}
-
-			// Set Body field of dst
-			dstBodyField := dstValue.FieldByName(srcFieldName)
-			dstBodyField.Set(reflect.ValueOf(destBody))
-		} else if srcFieldEncode == "base_58_check" {
-			pkString := PkToString(srcFieldValue.Bytes(), desoParams)
-			dstValue.FieldByName(srcFieldName).SetString(pkString)
-		}
-
-		// If the field doesn't need to be decoded, just copy it over.
-		if dstField.IsValid() && dstField.Type() == srcFieldType {
-			dstField.Set(srcFieldValue)
-		}
-	}
-	return nil
 }

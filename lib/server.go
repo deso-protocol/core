@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/deso-protocol/core/proto_schemas/entries"
 	"net"
 	"reflect"
 	"runtime"
@@ -1691,15 +1690,6 @@ func (srv *Server) _handleBlockMainChainDisconnectedd(event *BlockEvent) {
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainDisconnect: Block %s height %d disconnected from "+
 		"main chain and chain is current.", hex.EncodeToString(blockHash[:]), blk.Header.Height)
-}
-
-func getProtoStructFromEncoderType(encoderType EncoderType) interface{} {
-	if encoderType == EncoderTypePostEntry {
-		return &entries.Post{}
-	} else if encoderType == EncoderTypeProfileEntry {
-		return &entries.Profile{}
-	}
-	return nil
 }
 
 func (srv *Server) _maybeRequestSync(pp *Peer) {

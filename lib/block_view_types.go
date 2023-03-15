@@ -3724,16 +3724,16 @@ type PostEntryReaderState struct {
 
 type PostEntry struct {
 	// The hash of this post entry. Used as the ID for the entry.
-	PostHash *BlockHash `proto_encode:"blockhash"`
+	PostHash *BlockHash
 
 	// The public key of the user who made the post.
-	PosterPublicKey []byte `proto_encode:"base_58_check"`
+	PosterPublicKey []byte
 
 	// The parent post. This is used for comments.
 	ParentStakeID []byte
 
 	// The body of this post.
-	Body []byte `proto_encode:"deso_body_schema"`
+	Body []byte
 
 	// The PostHash of the post this post reposts
 	RepostedPostHash *BlockHash
