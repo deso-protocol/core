@@ -174,7 +174,7 @@ func _daoCoinTransferTxnWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func TestBalanceModelDAOCoinBasic(t *testing.T) {
+func TestBalanceModelDAOCoins(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 

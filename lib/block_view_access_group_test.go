@@ -31,11 +31,12 @@ func (data *AccessGroupTestData) GetInputType() transactionTestInputType {
 	return transactionTestInputTypeAccessGroup
 }
 
-func TestBalanceModelAccessGroup(t *testing.T) {
+func TestBalanceModelAccessGroups(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	TestAccessGroup(t)
+	TestAccessGroupTxnWithDerivedKey(t)
 }
 
 func TestAccessGroup(t *testing.T) {
@@ -488,13 +489,6 @@ func _customCreateAccessGroupTxn(
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
-}
-
-func TestBalanceModelAccessGroupTxnWithDerivedKey(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestAccessGroupTxnWithDerivedKey(t)
 }
 
 func TestAccessGroupTxnWithDerivedKey(t *testing.T) {

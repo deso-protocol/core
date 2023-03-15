@@ -113,11 +113,13 @@ func _privateMessageWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB
 	return utxoOps, txn, blockHeight, nil
 }
 
-func TestBalanceModelPrivateMessage(t *testing.T) {
+func TestBalanceModelPrivateMessages(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	TestPrivateMessages(t)
+	TestMessagingKeys(t)
+	TestGroupMessages(t)
 }
 
 func TestPrivateMessage(t *testing.T) {
@@ -765,13 +767,6 @@ func _initMessagingKey(senderPub []byte, messagingPublicKey []byte, messagingKey
 		MessagingPublicKey:    NewPublicKey(messagingPublicKey),
 		MessagingGroupKeyName: NewGroupKeyName(messagingKeyName),
 	}
-}
-
-func TestBalanceModelMessagingKeys(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestMessagingKeys(t)
 }
 
 func TestMessagingKeys(t *testing.T) {
@@ -1813,13 +1808,6 @@ func _verifyMessages(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]
 			assert.Equal(true, ok)
 		}
 	}
-}
-
-func TestBalanceModelGroupMessages(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestGroupMessages(t)
 }
 
 // In these tests we basically want to verify that messages are correctly added to UtxoView and DB

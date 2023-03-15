@@ -2949,14 +2949,14 @@ func _computeMaxTxFee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 }
 
 func _computeMaxTxV1Fee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
-	if minFeeRateNanosPerKB <= 100 {
+	if minFeeRateNanosPerKB > 1 && minFeeRateNanosPerKB <= 100 {
 		return _computeMaxTxFee(_tx, minFeeRateNanosPerKB)
 	}
 
 	maxSizeBytes := _computeMaxTxSize(_tx)
 	res := maxSizeBytes * minFeeRateNanosPerKB / 1000
 
-	if maxSizeBytes*minFeeRateNanosPerKB%1000 != 0 {
+	if (maxSizeBytes*minFeeRateNanosPerKB)%1000 != 0 {
 		res++
 	}
 	return res

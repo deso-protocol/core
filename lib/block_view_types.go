@@ -830,8 +830,8 @@ type UtxoOperation struct {
 	PrevDmThreadEntry *DmThreadEntry
 
 	// When we add to or spend balance, we keep track of the public key and amount.
-	BalancePublicKey []byte
-	AmountNanos      uint64
+	BalancePublicKey   []byte
+	BalanceAmountNanos uint64
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1142,7 +1142,7 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 	if MigrationTriggered(blockHeight, BalanceModelMigration) {
 
 		data = append(data, EncodeByteArray(op.BalancePublicKey)...)
-		data = append(data, UintToBuf(op.AmountNanos)...)
+		data = append(data, UintToBuf(op.BalanceAmountNanos)...)
 	}
 
 	return data
@@ -1740,9 +1740,9 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PublicKeyBytes")
 		}
-		op.AmountNanos, err = ReadUvarint(rr)
+		op.BalanceAmountNanos, err = ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AmountNanos")
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading BalanceAmountNanos")
 		}
 	}
 

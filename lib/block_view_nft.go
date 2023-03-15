@@ -2255,13 +2255,13 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 		// transfer there. We also "_unAdd" the balance added for the seller / NFT creator.
 		if utxoOp.Type == OperationTypeSpendBalance && utxoOpIdx != 0 {
 			numAddsOrUnSpends += 1
-			if err := bav._unSpendBalance(utxoOp.AmountNanos, utxoOp.BalancePublicKey); err != nil {
+			if err := bav._unSpendBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
 				return errors.Wrapf(err, "_disconnectAcceptNFTBid: Problem unSpending balance: ")
 			}
 		}
 		if utxoOp.Type == OperationTypeAddBalance {
 			numAddsOrUnSpends += 1
-			if err := bav._unAddBalance(utxoOp.AmountNanos, utxoOp.BalancePublicKey); err != nil {
+			if err := bav._unAddBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
 				return errors.Wrapf(err, "_disconnectAcceptNFTBid: Problem unAdding balance: ")
 			}
 		}
@@ -2442,7 +2442,7 @@ func (bav *UtxoView) _disconnectNFTBid(
 		}
 		if utxoOp.Type == OperationTypeAddBalance {
 			numUtxoAddsOrUnspends += 1
-			if err := bav._unAddBalance(utxoOp.AmountNanos, utxoOp.BalancePublicKey); err != nil {
+			if err := bav._unAddBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
 				return errors.Wrapf(err, "_disconnectNFTBid: Problem unAdding balance: ")
 			}
 		}

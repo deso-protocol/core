@@ -780,9 +780,9 @@ func (bav *UtxoView) _addBalance(amountNanos uint64, balancePublicKey []byte,
 	// Finally record a UtxoOperation in case we want to roll back this ADD
 	// in the future. Note that Entry data isn't required for an ADD operation.
 	return &UtxoOperation{
-		Type:             OperationTypeAddBalance,
-		BalancePublicKey: balancePublicKey,
-		AmountNanos:      amountNanos,
+		Type:               OperationTypeAddBalance,
+		BalancePublicKey:   balancePublicKey,
+		BalanceAmountNanos: amountNanos,
 	}, nil
 }
 
@@ -849,9 +849,9 @@ func (bav *UtxoView) _spendBalance(
 	// Finally record a UtxoOperation in case we want to roll back this ADD
 	// in the future. Note that Entry data isn't required for an ADD operation.
 	return &UtxoOperation{
-		Type:             OperationTypeSpendBalance,
-		BalancePublicKey: balancePublicKey,
-		AmountNanos:      amountNanos,
+		Type:               OperationTypeSpendBalance,
+		BalancePublicKey:   balancePublicKey,
+		BalanceAmountNanos: amountNanos,
 	}, nil
 }
 
@@ -1966,10 +1966,10 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 			spendAmount -= utxoOp.Entry.AmountNanos
 		}
 		if utxoOp.Type == OperationTypeAddBalance && reflect.DeepEqual(utxoOp.BalancePublicKey, txn.PublicKey) {
-			if utxoOp.AmountNanos > spendAmount {
+			if utxoOp.BalanceAmountNanos > spendAmount {
 				return utxoOpsForTxn, fmt.Errorf("_checkAndUpdateDerivedKeySpendingLimit: Underflow on spend amount")
 			}
-			spendAmount -= utxoOp.AmountNanos
+			spendAmount -= utxoOp.BalanceAmountNanos
 		}
 	}
 

@@ -69,7 +69,7 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	return utxoOps, txn, blockHeight, nil
 }
 
-func TestBalanceModelFollowTxns(t *testing.T) {
+func TestBalanceModelFollows(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 

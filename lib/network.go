@@ -79,9 +79,7 @@ const (
 	MsgTypeGetTransactions MsgType = 12
 	// MsgTypeTransactionBundle contains transactions from a peer.
 	MsgTypeTransactionBundle MsgType = 13
-	// MsgTypeTransactionBundleV2 contains transactions after the balance model block height from a peer.
-	MsgTypeTransactionBundleV2 MsgType = 19
-	MsgTypeMempool             MsgType = 14
+	MsgTypeMempool           MsgType = 14
 	// MsgTypeAddr is used by peers to share addresses of nodes they're aware about
 	// with other peers.
 	MsgTypeAddr MsgType = 15
@@ -91,6 +89,8 @@ const (
 	// MsgTypeGetSnapshot is used to retrieve state from peers.
 	MsgTypeGetSnapshot  MsgType = 17
 	MsgTypeSnapshotData MsgType = 18
+	// MsgTypeTransactionBundleV2 contains transactions after the balance model block height from a peer.
+	MsgTypeTransactionBundleV2 MsgType = 19
 
 	// NEXT_TAG = 20
 
@@ -1044,7 +1044,7 @@ func (msg *MsgDeSoGetTransactions) String() string {
 
 // ==================================================================
 // (DEPRECATED) TransactionBundle message
-// 	- After the BalanceModelBlockHeight, nodes shouls rely on TransactionBundleV2.
+// 	- After the BalanceModelBlockHeight, nodes should rely on TransactionBundleV2.
 // ==================================================================
 
 type MsgDeSoTransactionBundle struct {

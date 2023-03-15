@@ -1067,12 +1067,12 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 			numUtxoAdds += 1
 		}
 		if utxoOp.Type == OperationTypeAddBalance {
-			if err := bav._unAddBalance(utxoOp.AmountNanos, utxoOp.BalancePublicKey); err != nil {
+			if err := bav._unAddBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
 				return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unAdding balance: ")
 			}
 		}
 		if utxoOp.Type == OperationTypeSpendBalance {
-			if err := bav._unSpendBalance(utxoOp.AmountNanos, utxoOp.BalancePublicKey); err != nil {
+			if err := bav._unSpendBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
 				return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unSpendBalance: ")
 			}
 		}

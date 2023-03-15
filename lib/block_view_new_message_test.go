@@ -49,7 +49,7 @@ func (data *NewMessageTestData) GetInputType() transactionTestInputType {
 	return transactionTestInputTypeNewMessage
 }
 
-func TestBalanceModelNewMessage(t *testing.T) {
+func TestBalanceModelNewMessages(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 

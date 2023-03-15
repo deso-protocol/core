@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -175,15 +176,18 @@ func CleanUpBadger(db *badger.DB) {
 }
 
 func AppendToMemLog(t *testing.T, prefix string) {
-	//var mem runtime.MemStats
-	//runtime.ReadMemStats(&mem)
-	//f, err := os.OpenFile("mem.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	//if err == nil {
-	//	defer f.Close()
-	//	if _, err := f.WriteString(fmt.Sprintf("%s\t%s\tMemory Usage\t%v\n", prefix, t.Name(), float64(mem.Alloc)/float64(1e9))); err != nil {
-	//		log.Println(err)
-	//	}
-	//}
+	if os.Getenv("CI_PROFILE_MEMORY") != "true" {
+		return
+	}
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+	f, err := os.OpenFile("mem.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		defer f.Close()
+		if _, err := f.WriteString(fmt.Sprintf("%s\t%s\tMemory Usage\t%v\n", prefix, t.Name(), float64(mem.Alloc)/float64(1e9))); err != nil {
+			log.Println(err)
+		}
+	}
 }
 
 func NewLowDifficultyBlockchain(t *testing.T) (
@@ -427,6 +431,26 @@ func _getBalanceWithView(t *testing.T, chain *Blockchain, utxoView *UtxoView, pk
 
 	return balanceNanos
 }
+//
+//func TestBalanceModelBlockTests(t *testing.T) {
+//	setBlockHeightGlobals()
+//	defer resetBlockHeightGlobals()
+//	TestBasicTransferReorg(t)
+//	TestProcessBlockConnectBlocks(t)
+//	TestProcessHeaderskReorgBlocks(t)
+//	// The below two tests check utxos and need to be updated for balance model
+//	//TestProcessBlockReorgBlocks(t)
+//	//TestAddInputsAndChangeToTransaction(t)
+//	TestValidateBasicTransfer(t)
+//	TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t)
+//	TestCalcNextDifficultyTargetHittingLimitsSlow(t)
+//	TestCalcNextDifficultyTargetHittingLimitsFast(t)
+//	TestCalcNextDifficultyTargetJustRight(t)
+//	TestCalcNextDifficultyTargetSlightlyOff(t)
+//	TestBadMerkleRoot(t)
+//	TestBadBlockSignature(t)
+//	TestForbiddenBlockSignaturePubKey(t)
+//}
 
 func TestBasicTransferReorg(t *testing.T) {
 	assert := assert.New(t)

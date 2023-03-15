@@ -12,11 +12,13 @@ import (
 	"time"
 )
 
-func TestBalanceModelZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
+func TestBalanceModelDAOCoinLimitOrders(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t)
+	TestDAOCoinLimitOrder(t)
+	TestFlushingDAOCoinLimitOrders(t)
 }
 func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 	// -----------------------
@@ -603,12 +605,7 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 	_ = desoQuantityChange
 	_executeAllTestRollbackAndFlush(testMeta)
 }
-func TestBalanceModelDAOCoinLimitOrder(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
 
-	TestDAOCoinLimitOrder(t)
-}
 func TestDAOCoinLimitOrder(t *testing.T) {
 	// -----------------------
 	// Initialization

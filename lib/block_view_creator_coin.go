@@ -254,9 +254,9 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		// or when the signer sells creator coins.  We handle the "unAddBalance" here since the
 		// operation data tells us how much to unAdd and from which public key.
 		if utxoOp.Type == OperationTypeAddBalance {
-			if err := bav._unAddBalance(utxoOp.AmountNanos, utxoOp.BalancePublicKey); err != nil {
+			if err := bav._unAddBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
 				return errors.Wrapf(err, "_disconnectCreatorCoin: Problem unAdding balance (%d, %s): ",
-					utxoOp.AmountNanos, PkToStringBoth(utxoOp.BalancePublicKey))
+					utxoOp.BalanceAmountNanos, PkToStringBoth(utxoOp.BalancePublicKey))
 			}
 		}
 	}

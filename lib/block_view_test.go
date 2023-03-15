@@ -81,267 +81,14 @@ func resetBlockHeightGlobals() {
 	GlobalDeSoParams = DeSoTestnetParams
 }
 
-//func TestBalanceModelBasicTransfer(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	// Basic transfers.
-//	TestBasicTransfer(t)
-//	TestBasicTransferReorg(t)
-//	TestValidateBasicTransfer(t)
-//}
-//
-//func TestBalanceModelDiamonds(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	// Diamonds.
-//	TestDeSoDiamonds(t)
-//	TestDeSoDiamondErrorCases(t)
-//}
-//
-//func TestBalanceModelSocial(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	// Posts, profiles, likes, follows, messages.
-//	TestSubmitPost(t)
-//	TestUpdateProfile(t)
-//	TestSpamUpdateProfile(t)
-//	TestUpdateProfileChangeBack(t)
-//	TestLikeTxns(t)
-//	TestFollowTxns(t)
-//	TestPrivateMessage(t)
-//}
-//
-//func TestBalanceModelDerivedKeys(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	TestAuthorizeDerivedKeyBasic(t)
-//	TestAuthorizeDerivedKeyBasicWithTransactionLimits(t)
-//	// Commented out test is failing
-//	//TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t)
-//	// TODO: I HATE THIS, but this makes it pass because it makes the encoder versions correct.
-//	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
-//	TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
-//}
-//
-//func TestBalanceModelCreatorCoins(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	// Creator coins.
-//	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
-//	TestSalomonSequence(t)
-//	TestCreatorCoinBigBigBuyBigSell(t)
-//	TestCreatorCoinBigBuyAfterSmallBuy(t)
-//	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
-//	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
-//	//TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
-//	//TestCreatorCoinAroundThresholdBuySellAmounts(t)
-//	//TestCreatorCoinTransferSimple_DeSoFounderReward(t)
-//	//TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
-//	//TestCreatorCoinTransferBelowMinThreshold(t)
-//	//TestCreatorCoinTransferWithMaxTransfers(t)
-//	//TestCreatorCoinTransferWithSwapIdentity(t)
-//	//TestCreatorCoinWithDiamonds(t)
-//	//TestCreatorCoinWithDiamondsFailureCases(t)
-//}
-//
-//func TestBalanceModelCreatorCoins2(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
-//	TestCreatorCoinAroundThresholdBuySellAmounts(t)
-//	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
-//	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
-//}
-//
-//func TestBalanceModelCreatorCoin3(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	TestCreatorCoinTransferBelowMinThreshold(t)
-//	TestCreatorCoinTransferWithMaxTransfers(t)
-//	TestCreatorCoinTransferWithSwapIdentity(t)
-//	TestCreatorCoinWithDiamonds(t)
-//	TestCreatorCoinWithDiamondsFailureCases(t)
-//}
-//
-//func TestBalanceModelSwapIdentity(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	// Swap identity.
-//	TestSwapIdentityMain(t)
-//	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
-//}
-//
-//func TestBalanceModelSwapIdentity2(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	TestSwapIdentityCreatorCoinBuySimple(t)
-//	TestSwapIdentityFailureCases(t)
-//	TestSwapIdentityWithFollows(t)
-//}
-//
-//func TestBalanceModelNFT(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	// NFTs.
-//	TestNFTBasic(t)
-//	TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t)
-//	TestNFTMoreErrorCases(t)
-//	TestNFTCreatedIsNotForSale(t)
-//	TestNFTBidsAreCanceledAfterAccept(t)
-//	TestNFTPreviousOwnersCantAcceptBids(t)
-//	TestNFTMaxCopiesGlobalParam(t)
-//	TestNFTSerialNumberZeroBid(t)
-//	TestNFTMinimumBidAmount(t)
-//	TestNFTDifferentMinBidAmountSerialNumbers(t)
-//	TestNFTTransfersAndBurns(t)
-//}
-//
-//func TestBalanceModelDAOCoinLimitOrders(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	// DAO coin limit orders.
-//	TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t)
-//	TestDAOCoinLimitOrder(t)
-//	TestCalculateDAOCoinsTransferredInLimitOrderMatch(t)
-//	TestComputeBaseUnitsToBuyUint256(t)
-//	TestCalculateScaledExchangeRate(t)
-//	TestFlushingDAOCoinLimitOrders(t)
-//}
-//
-//func TestBalanceModelAssociations(t *testing.T) {
-//	t.Skip("fixing this one.")
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	TestAssociations(t)
-//}
-//
-//func TestBalanceModelAccessGroups(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	TestAccessGroup(t)
-//	TestAccessGroupTxnWithDerivedKey(t)
-//}
-//
-//func TestBalanceModelAccessGroupMembers(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//
-//	TestAccessGroupMembersAdd(t)
-//	TestAccessGroupMembersRemove(t)
-//	TestAccessGroupMembersUpdate(t)
-//	TestAccessGroupMembersTxnWithDerivedKey(t)
-//}
-//
-//func TestBalanceModel(t *testing.T) {
-//	t.Skip("temporarily skip big balance model test - running small ones to debug")
-//	setBlockHeightGlobals() // Skip the genesis block.
-//	defer resetBlockHeightGlobals()
-//
-//	// Basic transfers.
-//	TestBasicTransfer(t)
-//	TestBasicTransferReorg(t)
-//	TestValidateBasicTransfer(t)
-//
-//	// Diamonds.
-//	TestDeSoDiamonds(t)
-//	TestDeSoDiamondErrorCases(t)
-//
-//	// Global params.
-//	TestUpdateGlobalParams(t)
-//
-//	// Posts, profiles, likes, follows, messages.
-//	TestSubmitPost(t)
-//	TestUpdateProfile(t)
-//	// This one eats up memory
-//	//TestSpamUpdateProfile(t)
-//	TestUpdateProfileChangeBack(t)
-//	TestLikeTxns(t)
-//	TestFollowTxns(t)
-//	TestPrivateMessage(t)
-//
-//	// Derived keys.
-//	TestAuthorizeDerivedKeyBasic(t)
-//	TestAuthorizeDerivedKeyBasicWithTransactionLimits(t)
-//	// Commented out test is failing
-//	//TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t)
-//	// TODO: I HATE THIS, but this makes it pass because it makes the encoder versions correct.
-//	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
-//	TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
-//	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
-//
-//	// Creator coins.
-//	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
-//	TestSalomonSequence(t)
-//	TestCreatorCoinBigBigBuyBigSell(t)
-//	TestCreatorCoinBigBuyAfterSmallBuy(t)
-//	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
-//	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
-//	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
-//	TestCreatorCoinAroundThresholdBuySellAmounts(t)
-//	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
-//	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
-//	TestCreatorCoinTransferBelowMinThreshold(t)
-//	TestCreatorCoinTransferWithMaxTransfers(t)
-//	TestCreatorCoinTransferWithSwapIdentity(t)
-//	TestCreatorCoinWithDiamonds(t)
-//	TestCreatorCoinWithDiamondsFailureCases(t)
-//
-//	// Swap identity.
-//	TestSwapIdentityMain(t)
-//	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
-//	TestSwapIdentityCreatorCoinBuySimple(t)
-//	TestSwapIdentityFailureCases(t)
-//	TestSwapIdentityWithFollows(t)
-//
-//	// NFTs.
-//	TestNFTBasic(t)
-//	TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t)
-//	TestNFTMoreErrorCases(t)
-//	TestNFTCreatedIsNotForSale(t)
-//	TestNFTBidsAreCanceledAfterAccept(t)
-//	TestNFTPreviousOwnersCantAcceptBids(t)
-//	TestNFTMaxCopiesGlobalParam(t)
-//	TestNFTSerialNumberZeroBid(t)
-//	TestNFTMinimumBidAmount(t)
-//	TestNFTDifferentMinBidAmountSerialNumbers(t)
-//	TestNFTTransfersAndBurns(t)
-//
-//	// DAO coin limit orders.
-//	TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t)
-//	TestDAOCoinLimitOrder(t)
-//	TestCalculateDAOCoinsTransferredInLimitOrderMatch(t)
-//	TestComputeBaseUnitsToBuyUint256(t)
-//	TestCalculateScaledExchangeRate(t)
-//	TestFlushingDAOCoinLimitOrders(t)
-//
-//	// Associations
-//	// TODO: fix associations tests
-//	//TestAssociations(t)
-//
-//	// Access Groups
-//	TestAccessGroup(t)
-//	TestAccessGroupTxnWithDerivedKey(t)
-//
-//	// Access Group Members
-//	TestAccessGroupMembersAdd(t)
-//	TestAccessGroupMembersRemove(t)
-//	TestAccessGroupMembersUpdate(t)
-//	TestAccessGroupMembersTxnWithDerivedKey(t)
-//
-//}
+func GetConditionalBalanceFunc(chain *Blockchain, params *DeSoParams) func(uint64, uint64) uint64 {
+	return func(deso uint64, balanceModelBalance uint64) uint64 {
+		if chain.blockTip().Height >= params.ForkHeights.BalanceModelBlockHeight {
+			return balanceModelBalance
+		}
+		return deso
+	}
+}
 
 // ================================== TRANSACTION TEST FRAMEWORK ==============================================
 // transactionTest is a new testing framework intended to streamline testing of blockchain transactions.
@@ -1515,11 +1262,12 @@ func TestUpdateGlobalParams(t *testing.T) {
 	}
 }
 
-func TestBalanceModelBasicTransfer(t *testing.T) {
+func TestBalanceModelBasicTransfers(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	TestBasicTransfer(t)
+	TestBasicTransferSignatures(t)
 }
 
 func TestBasicTransfer(t *testing.T) {
@@ -1776,13 +1524,6 @@ func TestBasicTransfer(t *testing.T) {
 		require.Equal(uint64(2999999997), senderBalance)
 		require.Equal(uint64(1), recipientBalance)
 	}
-}
-
-func TestBalanceModelBasicTransferSignatures(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestBasicTransferSignatures(t)
 }
 
 // TestBasicTransferSignatures thoroughly tests all possible ways to sign a DeSo transaction.

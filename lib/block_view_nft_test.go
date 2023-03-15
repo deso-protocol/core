@@ -828,20 +828,32 @@ func _burnNFTWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func GetConditionalBalanceFunc(chain *Blockchain, params *DeSoParams) func(uint64, uint64) uint64 {
-	return func(deso uint64, balanceModelBalance uint64) uint64 {
-		if chain.blockTip().Height >= params.ForkHeights.BalanceModelBlockHeight {
-			return balanceModelBalance
-		}
-		return deso
-	}
-}
-
-func TestBalanceModelNFTBasic(t *testing.T) {
+func TestBalanceModelNFTs(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	TestNFTBasic(t)
+	TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t)
+	TestNFTSerialNumberZeroBid(t)
+	TestNFTMinimumBidAmount(t)
+	TestNFTCreatedIsNotForSale(t)
+	TestNFTMoreErrorCases(t)
+	TestNFTBidsAreCanceledAfterAccept(t)
+}
+
+// Break up into two tests to keep memory footprint lower
+func TestBalanceModelNFTs2(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
+	TestNFTDifferentMinBidAmountSerialNumbers(t)
+	TestNFTMaxCopiesGlobalParam(t)
+	TestNFTPreviousOwnersCantAcceptBids(t)
+	TestNFTTransfersAndBurns(t)
+	TestBidAmountZero(t)
+	TestNFTBuyNow(t)
+	TestNFTSplits(t)
+	TestNFTSplitsHardcorePKIDBug(t)
 }
 
 func TestNFTBasic(t *testing.T) {
@@ -1736,13 +1748,6 @@ func TestNFTBasic(t *testing.T) {
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
 
-func TestBalanceModelNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t)
-}
-
 func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -2290,13 +2295,6 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
 
-func TestBalanceModelNFTSerialNumberZeroBid(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTSerialNumberZeroBid(t)
-}
-
 func TestNFTSerialNumberZeroBid(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -2630,13 +2628,6 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
 
-func TestBalanceModelNFTMinimumBidAmount(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTMinimumBidAmount(t)
-}
-
 func TestNFTMinimumBidAmount(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -2893,13 +2884,6 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
 
-func TestBalanceModelNFTCreatedIsNotForSale(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTCreatedIsNotForSale(t)
-}
-
 // Test to make sure an NFT created with "IsForSale=false" does not accept bids.
 func TestNFTCreatedIsNotForSale(t *testing.T) {
 	assert := assert.New(t)
@@ -3113,13 +3097,6 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
-}
-
-func TestBalanceModeNFTMoreErrorCases(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTMoreErrorCases(t)
 }
 
 func TestNFTMoreErrorCases(t *testing.T) {
@@ -3479,13 +3456,6 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
 
-func TestBalanceModelNFTBidsAreCanceledAfterAccept(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTBidsAreCanceledAfterAccept(t)
-}
-
 func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -3771,13 +3741,6 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
-}
-
-func TestBalanceModelNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTDifferentMinBidAmountSerialNumbers(t)
 }
 
 func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
@@ -4069,13 +4032,6 @@ func TestNFTDifferentMinBidAmountSerialNumbers(t *testing.T) {
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
-}
-
-func TestBalanceModelNFTMaxCopiesGlobalParam(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTMaxCopiesGlobalParam(t)
 }
 
 func TestNFTMaxCopiesGlobalParam(t *testing.T) {
@@ -4392,13 +4348,6 @@ func TestNFTMaxCopiesGlobalParam(t *testing.T) {
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
 
-func TestBalanceModelNFTPreviousOwnersCantAcceptBids(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTPreviousOwnersCantAcceptBids(t)
-}
-
 func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -4692,13 +4641,6 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 	_applyTestMetaTxnsToViewAndFlush(testMeta)
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
-}
-
-func TestBalanceModelNFTTransfersAndBurns(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTTransfersAndBurns(t)
 }
 
 func TestNFTTransfersAndBurns(t *testing.T) {
@@ -5210,13 +5152,6 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
 
-func TestBalanceModelBidAmountZero(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestBidAmountZero(t)
-}
-
 func TestBidAmountZero(t *testing.T) {
 
 	assert := assert.New(t)
@@ -5427,13 +5362,6 @@ func TestBidAmountZero(t *testing.T) {
 	_disconnectTestMetaTxnsFromViewAndFlush(testMeta)
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 
-}
-
-func TestBalanceModelNFTBuyNow(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTBuyNow(t)
 }
 
 func TestNFTBuyNow(t *testing.T) {
@@ -6456,13 +6384,6 @@ func TestNFTBuyNow(t *testing.T) {
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 }
 
-func TestBalanceModelNFTSplits(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTSplits(t)
-}
-
 func TestNFTSplits(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -7437,13 +7358,6 @@ func TestNFTSplitsSerializers(t *testing.T) {
 	require.NoError(err)
 
 	require.Equal(mm, newMM)
-}
-
-func TestBalanceModelNFTSplitsHardcorePKIDBug(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestNFTSplitsHardcorePKIDBug(t)
 }
 
 // Set up this test to catch a very hardcore pkid/pubkey bug that only

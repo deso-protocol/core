@@ -124,11 +124,6 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)
 
-	// Some wacky stuff from the previous version of this PR
-	if utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB == 0 {
-		utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
-	}
-
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(
 		updaterPkBytes,
 		profilePubKey,
@@ -217,11 +212,18 @@ const (
 	otherShortPic string = "data:image/jpeg;base64,/9j/2wCEAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDIBCQkJDAsMGA0NGDIhHCEyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMv/AABEIAGQAZAMBIgACEQEDEQH/xAGiAAABBQEBAQEBAQAAAAAAAAAAAQIDBAUGBwgJCgsQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+gEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoLEQACAQIEBAMEBwUEBAABAncAAQIDEQQFITEGEkFRB2FxEyIygQgUQpGhscEJIzNS8BVictEKFiQ04SXxFxgZGiYnKCkqNTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqCg4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2dri4+Tl5ufo6ery8/T19vf4+fr/2gAMAwEAAhEDEQA/APf6KKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAoopGJVSQpYgcAd6AForyO++JmrHUJCgg05bZyj2dxHuckcEOeD/wB8fma7SDxpDH4Stte1OxurRJ3WNIVQyO5Y4UqBzhu2QDz0rSdKUEpPqZQrRnJxj08jqKKwbTxdp17p9/cwR3ZksB+/tGt2SdTjcAEbBJI6etXptasLU2KXU4gkvmCQRyAhmbaWwR2OAevpWZqaFFc5qfjfRtJv5bS5kuD5Gw3M8UDPFbb/ALvmOOFzViz8TQXfiSfQ2sryC5ihadZJkURyxhgu5SGJIJPcCgDbopnmx/N86/L97np9ar6hqVnpdjPe3twkNvAhkkdudq+uBzQBbopkM0c8SyROHRgCCD1p9ABRRRQAUjbtp2kBscZGRS0UAfP/AIkOqN4guzrccn29WAcW0a+XKv8AAU7gHpzkn7pzjFd34hsvEWo/DywXULaSbUlvbeaWOxTEiRrID9N4XqRgZ6V291o+n3t/a31zaxyXNoSYZGHKZ/n+PQ81exSV+rua1JwlFKMUn1fc8dvNEu7jQPE3m+H9WvVvmT+z2vYlkuxMImXe5z8qLwFPUZPFamt6UNU03wxqk3hm6uPsUyw3tvJbKZzCI2XG3PzLvIOPxr07FGKZkeb2R1HQb3WY7Xwvd3cerSQz2URRViRfLVDHMcny9u3pg8dKmvJ9Sk+IUtxbaPqcSHTH02O6EA8tZjJkPnP3B1z+lehYoxQB4gfCeq3Witaaf4fu7G8j0eaDUpJsAX05KlcHJ8w7lZg3vitbU9Ev/FDeJLj+wrqIz6PAlkt7EEYzp5nTk4YZ46dfevWcUYoA5/wetpHoax2miz6SqsN8M1uISz7RlsA8+mfaugoooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9k="
 )
 
-func TestBalanceModelUpdateProfile(t *testing.T) {
+func TestBalanceModelUpdateProfileAndSwapIdentity(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	TestUpdateProfile(t)
+	TestSpamUpdateProfile(t)
+	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
+	TestSwapIdentityCreatorCoinBuySimple(t)
+	TestSwapIdentityFailureCases(t)
+	TestSwapIdentityMain(t)
+	TestSwapIdentityWithFollows(t)
+	TestUpdateProfileChangeBack(t)
 }
 
 func TestUpdateProfile(t *testing.T) {
@@ -337,6 +339,18 @@ func TestUpdateProfile(t *testing.T) {
 	// Do some UpdateProfile transactions
 	// ===================================================================================
 
+	{
+		// Set min network fee rate to 1 for balance model
+		if chain.blockTip().Height >= chain.params.ForkHeights.BalanceModelBlockHeight {
+			updateGlobalParamsEntry(
+				100,
+				m3Pub,
+				m3Priv,
+				-1,
+				1,
+				-1)
+		}
+	}
 	// Zero input txn should fail.
 	{
 		_, _, _, err = _updateProfile(
@@ -512,9 +526,8 @@ func TestUpdateProfile(t *testing.T) {
 
 	// A simple registration should succeed
 	{
-		// TODO: figure out why I really had to up the fee rate to 2 nanos per kb
 		updateProfile(
-			2,             /*feeRateNanosPerKB*/
+			1,             /*feeRateNanosPerKB*/
 			m0Pub,         /*updaterPkBase58Check*/
 			m0Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -640,7 +653,7 @@ func TestUpdateProfile(t *testing.T) {
 
 		// Register m1 and then try to steal the username
 		updateProfile(
-			2,             /*feeRateNanosPerKB*/
+			1,             /*feeRateNanosPerKB*/
 			m1Pub,         /*updaterPkBase58Check*/
 			m1Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -704,7 +717,7 @@ func TestUpdateProfile(t *testing.T) {
 	// Register m2 (should succeed)
 	{
 		updateProfile(
-			2,             /*feeRateNanosPerKB*/
+			1,             /*feeRateNanosPerKB*/
 			m2Pub,         /*updaterPkBase58Check*/
 			m2Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -734,7 +747,7 @@ func TestUpdateProfile(t *testing.T) {
 	// An update followed by a reversion should result in no change.
 	{
 		updateProfile(
-			2,                    /*feeRateNanosPerKB*/
+			1,                    /*feeRateNanosPerKB*/
 			m2Pub,                /*updaterPkBase58Check*/
 			m2Priv,               /*updaterPrivBase58Check*/
 			[]byte{},             /*profilePubKey*/
@@ -746,7 +759,7 @@ func TestUpdateProfile(t *testing.T) {
 			true /*isHidden*/)
 
 		updateProfile(
-			2,             /*feeRateNanosPerKB*/
+			1,             /*feeRateNanosPerKB*/
 			m2Pub,         /*updaterPkBase58Check*/
 			m2Priv,        /*updaterPrivBase58Check*/
 			[]byte{},      /*profilePubKey*/
@@ -761,7 +774,7 @@ func TestUpdateProfile(t *testing.T) {
 	// A normal user updating their profile should succeed.
 	{
 		updateProfile(
-			2,                  /*feeRateNanosPerKB*/
+			1,                  /*feeRateNanosPerKB*/
 			m1Pub,              /*updaterPkBase58Check*/
 			m1Priv,             /*updaterPrivBase58Check*/
 			[]byte{},           /*profilePubKey*/
@@ -794,7 +807,7 @@ func TestUpdateProfile(t *testing.T) {
 	// ParamUpdater updating another user's profile should succeed.
 	{
 		updateProfile(
-			2,                            /*feeRateNanosPerKB*/
+			1,                            /*feeRateNanosPerKB*/
 			m3Pub,                        /*updaterPkBase58Check*/
 			m3Priv,                       /*updaterPrivBase58Check*/
 			m0PkBytes,                    /*profilePubKey*/
@@ -809,7 +822,7 @@ func TestUpdateProfile(t *testing.T) {
 	// ParamUpdater creating another user's profile should succeed.
 	{
 		updateProfile(
-			2,                            /*feeRateNanosPerKB*/
+			1,                            /*feeRateNanosPerKB*/
 			m3Pub,                        /*updaterPkBase58Check*/
 			m3Priv,                       /*updaterPrivBase58Check*/
 			m5PkBytes,                    /*profilePubKey*/
@@ -1211,13 +1224,6 @@ func TestUpdateProfile(t *testing.T) {
 	checkProfilesDeleted()
 }
 
-func TestBalanceModelSpamUpdateProfile(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestSpamUpdateProfile(t)
-}
-
 func TestSpamUpdateProfile(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1267,13 +1273,6 @@ func TestSpamUpdateProfile(t *testing.T) {
 		require.Equal(1, len(mempoolTxsAdded))
 		fmt.Printf("Adding to mempool took: %v seconds\n", time.Since(startTimeMempoolAdd).Seconds())
 	}
-}
-
-func TestBalanceModelSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
 }
 
 func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
@@ -1746,13 +1745,6 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 }
 
-func TestBalanceModelSwapIdentityCreatorCoinBuySimple(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestSwapIdentityCreatorCoinBuySimple(t)
-}
-
 func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 	// Set up a blockchain
 	assert := assert.New(t)
@@ -2139,13 +2131,6 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 }
 
-func TestBalanceModelSwapIdentityFailureCases(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestSwapIdentityFailureCases(t)
-}
-
 func TestSwapIdentityFailureCases(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -2202,13 +2187,6 @@ func TestSwapIdentityFailureCases(t *testing.T) {
 		m2PkBytes, m0PkBytes)
 	require.Error(err)
 	require.Contains(err.Error(), RuleErrorSwapIdentityIsParamUpdaterOnly)
-}
-
-func TestBalanceModelSwapIdentityMain(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestSwapIdentityMain(t)
 }
 
 func TestSwapIdentityMain(t *testing.T) {
@@ -3032,13 +3010,6 @@ func TestSwapIdentityMain(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 }
 
-func TestBalanceModelSwapIdentityWithFollows(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestSwapIdentityWithFollows(t)
-}
-
 func TestSwapIdentityWithFollows(t *testing.T) {
 	// Set up a blockchain
 	assert := assert.New(t)
@@ -3310,13 +3281,6 @@ func TestSwapIdentityWithFollows(t *testing.T) {
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 }
 
-func TestBalanceModelUpdateProfileChangeBack(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
-
-	TestUpdateProfileChangeBack(t)
-}
-
 func TestUpdateProfileChangeBack(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -3564,7 +3528,6 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 // Check that Eth personal_sign works on some test data.
 func TestEthSignature(t *testing.T) {
 	require := require.New(t)
-	_ = require
 
 	// Make sure encoder migrations are not triggered yet.
 	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
