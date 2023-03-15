@@ -3503,6 +3503,7 @@ func (bav *UtxoView) GetNextNonceForPKID(pkid PKID) (uint64, error) {
 		return 0, errors.Wrapf(err, "UtxoView.GetNextNonceForPKID: Problem fetching "+
 			"next nonce for public key %s", PkToString(pkid[:], bav.Params))
 	}
+	bav.PKIDToNextNonce[pkid] = nextNonce
 	return nextNonce, nil
 }
 
