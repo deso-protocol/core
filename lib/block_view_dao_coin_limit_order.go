@@ -816,6 +816,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 						if utxoOp, err = bav._spendBalance(spendAmount, pubKey, blockHeight); err != nil {
 							return 0, 0, nil, err
 						}
+						// If this is the transactor, we need to keep track of the
+						// amount of DESO they spent so we can appropriately count the input.
 						if bytes.Equal(pubKey, txn.PublicKey) {
 							totalInput += spendAmount
 							transactorDESOSpendAmount = spendAmount
