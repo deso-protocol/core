@@ -545,7 +545,7 @@ func _doTxnWithBlockHeight(
 		}
 		if txnType == TxnTypeDAOCoinLimitOrder {
 			metadata := txnMeta.(*DAOCoinLimitOrderMetadata)
-			if metadata.CancelOrderID != nil && metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+			if metadata.CancelOrderID == nil && metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
 				nanosToFillOrder, err := utxoView.GetDESONanosToFillOrder(
 					utxoView.ConstructTransactorOrderFromTxn(txn, blockHeight), blockHeight)
 				require.NoError(err)
@@ -573,9 +573,6 @@ func _doTxnWithBlockHeight(
 	// We add one op to account for NFT bids on buy now NFT.
 	if isBuyNowBid {
 		utxoOpExpectation++
-		if blockHeight >= testMeta.params.ForkHeights.BalanceModelBlockHeight {
-			utxoOpExpectation++
-		}
 	}
 	require.Equal(utxoOpExpectation, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {

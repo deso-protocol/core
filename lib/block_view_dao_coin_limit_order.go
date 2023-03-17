@@ -411,6 +411,15 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				continue
 			}
 
+			// Since we don't have bidder inputs in the balance model, we add the transactor
+			// to the prev balances map if it doesn't exist and the matching order is buying
+			// DESO.
+			if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && transactorOrder.SellingDAOCoinCreatorPKID.IsZeroPKID() {
+				if _, exists := prevBalances[*matchingOrder.TransactorPKID][ZeroPKID]; !exists {
+					bav.balanceChange(matchingOrder.TransactorPKID, &ZeroPKID, big.NewInt(0), nil, prevBalances)
+				}
+			}
+
 			// Calculate leftover transactor and matching order quantities
 			// as well as the number of coins exchanged.
 			updatedTransactorOrderQuantityToFill,
@@ -583,6 +592,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 	}
 
+	// We save the filled orders on the view so the basic transfer connection
+	// logic can use them to compute the spend amount and handle the
+	// accounting logic for derived key's spending limits.
+	bav.TxHashToFilledOrder[*txHash] = filledOrders
+
 	// Now, we need to update all the balances of all the users who were involved in
 	// all of the matching that we did above. We do this via the following steps:
 	//
@@ -613,7 +627,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Start by adding the output minus input for the transactor, since they can
 	// technically spend this amount if they want. Later on, we'll make sure that
 	// we're accounting for the fee as well.
-	if totalInput > totalOutput {
+	if totalInput > totalOutput && blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = totalInput - totalOutput
 	} else {
 		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = 0
@@ -795,8 +809,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 				// If the current delta is for the transactor, we need
 				// to deduct the fees specified in the metadata from the output
-				// we will create.
-				if transactorPKIDEntry.PKID.Eq(&userPKID) {
+				// we will create. We do not need to do this for balance model
+				// as the fees are already deducted in the basic transfer.
+				if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight && transactorPKIDEntry.PKID.Eq(&userPKID) {
 					newDESOSurplus = big.NewInt(0).Sub(newDESOSurplus, big.NewInt(0).SetUint64(txMeta.FeeNanos))
 				}
 
@@ -811,16 +826,22 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 						if utxoOp, err = bav._addBalance(newDESOSurplus.Uint64(), pubKey); err != nil {
 							return 0, 0, nil, err
 						}
+						// Add the DESO to the total output.
+						totalOutput += newDESOSurplus.Uint64()
 					} else {
 						spendAmount := newDESOSurplus.Neg(newDESOSurplus).Uint64()
 						if utxoOp, err = bav._spendBalance(spendAmount, pubKey, blockHeight); err != nil {
 							return 0, 0, nil, err
 						}
-						// If this is the transactor, we need to keep track of the
-						// amount of DESO they spent so we can appropriately count the input.
+						// Add the spend amount to the total input
+						totalInput += spendAmount
+						// The spend amount is already accounted for in the
+						// basic transfer. We look at the filled orders there
+						// to properly compute the total input to account for
+						// the derived key spending limits. We don't want to double
+						// count it, so we deduct it here.
 						if bytes.Equal(pubKey, txn.PublicKey) {
-							totalInput += spendAmount
-							transactorDESOSpendAmount = spendAmount
+							totalInput -= spendAmount
 						}
 					}
 					utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)

@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
@@ -110,6 +109,11 @@ type UtxoView struct {
 	// Map of PKID to the next nonce to use for a transaction.
 	PKIDToNextNonce map[PKID]uint64
 
+	// Map of TxHash to filled order. Needed to handle
+	// derived key accounting for DAOCoinLimitOrders
+	// where the transactor is selling DESO.
+	TxHashToFilledOrder map[BlockHash][]*FilledDAOCoinLimitOrder
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -198,6 +202,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Transaction nonce map
 	bav.PKIDToNextNonce = make(map[PKID]uint64)
+
+	bav.TxHashToFilledOrder = make(map[BlockHash][]*FilledDAOCoinLimitOrder)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -1798,13 +1804,20 @@ func (bav *UtxoView) _connectBasicTransfer(
 		case TxnTypeDAOCoinLimitOrder:
 			txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 			if txMeta.CancelOrderID == nil && txMeta.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
-				explicitSpend, err := bav.GetDESONanosToFillOrder(
-					bav.ConstructTransactorOrderFromTxn(txn, blockHeight),
-					blockHeight,
-				)
-				if err != nil {
-					return 0, 0, nil, errors.Wrapf(err,
-						"_connectBasicTransfer: Problem getting DESO nanos to fill order")
+				transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+				if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+					return 0, 0, nil, errors.Wrap(
+						err,
+						"_connectBasicTransfer: Transactor PKID entry doesn't exist; this should never happen")
+				}
+				var explicitSpend uint64
+				for _, filledOrder := range bav.TxHashToFilledOrder[*txHash] {
+					if filledOrder == nil {
+						continue
+					}
+					if !filledOrder.TransactorPKID.Eq(transactorPKIDEntry.PKID) {
+						explicitSpend += filledOrder.CoinQuantityInBaseUnitsBought.Uint64()
+					}
 				}
 				totalInput += explicitSpend
 			}
@@ -3127,32 +3140,13 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	// Validate that totalInput - totalOutput is equal to the fee specified in the transaction metadata.
 	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
 		feeNanos := txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
-		// For balance model, we need to subtract the DESO spent amount from dao coin limit order txn
-		var transactorDESOSpendAmount uint64
-		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-			// Find the spend amount of DESO
-			for _, utxoOp := range utxoOpsForTxn {
-				if utxoOp.Type == OperationTypeSpendBalance &&
-					bytes.Equal(utxoOp.BalancePublicKey, txn.PublicKey) &&
-					utxoOp.BalanceAmountNanos != feeNanos {
-					// TODO: what about additional outputs specified when constructing transaction...
-					transactorDESOSpendAmount = utxoOp.BalanceAmountNanos
-				}
-			}
-		}
-		outputAndSpendAmount, err := SafeUint64().Add(totalOutput, transactorDESOSpendAmount)
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrap(
-				err,
-				"_connectTransaction: error summing totalOutput and transactorDESOSpendAmount for DAO coin limit order")
-		}
-		inputMinusOutputAndSpendAmount, err := SafeUint64().Sub(totalInput, outputAndSpendAmount)
+		inputMinusOutput, err := SafeUint64().Sub(totalInput, totalOutput)
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrap(
 				err,
 				"_connectTransaction: error subtracting outputAndSpendAmount from totalInput for DAO coin limit order")
 		}
-		if inputMinusOutputAndSpendAmount != feeNanos {
+		if inputMinusOutput != feeNanos {
 			return nil, 0, 0, 0, RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee
 		}
 	}
