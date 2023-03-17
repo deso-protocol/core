@@ -4331,7 +4331,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
-	if OperationType == CreatorCoinOperationTypeBuy && blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+	if OperationType == CreatorCoinOperationTypeBuy {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake+DeSoToSellNanos))
 	} else {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake))
@@ -4363,10 +4363,14 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
 		}
 	} else {
+		// Spend for fee and then spend DESO for cc.
 		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
-		if numOps == 3 {
-			// Founder reward case.
-			require.Equal(OperationTypeAddBalance, utxoOps[1].Type)
+		if OperationType == CreatorCoinOperationTypeBuy {
+			require.Equal(OperationTypeSpendBalance, utxoOps[1].Type)
+			if numOps == 4 {
+				// Founder reward case.
+				require.Equal(OperationTypeAddBalance, utxoOps[2].Type)
+			}
 		}
 	}
 	require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)

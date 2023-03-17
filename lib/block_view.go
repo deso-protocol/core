@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
@@ -3089,7 +3090,33 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	}
 	// Validate that totalInput - totalOutput is equal to the fee specified in the transaction metadata.
 	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
-		if totalInput-totalOutput != txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos {
+		feeNanos := txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
+		// For balance model, we need to subtract the DESO spent amount from dao coin limit order txn
+		var transactorDESOSpendAmount uint64
+		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+			// Find the spend amount of DESO
+			for _, utxoOp := range utxoOpsForTxn {
+				if utxoOp.Type == OperationTypeSpendBalance &&
+					bytes.Equal(utxoOp.BalancePublicKey, txn.PublicKey) &&
+					utxoOp.BalanceAmountNanos != feeNanos {
+					// TODO: what about additional outputs specified when constructing transaction...
+					transactorDESOSpendAmount = utxoOp.BalanceAmountNanos
+				}
+			}
+		}
+		outputAndSpendAmount, err := SafeUint64().Add(totalOutput, transactorDESOSpendAmount)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrap(
+				err,
+				"_connectTransaction: error summing totalOutput and transactorDESOSpendAmount for DAO coin limit order")
+		}
+		inputMinusOutputAndSpendAmount, err := SafeUint64().Sub(totalInput, outputAndSpendAmount)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrap(
+				err,
+				"_connectTransaction: error subtracting outputAndSpendAmount from totalInput for DAO coin limit order")
+		}
+		if inputMinusOutputAndSpendAmount != feeNanos {
 			return nil, 0, 0, 0, RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee
 		}
 	}

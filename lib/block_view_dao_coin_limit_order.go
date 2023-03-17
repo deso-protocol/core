@@ -618,6 +618,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	} else {
 		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = 0
 	}
+
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && len(txMeta.BidderInputs) != 0 {
 		return 0, 0, nil, fmt.Errorf("_connectDAOCoinLimitOrder: BidderInputs should be empty for balance model %d", blockHeight)
 	}
@@ -769,6 +770,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		userPKID := userPKIDIter
 		userPKIDs = append(userPKIDs, userPKID)
 	}
+	var transactorDESOSpendAmount uint64
 	sortedUserPKIDs := SortPKIDs(userPKIDs)
 	for _, userPKIDIter := range sortedUserPKIDs {
 		userPKID := userPKIDIter
@@ -810,8 +812,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 							return 0, 0, nil, err
 						}
 					} else {
-						if utxoOp, err = bav._spendBalance(newDESOSurplus.Neg(newDESOSurplus).Uint64(), pubKey, blockHeight); err != nil {
+						spendAmount := newDESOSurplus.Neg(newDESOSurplus).Uint64()
+						if utxoOp, err = bav._spendBalance(spendAmount, pubKey, blockHeight); err != nil {
 							return 0, 0, nil, err
+						}
+						if bytes.Equal(pubKey, txn.PublicKey) {
+							totalInput += spendAmount
+							transactorDESOSpendAmount = spendAmount
 						}
 					}
 					utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
@@ -900,14 +907,19 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		FilledDAOCoinLimitOrders:             filledOrders,
 	})
 
-	// Just to be safe, we confirm that totalOutput doesn't exceed totalInput.
-	if totalInput < totalOutput {
+	outputAndSpendAmount, err := SafeUint64().Add(totalOutput, transactorDESOSpendAmount)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err,
+			"_connectDAOCoinLimitOrder: Adding to totalOutput and transactorDESOSpendAmount overflows uint64: ")
+	}
+	// Just to be safe, we confirm that totalOutput plus transactor DESO spend amount doesn't exceed totalInput.
+	if totalInput < outputAndSpendAmount {
 		return 0, 0, nil, RuleErrorTxnOutputExceedsInput
 	}
 
 	// The difference between totalInput and totalOutput should be EXACTLY equal to the fee specified
 	// in the transaction metadata.
-	if totalInput-totalOutput != txMeta.FeeNanos {
+	if totalInput-outputAndSpendAmount != txMeta.FeeNanos {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee
 	}
 

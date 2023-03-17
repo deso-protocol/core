@@ -1202,6 +1202,13 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 
 		totalOutput += bidAmountNanos
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+			// spend the bid amount
+			utxoOp, err := bav._spendBalance(args.BidAmountNanos, args.Txn.PublicKey, tipHeight)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: error spending bid amount")
+			}
+			utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
+			totalInput += args.BidAmountNanos
 			totalBidderInput += bidAmountNanos
 		} else {
 			// It's assumed the caller code will check that things like output <= input,
@@ -2365,7 +2372,6 @@ func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPos
 			return fmt.Errorf("_helpDisconnectNFTSold: Invalid Operation type: %s", operationData.Type.String())
 		}
 	}
-
 	// (5) Revert the creator's CreatorCoinEntry if a previous one exists.
 	if operationData.PrevCoinEntry != nil {
 		nftPostEntry := bav.GetPostEntryForPostHash(operationData.PrevNFTEntry.NFTPostHash)
@@ -2461,6 +2467,11 @@ func (bav *UtxoView) _disconnectNFTBid(
 		// manipulate an NFT Entry.
 		if !operationData.PrevNFTEntry.IsBuyNow {
 			return fmt.Errorf("_disconnectNFTBid: PrevNFTEntry is non-nil and is not Buy Now on NFT bid operation. This should never happen.")
+		}
+
+		// Unspend the bid amount
+		if err := bav._unSpendBalance(txMeta.BidAmountNanos, currentTxn.PublicKey); err != nil {
+			return errors.Wrapf(err, "_disconnectNFTBid: Problem unSpendBalance: ")
 		}
 
 		// We now know that this was a bid on a buy-now NFT and the underlying NFT was sold outright to the bidder.

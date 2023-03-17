@@ -3362,7 +3362,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the create profile fee.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, AdditionalFees)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, AdditionalFees, 0)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateProfileTxn: Problem adding inputs: ")
 	}
@@ -3445,7 +3445,7 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 
 	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransactionWithSubsidy(
-			txn, minFeeRateNanosPerKB, 0, mempool, DeSoToSellNanos)
+			txn, minFeeRateNanosPerKB, 0, mempool, 0, DeSoToSellNanos)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTxn: Problem adding inputs: ")
 	}
@@ -3642,8 +3642,8 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		}
 	}
 
-	// We use "additionalFees" to track how much we need to spend to cover the transactor's bid in DESO.
-	var additionalFees uint64
+	// We use "explicitSpend" to track how much we need to spend to cover the transactor's bid in DESO.
+	var explicitSpend uint64
 	if metadata.CancelOrderID == nil &&
 		metadata.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
 		// If buying $DESO, we need to find inputs from all the orders that match.
@@ -3812,12 +3812,12 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 				"Blockchain.CreateDAOCoinLimitOrderTxn: fulfilling order $DESO overflows uint64")
 		}
 
-		additionalFees = desoNanosToFulfillOrders.Uint64()
+		explicitSpend = desoNanosToFulfillOrders.Uint64()
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, additionalFees)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, 0, explicitSpend)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"CreateDAOCoinLimitOrderTxn: Problem adding inputs: ")
@@ -3913,7 +3913,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the NFT fee.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, NFTFee)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, NFTFee, 0)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreateNFTTxn: Problem adding inputs: ")
 	}
@@ -4015,14 +4015,14 @@ func (bc *Blockchain) CreateNFTBidTxn(
 		return nil, 0, 0, 0, errors.New(
 			"_computeInputsForTxn: nftEntry is deleted")
 	}
-	var additionalFees uint64
+	var explicitSpend uint64
 	if nftEntry != nil && nftEntry.IsBuyNow && nftEntry.BuyNowPriceNanos <= BidAmountNanos {
-		additionalFees = BidAmountNanos
+		explicitSpend = BidAmountNanos
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, additionalFees)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, 0, explicitSpend)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNFTBidTxn: Problem adding inputs: ")
 	}
@@ -4896,11 +4896,12 @@ func (bc *Blockchain) AddInputsAndChangeToTransaction(
 	txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
 	_totalInputAdded uint64, _spendAmount uint64, _totalChangeAdded uint64, _fee uint64, _err error) {
 
-	return bc.AddInputsAndChangeToTransactionWithSubsidy(txArg, minFeeRateNanosPerKB, 0, mempool, 0)
+	return bc.AddInputsAndChangeToTransactionWithSubsidy(txArg, minFeeRateNanosPerKB, 0, mempool, 0, 0)
 }
 
 func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
-	txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, inputSubsidy uint64, mempool *DeSoMempool, additionalFees uint64) (
+	txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, inputSubsidy uint64, mempool *DeSoMempool, additionalFees uint64,
+	explicitTransactionSpend uint64) (
 	_totalInputAdded uint64, _spendAmount uint64, _totalChangeAdded uint64, _fee uint64, _err error) {
 
 	// The transaction we're working with should never have any inputs
@@ -4920,32 +4921,14 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		spendAmount += desoOutput.AmountNanos
 	}
 
+	// Add to explict transaction spend to spend amount. This is used for
+	// transactions that move money around such as CC buys, buy now NFT bids,
+	// and DAO Coin Limit Orders where the transactor spends DESO in addition
+	// to the fee.
+	spendAmount += explicitTransactionSpend
+
 	// Add additional fees to the spend amount.
 	spendAmount += additionalFees
-	// The public key of the transaction is assumed to be the one set at its
-	// top level.
-	spendPublicKeyBytes := txArg.PublicKey
-
-	// Make a copy of the transaction. This makes it so that we don't need
-	// to modify the passed-in transaction until we're absolutely sure we don't
-	// have an error.
-	txCopyWithChangeOutput, err := txArg.Copy()
-	if err != nil {
-		return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
-	}
-	// Since we generally want to compute an upper bound on the transaction
-	// size, add a change output to the transaction to factor in the
-	// worst-case situation in which a change output is required. This
-	// assignment and ones like it that follow should leave the original
-	// transaction's outputs/slices unchanged.
-	changeOutput := &DeSoOutput{
-		PublicKey: make([]byte, btcec.PubKeyBytesLenCompressed),
-		// Since we want an upper bound on the transaction size, set the amount
-		// to the maximum value since that will induce the serializer to encode
-		// a maximum-sized uvarint.
-		AmountNanos: math.MaxUint64,
-	}
-	txCopyWithChangeOutput.TxOutputs = append(txCopyWithChangeOutput.TxOutputs, changeOutput)
 
 	totalInput := inputSubsidy
 	// At this point, if we are constructing a balance model transaction, we can bail. Since
@@ -4997,10 +4980,35 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		if math.MaxUint64-txArg.TxnFeeNanos < totalInput {
 			return 0, 0, 0, 0, fmt.Errorf(
 				"AddInputsAndChangeToTransaction: overflow detected")
-		}
+		}/
 		totalInput += txArg.TxnFeeNanos
 		return totalInput, spendAmount, 0, txArg.TxnFeeNanos, nil
 	}
+
+	// The public key of the transaction is assumed to be the one set at its
+	// top level.
+	spendPublicKeyBytes := txArg.PublicKey
+
+	// Make a copy of the transaction. This makes it so that we don't need
+	// to modify the passed-in transaction until we're absolutely sure we don't
+	// have an error.
+	txCopyWithChangeOutput, err := txArg.Copy()
+	if err != nil {
+		return 0, 0, 0, 0, errors.Wrapf(err, "AddInputsAndChangeToTransaction: ")
+	}
+	// Since we generally want to compute an upper bound on the transaction
+	// size, add a change output to the transaction to factor in the
+	// worst-case situation in which a change output is required. This
+	// assignment and ones like it that follow should leave the original
+	// transaction's outputs/slices unchanged.
+	changeOutput := &DeSoOutput{
+		PublicKey: make([]byte, btcec.PubKeyBytesLenCompressed),
+		// Since we want an upper bound on the transaction size, set the amount
+		// to the maximum value since that will induce the serializer to encode
+		// a maximum-sized uvarint.
+		AmountNanos: math.MaxUint64,
+	}
+	txCopyWithChangeOutput.TxOutputs = append(txCopyWithChangeOutput.TxOutputs, changeOutput)
 
 	// Get the spendable UtxoEntrys.
 	spendableUtxos, err := bc.GetSpendableUtxosForPublicKey(spendPublicKeyBytes, mempool, nil)
