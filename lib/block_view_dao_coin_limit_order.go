@@ -1918,3 +1918,89 @@ func ScaleFloatFormatStringToUint256(floatStr string, scaleFactor *uint256.Int) 
 
 	return ret, nil
 }
+
+func (bav *UtxoView) GetDESONanosToFillOrder(transactorOrder *DAOCoinLimitOrderEntry, blockHeight uint32) (uint64, error) {
+	// If selling $DESO for DAO coins, we need to find the matching orders
+	// and add that as an additional fee when adding inputs and outputs.
+	var lastSeenOrder *DAOCoinLimitOrderEntry
+
+	desoNanosToFulfillOrders := uint256.NewInt()
+	transactorQuantityToFill := transactorOrder.QuantityToFillInBaseUnits.Clone()
+
+	for transactorQuantityToFill.GtUint64(0) {
+		matchingOrderEntries, err := bav.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder, blockHeight)
+		if err != nil {
+			return 0, errors.Wrapf(
+				err, "GetDESONanosToFillOrder: Error getting orders to match: ")
+		}
+		if len(matchingOrderEntries) == 0 {
+			break
+		}
+		for _, matchingOrder := range matchingOrderEntries {
+			lastSeenOrder = matchingOrder
+
+			matchingOrderBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(
+				matchingOrder.TransactorPKID, matchingOrder.SellingDAOCoinCreatorPKID, true)
+
+			// Skip if matching order doesn't own any of the DAO coins they're selling.
+			if matchingOrderBalanceEntry == nil || matchingOrderBalanceEntry.isDeleted {
+				continue
+			}
+
+			// Calculate updated order quantities and coins exchanged.
+			var updatedTransactorQuantityToFill *uint256.Int
+			var daoCoinNanosExchanged *uint256.Int
+			var desoNanosExchanged *uint256.Int
+
+			updatedTransactorQuantityToFill,
+				_, // matching order updated quantity, not used here
+				daoCoinNanosExchanged,
+				desoNanosExchanged,
+				err = _calculateDAOCoinsTransferredInLimitOrderMatch(
+				matchingOrder, transactorOrder.OperationType, transactorQuantityToFill)
+			if err != nil {
+				return 0, errors.Wrapf(err, "GetDESONanosToFillOrder: ")
+			}
+
+			// Skip if matching order doesn't own enough of the DAO coins they're selling.
+			if matchingOrderBalanceEntry.BalanceNanos.Lt(daoCoinNanosExchanged) {
+				continue
+			}
+
+			// Now that we know this is a legitimate matching order
+			// we can update the transactor quantity to fill.
+			transactorQuantityToFill = updatedTransactorQuantityToFill
+
+			// Track total $DESO exchanged across all matching orders.
+			desoNanosToFulfillOrders, err = SafeUint256().Add(
+				desoNanosToFulfillOrders, desoNanosExchanged)
+			if err != nil {
+				return 0, errors.Wrapf(err,
+					"GetDESONanosToFillOrder: overflow when adding up $DESO to fill orders")
+			}
+		}
+	}
+
+	// Validate $DESO doesn't overflow uint64.
+	if !desoNanosToFulfillOrders.IsUint64() {
+		return 0, fmt.Errorf(
+			"GetDESONanosToFillOrder: fulfilling order $DESO overflows uint64")
+	}
+
+	return desoNanosToFulfillOrders.Uint64(), nil
+}
+
+func (bav *UtxoView) ConstructTransactorOrderFromTxn(txn *MsgDeSoTxn, blockHeight uint32) *DAOCoinLimitOrderEntry {
+	metadata := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+	return &DAOCoinLimitOrderEntry{
+		OrderID:                   txn.Hash(),
+		TransactorPKID:            bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
+		BuyingDAOCoinCreatorPKID:  bav.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+		SellingDAOCoinCreatorPKID: bav.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
+		QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
+		OperationType:                             metadata.OperationType,
+		FillType:                                  metadata.FillType,
+		BlockHeight:                               blockHeight,
+	}
+}

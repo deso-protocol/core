@@ -370,10 +370,12 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 			}
 		}
 
-		// We need to unspend the DESO that was spent on this transaction.
-		if err := bav._unSpendBalance(txMeta.DeSoToSellNanos, currentTxn.PublicKey); err != nil {
-			return errors.Wrapf(err, "_disconnectCreatorCoin: Problem unspending "+
-				"balance for %v: ", currentTxn.PublicKey)
+		// We need to unspend the DESO that was spent on this transaction for balance model.
+		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+			if err := bav._unSpendBalance(txMeta.DeSoToSellNanos, currentTxn.PublicKey); err != nil {
+				return errors.Wrapf(err, "_disconnectCreatorCoin: Problem unspending "+
+					"balance for %v: ", currentTxn.PublicKey)
+			}
 		}
 
 		// Reset the Buyer's BalanceEntry to what it was previously.

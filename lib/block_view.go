@@ -1774,6 +1774,42 @@ func (bav *UtxoView) _connectBasicTransfer(
 		}
 
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
+		// Certain transaction types spend more DESO than input specified
+		switch txn.TxnMeta.GetTxnType() {
+		case TxnTypeCreatorCoin:
+			txMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
+			if txMeta.OperationType == CreatorCoinOperationTypeBuy {
+				totalInput += txMeta.DeSoToSellNanos
+			}
+		case TxnTypeNFTBid:
+			txMeta := txn.TxnMeta.(*NFTBidMetadata)
+			if txMeta.SerialNumber == 0 {
+				break
+			}
+			nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
+			nftEntry := bav.GetNFTEntryForNFTKey(&nftKey)
+			if nftEntry == nil || nftEntry.isDeleted {
+				return 0, 0, nil, errors.Wrap(err,
+					"_connectBasicTransfer: NFT entry doesn't exist; this should never happen")
+			}
+			if nftEntry.IsBuyNow && nftEntry.BuyNowPriceNanos <= txMeta.BidAmountNanos {
+				totalInput += txMeta.BidAmountNanos
+			}
+		case TxnTypeDAOCoinLimitOrder:
+			txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+			if txMeta.CancelOrderID == nil && txMeta.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+				explicitSpend, err := bav.GetDESONanosToFillOrder(
+					bav.ConstructTransactorOrderFromTxn(txn, blockHeight),
+					blockHeight,
+				)
+				if err != nil {
+					return 0, 0, nil, errors.Wrapf(err,
+						"_connectBasicTransfer: Problem getting DESO nanos to fill order")
+				}
+				totalInput += explicitSpend
+			}
+
+		}
 	}
 
 	// Now that we have computed the outputs, we can finish processing diamonds if need be.
