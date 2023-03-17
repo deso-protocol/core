@@ -4980,7 +4980,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		if math.MaxUint64-txArg.TxnFeeNanos < totalInput {
 			return 0, 0, 0, 0, fmt.Errorf(
 				"AddInputsAndChangeToTransaction: overflow detected")
-		}/
+		}
 		totalInput += txArg.TxnFeeNanos
 		return totalInput, spendAmount, 0, txArg.TxnFeeNanos, nil
 	}
