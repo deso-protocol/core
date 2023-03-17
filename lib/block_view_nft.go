@@ -2469,9 +2469,11 @@ func (bav *UtxoView) _disconnectNFTBid(
 			return fmt.Errorf("_disconnectNFTBid: PrevNFTEntry is non-nil and is not Buy Now on NFT bid operation. This should never happen.")
 		}
 
-		// Unspend the bid amount
-		if err := bav._unSpendBalance(txMeta.BidAmountNanos, currentTxn.PublicKey); err != nil {
-			return errors.Wrapf(err, "_disconnectNFTBid: Problem unSpendBalance: ")
+		// Unspend the bid amount if balance model block height hit
+		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+			if err := bav._unSpendBalance(txMeta.BidAmountNanos, currentTxn.PublicKey); err != nil {
+				return errors.Wrapf(err, "_disconnectNFTBid: Problem unSpendBalance: ")
+			}
 		}
 
 		// We now know that this was a bid on a buy-now NFT and the underlying NFT was sold outright to the bidder.
