@@ -3139,14 +3139,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	}
 	// Validate that totalInput - totalOutput is equal to the fee specified in the transaction metadata.
 	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
-		feeNanos := txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos
-		inputMinusOutput, err := SafeUint64().Sub(totalInput, totalOutput)
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrap(
-				err,
-				"_connectTransaction: error subtracting outputAndSpendAmount from totalInput for DAO coin limit order")
-		}
-		if inputMinusOutput != feeNanos {
+		if totalInput-totalOutput != txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos {
 			return nil, 0, 0, 0, RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee
 		}
 	}
