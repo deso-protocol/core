@@ -13,6 +13,11 @@ func NewSet[T comparable](elements []T) *Set[T] {
 	return set
 }
 
+func (set *Set[T]) Copy() *Set[T] {
+	// Return a copy of the set.
+	return NewSet[T](set.ToSlice())
+}
+
 func (set *Set[T]) Add(element T) {
 	// Add element to set.
 	if !set.Includes(element) {

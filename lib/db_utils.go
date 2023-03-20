@@ -473,6 +473,9 @@ type DBPrefixes struct {
 	// <prefix, PublicKey [33]byte> -> uint64
 	PrefixPKIDToNextNonce []byte `prefix_id:"[77]" is_state:"true"`
 
+	// TODO: IsState?
+	PrefixAccountNonce []byte `prefix_id:"78" is_state:"true"`
+
 	// NEXT_TAG: 78
 
 }
@@ -10462,11 +10465,39 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 // DeSo nonce mapping functions
 // -------------------------------------------------------------------------------------
 
+func _dbKeyForAccountNonce(accountNonce *AccountNonce) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixAccountNonce...)
+	key := append(prefixCopy, accountNonce.ToBytes()...)
+	return key
+}
+
 func _dbKeyForPKIDToNextNonce(pkid PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, Prefixes.PrefixPKIDToNextNonce...)
 	key := append(prefixCopy, pkid[:]...)
 	return key
+}
+
+func _dbPrefixForAccountNonceBlockHeight(blockHeight uint32) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixAccountNonce...)
+	return append(prefixCopy, UintToBuf(uint64(blockHeight))...)
+}
+
+func DbGetAccountNonceWithTxn(txn *badger.Txn, accountNonce *AccountNonce) (*AccountNonce, error) {
+	key := _dbKeyForAccountNonce(accountNonce)
+	_, err := txn.Get(key)
+	// TODO: what if not found? Is it an error or not?
+	if err != nil {
+		return nil, nil
+	}
+	keyWithoutPrefix := key[1:]
+	nonce := &AccountNonce{}
+	rr := bytes.NewReader(keyWithoutPrefix)
+	if nonce, err = nonce.ReadAccountNonce(rr); err != nil {
+		return nil, err
+	}
+	return nonce, nil
 }
 
 func DbGetNextNonceForPKIDWithTxn(txn *badger.Txn, pkid PKID,
@@ -10489,6 +10520,22 @@ func DbGetNextNonceForPKIDWithTxn(txn *badger.Txn, pkid PKID,
 	return nextNonce, nil
 }
 
+func DbGetAccountNonce(db *badger.DB, accountNonce *AccountNonce, pkid PKID) (*AccountNonce, error) {
+	var ret *AccountNonce
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DbGetAccountNonceAndPKIDWithTxn(txn, accountNonce, pkid)
+		if err != nil {
+			return errors.Wrap(err, "DbGetNonce: ")
+		}
+		return nil
+	})
+	if dbErr != nil {
+		return nil, dbErr
+	}
+	return ret, nil
+}
+
 func DbGetNextNonceForPKID(db *badger.DB, pkid PKID,
 ) (_balance uint64, _err error) {
 	ret := uint64(0)
@@ -10506,6 +10553,11 @@ func DbGetNextNonceForPKID(db *badger.DB, pkid PKID,
 	return ret, nil
 }
 
+func DbPutAccountNonceWithTxn(txn *badger.Txn, nonce *AccountNonce) error {
+	return errors.Wrap(txn.Set(_dbKeyForAccountNonce(nonce), []byte{}),
+		"DbPutAccountNonceWithTxn: Problem setting nonce")
+}
+
 func DbPutNextNonceForPKIDWithTxn(
 	txn *badger.Txn, pkid PKID, nextNonce uint64) error {
 
@@ -10521,11 +10573,23 @@ func DbPutNextNonceForPKIDWithTxn(
 	return nil
 }
 
+func DbPutAccountNonce(handle *badger.DB, nonce *AccountNonce) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbPutAccountNonceWithTxn(txn, nonce)
+	})
+}
+
 func DbPutNextNonceForPKID(handle *badger.DB, pkid PKID, nextNonce uint64) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
 		return DbPutNextNonceForPKIDWithTxn(txn, pkid, nextNonce)
 	})
+}
+
+func DbDeleteAccountNonceWithTxn(txn *badger.Txn, accountNonce *AccountNonce) error {
+	return errors.Wrap(
+		txn.Delete(_dbKeyForAccountNonce(accountNonce)),
+		"DbDeleteAccountNonceWithTxn: Problem deleting nonce")
 }
 
 func DbDeleteNextNonceForPKIDWithTxn(
@@ -10535,6 +10599,21 @@ func DbDeleteNextNonceForPKIDWithTxn(
 		return errors.Wrapf(
 			err, "DbDeleteNextNonceForPKIDfoWithTxn: Problem deleting next nonce for: %s ",
 			PkToStringBoth(pkid[:]))
+	}
+	return nil
+}
+
+// TODO: Test me.
+func DbDeleteExpiredNoncesAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint32) error {
+	startKey := _dbPrefixForAccountNonceBlockHeight(0)
+	endPrefix := _dbPrefixForAccountNonceBlockHeight(blockHeight)
+	opts := badger.DefaultIteratorOptions
+	nodeIterator := txn.NewIterator(opts)
+	for nodeIterator.Seek(startKey); nodeIterator.ValidForPrefix(endPrefix); nodeIterator.Next() {
+		key := nodeIterator.Item().Key()
+		if err := DBDeleteWithTxn(txn, nil, key); err != nil {
+			return errors.Wrapf(err, "DbDeleteExpiredNoncesAtBlockHeightWithTxn: Problem deleting key: %v", key)
+		}
 	}
 	return nil
 }
