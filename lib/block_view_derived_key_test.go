@@ -547,7 +547,7 @@ func _doTxnWithBlockHeight(
 			metadata := txnMeta.(*DAOCoinLimitOrderMetadata)
 			if metadata.CancelOrderID == nil && metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
 				nanosToFillOrder, err := utxoView.GetDESONanosToFillOrder(
-					utxoView.ConstructTransactorOrderFromTxn(txn, blockHeight), blockHeight)
+					utxoView.ConvertTxnToDAOCoinLimitOrderEntry(txn, blockHeight), blockHeight)
 				require.NoError(err)
 				if nanosToFillOrder > 0 {
 					utxoOpExpectation++

@@ -1817,17 +1817,19 @@ func (bav *UtxoView) _connectBasicTransfer(
 					"_connectBasicTransfer: Transactor PKID entry doesn't exist; this should never happen")
 			}
 			for _, filledOrder := range bav.TxHashToFilledOrder[*txHash] {
+				// Skip nil orders
 				if filledOrder == nil {
 					continue
 				}
-				if !filledOrder.TransactorPKID.Eq(transactorPKIDEntry.PKID) {
-					totalInput, err = SafeUint64().Add(totalInput, filledOrder.CoinQuantityInBaseUnitsBought.Uint64())
-					if err != nil {
-						return 0, 0, nil, errors.Wrap(
-							err,
-							"_connectBasicTransfer: Problem adding filled order DESO to total input")
-					}
+				// Skip filled orders for the transactor since the transactor doesn't pay itself.
+				if filledOrder.TransactorPKID.Eq(transactorPKIDEntry.PKID) {
+					continue
 				}
+				if !filledOrder.CoinQuantityInBaseUnitsBought.IsUint64() {
+					return 0, 0, nil, errors.New(
+						"_connectBasicTransfer: filledOrder.CoinQuantityInBaseUnitsBought is not a uint64")
+				}
+				totalInput, err = SafeUint64().Add(totalInput, filledOrder.CoinQuantityInBaseUnitsBought.Uint64())
 			}
 		}
 	}
