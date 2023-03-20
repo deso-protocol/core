@@ -1816,6 +1816,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 					err,
 					"_connectBasicTransfer: Transactor PKID entry doesn't exist; this should never happen")
 			}
+
 			for _, filledOrder := range bav.TxHashToFilledOrder[*txHash] {
 				if filledOrder == nil {
 					continue
