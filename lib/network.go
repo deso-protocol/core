@@ -2864,25 +2864,47 @@ func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) (*DeSoSignature, e
 	}, nil
 }
 
-type AccountNonce struct {
-	ExpirationBlockHeight uint32
+type NonceEntry struct {
+	Nonce     *DeSoNonce
+	PKID      *PKID
+	isDeleted bool
+}
+
+func (ne *NonceEntry) ToMapKey() NonceMapKey {
+	return NonceMapKey{
+		Nonce: *ne.Nonce,
+		PKID:  *ne.PKID,
+	}
+}
+
+type NonceMapKey struct {
+	Nonce DeSoNonce
+	PKID  PKID
+}
+
+type DeSoNonce struct {
+	ExpirationBlockHeight uint64
 	PartialID			  uint64
 }
 
-func (nonce *AccountNonce) ToBytes() []byte {
-	// We use a 12-byte nonce. The first 4 bytes are the expiration block height and the last 8 bytes are the partial ID.
+func (nonce *DeSoNonce) ToBytes() []byte {
 	data := []byte{}
-	data = append(data, UintToBuf(uint64(nonce.ExpirationBlockHeight))...)
+	data = append(data, UintToBuf(nonce.ExpirationBlockHeight)...)
 	data = append(data, UintToBuf(nonce.PartialID)...)
 	return data
 }
 
-func (nonce *AccountNonce) ReadAccountNonce(rr io.Reader) (*AccountNonce, error) {
-	expirationBlockHeight, err := ReadUvarint(rr)
+func (nonce *DeSoNonce) String() string {
+	return fmt.Sprintf("DeSoNonce: ExpirationBlockHeight: %d, PartialID: %d",
+		nonce.ExpirationBlockHeight, nonce.PartialID)
+}
+
+func (nonce *DeSoNonce) ReadDeSoNonce(rr io.Reader) (*DeSoNonce, error) {
+	var err error
+	nonce.ExpirationBlockHeight, err = ReadUvarint(rr)
 	if err != nil {
 		return nil, err
 	}
-	nonce.ExpirationBlockHeight = uint32(expirationBlockHeight)
 	nonce.PartialID, err = ReadUvarint(rr)
 	if err != nil {
 		return nil, err
@@ -2904,7 +2926,7 @@ type MsgDeSoTxn struct {
 	TxnFeeNanos uint64
 	// In the balance model, a unique nonce is required for each transaction that a single
 	// public key makes.  This prevents transactions from being used in replay attacks.
-	TxnNonce *AccountNonce
+	TxnNonce *DeSoNonce
 
 	// DeSoTxnMetadata is an interface type that will give us information on how
 	// we should handle the transaction, including what type of transaction this
@@ -3221,8 +3243,8 @@ func _readTransactionV1Fields(rr io.Reader, ret *MsgDeSoTxn) error {
 	}
 	ret.TxnFeeNanos = txnFeeNanos
 
-	txnNonce := &AccountNonce{}
-	txnNonce, err = txnNonce.ReadAccountNonce(rr)
+	txnNonce := &DeSoNonce{}
+	txnNonce, err = txnNonce.ReadDeSoNonce(rr)
 	if err != nil {
 		return errors.Wrapf(
 			err, "_readTransactionV1Fields: Problem parsing DeSoTxn.TxnNonce bytes")

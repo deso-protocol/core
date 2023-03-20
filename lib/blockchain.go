@@ -2814,31 +2814,31 @@ func ComputeMerkleRoot(txns []*MsgDeSoTxn) (_merkle *BlockHash, _txHashes []*Blo
 	return rootHash, txHashes, nil
 }
 
-func (bc *Blockchain) GetNextNonceForPKID(
-	publicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView,
-) (uint64, error) {
-
-	var err error
-	var utxoView *UtxoView
-	// Use the reference UtxoView if provided. Otherwise, try to get one from the mempool.
-	// This improves efficiency when we have a UtxoView already handy.
-	if referenceUtxoView != nil {
-		utxoView = referenceUtxoView
-	} else if mempool != nil {
-		utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(publicKeyBytes, nil)
-		if err != nil {
-			return 0, errors.Wrapf(
-				err, "Blockchain.GetNextNonceForPKID: Problem getting augmented UtxoView from mempool: ")
-		}
-	} else {
-		utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
-		if err != nil {
-			return 0, errors.Wrapf(err, "Blockchain.GetNextNonceForPKID: Problem initializing UtxoView: ")
-		}
-	}
-
-	return utxoView.GetNextNonceForPublicKey(publicKeyBytes)
-}
+//func (bc *Blockchain) GetNextNonceForPKID(
+//	publicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView,
+//) (uint64, error) {
+//
+//	var err error
+//	var utxoView *UtxoView
+//	// Use the reference UtxoView if provided. Otherwise, try to get one from the mempool.
+//	// This improves efficiency when we have a UtxoView already handy.
+//	if referenceUtxoView != nil {
+//		utxoView = referenceUtxoView
+//	} else if mempool != nil {
+//		utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(publicKeyBytes, nil)
+//		if err != nil {
+//			return 0, errors.Wrapf(
+//				err, "Blockchain.GetNextNonceForPKID: Problem getting augmented UtxoView from mempool: ")
+//		}
+//	} else {
+//		utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+//		if err != nil {
+//			return 0, errors.Wrapf(err, "Blockchain.GetNextNonceForPKID: Problem initializing UtxoView: ")
+//		}
+//	}
+//
+//	return utxoView.GetNextNonceForPublicKey(publicKeyBytes)
+//}
 
 func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
 	// If we have access to a mempool, use it to account for utxos we might not
@@ -4738,12 +4738,13 @@ func (bc *Blockchain) CreateMaxSpend(
 		}
 		txn.TxOutputs[len(txn.TxOutputs)-1].AmountNanos = spendableBalance
 		txn.TxnVersion = 1
-		nextNonce, err := utxoView.GetNextNonceForPublicKey(senderPkBytes)
+		txn.TxnNonce, err = utxoView.ConstructNewAccountNonceForPublicKey(senderPkBytes, uint64(bc.BlockTip().Height))
 		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err,
+			return nil, 0, 0, 0, errors.Wrapf(
+				err,
 				"Blockchain.CreateMaxSpend: Problem getting next nonce: ")
 		}
-		txn.TxnNonce = nextNonce
+
 
 		feeAmountNanos := uint64(0)
 		prevFeeAmountNanos := uint64(0)
@@ -4860,15 +4861,21 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	// balance model transactions don't use UTXOs, they don't require change to be paid.
 	blockHeight := bc.blockTip().Height + 1
 	if blockHeight >= bc.params.ForkHeights.BalanceModelBlockHeight {
+
 		txArg.TxnVersion = 1
-		nextNonce, err := bc.GetNextNonceForPKID(txArg.PublicKey, mempool, nil)
+
+		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 		if err != nil {
-			return 0, 0, 0, 0, errors.Wrapf(
-				err, "AddInputsAndChangeToTransaction: Problem getting next nonce for public key %s: ",
+			return 0, 0, 0, 0, errors.Wrapf(err,
+				"AddInputsAndChangeToTransaction: Problem getting UtxoView: ")
+		}
+		txArg.TxnNonce, err = utxoView.ConstructNewAccountNonceForPublicKey(txArg.PublicKey, uint64(blockHeight))
+		if err != nil {
+			return 0, 0, 0, 0, errors.Wrapf(err,
+				"AddInputsAndChangeToTransaction: Problem getting next nonce for public key %s: ",
 				PkToStringBoth(txArg.PublicKey),
 			)
 		}
-		txArg.TxnNonce = nextNonce
 
 		// Set to max uint64 so we can compute max fee
 		txArg.TxnFeeNanos = additionalFees

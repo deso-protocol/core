@@ -137,7 +137,10 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushDAOCoinLimitOrderEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
-	if err := bav._flushNextNoncesToDbWithTxn(txn); err != nil {
+	//if err := bav._flushNextNoncesToDbWithTxn(txn); err != nil {
+	//	return err
+	//}
+	if err := bav._flushNonceEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
 	return nil
@@ -1412,23 +1415,30 @@ func (bav *UtxoView) _flushPostAssociationEntriesToDbWithTxn(txn *badger.Txn, bl
 	return nil
 }
 
-func (bav *UtxoView) _flushNextNoncesToDbWithTxn(txn *badger.Txn) error {
-
-	// Go through all the entries in the PKIDToNextNonce map and update the database.
-	// Note that there is no need to delete the mappings first since we never delete
-	// nonce mappings.
-	for pkid, nextNonce := range bav.PKIDToNextNonce {
-		// If next nonce is 0, we delete it to maintain the same state in the db after disconnects
-		if nextNonce == 0 {
-			if err := DbDeleteNextNonceForPKIDWithTxn(txn, pkid); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := DbPutNextNonceForPKIDWithTxn(txn, pkid, nextNonce); err != nil {
-			return err
+func (bav *UtxoView) _flushNonceEntriesToDbWithTxn(txn *badger.Txn) error {
+	for _, nonceEntry := range bav.NonceMapKeyToNonceEntry {
+		// Delete the existing mappings in the db for this AccountNonceAndPKID. They
+		// will be re-added if the corresponding entry in memory has isDeleted=false.
+		if err := DbDeleteNonceEntryWithTxn(txn, nonceEntry.Nonce, nonceEntry.PKID); err != nil {
+			return fmt.Errorf(
+				"_flushNonceEntriesToDbWithTxn: problem deleting account nonce mappings for account nonce %v: %v",
+				nonceEntry.Nonce.String(),
+				err,
+			)
 		}
 	}
 
+	for _, nonceEntry := range bav.NonceMapKeyToNonceEntry {
+		if nonceEntry.isDeleted {
+			// If the AccountNonceAndPKID has isDeleted=true then there's
+			// nothing to do because we already deleted the entry above.
+		} else {
+			// If the AccountNonceAndPKID has isDeleted=false then we
+			// put the corresponding mappings for it into the db.
+			if err := DbPutNonceEntryWithTxn(txn, nonceEntry.Nonce, nonceEntry.PKID); err != nil {
+				return fmt.Errorf("_flushNonceEntriesToDbWithTxn: %v", err)
+			}
+		}
+	}
 	return nil
 }

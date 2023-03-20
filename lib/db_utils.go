@@ -474,7 +474,7 @@ type DBPrefixes struct {
 	PrefixPKIDToNextNonce []byte `prefix_id:"[77]" is_state:"true"`
 
 	// TODO: IsState?
-	PrefixAccountNonce []byte `prefix_id:"78" is_state:"true"`
+	PrefixAccountNonce []byte `prefix_id:"[78]" is_state:"true"`
 
 	// NEXT_TAG: 78
 
@@ -5236,6 +5236,7 @@ func RandomBytes(numBytes int32) []byte {
 func RandomBytesHex(numBytes int32) string {
 	return hex.EncodeToString(RandomBytes(numBytes))
 }
+
 
 // RandInt64 returns a random 64-bit int.
 func RandInt64(max int64) int64 {
@@ -10465,17 +10466,12 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 // DeSo nonce mapping functions
 // -------------------------------------------------------------------------------------
 
-func _dbKeyForAccountNonce(accountNonce *AccountNonce) []byte {
+func _dbKeyForNonceEntry(accountNonce *DeSoNonce, pkid *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, Prefixes.PrefixAccountNonce...)
-	key := append(prefixCopy, accountNonce.ToBytes()...)
-	return key
-}
-
-func _dbKeyForPKIDToNextNonce(pkid PKID) []byte {
-	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, Prefixes.PrefixPKIDToNextNonce...)
-	key := append(prefixCopy, pkid[:]...)
+	key := append(prefixCopy, EncodeUint64(accountNonce.ExpirationBlockHeight)...)
+	key = append(key, pkid.ToBytes()...)
+	key = append(key, UintToBuf(accountNonce.PartialID)...)
 	return key
 }
 
@@ -10484,47 +10480,26 @@ func _dbPrefixForAccountNonceBlockHeight(blockHeight uint32) []byte {
 	return append(prefixCopy, UintToBuf(uint64(blockHeight))...)
 }
 
-func DbGetAccountNonceWithTxn(txn *badger.Txn, accountNonce *AccountNonce) (*AccountNonce, error) {
-	key := _dbKeyForAccountNonce(accountNonce)
+func DbGetNonceEntryWithTxn(txn *badger.Txn, accountNonce *DeSoNonce, pkid *PKID) (*NonceEntry, error) {
+	key := _dbKeyForNonceEntry(accountNonce, pkid)
 	_, err := txn.Get(key)
-	// TODO: what if not found? Is it an error or not?
-	if err != nil {
+	if err == badger.ErrKeyNotFound {
 		return nil, nil
 	}
-	keyWithoutPrefix := key[1:]
-	nonce := &AccountNonce{}
-	rr := bytes.NewReader(keyWithoutPrefix)
-	if nonce, err = nonce.ReadAccountNonce(rr); err != nil {
+	if err != nil {
 		return nil, err
 	}
-	return nonce, nil
+	return &NonceEntry{
+		Nonce: accountNonce,
+		PKID: pkid,
+	}, nil
 }
 
-func DbGetNextNonceForPKIDWithTxn(txn *badger.Txn, pkid PKID,
-) (_balance uint64, _err error) {
-
-	key := _dbKeyForPKIDToNextNonce(pkid)
-	nextNonceItem, err := txn.Get(key)
-	if err != nil {
-		return uint64(0), nil
-	}
-	nextNonceBytes, err := nextNonceItem.ValueCopy(nil)
-	if err != nil {
-		return uint64(0), errors.Wrapf(
-			err, "DbGetNextNonceForPKIDWithTxn: Problem getting next nonce for: %s ",
-			PkToStringBoth(pkid[:]))
-	}
-
-	nextNonce := DecodeUint64(nextNonceBytes)
-
-	return nextNonce, nil
-}
-
-func DbGetAccountNonce(db *badger.DB, accountNonce *AccountNonce, pkid PKID) (*AccountNonce, error) {
-	var ret *AccountNonce
+func DbGetNonceEntry(db *badger.DB, accountNonce *DeSoNonce, pkid *PKID) (*NonceEntry, error) {
+	var ret *NonceEntry
 	dbErr := db.View(func(txn *badger.Txn) error {
 		var err error
-		ret, err = DbGetAccountNonceAndPKIDWithTxn(txn, accountNonce, pkid)
+		ret, err = DbGetNonceEntryWithTxn(txn, accountNonce, pkid)
 		if err != nil {
 			return errors.Wrap(err, "DbGetNonce: ")
 		}
@@ -10536,74 +10511,24 @@ func DbGetAccountNonce(db *badger.DB, accountNonce *AccountNonce, pkid PKID) (*A
 	return ret, nil
 }
 
-func DbGetNextNonceForPKID(db *badger.DB, pkid PKID,
-) (_balance uint64, _err error) {
-	ret := uint64(0)
-	dbErr := db.View(func(txn *badger.Txn) error {
-		var err error
-		ret, err = DbGetNextNonceForPKIDWithTxn(txn, pkid)
-		if err != nil {
-			return fmt.Errorf("DbGetNextNonceForPKID: %v", err)
-		}
-		return nil
-	})
-	if dbErr != nil {
-		return ret, dbErr
-	}
-	return ret, nil
-}
-
-func DbPutAccountNonceWithTxn(txn *badger.Txn, nonce *AccountNonce) error {
-	return errors.Wrap(txn.Set(_dbKeyForAccountNonce(nonce), []byte{}),
+func DbPutNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) error {
+	return errors.Wrap(txn.Set(_dbKeyForNonceEntry(nonce, pkid), []byte{}),
 		"DbPutAccountNonceWithTxn: Problem setting nonce")
 }
 
-func DbPutNextNonceForPKIDWithTxn(
-	txn *badger.Txn, pkid PKID, nextNonce uint64) error {
-
-	nextNonceBytes := EncodeUint64(nextNonce)
-
-	if err := txn.Set(_dbKeyForPKIDToNextNonce(pkid), nextNonceBytes); err != nil {
-
-		return errors.Wrapf(
-			err, "DbPutNextNonceForPKIDWithTxn: Problem adding next nonce of %d for: %s ",
-			nextNonce, PkToStringBoth(pkid[:]))
-	}
-
-	return nil
-}
-
-func DbPutAccountNonce(handle *badger.DB, nonce *AccountNonce) error {
+func DbPutNonceEntry(handle *badger.DB, nonce *DeSoNonce, pkid *PKID) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutAccountNonceWithTxn(txn, nonce)
+		return DbPutNonceEntryWithTxn(txn, nonce, pkid)
 	})
 }
 
-func DbPutNextNonceForPKID(handle *badger.DB, pkid PKID, nextNonce uint64) error {
-
-	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutNextNonceForPKIDWithTxn(txn, pkid, nextNonce)
-	})
-}
-
-func DbDeleteAccountNonceWithTxn(txn *badger.Txn, accountNonce *AccountNonce) error {
+func DbDeleteNonceEntryWithTxn(txn *badger.Txn, accountNonce *DeSoNonce, pkid *PKID) error {
 	return errors.Wrap(
-		txn.Delete(_dbKeyForAccountNonce(accountNonce)),
+		txn.Delete(_dbKeyForNonceEntry(accountNonce, pkid)),
 		"DbDeleteAccountNonceWithTxn: Problem deleting nonce")
 }
 
-func DbDeleteNextNonceForPKIDWithTxn(
-	txn *badger.Txn, pkid PKID) error {
-
-	if err := txn.Delete(_dbKeyForPKIDToNextNonce(pkid)); err != nil {
-		return errors.Wrapf(
-			err, "DbDeleteNextNonceForPKIDfoWithTxn: Problem deleting next nonce for: %s ",
-			PkToStringBoth(pkid[:]))
-	}
-	return nil
-}
-
-// TODO: Test me.
+// TODO: Test me - this is probably wrong and we'll need to adjust the keys to be left padded on block height.
 func DbDeleteExpiredNoncesAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint32) error {
 	startKey := _dbPrefixForAccountNonceBlockHeight(0)
 	endPrefix := _dbPrefixForAccountNonceBlockHeight(blockHeight)

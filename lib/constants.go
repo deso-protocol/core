@@ -586,6 +586,8 @@ type DeSoParams struct {
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
 	EncoderMigrationHeightsList []*MigrationHeight
+
+	IsRegtest bool
 }
 
 var RegtestForkHeights = ForkHeights{
@@ -651,6 +653,8 @@ func (params *DeSoParams) EnableRegtest() {
 	params.ForkHeights = RegtestForkHeights
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+	params.IsRegtest = true
 }
 
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
 	"math"
+	"math/rand"
 	"reflect"
 	"strings"
 	"time"
@@ -108,7 +109,7 @@ type UtxoView struct {
 
 	// Map of PKID to the next nonce to use for a transaction.
 	//PKIDToNextNonce map[PKID]uint64
-	AccountNonceSet Set[AccountNonce]
+	NonceMapKeyToNonceEntry map[NonceMapKey]*NonceEntry
 
 	// Map of TxHash to filled order. Needed to handle
 	// derived key accounting for DAOCoinLimitOrders
@@ -203,7 +204,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Transaction nonce map
 	//bav.PKIDToNextNonce = make(map[PKID]uint64)
-	bav.AccountNonceSet = *NewSet[AccountNonce]([]AccountNonce{})
+	bav.NonceMapKeyToNonceEntry = make(map[NonceMapKey]*NonceEntry)
 
 	bav.TxHashToFilledOrder = make(map[BlockHash][]*FilledDAOCoinLimitOrder)
 }
@@ -455,7 +456,12 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	//for pkid, nonce := range bav.PKIDToNextNonce {
 	//	newView.PKIDToNextNonce[pkid] = nonce
 	//}
-	newView.AccountNonceSet = *bav.AccountNonceSet.Copy()
+	newView.NonceMapKeyToNonceEntry = make(map[NonceMapKey]*NonceEntry,
+		len(bav.NonceMapKeyToNonceEntry))
+	for entryKey, entry := range bav.NonceMapKeyToNonceEntry {
+		newEntry := *entry
+		newView.NonceMapKeyToNonceEntry[entryKey] = &newEntry
+	}
 
 	return newView, nil
 }
@@ -1184,28 +1190,21 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 
 	// Start by resetting the expected nonce for this txn's public key.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+
 		// Make sure we haven't seen the nonce yet
-		bav.GetAccountNonce(currentTxn.TxnNonce)
-		//// Get the current nextNonce.
-		nextNonce, err := bav.GetNextNonceForPublicKey(currentTxn.PublicKey)
-		//if err != nil {
-		//	return errors.Wrapf(
-		//		err, "DisconnectTransaction: Error getting current nonce for pub key %s",
-		//		PkToStringBoth(currentTxn.PublicKey))
-		//}
-		//// Ensure that nextNonce is non-zero to prevent underflow.
-		//if nextNonce == 0 {
-		//	return fmt.Errorf("DisconnectTransaction: nextNonce was 0, this should never happen.")
-		//}
-		//// Ensure that the currentTxn's and nextNonce line up correctly.
-		//if currentTxn.TxnNonce != nextNonce-1 {
-		//	return fmt.Errorf(
-		//		"DisconnectTransaction: Txn nonce %d does not match expected nonce %d for pub key %s",
-		//		currentTxn.TxnNonce, nextNonce-1, PkToStringBoth(currentTxn.PublicKey))
-		//}
-		//
-		//// Now that we've confirmed everything, revert the next nonce.
-		//bav.SetNextNonceForPublicKey(currentTxn.PublicKey, currentTxn.TxnNonce)
+		pkidEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+		if pkidEntry == nil || pkidEntry.isDeleted {
+			return fmt.Errorf("DisconnectTransaction: PKID for public key %s does not exist", PkToString(currentTxn.PublicKey, bav.Params))
+		}
+		nonce, err := bav.GetNonceEntry(currentTxn.TxnNonce, pkidEntry.PKID)
+		if err != nil {
+			return errors.Wrapf(err, "DisconnectTransaction: Problem getting account nonce for nonce %s and PKID %v", currentTxn.TxnNonce.String(), pkidEntry.PKID)
+		}
+		// TODO: Is it possible that the nonce is already deleted from badger? I don't think so, but I'm not sure.
+		if nonce == nil || nonce.isDeleted {
+			return fmt.Errorf("DisconnectTransaction: Nonce %s hasn't been seen for PKID %v", currentTxn.TxnNonce.String(), pkidEntry.PKID)
+		}
+		bav.DeleteNonceEntry(nonce)
 	}
 
 	switch currentTxn.TxnMeta.GetTxnType() {
@@ -1808,7 +1807,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 			}
 		case TxnTypeDAOCoinLimitOrder:
 			txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
-			if txMeta.CancelOrderID == nil || !txMeta.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+			if txMeta.CancelOrderID != nil || !txMeta.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
 				break
 			}
 			transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
@@ -3172,20 +3171,33 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	// For all transactions other than block rewards, validate the nonce.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-		expectedNonce, err := bav.GetNextNonceForPublicKey(txn.PublicKey)
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(
-				err, "_connectTransaction: Error getting nonce for pub key %s",
-				PkToStringBoth(txn.PublicKey))
+		if txn.TxnNonce.ExpirationBlockHeight < uint64(blockHeight) {
+			return nil, 0, 0, 0, errors.Wrapf(RuleErrorNonceExpired,
+				"ConnectTransaction: Nonce %s has expired for public key %v",
+				txn.TxnNonce.String(), PkToStringBoth(txn.PublicKey))
 		}
-		if txn.TxnNonce != expectedNonce {
+		pkidEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+		if pkidEntry == nil || pkidEntry.isDeleted {
 			return nil, 0, 0, 0, fmt.Errorf(
-				"_connectTransaction: Txn nonce %d does not match expected nonce %d for pub key %s",
-				txn.TxnNonce, expectedNonce, PkToStringBoth(txn.PublicKey))
+				"DisconnectTransaction: PKID for public key %s does not exist",
+				PkToString(txn.PublicKey, bav.Params))
 		}
 
-		// Now that we've confirmed we have the correct nonce, increment.
-		bav.SetNextNonceForPublicKey(txn.PublicKey, expectedNonce+1)
+		nonce, err := bav.GetNonceEntry(txn.TxnNonce, pkidEntry.PKID)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"ConnectTransaction: Problem getting account nonce for nonce %s and PKID %v",
+				txn.TxnNonce.String(), pkidEntry.PKID)
+		}
+		if nonce != nil && !nonce.isDeleted {
+			return nil, 0, 0, 0, errors.Wrapf(RuleErrorReusedNonce,
+				"ConnectTransaction: Nonce %s has already been used for PKID %v",
+				txn.TxnNonce.String(), pkidEntry.PKID)
+		}
+		bav.SetNonceEntry(&NonceEntry{
+			Nonce: txn.TxnNonce,
+			PKID:  pkidEntry.PKID,
+		})
 	}
 
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
@@ -3542,56 +3554,92 @@ func (bav *UtxoView) Preload(desoBlock *MsgDeSoBlock, blockHeight uint64) error 
 	return nil
 }
 
-func (bav *UtxoView) GetAccountNonce(accountNonce *AccountNonce) (*AccountNonce, error) {
-	if bav.AccountNonceSet.Includes(*accountNonce) {
-		return accountNonce, nil
+func (bav *UtxoView) GetNonceEntry(accountNonce *DeSoNonce, pkid *PKID) (*NonceEntry, error) {
+	if accountNonce == nil {
+		return nil, fmt.Errorf("GetAccountNonceAndPKIDEntry: nil accountNonce")
 	}
-	nonce, err := DbGetAccountNonce(bav.Handle, accountNonce)
-	if nonce != nil {
-		bav.AccountNonceSet.Add(*nonce)
+	if pkid == nil {
+		return nil, fmt.Errorf("GetNonceEntry: nil pkid")
 	}
-	return nonce, err
+	mapKey := NonceMapKey{
+		Nonce: *accountNonce,
+		PKID:  *pkid,
+	}
+
+	nonceEntry, exists := bav.NonceMapKeyToNonceEntry[mapKey]
+	if exists {
+		return nonceEntry, nil
+	}
+	nonce, err := DbGetNonceEntry(bav.Handle, accountNonce, pkid)
+	if err != nil {
+		return nil, err
+	}
+	if nonce == nil {
+		return nil, nil
+	}
+	bav.NonceMapKeyToNonceEntry[mapKey] = nonce
+	return nonce, nil
+
 }
 
-func (bav *UtxoView) SetAccountNonce(accountNonce *AccountNonce) (*AccountNonce, error) {
-	bav
+func (bav *UtxoView) SetNonceEntry(nonceEntry *NonceEntry) {
+	if nonceEntry == nil {
+		glog.Errorf("SetNonceEntry: nil nonceEntry")
+		// TODO: remove panic?
+		panic("SetNonceEntry: nil nonceEntry")
+		return
+	}
+
+	bav.NonceMapKeyToNonceEntry[nonceEntry.ToMapKey()] = nonceEntry
 }
 
-//func (bav *UtxoView) GetNextNonceForPublicKey(pkBytes []byte) (uint64, error) {
-//	pkidEntry := bav.GetPKIDForPublicKey(pkBytes)
-//	if pkidEntry == nil || pkidEntry.isDeleted {
-//		return 0, fmt.Errorf("GetNextNonceForPublicKey: PKID entry is deleted for public key %s", PkToStringBoth(pkBytes))
-//	}
-//	return bav.GetNextNonceForPKID(*pkidEntry.PKID)
-//}
-//
-//func (bav *UtxoView) GetNextNonceForPKID(pkid PKID) (uint64, error) {
-//	nextNonce, nonceFound := bav.PKIDToNextNonce[pkid]
-//	if nonceFound {
-//		return nextNonce, nil
-//	}
-//	var err error
-//	nextNonce, err = DbGetNextNonceForPKID(bav.Handle, pkid)
-//	if err != nil {
-//		return 0, errors.Wrapf(err, "UtxoView.GetNextNonceForPKID: Problem fetching "+
-//			"next nonce for public key %s", PkToString(pkid[:], bav.Params))
-//	}
-//	bav.PKIDToNextNonce[pkid] = nextNonce
-//	return nextNonce, nil
-//}
-//
-//func (bav *UtxoView) SetNextNonceForPublicKey(pkBytes []byte, nextNonce uint64) {
-//	pkidEntry := bav.GetPKIDForPublicKey(pkBytes)
-//	if pkidEntry == nil || pkidEntry.isDeleted {
-//		glog.Errorf("SetNextNonceForPublicKey: PKID entry is deleted for public key %s", PkToStringBoth(pkBytes))
-//		return
-//	}
-//	bav.SetNextNonceForPKID(*pkidEntry.PKID, nextNonce)
-//}
-//
-//func (bav *UtxoView) SetNextNonceForPKID(pkid PKID, nextNonce uint64) {
-//	bav.PKIDToNextNonce[pkid] = nextNonce
-//}
+func (bav *UtxoView) DeleteNonceEntry(nonceEntry *NonceEntry) {
+	if nonceEntry == nil {
+		glog.Errorf("DeleteNonceEntry: nil nonceEntry")
+		return
+	}
+
+	nonceEntry.isDeleted = true
+	bav.SetNonceEntry(nonceEntry)
+}
+
+func (bav *UtxoView) ConstructNewAccountNonceForPublicKey(publicKey []byte, blockHeight uint64) (*DeSoNonce, error) {
+	pkidEntry := bav.GetPKIDForPublicKey(publicKey)
+	if pkidEntry == nil || pkidEntry.isDeleted {
+		return nil, fmt.Errorf(
+			"AddInputsAndChangeToTransaction: No PKID entry found for public key %s",
+			PkToStringBoth(publicKey))
+	}
+	return bav.ConstructNewAccountNonceForPKID(pkidEntry.PKID, blockHeight, 2)
+}
+
+func (bav *UtxoView) ConstructNewAccountNonceForPKID(pkid *PKID, blockHeight uint64, depth uint8) (*DeSoNonce, error) {
+	// construct nonce
+	// For now, just use a random partial ID. We can do something more sophisticated later.
+	partialID := rand.Uint64()
+	// Keep the partial IDs small for regtest.
+	if bav.Params.IsRegtest {
+		partialID = partialID % 1000
+	}
+	accountNonce := DeSoNonce{
+		PartialID: rand.Uint64(),
+		// TODO: don't hardcode 600.
+		ExpirationBlockHeight: blockHeight + 600,
+	}
+
+	// Make sure we don't have a collision.
+	nonce, err := bav.GetNonceEntry(&accountNonce, pkid)
+	if err != nil {
+		return nil, errors.Wrapf(err, "ConstructNewAccountNonceForPKID: ")
+	}
+	if nonce == nil {
+		return &accountNonce, nil
+	}
+	if depth == 0 {
+		return nil, errors.New("ConstructNewAccountNonceForPKID: Exhausted depth")
+	}
+	return bav.ConstructNewAccountNonceForPKID(pkid, blockHeight, depth-1)
+}
 
 // GetUnspentUtxoEntrysForPublicKey returns the UtxoEntrys corresponding to the
 // passed-in public key that are currently unspent. It does this while factoring
