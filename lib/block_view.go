@@ -1803,25 +1803,25 @@ func (bav *UtxoView) _connectBasicTransfer(
 			}
 		case TxnTypeDAOCoinLimitOrder:
 			txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
-			if txMeta.CancelOrderID == nil && txMeta.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
-				transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
-				if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-					return 0, 0, nil, errors.Wrap(
-						err,
-						"_connectBasicTransfer: Transactor PKID entry doesn't exist; this should never happen")
-				}
-				var explicitSpend uint64
-				for _, filledOrder := range bav.TxHashToFilledOrder[*txHash] {
-					if filledOrder == nil {
-						continue
-					}
-					if !filledOrder.TransactorPKID.Eq(transactorPKIDEntry.PKID) {
-						explicitSpend += filledOrder.CoinQuantityInBaseUnitsBought.Uint64()
-					}
-				}
-				totalInput += explicitSpend
+			if txMeta.CancelOrderID != nil || !txMeta.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+				break
 			}
-
+			transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+			if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+				return 0, 0, nil, errors.Wrap(
+					err,
+					"_connectBasicTransfer: Transactor PKID entry doesn't exist; this should never happen")
+			}
+			var explicitSpend uint64
+			for _, filledOrder := range bav.TxHashToFilledOrder[*txHash] {
+				if filledOrder == nil {
+					continue
+				}
+				if !filledOrder.TransactorPKID.Eq(transactorPKIDEntry.PKID) {
+					explicitSpend += filledOrder.CoinQuantityInBaseUnitsBought.Uint64()
+				}
+			}
+			totalInput += explicitSpend
 		}
 	}
 
