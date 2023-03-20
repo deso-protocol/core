@@ -4745,7 +4745,6 @@ func (bc *Blockchain) CreateMaxSpend(
 				"Blockchain.CreateMaxSpend: Problem getting next nonce: ")
 		}
 
-
 		feeAmountNanos := uint64(0)
 		prevFeeAmountNanos := uint64(0)
 		for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {

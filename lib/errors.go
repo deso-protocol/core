@@ -475,7 +475,7 @@ const (
 	RuleErrorCreateProfileTxnWithInsufficientFee RuleError = "RuleErrorCreateProfileTxnWithInsufficientFee"
 	RuleErrorCreateNFTTxnWithInsufficientFee     RuleError = "RuleErrorCreateNFTTxnWithInsufficientFee"
 	RuleErrorCreatorCoinBuyWithInsufficientFee   RuleError = "RuleErrorCreatorCoinBuyWithInsufficientFee"
-	RuleErrorReusedNonce 					     RuleError = "RuleErrorReusedNonce"
+	RuleErrorReusedNonce                         RuleError = "RuleErrorReusedNonce"
 	RuleErrorNonceExpired                        RuleError = "RuleErrorNonceExpired"
 
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"

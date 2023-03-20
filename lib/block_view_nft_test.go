@@ -1279,7 +1279,7 @@ func TestNFTBasic(t *testing.T) {
 		nftFee := utxoView.GlobalParamsEntry.CreateNFTFeeNanos * numCopies
 
 		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(getConditionalBalance(24, 26), m0BalBeforeNFT)
+		require.Equal(getConditionalBalance(24, 25), m0BalBeforeNFT)
 
 		extraData := map[string][]byte{
 			"rarity": []byte("high"),
@@ -1306,7 +1306,7 @@ func TestNFTBasic(t *testing.T) {
 
 		// Check that m0 was charged the correct nftFee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(getConditionalBalance(24, 26)-1-nftFee, m0BalAfterNFT)
+		require.Equal(getConditionalBalance(24, 25)-1-nftFee, m0BalAfterNFT)
 
 		nftEntry := DBGetNFTEntryByPostHashSerialNumber(db, chain.snapshot, post2Hash, 1)
 		require.Len(nftEntry.ExtraData, 1)

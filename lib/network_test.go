@@ -392,7 +392,7 @@ func expectedTransactions(includeV1Fields bool) []*MsgDeSoTxn {
 		txns[1].TxnFeeNanos = 123
 		txns[1].TxnNonce = &DeSoNonce{
 			ExpirationBlockHeight: 1,
-			PartialID: 123,
+			PartialID:             123,
 		}
 	}
 

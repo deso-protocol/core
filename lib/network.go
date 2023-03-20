@@ -2884,7 +2884,7 @@ type NonceMapKey struct {
 
 type DeSoNonce struct {
 	ExpirationBlockHeight uint64
-	PartialID			  uint64
+	PartialID             uint64
 }
 
 func (nonce *DeSoNonce) ToBytes() []byte {

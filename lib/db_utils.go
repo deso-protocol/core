@@ -5237,7 +5237,6 @@ func RandomBytesHex(numBytes int32) string {
 	return hex.EncodeToString(RandomBytes(numBytes))
 }
 
-
 // RandInt64 returns a random 64-bit int.
 func RandInt64(max int64) int64 {
 	val, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt64))
@@ -10491,7 +10490,7 @@ func DbGetNonceEntryWithTxn(txn *badger.Txn, accountNonce *DeSoNonce, pkid *PKID
 	}
 	return &NonceEntry{
 		Nonce: accountNonce,
-		PKID: pkid,
+		PKID:  pkid,
 	}, nil
 }
 
