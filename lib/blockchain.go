@@ -3629,7 +3629,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 	if metadata.CancelOrderID == nil {
 		// CancelOrderID is nil, so we know we're submitting a new order.
-		transactorOrder = utxoView.ConstructTransactorOrderFromTxn(txn, blockHeight)
+		transactorOrder = utxoView.ConvertTxnToDAOCoinLimitOrderEntry(txn, blockHeight)
 	}
 
 	// We use "explicitSpend" to track how much we need to spend to cover the transactor's bid in DESO.

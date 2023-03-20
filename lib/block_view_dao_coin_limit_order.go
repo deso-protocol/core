@@ -619,6 +619,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
 	}
 
+	// After connecting the basic transfer, the filled orders are no longer needed on the view
+	delete(bav.TxHashToFilledOrder, *txHash)
+
 	// This is the amount of DESO each account is allowed to spend based on the
 	// UTXOs passed-in. We compute this first to know what our "budget" is for
 	// each account. At the end, we will use this map to compute change amounts
@@ -827,21 +830,33 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 							return 0, 0, nil, err
 						}
 						// Add the DESO to the total output.
-						totalOutput += newDESOSurplus.Uint64()
+						if !newDESOSurplus.IsUint64() {
+							return 0, 0, nil, errors.New(
+								"_connectDAOCoinLimitOrder: New DESO surplus is not uint64")
+						}
+						totalOutput, err = SafeUint64().Add(totalOutput, newDESOSurplus.Uint64())
+						if err != nil {
+							return 0, 0, nil, errors.Wrapf(
+								err, "_connectDAOCoinLimitOrder: Problem adding total output: ")
+						}
 					} else {
-						spendAmount := newDESOSurplus.Neg(newDESOSurplus).Uint64()
+						spendAmountUint256 := newDESOSurplus.Neg(newDESOSurplus)
+						if !spendAmountUint256.IsUint64() {
+							return 0, 0, nil, errors.New(
+								"_connectDAOCoinLimitOrder: Spend amount is not uint64")
+						}
+						spendAmount := spendAmountUint256.Uint64()
 						if utxoOp, err = bav._spendBalance(spendAmount, pubKey, blockHeight); err != nil {
 							return 0, 0, nil, err
 						}
 						// Add the spend amount to the total input
-						totalInput += spendAmount
 						// The spend amount is already accounted for in the
 						// basic transfer. We look at the filled orders there
 						// to properly compute the total input to account for
 						// the derived key spending limits. We don't want to double
 						// count it, so we deduct it here.
-						if bytes.Equal(pubKey, txn.PublicKey) {
-							totalInput -= spendAmount
+						if !bytes.Equal(pubKey, txn.PublicKey) {
+							totalInput += spendAmount
 						}
 					}
 					utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
@@ -2013,7 +2028,7 @@ func (bav *UtxoView) GetDESONanosToFillOrder(transactorOrder *DAOCoinLimitOrderE
 	return desoNanosToFulfillOrders.Uint64(), nil
 }
 
-func (bav *UtxoView) ConstructTransactorOrderFromTxn(txn *MsgDeSoTxn, blockHeight uint32) *DAOCoinLimitOrderEntry {
+func (bav *UtxoView) ConvertTxnToDAOCoinLimitOrderEntry(txn *MsgDeSoTxn, blockHeight uint32) *DAOCoinLimitOrderEntry {
 	metadata := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
 	return &DAOCoinLimitOrderEntry{
 		OrderID:                   txn.Hash(),

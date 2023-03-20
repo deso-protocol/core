@@ -1812,16 +1812,22 @@ func (bav *UtxoView) _connectBasicTransfer(
 					err,
 					"_connectBasicTransfer: Transactor PKID entry doesn't exist; this should never happen")
 			}
-			var explicitSpend uint64
+			var totalSpend uint64
 			for _, filledOrder := range bav.TxHashToFilledOrder[*txHash] {
+				// Skip nil orders
 				if filledOrder == nil {
 					continue
 				}
-				if !filledOrder.TransactorPKID.Eq(transactorPKIDEntry.PKID) {
-					explicitSpend += filledOrder.CoinQuantityInBaseUnitsBought.Uint64()
+				// Skip filled orders for the transactor since the transactor doesn't pay itself.
+				if filledOrder.TransactorPKID.Eq(transactorPKIDEntry.PKID) {
+					continue
 				}
+				if !filledOrder.CoinQuantityInBaseUnitsBought.IsUint64() {
+					return 0, 0, nil, errors.New(
+						"_connectBasicTransfer: filledOrder.CoinQuantityInBaseUnitsBought is not a uint64")
+				}
+				totalSpend, err = SafeUint64().Add(totalSpend, filledOrder.CoinQuantityInBaseUnitsBought.Uint64())
 			}
-			totalInput += explicitSpend
 		}
 	}
 
