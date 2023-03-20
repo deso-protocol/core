@@ -8,11 +8,14 @@ import (
 	"os"
 )
 
+type StateSyncerOperationType uint8
+
 const (
-	DbOperationTypeInsert = uint8(0)
-	DbOperationTypeDelete = uint8(1)
-	DbOperationTypeUpdate = uint8(2)
-	DbOperationTypeUpsert = uint8(3)
+	// We intentionally skip zero as otherwise that would be the default value.
+	DbOperationTypeInsert StateSyncerOperationType = 0
+	DbOperationTypeDelete StateSyncerOperationType = 1
+	DbOperationTypeUpdate StateSyncerOperationType = 2
+	DbOperationTypeUpsert StateSyncerOperationType = 3
 )
 
 func createLogFile(fileName string) *os.File {
@@ -43,26 +46,30 @@ func NewStateChangeSyncer(desoParams *DeSoParams) *StateChangeSyncer {
 // It also writes the offset of the entry in the file to a separate index file, such that a consumer can look up a
 // particular entry index in the state change file.
 func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransactionEvent) {
-	key := event.Key
-	entryBytes := event.Value
+	keyBytes := event.Key
+	valueBytes := event.Value
 	// Check to see if the index in question has a "core_state" annotation in it's definition.
-	if !isCoreStateKey(key) {
+	if !isCoreStateKey(keyBytes) {
 		return
 	}
 
-	// Get the encoder type for this key.
+	// Get the encoder type for this keyBytes.
 	var encoderType EncoderType
-	// Get the relevant deso encoder for this key.
-	if isEncoder, encoder := StateKeyToDeSoEncoder(key); isEncoder && encoder != nil {
+	// Get the relevant deso encoder for this keyBytes.
+	if isEncoder, encoder := StateKeyToDeSoEncoder(keyBytes); isEncoder && encoder != nil {
 		encoderType = encoder.GetEncoderType()
 	} else {
-		glog.Errorf("Server._handleDbTransaction: Problem getting deso encoder from key")
+		glog.Errorf("Server._handleDbTransaction: Problem getting deso encoder from keyBytes")
 		return
 	}
 
-	// Get byte length of value.
-	valueLen := uint16(len(entryBytes))
+	// Get byte length of keyBytes
+	keyLen := uint16(len(keyBytes))
+	keyLenBytes := make([]byte, 2)
+	binary.LittleEndian.PutUint16(keyLenBytes, keyLen)
 
+	// Get byte length of value.
+	valueLen := uint16(len(valueBytes))
 	// Convert the value length to a byte slice.
 	valueLenBytes := make([]byte, 2)
 	binary.LittleEndian.PutUint16(valueLenBytes, valueLen)
@@ -77,14 +84,18 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	binary.Write(buf, binary.LittleEndian, event.OperationType)
 	operationTypeBytes = buf.Bytes()
 
-	// Append the value length and encoder type to the protobuf bytes.
-	valueWithLengthAndEncoderTypeBytes := append(valueLenBytes, encoderTypeBytes...)
-	valueWithLengthAndEncoderTypeBytes = append(valueWithLengthAndEncoderTypeBytes, operationTypeBytes...)
-	valueWithLengthAndEncoderTypeBytes = append(valueWithLengthAndEncoderTypeBytes, entryBytes...)
+	// Construct the bytes to be written to the file.
+	// The format is:
+	// [operation type (1 byte)][encoder type (2 bytes)][key length (2 bytes)][key bytes][value length (2 bytes)][value bytes]
+	writeBytes := append(operationTypeBytes, encoderTypeBytes...)
+	writeBytes = append(writeBytes, keyLenBytes...)
+	writeBytes = append(writeBytes, keyBytes...)
+	writeBytes = append(writeBytes, valueLenBytes...)
+	writeBytes = append(writeBytes, valueBytes...)
 
-	fmt.Printf("\n\n*****Printing to file: %+v\n\n", valueWithLengthAndEncoderTypeBytes)
+	fmt.Printf("\n\n*****Printing to file: %+v\n\n", writeBytes)
 	// Write the bytes to file.
-	_, err := stateChangeSyncer.StateChangeFile.Write(valueWithLengthAndEncoderTypeBytes)
+	_, err := stateChangeSyncer.StateChangeFile.Write(writeBytes)
 	if err != nil {
 		glog.Errorf("Error writing to state change file: %v", err)
 	}
@@ -103,6 +114,6 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	fmt.Printf("\n\n*****Printing to index file: %+v\n\n", dbOperationIndexBytes)
 
 	// Update the state change file size.
-	transactionLen := uint32(len(entryBytes) + 5)
+	transactionLen := uint32(len(valueBytes) + 5)
 	stateChangeSyncer.StateChangeFileSize += transactionLen
 }

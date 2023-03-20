@@ -8,7 +8,7 @@ type SnapshotCompletedEventFunc func()
 type DBTransactionEvent struct {
 	Key           []byte
 	Value         []byte
-	OperationType uint8
+	OperationType StateSyncerOperationType
 }
 
 type TransactionEvent struct {
