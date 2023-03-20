@@ -1812,7 +1812,6 @@ func (bav *UtxoView) _connectBasicTransfer(
 					err,
 					"_connectBasicTransfer: Transactor PKID entry doesn't exist; this should never happen")
 			}
-			var totalSpend uint64
 			for _, filledOrder := range bav.TxHashToFilledOrder[*txHash] {
 				// Skip nil orders
 				if filledOrder == nil {
@@ -1826,7 +1825,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 					return 0, 0, nil, errors.New(
 						"_connectBasicTransfer: filledOrder.CoinQuantityInBaseUnitsBought is not a uint64")
 				}
-				totalSpend, err = SafeUint64().Add(totalSpend, filledOrder.CoinQuantityInBaseUnitsBought.Uint64())
+				totalInput, err = SafeUint64().Add(totalInput, filledOrder.CoinQuantityInBaseUnitsBought.Uint64())
 			}
 		}
 	}
