@@ -370,14 +370,6 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 			}
 		}
 
-		// We need to unspend the DESO that was spent on this transaction for balance model.
-		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-			if err := bav._unSpendBalance(txMeta.DeSoToSellNanos, currentTxn.PublicKey); err != nil {
-				return errors.Wrapf(err, "_disconnectCreatorCoin: Problem unspending "+
-					"balance for %v: ", currentTxn.PublicKey)
-			}
-		}
-
 		// Reset the Buyer's BalanceEntry to what it was previously.
 		*transactorBalanceEntry = *operationData.PrevTransactorBalanceEntry
 		bav._setCreatorCoinBalanceEntryMappings(transactorBalanceEntry)
@@ -617,8 +609,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransferWithExtraSpend(
+		txn, txHash, blockHeight, txn.TxnMeta.(*CreatorCoinMetadataa).DeSoToSellNanos, verifySignatures)
 	if err != nil {
 		return 0, 0, 0, 0, nil, errors.Wrapf(err, "_connectCreatorCoin: ")
 	}
@@ -638,17 +630,6 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	txMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
 	if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, 0, 0, nil, RuleErrorCreatorCoinInvalidPubKeySize
-	}
-
-	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-		// We need to explicitly spend the deso to sell nanos
-		utxoOp, err := bav._spendBalance(txMeta.DeSoToSellNanos, txn.PublicKey, blockHeight-1)
-		if err != nil {
-			return 0, 0, 0, 0, nil, errors.Wrapf(
-				err, "_connectCreatorCoin: Problem spending balance: ")
-		}
-		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
-		totalInput += txMeta.DeSoToSellNanos
 	}
 
 	// Dig up the profile. It must exist for the user to be able to
