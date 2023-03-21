@@ -846,7 +846,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 								"_connectDAOCoinLimitOrder: Spend amount is not uint64")
 						}
 						spendAmount := spendAmountUint256.Uint64()
-						if utxoOp, err = bav._spendBalance(spendAmount, pubKey, blockHeight); err != nil {
+						if utxoOp, err = bav._spendBalance(spendAmount, pubKey, blockHeight-1); err != nil {
 							return 0, 0, nil, err
 						}
 						// Add the spend amount to the total input

@@ -642,7 +642,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 		// We need to explicitly spend the deso to sell nanos
-		utxoOp, err := bav._spendBalance(txMeta.DeSoToSellNanos, txn.PublicKey, blockHeight)
+		utxoOp, err := bav._spendBalance(txMeta.DeSoToSellNanos, txn.PublicKey, blockHeight-1)
 		if err != nil {
 			return 0, 0, 0, 0, nil, errors.Wrapf(
 				err, "_connectCreatorCoin: Problem spending balance: ")
