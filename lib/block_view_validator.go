@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"math"
@@ -50,6 +51,10 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 		ExtraData:             extraDataCopy,
 		isDeleted:             validatorEntry.isDeleted,
 	}
+}
+
+func (validatorEntry *ValidatorEntry) Eq(other *ValidatorEntry, blockHeight uint64) bool {
+	return bytes.Equal(EncodeToBytes(blockHeight, validatorEntry), EncodeToBytes(blockHeight, other))
 }
 
 func (validatorEntry *ValidatorEntry) ToMapKey() ValidatorMapKey {
@@ -134,7 +139,7 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 	return nil
 }
 
-func (validatorEntry *ValidatorEntry) GetVersionByte(_ uint64) byte {
+func (validatorEntry *ValidatorEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
@@ -155,7 +160,7 @@ func (txnData *RegisterAsValidatorMetadata) GetTxnType() TxnType {
 	return 0 // TODO
 }
 
-func (txnData *RegisterAsValidatorMetadata) ToBytes(_ bool) ([]byte, error) {
+func (txnData *RegisterAsValidatorMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 
 	// Domains
@@ -207,7 +212,7 @@ func (txnData *UnregisterAsValidatorMetadata) GetTxnType() TxnType {
 	return 0 // TODO
 }
 
-func (txnData *UnregisterAsValidatorMetadata) ToBytes(_ bool) ([]byte, error) {
+func (txnData *UnregisterAsValidatorMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	return []byte{}, nil
 }
 
@@ -297,7 +302,7 @@ func (txindexMetadata *RegisterAsValidatorTxindexMetadata) RawDecodeWithoutMetad
 	return nil
 }
 
-func (txindexMetadata *RegisterAsValidatorTxindexMetadata) GetVersionByte(_ uint64) byte {
+func (txindexMetadata *RegisterAsValidatorTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
@@ -314,14 +319,14 @@ type UnstakedStakerTxindexMetadata struct {
 	UnstakeAmountNanos         *uint256.Int
 }
 
-func (txindexMetadata *UnstakedStakerTxindexMetadata) RawEncodeWithoutMetadata(_ uint64, _ ...bool) []byte {
+func (txindexMetadata *UnstakedStakerTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.StakerPublicKeyBase58Check))...)
 	data = append(data, EncodeUint256(txindexMetadata.UnstakeAmountNanos)...)
 	return data
 }
 
-func (txindexMetadata *UnstakedStakerTxindexMetadata) RawDecodeWithoutMetadata(_ uint64, rr *bytes.Reader) error {
+func (txindexMetadata *UnstakedStakerTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
 	// StakerPublicKeyBase58Check
@@ -389,10 +394,275 @@ func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) RawDecodeWithoutMet
 	return nil
 }
 
-func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetVersionByte(_ uint64) byte {
+func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
 
 func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetEncoderType() EncoderType {
 	return 0 // TODO
+}
+
+//
+// ValidatorEntry db utils
+//
+
+func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
+	var key []byte
+	// key = append(key, Prefixes.PrefixValidatorByPKID...) // TODO
+	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
+	return key
+}
+
+func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
+	var key []byte
+	// key = append(key, Prefixes.PrefixValidatorByStake...) // TODO
+	key = append(key, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)               // Highest stake first
+	key = append(key, _EncodeUint32(math.MaxUint32-validatorEntry.CreatedAtBlockHeight)...) // Oldest first
+	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
+	return key
+}
+
+func DBGetValidatorByPKID(handle *badger.DB, snap *Snapshot, pkid *PKID) (*ValidatorEntry, error) {
+	var ret *ValidatorEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetValidatorByPKIDWithTxn(txn, snap, pkid)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetValidatorByPKIDWithTxn(txn *badger.Txn, snap *Snapshot, pkid *PKID) (*ValidatorEntry, error) {
+	// Retrieve ValidatorEntry from db.
+	key := DBKeyForValidatorByPKID(&ValidatorEntry{ValidatorPKID: pkid})
+	validatorBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetValidatorByPKID: problem retrieving ValidatorEntry")
+	}
+
+	// Decode ValidatorEntry from bytes.
+	validatorEntry := &ValidatorEntry{}
+	rr := bytes.NewReader(validatorBytes)
+	if exist, err := DecodeFromBytes(validatorEntry, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetValidatorByPKID: problem decoding ValidatorEntry")
+	}
+	return validatorEntry, nil
+}
+
+func DBGetTopValidatorsByStake(handle *badger.DB, snap *Snapshot, limit uint64) ([]*ValidatorEntry, error) {
+	var validatorEntries []*ValidatorEntry
+
+	// Retrieve top N ValidatorEntry PKIDs by stake.
+	var key []byte
+	// key := Prefixes.PrefixValidatorByStake // TODO
+	key = append(key)
+	_, validatorPKIDsBytes, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+		handle, key, int(limit), nil, true, NewSet([]string{}),
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetTopValidatorsByStake: problem retrieving top validators: ")
+	}
+
+	// For each PKID, retrieve the ValidatorEntry by PKID.
+	for _, validatorPKIDBytes := range validatorPKIDsBytes {
+		validatorEntry, err := DBGetValidatorByPKID(handle, snap, NewPKID(validatorPKIDBytes))
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetTopValidatorsByStake: problem retrieving validator by PKID: ")
+		}
+		validatorEntries = append(validatorEntries, validatorEntry)
+	}
+
+	return validatorEntries, nil
+}
+
+func DBGetGlobalStakeAmountNanos(handle *badger.DB, snap *Snapshot) (*uint256.Int, error) {
+	var ret *uint256.Int
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetGlobalStakeAmountNanosWithTxn(txn, snap)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetGlobalStakeAmountNanosWithTxn(txn *badger.Txn, snap *Snapshot) (*uint256.Int, error) {
+	// Retrieve from db.
+	var key []byte
+	// key := Prefixes.PrefixGlobalStakeAmountNanos // TODO
+	globalStakeAmountNanosBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return 0.
+		if err == badger.ErrKeyNotFound {
+			return uint256.NewInt(), nil
+		}
+		return nil, errors.Wrapf(err, "DBGetGlobalStakeAmountNanosWithTxn: problem retrieving value")
+	}
+
+	// Decode from bytes.
+	var globalStakeAmountNanos *uint256.Int
+	rr := bytes.NewReader(globalStakeAmountNanosBytes)
+	globalStakeAmountNanos, err = DecodeUint256(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetGlobalStakeAmountNanosWithTxn: problem decoding value")
+	}
+	return globalStakeAmountNanos, nil
+}
+
+func DBPutValidatorWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	validatorEntry *ValidatorEntry,
+	blockHeight uint64,
+) error {
+	if validatorEntry == nil {
+		return nil
+	}
+	validatorEntryBytes := EncodeToBytes(blockHeight, validatorEntry)
+
+	// Retrieve existing ValidatorEntry.
+	prevValidatorEntry, err := DBGetValidatorByPKIDWithTxn(txn, snap, validatorEntry.ValidatorPKID)
+	if err != nil {
+		return errors.Wrapf(err, "DBPutValidatorWithTxn: problem retrieving validator by PKID: ")
+	}
+	if validatorEntry.Eq(prevValidatorEntry, blockHeight) {
+		return nil
+	}
+
+	// Set ValidatorEntry in PrefixValidatorByPKID.
+	key := DBKeyForValidatorByPKID(validatorEntry)
+	if err = DBSetWithTxn(txn, snap, key, validatorEntryBytes); err != nil {
+		return errors.Wrapf(
+			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByPKID",
+		)
+	}
+
+	if !validatorEntry.TotalStakeAmountNanos.Eq(prevValidatorEntry.TotalStakeAmountNanos) {
+		// Delete existing entry in PrefixValidatorByStake.
+		key = DBKeyForValidatorByStake(prevValidatorEntry)
+		if err = DBDeleteWithTxn(txn, snap, key); err != nil {
+			return errors.Wrapf(
+				err, "DBPutValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByStake",
+			)
+		}
+
+		// Set new entry in PrefixValidatorByStake.
+		key = DBKeyForValidatorByStake(validatorEntry)
+		if err = DBSetWithTxn(txn, snap, key, validatorEntry.ValidatorPKID.ToBytes()); err != nil {
+			return errors.Wrapf(
+				err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByPKID",
+			)
+		}
+
+		// Update PrefixGlobalStakeAmountNanos.
+		// Retrieve existing GlobalStakeAmountNanos.
+		var globalStakeAmountNanos *uint256.Int
+		globalStakeAmountNanos, err = DBGetGlobalStakeAmountNanosWithTxn(txn, snap)
+		if err != nil {
+			return errors.Wrapf(
+				err, "DBPutValidatorWithTxn: problem retrieving value from index PrefixGlobalStakeAmountNanos",
+			)
+		}
+
+		// Calculate change in GlobalStakeAmountNanos.
+		var deltaStakeAmountNanos *uint256.Int
+		if validatorEntry.TotalStakeAmountNanos.Lt(prevValidatorEntry.TotalStakeAmountNanos) {
+			// Validator stake has been decreased.
+			deltaStakeAmountNanos, err = SafeUint256().Sub(
+				prevValidatorEntry.TotalStakeAmountNanos, validatorEntry.TotalStakeAmountNanos,
+			)
+			if err != nil {
+				return errors.Wrapf(
+					err, "DBPutValidatorWithTxn: problem calculating decrease in validator's stake",
+				)
+			}
+			globalStakeAmountNanos, err = SafeUint256().Sub(globalStakeAmountNanos, deltaStakeAmountNanos)
+			if err != nil {
+				return errors.Wrapf(
+					err, "DBPutValidatorWithTxn: problem calculating decrease in global stake",
+				)
+			}
+		} else {
+			// Validator stake has been increased.
+			deltaStakeAmountNanos, err = SafeUint256().Sub(
+				validatorEntry.TotalStakeAmountNanos, prevValidatorEntry.TotalStakeAmountNanos,
+			)
+			if err != nil {
+				return errors.Wrapf(
+					err, "DBPutValidatorWithTxn: problem calculating increase in validator's stake",
+				)
+			}
+			globalStakeAmountNanos, err = SafeUint256().Add(globalStakeAmountNanos, deltaStakeAmountNanos)
+			if err != nil {
+				return errors.Wrapf(
+					err, "DBPutValidatorWithTxn: problem calculating increase in global stake",
+				)
+			}
+		}
+
+		// Set updated GlobalStakeAmountNanos.
+		// key = Prefixes.PrefixGlobalStakeAmountNanos // TODO
+		if err = DBSetWithTxn(txn, snap, key, EncodeUint256(globalStakeAmountNanos)); err != nil {
+			return errors.Wrapf(
+				err, "DBPutValidatorWithTxn: problem storing value in index PrefixGlobalStakeAmountNanos",
+			)
+		}
+	}
+
+	return nil
+}
+
+func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorEntry *ValidatorEntry) error {
+	if validatorEntry == nil {
+		return nil
+	}
+	var key []byte
+	var err error
+
+	// Delete ValidatorEntry from PrefixValidatorByPKID.
+	key = DBKeyForValidatorByPKID(validatorEntry)
+	if err = DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByPKID",
+		)
+	}
+
+	// Delete ValidatorEntry from PrefixValidatorByStake.
+	key = DBKeyForValidatorByStake(validatorEntry)
+	if err = DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByPKID",
+		)
+	}
+
+	// Update PrefixGlobalStakeAmountNanos.
+	// Retrieve existing GlobalStakeAmountNanos.
+	var globalStakeAmountNanos *uint256.Int
+	globalStakeAmountNanos, err = DBGetGlobalStakeAmountNanosWithTxn(txn, snap)
+	if err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteValidatorWithTxn: problem retrieving value from index PrefixGlobalStakeAmountNanos",
+		)
+	}
+
+	// Calculate change in GlobalStakeAmountNanos.
+	globalStakeAmountNanos, err = SafeUint256().Sub(globalStakeAmountNanos, validatorEntry.TotalStakeAmountNanos)
+	if err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteValidatorWithTxn: problem calculating decrease in global stake",
+		)
+	}
+
+	// Set updated GlobalStakeAmountNanos.
+	// key = Prefixes.PrefixGlobalStakeAmountNanos // TODO
+	if err = DBSetWithTxn(txn, snap, key, EncodeUint256(globalStakeAmountNanos)); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteValidatorWithTxn: problem storing value in index PrefixGlobalStakeAmountNanos",
+		)
+	}
+
+	return nil
 }
