@@ -198,6 +198,28 @@ func (txnData *RegisterAsValidatorMetadata) New() DeSoTxnMetadata {
 }
 
 //
+// UnregisterAsValidatorMetadata
+//
+
+type UnregisterAsValidatorMetadata struct{}
+
+func (txnData *UnregisterAsValidatorMetadata) GetTxnType() TxnType {
+	return 0 // TODO
+}
+
+func (txnData *UnregisterAsValidatorMetadata) ToBytes(_ bool) ([]byte, error) {
+	return []byte{}, nil
+}
+
+func (txnData *UnregisterAsValidatorMetadata) FromBytes(data []byte) error {
+	return nil
+}
+
+func (txnData *UnregisterAsValidatorMetadata) New() DeSoTxnMetadata {
+	return &UnregisterAsValidatorMetadata{}
+}
+
+//
 // RegisterAsValidatorTxindexMetadata
 //
 
@@ -275,6 +297,14 @@ func (txindexMetadata *RegisterAsValidatorTxindexMetadata) RawDecodeWithoutMetad
 	return nil
 }
 
+func (txindexMetadata *RegisterAsValidatorTxindexMetadata) GetVersionByte(_ uint64) byte {
+	return 0
+}
+
+func (txindexMetadata *RegisterAsValidatorTxindexMetadata) GetEncoderType() EncoderType {
+	return 0 // TODO
+}
+
 //
 // UnstakedStakerTxindexMetadata
 //
@@ -308,4 +338,61 @@ func (txindexMetadata *UnstakedStakerTxindexMetadata) RawDecodeWithoutMetadata(_
 	}
 
 	return nil
+}
+
+//
+// UnregisterAsValidatorTxindexMetadata
+//
+
+type UnregisterAsValidatorTxindexMetadata struct {
+	ValidatorPublicKeyBase58Check string
+	UnstakedStakers               []*UnstakedStakerTxindexMetadata
+}
+
+func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(txindexMetadata.ValidatorPublicKeyBase58Check))...)
+
+	// UnstakedStakers
+	data = append(data, UintToBuf(uint64(len(txindexMetadata.UnstakedStakers)))...)
+	for _, unstakedStaker := range txindexMetadata.UnstakedStakers {
+		data = append(data, unstakedStaker.RawEncodeWithoutMetadata(blockHeight, skipMetadata...)...)
+	}
+
+	return data
+}
+
+func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	// ValidatorPublicKeyBase58Check
+	validatorPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnregisterAsValidatorTxindexMetadata.Decode: Problem reading ValidatorPublicKeyBase58Check: ")
+	}
+	txindexMetadata.ValidatorPublicKeyBase58Check = string(validatorPublicKeyBase58CheckBytes)
+
+	// UnstakedStakers
+	numUnstakedStakers, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnregisterAsValidatorTxindexMetadata.Decode: Problem reading UnstakedStakers: ")
+	}
+	for ii := 0; ii < int(numUnstakedStakers); ii++ {
+		unstakedStaker := &UnstakedStakerTxindexMetadata{}
+		err = unstakedStaker.RawDecodeWithoutMetadata(blockHeight, rr)
+		if err != nil {
+			return errors.Wrapf(err, "UnregisterAsValidatorTxindexMetadata.Decode: Problem reading UnstakedStakers: ")
+		}
+		txindexMetadata.UnstakedStakers = append(txindexMetadata.UnstakedStakers, unstakedStaker)
+	}
+
+	return nil
+}
+
+func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetVersionByte(_ uint64) byte {
+	return 0
+}
+
+func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetEncoderType() EncoderType {
+	return 0 // TODO
 }
