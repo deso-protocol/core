@@ -1000,16 +1000,10 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 	// we add the spent DESO + txn fees back to the sender's balance. In the balance model
 	// no UTXOs are stored so outputs do not need to be looked up or deleted.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-		totalSpend := currentTxn.TxnFeeNanos
 		for outputIndex := len(currentTxn.TxOutputs) - 1; outputIndex >= 0; outputIndex-- {
 			currentOutput := currentTxn.TxOutputs[outputIndex]
 			if err := bav._unAddBalance(currentOutput.AmountNanos, currentOutput.PublicKey); err != nil {
 				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding output %v: ", currentOutput)
-			}
-			var err error
-			totalSpend, err = SafeUint64().Add(totalSpend, currentOutput.AmountNanos)
-			if err != nil {
-				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem adding %d to total spend %d", currentOutput.AmountNanos, totalSpend)
 			}
 		}
 		// Block reward transactions don't unspend DESO since it is newly created DESO
