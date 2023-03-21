@@ -1203,7 +1203,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		totalOutput += bidAmountNanos
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 			// spend the bid amount and add the bid amount to the input amount
-			utxoOp, err := bav._spendBalance(args.BidAmountNanos, args.Txn.PublicKey, blockHeight)
+			utxoOp, err := bav._spendBalance(args.BidAmountNanos, args.Txn.PublicKey, blockHeight-1)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: error spending bid amount")
 			}
