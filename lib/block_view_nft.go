@@ -689,7 +689,7 @@ func (bav *UtxoView) _connectCreateNFT(
 	if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		totalOutput += nftFee
 	} else if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-		utxoOp, err := bav._spendBalance(nftFee, txn.PublicKey, blockHeight-1)
+		utxoOp, err := bav._spendBalance(nftFee, txn.PublicKey, blockHeight)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectCreateNFT: error assess NFT fee")
 		}
