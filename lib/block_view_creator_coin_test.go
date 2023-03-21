@@ -4363,14 +4363,10 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
 		}
 	} else {
-		// Spend for fee and then spend DESO for cc.
 		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
-		if OperationType == CreatorCoinOperationTypeBuy {
-			require.Equal(OperationTypeSpendBalance, utxoOps[1].Type)
-			if numOps == 4 {
-				// Founder reward case.
-				require.Equal(OperationTypeAddBalance, utxoOps[2].Type)
-			}
+		if OperationType == CreatorCoinOperationTypeBuy && numOps == 3 {
+			// Founder reward case.
+			require.Equal(OperationTypeAddBalance, utxoOps[1].Type)
 		}
 	}
 	require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)

@@ -592,10 +592,18 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 	}
 
-	// We save the filled orders on the view so the basic transfer connection
-	// logic can use them to compute the spend amount and handle the
-	// accounting logic for derived key's spending limits.
-	bav.TxHashToFilledOrder[*txHash] = filledOrders
+	var extraSpend uint64
+	if txMeta.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+		desoDelta := balanceDeltas[*transactorPKIDEntry.PKID][ZeroPKID]
+		if desoDelta != nil && desoDelta.Sign() < 0 {
+			desoDeltaNeg := big.NewInt(0).Neg(desoDelta)
+			if !desoDeltaNeg.IsUint64() {
+				return 0, 0, nil, fmt.Errorf("_connectDAOCoinLimitOrder: "+
+					"DesoDelta %v overflows uint64", desoDelta)
+			}
+			extraSpend = desoDeltaNeg.Uint64()
+		}
+	}
 
 	// Now, we need to update all the balances of all the users who were involved in
 	// all of the matching that we did above. We do this via the following steps:
@@ -613,14 +621,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransferWithExtraSpend(
+		txn, txHash, blockHeight, extraSpend, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
 	}
-
-	// After connecting the basic transfer, the filled orders are no longer needed on the view
-	delete(bav.TxHashToFilledOrder, *txHash)
 
 	// This is the amount of DESO each account is allowed to spend based on the
 	// UTXOs passed-in. We compute this first to know what our "budget" is for
@@ -840,24 +845,23 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 								err, "_connectDAOCoinLimitOrder: Problem adding total output: ")
 						}
 					} else {
+						// We've already spent the DESO for the transactor.
+						if bytes.Equal(pubKey, txn.PublicKey) {
+							continue
+						}
 						spendAmountUint256 := newDESOSurplus.Neg(newDESOSurplus)
 						if !spendAmountUint256.IsUint64() {
 							return 0, 0, nil, errors.New(
 								"_connectDAOCoinLimitOrder: Spend amount is not uint64")
 						}
 						spendAmount := spendAmountUint256.Uint64()
-						if utxoOp, err = bav._spendBalance(spendAmount, pubKey, blockHeight); err != nil {
+						if utxoOp, err = bav._spendBalance(spendAmount, pubKey, blockHeight-1); err != nil {
 							return 0, 0, nil, err
 						}
 						// Add the spend amount to the total input
 						// The spend amount is already accounted for in the
-						// basic transfer. We look at the filled orders there
-						// to properly compute the total input to account for
-						// the derived key spending limits. We don't want to double
-						// count it, so we deduct it here.
-						if !bytes.Equal(pubKey, txn.PublicKey) {
-							totalInput += spendAmount
-						}
+						// basic transfer for the transactor.
+						totalInput += spendAmount
 					}
 					utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 				} else {

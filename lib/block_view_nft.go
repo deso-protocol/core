@@ -655,10 +655,18 @@ func (bav *UtxoView) _connectCreateNFT(
 		return 0, 0, nil, RuleErrorCantCreateNFTWithoutProfileEntry
 	}
 
+	// Since issuing N copies of an NFT multiplies the downstream processing overhead by N,
+	// we charge a fee for each additional copy minted.
+	// We do not need to check for overflow as these values are managed by the ParamUpdater.
+	nftFee, err := SafeUint64().Mul(txMeta.NumCopies, bav.GlobalParamsEntry.CreateNFTFeeNanos)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(
+			err, "_connectCreateNFT: error computing NFT fee")
+	}
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransferWithExtraSpend(
+		txn, txHash, blockHeight, nftFee, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreateNFT: ")
 	}
@@ -674,22 +682,14 @@ func (bav *UtxoView) _connectCreateNFT(
 		// public key.
 	}
 
-	// Since issuing N copies of an NFT multiplies the downstream processing overhead by N,
-	// we charge a fee for each additional copy minted.
-	// We do not need to check for overflow as these values are managed by the ParamUpdater.
-	nftFee := txMeta.NumCopies * bav.GlobalParamsEntry.CreateNFTFeeNanos
-
 	// Sanity check overflow and then ensure that the transaction covers the NFT fee.
 	if math.MaxUint64-totalOutput < nftFee {
 		return 0, 0, nil, fmt.Errorf("_connectCreateNFTFee: nft Fee overflow")
 	}
 	// Prior to the BalanceModelBlockHeight, the nftFee was returned as part of the
-	// "totalOutput" returned by _connectCreateNFT. However, for the balance model,
-	// this fee is baked into the "TxnFeeNanos".
+	// "totalOutput" returned by _connectCreateNFT.
 	if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		totalOutput += nftFee
-	} else if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnFeeNanos < nftFee {
-		return 0, 0, nil, RuleErrorCreateNFTTxnWithInsufficientFee
 	}
 	if totalInput < totalOutput+txn.TxnFeeNanos {
 		return 0, 0, nil, RuleErrorCreateNFTWithInsufficientFunds
@@ -1104,8 +1104,12 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
 	utxoOpsForTxn := []*UtxoOperation{}
-	totalInput, totalOutput, utxoOpsFromBasicTransfer, err := bav._connectBasicTransfer(
-		args.Txn, args.TxHash, blockHeight, args.VerifySignatures)
+	var extraSpend uint64
+	if args.Txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+		extraSpend = args.BidAmountNanos
+	}
+	totalInput, totalOutput, utxoOpsFromBasicTransfer, err := bav._connectBasicTransferWithExtraSpend(
+		args.Txn, args.TxHash, blockHeight, extraSpend, args.VerifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: ")
 	}
@@ -1202,13 +1206,6 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 
 		totalOutput += bidAmountNanos
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-			// spend the bid amount and add the bid amount to the input amount
-			utxoOp, err := bav._spendBalance(args.BidAmountNanos, args.Txn.PublicKey, tipHeight)
-			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: error spending bid amount")
-			}
-			utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
-			totalInput += args.BidAmountNanos
 			totalBidderInput += bidAmountNanos
 		} else {
 			// It's assumed the caller code will check that things like output <= input,
@@ -2467,13 +2464,6 @@ func (bav *UtxoView) _disconnectNFTBid(
 		// manipulate an NFT Entry.
 		if !operationData.PrevNFTEntry.IsBuyNow {
 			return fmt.Errorf("_disconnectNFTBid: PrevNFTEntry is non-nil and is not Buy Now on NFT bid operation. This should never happen.")
-		}
-
-		// Unspend the bid amount if balance model block height hit
-		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-			if err := bav._unSpendBalance(txMeta.BidAmountNanos, currentTxn.PublicKey); err != nil {
-				return errors.Wrapf(err, "_disconnectNFTBid: Problem unSpendBalance: ")
-			}
 		}
 
 		// We now know that this was a bid on a buy-now NFT and the underlying NFT was sold outright to the bidder.

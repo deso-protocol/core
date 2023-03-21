@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
@@ -110,11 +111,6 @@ type UtxoView struct {
 	// Map of DeSoNonce and PKID to NonceEntry
 	NonceMapKeyToNonceEntry map[NonceMapKey]*NonceEntry
 
-	// Map of TxHash to filled order. Needed to handle
-	// derived key accounting for DAOCoinLimitOrders
-	// where the transactor is selling DESO.
-	TxHashToFilledOrder map[BlockHash][]*FilledDAOCoinLimitOrder
-
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -203,8 +199,6 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Transaction nonce map
 	bav.NonceMapKeyToNonceEntry = make(map[NonceMapKey]*NonceEntry)
-
-	bav.TxHashToFilledOrder = make(map[BlockHash][]*FilledDAOCoinLimitOrder)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -833,6 +827,9 @@ func (bav *UtxoView) _spendBalance(
 	// First we must check that the public key has sufficient spendable balance.
 	spendableBalanceNanos, err :=
 		bav.GetSpendableDeSoBalanceNanosForPublicKey(balancePublicKey, tipHeight)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_spendBalance: ")
+	}
 	if spendableBalanceNanos < amountNanos {
 		return nil, errors.Wrapf(RuleErrorInsufficientBalance,
 			"_spendBalance: amountNanos (%d) exceeds spendable balance (%d) at tipHeight (%d)",
@@ -1006,23 +1003,26 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 	// we add the spent DESO + txn fees back to the sender's balance. In the balance model
 	// no UTXOs are stored so outputs do not need to be looked up or deleted.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-		totalSpend := currentTxn.TxnFeeNanos
 		for outputIndex := len(currentTxn.TxOutputs) - 1; outputIndex >= 0; outputIndex-- {
 			currentOutput := currentTxn.TxOutputs[outputIndex]
 			if err := bav._unAddBalance(currentOutput.AmountNanos, currentOutput.PublicKey); err != nil {
 				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding output %v: ", currentOutput)
 			}
-			var err error
-			totalSpend, err = SafeUint64().Add(totalSpend, currentOutput.AmountNanos)
-			if err != nil {
-				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem adding %d to total spend %d", currentOutput.AmountNanos, totalSpend)
-			}
 		}
 		// Block reward transactions don't unspend DESO since it is newly created DESO
 		// and no input DESO was provided.
 		if currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-			if err := bav._unSpendBalance(totalSpend, currentTxn.PublicKey); err != nil {
-				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unSpending total spend %v: ", totalSpend)
+			// Iterate over utxo ops and unspend any balance that was spent by the transactor.
+			for _, utxoOp := range utxoOpsForTxn {
+				if utxoOp.Type != OperationTypeSpendBalance ||
+					!bytes.Equal(utxoOp.BalancePublicKey, currentTxn.PublicKey) {
+					continue
+				}
+				if err := bav._unSpendBalance(utxoOp.BalanceAmountNanos, currentTxn.PublicKey); err != nil {
+					return errors.Wrapf(err,
+						"_disconnectBasicTransfer: Problem unSpending balance of %v for transactor: ",
+						utxoOp.BalanceAmountNanos)
+				}
 			}
 		}
 	} else {
@@ -1613,6 +1613,12 @@ func IsDerivedSignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []
 
 func (bav *UtxoView) _connectBasicTransfer(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	uint64, uint64, []*UtxoOperation, error) {
+	return bav._connectBasicTransferWithExtraSpend(txn, txHash, blockHeight, 0, verifySignatures)
+}
+
+func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, extraSpend uint64, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	var utxoOpsForTxn []*UtxoOperation
@@ -1765,67 +1771,27 @@ func (bav *UtxoView) _connectBasicTransfer(
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
 	}
 
-	// TODO: consolidate spending of UTXOs and spending balance.
 	// After the BalanceModelBlockHeight, we no longer spend UTXO inputs. Instead, we must
 	// spend the sender's balance. Note that we don't need to explicitly check that the
 	// sender's balance is sufficient because _spendBalance will error if it is insufficient.
 	// Note that for block reward transactions, we don't spend any balance; DESO is printed.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-		totalInput = totalOutput + txn.TxnFeeNanos
+		var err error
+		totalInput, err = SafeUint64().Add(totalOutput, txn.TxnFeeNanos)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding txn fee and total output")
+		}
+		totalInput, err = SafeUint64().Add(totalInput, extraSpend)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding extraSpend")
+		}
 		newUtxoOp, err := bav._spendBalance(totalInput, txn.PublicKey, blockHeight-1)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem spending balance")
+			return 0, 0, nil, errors.Wrapf(
+				err, "_connectBasicTransfer: Problem spending balance")
 		}
 
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
-		// Certain transaction types spend more DESO than input specified
-		switch txn.TxnMeta.GetTxnType() {
-		case TxnTypeCreatorCoin:
-			txMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
-			if txMeta.OperationType == CreatorCoinOperationTypeBuy {
-				totalInput += txMeta.DeSoToSellNanos
-			}
-		case TxnTypeNFTBid:
-			txMeta := txn.TxnMeta.(*NFTBidMetadata)
-			if txMeta.SerialNumber == 0 {
-				break
-			}
-			nftKey := MakeNFTKey(txMeta.NFTPostHash, txMeta.SerialNumber)
-			nftEntry := bav.GetNFTEntryForNFTKey(&nftKey)
-			if nftEntry == nil || nftEntry.isDeleted {
-				return 0, 0, nil, errors.Wrap(err,
-					"_connectBasicTransfer: NFT entry doesn't exist; this should never happen")
-			}
-			if nftEntry.IsBuyNow && nftEntry.BuyNowPriceNanos <= txMeta.BidAmountNanos {
-				totalInput += txMeta.BidAmountNanos
-			}
-		case TxnTypeDAOCoinLimitOrder:
-			txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
-			if txMeta.CancelOrderID != nil || !txMeta.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
-				break
-			}
-			transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
-			if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-				return 0, 0, nil, errors.Wrap(
-					err,
-					"_connectBasicTransfer: Transactor PKID entry doesn't exist; this should never happen")
-			}
-			for _, filledOrder := range bav.TxHashToFilledOrder[*txHash] {
-				// Skip nil orders
-				if filledOrder == nil {
-					continue
-				}
-				// Skip filled orders for the transactor since the transactor doesn't pay itself.
-				if filledOrder.TransactorPKID.Eq(transactorPKIDEntry.PKID) {
-					continue
-				}
-				if !filledOrder.CoinQuantityInBaseUnitsBought.IsUint64() {
-					return 0, 0, nil, errors.New(
-						"_connectBasicTransfer: filledOrder.CoinQuantityInBaseUnitsBought is not a uint64")
-				}
-				totalInput, err = SafeUint64().Add(totalInput, filledOrder.CoinQuantityInBaseUnitsBought.Uint64())
-			}
-		}
 	}
 
 	// Now that we have computed the outputs, we can finish processing diamonds if need be.
