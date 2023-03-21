@@ -291,6 +291,9 @@ func (safeUint64 *_SafeUint64) Sub(x uint64, y uint64) (uint64, error) {
 }
 
 func (safeUint64 *_SafeUint64) Mul(x uint64, y uint64) (uint64, error) {
+	if x == 0 || y == 0 {
+		return 0, nil
+	}
 	if uint64(math.MaxUint64)/y < x {
 		return 0, fmt.Errorf("multiplication overflows uint64")
 	}

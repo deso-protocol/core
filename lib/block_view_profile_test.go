@@ -159,9 +159,9 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.Equal(totalInput, totalInputMake)
 
 	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		require.Equal(totalInput, totalInputMake)
 		// We should have one SPEND UtxoOperation for each input, one ADD operation
 		// for each output, and one OperationTypeUpdateProfile operation at the end.
 		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
@@ -169,6 +169,10 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 		}
 	} else {
+		require.GreaterOrEqual(totalInput, totalInputMake)
+		if totalInput != totalInputMake {
+			require.Equal(totalInput, totalInputMake+utxoView.GlobalParamsEntry.CreateProfileFeeNanos)
+		}
 		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeUpdateProfile, utxoOps[len(utxoOps)-1].Type)
@@ -860,36 +864,10 @@ func TestUpdateProfile(t *testing.T) {
 			1.5*100*100,
 			false)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
-
 		blockHeight := chain.blockTip().Height + 1
-
-		// For the balance model, check the new RuleErrorCreateProfileTxnWithInsufficientFee
 		if blockHeight >= params.ForkHeights.BalanceModelBlockHeight {
-			// Reduce the minimum network fee to 1 nanos per kb but make the create profile fee 50.
-			updateGlobalParamsEntry(
-				100,
-				m3Pub,
-				m3Priv,
-				int64(InitialUSDCentsPerBitcoinExchangeRate),
-				1,
-				50)
-
-			// Update profile fails as the fee is too low
-			_, _, _, err = _updateProfile(
-				t, chain, db, params,
-				10,
-				m4Pub,
-				m4Priv,
-				m4PkBytes,
-				"m4_username",
-				"m4 description",
-				otherShortPic,
-				11*100,
-				1.5*100*100,
-				false,
-			)
-			require.Error(err)
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
+		} else {
 			require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
 		}
 

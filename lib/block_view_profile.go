@@ -609,6 +609,13 @@ func (bav *UtxoView) _connectUpdateProfile(
 		}
 	}
 
+	// See if a profile already exists for this public key.
+	existingProfileEntry := bav.GetProfileEntryForPublicKey(profilePublicKey)
+	var extraSpend uint64
+	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
+		extraSpend = bav.GlobalParamsEntry.CreateProfileFeeNanos
+	}
+
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
 	//
@@ -620,8 +627,8 @@ func (bav *UtxoView) _connectUpdateProfile(
 	var utxoOpsForTxn = []*UtxoOperation{}
 	var err error
 	if !ignoreUtxos {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransfer(
-			txn, txHash, blockHeight, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransferWithExtraSpend(
+			txn, txHash, blockHeight, extraSpend, verifySignatures)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectUpdateProfile: ")
 		}
@@ -632,23 +639,12 @@ func (bav *UtxoView) _connectUpdateProfile(
 		}
 	}
 
-	// See if a profile already exists for this public key.
-	existingProfileEntry := bav.GetProfileEntryForPublicKey(profilePublicKey)
 	// If we are creating a profile for the first time, assess the create profile fee.
 	if existingProfileEntry == nil {
 		createProfileFeeNanos := bav.GlobalParamsEntry.CreateProfileFeeNanos
 		totalOutput += createProfileFeeNanos
 		if totalInput < totalOutput {
 			return 0, 0, nil, RuleErrorCreateProfileTxnOutputExceedsInput
-		}
-		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight &&
-			bav.GlobalParamsEntry.CreateProfileFeeNanos > 0 {
-			var utxoOp *UtxoOperation
-			utxoOp, err = bav._spendBalance(bav.GlobalParamsEntry.CreateProfileFeeNanos, txn.PublicKey, blockHeight-1)
-			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectUpdateProfile: error assessing create profile fee")
-			}
-			utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 		}
 	}
 	// Save a copy of the profile entry so that we can safely modify it.
@@ -1078,14 +1074,6 @@ func (bav *UtxoView) _disconnectUpdateProfile(
 	// that. Otherwise leave it as deleted.
 	if currentOperation.PrevProfileEntry != nil {
 		bav._setProfileEntryMappings(currentOperation.PrevProfileEntry)
-	}
-	// If there's no prev profile, we unspend the create profile fee
-	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight &&
-		currentOperation.PrevProfileEntry == nil &&
-		bav.GlobalParamsEntry.CreateProfileFeeNanos > 0 {
-		if err := bav._unSpendBalance(bav.GlobalParamsEntry.CreateProfileFeeNanos, currentTxn.PublicKey); err != nil {
-			return errors.Wrapf(err, "_disconnectUpdateProfile: Problem unspending balance")
-		}
 	}
 
 	// Now revert the basic transfer with the remaining operations. Cut off
