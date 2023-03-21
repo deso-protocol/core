@@ -4875,16 +4875,6 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			}
 		}
 
-		// Prior to the BalanceModelBlockHeight, "additionalFees" such as the create profile
-		// fee were backed into the spend amount in order to create an "implicit" fee. However,
-		// in the balance model, all outputs and fees must be set explicitly, so it is included
-		// in TxnFeeNanos here instead.
-		//if additionalFees > spendAmount {
-		//	return 0, 0, 0, 0, fmt.Errorf("AddInputsAndChangeToTransaction: " +
-		//		"underflow detected")
-		//}
-		//explicitSpendAmount := spendAmount - additionalFees
-
 		if math.MaxUint64-spendAmount < totalInput {
 			return 0, 0, 0, 0, fmt.Errorf(
 				"AddInputsAndChangeToTransaction: overflow detected")
