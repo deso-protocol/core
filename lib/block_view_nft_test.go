@@ -80,9 +80,8 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 		// Note: the "nftFee" is the "spendAmount" and therefore must be added to feesMake.
 		require.Equal(totalInputMake, changeAmountMake+feesMake+nftFee)
 	} else {
-		// The balance model does not have "implicit" outputs  or "change" like the UTXO model.
-		// Instead, all fees are explicitly baked into the "feesMake".
-		require.Equal(totalInputMake, feesMake)
+		// FeesMake represents the transaction fees PLUS the NFT fee should equal total input make
+		require.Equal(totalInputMake, feesMake+nftFee)
 	}
 
 	// Sign the transaction now that its inputs are set up.
@@ -1264,9 +1263,11 @@ func TestNFTBasic(t *testing.T) {
 		if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
 			require.Contains(err.Error(), RuleErrorCreateNFTWithInsufficientFunds)
 		} else {
-			require.Contains(err.Error(), RuleErrorCreateNFTTxnWithInsufficientFee)
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
 		}
 	}
+	// After we tested the create NFT fee errors, lower the block reward maturity
+	params.BlockRewardMaturity = time.Second
 
 	// Creating an NFT with the correct NFT fee should succeed.
 	// This time set HasUnlockable to 'true'.

@@ -658,12 +658,15 @@ func (bav *UtxoView) _connectCreateNFT(
 	// Since issuing N copies of an NFT multiplies the downstream processing overhead by N,
 	// we charge a fee for each additional copy minted.
 	// We do not need to check for overflow as these values are managed by the ParamUpdater.
-	nftFee := txMeta.NumCopies * bav.GlobalParamsEntry.CreateNFTFeeNanos
-
+	nftFee, err := SafeUint64().Mul(txMeta.NumCopies, bav.GlobalParamsEntry.CreateNFTFeeNanos)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(
+			err, "_connectCreateNFT: error computing NFT fee")
+	}
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransferWithExtraSpend(
+		txn, txHash, blockHeight, nftFee, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreateNFT: ")
 	}
@@ -684,12 +687,9 @@ func (bav *UtxoView) _connectCreateNFT(
 		return 0, 0, nil, fmt.Errorf("_connectCreateNFTFee: nft Fee overflow")
 	}
 	// Prior to the BalanceModelBlockHeight, the nftFee was returned as part of the
-	// "totalOutput" returned by _connectCreateNFT. However, for the balance model,
-	// this fee is baked into the "TxnFeeNanos".
+	// "totalOutput" returned by _connectCreateNFT.
 	if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		totalOutput += nftFee
-	} else if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnFeeNanos < nftFee {
-		return 0, 0, nil, RuleErrorCreateNFTTxnWithInsufficientFee
 	}
 	if totalInput < totalOutput+txn.TxnFeeNanos {
 		return 0, 0, nil, RuleErrorCreateNFTWithInsufficientFunds

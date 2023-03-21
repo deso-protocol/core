@@ -1789,7 +1789,8 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 		}
 		newUtxoOp, err := bav._spendBalance(totalInput, txn.PublicKey, blockHeight-1)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem spending balance")
+			return 0, 0, nil, errors.Wrapf(
+				err, "_connectBasicTransfer: Problem spending balance")
 		}
 
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)

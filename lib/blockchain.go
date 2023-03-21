@@ -3362,7 +3362,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the create profile fee.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, AdditionalFees, 0)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, AdditionalFees)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateProfileTxn: Problem adding inputs: ")
 	}
@@ -3401,12 +3401,12 @@ func (bc *Blockchain) CreateSwapIdentityTxn(
 	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateProfileTxn: Problem adding inputs: ")
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateSwapIdentityTxn: Problem adding inputs: ")
 	}
 
 	// The spend amount should be zero for SwapIdentity txns.
 	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
-		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateProfileTxn: %v", err)
+		return nil, 0, 0, 0, fmt.Errorf("CreateSwapIdentityTxn: %v", err)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -3443,13 +3443,12 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 		// inputs and change.
 	}
 
-	totalInput, spendAmount, changeAmount, fees, err :=
+	totalInput, _, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransactionWithSubsidy(
-			txn, minFeeRateNanosPerKB, 0, mempool, 0, DeSoToSellNanos)
+			txn, minFeeRateNanosPerKB, 0, mempool, DeSoToSellNanos)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
@@ -3742,7 +3741,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, 0, explicitSpend)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, explicitSpend)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"CreateDAOCoinLimitOrderTxn: Problem adding inputs: ")
@@ -3838,7 +3837,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the NFT fee.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, NFTFee, 0)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, NFTFee)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreateNFTTxn: Problem adding inputs: ")
 	}
@@ -3947,7 +3946,7 @@ func (bc *Blockchain) CreateNFTBidTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, 0, explicitSpend)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, explicitSpend)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNFTBidTxn: Problem adding inputs: ")
 	}
@@ -4821,12 +4820,11 @@ func (bc *Blockchain) AddInputsAndChangeToTransaction(
 	txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
 	_totalInputAdded uint64, _spendAmount uint64, _totalChangeAdded uint64, _fee uint64, _err error) {
 
-	return bc.AddInputsAndChangeToTransactionWithSubsidy(txArg, minFeeRateNanosPerKB, 0, mempool, 0, 0)
+	return bc.AddInputsAndChangeToTransactionWithSubsidy(txArg, minFeeRateNanosPerKB, 0, mempool, 0)
 }
 
 func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
-	txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, inputSubsidy uint64, mempool *DeSoMempool, additionalFees uint64,
-	explicitTransactionSpend uint64) (
+	txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, inputSubsidy uint64, mempool *DeSoMempool, additionalFees uint64) (
 	_totalInputAdded uint64, _spendAmount uint64, _totalChangeAdded uint64, _fee uint64, _err error) {
 
 	// The transaction we're working with should never have any inputs
@@ -4846,12 +4844,6 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		spendAmount += desoOutput.AmountNanos
 	}
 
-	// Add to explict transaction spend to spend amount. This is used for
-	// transactions that move money around such as CC buys, buy now NFT bids,
-	// and DAO Coin Limit Orders where the transactor spends DESO in addition
-	// to the fee.
-	spendAmount += explicitTransactionSpend
-
 	// Add additional fees to the spend amount.
 	spendAmount += additionalFees
 
@@ -4870,8 +4862,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		}
 		txArg.TxnNonce = nextNonce
 
-		// Set to max uint64 so we can compute max fee
-		txArg.TxnFeeNanos = additionalFees
+		// Initialize to 0.
+		txArg.TxnFeeNanos = 0 // additionalFees
 
 		feeAmountNanos := uint64(0)
 		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward && minFeeRateNanosPerKB != 0 {
@@ -4879,29 +4871,15 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 				prevFeeAmountNanos = feeAmountNanos
 				feeAmountNanos = _computeMaxTxV1Fee(txArg, minFeeRateNanosPerKB)
-				if math.MaxUint64-feeAmountNanos < additionalFees {
-					return 0, 0, 0, 0, fmt.Errorf(
-						"AddInputsAndChangeToTransaction: overflow detected")
-				}
-				txArg.TxnFeeNanos = additionalFees + feeAmountNanos
+				txArg.TxnFeeNanos = feeAmountNanos
 			}
 		}
 
-		// Prior to the BalanceModelBlockHeight, "additionalFees" such as the create profile
-		// fee were backed into the spend amount in order to create an "implicit" fee. However,
-		// in the balance model, all outputs and fees must be set explicitly, so it is included
-		// in TxnFeeNanos here instead.
-		if additionalFees > spendAmount {
-			return 0, 0, 0, 0, fmt.Errorf("AddInputsAndChangeToTransaction: " +
-				"underflow detected")
-		}
-		explicitSpendAmount := spendAmount - additionalFees
-
-		if math.MaxUint64-explicitSpendAmount < totalInput {
+		if math.MaxUint64-spendAmount < totalInput {
 			return 0, 0, 0, 0, fmt.Errorf(
 				"AddInputsAndChangeToTransaction: overflow detected")
 		}
-		totalInput += explicitSpendAmount
+		totalInput += spendAmount
 		if math.MaxUint64-txArg.TxnFeeNanos < totalInput {
 			return 0, 0, 0, 0, fmt.Errorf(
 				"AddInputsAndChangeToTransaction: overflow detected")
