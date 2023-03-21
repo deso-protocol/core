@@ -113,7 +113,7 @@ type UtxoView struct {
 	// Map of TxHash to filled order. Needed to handle
 	// derived key accounting for DAOCoinLimitOrders
 	// where the transactor is selling DESO.
-	TxHashToFilledOrder map[BlockHash][]*FilledDAOCoinLimitOrder
+	TxHashToFilledDAOCoinLimitOrders map[BlockHash][]*FilledDAOCoinLimitOrder
 
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
@@ -204,7 +204,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Transaction nonce map
 	bav.PKIDToNextNonce = make(map[PKID]uint64)
 
-	bav.TxHashToFilledOrder = make(map[BlockHash][]*FilledDAOCoinLimitOrder)
+	bav.TxHashToFilledDAOCoinLimitOrders = make(map[BlockHash][]*FilledDAOCoinLimitOrder)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -1775,7 +1775,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 	// Note that for block reward transactions, we don't spend any balance; DESO is printed.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 		totalInput = totalOutput + txn.TxnFeeNanos
-		newUtxoOp, err := bav._spendBalance(totalInput, txn.PublicKey, blockHeight-1)
+		newUtxoOp, err := bav._spendBalance(totalInput, txn.PublicKey, blockHeight)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(
 				err, "_connectBasicTransfer: Problem spending balance")
@@ -1824,7 +1824,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 				return 0, 0, nil, errors.Wrap(
 					err, "_connectBasicTransfer: Transactor PKID entry doesn't exist; this should never happen")
 			}
-			for _, filledOrder := range bav.TxHashToFilledOrder[*txHash] {
+			for _, filledOrder := range bav.TxHashToFilledDAOCoinLimitOrders[*txHash] {
 				// Skip nil orders
 				if filledOrder == nil {
 					continue

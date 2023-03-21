@@ -595,7 +595,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// We save the filled orders on the view so the basic transfer connection
 	// logic can use them to compute the spend amount and handle the
 	// accounting logic for derived key's spending limits.
-	bav.TxHashToFilledOrder[*txHash] = filledOrders
+	bav.TxHashToFilledDAOCoinLimitOrders[*txHash] = filledOrders
 
 	// Now, we need to update all the balances of all the users who were involved in
 	// all of the matching that we did above. We do this via the following steps:
@@ -620,7 +620,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	}
 
 	// After connecting the basic transfer, the filled orders are no longer needed on the view
-	delete(bav.TxHashToFilledOrder, *txHash)
+	delete(bav.TxHashToFilledDAOCoinLimitOrders, *txHash)
 
 	// This is the amount of DESO each account is allowed to spend based on the
 	// UTXOs passed-in. We compute this first to know what our "budget" is for
