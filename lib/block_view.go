@@ -107,8 +107,7 @@ type UtxoView struct {
 	AssociationMapKeyToUserAssociationEntry map[AssociationMapKey]*UserAssociationEntry
 	AssociationMapKeyToPostAssociationEntry map[AssociationMapKey]*PostAssociationEntry
 
-	// Map of PKID to the next nonce to use for a transaction.
-	//PKIDToNextNonce map[PKID]uint64
+	// Map of DeSoNonce and PKID to NonceEntry
 	NonceMapKeyToNonceEntry map[NonceMapKey]*NonceEntry
 
 	// Map of TxHash to filled order. Needed to handle
@@ -203,7 +202,6 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.AssociationMapKeyToPostAssociationEntry = make(map[AssociationMapKey]*PostAssociationEntry)
 
 	// Transaction nonce map
-	//bav.PKIDToNextNonce = make(map[PKID]uint64)
 	bav.NonceMapKeyToNonceEntry = make(map[NonceMapKey]*NonceEntry)
 
 	bav.TxHashToFilledOrder = make(map[BlockHash][]*FilledDAOCoinLimitOrder)

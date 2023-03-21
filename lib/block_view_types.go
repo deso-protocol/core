@@ -6013,3 +6013,21 @@ func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetVersionByte(block
 func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeNewMessageTxindexMetadata
 }
+
+type NonceEntry struct {
+	Nonce     *DeSoNonce
+	PKID      *PKID
+	isDeleted bool
+}
+
+func (ne *NonceEntry) ToMapKey() NonceMapKey {
+	return NonceMapKey{
+		Nonce: *ne.Nonce,
+		PKID:  *ne.PKID,
+	}
+}
+
+type NonceMapKey struct {
+	Nonce DeSoNonce
+	PKID  PKID
+}

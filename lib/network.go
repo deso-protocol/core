@@ -2864,24 +2864,6 @@ func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) (*DeSoSignature, e
 	}, nil
 }
 
-type NonceEntry struct {
-	Nonce     *DeSoNonce
-	PKID      *PKID
-	isDeleted bool
-}
-
-func (ne *NonceEntry) ToMapKey() NonceMapKey {
-	return NonceMapKey{
-		Nonce: *ne.Nonce,
-		PKID:  *ne.PKID,
-	}
-}
-
-type NonceMapKey struct {
-	Nonce DeSoNonce
-	PKID  PKID
-}
-
 type DeSoNonce struct {
 	ExpirationBlockHeight uint64
 	PartialID             uint64
