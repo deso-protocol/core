@@ -536,24 +536,6 @@ func _doTxnWithBlockHeight(
 	// have one utxo op for the spend balance
 	if blockHeight >= testMeta.params.ForkHeights.BalanceModelBlockHeight {
 		utxoOpExpectation++
-		if txnType == TxnTypeCreatorCoin && txn.TxnMeta.(*CreatorCoinMetadataa).OperationType == CreatorCoinOperationTypeBuy {
-			utxoOpExpectation++
-		}
-		// There's an extra spend for buy now NFTs
-		if isBuyNowBid {
-			utxoOpExpectation++
-		}
-		if txnType == TxnTypeDAOCoinLimitOrder {
-			metadata := txnMeta.(*DAOCoinLimitOrderMetadata)
-			if metadata.CancelOrderID == nil && metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
-				nanosToFillOrder, err := utxoView.GetDESONanosToFillOrder(
-					utxoView.ConvertTxnToDAOCoinLimitOrderEntry(txn, blockHeight), blockHeight)
-				require.NoError(err)
-				if nanosToFillOrder > 0 {
-					utxoOpExpectation++
-				}
-			}
-		}
 	}
 	if isDerivedTransactor && blockHeight >= testMeta.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		// If we got an unlimited derived key, we will not have an additional spending limit utxoop.
