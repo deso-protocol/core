@@ -644,7 +644,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight &&
 			bav.GlobalParamsEntry.CreateProfileFeeNanos > 0 {
 			var utxoOp *UtxoOperation
-			utxoOp, err = bav._spendBalance(bav.GlobalParamsEntry.CreateProfileFeeNanos, txn.PublicKey, blockHeight)
+			utxoOp, err = bav._spendBalance(bav.GlobalParamsEntry.CreateProfileFeeNanos, txn.PublicKey, blockHeight-1)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_connectUpdateProfile: error assessing create profile fee")
 			}
