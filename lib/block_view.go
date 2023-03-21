@@ -452,10 +452,6 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	}
 
 	// Copy the nonce map
-	//newView.PKIDToNextNonce = make(map[PKID]uint64, len(bav.PKIDToNextNonce))
-	//for pkid, nonce := range bav.PKIDToNextNonce {
-	//	newView.PKIDToNextNonce[pkid] = nonce
-	//}
 	newView.NonceMapKeyToNonceEntry = make(map[NonceMapKey]*NonceEntry,
 		len(bav.NonceMapKeyToNonceEntry))
 	for entryKey, entry := range bav.NonceMapKeyToNonceEntry {

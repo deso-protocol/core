@@ -469,12 +469,8 @@ type DBPrefixes struct {
 	// It's worth noting that two of these entries are stored for each Dm thread, one being the inverse of the other.
 	PrefixDmThreadIndex []byte `prefix_id:"[76]" is_state:"true"`
 
-	// PrefixPKIDToNextNonce tracks the next nonce a user should use when constructing a transaction
-	// <prefix, PublicKey [33]byte> -> uint64
-	PrefixPKIDToNextNonce []byte `prefix_id:"[77]" is_state:"true"`
-
-	// TODO: IsState?
-	PrefixAccountNonce []byte `prefix_id:"[78]" is_state:"true"`
+	// TODO: Comment further
+	PrefixNoncePKIDIndex []byte `prefix_id:"[77]" is_state:"true"`
 
 	// NEXT_TAG: 78
 
@@ -676,7 +672,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
 		// prefix_id:"[76]"
 		return true, &DmThreadEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixPKIDToNextNonce) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixNoncePKIDIndex) {
 		// prefix_id:"[77]"
 		return false, nil
 	}
@@ -10467,7 +10463,7 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 
 func _dbKeyForNonceEntry(accountNonce *DeSoNonce, pkid *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, Prefixes.PrefixAccountNonce...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
 	key := append(prefixCopy, EncodeUint64(accountNonce.ExpirationBlockHeight)...)
 	key = append(key, pkid.ToBytes()...)
 	key = append(key, UintToBuf(accountNonce.PartialID)...)
@@ -10475,8 +10471,8 @@ func _dbKeyForNonceEntry(accountNonce *DeSoNonce, pkid *PKID) []byte {
 }
 
 func _dbPrefixForAccountNonceBlockHeight(blockHeight uint32) []byte {
-	prefixCopy := append([]byte{}, Prefixes.PrefixAccountNonce...)
-	return append(prefixCopy, UintToBuf(uint64(blockHeight))...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
+	return append(prefixCopy, EncodeUint64(uint64(blockHeight))...)
 }
 
 func DbGetNonceEntryWithTxn(txn *badger.Txn, accountNonce *DeSoNonce, pkid *PKID) (*NonceEntry, error) {

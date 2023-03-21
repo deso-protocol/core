@@ -2814,32 +2814,6 @@ func ComputeMerkleRoot(txns []*MsgDeSoTxn) (_merkle *BlockHash, _txHashes []*Blo
 	return rootHash, txHashes, nil
 }
 
-//func (bc *Blockchain) GetNextNonceForPKID(
-//	publicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView,
-//) (uint64, error) {
-//
-//	var err error
-//	var utxoView *UtxoView
-//	// Use the reference UtxoView if provided. Otherwise, try to get one from the mempool.
-//	// This improves efficiency when we have a UtxoView already handy.
-//	if referenceUtxoView != nil {
-//		utxoView = referenceUtxoView
-//	} else if mempool != nil {
-//		utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(publicKeyBytes, nil)
-//		if err != nil {
-//			return 0, errors.Wrapf(
-//				err, "Blockchain.GetNextNonceForPKID: Problem getting augmented UtxoView from mempool: ")
-//		}
-//	} else {
-//		utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
-//		if err != nil {
-//			return 0, errors.Wrapf(err, "Blockchain.GetNextNonceForPKID: Problem initializing UtxoView: ")
-//		}
-//	}
-//
-//	return utxoView.GetNextNonceForPublicKey(publicKeyBytes)
-//}
-
 func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
 	// If we have access to a mempool, use it to account for utxos we might not
 	// get otherwise.
