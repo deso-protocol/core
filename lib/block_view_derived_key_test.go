@@ -554,6 +554,9 @@ func _doTxnWithBlockHeight(
 				}
 			}
 		}
+		if txnType == TxnTypeCreateNFT {
+			utxoOpExpectation++
+		}
 	}
 	if isDerivedTransactor && blockHeight >= testMeta.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		// If we got an unlimited derived key, we will not have an additional spending limit utxoop.

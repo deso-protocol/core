@@ -641,7 +641,8 @@ func (bav *UtxoView) _connectUpdateProfile(
 		if totalInput < totalOutput {
 			return 0, 0, nil, RuleErrorCreateProfileTxnOutputExceedsInput
 		}
-		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight &&
+			bav.GlobalParamsEntry.CreateProfileFeeNanos > 0 {
 			var utxoOp *UtxoOperation
 			utxoOp, err = bav._spendBalance(bav.GlobalParamsEntry.CreateProfileFeeNanos, txn.PublicKey, blockHeight-1)
 			if err != nil {
@@ -650,7 +651,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 			utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 		}
 	}
-	// Save a copy of the profile entry so so that we can safely modify it.
+	// Save a copy of the profile entry so that we can safely modify it.
 	var prevProfileEntry *ProfileEntry
 	if existingProfileEntry != nil {
 		// NOTE: The only pointer in here is the StakeEntry and CreatorCoinEntry pointer, but since
@@ -1079,7 +1080,9 @@ func (bav *UtxoView) _disconnectUpdateProfile(
 		bav._setProfileEntryMappings(currentOperation.PrevProfileEntry)
 	}
 	// If there's no prev profile, we unspend the create profile fee
-	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && currentOperation.PrevProfileEntry == nil {
+	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight &&
+		currentOperation.PrevProfileEntry == nil &&
+		bav.GlobalParamsEntry.CreateProfileFeeNanos > 0 {
 		if err := bav._unSpendBalance(bav.GlobalParamsEntry.CreateProfileFeeNanos, currentTxn.PublicKey); err != nil {
 			return errors.Wrapf(err, "_disconnectUpdateProfile: Problem unspending balance")
 		}
