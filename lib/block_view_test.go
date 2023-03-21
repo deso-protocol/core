@@ -165,6 +165,10 @@ type transactionTestMeta struct {
 func (tm *transactionTestMeta) Quit() {
 	require := require.New(tm.t)
 
+	if tm.miner.BlockProducer != nil {
+		tm.miner.BlockProducer.Stop()
+	}
+
 	if tm.miner != nil {
 		tm.miner.Stop()
 	}
