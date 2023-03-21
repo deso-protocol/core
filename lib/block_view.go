@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
@@ -1776,7 +1777,8 @@ func (bav *UtxoView) _connectBasicTransfer(
 		totalInput = totalOutput + txn.TxnFeeNanos
 		newUtxoOp, err := bav._spendBalance(totalInput, txn.PublicKey, blockHeight-1)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem spending balance")
+			return 0, 0, nil, errors.Wrapf(
+				err, "_connectBasicTransfer: Problem spending balance")
 		}
 
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
@@ -1784,8 +1786,14 @@ func (bav *UtxoView) _connectBasicTransfer(
 		switch txn.TxnMeta.GetTxnType() {
 		case TxnTypeCreatorCoin:
 			txMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
-			if txMeta.OperationType == CreatorCoinOperationTypeBuy {
-				totalInput += txMeta.DeSoToSellNanos
+			if txMeta.OperationType != CreatorCoinOperationTypeBuy {
+				break
+			}
+			totalInput, err = SafeUint64().Add(totalInput, txMeta.DeSoToSellNanos)
+			if err != nil {
+				return 0, 0, nil, errors.Wrap(
+					err,
+					"_connectBasicTransfer: Problem adding to totalInput")
 			}
 		case TxnTypeNFTBid:
 			txMeta := txn.TxnMeta.(*NFTBidMetadata)
@@ -1798,8 +1806,13 @@ func (bav *UtxoView) _connectBasicTransfer(
 				return 0, 0, nil, errors.Wrap(err,
 					"_connectBasicTransfer: NFT entry doesn't exist; this should never happen")
 			}
-			if nftEntry.IsBuyNow && nftEntry.BuyNowPriceNanos <= txMeta.BidAmountNanos {
-				totalInput += txMeta.BidAmountNanos
+			if !nftEntry.IsBuyNow || nftEntry.BuyNowPriceNanos > txMeta.BidAmountNanos {
+				break
+			}
+			totalInput, err = SafeUint64().Add(totalInput, txMeta.BidAmountNanos)
+			if err != nil {
+				return 0, 0, nil, errors.Wrap(
+					err, "_connectBasicTransfer: Problem adding bid amount to total input")
 			}
 		case TxnTypeDAOCoinLimitOrder:
 			txMeta := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
@@ -1809,8 +1822,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 			transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 			if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
 				return 0, 0, nil, errors.Wrap(
-					err,
-					"_connectBasicTransfer: Transactor PKID entry doesn't exist; this should never happen")
+					err, "_connectBasicTransfer: Transactor PKID entry doesn't exist; this should never happen")
 			}
 			for _, filledOrder := range bav.TxHashToFilledOrder[*txHash] {
 				// Skip nil orders
@@ -1826,6 +1838,40 @@ func (bav *UtxoView) _connectBasicTransfer(
 						"_connectBasicTransfer: filledOrder.CoinQuantityInBaseUnitsBought is not a uint64")
 				}
 				totalInput, err = SafeUint64().Add(totalInput, filledOrder.CoinQuantityInBaseUnitsBought.Uint64())
+				if err != nil {
+					return 0, 0, nil, errors.Wrap(
+						err, "_connectBasicTransfer: Problem adding filled order DESO amount to total input")
+				}
+			}
+		case TxnTypeUpdateProfile:
+			txMeta := txn.TxnMeta.(*UpdateProfileMetadata)
+			profilePublicKey := txn.PublicKey
+			// Support the case where the profile public key is different from the transaction public key
+			// which only happens for param updaters.
+			if txMeta.ProfilePublicKey != nil && bytes.Equal(txMeta.ProfilePublicKey, txn.PublicKey) {
+				profilePublicKey = txMeta.ProfilePublicKey
+			}
+			// Check if the profile exists and is not deleted. If not, add the create profile fee.
+			profileEntry := bav.GetProfileEntryForPublicKey(profilePublicKey)
+			if profileEntry != nil && !profileEntry.isDeleted {
+				break
+			}
+			totalInput, err = SafeUint64().Add(totalInput, bav.GlobalParamsEntry.CreateNFTFeeNanos)
+			if err != nil {
+				return 0, 0, nil, errors.Wrap(
+					err, "_connectBasicTransfer: Problem adding create profile fee to total input")
+			}
+		case TxnTypeCreateNFT:
+			txMeta := txn.TxnMeta.(*CreateNFTMetadata)
+			totalNFTFees, err := SafeUint64().Mul(bav.GlobalParamsEntry.CreateNFTFeeNanos, txMeta.NumCopies)
+			if err != nil {
+				return 0, 0, nil, errors.Wrap(
+					err, "_connectBasicTransfer: Problem multiplying create NFT fee by number of copies")
+			}
+			totalInput, err = SafeUint64().Add(totalInput, totalNFTFees)
+			if err != nil {
+				return 0, 0, nil, errors.Wrap(
+					err, "_connectBasicTransfer: Problem adding create NFT fee to total input")
 			}
 		}
 	}

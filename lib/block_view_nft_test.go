@@ -80,9 +80,8 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 		// Note: the "nftFee" is the "spendAmount" and therefore must be added to feesMake.
 		require.Equal(totalInputMake, changeAmountMake+feesMake+nftFee)
 	} else {
-		// The balance model does not have "implicit" outputs  or "change" like the UTXO model.
-		// Instead, all fees are explicitly baked into the "feesMake".
-		require.Equal(totalInputMake, feesMake)
+		// FeesMake represents the transaction fees PLUS the NFT fee should equal total input make
+		require.Equal(totalInputMake, feesMake+nftFee)
 	}
 
 	// Sign the transaction now that its inputs are set up.
@@ -108,8 +107,10 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 		}
 		require.Equal(OperationTypeCreateNFT, utxoOps[len(utxoOps)-1].Type)
 	} else {
+		// Two spend operations - one for the NFT fee and one for the transaction fee.
 		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
-		require.Equal(OperationTypeCreateNFT, utxoOps[1].Type)
+		require.Equal(OperationTypeSpendBalance, utxoOps[1].Type)
+		require.Equal(OperationTypeCreateNFT, utxoOps[2].Type)
 	}
 
 	require.NoError(utxoView.FlushToDb(0))
@@ -1264,9 +1265,11 @@ func TestNFTBasic(t *testing.T) {
 		if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
 			require.Contains(err.Error(), RuleErrorCreateNFTWithInsufficientFunds)
 		} else {
-			require.Contains(err.Error(), RuleErrorCreateNFTTxnWithInsufficientFee)
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
 		}
 	}
+	// After we tested the create NFT fee errors, lower the block reward maturity
+	params.BlockRewardMaturity = time.Second
 
 	// Creating an NFT with the correct NFT fee should succeed.
 	// This time set HasUnlockable to 'true'.

@@ -685,11 +685,15 @@ func (bav *UtxoView) _connectCreateNFT(
 	}
 	// Prior to the BalanceModelBlockHeight, the nftFee was returned as part of the
 	// "totalOutput" returned by _connectCreateNFT. However, for the balance model,
-	// this fee is baked into the "TxnFeeNanos".
+	// this fee is assessed here.
 	if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		totalOutput += nftFee
-	} else if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnFeeNanos < nftFee {
-		return 0, 0, nil, RuleErrorCreateNFTTxnWithInsufficientFee
+	} else if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+		utxoOp, err := bav._spendBalance(nftFee, txn.PublicKey, blockHeight-1)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectCreateNFT: error assess NFT fee")
+		}
+		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 	}
 	if totalInput < totalOutput+txn.TxnFeeNanos {
 		return 0, 0, nil, RuleErrorCreateNFTWithInsufficientFunds
@@ -2156,6 +2160,17 @@ func (bav *UtxoView) _disconnectCreateNFT(
 			IsForSale:    true,
 		}
 		bav._deleteNFTEntryMappings(nftEntry)
+	}
+
+	// We need to explicitly unspend the NFT fee for balance model
+	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+		nftFee, err := SafeUint64().Mul(bav.GlobalParamsEntry.CreateNFTFeeNanos, txMeta.NumCopies)
+		if err != nil {
+			return fmt.Errorf("_disconnectCreateNFT: Error computing NFT fee: %v", err)
+		}
+		if err = bav._unSpendBalance(nftFee, currentTxn.PublicKey); err != nil {
+			return fmt.Errorf("_disconnectCreateNFT: Error unspending NFT fee: %v", err)
+		}
 	}
 
 	// Now revert the basic transfer with the remaining operations. Cut off
