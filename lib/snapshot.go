@@ -312,10 +312,6 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	snapshotDirectory := filepath.Join(GetBadgerDbPath(mainDbDirectory), "snapshot")
 	snapshotOpts := PerformanceBadgerOptions(snapshotDirectory)
 	snapshotOpts.ValueDir = GetBadgerDbPath(snapshotDirectory)
-	// Turn off logging for regtest nodes.
-	if params.IsRegtest {
-		snapshotOpts.Logger = nil
-	}
 	snapshotDb, err := badger.Open(snapshotOpts)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewSnapshot: Problem creating SnapshotDb"), true

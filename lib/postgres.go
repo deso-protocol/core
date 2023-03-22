@@ -1131,7 +1131,6 @@ type PGBalance struct {
 	BalanceNanos uint64     `pg:",use_zero"`
 }
 
-// TODO: update for MaxNonceExpirationBlockBuffer
 // PGGlobalParams represents GlobalParamsEntry
 type PGGlobalParams struct {
 	tableName struct{} `pg:"pg_global_params"`

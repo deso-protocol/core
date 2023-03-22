@@ -3615,7 +3615,10 @@ type GlobalParamsEntry struct {
 	// The new minimum fee the network will accept
 	MinimumNetworkFeeNanosPerKB uint64
 
-	// Max Expiration Block Height
+	// MaxNonceExpirationBlockBuffer is maximum value nodes will
+	// tolerate for the difference between the current block height
+	// and the expiration block height specified in the nonce for a
+	// transaction.
 	MaxNonceExpirationBlockBuffer uint64
 }
 

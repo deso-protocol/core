@@ -1464,7 +1464,7 @@ func TestBasicTransfer(t *testing.T) {
 			require.Greater(totalInput, uint64(0))
 		} else {
 			txn.TxnVersion = 1
-			txn.TxnNonce, err = utxoView.ConstructNewAccountNonceForPublicKey(senderPkBytes, uint64(chain.BlockTip().Height))
+			txn.TxnNonce, err = utxoView.ConstructNonceForPublicKey(senderPkBytes, uint64(chain.BlockTip().Height))
 			require.NoError(err)
 		}
 		// Sign the transaction with the recipient's key rather than the

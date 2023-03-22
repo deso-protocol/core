@@ -469,7 +469,11 @@ type DBPrefixes struct {
 	// It's worth noting that two of these entries are stored for each Dm thread, one being the inverse of the other.
 	PrefixDmThreadIndex []byte `prefix_id:"[76]" is_state:"true"`
 
-	// TODO: Comment further
+	// PrefixNoncePKIDIndex is used to track unexpired nonces. Each nonce is uniquely identified by its expiration block
+	// height, the PKID of the user who created it, and a partial ID that is unique to the nonce. The partial ID is any
+	// random uint64.
+	// The index has the following structure:
+	// 	<prefix, expirationBlockHeight, PKID, partialID> -> <>
 	PrefixNoncePKIDIndex []byte `prefix_id:"[77]" is_state:"true"`
 
 	// NEXT_TAG: 78

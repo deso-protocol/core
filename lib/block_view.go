@@ -3587,17 +3587,17 @@ func (bav *UtxoView) DeleteNonceEntry(nonceEntry *NonceEntry) {
 	bav.SetNonceEntry(nonceEntry)
 }
 
-func (bav *UtxoView) ConstructNewAccountNonceForPublicKey(publicKey []byte, blockHeight uint64) (*DeSoNonce, error) {
+func (bav *UtxoView) ConstructNonceForPublicKey(publicKey []byte, blockHeight uint64) (*DeSoNonce, error) {
 	pkidEntry := bav.GetPKIDForPublicKey(publicKey)
 	if pkidEntry == nil || pkidEntry.isDeleted {
 		return nil, fmt.Errorf(
-			"AddInputsAndChangeToTransaction: No PKID entry found for public key %s",
+			"ConstructNonceForPublicKey: No PKID entry found for public key %s",
 			PkToStringBoth(publicKey))
 	}
-	return bav.ConstructNewAccountNonceForPKID(pkidEntry.PKID, blockHeight, 2)
+	return bav.ConstructNonceForPKID(pkidEntry.PKID, blockHeight, 2)
 }
 
-func (bav *UtxoView) ConstructNewAccountNonceForPKID(pkid *PKID, blockHeight uint64, depth uint8) (*DeSoNonce, error) {
+func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64, depth uint8) (*DeSoNonce, error) {
 	// construct nonce
 	// TODO: what's our initial value for this in the event that the global params entry isn't set?
 	expirationBuffer := uint64(10000)
@@ -3612,15 +3612,15 @@ func (bav *UtxoView) ConstructNewAccountNonceForPKID(pkid *PKID, blockHeight uin
 	// Make sure we don't have a collision.
 	nonce, err := bav.GetNonceEntry(&accountNonce, pkid)
 	if err != nil {
-		return nil, errors.Wrapf(err, "ConstructNewAccountNonceForPKID: ")
+		return nil, errors.Wrapf(err, "ConstructNonceForPKID: ")
 	}
 	if nonce == nil {
 		return &accountNonce, nil
 	}
 	if depth == 0 {
-		return nil, errors.New("ConstructNewAccountNonceForPKID: Exhausted depth")
+		return nil, errors.New("ConstructNonceForPKID: Exhausted depth")
 	}
-	return bav.ConstructNewAccountNonceForPKID(pkid, blockHeight, depth-1)
+	return bav.ConstructNonceForPKID(pkid, blockHeight, depth-1)
 }
 
 // GetUnspentUtxoEntrysForPublicKey returns the UtxoEntrys corresponding to the

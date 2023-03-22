@@ -4715,7 +4715,7 @@ func (bc *Blockchain) CreateMaxSpend(
 		}
 		txn.TxOutputs[len(txn.TxOutputs)-1].AmountNanos = spendableBalance
 		txn.TxnVersion = 1
-		txn.TxnNonce, err = utxoView.ConstructNewAccountNonceForPublicKey(senderPkBytes, uint64(bc.BlockTip().Height))
+		txn.TxnNonce, err = utxoView.ConstructNonceForPublicKey(senderPkBytes, uint64(bc.BlockTip().Height))
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
 				err,
@@ -4838,7 +4838,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			return 0, 0, 0, 0, errors.Wrapf(err,
 				"AddInputsAndChangeToTransaction: Problem getting UtxoView: ")
 		}
-		txArg.TxnNonce, err = utxoView.ConstructNewAccountNonceForPublicKey(txArg.PublicKey, uint64(blockHeight))
+		txArg.TxnNonce, err = utxoView.ConstructNonceForPublicKey(txArg.PublicKey, uint64(blockHeight))
 		if err != nil {
 			return 0, 0, 0, 0, errors.Wrapf(err,
 				"AddInputsAndChangeToTransaction: Problem getting next nonce for public key %s: ",
