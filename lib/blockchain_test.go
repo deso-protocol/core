@@ -331,7 +331,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 	}
 
 	blockProducer, err := NewDeSoBlockProducer(
-		0, 1,
+		0, 10,
 		blockSignerSeed,
 		mempool, chain,
 		params, chain.postgres)

@@ -10466,13 +10466,13 @@ func _dbKeyForNonceEntry(accountNonce *DeSoNonce, pkid *PKID) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
 	key := append(prefixCopy, EncodeUint64(accountNonce.ExpirationBlockHeight)...)
 	key = append(key, pkid.ToBytes()...)
-	key = append(key, UintToBuf(accountNonce.PartialID)...)
+	key = append(key, EncodeUint64(accountNonce.PartialID)...)
 	return key
 }
 
-func _dbPrefixForAccountNonceBlockHeight(blockHeight uint32) []byte {
+func _dbPrefixForNonceEntryIndexWithBlockHeight(blockHeight uint64) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
-	return append(prefixCopy, EncodeUint64(uint64(blockHeight))...)
+	return append(prefixCopy, EncodeUint64(blockHeight)...)
 }
 
 func DbGetNonceEntryWithTxn(txn *badger.Txn, accountNonce *DeSoNonce, pkid *PKID) (*NonceEntry, error) {
@@ -10523,19 +10523,61 @@ func DbDeleteNonceEntryWithTxn(txn *badger.Txn, accountNonce *DeSoNonce, pkid *P
 		"DbDeleteAccountNonceWithTxn: Problem deleting nonce")
 }
 
-// TODO: Test me - this is probably wrong and we'll need to adjust the keys to be left padded on block height.
-func DbDeleteExpiredNoncesAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint32) error {
-	startKey := _dbPrefixForAccountNonceBlockHeight(0)
-	endPrefix := _dbPrefixForAccountNonceBlockHeight(blockHeight)
+func DbDeleteExpiredNoncesAtBlockHeight(handle *badger.DB, blockHeight uint64) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbDeleteExpiredNoncesAtBlockHeightWithTxn(txn, blockHeight)
+	})
+}
+
+func DbDeleteExpiredNoncesAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint64) error {
+
+	startPrefix := _dbPrefixForNonceEntryIndexWithBlockHeight(blockHeight)
+	endPrefix := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
+	// Add 33 max bytes for the PKID
+	for ii := 0; ii < 33; ii++ {
+		startPrefix = append(startPrefix, 0xFF)
+	}
+	// And then append the max uint64 to start key
+	startPrefix = append(startPrefix, EncodeUint64(math.MaxUint64)...)
 	opts := badger.DefaultIteratorOptions
+	opts.Reverse = true
 	nodeIterator := txn.NewIterator(opts)
-	for nodeIterator.Seek(startKey); nodeIterator.ValidForPrefix(endPrefix); nodeIterator.Next() {
-		key := nodeIterator.Item().Key()
+	defer nodeIterator.Close()
+	keysToDelete := [][]byte{}
+	for nodeIterator.Seek(startPrefix); nodeIterator.ValidForPrefix(endPrefix); nodeIterator.Next() {
+		keysToDelete = append(keysToDelete, nodeIterator.Item().Key())
+	}
+	for _, key := range keysToDelete {
 		if err := DBDeleteWithTxn(txn, nil, key); err != nil {
 			return errors.Wrapf(err, "DbDeleteExpiredNoncesAtBlockHeightWithTxn: Problem deleting key: %v", key)
 		}
 	}
 	return nil
+}
+
+func DbGetAllNonceEntries(handle *badger.DB) []*NonceEntry {
+	keys, _ := EnumerateKeysForPrefix(handle, Prefixes.PrefixNoncePKIDIndex)
+	nonceEntries := []*NonceEntry{}
+	for _, key := range keys {
+		// Convert key to nonce entry.
+		nonceEntries = append(nonceEntries, NonceKeyToNonceEntry(key))
+	}
+	return nonceEntries
+}
+
+func NonceKeyToNonceEntry(key []byte) *NonceEntry {
+	keyWithoutPrefix := key[1:]
+	expirationHeight := DecodeUint64(keyWithoutPrefix[:8])
+	pkid := &PKID{}
+	copy(pkid[:], keyWithoutPrefix[8:41])
+	partialID := DecodeUint64(keyWithoutPrefix[41:])
+	return &NonceEntry{
+		Nonce: &DeSoNonce{
+			ExpirationBlockHeight: expirationHeight,
+			PartialID:             partialID,
+		},
+		PKID: pkid,
+	}
 }
 
 // -------------------------------------------------------------------------------------

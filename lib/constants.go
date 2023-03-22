@@ -1324,7 +1324,7 @@ const (
 
 	// TODO: What are reasonable values for these? Or do we even need them at all?
 	// Min/Max MaxNonceExpirationBlockBuffer - Min/max value to which the MaxNonceExpirationBlockBuffer can be set.
-	MinMaxNonceExpirationBlockBuffer = 100
+	MinMaxNonceExpirationBlockBuffer = 1
 	MaxMaxNonceExpirationBlockBuffer = 10000
 
 	// TODO: Are these fields needed?

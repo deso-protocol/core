@@ -319,8 +319,6 @@ func (tes *transactionTestSuite) RunBadgerTest() {
 		afterConnectBlockHeight := tm.chain.blockTip().Height
 		tes.testDisconnectBlock(tm, testVectorBlock)
 		dbEntriesAfter := tes.GetAllStateDbEntries(tm, beforeConnectBlockHeight)
-		glog.Infof("BeforeHeight: %v", beforeConnectBlockHeight)
-		glog.Infof("AfterHeight: %v", afterConnectBlockHeight)
 		tes.compareBeforeAfterDbEntries(dbEntriesBefore, dbEntriesAfter, afterConnectBlockHeight)
 		glog.Infof(CLog(Yellow, "RunBadgerTest: successfully connected/disconnected block and verified db state"))
 		tes.testConnectBlock(tm, testVectorBlock)
@@ -851,7 +849,7 @@ func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.D
 		require.Equal(OperationTypeSpendBalance, utxoOps[len(txn.TxOutputs)].Type)
 	}
 
-	require.NoError(utxoView.FlushToDb(0))
+	require.NoError(utxoView.FlushToDb(uint64(chain.blockTip().Height)))
 
 	return utxoOps, txn, blockHeight
 }
