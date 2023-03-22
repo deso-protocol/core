@@ -3112,6 +3112,11 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			return nil, 0, 0, 0, RuleErrorTxnOutputExceedsInput
 		}
 		fees = totalInput - totalOutput
+		// After the balance model block height, fees are specified in the transaction and
+		// cannot be assumed to be equal to total input - total output.
+		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+			fees = txn.TxnFeeNanos
+		}
 	}
 	// Validate that totalInput - totalOutput is equal to the fee specified in the transaction metadata.
 	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
