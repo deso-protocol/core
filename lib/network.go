@@ -3006,7 +3006,6 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, UintToBuf(uint64(len(sigBytes)))...)
 	data = append(data, sigBytes...)
 
-	// TODO: migration triggered check here? Probably safer than txn version.
 	// If txnFee is non-zero, this is a post-UTXO model transaction and we must encode the
 	// fee and the nonce.
 	if msg.TxnVersion != 0 {

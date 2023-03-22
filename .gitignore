@@ -8,3 +8,4 @@ backend
 .idea
 
 local_scripts/*
+lib/mem.log
