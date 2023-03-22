@@ -3123,10 +3123,10 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		if totalInput < totalOutput {
 			return nil, 0, 0, 0, RuleErrorTxnOutputExceedsInput
 		}
-		if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
-			fees = totalInput - totalOutput
-		} else {
-			// For balance model transactions, the fee amount is specified explicitly
+		fees = totalInput - totalOutput
+		// After the balance model block height, fees are specified in the transaction and
+		// cannot be assumed to be equal to total input - total output.
+		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 			fees = txn.TxnFeeNanos
 		}
 	}
