@@ -3132,7 +3132,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	}
 	// Validate that totalInput - totalOutput is equal to the fee specified in the transaction metadata.
 	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
-		if totalInput-totalOutput != txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos {
+		if fees != txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos {
 			return nil, 0, 0, 0, RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee
 		}
 	}
