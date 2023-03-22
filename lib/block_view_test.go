@@ -1455,6 +1455,7 @@ func TestBasicTransfer(t *testing.T) {
 		}
 
 		blockHeight := chain.blockTip().Height + 1
+		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
 		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
 			totalInput, spendAmount, changeAmount, fees, err :=
 				chain.AddInputsAndChangeToTransaction(txn, 10, nil)
@@ -1463,11 +1464,12 @@ func TestBasicTransfer(t *testing.T) {
 			require.Greater(totalInput, uint64(0))
 		} else {
 			txn.TxnVersion = 1
+			txn.TxnNonce, err = utxoView.ConstructNewAccountNonceForPublicKey(senderPkBytes, uint64(chain.BlockTip().Height))
+			require.NoError(err)
 		}
 		// Sign the transaction with the recipient's key rather than the
 		// sender's key.
 		_signTxn(t, txn, recipientPrivString)
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot)
 		txHash := txn.Hash()
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
