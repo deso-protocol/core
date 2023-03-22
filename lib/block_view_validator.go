@@ -10,7 +10,7 @@ import (
 )
 
 //
-// ValidatorEntry
+// TYPES: ValidatorEntry
 //
 
 type ValidatorEntry struct {
@@ -148,7 +148,7 @@ func (validatorEntry *ValidatorEntry) GetEncoderType() EncoderType {
 }
 
 //
-// RegisterAsValidatorMetadata
+// TYPES: RegisterAsValidatorMetadata
 //
 
 type RegisterAsValidatorMetadata struct {
@@ -203,7 +203,7 @@ func (txnData *RegisterAsValidatorMetadata) New() DeSoTxnMetadata {
 }
 
 //
-// UnregisterAsValidatorMetadata
+// TYPES: UnregisterAsValidatorMetadata
 //
 
 type UnregisterAsValidatorMetadata struct{}
@@ -225,7 +225,7 @@ func (txnData *UnregisterAsValidatorMetadata) New() DeSoTxnMetadata {
 }
 
 //
-// RegisterAsValidatorTxindexMetadata
+// TYPES: RegisterAsValidatorTxindexMetadata
 //
 
 type RegisterAsValidatorTxindexMetadata struct {
@@ -311,7 +311,7 @@ func (txindexMetadata *RegisterAsValidatorTxindexMetadata) GetEncoderType() Enco
 }
 
 //
-// UnstakedStakerTxindexMetadata
+// TYPES: UnstakedStakerTxindexMetadata
 //
 
 type UnstakedStakerTxindexMetadata struct {
@@ -346,7 +346,7 @@ func (txindexMetadata *UnstakedStakerTxindexMetadata) RawDecodeWithoutMetadata(b
 }
 
 //
-// UnregisterAsValidatorTxindexMetadata
+// TYPES: UnregisterAsValidatorTxindexMetadata
 //
 
 type UnregisterAsValidatorTxindexMetadata struct {
@@ -403,7 +403,7 @@ func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetEncoderType() En
 }
 
 //
-// ValidatorEntry db utils
+// DB UTILS
 //
 
 func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
@@ -662,6 +662,111 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorEntry *V
 		return errors.Wrapf(
 			err, "DBDeleteValidatorWithTxn: problem storing value in index PrefixGlobalStakeAmountNanos",
 		)
+	}
+
+	return nil
+}
+
+//
+// BLOCKCHAIN UTILS
+//
+
+func (bc *Blockchain) CreateRegisterAsValidatorTxn(
+	transactorPublicKey []byte,
+	metadata *RegisterAsValidatorMetadata,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a txn containing the RegisterAsValidator fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+
+	// Create a new UtxoView. If we have access to a mempool object, use
+	// it to get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrap(
+			err, "Blockchain.CreateRegisterAsValidatorTxn: problem creating new utxo view: ",
+		)
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(
+				err, "Blockchain.CreateRegisterAsValidatorTxn: problem getting augmented utxo view from mempool: ",
+			)
+		}
+	}
+
+	// Validate txn metadata.
+	if err = utxoView.IsValidRegisterAsValidatorMetadata(transactorPublicKey, metadata); err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateRegisterAsValidatorTxn: invalid txn metadata: ",
+		)
+	}
+
+	// TODO: what else do we need here with balance model
+
+	return txn, 0, 0, 0, nil
+}
+
+//
+// UTXO VIEW UTILS
+//
+
+func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []byte, metadata *RegisterAsValidatorMetadata) error {
+	// TODO
+	return nil
+}
+
+func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Iterate through all entries in the UtxoView map.
+	var validatorMapKeyToValidatorEntry map[ValidatorMapKey]*ValidatorEntry // TODO: store this on the UtxoView
+
+	for validatorMapKeyIter, validatorEntryIter := range validatorMapKeyToValidatorEntry {
+		// Make a copy of the iterators since we make references to them below.
+		validatorMapKey := validatorMapKeyIter
+		validatorEntry := *validatorEntryIter
+
+		// Sanity-check that the entry matches the map key.
+		validatorMapKeyInEntry := validatorEntry.ToMapKey()
+		if validatorMapKeyInEntry != validatorMapKey {
+			return fmt.Errorf(
+				"_flushValidatorEntriesToDbWithTxn: validator entry key %v doesn't match map key %v",
+				&validatorMapKeyInEntry,
+				&validatorMapKey,
+			)
+		}
+
+		// We can't first delete all then set all !isDeleted entries since we have
+		// an index that relies on the previous TotalStakeAmountNanos value. The
+		// DBPutValidatorWithTxn function handles deleting the old entries from the
+		// database for us and setting the new ones.
+		if validatorEntry.isDeleted {
+			// Delete entry if isDeleted.
+			if err := DBDeleteValidatorWithTxn(txn, bav.Snapshot, &validatorEntry); err != nil {
+				return errors.Wrapf(err, "_flushValidatorEntriesToDbWithTxn: error deleting entry: ")
+			}
+		} else {
+			// Set entry if !isDeleted.
+			if err := DBPutValidatorWithTxn(txn, bav.Snapshot, &validatorEntry, blockHeight); err != nil {
+				return errors.Wrapf(err, "_flushValidatorEntriesToDbWithTxn: error setting entry: ")
+			}
+		}
 	}
 
 	return nil
