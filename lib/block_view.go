@@ -564,6 +564,11 @@ func (bav *UtxoView) GetDeSoBalanceNanosForPublicKey(publicKeyArg []byte) (uint6
 	if publicKeyArg == nil {
 		return 0, errors.New("GetDeSoBalanceNanosForPublicKey: Called with nil publicKeyArg")
 	}
+	if len(publicKeyArg) != btcec.PubKeyBytesLenCompressed {
+		return 0, fmt.Errorf("GetDeSoBalanceNanosForPublicKey: Called with "+
+			"publicKeyArg of length %d but expected length %d",
+			len(publicKeyArg), btcec.PubKeyBytesLenCompressed)
+	}
 	publicKey := publicKeyArg
 
 	balanceNanos, hasBalance := bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(publicKey)]
@@ -1025,117 +1030,117 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 				}
 			}
 		}
-	} else {
-		// Loop through the transaction's outputs backwards and remove them
-		// from the view. Since the outputs will have been added to the view
-		// at the end of the utxo list, removing them from the view amounts to
-		// removing the last element from the utxo list.
-		//
-		// Loop backwards over the utxo operations as we go along.
-		for outputIndex := len(currentTxn.TxOutputs) - 1; outputIndex >= 0; outputIndex-- {
-			currentOutput := currentTxn.TxOutputs[outputIndex]
+		return nil
+	}
+	// If this is a UTXO model basic transfer, then loop through the transaction's
+	// outputs backwards and remove them from the view. Since the outputs will have
+	// been added to the view at the end of the utxo list, removing them from the
+	// view amounts to removing the last element from the utxo list.
+	//
+	// Loop backwards over the utxo operations as we go along.
+	for outputIndex := len(currentTxn.TxOutputs) - 1; outputIndex >= 0; outputIndex-- {
+		currentOutput := currentTxn.TxOutputs[outputIndex]
 
-			// Compute the utxo key for this output so we can reference it in our
-			// data structures.
-			outputKey := &UtxoKey{
-				TxID:  *txnHash,
-				Index: uint32(outputIndex),
-			}
-
-			// Verify that the utxo operation we're undoing is an add and advance
-			// our index to the next operation.
-			currentOperation := utxoOpsForTxn[operationIndex]
-			operationIndex--
-			if currentOperation.Type != OperationTypeAddUtxo {
-				return fmt.Errorf(
-					"_disconnectBasicTransfer: Output with key %v does not line up to an "+
-						"ADD operation in the passed utxoOps", outputKey)
-			}
-
-			// The current output should be at the end of the utxo list so go
-			// ahead and fetch it. Do some sanity checks to make sure the view
-			// is in sync with the operations we're trying to perform.
-			outputEntry := bav.GetUtxoEntryForUtxoKey(outputKey)
-			if outputEntry == nil {
-				return fmt.Errorf(
-					"_disconnectBasicTransfer: Output with key %v is missing from "+
-						"utxo view", outputKey)
-			}
-			if outputEntry.isSpent {
-				return fmt.Errorf(
-					"_disconnectBasicTransfer: Output with key %v was spent before "+
-						"being removed from the utxo view. This should never "+
-						"happen", outputKey)
-			}
-			if outputEntry.AmountNanos != currentOutput.AmountNanos {
-				return fmt.Errorf(
-					"_disconnectBasicTransfer: Output with key %v has amount (%d) "+
-						"that differs from the amount for the output in the "+
-						"view (%d)", outputKey, currentOutput.AmountNanos,
-					outputEntry.AmountNanos)
-			}
-			if !reflect.DeepEqual(outputEntry.PublicKey, currentOutput.PublicKey) {
-				return fmt.Errorf(
-					"_disconnectBasicTransfer: Output with key %v has public key (%v) "+
-						"that differs from the public key for the output in the "+
-						"view (%v)", outputKey, currentOutput.PublicKey,
-					outputEntry.PublicKey)
-			}
-			if outputEntry.BlockHeight != blockHeight {
-				return fmt.Errorf(
-					"_disconnectBasicTransfer: Output with key %v has block height (%d) "+
-						"that differs from the block we're disconnecting (%d)",
-					outputKey, outputEntry.BlockHeight, blockHeight)
-			}
-			if outputEntry.UtxoType == UtxoTypeBlockReward && (currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward) {
-
-				return fmt.Errorf(
-					"_disconnectBasicTransfer: Output with key %v is a block reward txn according "+
-						"to the view, yet is not the first transaction referenced in "+
-						"the block", outputKey)
-			}
-
-			if err := bav._unAddUtxo(outputKey); err != nil {
-				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding utxo %v: ", outputKey)
-			}
+		// Compute the utxo key for this output so we can reference it in our
+		// data structures.
+		outputKey := &UtxoKey{
+			TxID:  *txnHash,
+			Index: uint32(outputIndex),
 		}
 
-		// At this point we should have rolled back all of the transaction's outputs
-		// in the view. Now we roll back its inputs, similarly processing them in
-		// backwards order.
-		for inputIndex := len(currentTxn.TxInputs) - 1; inputIndex >= 0; inputIndex-- {
-			currentInput := currentTxn.TxInputs[inputIndex]
+		// Verify that the utxo operation we're undoing is an add and advance
+		// our index to the next operation.
+		currentOperation := utxoOpsForTxn[operationIndex]
+		operationIndex--
+		if currentOperation.Type != OperationTypeAddUtxo {
+			return fmt.Errorf(
+				"_disconnectBasicTransfer: Output with key %v does not line up to an "+
+					"ADD operation in the passed utxoOps", outputKey)
+		}
 
-			// Convert this input to a utxo key.
-			inputKey := UtxoKey(*currentInput)
+		// The current output should be at the end of the utxo list so go
+		// ahead and fetch it. Do some sanity checks to make sure the view
+		// is in sync with the operations we're trying to perform.
+		outputEntry := bav.GetUtxoEntryForUtxoKey(outputKey)
+		if outputEntry == nil {
+			return fmt.Errorf(
+				"_disconnectBasicTransfer: Output with key %v is missing from "+
+					"utxo view", outputKey)
+		}
+		if outputEntry.isSpent {
+			return fmt.Errorf(
+				"_disconnectBasicTransfer: Output with key %v was spent before "+
+					"being removed from the utxo view. This should never "+
+					"happen", outputKey)
+		}
+		if outputEntry.AmountNanos != currentOutput.AmountNanos {
+			return fmt.Errorf(
+				"_disconnectBasicTransfer: Output with key %v has amount (%d) "+
+					"that differs from the amount for the output in the "+
+					"view (%d)", outputKey, currentOutput.AmountNanos,
+				outputEntry.AmountNanos)
+		}
+		if !reflect.DeepEqual(outputEntry.PublicKey, currentOutput.PublicKey) {
+			return fmt.Errorf(
+				"_disconnectBasicTransfer: Output with key %v has public key (%v) "+
+					"that differs from the public key for the output in the "+
+					"view (%v)", outputKey, currentOutput.PublicKey,
+				outputEntry.PublicKey)
+		}
+		if outputEntry.BlockHeight != blockHeight {
+			return fmt.Errorf(
+				"_disconnectBasicTransfer: Output with key %v has block height (%d) "+
+					"that differs from the block we're disconnecting (%d)",
+				outputKey, outputEntry.BlockHeight, blockHeight)
+		}
+		if outputEntry.UtxoType == UtxoTypeBlockReward && (currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward) {
 
-			// Get the output entry for this input from the utxoOps that were
-			// passed in and check its type. For every input that we're restoring
-			// we need a SPEND operation that lines up with it.
-			currentOperation := utxoOpsForTxn[operationIndex]
-			operationIndex--
-			if currentOperation.Type != OperationTypeSpendUtxo {
-				return fmt.Errorf(
-					"_disconnectBasicTransfer: Input with key %v does not line up with a "+
-						"SPEND operation in the passed utxoOps", inputKey)
-			}
+			return fmt.Errorf(
+				"_disconnectBasicTransfer: Output with key %v is a block reward txn according "+
+					"to the view, yet is not the first transaction referenced in "+
+					"the block", outputKey)
+		}
 
-			// Check that the input matches the key of the spend we're rolling
-			// back.
-			if inputKey != *currentOperation.Key {
-				return fmt.Errorf(
-					"_disconnectBasicTransfer: Input with key %v does not match the key of the "+
-						"corresponding SPEND operation in the passed utxoOps %v",
-					inputKey, *currentOperation.Key)
-			}
+		if err := bav._unAddUtxo(outputKey); err != nil {
+			return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding utxo %v: ", outputKey)
+		}
+	}
 
-			// Unspend the entry using the information in the UtxoOperation. If the entry
-			// was de-serialized from the db it will have its utxoKey unset so we need to
-			// set it here in order to make it unspendable.
-			currentOperation.Entry.UtxoKey = currentOperation.Key
-			if err := bav._unSpendUtxo(currentOperation.Entry); err != nil {
-				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unspending utxo %v: ", currentOperation.Key)
-			}
+	// At this point we should have rolled back all of the transaction's outputs
+	// in the view. Now we roll back its inputs, similarly processing them in
+	// backwards order.
+	for inputIndex := len(currentTxn.TxInputs) - 1; inputIndex >= 0; inputIndex-- {
+		currentInput := currentTxn.TxInputs[inputIndex]
+
+		// Convert this input to a utxo key.
+		inputKey := UtxoKey(*currentInput)
+
+		// Get the output entry for this input from the utxoOps that were
+		// passed in and check its type. For every input that we're restoring
+		// we need a SPEND operation that lines up with it.
+		currentOperation := utxoOpsForTxn[operationIndex]
+		operationIndex--
+		if currentOperation.Type != OperationTypeSpendUtxo {
+			return fmt.Errorf(
+				"_disconnectBasicTransfer: Input with key %v does not line up with a "+
+					"SPEND operation in the passed utxoOps", inputKey)
+		}
+
+		// Check that the input matches the key of the spend we're rolling
+		// back.
+		if inputKey != *currentOperation.Key {
+			return fmt.Errorf(
+				"_disconnectBasicTransfer: Input with key %v does not match the key of the "+
+					"corresponding SPEND operation in the passed utxoOps %v",
+				inputKey, *currentOperation.Key)
+		}
+
+		// Unspend the entry using the information in the UtxoOperation. If the entry
+		// was de-serialized from the db it will have its utxoKey unset so we need to
+		// set it here in order to make it unspendable.
+		currentOperation.Entry.UtxoKey = currentOperation.Key
+		if err := bav._unSpendUtxo(currentOperation.Entry); err != nil {
+			return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unspending utxo %v: ", currentOperation.Key)
 		}
 	}
 
