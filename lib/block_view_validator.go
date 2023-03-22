@@ -7,6 +7,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"math"
+	"sort"
 )
 
 //
@@ -733,10 +734,46 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 	return nil
 }
 
+func (bav *UtxoView) GetValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
+	// First check UtxoView.
+	var validatorMapKeyToValidatorEntry map[ValidatorMapKey]*ValidatorEntry // TODO: store this on the UtxoView
+	for _, validatorEntry := range validatorMapKeyToValidatorEntry {
+		if validatorEntry != nil && validatorEntry.ValidatorPKID.Eq(pkid) {
+			if validatorEntry.isDeleted {
+				return nil, nil
+			}
+			return validatorEntry, nil
+		}
+	}
+	// If not found, check database.
+	return DBGetValidatorByPKID(bav.Handle, bav.Snapshot, pkid)
+}
+
+func (bav *UtxoView) GetTopValidatorsByStake(limit uint64) ([]*ValidatorEntry, error) {
+	// Pull top ValidatorEntries from the database.
+	dbValidatorEntries, err := DBGetTopValidatorsByStake(bav.Handle, bav.Snapshot, limit)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetTopValidatorsByStake: error retrieving entries from db: ")
+	}
+	// Add ValidatorEntries from the UtxoView.
+	// Convert from slice to set to prevent duplicates.
+	validatorSet := NewSet(dbValidatorEntries)
+	var validatorMapKeyToValidatorEntry map[ValidatorMapKey]*ValidatorEntry // TODO: store this on the UtxoView
+	for _, validatorEntry := range validatorMapKeyToValidatorEntry {
+		validatorSet.Add(validatorEntry)
+	}
+	// Convert from set to slice to sort DESC by TotalStakeAmountNanos.
+	validatorEntries := validatorSet.ToSlice()
+	sort.Slice(validatorEntries, func(ii, jj int) bool {
+		return validatorEntries[ii].TotalStakeAmountNanos.Cmp(validatorEntries[jj].TotalStakeAmountNanos) > 0
+	})
+	// Return top N.
+	return validatorEntries[0:limit], nil
+}
+
 func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	// Iterate through all entries in the UtxoView map.
 	var validatorMapKeyToValidatorEntry map[ValidatorMapKey]*ValidatorEntry // TODO: store this on the UtxoView
-
 	for validatorMapKeyIter, validatorEntryIter := range validatorMapKeyToValidatorEntry {
 		// Make a copy of the iterators since we make references to them below.
 		validatorMapKey := validatorMapKeyIter
@@ -768,6 +805,55 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 			}
 		}
 	}
-
 	return nil
+}
+
+//
+// MEMPOOL UTILS
+//
+
+func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
+	utxoOp *UtxoOperation,
+	txn *MsgDeSoTxn,
+) (
+	*RegisterAsValidatorTxindexMetadata,
+	[]*AffectedPublicKey,
+) {
+	metadata := txn.TxnMeta.(*RegisterAsValidatorMetadata)
+
+	// Cast ValidatorPublicKey to ValidatorPublicKeyBase58Check.
+	validatorPublicKeyBase58Check := PkToString(txn.PublicKey, bav.Params)
+
+	// Cast domains from []byte to string.
+	var domains []string
+	for _, domain := range metadata.Domains {
+		domains = append(domains, string(domain))
+	}
+
+	// TODO: Pull UnstakedStakers from UtxoOperation.
+	var unstakedStakers []*UnstakedStakerTxindexMetadata
+
+	// Construct TxindexMetadata.
+	txindexMetadata := &RegisterAsValidatorTxindexMetadata{
+		ValidatorPublicKeyBase58Check: validatorPublicKeyBase58Check,
+		Domains:                       domains,
+		DisableDelegatedStake:         metadata.DisableDelegatedStake,
+		UnstakedStakers:               unstakedStakers,
+	}
+
+	// Construct AffectedPublicKeys.
+	affectedPublicKeys := []*AffectedPublicKey{
+		{
+			PublicKeyBase58Check: validatorPublicKeyBase58Check,
+			Metadata:             "RegisteredValidatorPublicKeyBase58Check",
+		},
+	}
+	for _, unstakedStaker := range unstakedStakers {
+		affectedPublicKeys = append(affectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: unstakedStaker.StakerPublicKeyBase58Check,
+			Metadata:             "UnstakedStakerPublicKeyBase58Check",
+		})
+	}
+
+	return txindexMetadata, affectedPublicKeys
 }
