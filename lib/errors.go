@@ -217,6 +217,8 @@ const (
 	RuleErrorCreateNFTFeeTooHigh                   RuleError = "RuleErrorCreateNFTFeeTooHigh"
 	RuleErrorMaxCopiesPerNFTTooLow                 RuleError = "RuleErrorMaxCopiesPerNFTTooLow"
 	RuleErrorMaxCopiesPerNFTTooHigh                RuleError = "RuleErrorMaxCopiesPerNFTTooHigh"
+	RuleErrorMaxNonceExpirationBlockBufferTooLow   RuleError = "RuleErrorMaxNonceExpirationBlockBufferTooLow"
+	RuleErrorMaxNonceExpirationBlockBufferTooHigh  RuleError = "RuleErrorMaxNonceExpirationBlockBufferTooHigh"
 	RuleErrorForbiddenPubKeyLength                 RuleError = "RuleErrorForbiddenPubKeyLength"
 	RuleErrorUserNotAuthorizedToUpdateExchangeRate RuleError = "RuleErrorUserNotAuthorizedToUpdateExchangeRate"
 	RuleErrorUserNotAuthorizedToUpdateGlobalParams RuleError = "RuleErrorUserNotAuthorizedToUpdateGlobalParams"
@@ -487,13 +489,15 @@ const (
 	HeaderErrorHeightInvalid                                                     RuleError = "HeaderErrorHeightInvalid"
 	HeaderErrorDifficultyBitsNotConsistentWithTargetDifficultyComputedFromParent RuleError = "HeaderErrorDifficultyBitsNotConsistentWithTargetDifficultyComputedFromParent"
 
-	TxErrorTooLarge                     RuleError = "TxErrorTooLarge"
-	TxErrorDuplicate                    RuleError = "TxErrorDuplicate"
-	TxErrorIndividualBlockReward        RuleError = "TxErrorIndividualBlockReward"
-	TxErrorInsufficientFeeMinFee        RuleError = "TxErrorInsufficientFeeMinFee"
-	TxErrorInsufficientFeeRateLimit     RuleError = "TxErrorInsufficientFeeRateLimit"
-	TxErrorInsufficientFeePriorityQueue RuleError = "TxErrorInsufficientFeePriorityQueue"
-	TxErrorUnconnectedTxnNotAllowed     RuleError = "TxErrorUnconnectedTxnNotAllowed"
+	TxErrorTooLarge                           RuleError = "TxErrorTooLarge"
+	TxErrorDuplicate                          RuleError = "TxErrorDuplicate"
+	TxErrorIndividualBlockReward              RuleError = "TxErrorIndividualBlockReward"
+	TxErrorInsufficientFeeMinFee              RuleError = "TxErrorInsufficientFeeMinFee"
+	TxErrorInsufficientFeeRateLimit           RuleError = "TxErrorInsufficientFeeRateLimit"
+	TxErrorInsufficientFeePriorityQueue       RuleError = "TxErrorInsufficientFeePriorityQueue"
+	TxErrorUnconnectedTxnNotAllowed           RuleError = "TxErrorUnconnectedTxnNotAllowed"
+	TxErrorNonceExpired                       RuleError = "TxErrorNonceExpired"
+	TxErrorNonceExpirationBlockBufferExceeded RuleError = "TxErrorNonceExpirationBlockBufferExceeded"
 )
 
 func (e RuleError) Error() string {

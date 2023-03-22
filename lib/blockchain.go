@@ -3147,7 +3147,7 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	maxCopiesPerNFT int64,
 	minimumNetworkFeeNanosPerKb int64,
 	forbiddenPubKey []byte,
-
+	maxNonceExpirationBlockBuffer int64,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3171,6 +3171,9 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	}
 	if len(forbiddenPubKey) > 0 {
 		extraData[ForbiddenBlockSignaturePubKeyKey] = forbiddenPubKey
+	}
+	if maxNonceExpirationBlockBuffer >= 0 {
+		extraData[MaxNonceExpirationBlockBufferKey] = UintToBuf(uint64(maxNonceExpirationBlockBuffer))
 	}
 
 	txn := &MsgDeSoTxn{

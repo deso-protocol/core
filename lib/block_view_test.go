@@ -319,6 +319,8 @@ func (tes *transactionTestSuite) RunBadgerTest() {
 		afterConnectBlockHeight := tm.chain.blockTip().Height
 		tes.testDisconnectBlock(tm, testVectorBlock)
 		dbEntriesAfter := tes.GetAllStateDbEntries(tm, beforeConnectBlockHeight)
+		glog.Infof("BeforeHeight: %v", beforeConnectBlockHeight)
+		glog.Infof("AfterHeight: %v", afterConnectBlockHeight)
 		tes.compareBeforeAfterDbEntries(dbEntriesBefore, dbEntriesAfter, afterConnectBlockHeight)
 		glog.Infof(CLog(Yellow, "RunBadgerTest: successfully connected/disconnected block and verified db state"))
 		tes.testConnectBlock(tm, testVectorBlock)
@@ -875,13 +877,24 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 	return _updateGlobalParamsEntryWithMempool(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check,
 		updaterPrivBase58Check, usdCentsPerBitcoin, minimumNetworkFeesNanosPerKB, createProfileFeeNanos,
-		createNFTFeeNanos, maxCopiesPerNFT, flushToDb, nil)
+		createNFTFeeNanos, maxCopiesPerNFT, -1, flushToDb, nil)
+}
+
+func _updateGlobalParamsEntryWithMaxNonceExpirationBlockBuffer(t *testing.T, chain *Blockchain, db *badger.DB,
+	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
+	updaterPrivBase58Check string, usdCentsPerBitcoin int64, minimumNetworkFeesNanosPerKB int64,
+	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, maxNonceExpirationBlockBuffer int64, flushToDb bool) (
+	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	return _updateGlobalParamsEntryWithMempool(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check,
+		updaterPrivBase58Check, usdCentsPerBitcoin, minimumNetworkFeesNanosPerKB, createProfileFeeNanos,
+		createNFTFeeNanos, maxCopiesPerNFT, maxNonceExpirationBlockBuffer, flushToDb, nil)
 }
 
 func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, usdCentsPerBitcoin int64, minimumNetworkFeesNanosPerKB int64,
-	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, flushToDb bool, mempool *DeSoMempool) (
+	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, maxNonceExpirationBlockBuffer int64,
+	flushToDb bool, mempool *DeSoMempool) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -900,6 +913,7 @@ func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *ba
 		maxCopiesPerNFT,
 		minimumNetworkFeesNanosPerKB,
 		nil,
+		maxNonceExpirationBlockBuffer,
 		feeRateNanosPerKB,
 		mempool,
 		[]*DeSoOutput{})
@@ -944,7 +958,7 @@ func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *ba
 		require.Equal(OperationTypeUpdateGlobalParams, utxoOps[1].Type)
 	}
 	if flushToDb {
-		require.NoError(utxoView.FlushToDb(0))
+		require.NoError(utxoView.FlushToDb(uint64(chain.blockTip().Height)+1))
 	}
 	return utxoOps, txn, blockHeight, nil
 }
@@ -975,6 +989,41 @@ func _updateGlobalParamsEntryWithTestMeta(
 		createProfileFeeNanos,
 		createNFTFeeNanos,
 		maxCopiesPerNFT,
+		-1,
+		true,
+		testMeta.mempool) /*flushToDB*/
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
+func _updateGlobalParamsEntryWithMaxNonceExpirationBlockBufferAndTestMeta(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	USDCentsPerBitcoinExchangeRate int64,
+	minimumNetworkFeeNanosPerKb int64,
+	createProfileFeeNanos int64,
+	createNFTFeeNanos int64,
+	maxCopiesPerNFT int64,
+	maxNonceExpirationBlockBuffer int64,
+) {
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances,
+		_getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+
+	currentOps, currentTxn, _, err := _updateGlobalParamsEntryWithMempool(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+		feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		int64(InitialUSDCentsPerBitcoinExchangeRate),
+		minimumNetworkFeeNanosPerKb,
+		createProfileFeeNanos,
+		createNFTFeeNanos,
+		maxCopiesPerNFT,
+		maxNonceExpirationBlockBuffer,
 		true,
 		testMeta.mempool) /*flushToDB*/
 	require.NoError(testMeta.t, err)
@@ -1140,6 +1189,12 @@ func TestUpdateGlobalParams(t *testing.T) {
 	params.ExtraRegtestParamUpdaterKeys = make(map[PkMapKey]bool)
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(MustBase58CheckDecode(moneyPkString))] = true
 
+	// Mine a few blocks
+	_, err := miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(err)
+
 	// Send money to m0 from moneyPk
 	_, _, _ = _doBasicTransferWithViewFlush(
 		t, chain, db, params, moneyPkString, m0Pub,
@@ -1167,7 +1222,6 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 	// Should pass when founder key is equal to moneyPk
 	var updateGlobalParamsTxn *MsgDeSoTxn
-	var err error
 
 	{
 		newUSDCentsPerBitcoin := int64(270430 * 100)
@@ -1263,6 +1317,57 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 		// Check the balance of the updater after this txn
 		require.NotEqual(0, _getBalance(t, chain, nil, moneyPkString))
+	}
+	{
+		if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
+			return
+		}
+
+		// Save the prev global params entry so we can check it after disconnect.
+		prevGlobalParams := DbGetGlobalParamsEntry(db, chain.snapshot)
+
+		var utxoOps []*UtxoOperation
+		utxoOps, updateGlobalParamsTxn, _, err = _updateGlobalParamsEntryWithMaxNonceExpirationBlockBuffer(
+			t, chain, db, params, 200, /*feeRateNanosPerKB*/
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1, /*maxCopiesPerNFT*/
+			5000,
+			true)
+		require.NoError(err)
+
+		// Verify that the db reflects the new global params entry.
+		expectedGlobalParams := &GlobalParamsEntry{
+			USDCentsPerBitcoin:          prevGlobalParams.USDCentsPerBitcoin,
+			MinimumNetworkFeeNanosPerKB: prevGlobalParams.MinimumNetworkFeeNanosPerKB,
+			CreateProfileFeeNanos:       prevGlobalParams.CreateProfileFeeNanos,
+			CreateNFTFeeNanos:           prevGlobalParams.CreateNFTFeeNanos,
+			MaxCopiesPerNFT:             prevGlobalParams.MaxCopiesPerNFT,
+			MaxNonceExpirationBlockBuffer: 5000,
+		}
+
+		require.Equal(DbGetGlobalParamsEntry(db, chain.snapshot), expectedGlobalParams)
+
+		// Now let's do a disconnect and make sure the values reflect the previous entry.
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot)
+		require.NoError(err)
+		blockHeight := chain.blockTip().Height + 1
+		utxoView.DisconnectTransaction(
+			updateGlobalParamsTxn, updateGlobalParamsTxn.Hash(), utxoOps, blockHeight)
+
+		require.NoError(utxoView.FlushToDb(0))
+
+		require.Equal(DbGetGlobalParamsEntry(utxoView.Handle, chain.snapshot), prevGlobalParams)
+		require.Equal(utxoView.GlobalParamsEntry, prevGlobalParams)
+
+		// Check the balance of the updater after this txn
+		require.NotEqual(0, _getBalance(t, chain, nil, moneyPkString))
+
+		// TODO: make sure mempool won't accept the transaction w/ a high expiration.
 	}
 }
 

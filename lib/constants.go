@@ -1221,6 +1221,7 @@ const (
 	CreateProfileFeeNanosKey         = "CreateProfileFeeNanos"
 	CreateNFTFeeNanosKey             = "CreateNFTFeeNanos"
 	MaxCopiesPerNFTKey               = "MaxCopiesPerNFT"
+	MaxNonceExpirationBlockBufferKey = "MaxNonceExpirationBlockBuffer"
 	ForbiddenBlockSignaturePubKeyKey = "ForbiddenBlockSignaturePubKey"
 
 	DiamondLevelKey    = "DiamondLevel"
@@ -1320,6 +1321,11 @@ const (
 	// Access group key constants
 	MinAccessGroupKeyNameCharacters = 1
 	MaxAccessGroupKeyNameCharacters = 32
+
+	// TODO: What are reasonable values for these? Or do we even need them at all?
+	// Min/Max MaxNonceExpirationBlockBuffer - Min/max value to which the MaxNonceExpirationBlockBuffer can be set.
+	MinMaxNonceExpirationBlockBuffer = 100
+	MaxMaxNonceExpirationBlockBuffer = 10000
 
 	// TODO: Are these fields needed?
 	// Access group enumeration max recursion depth.

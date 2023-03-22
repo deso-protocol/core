@@ -2799,6 +2799,20 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 		newGlobalParamsEntry.MaxCopiesPerNFT = newMaxCopiesPerNFT
 	}
 
+	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && len(extraData[MaxNonceExpirationBlockBufferKey]) > 0 {
+		newMaxNonceExpirationBlockBuffer, maxNonceExpirationBlockBufferBytesRead := Uvarint(extraData[MaxNonceExpirationBlockBufferKey])
+		if maxNonceExpirationBlockBufferBytesRead <= 0 {
+			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode MaxNonceExpirationBlockBuffer as uint64")
+		}
+		if newMaxNonceExpirationBlockBuffer < MinMaxNonceExpirationBlockBuffer {
+			return 0, 0, nil, RuleErrorMaxNonceExpirationBlockBufferTooLow
+		}
+		if newMaxNonceExpirationBlockBuffer > MaxMaxNonceExpirationBlockBuffer {
+			return 0, 0, nil, RuleErrorMaxNonceExpirationBlockBufferTooHigh
+		}
+		newGlobalParamsEntry.MaxNonceExpirationBlockBuffer = newMaxNonceExpirationBlockBuffer
+	}
+
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var prevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var forbiddenPubKey []byte
@@ -3547,8 +3561,6 @@ func (bav *UtxoView) GetNonceEntry(accountNonce *DeSoNonce, pkid *PKID) (*NonceE
 func (bav *UtxoView) SetNonceEntry(nonceEntry *NonceEntry) {
 	if nonceEntry == nil {
 		glog.Errorf("SetNonceEntry: nil nonceEntry")
-		// TODO: remove panic?
-		panic("SetNonceEntry: nil nonceEntry")
 		return
 	}
 
@@ -3577,16 +3589,14 @@ func (bav *UtxoView) ConstructNewAccountNonceForPublicKey(publicKey []byte, bloc
 
 func (bav *UtxoView) ConstructNewAccountNonceForPKID(pkid *PKID, blockHeight uint64, depth uint8) (*DeSoNonce, error) {
 	// construct nonce
-	// For now, just use a random partial ID. We can do something more sophisticated later.
-	partialID := rand.Uint64()
-	// Keep the partial IDs small for regtest.
-	if bav.Params.IsRegtest {
-		partialID = partialID % 1000
+	// TODO: what's our initial value for this in the event that the global params entry isn't set?
+	expirationBuffer := uint64(10000)
+	if bav.GlobalParamsEntry != nil && bav.GlobalParamsEntry.MaxNonceExpirationBlockBuffer != 0 {
+		expirationBuffer = bav.GlobalParamsEntry.MaxNonceExpirationBlockBuffer
 	}
 	accountNonce := DeSoNonce{
 		PartialID: rand.Uint64(),
-		// TODO: don't hardcode 600.
-		ExpirationBlockHeight: blockHeight + 600,
+		ExpirationBlockHeight: blockHeight + expirationBuffer,
 	}
 
 	// Make sure we don't have a collision.

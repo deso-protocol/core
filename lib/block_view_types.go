@@ -3614,6 +3614,9 @@ type GlobalParamsEntry struct {
 
 	// The new minimum fee the network will accept
 	MinimumNetworkFeeNanosPerKB uint64
+
+	// Max Expiration Block Height
+	MaxNonceExpirationBlockBuffer uint64
 }
 
 func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -3624,7 +3627,9 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 	data = append(data, UintToBuf(gp.CreateNFTFeeNanos)...)
 	data = append(data, UintToBuf(gp.MaxCopiesPerNFT)...)
 	data = append(data, UintToBuf(gp.MinimumNetworkFeeNanosPerKB)...)
-
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockBuffer)...)
+	}
 	return data
 }
 
@@ -3651,12 +3656,17 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	if err != nil {
 		return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MinimumNetworkFeeNanosPerKB")
 	}
-
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		gp.MaxNonceExpirationBlockBuffer, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxNonceExpirationBlockBuffer")
+		}
+	}
 	return nil
 }
 
 func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, BalanceModelMigration)
 }
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {

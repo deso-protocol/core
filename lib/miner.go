@@ -186,8 +186,8 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 
 	// Log information on the block we just mined.
 	bestHash, _ := blockToMine.Hash()
-	glog.V(1).Infof("================== YOU MINED A NEW BLOCK! ================== Height: %d, Hash: %s", blockToMine.Header.Height, hex.EncodeToString(bestHash[:]))
-	glog.V(1).Infof("Height: (%d), Diff target: (%s), "+
+	glog.Infof("================== YOU MINED A NEW BLOCK! ================== Height: %d, Hash: %s", blockToMine.Header.Height, hex.EncodeToString(bestHash[:]))
+	glog.Infof("Height: (%d), Diff target: (%s), "+
 		"New hash: (%s), , Header Tip: %v, Block Tip: %v", blockToMine.Header.Height,
 		hex.EncodeToString(diffTarget[:])[:10], hex.EncodeToString(bestHash[:]),
 		desoMiner.BlockProducer.chain.headerTip().Header,

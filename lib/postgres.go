@@ -1131,17 +1131,19 @@ type PGBalance struct {
 	BalanceNanos uint64     `pg:",use_zero"`
 }
 
+// TODO: update for MaxNonceExpirationBlockBuffer
 // PGGlobalParams represents GlobalParamsEntry
 type PGGlobalParams struct {
 	tableName struct{} `pg:"pg_global_params"`
 
 	ID uint64
 
-	USDCentsPerBitcoin      uint64 `pg:",use_zero"`
-	CreateProfileFeeNanos   uint64 `pg:",use_zero"`
-	CreateNFTFeeNanos       uint64 `pg:",use_zero"`
-	MaxCopiesPerNFT         uint64 `pg:",use_zero"`
-	MinNetworkFeeNanosPerKB uint64 `pg:",use_zero"`
+	USDCentsPerBitcoin            uint64 `pg:",use_zero"`
+	CreateProfileFeeNanos         uint64 `pg:",use_zero"`
+	CreateNFTFeeNanos             uint64 `pg:",use_zero"`
+	MaxCopiesPerNFT               uint64 `pg:",use_zero"`
+	MinNetworkFeeNanosPerKB       uint64 `pg:",use_zero"`
+	MaxNonceExpirationBlockBuffer uint64 `pg:",use_zero"`
 }
 
 type PGRepost struct {
