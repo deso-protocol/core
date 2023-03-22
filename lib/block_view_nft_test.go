@@ -837,18 +837,24 @@ func TestBalanceModelNFTs(t *testing.T) {
 	TestNFTSerialNumberZeroBid(t)
 	TestNFTMinimumBidAmount(t)
 	TestNFTCreatedIsNotForSale(t)
-	TestNFTMoreErrorCases(t)
-	TestNFTBidsAreCanceledAfterAccept(t)
 }
 
-// Break up into two tests to keep memory footprint lower
+// Break up into multiple tests to keep memory footprint lower
 func TestBalanceModelNFTs2(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
+	TestNFTMoreErrorCases(t)
+	TestNFTBidsAreCanceledAfterAccept(t)
 	TestNFTDifferentMinBidAmountSerialNumbers(t)
 	TestNFTMaxCopiesGlobalParam(t)
 	TestNFTPreviousOwnersCantAcceptBids(t)
+}
+
+func TestBalanceModelNFTs3(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
 	TestNFTTransfersAndBurns(t)
 	TestBidAmountZero(t)
 	TestNFTBuyNow(t)
