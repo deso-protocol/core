@@ -95,10 +95,10 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
 	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		require.Equal(totalInput, totalOutput+fees)
 		// We should have one SPEND UtxoOperation for each input, one ADD operation
 		// for each output, and one OperationTypeCreateNFT operation at the end.
 		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
@@ -107,6 +107,7 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 		}
 		require.Equal(OperationTypeCreateNFT, utxoOps[len(utxoOps)-1].Type)
 	} else {
+		require.Equal(totalInput, totalOutput+fees+nftFee)
 		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 		require.Equal(OperationTypeCreateNFT, utxoOps[1].Type)
 	}
