@@ -3595,7 +3595,7 @@ func (bav *UtxoView) ConstructNewAccountNonceForPKID(pkid *PKID, blockHeight uin
 		expirationBuffer = bav.GlobalParamsEntry.MaxNonceExpirationBlockBuffer
 	}
 	accountNonce := DeSoNonce{
-		PartialID: rand.Uint64(),
+		PartialID:             rand.Uint64(),
 		ExpirationBlockHeight: blockHeight + expirationBuffer,
 	}
 

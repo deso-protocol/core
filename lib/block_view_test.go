@@ -958,7 +958,7 @@ func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *ba
 		require.Equal(OperationTypeUpdateGlobalParams, utxoOps[1].Type)
 	}
 	if flushToDb {
-		require.NoError(utxoView.FlushToDb(uint64(chain.blockTip().Height)+1))
+		require.NoError(utxoView.FlushToDb(uint64(chain.blockTip().Height) + 1))
 	}
 	return utxoOps, txn, blockHeight, nil
 }
@@ -1342,11 +1342,11 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 		// Verify that the db reflects the new global params entry.
 		expectedGlobalParams := &GlobalParamsEntry{
-			USDCentsPerBitcoin:          prevGlobalParams.USDCentsPerBitcoin,
-			MinimumNetworkFeeNanosPerKB: prevGlobalParams.MinimumNetworkFeeNanosPerKB,
-			CreateProfileFeeNanos:       prevGlobalParams.CreateProfileFeeNanos,
-			CreateNFTFeeNanos:           prevGlobalParams.CreateNFTFeeNanos,
-			MaxCopiesPerNFT:             prevGlobalParams.MaxCopiesPerNFT,
+			USDCentsPerBitcoin:            prevGlobalParams.USDCentsPerBitcoin,
+			MinimumNetworkFeeNanosPerKB:   prevGlobalParams.MinimumNetworkFeeNanosPerKB,
+			CreateProfileFeeNanos:         prevGlobalParams.CreateProfileFeeNanos,
+			CreateNFTFeeNanos:             prevGlobalParams.CreateNFTFeeNanos,
+			MaxCopiesPerNFT:               prevGlobalParams.MaxCopiesPerNFT,
 			MaxNonceExpirationBlockBuffer: 5000,
 		}
 
