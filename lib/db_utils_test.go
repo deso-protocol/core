@@ -632,7 +632,7 @@ func TestDeleteExpiredNonces(t *testing.T) {
 			-1,
 			-1,
 			1,
-			)
+		)
 		// There should be once nonce in the db.
 		nonceEntries := DbGetAllNonceEntries(testMeta.db)
 		require.Equal(3, len(nonceEntries))

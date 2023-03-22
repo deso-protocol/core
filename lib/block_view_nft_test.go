@@ -95,7 +95,7 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	require.Equal(totalInput, totalOutput+fees)
+	require.Equal(totalInput, totalOutput+fees+utxoView.GlobalParamsEntry.CreateNFTFeeNanos*numCopies)
 	require.Equal(totalInput, totalInputMake)
 
 	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
