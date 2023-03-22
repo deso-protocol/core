@@ -107,7 +107,7 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 		}
 		require.Equal(OperationTypeCreateNFT, utxoOps[len(utxoOps)-1].Type)
 	} else {
-		require.Equal(totalInput, totalOutput+fees+utxoView.GlobalParamsEntry.CreateNFTFeeNanos*numCopies)
+		require.Equal(totalInput, totalOutput+fees+nftFee)
 		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 		require.Equal(OperationTypeCreateNFT, utxoOps[1].Type)
 	}
