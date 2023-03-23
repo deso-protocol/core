@@ -1701,7 +1701,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 		newUtxoOp, err := bav._spendUtxo(&utxoKey)
 
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem spending input utxo")
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem spending input utxo")
 		}
 
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
@@ -1709,7 +1709,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 
 	if len(txn.TxInputs) != len(utxoEntriesForInputs) {
 		// Something went wrong if these lists differ in length.
-		return 0, 0, nil, fmt.Errorf("_connectBasicTransfer: Length of list of " +
+		return 0, 0, nil, fmt.Errorf("_connectBasicTransferWithExtraSpend Length of list of " +
 			"UtxoEntries does not match length of input list; this should never happen")
 	}
 
@@ -1769,7 +1769,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 		}
 		newUtxoOp, err := bav._addDESO(desoOutput.AmountNanos, desoOutput.PublicKey, getUtxoEntry, blockHeight)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding DESO")
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem adding DESO")
 		}
 
 		// Rosetta uses this UtxoOperation to provide INPUT amounts
@@ -1784,16 +1784,16 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 		var err error
 		totalInput, err = SafeUint64().Add(totalOutput, txn.TxnFeeNanos)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding txn fee and total output")
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem adding txn fee and total output")
 		}
 		totalInput, err = SafeUint64().Add(totalInput, extraSpend)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding extraSpend")
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem adding extraSpend")
 		}
 		newUtxoOp, err := bav._spendBalance(totalInput, txn.PublicKey, blockHeight-1)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(
-				err, "_connectBasicTransfer: Problem spending balance")
+				err, "_connectBasicTransferWithExtraSpend Problem spending balance")
 		}
 
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
@@ -1821,7 +1821,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 		if len(diamondPostHashBytes) != HashSizeBytes {
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorBasicTransferDiamondInvalidLengthForPostHashBytes,
-				"_connectBasicTransfer: DiamondPostHashBytes length: %d", len(diamondPostHashBytes))
+				"_connectBasicTransferWithExtraSpend DiamondPostHashBytes length: %d", len(diamondPostHashBytes))
 		}
 		copy(diamondPostHash[:], diamondPostHashBytes[:])
 
@@ -1841,7 +1841,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 		expectedDeSoNanosToTransfer, netNewDiamonds, err := bav.ValidateDiamondsAndGetNumDeSoNanos(
 			txn.PublicKey, diamondRecipientPubKey, diamondPostHash, diamondLevel, blockHeight)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: ")
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend ")
 		}
 		diamondRecipientTotal, _ := amountsByPublicKey[*NewPublicKey(diamondRecipientPubKey)]
 
@@ -1914,7 +1914,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 			}
 		} else {
 			if _, err := bav._verifySignature(txn, blockHeight); err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem verifying txn signature: ")
+				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem verifying txn signature: ")
 			}
 		}
 	}
@@ -1922,7 +1922,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 	if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		if derivedPkBytes, isDerivedSig, err := IsDerivedSignature(txn, blockHeight); isDerivedSig {
 			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: "+
+				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend "+
 					"It looks like this transaction was signed with a derived key, but the signature is malformed: ")
 			}
 			// Now we check the transaction limits on the derived key.

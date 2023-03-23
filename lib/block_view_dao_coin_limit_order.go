@@ -2032,8 +2032,18 @@ func (bav *UtxoView) GetDESONanosToFillOrder(transactorOrder *DAOCoinLimitOrderE
 	return desoNanosToFulfillOrders.Uint64(), nil
 }
 
-func (bav *UtxoView) ConvertTxnToDAOCoinLimitOrderEntry(txn *MsgDeSoTxn, blockHeight uint32) *DAOCoinLimitOrderEntry {
+func (bav *UtxoView) ConvertTxnToDAOCoinLimitOrderEntry(txn *MsgDeSoTxn, blockHeight uint32) (
+	*DAOCoinLimitOrderEntry, error) {
+	if txn.TxnMeta.GetTxnType() != TxnTypeDAOCoinLimitOrder {
+		return nil, fmt.Errorf(
+			"_convertTxnToDAOCoinLimitOrderEntry: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
 	metadata := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+	if metadata == nil {
+		return nil, fmt.Errorf(
+			"_convertTxnToDAOCoinLimitOrderEntry: Error casting txn metadata to type *DAOCoinLimitOrderMetadata")
+	}
 	return &DAOCoinLimitOrderEntry{
 		OrderID:                   txn.Hash(),
 		TransactorPKID:            bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
@@ -2044,5 +2054,5 @@ func (bav *UtxoView) ConvertTxnToDAOCoinLimitOrderEntry(txn *MsgDeSoTxn, blockHe
 		OperationType:                             metadata.OperationType,
 		FillType:                                  metadata.FillType,
 		BlockHeight:                               blockHeight,
-	}
+	}, nil
 }
