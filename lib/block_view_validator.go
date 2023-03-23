@@ -582,8 +582,20 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorEntry *V
 	var key []byte
 	var err error
 
-	// Delete ValidatorEntry from PrefixValidatorByPKID.
+	// Check if the ValidatorEntry exists in the db. If there isn't an existing
+	// ValidatorEntry in the db, just return. This is an important check since
+	// we do not want to decrease the GlobalStakeAmountNanos for a validator
+	// that does not exist.
 	key = DBKeyForValidatorByPKID(validatorEntry)
+	prevValidatorEntry, err := DBGetValidatorByPKIDWithTxn(txn, snap, validatorEntry.ValidatorPKID)
+	if err != nil {
+		return errors.Wrapf(err, "DBDeleteValidatorWithTxn: problem retrieving ValidatorEntry from index PrefixValidatorByPKID")
+	}
+	if prevValidatorEntry == nil {
+		return nil
+	}
+
+	// Delete ValidatorEntry from PrefixValidatorByPKID.
 	if err = DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByPKID",
@@ -837,7 +849,7 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	}
 
 	// TODO: Calculate TotalStakeAmountNanos.
-	var totalStakeAmountNanos *uint256.Int
+	totalStakeAmountNanos := uint256.NewInt()
 
 	// Set CreatedAtBlockHeight only if this is a new ValidatorEntry.
 	createdAtBlockHeight := blockHeight
@@ -1041,16 +1053,21 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 
 	// Validate Domains.
 	if len(metadata.Domains) < 1 {
-		return RuleErrorValidatorNoDomainsProvided
+		return RuleErrorValidatorNoDomains
 	}
 	if len(metadata.Domains) > MaxValidatorNumDomains {
-		return RuleErrorValidatorTooManyDomainsProvided
+		return RuleErrorValidatorTooManyDomains
 	}
+	var domainStrings []string
 	for _, domain := range metadata.Domains {
 		_, err := url.ParseRequestURI(string(domain))
 		if err != nil {
 			return fmt.Errorf("%s: %v", RuleErrorValidatorInvalidDomain, domain)
 		}
+		domainStrings = append(domainStrings, string(domain))
+	}
+	if len(NewSet(domainStrings).ToSlice()) != len(domainStrings) {
+		return RuleErrorValidatorDuplicateDomains
 	}
 
 	return nil
@@ -1267,9 +1284,10 @@ func (bav *UtxoView) CreateUnregisterAsValidatorTxindexMetadata(
 
 const RuleErrorProofofStakeTxnBeforeBlockHeight RuleError = "RuleErrorProofOfStakeTxnBeforeBlockHeight"
 const RuleErrorInvalidValidatorPKID RuleError = "RuleErrorInvalidValidatorPKID"
-const RuleErrorValidatorNoDomainsProvided RuleError = "RuleErrorValidatorNoDomainsProvided"
-const RuleErrorValidatorTooManyDomainsProvided RuleError = "RuleErrorValidatorTooManyDomainsProvided"
+const RuleErrorValidatorNoDomains RuleError = "RuleErrorValidatorNoDomains"
+const RuleErrorValidatorTooManyDomains RuleError = "RuleErrorValidatorTooManyDomains"
 const RuleErrorValidatorInvalidDomain RuleError = "RuleErrorValidatorInvalidDomain"
+const RuleErrorValidatorDuplicateDomains RuleError = "RuleErrorValidatorDuplicateDomains"
 const RuleErrorValidatorNotFound RuleError = "RuleErrorValidatorNotFound"
 
 const MaxValidatorNumDomains int = 12

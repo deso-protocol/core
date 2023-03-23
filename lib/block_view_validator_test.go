@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"fmt"
 	"github.com/stretchr/testify/require"
 	"math"
 	"testing"
@@ -80,7 +81,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		// RuleErrorProofOfStakeTxnBeforeBlockHeight
 		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = math.MaxUint32
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:               [][]byte{[]byte("https://example.com/")},
+			Domains:               [][]byte{[]byte("https://example.com")},
 			DisableDelegatedStake: false,
 		}
 		_, _, _, err = _submitRegisterAsValidatorTxn(
@@ -88,7 +89,70 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
-		params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(0)
+	}
+	{
+		// RuleErrorValidatorNoDomains
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:               [][]byte{},
+			DisableDelegatedStake: false,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorNoDomains)
+	}
+	{
+		// RuleErrorValidatorTooManyDomains
+		var domains [][]byte
+		for ii := 0; ii <= MaxValidatorNumDomains+1; ii++ {
+			domains = append(domains, []byte(fmt.Sprintf("https://example.com/%d", ii)))
+		}
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:               domains,
+			DisableDelegatedStake: false,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorTooManyDomains)
+	}
+	{
+		// RuleErrorValidatorInvalidDomain
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:               [][]byte{[]byte("InvalidURL")},
+			DisableDelegatedStake: false,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorInvalidDomain)
+	}
+	{
+		// RuleErrorValidatorDuplicateDomains
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:               [][]byte{[]byte("https://example.com"), []byte("https://example.com")},
+			DisableDelegatedStake: false,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorDuplicateDomains)
+	}
+	{
+		// Happy path: validator is registered
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:               [][]byte{[]byte("https://example.com")},
+			DisableDelegatedStake: false,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
 	}
 }
 
