@@ -682,6 +682,53 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 	return txn, 0, 0, 0, nil
 }
 
+func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
+	transactorPublicKey []byte,
+	metadata *UnregisterAsValidatorMetadata,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a txn containing the UnregisterAsValidator fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+
+	// Create a new UtxoView. If we have access to a mempool object, use
+	// it to get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrap(
+			err, "Blockchain.CreateUnregisterAsValidatorTxn: problem creating new utxo view: ",
+		)
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(
+				err, "Blockchain.CreateUnregisterAsValidatorTxn: problem getting augmented utxo view from mempool: ",
+			)
+		}
+	}
+	_ = utxoView
+
+	// TODO: what else do we need here with balance model
+
+	return txn, 0, 0, 0, nil
+}
+
 //
 // UTXO VIEW UTILS
 //
@@ -956,7 +1003,23 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 }
 
 func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []byte, metadata *RegisterAsValidatorMetadata) error {
-	// TODO
+	// Validate ValidatorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return RuleErrorInvalidValidatorPKID
+	}
+
+	// Validate Domains.
+	if len(metadata.Domains) > ValidatorMaxNumDomains {
+		return RuleErrorValidatorTooManyDomainsProvided
+	}
+	for _, domain := range metadata.Domains {
+		// TODO: validate regex for each domain
+		if len(domain) == 0 {
+			return RuleErrorValidatorInvalidDomain
+		}
+	}
+
 	return nil
 }
 
@@ -1104,7 +1167,7 @@ func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
 		domains = append(domains, string(domain))
 	}
 
-	// TODO: Pull UnstakedStakers from UtxoOperation.
+	// TODO: Pull UnstakedStakers from PrevStakeEntries on UtxoOperation.
 	var unstakedStakers []*UnstakedStakerTxindexMetadata
 
 	// Construct TxindexMetadata.
@@ -1132,14 +1195,55 @@ func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
 	return txindexMetadata, affectedPublicKeys
 }
 
+func (bav *UtxoView) CreateUnregisterAsValidatorTxindexMetadata(
+	utxoOp *UtxoOperation,
+	txn *MsgDeSoTxn,
+) (
+	*UnregisterAsValidatorTxindexMetadata,
+	[]*AffectedPublicKey,
+) {
+	// Cast ValidatorPublicKey to ValidatorPublicKeyBase58Check.
+	validatorPublicKeyBase58Check := PkToString(txn.PublicKey, bav.Params)
+
+	// TODO: Pull UnstakedStakers from PrevStakeEntries on UtxoOperation.
+	var unstakedStakers []*UnstakedStakerTxindexMetadata
+
+	// Construct TxindexMetadata.
+	txindexMetadata := &UnregisterAsValidatorTxindexMetadata{
+		ValidatorPublicKeyBase58Check: validatorPublicKeyBase58Check,
+		UnstakedStakers:               unstakedStakers,
+	}
+
+	// Construct AffectedPublicKeys.
+	affectedPublicKeys := []*AffectedPublicKey{
+		{
+			PublicKeyBase58Check: validatorPublicKeyBase58Check,
+			Metadata:             "UnregisteredValidatorPublicKeyBase58Check",
+		},
+	}
+	for _, unstakedStaker := range unstakedStakers {
+		affectedPublicKeys = append(affectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: unstakedStaker.StakerPublicKeyBase58Check,
+			Metadata:             "UnstakedStakerPublicKeyBase58Check",
+		})
+	}
+
+	return txindexMetadata, affectedPublicKeys
+}
+
 //
 // CONSTANTS
 //
 
-const TxnTypeRegisterAsValidator TxnType = math.MaxUint8 - 1             // TODO: update
-const TxnTypeUnregisterAsValidator TxnType = math.MaxUint8               // TODO: update
+const TxnTypeRegisterAsValidator TxnType = math.MaxUint8 - 1 // TODO: update
+const TxnTypeUnregisterAsValidator TxnType = math.MaxUint8   // TODO: update
+
 const OperationTypeRegisterAsValidator OperationType = math.MaxUint8 - 1 // TODO: update
 const OperationTypeUnregisterAsValidator OperationType = math.MaxUint8   // TODO: update
 
 const RuleErrorProofofStakeTxnBeforeBlockHeight RuleError = "RuleErrorProofOfStakeTxnBeforeBlockHeight"
 const RuleErrorInvalidValidatorPKID RuleError = "RuleErrorInvalidValidatorPKID"
+const RuleErrorValidatorTooManyDomainsProvided RuleError = "RuleErrorValidatorTooManyDomainsProvided"
+const RuleErrorValidatorInvalidDomain RuleError = "RuleErrorValidatorInvalidDomain"
+
+const ValidatorMaxNumDomains = 12
