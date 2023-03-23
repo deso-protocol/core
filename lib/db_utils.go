@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/holiman/uint256"
 	"io"
 	"log"
@@ -915,6 +916,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 			Key:           key,
 			Value:         value,
 			OperationType: DbOperationTypeUpsert,
+			FlushId:       uuid.Nil,
 		})
 	}
 	return nil
@@ -4199,9 +4201,18 @@ func DbPutNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot, nanosPurchased 
 }
 
 func DbPutNanosPurchased(handle *badger.DB, snap *Snapshot, nanosPurchased uint64, eventManager *EventManager) error {
-	return handle.Update(func(txn *badger.Txn) error {
+	err := handle.Update(func(txn *badger.Txn) error {
 		return DbPutNanosPurchasedWithTxn(txn, snap, nanosPurchased, eventManager)
 	})
+
+	if eventManager != nil {
+		eventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   uuid.Nil,
+			Succeeded: err == nil,
+		})
+	}
+
+	return err
 }
 
 func DbGetNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot) uint64 {
@@ -4226,9 +4237,18 @@ func DbGetNanosPurchased(handle *badger.DB, snap *Snapshot) uint64 {
 func DbPutGlobalParamsEntry(handle *badger.DB, snap *Snapshot, blockHeight uint64,
 	globalParamsEntry GlobalParamsEntry, eventManager *EventManager) error {
 
-	return handle.Update(func(txn *badger.Txn) error {
+	err := handle.Update(func(txn *badger.Txn) error {
 		return DbPutGlobalParamsEntryWithTxn(txn, snap, blockHeight, globalParamsEntry, eventManager)
 	})
+
+	if eventManager != nil {
+		eventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   uuid.Nil,
+			Succeeded: err == nil,
+		})
+	}
+
+	return err
 }
 
 func DbPutGlobalParamsEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
@@ -4689,9 +4709,18 @@ func PutBestHashWithTxn(txn *badger.Txn, snap *Snapshot,
 }
 
 func PutBestHash(handle *badger.DB, snap *Snapshot, bh *BlockHash, chainType ChainType, eventManager *EventManager) error {
-	return handle.Update(func(txn *badger.Txn) error {
+	err := handle.Update(func(txn *badger.Txn) error {
 		return PutBestHashWithTxn(txn, snap, bh, chainType, eventManager)
 	})
+
+	if eventManager != nil {
+		eventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   uuid.Nil,
+			Succeeded: err == nil,
+		})
+	}
+
+	return err
 }
 
 func BlockHashToBlockKey(blockHash *BlockHash) []byte {
@@ -4803,17 +4832,29 @@ func PutBlock(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock, eventM
 	err := handle.Update(func(txn *badger.Txn) error {
 		return PutBlockWithTxn(txn, snap, desoBlock, eventManager)
 	})
-	if err != nil {
-		return err
+	if eventManager != nil {
+		eventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   uuid.Nil,
+			Succeeded: err == nil,
+		})
 	}
 
-	return nil
+	return err
 }
 
-func DeleteBlockReward(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
-	return handle.Update(func(txn *badger.Txn) error {
+func DeleteBlockReward(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
+	err := handle.Update(func(txn *badger.Txn) error {
 		return DeleteBlockRewardWithTxn(txn, snap, desoBlock)
 	})
+
+	if eventManager != nil {
+		eventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   uuid.Nil,
+			Succeeded: err == nil,
+		})
+	}
+
+	return err
 }
 
 func DeleteBlockRewardWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
@@ -4942,6 +4983,12 @@ func PutHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot, node *BlockNode,
 	err := handle.Update(func(txn *badger.Txn) error {
 		return PutHeightHashToNodeInfoWithTxn(txn, snap, node, bitcoinNodes, eventManager)
 	})
+	if eventManager != nil {
+		eventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   uuid.Nil,
+			Succeeded: err == nil,
+		})
+	}
 
 	if err != nil {
 		return err
@@ -4991,8 +5038,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -7219,10 +7266,19 @@ func DbPutTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blo
 func DbPutTxindexTransactionMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
 	desoTxn *MsgDeSoTxn, params *DeSoParams, txnMeta *TransactionMetadata, eventManager *EventManager) error {
 
-	return handle.Update(func(txn *badger.Txn) error {
+	err := handle.Update(func(txn *badger.Txn) error {
 		return DbPutTxindexTransactionMappingsWithTxn(
 			txn, snap, blockHeight, desoTxn, params, txnMeta, eventManager)
 	})
+
+	if eventManager != nil {
+		eventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   uuid.Nil,
+			Succeeded: err == nil,
+		})
+	}
+
+	return err
 }
 
 func DbDeleteTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
@@ -9052,7 +9108,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -9179,7 +9235,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}

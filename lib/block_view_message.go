@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"math"
 	"reflect"
@@ -272,6 +273,12 @@ func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint
 
 	// We fetched all UtxoView entries, so now look for messages in the DB.
 	dbMessageEntries, err := DBGetLimitedMessageForMessagingKeys(bav.Handle, messagingGroupEntries, limit)
+	if bav.EventManager != nil {
+		bav.EventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   uuid.Nil,
+			Succeeded: err == nil,
+		})
+	}
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntries from db: ")
 	}

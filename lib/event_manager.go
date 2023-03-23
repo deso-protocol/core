@@ -1,7 +1,10 @@
 package lib
 
+import "github.com/google/uuid"
+
 type TransactionEventFunc func(event *TransactionEvent)
 type DBTransactionEventFunc func(event *DBTransactionEvent)
+type DBFlushedEventFunc func(event *DBFlushedEvent)
 type BlockEventFunc func(event *BlockEvent)
 type SnapshotCompletedEventFunc func()
 
@@ -9,6 +12,12 @@ type DBTransactionEvent struct {
 	Key           []byte
 	Value         []byte
 	OperationType StateSyncerOperationType
+	FlushId       uuid.UUID
+}
+
+type DBFlushedEvent struct {
+	FlushId   uuid.UUID
+	Succeeded bool
 }
 
 type TransactionEvent struct {
@@ -31,6 +40,7 @@ type BlockEvent struct {
 type EventManager struct {
 	transactionConnectedHandlers   []TransactionEventFunc
 	dbTransactionConnectedHandlers []DBTransactionEventFunc
+	dbFlushedHandlers              []DBFlushedEventFunc
 	blockConnectedHandlers         []BlockEventFunc
 	blockDisconnectedHandlers      []BlockEventFunc
 	blockAcceptedHandlers          []BlockEventFunc
@@ -45,8 +55,18 @@ func (em *EventManager) OnDbTransactionConnected(handler DBTransactionEventFunc)
 	em.dbTransactionConnectedHandlers = append(em.dbTransactionConnectedHandlers, handler)
 }
 
+func (em *EventManager) OnDbFlushed(handler DBFlushedEventFunc) {
+	em.dbFlushedHandlers = append(em.dbFlushedHandlers, handler)
+}
+
 func (em *EventManager) dbTransactionConnected(event *DBTransactionEvent) {
 	for _, handler := range em.dbTransactionConnectedHandlers {
+		handler(event)
+	}
+}
+
+func (em *EventManager) dbFlushed(event *DBFlushedEvent) {
+	for _, handler := range em.dbFlushedHandlers {
 		handler(event)
 	}
 }

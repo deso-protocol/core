@@ -355,6 +355,7 @@ func (txi *TXIndex) Update() error {
 			}
 			return nil
 		})
+
 		if err != nil {
 			return fmt.Errorf("Update: Error updating badgger: %v", err)
 		}

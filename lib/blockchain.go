@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/holiman/uint256"
 	"math"
 	"math/big"
@@ -2060,6 +2061,12 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			return nil
 		})
 	}
+	if bc.eventManager != nil {
+		bc.eventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   uuid.Nil,
+			Succeeded: err == nil,
+		})
+	}
 
 	if err != nil {
 		return false, false, errors.Wrapf(err, "ProcessBlock: Problem storing block after basic validation")
@@ -2194,6 +2201,12 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		}
 		bc.timer.Start("Blockchain.ProcessBlock: Transactions Db end")
 
+		if bc.eventManager != nil {
+			bc.eventManager.dbFlushed(&DBFlushedEvent{
+				FlushId:   uuid.Nil,
+				Succeeded: err == nil,
+			})
+		}
 		if err != nil {
 			return false, false, errors.Wrapf(err, "ProcessBlock: Problem writing block info to db on simple add to tip")
 		}
@@ -2470,6 +2483,12 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			return nil
 		})
+		if bc.eventManager != nil {
+			bc.eventManager.dbFlushed(&DBFlushedEvent{
+				FlushId:   uuid.Nil,
+				Succeeded: err == nil,
+			})
+		}
 		if err != nil {
 			return false, false, errors.Errorf("ProcessBlock: Problem updating: %v", err)
 		}
@@ -2583,7 +2602,7 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapsho
 					"at height: (%v)", hash, node.Height)
 			}
 			if blockToDetach != nil {
-				if err = DeleteBlockReward(bc.db, snap, blockToDetach); err != nil {
+				if err = DeleteBlockReward(bc.db, snap, blockToDetach, bc.eventManager); err != nil {
 					return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward with hash: "+
 						"(%v) and at height: (%v)", hash, node.Height)
 				}
@@ -2677,6 +2696,12 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapsho
 
 			return nil
 		})
+		if bc.eventManager != nil {
+			bc.eventManager.dbFlushed(&DBFlushedEvent{
+				FlushId:   uuid.Nil,
+				Succeeded: err == nil,
+			})
+		}
 		if err != nil {
 			return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem disconnecting block "+
 				"with hash: (%v) at blockHeight: (%v)", hash, height)

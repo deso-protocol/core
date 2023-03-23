@@ -5,6 +5,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"reflect"
 )
@@ -22,6 +23,12 @@ func (bav *UtxoView) FlushToDb(blockHeight uint64) error {
 	err = bav.Handle.Update(func(txn *badger.Txn) error {
 		return bav.FlushToDbWithTxn(txn, blockHeight)
 	})
+	if bav.EventManager != nil {
+		bav.EventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   uuid.Nil,
+			Succeeded: err == nil,
+		})
+	}
 	if err != nil {
 		return err
 	}

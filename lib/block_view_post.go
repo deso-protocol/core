@@ -8,6 +8,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"math"
 	"reflect"
@@ -546,6 +547,10 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 				posts = append(posts, postEntry)
 			}
 			return nil
+		})
+		bav.EventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   uuid.Nil,
+			Succeeded: err == nil,
 		})
 		if err != nil {
 			return nil, err

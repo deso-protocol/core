@@ -208,7 +208,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(params *DeSoParams, usePostgres b
 	// key have some DeSo
 	var snap *Snapshot
 	if !usePostgres {
-		snap, err, _ = NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &testParams, false)
+		snap, err, _ = NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &testParams, false, nil)
 		if err != nil {
 			log.Fatal(err)
 		}

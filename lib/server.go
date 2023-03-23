@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/google/uuid"
 	"net"
 	"reflect"
 	"runtime"
@@ -370,13 +371,17 @@ func NewServer(
 
 	var err error
 
+	stateChangeSyncer := NewStateChangeSyncer(_params)
+	eventManager.OnDbTransactionConnected(stateChangeSyncer._handleDbTransaction)
+	eventManager.OnDbFlushed(stateChangeSyncer._handleDbFlush)
+
 	// Setup snapshot
 	var _snapshot *Snapshot
 	shouldRestart := false
 	archivalMode := false
 	if _hyperSync {
 		_snapshot, err, shouldRestart = NewSnapshot(_db, _dataDir, _snapshotBlockHeightPeriod,
-			false, false, _params, _disableEncoderMigrations)
+			false, false, _params, _disableEncoderMigrations, eventManager)
 		if err != nil {
 			panic(err)
 		}
@@ -423,8 +428,6 @@ func NewServer(
 	// TODO: Would be nice if this heavier-weight operation were moved to Start() to
 	// keep this constructor fast.
 	srv.eventManager = eventManager
-	stateChangeSyncer := NewStateChangeSyncer(_params)
-	eventManager.OnDbTransactionConnected(stateChangeSyncer._handleDbTransaction)
 	eventManager.OnBlockConnected(srv._handleBlockMainChainConnectedd)
 	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
 	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
@@ -1352,6 +1355,14 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		err := PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
 		return err
 	})
+
+	if srv.eventManager != nil {
+		srv.eventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   uuid.Nil,
+			Succeeded: err == nil,
+		})
+	}
+
 	if err != nil {
 		glog.Errorf("Server._handleSnapshot: Problem updating snapshot blocknodes, error: (%v)", err)
 	}
