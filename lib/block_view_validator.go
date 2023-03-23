@@ -797,12 +797,56 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 func (bav *UtxoView) _disconnectRegisterAsValidator(
 	operationType OperationType,
 	currentTxn *MsgDeSoTxn,
-	txnHash *BlockHash,
+	txHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
+	// Validate the last operation is a RegisterAsValidator operation.
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectRegisterAsValidator: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	operationData := utxoOpsForTxn[operationIndex]
+	if operationData.Type != OperationTypeRegisterAsValidator {
+		return fmt.Errorf(
+			"_disconnectRegisterAsValidator: trying to revert %v but found %v",
+			OperationTypeRegisterAsValidator,
+			operationData.Type,
+		)
+	}
+
+	// Convert TransactorPublicKey to TransactorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return RuleErrorInvalidValidatorPKID
+	}
+
+	// Delete the current ValidatorEntry.
+	currentValidatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectRegisterAsValidator: ")
+	}
+	if currentValidatorEntry == nil {
+		return fmt.Errorf(
+			"_disconnectRegisterAsValidator: no ValidatorEntry found for %v", transactorPKIDEntry.PKID,
+		)
+	}
+	bav._deleteValidatorEntryMappings(currentValidatorEntry)
+
+	// Restore the prev ValidatorEntry, if exists.
+	var prevValidatorEntry *ValidatorEntry
+	// prevValidatorEntry = operationData.PrevValidatorEntry // TODO: store on UtxoOperation
+	if prevValidatorEntry != nil {
+		bav._setValidatorEntryMappings(prevValidatorEntry)
+	}
+
+	// If PrevStakers, delete the current stakers and restore the prev stakers.
 	// TODO
-	return nil
+
+	// Disconnect the BasicTransfer.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txHash, utxoOpsForTxn[:operationIndex], blockHeight,
+	)
 }
 
 func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []byte, metadata *RegisterAsValidatorMetadata) error {
