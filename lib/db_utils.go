@@ -10531,15 +10531,8 @@ func DbDeleteExpiredTransactorNonceEntriesAtBlockHeight(handle *badger.DB, block
 }
 
 func DbDeleteExpiredTransactorNonceEntriesAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint64) error {
-
-	startPrefix := _dbPrefixForNonceEntryIndexWithBlockHeight(blockHeight)
+	startPrefix := _dbKeyForTransactorNonceEntry(&DeSoNonce{ExpirationBlockHeight: blockHeight, PartialID: math.MaxUint64}, &MaxPKID)
 	endPrefix := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
-	// Add 33 max bytes for the PKID
-	for ii := 0; ii < 33; ii++ {
-		startPrefix = append(startPrefix, 0xFF)
-	}
-	// And then append the max uint64 to start key
-	startPrefix = append(startPrefix, EncodeUint64(math.MaxUint64)...)
 	opts := badger.DefaultIteratorOptions
 	opts.Reverse = true
 	nodeIterator := txn.NewIterator(opts)
@@ -10569,10 +10562,12 @@ func DbGetAllTransactorNonceEntries(handle *badger.DB) []*TransactorNonceEntry {
 
 func TransactorNonceKeyToTransactorNonceEntry(key []byte) *TransactorNonceEntry {
 	keyWithoutPrefix := key[1:]
-	expirationHeight := DecodeUint64(keyWithoutPrefix[:8])
+	lenEncodedUint64 := 8
+	expirationHeight := DecodeUint64(keyWithoutPrefix[:lenEncodedUint64])
 	pkid := &PKID{}
-	copy(pkid[:], keyWithoutPrefix[8:41])
-	partialID := DecodeUint64(keyWithoutPrefix[41:])
+	pkidEndIdx := lenEncodedUint64 + PublicKeyLenCompressed
+	copy(pkid[:], keyWithoutPrefix[lenEncodedUint64:pkidEndIdx])
+	partialID := DecodeUint64(keyWithoutPrefix[pkidEndIdx:])
 	return &TransactorNonceEntry{
 		Nonce: &DeSoNonce{
 			ExpirationBlockHeight: expirationHeight,

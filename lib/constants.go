@@ -1322,6 +1322,8 @@ const (
 	// Min/Max MaxNonceExpirationBlockHeightOffset - Min/max value to which the MaxNonceExpirationBlockHeightOffset can be set.
 	MinMaxNonceExpirationBlockHeightOffset = 1
 	MaxMaxNonceExpirationBlockHeightOffset = 10000
+	// TODO: what's our initial value for this in the event that the global params entry isn't set?
+	InitialMaxNonceExpirationBlockHeightOffset = uint64(10000)
 
 	// TODO: Are these fields needed?
 	// Access group enumeration max recursion depth.

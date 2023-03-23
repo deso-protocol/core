@@ -3600,8 +3600,7 @@ func (bav *UtxoView) ConstructNonceForPublicKey(publicKey []byte, blockHeight ui
 
 func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64, depth uint8) (*DeSoNonce, error) {
 	// construct nonce
-	// TODO: what's our initial value for this in the event that the global params entry isn't set?
-	expirationBuffer := uint64(10000)
+	expirationBuffer := InitialMaxNonceExpirationBlockHeightOffset
 	if bav.GlobalParamsEntry != nil && bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 {
 		expirationBuffer = bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset
 	}
