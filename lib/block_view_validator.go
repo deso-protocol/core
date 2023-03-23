@@ -840,7 +840,113 @@ func (bav *UtxoView) _disconnectRegisterAsValidator(
 		bav._setValidatorEntryMappings(prevValidatorEntry)
 	}
 
-	// If PrevStakers, delete the current stakers and restore the prev stakers.
+	// If PrevStakeEntries, delete the current StakeEntries and restore the prev StakeEntries.
+	// TODO
+
+	// Disconnect the BasicTransfer.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txHash, utxoOpsForTxn[:operationIndex], blockHeight,
+	)
+}
+
+func (bav *UtxoView) _connectUnregisterAsValidator(
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	verifySignatures bool,
+) (
+	_totalInput uint64,
+	_totalOutput uint64,
+	_utxoOps []*UtxoOperation,
+	_err error,
+) {
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight { // TODO: ProofOfStakeNewTxnTypesBlockHeight
+		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
+	}
+
+	// Validate the txn TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeUnregisterAsValidator {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectUnregisterAsValidator: called with bad TxnType %s", txn.TxnMeta.GetTxnType().String(),
+		)
+	}
+
+	// Connect a basic transfer to get the total input and the
+	// total output without considering the txn metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: ")
+	}
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the txn is signed
+		// by the top-level public key, which we take to be the sender's
+		// public key so there is no need to verify anything further.
+	}
+
+	// Convert TransactorPublicKey to TransactorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return 0, 0, nil, RuleErrorInvalidValidatorPKID
+	}
+
+	// Unstake all stakers.
+	// TODO
+
+	// Delete the existing ValidatorEntry.
+	prevValidatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: ")
+	}
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
+	if prevValidatorEntry != nil {
+		bav._deleteValidatorEntryMappings(prevValidatorEntry)
+	}
+
+	// Add a UTXO operation.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type: OperationTypeUnregisterAsValidator,
+		// PrevValidatorEntry: prevValidatorEntry, // TODO
+		// PrevStakeEntries: prevStakeEntries, // TODO
+	})
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _disconnectUnregisterAsValidator(
+	operationType OperationType,
+	currentTxn *MsgDeSoTxn,
+	txHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation,
+	blockHeight uint32,
+) error {
+	// Validate the last operation is an UnregisterAsValidator operation.
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectUnregisterAsValidator: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	operationData := utxoOpsForTxn[operationIndex]
+	if operationData.Type != OperationTypeUnregisterAsValidator {
+		return fmt.Errorf(
+			"_disconnectUnegisterAsValidator: trying to revert %v but found %v",
+			OperationTypeUnregisterAsValidator,
+			operationData.Type,
+		)
+	}
+
+	// Restore the prev ValidatorEntry.
+	var prevValidatorEntry *ValidatorEntry
+	// prevValidatorEntry = operationData.PrevValidatorEntry // TODO
+	if prevValidatorEntry == nil {
+		// This should never happen.
+		return fmt.Errorf(
+			"_disconnectUnregisterAsValidator: no deleted ValidatorEntry found for %v", currentTxn.PublicKey,
+		)
+	}
+	bav._setValidatorEntryMappings(prevValidatorEntry)
+
+	// Restore the prev StakeEntries, if any.
 	// TODO
 
 	// Disconnect the BasicTransfer.
@@ -1030,8 +1136,10 @@ func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
 // CONSTANTS
 //
 
-const TxnTypeRegisterAsValidator TxnType = math.MaxUint8             // TODO: update
-const OperationTypeRegisterAsValidator OperationType = math.MaxUint8 // TODO: update
+const TxnTypeRegisterAsValidator TxnType = math.MaxUint8 - 1             // TODO: update
+const TxnTypeUnregisterAsValidator TxnType = math.MaxUint8               // TODO: update
+const OperationTypeRegisterAsValidator OperationType = math.MaxUint8 - 1 // TODO: update
+const OperationTypeUnregisterAsValidator OperationType = math.MaxUint8   // TODO: update
 
 const RuleErrorProofofStakeTxnBeforeBlockHeight RuleError = "RuleErrorProofOfStakeTxnBeforeBlockHeight"
 const RuleErrorInvalidValidatorPKID RuleError = "RuleErrorInvalidValidatorPKID"
