@@ -677,9 +677,32 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 		)
 	}
 
-	// TODO: what else do we need here with balance model
+	// We don't need to make any tweaks to the amount because
+	// it's basically a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
+		txn, minFeeRateNanosPerKB, mempool,
+	)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateRegisterAsValidatorTxn: problem adding inputs: ",
+		)
+	}
 
-	return txn, 0, 0, 0, nil
+	// Validate that the transaction has at least one input, even if it all goes
+	// to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, errors.New(
+			"Blockchain.CreateRegisterAsValidatorTxn: txn has zero inputs, try increasing the fee rate",
+		)
+	}
+
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"Blockchain.CreateRegisterAsValidatorTxn: spend amount is non-zero: %d", spendAmount,
+		)
+	}
+	return txn, totalInput, changeAmount, fees, nil
 }
 
 func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
@@ -706,27 +729,32 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 		// we've added all the inputs and change.
 	}
 
-	// Create a new UtxoView. If we have access to a mempool object, use
-	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	// We don't need to make any tweaks to the amount because
+	// it's basically a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
+		txn, minFeeRateNanosPerKB, mempool,
+	)
 	if err != nil {
-		return nil, 0, 0, 0, errors.Wrap(
-			err, "Blockchain.CreateUnregisterAsValidatorTxn: problem creating new utxo view: ",
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateUnregisterAsValidatorTxn: problem adding inputs: ",
 		)
 	}
-	if mempool != nil {
-		utxoView, err = mempool.GetAugmentedUniversalView()
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(
-				err, "Blockchain.CreateUnregisterAsValidatorTxn: problem getting augmented utxo view from mempool: ",
-			)
-		}
+
+	// Validate that the transaction has at least one input, even if it all goes
+	// to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, errors.New(
+			"Blockchain.CreateUnregisterAsValidatorTxn: txn has zero inputs, try increasing the fee rate",
+		)
 	}
-	_ = utxoView
 
-	// TODO: what else do we need here with balance model
-
-	return txn, 0, 0, 0, nil
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"Blockchain.CreateUnregisterAsValidatorTxn: spend amount is non-zero: %d", spendAmount,
+		)
+	}
+	return txn, totalInput, changeAmount, fees, nil
 }
 
 //
