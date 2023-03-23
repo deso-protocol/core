@@ -108,6 +108,7 @@ const (
 	EncoderTypeNewMessageEntry
 	EncoderTypeAccessGroupMemberEnumerationEntry
 	EncoderTypeDmThreadEntry
+	EncoderTypeValidatorEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -145,6 +146,8 @@ const (
 	EncoderTypeAccessGroupTxindexMetadata
 	EncoderTypeAccessGroupMembersTxindexMetadata
 	EncoderTypeNewMessageTxindexMetadata
+	EncoderTypeRegisterAsValidatorTxindexMetadata
+	EncoderTypeUnregisterAsValidatorTxindexMetadata
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndTxIndex
@@ -230,6 +233,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMemberEnumerationEntry{}
 	case EncoderTypeDmThreadEntry:
 		return &DmThreadEntry{}
+	case EncoderTypeValidatorEntry:
+		return &ValidatorEntry{}
 	}
 
 	// Txindex encoder types
@@ -294,6 +299,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMembersTxindexMetadata{}
 	case EncoderTypeNewMessageTxindexMetadata:
 		return &NewMessageTxindexMetadata{}
+	case EncoderTypeRegisterAsValidatorTxindexMetadata:
+		return &RegisterAsValidatorTxindexMetadata{}
+	case EncoderTypeUnregisterAsValidatorTxindexMetadata:
+		return &UnregisterAsValidatorTxindexMetadata{}
 	default:
 		return nil
 	}
@@ -569,8 +578,10 @@ const (
 	OperationTypeAccessGroup                  OperationType = 33
 	OperationTypeAccessGroupMembers           OperationType = 34
 	OperationTypeNewMessage                   OperationType = 35
+	OperationTypeRegisterAsValidator          OperationType = 36
+	OperationTypeUnregisterAsValidator        OperationType = 37
 
-	// NEXT_TAG = 36
+	// NEXT_TAG = 38
 )
 
 func (op OperationType) String() string {
@@ -715,6 +726,10 @@ func (op OperationType) String() string {
 		{
 			return "OperationTypeNewMessage"
 		}
+	case OperationTypeRegisterAsValidator:
+		return "OperationTypeRegisterAsValidator"
+	case OperationTypeUnregisterAsValidator:
+		return "OperationTypeUnregisterAsValidator"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -892,6 +907,9 @@ type UtxoOperation struct {
 	PrevNewMessageEntry *NewMessageEntry
 	// PrevDmThreadEntry is used for disconnecting DM message threads.
 	PrevDmThreadEntry *DmThreadEntry
+
+	// PrevValidatorEntry is the previous ValidatorEntry prior to a register or unregister txn.
+	PrevValidatorEntry *ValidatorEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1197,6 +1215,11 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// PrevDmThreadEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevDmThreadEntry, skipMetadata...)...)
+	}
+
+	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+		// PrevValidatorEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
 	}
 
 	return data
@@ -1789,11 +1812,21 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 	}
 
+	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+		// PrevValidatorEntry
+		prevValidatorEntry := &ValidatorEntry{}
+		if exist, err := DecodeFromBytes(prevValidatorEntry, rr); exist && err == nil {
+			op.PrevValidatorEntry = prevValidatorEntry
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry")
+		}
+	}
+
 	return nil
 }
 
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration)
+	return GetMigrationVersion(blockHeight, ProofOfStakeNewTxnTypesMigration)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {

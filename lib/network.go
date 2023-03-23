@@ -235,8 +235,10 @@ const (
 	TxnTypeAccessGroup                  TxnType = 31
 	TxnTypeAccessGroupMembers           TxnType = 32
 	TxnTypeNewMessage                   TxnType = 33
+	TxnTypeRegisterAsValidator          TxnType = 34
+	TxnTypeUnregisterAsValidator        TxnType = 35
 
-	// NEXT_ID = 34
+	// NEXT_ID = 36
 )
 
 type TxnString string
@@ -276,6 +278,8 @@ const (
 	TxnStringAccessGroup                  TxnString = "ACCESS_GROUP"
 	TxnStringAccessGroupMembers           TxnString = "ACCESS_GROUP_MEMBERS"
 	TxnStringNewMessage                   TxnString = "NEW_MESSAGE"
+	TxnStringRegisterAsValidator          TxnString = "REGISTER_AS_VALIDATOR"
+	TxnStringUnregisterAsValidator        TxnString = "UNREGISTER_AS_VALIDATOR"
 )
 
 var (
@@ -287,7 +291,8 @@ var (
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
 		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeCreateUserAssociation,
 		TxnTypeDeleteUserAssociation, TxnTypeCreatePostAssociation, TxnTypeDeletePostAssociation,
-		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage,
+		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage, TxnTypeRegisterAsValidator,
+		TxnTypeUnregisterAsValidator,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -297,7 +302,8 @@ var (
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
 		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringCreateUserAssociation,
 		TxnStringDeleteUserAssociation, TxnStringCreatePostAssociation, TxnStringDeletePostAssociation,
-		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage,
+		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage, TxnStringRegisterAsValidator,
+		TxnStringUnregisterAsValidator,
 	}
 )
 
@@ -377,6 +383,10 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringAccessGroupMembers
 	case TxnTypeNewMessage:
 		return TxnStringNewMessage
+	case TxnTypeRegisterAsValidator:
+		return TxnStringRegisterAsValidator
+	case TxnTypeUnregisterAsValidator:
+		return TxnStringUnregisterAsValidator
 	default:
 		return TxnStringUndefined
 	}
@@ -450,6 +460,10 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeAccessGroupMembers
 	case TxnStringNewMessage:
 		return TxnTypeNewMessage
+	case TxnStringRegisterAsValidator:
+		return TxnTypeRegisterAsValidator
+	case TxnStringUnregisterAsValidator:
+		return TxnTypeUnregisterAsValidator
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -531,6 +545,10 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&AccessGroupMembersMetadata{}).New(), nil
 	case TxnTypeNewMessage:
 		return (&NewMessageMetadata{}).New(), nil
+	case TxnTypeRegisterAsValidator:
+		return (&RegisterAsValidatorMetadata{}).New(), nil
+	case TxnTypeUnregisterAsValidator:
+		return (&UnregisterAsValidatorMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}

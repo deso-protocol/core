@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/holiman/uint256"
 	"math"
 	"reflect"
 	"strings"
@@ -106,6 +107,10 @@ type UtxoView struct {
 	AssociationMapKeyToUserAssociationEntry map[AssociationMapKey]*UserAssociationEntry
 	AssociationMapKeyToPostAssociationEntry map[AssociationMapKey]*PostAssociationEntry
 
+	// Validator mappings
+	ValidatorMapKeyToValidatorEntry map[ValidatorMapKey]*ValidatorEntry
+	GlobalStakeAmountNanos          *uint256.Int
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -191,6 +196,10 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// Association entries
 	bav.AssociationMapKeyToUserAssociationEntry = make(map[AssociationMapKey]*UserAssociationEntry)
 	bav.AssociationMapKeyToPostAssociationEntry = make(map[AssociationMapKey]*PostAssociationEntry)
+
+	// ValidatorEntries
+	bav.ValidatorMapKeyToValidatorEntry = make(map[ValidatorMapKey]*ValidatorEntry)
+	bav.GlobalStakeAmountNanos = uint256.NewInt()
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -434,6 +443,14 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newEntry := *entry
 		newView.AssociationMapKeyToPostAssociationEntry[entryKey] = &newEntry
 	}
+
+	// Copy the ValidatorEntries
+	newView.ValidatorMapKeyToValidatorEntry = make(map[ValidatorMapKey]*ValidatorEntry, len(bav.ValidatorMapKeyToValidatorEntry))
+	for entryKey, entry := range bav.ValidatorMapKeyToValidatorEntry {
+		newEntry := *entry
+		newView.ValidatorMapKeyToValidatorEntry[entryKey] = &newEntry
+	}
+	newView.GlobalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
 	return newView, nil
 }
 
@@ -1111,6 +1128,12 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeNewMessage {
 		return bav._disconnectNewMessage(
 			OperationTypeNewMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeRegisterAsValidator {
+		return bav._disconnectRegisterAsValidator(
+			OperationTypeRegisterAsValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	} else if currentTxn.TxnMeta.GetTxnType() == TxnTypeUnregisterAsValidator {
+		return bav._disconnectUnregisterAsValidator(
+			OperationTypeUnregisterAsValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -2809,6 +2832,12 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNewMessage(
 				txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeRegisterAsValidator {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectRegisterAsValidator(txn, txHash, blockHeight, verifySignatures)
+
+	} else if txn.TxnMeta.GetTxnType() == TxnTypeUnregisterAsValidator {
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnregisterAsValidator(txn, txHash, blockHeight, verifySignatures)
 
 	} else {
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())

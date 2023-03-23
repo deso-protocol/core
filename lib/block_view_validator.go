@@ -411,14 +411,14 @@ func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetEncoderType() En
 
 func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 	var key []byte
-	key = append(key, NewPrefixes.PrefixValidatorByPKID...)
+	key = append(key, Prefixes.PrefixValidatorByPKID...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
 	return key
 }
 
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	var key []byte
-	key = append(key, NewPrefixes.PrefixValidatorByStake...)
+	key = append(key, Prefixes.PrefixValidatorByStake...)
 	key = append(key, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)               // Highest stake first
 	key = append(key, _EncodeUint32(math.MaxUint32-validatorEntry.CreatedAtBlockHeight)...) // Oldest first
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
@@ -427,7 +427,7 @@ func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 
 func DBKeyForGlobalStakeAmountNanos() []byte {
 	var key []byte
-	key = append(key, NewPrefixes.PrefixGlobalStakeAmountNanos...)
+	key = append(key, Prefixes.PrefixGlobalStakeAmountNanos...)
 	return key
 }
 
@@ -467,7 +467,7 @@ func DBGetTopValidatorsByStake(handle *badger.DB, snap *Snapshot, limit uint64) 
 
 	// Retrieve top N ValidatorEntry PKIDs by stake.
 	var key []byte
-	key = append(key, NewPrefixes.PrefixValidatorByStake...)
+	key = append(key, Prefixes.PrefixValidatorByStake...)
 	_, validatorPKIDsBytes, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, int(limit), nil, true, NewSet([]string{}),
 	)
@@ -745,7 +745,7 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight { // TODO: ProofOfStakeNewTxnTypesBlockHeight
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
 		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
 	}
 
@@ -802,15 +802,14 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		validatorID = prevValidatorEntry.ValidatorID
 	}
 
-	// Unstake delegated stakers if updating DisableDelegatedStake=true.
+	// TODO: Unstake delegated stakers if updating DisableDelegatedStake=true.
 	if prevValidatorEntry != nil &&
 		!prevValidatorEntry.DisableDelegatedStake && // Validator previously allowed delegated stake.
 		txMeta.DisableDelegatedStake { // Validator no longer allows delegated stake.
-		// TODO
 	}
 
-	// Calculate TotalStakeAmountNanos.
-	totalStakeAmountNanos := uint256.NewInt() // TODO
+	// TODO: Calculate TotalStakeAmountNanos.
+	var totalStakeAmountNanos *uint256.Int
 
 	// Set CreatedAtBlockHeight only if this is a new ValidatorEntry.
 	createdAtBlockHeight := blockHeight
@@ -840,8 +839,8 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 
 	// Add a UTXO operation
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type: OperationTypeRegisterAsValidator,
-		// PrevValidatorEntry: prevValidatorEntry, // TODO
+		Type:               OperationTypeRegisterAsValidator,
+		PrevValidatorEntry: prevValidatorEntry,
 		// PrevStakeEntries: prevStakeEntries, // TODO
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -887,14 +886,12 @@ func (bav *UtxoView) _disconnectRegisterAsValidator(
 	bav._deleteValidatorEntryMappings(currentValidatorEntry)
 
 	// Restore the prev ValidatorEntry, if exists.
-	var prevValidatorEntry *ValidatorEntry
-	// prevValidatorEntry = operationData.PrevValidatorEntry // TODO: store on UtxoOperation
+	prevValidatorEntry := operationData.PrevValidatorEntry
 	if prevValidatorEntry != nil {
 		bav._setValidatorEntryMappings(prevValidatorEntry)
 	}
 
-	// If PrevStakeEntries, delete the current StakeEntries and restore the prev StakeEntries.
-	// TODO
+	// TODO: If PrevStakeEntries, delete the current StakeEntries and restore the prev StakeEntries.
 
 	// Disconnect the BasicTransfer.
 	return bav._disconnectBasicTransfer(
@@ -914,7 +911,7 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight { // TODO: ProofOfStakeNewTxnTypesBlockHeight
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
 		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
 	}
 
@@ -945,8 +942,7 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 		return 0, 0, nil, RuleErrorInvalidValidatorPKID
 	}
 
-	// Unstake all StakeEntries for this validator.
-	// TODO
+	// TODO: Unstake all StakeEntries for this validator.
 
 	// Delete the existing ValidatorEntry.
 	prevValidatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
@@ -956,12 +952,14 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
 	if prevValidatorEntry != nil {
 		bav._deleteValidatorEntryMappings(prevValidatorEntry)
+	} else {
+		return 0, 0, nil, RuleErrorValidatorNotFound
 	}
 
 	// Add a UTXO operation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type: OperationTypeUnregisterAsValidator,
-		// PrevValidatorEntry: prevValidatorEntry, // TODO
+		Type:               OperationTypeUnregisterAsValidator,
+		PrevValidatorEntry: prevValidatorEntry,
 		// PrevStakeEntries: prevStakeEntries, // TODO
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -989,8 +987,7 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	}
 
 	// Restore the prev ValidatorEntry.
-	var prevValidatorEntry *ValidatorEntry
-	// prevValidatorEntry = operationData.PrevValidatorEntry // TODO
+	prevValidatorEntry := operationData.PrevValidatorEntry
 	if prevValidatorEntry == nil {
 		// This should never happen.
 		return fmt.Errorf(
@@ -999,8 +996,7 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	}
 	bav._setValidatorEntryMappings(prevValidatorEntry)
 
-	// Restore the prev StakeEntries, if any.
-	// TODO
+	// TODO: Restore the prev StakeEntries, if any.
 
 	// Disconnect the BasicTransfer.
 	return bav._disconnectBasicTransfer(
@@ -1019,7 +1015,7 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 	if len(metadata.Domains) < 1 {
 		return RuleErrorValidatorNoDomainsProvided
 	}
-	if len(metadata.Domains) > ValidatorMaxNumDomains {
+	if len(metadata.Domains) > MaxValidatorNumDomains {
 		return RuleErrorValidatorTooManyDomainsProvided
 	}
 	for _, domain := range metadata.Domains {
@@ -1034,8 +1030,7 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 
 func (bav *UtxoView) GetValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
 	// First check UtxoView.
-	var validatorMapKeyToValidatorEntry map[ValidatorMapKey]*ValidatorEntry // TODO: store this on the UtxoView
-	for _, validatorEntry := range validatorMapKeyToValidatorEntry {
+	for _, validatorEntry := range bav.ValidatorMapKeyToValidatorEntry {
 		if validatorEntry != nil && validatorEntry.ValidatorPKID.Eq(pkid) {
 			if validatorEntry.isDeleted {
 				return nil, nil
@@ -1056,8 +1051,7 @@ func (bav *UtxoView) GetTopValidatorsByStake(limit uint64) ([]*ValidatorEntry, e
 	// Add ValidatorEntries from the UtxoView.
 	// Convert from slice to set to prevent duplicates.
 	validatorSet := NewSet(dbValidatorEntries)
-	var validatorMapKeyToValidatorEntry map[ValidatorMapKey]*ValidatorEntry // TODO: store this on the UtxoView
-	for _, validatorEntry := range validatorMapKeyToValidatorEntry {
+	for _, validatorEntry := range bav.ValidatorMapKeyToValidatorEntry {
 		validatorSet.Add(validatorEntry)
 	}
 	// Convert from set to slice to sort DESC by TotalStakeAmountNanos.
@@ -1073,14 +1067,14 @@ func (bav *UtxoView) GetGlobalStakeAmountNanos() (*uint256.Int, error) {
 	var globalStakeAmountNanos *uint256.Int
 	var err error
 	// Read the GlobalStakeAmountNanos from the UtxoView.
-	// globalStakeAmountNanos = bav.GlobalStakeAmountNanos // TODO: read this from the UtxoView
+	globalStakeAmountNanos = bav.GlobalStakeAmountNanos
 	// If not set, read the GlobalStakeAmountNanos from the db.
 	if globalStakeAmountNanos == nil || globalStakeAmountNanos.IsZero() {
 		globalStakeAmountNanos, err = DBGetGlobalStakeAmountNanos(bav.Handle, bav.Snapshot)
 		if err != nil {
 			return nil, err
 		}
-		// bav.GlobalStakeAmountNanos = globalStakeAmountNanos // TODO: update this on the UtxoView
+		bav.GlobalStakeAmountNanos = globalStakeAmountNanos
 	}
 	return globalStakeAmountNanos, nil
 }
@@ -1091,7 +1085,7 @@ func (bav *UtxoView) _setValidatorEntryMappings(validatorEntry *ValidatorEntry) 
 		glog.Errorf("_setValidatorEntryMappings: called with nil entry, this should never happen")
 		return
 	}
-	// bav.ValidatorMapKeyToValidatorEntry[validatorEntry.ToMapKey()] = validatorEntry // TODO
+	bav.ValidatorMapKeyToValidatorEntry[validatorEntry.ToMapKey()] = validatorEntry
 }
 
 func (bav *UtxoView) _deleteValidatorEntryMappings(validatorEntry *ValidatorEntry) {
@@ -1109,8 +1103,7 @@ func (bav *UtxoView) _deleteValidatorEntryMappings(validatorEntry *ValidatorEntr
 
 func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	// Delete all entries in the ValidatorMapKeyToValidatorEntry UtxoView map.
-	var validatorMapKeyToValidatorEntry map[ValidatorMapKey]*ValidatorEntry // TODO: store this on the UtxoView
-	for validatorMapKeyIter, validatorEntryIter := range validatorMapKeyToValidatorEntry {
+	for validatorMapKeyIter, validatorEntryIter := range bav.ValidatorMapKeyToValidatorEntry {
 		// Make a copy of the iterators since we make references to them below.
 		validatorMapKey := validatorMapKeyIter
 		validatorEntry := *validatorEntryIter
@@ -1137,7 +1130,7 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 	}
 
 	// Set any !isDeleted ValidatorEntries in the ValidatorMapKeyToValidatorEntry UtxoView map.
-	for _, validatorEntryIter := range validatorMapKeyToValidatorEntry {
+	for _, validatorEntryIter := range bav.ValidatorMapKeyToValidatorEntry {
 		validatorEntry := *validatorEntryIter
 		if validatorEntry.isDeleted {
 			// If ValidatorEntry.isDeleted then there's nothing to
@@ -1244,40 +1237,11 @@ func (bav *UtxoView) CreateUnregisterAsValidatorTxindexMetadata(
 // CONSTANTS
 //
 
-const EncoderTypeValidatorEntry EncoderType = math.MaxUint32 - 2                     // TODO: update
-const EncoderTypeRegisterAsValidatorTxindexMetadata EncoderType = math.MaxUint32 - 1 // TODO: update
-const EncoderTypeUnregisterAsValidatorTxindexMetadata EncoderType = math.MaxUint32   // TODO: update
-
-const TxnTypeRegisterAsValidator TxnType = math.MaxUint8 - 1 // TODO: update
-const TxnTypeUnregisterAsValidator TxnType = math.MaxUint8   // TODO: update
-
-const OperationTypeRegisterAsValidator OperationType = math.MaxUint8 - 1 // TODO: update
-const OperationTypeUnregisterAsValidator OperationType = math.MaxUint8   // TODO: update
-
 const RuleErrorProofofStakeTxnBeforeBlockHeight RuleError = "RuleErrorProofOfStakeTxnBeforeBlockHeight"
 const RuleErrorInvalidValidatorPKID RuleError = "RuleErrorInvalidValidatorPKID"
 const RuleErrorValidatorNoDomainsProvided RuleError = "RuleErrorValidatorNoDomainsProvided"
 const RuleErrorValidatorTooManyDomainsProvided RuleError = "RuleErrorValidatorTooManyDomainsProvided"
 const RuleErrorValidatorInvalidDomain RuleError = "RuleErrorValidatorInvalidDomain"
+const RuleErrorValidatorNotFound RuleError = "RuleErrorValidatorNotFound"
 
-const ValidatorMaxNumDomains = 12
-
-type NewDBPrefixes struct {
-	// PrefixValidatorByPKID: Retrieve a validator by PKID.
-	// Prefix, ValidatorPKID -> ValidatorEntry
-	PrefixValidatorByPKID []byte `prefix_id:"[100]" is_state:"true"` // TODO
-
-	// PrefixValidatorByStake: Retrieve the top N validators by stake.
-	// Prefix, TotalStakeAmountNanos, MaxUint32 - CreatedAtBlockHeight, ValidatorPKID -> ValidatorPKID
-	PrefixValidatorByStake []byte `prefix_id:"[101]" is_state:"true"` // TODO
-
-	// PrefixGlobalStakeAmountNanos: Retrieve the cumulative stake across all validators.
-	// Prefix -> *uint256.Int
-	PrefixGlobalStakeAmountNanos []byte `prefix_id:"[102]" is_state:"true"` // TODO
-}
-
-var NewPrefixes = &NewDBPrefixes{
-	PrefixValidatorByPKID:        []byte{100},
-	PrefixValidatorByStake:       []byte{101},
-	PrefixGlobalStakeAmountNanos: []byte{102},
-}
+const MaxValidatorNumDomains int = 12

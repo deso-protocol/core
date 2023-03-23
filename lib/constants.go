@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -264,6 +265,10 @@ type ForkHeights struct {
 	// introduced a few improvements for associations' derived key spending limits.
 	AssociationsDerivedKeySpendingLimitBlockHeight uint32
 
+	// ProofOfStakeNewTxnTypesBlockHeight defines the height at which
+	// we introduced the new txn types to support Proof of Stake.
+	ProofOfStakeNewTxnTypesBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -327,6 +332,7 @@ const (
 	DefaultMigration                     MigrationName = "DefaultMigration"
 	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
 	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
+	ProofOfStakeNewTxnTypesMigration     MigrationName = "ProofOfStakeNewTxnTypesMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -337,6 +343,9 @@ type EncoderMigrationHeights struct {
 
 	// This coincides with the AssociationsAndAccessGroups block
 	AssociationsAndAccessGroups MigrationHeight
+
+	// This coincides with the ProofOfStakeNewTxnTypesBlockHeight
+	ProofOfStakeNewTxnTypesMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -355,6 +364,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 2,
 			Height:  uint64(forkHeights.AssociationsAndAccessGroupsBlockHeight),
 			Name:    AssociationsAndAccessGroupsMigration,
+		},
+		ProofOfStakeNewTxnTypesMigration: MigrationHeight{
+			Version: 3,
+			Height:  uint64(forkHeights.ProofOfStakeNewTxnTypesBlockHeight),
+			Name:    ProofOfStakeNewTxnTypesMigration,
 		},
 	}
 }
@@ -598,6 +612,7 @@ var RegtestForkHeights = ForkHeights{
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
 	AssociationsAndAccessGroupsBlockHeight:               uint32(0),
 	AssociationsDerivedKeySpendingLimitBlockHeight:       uint32(0),
+	ProofOfStakeNewTxnTypesBlockHeight:                   uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -746,6 +761,9 @@ var MainnetForkHeights = ForkHeights{
 
 	// Wed Mar 8 2023 @ 5pm PST
 	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(213487),
+
+	// FIXME: set to real block height when ready
+	ProofOfStakeNewTxnTypesBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1006,6 +1024,9 @@ var TestnetForkHeights = ForkHeights{
 
 	// Mon Mar 6 2023 @ 7pm PT
 	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(642270),
+
+	// FIXME: set to real block height when ready
+	ProofOfStakeNewTxnTypesBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
