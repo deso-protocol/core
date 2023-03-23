@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"math"
@@ -26,7 +27,7 @@ type ValidatorEntry struct {
 }
 
 type ValidatorMapKey struct {
-	ValidatorID BlockHash
+	ValidatorPKID PKID
 }
 
 func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
@@ -59,7 +60,7 @@ func (validatorEntry *ValidatorEntry) Eq(other *ValidatorEntry, blockHeight uint
 }
 
 func (validatorEntry *ValidatorEntry) ToMapKey() ValidatorMapKey {
-	return ValidatorMapKey{ValidatorID: *validatorEntry.ValidatorID}
+	return ValidatorMapKey{ValidatorPKID: *validatorEntry.ValidatorPKID}
 }
 
 func (validatorEntry *ValidatorEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -423,6 +424,12 @@ func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	return key
 }
 
+func DBKeyForGlobalStakeAmountNanos() []byte {
+	var key []byte
+	// key = append(key, Prefixes.PrefixGlobalStakeAmountNanos) // TODO
+	return key
+}
+
 func DBGetValidatorByPKID(handle *badger.DB, snap *Snapshot, pkid *PKID) (*ValidatorEntry, error) {
 	var ret *ValidatorEntry
 	var err error
@@ -492,8 +499,7 @@ func DBGetGlobalStakeAmountNanos(handle *badger.DB, snap *Snapshot) (*uint256.In
 
 func DBGetGlobalStakeAmountNanosWithTxn(txn *badger.Txn, snap *Snapshot) (*uint256.Int, error) {
 	// Retrieve from db.
-	var key []byte
-	// key := Prefixes.PrefixGlobalStakeAmountNanos // TODO
+	key := DBKeyForGlobalStakeAmountNanos()
 	globalStakeAmountNanosBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		// We don't want to error if the key isn't found. Instead, return 0.
@@ -523,94 +529,47 @@ func DBPutValidatorWithTxn(
 		return nil
 	}
 	validatorEntryBytes := EncodeToBytes(blockHeight, validatorEntry)
-
-	// Retrieve existing ValidatorEntry.
-	prevValidatorEntry, err := DBGetValidatorByPKIDWithTxn(txn, snap, validatorEntry.ValidatorPKID)
-	if err != nil {
-		return errors.Wrapf(err, "DBPutValidatorWithTxn: problem retrieving validator by PKID: ")
-	}
-	if validatorEntry.Eq(prevValidatorEntry, blockHeight) {
-		return nil
-	}
+	var key []byte
+	var err error
 
 	// Set ValidatorEntry in PrefixValidatorByPKID.
-	key := DBKeyForValidatorByPKID(validatorEntry)
+	key = DBKeyForValidatorByPKID(validatorEntry)
 	if err = DBSetWithTxn(txn, snap, key, validatorEntryBytes); err != nil {
 		return errors.Wrapf(
 			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByPKID",
 		)
 	}
 
-	if !validatorEntry.TotalStakeAmountNanos.Eq(prevValidatorEntry.TotalStakeAmountNanos) {
-		// Delete existing entry in PrefixValidatorByStake.
-		key = DBKeyForValidatorByStake(prevValidatorEntry)
-		if err = DBDeleteWithTxn(txn, snap, key); err != nil {
-			return errors.Wrapf(
-				err, "DBPutValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByStake",
-			)
-		}
+	// Set new entry in PrefixValidatorByStake.
+	key = DBKeyForValidatorByStake(validatorEntry)
+	if err = DBSetWithTxn(txn, snap, key, validatorEntry.ValidatorPKID.ToBytes()); err != nil {
+		return errors.Wrapf(
+			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByPKID",
+		)
+	}
 
-		// Set new entry in PrefixValidatorByStake.
-		key = DBKeyForValidatorByStake(validatorEntry)
-		if err = DBSetWithTxn(txn, snap, key, validatorEntry.ValidatorPKID.ToBytes()); err != nil {
-			return errors.Wrapf(
-				err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByPKID",
-			)
-		}
-
-		// Update PrefixGlobalStakeAmountNanos.
-		// Retrieve existing GlobalStakeAmountNanos.
-		var globalStakeAmountNanos *uint256.Int
-		globalStakeAmountNanos, err = DBGetGlobalStakeAmountNanosWithTxn(txn, snap)
-		if err != nil {
-			return errors.Wrapf(
-				err, "DBPutValidatorWithTxn: problem retrieving value from index PrefixGlobalStakeAmountNanos",
-			)
-		}
-
-		// Calculate change in GlobalStakeAmountNanos.
-		var deltaStakeAmountNanos *uint256.Int
-		if validatorEntry.TotalStakeAmountNanos.Lt(prevValidatorEntry.TotalStakeAmountNanos) {
-			// Validator stake has been decreased.
-			deltaStakeAmountNanos, err = SafeUint256().Sub(
-				prevValidatorEntry.TotalStakeAmountNanos, validatorEntry.TotalStakeAmountNanos,
-			)
-			if err != nil {
-				return errors.Wrapf(
-					err, "DBPutValidatorWithTxn: problem calculating decrease in validator's stake",
-				)
-			}
-			globalStakeAmountNanos, err = SafeUint256().Sub(globalStakeAmountNanos, deltaStakeAmountNanos)
-			if err != nil {
-				return errors.Wrapf(
-					err, "DBPutValidatorWithTxn: problem calculating decrease in global stake",
-				)
-			}
-		} else {
-			// Validator stake has been increased.
-			deltaStakeAmountNanos, err = SafeUint256().Sub(
-				validatorEntry.TotalStakeAmountNanos, prevValidatorEntry.TotalStakeAmountNanos,
-			)
-			if err != nil {
-				return errors.Wrapf(
-					err, "DBPutValidatorWithTxn: problem calculating increase in validator's stake",
-				)
-			}
-			globalStakeAmountNanos, err = SafeUint256().Add(globalStakeAmountNanos, deltaStakeAmountNanos)
-			if err != nil {
-				return errors.Wrapf(
-					err, "DBPutValidatorWithTxn: problem calculating increase in global stake",
-				)
-			}
-		}
-
-		// Set updated GlobalStakeAmountNanos.
-		// key = Prefixes.PrefixGlobalStakeAmountNanos // TODO
-		if err = DBSetWithTxn(txn, snap, key, EncodeUint256(globalStakeAmountNanos)); err != nil {
-			return errors.Wrapf(
-				err, "DBPutValidatorWithTxn: problem storing value in index PrefixGlobalStakeAmountNanos",
-			)
-		}
+	// Update PrefixGlobalStakeAmountNanos.
+	// Retrieve existing GlobalStakeAmountNanos.
+	var globalStakeAmountNanos *uint256.Int
+	globalStakeAmountNanos, err = DBGetGlobalStakeAmountNanosWithTxn(txn, snap)
+	if err != nil {
+		return errors.Wrapf(
+			err, "DBPutValidatorWithTxn: problem retrieving value from index PrefixGlobalStakeAmountNanos",
+		)
+	}
+	// Calculate increase in GlobalStakeAmountNanos.
+	globalStakeAmountNanos, err = SafeUint256().Add(globalStakeAmountNanos, validatorEntry.TotalStakeAmountNanos)
+	if err != nil {
+		return errors.Wrapf(
+			err, "DBPutValidatorWithTxn: problem calculating increase in GlobalStakeAmountNanos",
+		)
+	}
+	// Set updated GlobalStakeAmountNanos.
+	key = DBKeyForGlobalStakeAmountNanos()
+	if err = DBSetWithTxn(txn, snap, key, EncodeUint256(globalStakeAmountNanos)); err != nil {
+		return errors.Wrapf(
+			err, "DBPutValidatorWithTxn: problem storing value in index PrefixGlobalStakeAmountNanos",
+		)
 	}
 
 	return nil
@@ -648,17 +607,15 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorEntry *V
 			err, "DBDeleteValidatorWithTxn: problem retrieving value from index PrefixGlobalStakeAmountNanos",
 		)
 	}
-
-	// Calculate change in GlobalStakeAmountNanos.
+	// Calculate decrease in GlobalStakeAmountNanos.
 	globalStakeAmountNanos, err = SafeUint256().Sub(globalStakeAmountNanos, validatorEntry.TotalStakeAmountNanos)
 	if err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteValidatorWithTxn: problem calculating decrease in global stake",
 		)
 	}
-
 	// Set updated GlobalStakeAmountNanos.
-	// key = Prefixes.PrefixGlobalStakeAmountNanos // TODO
+	key = DBKeyForGlobalStakeAmountNanos()
 	if err = DBSetWithTxn(txn, snap, key, EncodeUint256(globalStakeAmountNanos)); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteValidatorWithTxn: problem storing value in index PrefixGlobalStakeAmountNanos",
@@ -729,6 +686,112 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 // UTXO VIEW UTILS
 //
 
+func (bav *UtxoView) _connectRegisterAsValidator(
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	verifySignatures bool,
+) (
+	_totalInput uint64,
+	_totalOutput uint64,
+	_utxoOps []*UtxoOperation,
+	_err error,
+) {
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight { // TODO: ProofOfStakeNewTxnTypesBlockHeight
+		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
+	}
+
+	// Validate the txn TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeRegisterAsValidator {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectRegisterAsValidator: called with bad TxnType %s", txn.TxnMeta.GetTxnType().String(),
+		)
+	}
+
+	// Connect a basic transfer to get the total input and the
+	// total output without considering the txn metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectRegisterAsValidator: ")
+	}
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the txn is signed
+		// by the top-level public key, which we take to be the sender's
+		// public key so there is no need to verify anything further.
+	}
+
+	// Grab the txn metadata.
+	txMeta := txn.TxnMeta.(*RegisterAsValidatorMetadata)
+
+	// Validate the txn metadata.
+	if err = bav.IsValidRegisterAsValidatorMetadata(txn.PublicKey, txMeta); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectRegisterAsValidator: ")
+	}
+
+	// Convert TransactorPublicKey to TransactorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return 0, 0, nil, RuleErrorInvalidValidatorPKID
+	}
+
+	// Check if there is an existing ValidatorEntry that will be overwritten.
+	// The existing ValidatorEntry will be restored if we disconnect this transaction.
+	prevValidatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectRegisterAsValidator: ")
+	}
+	// Delete the existing ValidatorEntry, if exists.
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
+	if prevValidatorEntry != nil {
+		bav._deleteValidatorEntryMappings(prevValidatorEntry)
+	}
+
+	// Set CreatedAtBlockHeight only if this is a new ValidatorEntry.
+	createdAtBlockHeight := blockHeight
+	if prevValidatorEntry != nil {
+		createdAtBlockHeight = prevValidatorEntry.CreatedAtBlockHeight
+	}
+
+	// Calculate TotalStakeAmountNanos.
+	totalStakeAmountNanos := uint256.NewInt() // TODO
+
+	// Retrieve existing ExtraData to merge with any new ExtraData.
+	var prevExtraData map[string][]byte
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
+	if prevValidatorEntry != nil {
+		prevExtraData = prevValidatorEntry.ExtraData
+	}
+
+	// Construct new ValidatorEntry from metadata.
+	currentValidatorEntry := &ValidatorEntry{
+		ValidatorID:           txHash,
+		ValidatorPKID:         transactorPKIDEntry.PKID,
+		Domains:               txMeta.Domains,
+		DisableDelegatedStake: txMeta.DisableDelegatedStake,
+		TotalStakeAmountNanos: totalStakeAmountNanos,
+		CreatedAtBlockHeight:  createdAtBlockHeight,
+		ExtraData:             mergeExtraData(prevExtraData, txn.ExtraData),
+	}
+	_ = currentValidatorEntry
+
+	// TODO
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _disconnectRegisterAsValidator(
+	operationType OperationType,
+	currentTxn *MsgDeSoTxn,
+	txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation,
+	blockHeight uint32,
+) error {
+	// TODO
+	return nil
+}
+
 func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []byte, metadata *RegisterAsValidatorMetadata) error {
 	// TODO
 	return nil
@@ -771,8 +834,46 @@ func (bav *UtxoView) GetTopValidatorsByStake(limit uint64) ([]*ValidatorEntry, e
 	return validatorEntries[0:limit], nil
 }
 
+func (bav *UtxoView) GetGlobalStakeAmountNanos() (*uint256.Int, error) {
+	var globalStakeAmountNanos *uint256.Int
+	var err error
+	// Read the GlobalStakeAmountNanos from the UtxoView.
+	// globalStakeAmountNanos = bav.GlobalStakeAmountNanos // TODO: read this from the UtxoView
+	// If not set, read the GlobalStakeAmountNanos from the db.
+	if globalStakeAmountNanos == nil || globalStakeAmountNanos.IsZero() {
+		globalStakeAmountNanos, err = DBGetGlobalStakeAmountNanos(bav.Handle, bav.Snapshot)
+		if err != nil {
+			return nil, err
+		}
+		// bav.GlobalStakeAmountNanos = globalStakeAmountNanos // TODO: update this on the UtxoView
+	}
+	return globalStakeAmountNanos, nil
+}
+
+func (bav *UtxoView) _setValidatorEntryMappings(validatorEntry *ValidatorEntry) {
+	// This function shouldn't be called with nil.
+	if validatorEntry == nil {
+		glog.Errorf("_setValidatorEntryMappings: called with nil entry, this should never happen")
+		return
+	}
+	// bav.ValidatorMapKeyToValidatorEntry[validatorEntry.ToMapKey()] = validatorEntry // TODO
+}
+
+func (bav *UtxoView) _deleteValidatorEntryMappings(validatorEntry *ValidatorEntry) {
+	// This function shouldn't be called with nil.
+	if validatorEntry == nil {
+		glog.Errorf("_deleteValidatorEntryMappings: called with nil entry, this should never happen")
+		return
+	}
+	// Create a tombstone entry.
+	tombstoneEntry := validatorEntry
+	tombstoneEntry.isDeleted = true
+	// Set the mappings to the point to the tombstone entry.
+	bav._setValidatorEntryMappings(tombstoneEntry)
+}
+
 func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	// Iterate through all entries in the UtxoView map.
+	// Delete all entries in the ValidatorMapKeyToValidatorEntry UtxoView map.
 	var validatorMapKeyToValidatorEntry map[ValidatorMapKey]*ValidatorEntry // TODO: store this on the UtxoView
 	for validatorMapKeyIter, validatorEntryIter := range validatorMapKeyToValidatorEntry {
 		// Make a copy of the iterators since we make references to them below.
@@ -789,22 +890,32 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 			)
 		}
 
-		// We can't first delete all then set all !isDeleted entries since we have
-		// an index that relies on the previous TotalStakeAmountNanos value. The
-		// DBPutValidatorWithTxn function handles deleting the old entries from the
-		// database for us and setting the new ones.
+		// Delete the existing mappings in the db for this ValidatorMapKey. They
+		// will be re-added if the corresponding entry in memory has isDeleted=false.
+		if err := DBDeleteValidatorWithTxn(txn, bav.Snapshot, &validatorEntry); err != nil {
+			return fmt.Errorf(
+				"_flushValidatorEntriesToDbWithTxn: problem deleting association mappings for map key %v: %v",
+				&validatorMapKey,
+				err,
+			)
+		}
+	}
+
+	// Set any !isDeleted ValidatorEntries in the ValidatorMapKeyToValidatorEntry UtxoView map.
+	for _, validatorEntryIter := range validatorMapKeyToValidatorEntry {
+		validatorEntry := *validatorEntryIter
 		if validatorEntry.isDeleted {
-			// Delete entry if isDeleted.
-			if err := DBDeleteValidatorWithTxn(txn, bav.Snapshot, &validatorEntry); err != nil {
-				return errors.Wrapf(err, "_flushValidatorEntriesToDbWithTxn: error deleting entry: ")
-			}
+			// If ValidatorEntry.isDeleted then there's nothing to
+			// do because we already deleted the entry above.
 		} else {
-			// Set entry if !isDeleted.
+			// If !ValidatorEntry.isDeleted then we put the
+			// corresponding mappings for it into the db.
 			if err := DBPutValidatorWithTxn(txn, bav.Snapshot, &validatorEntry, blockHeight); err != nil {
-				return errors.Wrapf(err, "_flushValidatorEntriesToDbWithTxn: error setting entry: ")
+				return fmt.Errorf("_flushValidatorEntriesToDbWithTxn: %v", err)
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -857,3 +968,11 @@ func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
 
 	return txindexMetadata, affectedPublicKeys
 }
+
+//
+// CONSTANTS
+//
+
+const TxnTypeRegisterAsValidator TxnType = math.MaxUint8 // TODO: update
+const RuleErrorProofofStakeTxnBeforeBlockHeight RuleError = "RuleErrorProofOfStakeTxnBeforeBlockHeight"
+const RuleErrorInvalidValidatorPKID RuleError = "RuleErrorInvalidValidatorPKID"
