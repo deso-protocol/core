@@ -658,10 +658,8 @@ func TestDeleteExpiredTransactorNonceEntries(t *testing.T) {
 	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 
-	// There should be 3 nonce entries in the db after running the delete operation
+	// There should be 3 nonce entries in the db after mining these blocks
 	{
-		err = DbDeleteExpiredTransactorNonceEntriesAtBlockHeight(testMeta.db, uint64(testMeta.chain.blockTip().Height))
-		require.NoError(err)
 		nonceEntries := DbGetAllTransactorNonceEntries(testMeta.db)
 		require.Equal(3, len(nonceEntries))
 	}

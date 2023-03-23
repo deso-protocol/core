@@ -2153,8 +2153,15 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			// Since we don't have utxo operations in postgres, always write UTXO operations for the block to badger
 			err = bc.db.Update(func(txn *badger.Txn) error {
-				if err = PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
-					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+				if innerErr := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); innerErr != nil {
+					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+				}
+
+				if blockHeight >= uint64(bc.params.ForkHeights.BalanceModelBlockHeight) {
+					if innerErr := DbDeleteExpiredTransactorNonceEntriesAtBlockHeightWithTxn(txn, blockHeight); innerErr != nil {
+						return errors.Wrapf(innerErr, "ProcessBlock: Problem deleting expired nonces at %v",
+							blockHeight)
+					}
 				}
 				return nil
 			})
@@ -2163,29 +2170,37 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			err = bc.db.Update(func(txn *badger.Txn) error {
 				// This will update the node's status.
 				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db height & hash")
-				if err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); err != nil {
+				if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); innerErr != nil {
 					return errors.Wrapf(
-						err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation")
+						innerErr, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation")
 				}
 
 				// Set the best node hash to this one. Note the header chain should already
 				// be fully aware of this block so we shouldn't update it here.
-				if err := PutBestHashWithTxn(txn, bc.snapshot, blockHash, ChainTypeDeSoBlock); err != nil {
-					return err
+				if innerErr := PutBestHashWithTxn(txn, bc.snapshot, blockHash, ChainTypeDeSoBlock); innerErr != nil {
+					return errors.Wrapf(innerErr, "ProcessBlock: Problem calling PutBestHash after validation")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db height & hash")
 				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db utxo flush")
 
 				// Write the utxo operations for this block to the db so we can have the
 				// ability to roll it back in the future.
-				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
-					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+				if innerErr := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); innerErr != nil {
+					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
+				if blockHeight >= uint64(bc.params.ForkHeights.BalanceModelBlockHeight) {
+					bc.timer.Start("Blockchain.ProcessBlock: Transactions Db delete expired nonces")
+					if innerErr := DbDeleteExpiredTransactorNonceEntriesAtBlockHeightWithTxn(txn, blockHeight); innerErr != nil {
+						return errors.Wrapf(innerErr, "ProcessBlock: Problem deleting expired nonces at %v",
+							blockHeight)
+					}
+					bc.timer.End("Blockchain.ProcessBlock: Transactions Db delete expired nonces")
+				}
 
 				// Write the modified utxo set to the view.
-				if err := bc.blockView.FlushToDbWithTxn(txn, blockHeight); err != nil {
-					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
+				if innerErr := bc.blockView.FlushToDbWithTxn(txn, blockHeight); innerErr != nil {
+					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db utxo flush")
 				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db snapshot & operations")

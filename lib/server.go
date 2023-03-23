@@ -1662,13 +1662,6 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 	// off a goroutine for each update.
 	srv.mempool.UpdateAfterConnectBlock(blk)
 
-	// TODO: Is there somewhere better for this to live?
-	// Just glog if we error when deleting expired nonces
-	if err := DbDeleteExpiredTransactorNonceEntriesAtBlockHeight(srv.blockchain.db, blk.Header.Height); err != nil {
-		glog.Errorf("Server._handleBlockMainChainConnected: Problem deleting expired nonces at %v: %v",
-			blk.Header.Height, err)
-	}
-
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainConnected: Block %s height %d connected to "+
 		"main chain and chain is current.", hex.EncodeToString(blockHash[:]), blk.Header.Height)
