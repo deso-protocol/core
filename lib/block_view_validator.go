@@ -8,6 +8,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"math"
+	"net/url"
 	"sort"
 )
 
@@ -1022,9 +1023,9 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 		return RuleErrorValidatorTooManyDomainsProvided
 	}
 	for _, domain := range metadata.Domains {
-		// TODO: validate regex for each domain
-		if len(domain) == 0 {
-			return RuleErrorValidatorInvalidDomain
+		_, err := url.ParseRequestURI(string(domain))
+		if err != nil {
+			return fmt.Errorf("%s: %v", RuleErrorValidatorInvalidDomain, domain)
 		}
 	}
 
