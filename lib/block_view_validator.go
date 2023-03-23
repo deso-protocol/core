@@ -146,7 +146,7 @@ func (validatorEntry *ValidatorEntry) GetVersionByte(blockHeight uint64) byte {
 }
 
 func (validatorEntry *ValidatorEntry) GetEncoderType() EncoderType {
-	return 0 // TODO
+	return EncoderTypeValidatorEntry
 }
 
 //
@@ -159,7 +159,7 @@ type RegisterAsValidatorMetadata struct {
 }
 
 func (txnData *RegisterAsValidatorMetadata) GetTxnType() TxnType {
-	return 0 // TODO
+	return TxnTypeRegisterAsValidator
 }
 
 func (txnData *RegisterAsValidatorMetadata) ToBytes(preSignature bool) ([]byte, error) {
@@ -211,7 +211,7 @@ func (txnData *RegisterAsValidatorMetadata) New() DeSoTxnMetadata {
 type UnregisterAsValidatorMetadata struct{}
 
 func (txnData *UnregisterAsValidatorMetadata) GetTxnType() TxnType {
-	return 0 // TODO
+	return TxnTypeUnregisterAsValidator
 }
 
 func (txnData *UnregisterAsValidatorMetadata) ToBytes(preSignature bool) ([]byte, error) {
@@ -309,7 +309,7 @@ func (txindexMetadata *RegisterAsValidatorTxindexMetadata) GetVersionByte(blockH
 }
 
 func (txindexMetadata *RegisterAsValidatorTxindexMetadata) GetEncoderType() EncoderType {
-	return 0 // TODO
+	return EncoderTypeRegisterAsValidatorTxindexMetadata
 }
 
 //
@@ -401,7 +401,7 @@ func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetVersionByte(bloc
 }
 
 func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetEncoderType() EncoderType {
-	return 0 // TODO
+	return EncoderTypeUnregisterAsValidatorTxindexMetadata
 }
 
 //
@@ -410,14 +410,14 @@ func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetEncoderType() En
 
 func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 	var key []byte
-	// key = append(key, Prefixes.PrefixValidatorByPKID...) // TODO
+	key = append(key, NewPrefixes.PrefixValidatorByPKID...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
 	return key
 }
 
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	var key []byte
-	// key = append(key, Prefixes.PrefixValidatorByStake...) // TODO
+	key = append(key, NewPrefixes.PrefixValidatorByStake...)
 	key = append(key, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)               // Highest stake first
 	key = append(key, _EncodeUint32(math.MaxUint32-validatorEntry.CreatedAtBlockHeight)...) // Oldest first
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
@@ -426,7 +426,7 @@ func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 
 func DBKeyForGlobalStakeAmountNanos() []byte {
 	var key []byte
-	// key = append(key, Prefixes.PrefixGlobalStakeAmountNanos) // TODO
+	key = append(key, NewPrefixes.PrefixGlobalStakeAmountNanos...)
 	return key
 }
 
@@ -466,8 +466,7 @@ func DBGetTopValidatorsByStake(handle *badger.DB, snap *Snapshot, limit uint64) 
 
 	// Retrieve top N ValidatorEntry PKIDs by stake.
 	var key []byte
-	// key := Prefixes.PrefixValidatorByStake // TODO
-	key = append(key)
+	key = append(key, NewPrefixes.PrefixValidatorByStake...)
 	_, validatorPKIDsBytes, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, int(limit), nil, true, NewSet([]string{}),
 	)
@@ -796,6 +795,12 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		bav._deleteValidatorEntryMappings(prevValidatorEntry)
 	}
 
+	// Set ValidatorID only if this is a new ValidatorEntry.
+	validatorID := txHash
+	if prevValidatorEntry != nil {
+		validatorID = prevValidatorEntry.ValidatorID
+	}
+
 	// Unstake delegated stakers if updating DisableDelegatedStake=true.
 	if prevValidatorEntry != nil &&
 		!prevValidatorEntry.DisableDelegatedStake && // Validator previously allowed delegated stake.
@@ -821,7 +826,7 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 
 	// Construct new ValidatorEntry from metadata.
 	currentValidatorEntry := &ValidatorEntry{
-		ValidatorID:           txHash,
+		ValidatorID:           validatorID,
 		ValidatorPKID:         transactorPKIDEntry.PKID,
 		Domains:               txMeta.Domains,
 		DisableDelegatedStake: txMeta.DisableDelegatedStake,
@@ -939,7 +944,7 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 		return 0, 0, nil, RuleErrorInvalidValidatorPKID
 	}
 
-	// Unstake all stakers.
+	// Unstake all StakeEntries for this validator.
 	// TODO
 
 	// Delete the existing ValidatorEntry.
@@ -1010,6 +1015,9 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 	}
 
 	// Validate Domains.
+	if len(metadata.Domains) < 1 {
+		return RuleErrorValidatorNoDomainsProvided
+	}
 	if len(metadata.Domains) > ValidatorMaxNumDomains {
 		return RuleErrorValidatorTooManyDomainsProvided
 	}
@@ -1235,6 +1243,10 @@ func (bav *UtxoView) CreateUnregisterAsValidatorTxindexMetadata(
 // CONSTANTS
 //
 
+const EncoderTypeValidatorEntry EncoderType = math.MaxUint32 - 2                     // TODO: update
+const EncoderTypeRegisterAsValidatorTxindexMetadata EncoderType = math.MaxUint32 - 1 // TODO: update
+const EncoderTypeUnregisterAsValidatorTxindexMetadata EncoderType = math.MaxUint32   // TODO: update
+
 const TxnTypeRegisterAsValidator TxnType = math.MaxUint8 - 1 // TODO: update
 const TxnTypeUnregisterAsValidator TxnType = math.MaxUint8   // TODO: update
 
@@ -1243,7 +1255,28 @@ const OperationTypeUnregisterAsValidator OperationType = math.MaxUint8   // TODO
 
 const RuleErrorProofofStakeTxnBeforeBlockHeight RuleError = "RuleErrorProofOfStakeTxnBeforeBlockHeight"
 const RuleErrorInvalidValidatorPKID RuleError = "RuleErrorInvalidValidatorPKID"
+const RuleErrorValidatorNoDomainsProvided RuleError = "RuleErrorValidatorNoDomainsProvided"
 const RuleErrorValidatorTooManyDomainsProvided RuleError = "RuleErrorValidatorTooManyDomainsProvided"
 const RuleErrorValidatorInvalidDomain RuleError = "RuleErrorValidatorInvalidDomain"
 
 const ValidatorMaxNumDomains = 12
+
+type NewDBPrefixes struct {
+	// PrefixValidatorByPKID: Retrieve a validator by PKID.
+	// Prefix, ValidatorPKID -> ValidatorEntry
+	PrefixValidatorByPKID []byte `prefix_id:"[100]" is_state:"true"` // TODO
+
+	// PrefixValidatorByStake: Retrieve the top N validators by stake.
+	// Prefix, TotalStakeAmountNanos, MaxUint32 - CreatedAtBlockHeight, ValidatorPKID -> ValidatorPKID
+	PrefixValidatorByStake []byte `prefix_id:"[101]" is_state:"true"` // TODO
+
+	// PrefixGlobalStakeAmountNanos: Retrieve the cumulative stake across all validators.
+	// Prefix -> *uint256.Int
+	PrefixGlobalStakeAmountNanos []byte `prefix_id:"[102]" is_state:"true"` // TODO
+}
+
+var NewPrefixes = &NewDBPrefixes{
+	PrefixValidatorByPKID:        []byte{100},
+	PrefixValidatorByStake:       []byte{101},
+	PrefixGlobalStakeAmountNanos: []byte{102},
+}
