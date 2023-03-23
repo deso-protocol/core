@@ -1416,7 +1416,7 @@ func (bav *UtxoView) _flushNonceEntriesToDbWithTxn(txn *badger.Txn) error {
 	for _, nonceEntry := range bav.TransactorNonceMapKeyToTransactorNonceEntry {
 		// Delete the existing mappings in the db for this TransactorNonceEntry. They
 		// will be re-added if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteNonceEntryWithTxn(txn, nonceEntry.Nonce, nonceEntry.TransactorPKID); err != nil {
+		if err := DbDeleteTransactorNonceEntryWithTxn(txn, nonceEntry.Nonce, nonceEntry.TransactorPKID); err != nil {
 			return fmt.Errorf(
 				"_flushNonceEntriesToDbWithTxn: problem deleting account nonce mappings for account nonce %v: %v",
 				nonceEntry.Nonce.String(),

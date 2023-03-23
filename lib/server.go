@@ -1664,7 +1664,7 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 
 	// TODO: Is there somewhere better for this to live?
 	// Just glog if we error when deleting expired nonces
-	if err := DbDeleteExpiredNoncesAtBlockHeight(srv.blockchain.db, blk.Header.Height); err != nil {
+	if err := DbDeleteExpiredTransactorNonceEntriesAtBlockHeight(srv.blockchain.db, blk.Header.Height); err != nil {
 		glog.Errorf("Server._handleBlockMainChainConnected: Problem deleting expired nonces at %v: %v",
 			blk.Header.Height, err)
 	}

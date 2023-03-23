@@ -3556,15 +3556,16 @@ func (bav *UtxoView) GetTransactorNonceEntry(nonce *DeSoNonce, pkid *PKID) (*Tra
 	if exists {
 		return nonceEntry, nil
 	}
-	nonce, err := DbGetTransactorNonceEntry(bav.Handle, nonce, pkid)
+	var err error
+	nonceEntry, err = DbGetTransactorNonceEntry(bav.Handle, nonce, pkid)
 	if err != nil {
 		return nil, err
 	}
-	if nonce == nil {
+	if nonceEntry == nil {
 		return nil, nil
 	}
-	bav.TransactorNonceMapKeyToTransactorNonceEntry[mapKey] = nonce
-	return nonce, nil
+	bav.TransactorNonceMapKeyToTransactorNonceEntry[mapKey] = nonceEntry
+	return nonceEntry, nil
 
 }
 
@@ -3610,11 +3611,11 @@ func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64, depth
 	}
 
 	// Make sure we don't have a collision.
-	nonce, err := bav.GetTransactorNonceEntry(&nonce, pkid)
+	nonceEntry, err := bav.GetTransactorNonceEntry(&nonce, pkid)
 	if err != nil {
 		return nil, errors.Wrapf(err, "ConstructNonceForPKID: ")
 	}
-	if nonce == nil {
+	if nonceEntry == nil {
 		return &nonce, nil
 	}
 	if depth == 0 {
