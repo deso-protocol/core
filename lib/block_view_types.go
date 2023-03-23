@@ -3615,11 +3615,11 @@ type GlobalParamsEntry struct {
 	// The new minimum fee the network will accept
 	MinimumNetworkFeeNanosPerKB uint64
 
-	// MaxNonceExpirationBlockBuffer is maximum value nodes will
+	// MaxNonceExpirationBlockHeightOffset is maximum value nodes will
 	// tolerate for the difference between the current block height
 	// and the expiration block height specified in the nonce for a
 	// transaction.
-	MaxNonceExpirationBlockBuffer uint64
+	MaxNonceExpirationBlockHeightOffset uint64
 }
 
 func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -3631,7 +3631,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 	data = append(data, UintToBuf(gp.MaxCopiesPerNFT)...)
 	data = append(data, UintToBuf(gp.MinimumNetworkFeeNanosPerKB)...)
 	if MigrationTriggered(blockHeight, BalanceModelMigration) {
-		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockBuffer)...)
+		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockHeightOffset)...)
 	}
 	return data
 }
@@ -3660,9 +3660,9 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MinimumNetworkFeeNanosPerKB")
 	}
 	if MigrationTriggered(blockHeight, BalanceModelMigration) {
-		gp.MaxNonceExpirationBlockBuffer, err = ReadUvarint(rr)
+		gp.MaxNonceExpirationBlockHeightOffset, err = ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxNonceExpirationBlockBuffer")
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxNonceExpirationBlockHeightOffset")
 		}
 	}
 	return nil
@@ -6027,20 +6027,20 @@ func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetEncoderType() Enc
 	return EncoderTypeNewMessageTxindexMetadata
 }
 
-type NonceEntry struct {
-	Nonce     *DeSoNonce
-	PKID      *PKID
-	isDeleted bool
+type TransactorNonceEntry struct {
+	Nonce          *DeSoNonce
+	TransactorPKID *PKID
+	isDeleted      bool
 }
 
-func (ne *NonceEntry) ToMapKey() NonceMapKey {
-	return NonceMapKey{
-		Nonce: *ne.Nonce,
-		PKID:  *ne.PKID,
+func (tne *TransactorNonceEntry) ToMapKey() TransactorNonceMapKey {
+	return TransactorNonceMapKey{
+		Nonce:          *tne.Nonce,
+		TransactorPKID: *tne.TransactorPKID,
 	}
 }
 
-type NonceMapKey struct {
-	Nonce DeSoNonce
-	PKID  PKID
+type TransactorNonceMapKey struct {
+	Nonce          DeSoNonce
+	TransactorPKID PKID
 }

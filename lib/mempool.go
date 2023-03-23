@@ -994,8 +994,8 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 		if tx.TxnNonce.ExpirationBlockHeight < blockHeight {
 			return nil, nil, TxErrorNonceExpired
 		}
-		if mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockBuffer != 0 &&
-			tx.TxnNonce.ExpirationBlockHeight > blockHeight+mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockBuffer {
+		if mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 &&
+			tx.TxnNonce.ExpirationBlockHeight > blockHeight+mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset {
 			return nil, nil, TxErrorNonceExpirationBlockBufferExceeded
 		}
 	}

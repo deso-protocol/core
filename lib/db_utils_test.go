@@ -590,7 +590,7 @@ func TestFollows(t *testing.T) {
 	}
 }
 
-func TestDeleteExpiredNonces(t *testing.T) {
+func TestDeleteExpiredTransactorNonceEntries(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 	assert := assert.New(t)
@@ -621,7 +621,7 @@ func TestDeleteExpiredNonces(t *testing.T) {
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 	// Param Updater sets the max nonce expiration block buffer to 1.
 	{
-		_updateGlobalParamsEntryWithMaxNonceExpirationBlockBufferAndTestMeta(
+		_updateGlobalParamsEntryWithMaxNonceExpirationBlockHeightOffsetAndTestMeta(
 			testMeta,
 			10,
 			paramUpdaterPub,
@@ -634,10 +634,10 @@ func TestDeleteExpiredNonces(t *testing.T) {
 			1,
 		)
 		// There should be once nonce in the db.
-		nonceEntries := DbGetAllNonceEntries(testMeta.db)
+		nonceEntries := DbGetAllTransactorNonceEntries(testMeta.db)
 		require.Equal(3, len(nonceEntries))
 		globalParamsEntry := DbGetGlobalParamsEntry(db, chain.snapshot)
-		require.Equal(globalParamsEntry.MaxNonceExpirationBlockBuffer, uint64(1))
+		require.Equal(globalParamsEntry.MaxNonceExpirationBlockHeightOffset, uint64(1))
 	}
 
 	// Now new txns should have a single block expiration buffer.
@@ -648,7 +648,7 @@ func TestDeleteExpiredNonces(t *testing.T) {
 		// m0 sends 10 nanos to m2
 		_registerOrTransferWithTestMeta(testMeta, "m2", m0Pub, m2Pub, m0Priv, 10)
 		// There should be 5 nonce entries in the db.
-		nonceEntries := DbGetAllNonceEntries(testMeta.db)
+		nonceEntries := DbGetAllTransactorNonceEntries(testMeta.db)
 		require.Equal(5, len(nonceEntries))
 	}
 
@@ -660,9 +660,9 @@ func TestDeleteExpiredNonces(t *testing.T) {
 
 	// There should be 3 nonce entries in the db after running the delete operation
 	{
-		err = DbDeleteExpiredNoncesAtBlockHeight(testMeta.db, uint64(testMeta.chain.blockTip().Height))
+		err = DbDeleteExpiredTransactorNonceEntriesAtBlockHeight(testMeta.db, uint64(testMeta.chain.blockTip().Height))
 		require.NoError(err)
-		nonceEntries := DbGetAllNonceEntries(testMeta.db)
+		nonceEntries := DbGetAllTransactorNonceEntries(testMeta.db)
 		require.Equal(3, len(nonceEntries))
 	}
 

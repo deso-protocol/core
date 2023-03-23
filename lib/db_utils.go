@@ -10465,12 +10465,12 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 // DeSo nonce mapping functions
 // -------------------------------------------------------------------------------------
 
-func _dbKeyForNonceEntry(accountNonce *DeSoNonce, pkid *PKID) []byte {
+func _dbKeyForTransactorNonceEntry(nonce *DeSoNonce, pkid *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
 	prefixCopy := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
-	key := append(prefixCopy, EncodeUint64(accountNonce.ExpirationBlockHeight)...)
+	key := append(prefixCopy, EncodeUint64(nonce.ExpirationBlockHeight)...)
 	key = append(key, pkid.ToBytes()...)
-	key = append(key, EncodeUint64(accountNonce.PartialID)...)
+	key = append(key, EncodeUint64(nonce.PartialID)...)
 	return key
 }
 
@@ -10479,8 +10479,8 @@ func _dbPrefixForNonceEntryIndexWithBlockHeight(blockHeight uint64) []byte {
 	return append(prefixCopy, EncodeUint64(blockHeight)...)
 }
 
-func DbGetNonceEntryWithTxn(txn *badger.Txn, accountNonce *DeSoNonce, pkid *PKID) (*NonceEntry, error) {
-	key := _dbKeyForNonceEntry(accountNonce, pkid)
+func DbGetTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) (*TransactorNonceEntry, error) {
+	key := _dbKeyForTransactorNonceEntry(nonce, pkid)
 	_, err := txn.Get(key)
 	if err == badger.ErrKeyNotFound {
 		return nil, nil
@@ -10488,21 +10488,18 @@ func DbGetNonceEntryWithTxn(txn *badger.Txn, accountNonce *DeSoNonce, pkid *PKID
 	if err != nil {
 		return nil, err
 	}
-	return &NonceEntry{
-		Nonce: accountNonce,
-		PKID:  pkid,
+	return &TransactorNonceEntry{
+		Nonce:          nonce,
+		TransactorPKID: pkid,
 	}, nil
 }
 
-func DbGetNonceEntry(db *badger.DB, accountNonce *DeSoNonce, pkid *PKID) (*NonceEntry, error) {
-	var ret *NonceEntry
+func DbGetTransactorNonceEntry(db *badger.DB, nonce *DeSoNonce, pkid *PKID) (*TransactorNonceEntry, error) {
+	var ret *TransactorNonceEntry
 	dbErr := db.View(func(txn *badger.Txn) error {
 		var err error
-		ret, err = DbGetNonceEntryWithTxn(txn, accountNonce, pkid)
-		if err != nil {
-			return errors.Wrap(err, "DbGetNonce: ")
-		}
-		return nil
+		ret, err = DbGetTransactorNonceEntryWithTxn(txn, nonce, pkid)
+		return errors.Wrap(err, "DbGetTransactorNonceEntry: ")
 	})
 	if dbErr != nil {
 		return nil, dbErr
@@ -10510,30 +10507,30 @@ func DbGetNonceEntry(db *badger.DB, accountNonce *DeSoNonce, pkid *PKID) (*Nonce
 	return ret, nil
 }
 
-func DbPutNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) error {
-	return errors.Wrap(txn.Set(_dbKeyForNonceEntry(nonce, pkid), []byte{}),
-		"DbPutAccountNonceWithTxn: Problem setting nonce")
+func DbPutTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) error {
+	return errors.Wrap(txn.Set(_dbKeyForTransactorNonceEntry(nonce, pkid), []byte{}),
+		"DbPutTransactorNonceEntryWithTxn: Problem setting nonce")
 }
 
-func DbPutNonceEntry(handle *badger.DB, nonce *DeSoNonce, pkid *PKID) error {
+func DbPutTransactorNonceEntry(handle *badger.DB, nonce *DeSoNonce, pkid *PKID) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutNonceEntryWithTxn(txn, nonce, pkid)
+		return DbPutTransactorNonceEntryWithTxn(txn, nonce, pkid)
 	})
 }
 
-func DbDeleteNonceEntryWithTxn(txn *badger.Txn, accountNonce *DeSoNonce, pkid *PKID) error {
+func DbDeleteTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) error {
 	return errors.Wrap(
-		txn.Delete(_dbKeyForNonceEntry(accountNonce, pkid)),
-		"DbDeleteAccountNonceWithTxn: Problem deleting nonce")
+		txn.Delete(_dbKeyForTransactorNonceEntry(nonce, pkid)),
+		"DbDeleteTransactorNonceEntryWithTxn: Problem deleting nonce")
 }
 
-func DbDeleteExpiredNoncesAtBlockHeight(handle *badger.DB, blockHeight uint64) error {
+func DbDeleteExpiredTransactorNonceEntriesAtBlockHeight(handle *badger.DB, blockHeight uint64) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteExpiredNoncesAtBlockHeightWithTxn(txn, blockHeight)
+		return DbDeleteExpiredTransactorNonceEntriesAtBlockHeightWithTxn(txn, blockHeight)
 	})
 }
 
-func DbDeleteExpiredNoncesAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint64) error {
+func DbDeleteExpiredTransactorNonceEntriesAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint64) error {
 
 	startPrefix := _dbPrefixForNonceEntryIndexWithBlockHeight(blockHeight)
 	endPrefix := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
@@ -10553,34 +10550,35 @@ func DbDeleteExpiredNoncesAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint
 	}
 	for _, key := range keysToDelete {
 		if err := DBDeleteWithTxn(txn, nil, key); err != nil {
-			return errors.Wrapf(err, "DbDeleteExpiredNoncesAtBlockHeightWithTxn: Problem deleting key: %v", key)
+			return errors.Wrapf(err,
+				"DbDeleteExpiredTransactorNonceEntriesAtBlockHeightWithTxn: Problem deleting key: %v", key)
 		}
 	}
 	return nil
 }
 
-func DbGetAllNonceEntries(handle *badger.DB) []*NonceEntry {
+func DbGetAllTransactorNonceEntries(handle *badger.DB) []*TransactorNonceEntry {
 	keys, _ := EnumerateKeysForPrefix(handle, Prefixes.PrefixNoncePKIDIndex)
-	nonceEntries := []*NonceEntry{}
+	nonceEntries := []*TransactorNonceEntry{}
 	for _, key := range keys {
 		// Convert key to nonce entry.
-		nonceEntries = append(nonceEntries, NonceKeyToNonceEntry(key))
+		nonceEntries = append(nonceEntries, TransactorNonceKeyToTransactorNonceEntry(key))
 	}
 	return nonceEntries
 }
 
-func NonceKeyToNonceEntry(key []byte) *NonceEntry {
+func TransactorNonceKeyToTransactorNonceEntry(key []byte) *TransactorNonceEntry {
 	keyWithoutPrefix := key[1:]
 	expirationHeight := DecodeUint64(keyWithoutPrefix[:8])
 	pkid := &PKID{}
 	copy(pkid[:], keyWithoutPrefix[8:41])
 	partialID := DecodeUint64(keyWithoutPrefix[41:])
-	return &NonceEntry{
+	return &TransactorNonceEntry{
 		Nonce: &DeSoNonce{
 			ExpirationBlockHeight: expirationHeight,
 			PartialID:             partialID,
 		},
-		PKID: pkid,
+		TransactorPKID: pkid,
 	}
 }
 

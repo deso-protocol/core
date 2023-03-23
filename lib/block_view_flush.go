@@ -1413,10 +1413,10 @@ func (bav *UtxoView) _flushPostAssociationEntriesToDbWithTxn(txn *badger.Txn, bl
 }
 
 func (bav *UtxoView) _flushNonceEntriesToDbWithTxn(txn *badger.Txn) error {
-	for _, nonceEntry := range bav.NonceMapKeyToNonceEntry {
-		// Delete the existing mappings in the db for this NonceEntry. They
+	for _, nonceEntry := range bav.TransactorNonceMapKeyToTransactorNonceEntry {
+		// Delete the existing mappings in the db for this TransactorNonceEntry. They
 		// will be re-added if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteNonceEntryWithTxn(txn, nonceEntry.Nonce, nonceEntry.PKID); err != nil {
+		if err := DbDeleteNonceEntryWithTxn(txn, nonceEntry.Nonce, nonceEntry.TransactorPKID); err != nil {
 			return fmt.Errorf(
 				"_flushNonceEntriesToDbWithTxn: problem deleting account nonce mappings for account nonce %v: %v",
 				nonceEntry.Nonce.String(),
@@ -1425,14 +1425,14 @@ func (bav *UtxoView) _flushNonceEntriesToDbWithTxn(txn *badger.Txn) error {
 		}
 	}
 
-	for _, nonceEntry := range bav.NonceMapKeyToNonceEntry {
+	for _, nonceEntry := range bav.TransactorNonceMapKeyToTransactorNonceEntry {
 		if nonceEntry.isDeleted {
-			// If the NonceEntry has isDeleted=true then there's
+			// If the TransactorNonceEntry has isDeleted=true then there's
 			// nothing to do because we already deleted the entry above.
 		} else {
-			// If the NonceEntry has isDeleted=false then we
+			// If the TransactorNonceEntry has isDeleted=false then we
 			// put the corresponding mappings for it into the db.
-			if err := DbPutNonceEntryWithTxn(txn, nonceEntry.Nonce, nonceEntry.PKID); err != nil {
+			if err := DbPutTransactorNonceEntryWithTxn(txn, nonceEntry.Nonce, nonceEntry.TransactorPKID); err != nil {
 				return fmt.Errorf("_flushNonceEntriesToDbWithTxn: %v", err)
 			}
 		}

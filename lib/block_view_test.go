@@ -878,20 +878,20 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 		createNFTFeeNanos, maxCopiesPerNFT, -1, flushToDb, nil)
 }
 
-func _updateGlobalParamsEntryWithMaxNonceExpirationBlockBuffer(t *testing.T, chain *Blockchain, db *badger.DB,
+func _updateGlobalParamsEntryWithMaxNonceExpirationBlockHeightOffset(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, usdCentsPerBitcoin int64, minimumNetworkFeesNanosPerKB int64,
-	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, maxNonceExpirationBlockBuffer int64, flushToDb bool) (
+	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, maxNonceExpirationBlockHeightOffset int64, flushToDb bool) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 	return _updateGlobalParamsEntryWithMempool(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check,
 		updaterPrivBase58Check, usdCentsPerBitcoin, minimumNetworkFeesNanosPerKB, createProfileFeeNanos,
-		createNFTFeeNanos, maxCopiesPerNFT, maxNonceExpirationBlockBuffer, flushToDb, nil)
+		createNFTFeeNanos, maxCopiesPerNFT, maxNonceExpirationBlockHeightOffset, flushToDb, nil)
 }
 
 func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, usdCentsPerBitcoin int64, minimumNetworkFeesNanosPerKB int64,
-	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, maxNonceExpirationBlockBuffer int64,
+	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, maxNonceExpirationBlockHeightOffset int64,
 	flushToDb bool, mempool *DeSoMempool) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
@@ -911,7 +911,7 @@ func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *ba
 		maxCopiesPerNFT,
 		minimumNetworkFeesNanosPerKB,
 		nil,
-		maxNonceExpirationBlockBuffer,
+		maxNonceExpirationBlockHeightOffset,
 		feeRateNanosPerKB,
 		mempool,
 		[]*DeSoOutput{})
@@ -995,7 +995,7 @@ func _updateGlobalParamsEntryWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _updateGlobalParamsEntryWithMaxNonceExpirationBlockBufferAndTestMeta(
+func _updateGlobalParamsEntryWithMaxNonceExpirationBlockHeightOffsetAndTestMeta(
 	testMeta *TestMeta,
 	feeRateNanosPerKB uint64,
 	updaterPkBase58Check string,
@@ -1005,7 +1005,7 @@ func _updateGlobalParamsEntryWithMaxNonceExpirationBlockBufferAndTestMeta(
 	createProfileFeeNanos int64,
 	createNFTFeeNanos int64,
 	maxCopiesPerNFT int64,
-	maxNonceExpirationBlockBuffer int64,
+	maxNonceExpirationBlockHeightOffset int64,
 ) {
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances,
@@ -1021,7 +1021,7 @@ func _updateGlobalParamsEntryWithMaxNonceExpirationBlockBufferAndTestMeta(
 		createProfileFeeNanos,
 		createNFTFeeNanos,
 		maxCopiesPerNFT,
-		maxNonceExpirationBlockBuffer,
+		maxNonceExpirationBlockHeightOffset,
 		true,
 		testMeta.mempool) /*flushToDB*/
 	require.NoError(testMeta.t, err)
@@ -1325,7 +1325,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 		prevGlobalParams := DbGetGlobalParamsEntry(db, chain.snapshot)
 
 		var utxoOps []*UtxoOperation
-		utxoOps, updateGlobalParamsTxn, _, err = _updateGlobalParamsEntryWithMaxNonceExpirationBlockBuffer(
+		utxoOps, updateGlobalParamsTxn, _, err = _updateGlobalParamsEntryWithMaxNonceExpirationBlockHeightOffset(
 			t, chain, db, params, 200, /*feeRateNanosPerKB*/
 			moneyPkString,
 			moneyPrivString,
@@ -1340,12 +1340,12 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 		// Verify that the db reflects the new global params entry.
 		expectedGlobalParams := &GlobalParamsEntry{
-			USDCentsPerBitcoin:            prevGlobalParams.USDCentsPerBitcoin,
-			MinimumNetworkFeeNanosPerKB:   prevGlobalParams.MinimumNetworkFeeNanosPerKB,
-			CreateProfileFeeNanos:         prevGlobalParams.CreateProfileFeeNanos,
-			CreateNFTFeeNanos:             prevGlobalParams.CreateNFTFeeNanos,
-			MaxCopiesPerNFT:               prevGlobalParams.MaxCopiesPerNFT,
-			MaxNonceExpirationBlockBuffer: 5000,
+			USDCentsPerBitcoin:                  prevGlobalParams.USDCentsPerBitcoin,
+			MinimumNetworkFeeNanosPerKB:         prevGlobalParams.MinimumNetworkFeeNanosPerKB,
+			CreateProfileFeeNanos:               prevGlobalParams.CreateProfileFeeNanos,
+			CreateNFTFeeNanos:                   prevGlobalParams.CreateNFTFeeNanos,
+			MaxCopiesPerNFT:                     prevGlobalParams.MaxCopiesPerNFT,
+			MaxNonceExpirationBlockHeightOffset: 5000,
 		}
 
 		require.Equal(DbGetGlobalParamsEntry(db, chain.snapshot), expectedGlobalParams)
