@@ -749,14 +749,21 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		bav._deleteValidatorEntryMappings(prevValidatorEntry)
 	}
 
+	// Unstake delegated stakers if updating DisableDelegatedStake=true.
+	if prevValidatorEntry != nil &&
+		!prevValidatorEntry.DisableDelegatedStake && // Validator previously allowed delegated stake.
+		txMeta.DisableDelegatedStake { // Validator no longer allows delegated stake.
+		// TODO
+	}
+
+	// Calculate TotalStakeAmountNanos.
+	totalStakeAmountNanos := uint256.NewInt() // TODO
+
 	// Set CreatedAtBlockHeight only if this is a new ValidatorEntry.
 	createdAtBlockHeight := blockHeight
 	if prevValidatorEntry != nil {
 		createdAtBlockHeight = prevValidatorEntry.CreatedAtBlockHeight
 	}
-
-	// Calculate TotalStakeAmountNanos.
-	totalStakeAmountNanos := uint256.NewInt() // TODO
 
 	// Retrieve existing ExtraData to merge with any new ExtraData.
 	var prevExtraData map[string][]byte
@@ -775,9 +782,15 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		CreatedAtBlockHeight:  createdAtBlockHeight,
 		ExtraData:             mergeExtraData(prevExtraData, txn.ExtraData),
 	}
-	_ = currentValidatorEntry
+	// Set the ValidatorEntry.
+	bav._setValidatorEntryMappings(currentValidatorEntry)
 
-	// TODO
+	// Add a UTXO operation
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type: OperationTypeRegisterAsValidator,
+		// PrevValidatorEntry: prevValidatorEntry, // TODO
+		// PrevStakeEntries: prevStakeEntries, // TODO
+	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -973,6 +986,8 @@ func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
 // CONSTANTS
 //
 
-const TxnTypeRegisterAsValidator TxnType = math.MaxUint8 // TODO: update
+const TxnTypeRegisterAsValidator TxnType = math.MaxUint8             // TODO: update
+const OperationTypeRegisterAsValidator OperationType = math.MaxUint8 // TODO: update
+
 const RuleErrorProofofStakeTxnBeforeBlockHeight RuleError = "RuleErrorProofOfStakeTxnBeforeBlockHeight"
 const RuleErrorInvalidValidatorPKID RuleError = "RuleErrorInvalidValidatorPKID"
