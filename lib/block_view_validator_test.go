@@ -149,13 +149,14 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorValidatorDuplicateDomains)
 	}
 	{
-		// Happy path: validator is registered
+		// Happy path: register a validator
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:               [][]byte{[]byte("https://example.com")},
 			DisableDelegatedStake: false,
 		}
+		extraData := map[string][]byte{"TestKey": []byte("TestValue1")}
 		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+			testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB,
 		)
 		require.NoError(t, err)
 	}
@@ -167,6 +168,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Len(t, validatorEntry.Domains, 1)
 		require.Equal(t, string(validatorEntry.Domains[0]), "https://example.com")
 		require.False(t, validatorEntry.DisableDelegatedStake)
+		require.Equal(t, string(validatorEntry.ExtraData["TestKey"]), "TestValue1")
 	}
 	{
 		// Query: retrieve top ValidatorEntries by stake
@@ -184,6 +186,29 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
 		require.NoError(t, err)
 		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
+	}
+	{
+		// Happy path: update a validator
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:               [][]byte{[]byte("https://example1.com"), []byte("https://example2.com")},
+			DisableDelegatedStake: false,
+		}
+		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB,
+		)
+		require.NoError(t, err)
+	}
+	{
+		// Query: retrieve ValidatorEntry by PKID, make sure it has been updated
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.ValidatorPKID, m0PKID)
+		require.Len(t, validatorEntry.Domains, 2)
+		require.Equal(t, string(validatorEntry.Domains[0]), "https://example1.com")
+		require.Equal(t, string(validatorEntry.Domains[1]), "https://example2.com")
+		require.False(t, validatorEntry.DisableDelegatedStake)
+		require.Equal(t, string(validatorEntry.ExtraData["TestKey"]), "TestValue2")
 	}
 	{
 		// Sad path: unregister validator but not enough blocks have passed since registering
@@ -232,6 +257,9 @@ func _submitRegisterAsValidatorTxn(
 	extraData map[string][]byte,
 	flushToDB bool,
 ) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	// Record transactor's prevBalance.
+	prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
+
 	// Convert PublicKeyBase58Check to PkBytes.
 	updaterPkBytes, _, err := Base58CheckDecode(transactorPublicKeyBase58Check)
 	require.NoError(testMeta.t, err)
@@ -272,6 +300,11 @@ func _submitRegisterAsValidatorTxn(
 		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(0))
 	}
 	require.NoError(testMeta.t, testMeta.mempool.RegenerateReadOnlyView())
+
+	// Record the txn.
+	testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
+	testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+	testMeta.txns = append(testMeta.txns, txn)
 	return utxoOps, txn, testMeta.savedHeight, nil
 }
 
@@ -281,6 +314,9 @@ func _submitUnregisterAsValidatorTxn(
 	transactorPrivateKeyBase58Check string,
 	flushToDB bool,
 ) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	// Record transactor's prevBalance.
+	prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
+
 	// Convert PublicKeyBase58Check to PkBytes.
 	updaterPkBytes, _, err := Base58CheckDecode(transactorPublicKeyBase58Check)
 	require.NoError(testMeta.t, err)
@@ -321,5 +357,10 @@ func _submitUnregisterAsValidatorTxn(
 		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(0))
 	}
 	require.NoError(testMeta.t, testMeta.mempool.RegenerateReadOnlyView())
+
+	// Record the txn.
+	testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
+	testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+	testMeta.txns = append(testMeta.txns, txn)
 	return utxoOps, txn, testMeta.savedHeight, nil
 }

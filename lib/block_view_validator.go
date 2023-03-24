@@ -136,11 +136,10 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 	validatorEntry.CreatedAtBlockHeight = uint32(createdAtBlockHeight)
 
 	// ExtraData
-	extraData, err := DecodeExtraData(rr)
+	validatorEntry.ExtraData, err = DecodeExtraData(rr)
 	if err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading ExtraData: ")
 	}
-	validatorEntry.ExtraData = extraData
 
 	return nil
 }
