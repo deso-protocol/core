@@ -1436,7 +1436,7 @@ func (bav *UtxoView) DisconnectBlock(
 	if desoBlock.Header.Height >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) {
 		if len(utxoOps) != len(desoBlock.Txns)+1 {
 			return fmt.Errorf(
-				"DisconnectBlock: Expected number of utxo ops to be equal to number of txns in block plus one for" +
+				"DisconnectBlock: Expected number of utxo ops to be equal to number of txns in block plus one for"+
 					" delete expired nonces operation for block %d",
 				desoBlock.Header.Height)
 		}
