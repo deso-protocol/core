@@ -877,7 +877,7 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	tvb3 := NewTransactionTestVectorBlock(tvv3, tvb3ConnectCallback, tvb3DisconnectCallback)
 
 	tvbb := []*transactionTestVectorBlock{tvb1, tvb2, tvb3}
-	tes := NewTransactionTestSuite(t, tvbb, tConfig)
+	_, tes := NewTransactionTestSuite(t, tvbb, tConfig)
 	tes.Run()
 }
 

@@ -108,6 +108,7 @@ const (
 	EncoderTypeNewMessageEntry
 	EncoderTypeAccessGroupMemberEnumerationEntry
 	EncoderTypeDmThreadEntry
+	EncoderTypeTransactorNonceEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -230,6 +231,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMemberEnumerationEntry{}
 	case EncoderTypeDmThreadEntry:
 		return &DmThreadEntry{}
+	case EncoderTypeTransactorNonceEntry:
+		return &TransactorNonceEntry{}
 	}
 
 	// Txindex encoder types
@@ -571,8 +574,8 @@ const (
 	OperationTypeNewMessage                   OperationType = 35
 	OperationTypeAddBalance                   OperationType = 36
 	OperationTypeSpendBalance                 OperationType = 37
-
-	// NEXT_TAG = 38
+	OperationTypeDeleteExpiredNonces          OperationType = 38
+	// NEXT_TAG = 39
 )
 
 func (op OperationType) String() string {
@@ -651,6 +654,8 @@ func (op OperationType) String() string {
 		return "OperationTypeAddBalance"
 	case OperationTypeSpendBalance:
 		return "OperationTypeSpendBalance"
+	case OperationTypeDeleteExpiredNonces:
+		return "OperationTypeDeleteExpiredNonces"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -832,6 +837,9 @@ type UtxoOperation struct {
 	// When we add to or spend balance, we keep track of the public key and amount.
 	BalancePublicKey   []byte
 	BalanceAmountNanos uint64
+
+	// When we connect a block, we delete expired nonce entries.
+	PrevNonceEntries []*TransactorNonceEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1140,9 +1148,13 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 	}
 
 	if MigrationTriggered(blockHeight, BalanceModelMigration) {
-
 		data = append(data, EncodeByteArray(op.BalancePublicKey)...)
 		data = append(data, UintToBuf(op.BalanceAmountNanos)...)
+
+		data = append(data, UintToBuf(uint64(len(op.PrevNonceEntries)))...)
+		for _, entry := range op.PrevNonceEntries {
+			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
+		}
 	}
 
 	return data
@@ -1743,6 +1755,25 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		op.BalanceAmountNanos, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading BalanceAmountNanos")
+		}
+
+		var numPrevNonceEntries uint64
+		numPrevNonceEntries, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading numPrevNonceEntries")
+		}
+
+		for ; numPrevNonceEntries > 0; numPrevNonceEntries-- {
+			prevNonceEntry := &TransactorNonceEntry{}
+			prevNonceEntry.Nonce = &DeSoNonce{}
+			if err = prevNonceEntry.Nonce.ReadDeSoNonce(rr); err != nil {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading prevNonceEntry's DeSo Nonce")
+			}
+			transactorPKID := &PKID{}
+			if _, err = DecodeFromBytes(transactorPKID, rr); err != nil {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading prevNonceEntry's TransactorPKID")
+			}
+			prevNonceEntry.TransactorPKID = transactorPKID
 		}
 	}
 
@@ -6031,6 +6062,36 @@ type TransactorNonceEntry struct {
 	Nonce          *DeSoNonce
 	TransactorPKID *PKID
 	isDeleted      bool
+}
+
+func (tne *TransactorNonceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, tne.Nonce.ToBytes()...)
+	data = append(data, EncodeToBytes(blockHeight, tne.TransactorPKID, skipMetadata...)...)
+	return data
+}
+
+func (tne *TransactorNonceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	nonce := &DeSoNonce{}
+	if err := nonce.ReadDeSoNonce(rr); err != nil {
+		return err
+	}
+	tne.Nonce = nonce
+
+	transactorPKID := &PKID{}
+	if _, err := DecodeFromBytes(transactorPKID, rr); err != nil {
+		return err
+	}
+	tne.TransactorPKID = transactorPKID
+	return nil
+}
+
+func (tne *TransactorNonceEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (tne *TransactorNonceEntry) GetEncoderType() EncoderType {
+	return EncoderTypeTransactorNonceEntry
 }
 
 func (tne *TransactorNonceEntry) ToMapKey() TransactorNonceMapKey {

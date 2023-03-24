@@ -2881,17 +2881,17 @@ func (nonce *DeSoNonce) String() string {
 		nonce.ExpirationBlockHeight, nonce.PartialID)
 }
 
-func (nonce *DeSoNonce) ReadDeSoNonce(rr io.Reader) (*DeSoNonce, error) {
+func (nonce *DeSoNonce) ReadDeSoNonce(rr io.Reader) error {
 	var err error
 	nonce.ExpirationBlockHeight, err = ReadUvarint(rr)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	nonce.PartialID, err = ReadUvarint(rr)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return nonce, nil
+	return nil
 }
 
 type MsgDeSoTxn struct {
@@ -3225,7 +3225,7 @@ func _readTransactionV1Fields(rr io.Reader, ret *MsgDeSoTxn) error {
 	ret.TxnFeeNanos = txnFeeNanos
 
 	txnNonce := &DeSoNonce{}
-	txnNonce, err = txnNonce.ReadDeSoNonce(rr)
+	err = txnNonce.ReadDeSoNonce(rr)
 	if err != nil {
 		return errors.Wrapf(
 			err, "_readTransactionV1Fields: Problem parsing DeSoTxn.TxnNonce bytes")

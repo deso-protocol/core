@@ -10550,6 +10550,30 @@ func DbDeleteExpiredTransactorNonceEntriesAtBlockHeightWithTxn(txn *badger.Txn, 
 	return nil
 }
 
+func DbGetTransactorNonceEntriesToExpireAtBlockHeight(handle *badger.DB, blockHeight uint64) ([]*TransactorNonceEntry, error) {
+	var ret []*TransactorNonceEntry
+	err := handle.View(func(txn *badger.Txn) error {
+		ret = DbGetTransactorNonceEntriesToExpireAtBlockHeightWithTxn(txn, blockHeight)
+		return nil
+	})
+	return ret, err
+}
+
+func DbGetTransactorNonceEntriesToExpireAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint64) []*TransactorNonceEntry {
+	startPrefix := _dbKeyForTransactorNonceEntry(&DeSoNonce{ExpirationBlockHeight: blockHeight, PartialID: math.MaxUint64}, &MaxPKID)
+	endPrefix := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
+	opts := badger.DefaultIteratorOptions
+	opts.Reverse = true
+	nodeIterator := txn.NewIterator(opts)
+	defer nodeIterator.Close()
+	var transactorNonceEntries []*TransactorNonceEntry
+	for nodeIterator.Seek(startPrefix); nodeIterator.ValidForPrefix(endPrefix); nodeIterator.Next() {
+		transactorNonceEntries = append(transactorNonceEntries,
+			TransactorNonceKeyToTransactorNonceEntry(nodeIterator.Item().Key()))
+	}
+	return transactorNonceEntries
+}
+
 func DbGetAllTransactorNonceEntries(handle *badger.DB) []*TransactorNonceEntry {
 	keys, _ := EnumerateKeysForPrefix(handle, Prefixes.PrefixNoncePKIDIndex)
 	nonceEntries := []*TransactorNonceEntry{}

@@ -1432,9 +1432,32 @@ func (bav *UtxoView) DisconnectBlock(
 				"utxoOps (%d)", numOutputs, numAddUtxoOps)
 	}
 
+	var deletedNonceUtxoExists int
+	// After the balance model block height, we may have a delete expired nonces utxo operation.
+	// We need to revert this before iterating over the transactions in the block.
+	if desoBlock.Header.Height >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) {
+		// We need to revert the delete expired nonces operation.
+		deleteExpiredNoncesUtxoOps := utxoOps[len(utxoOps)-1]
+		if deleteExpiredNoncesUtxoOps[0].Type != OperationTypeDeleteExpiredNonces {
+			return fmt.Errorf(
+				"DisconnectBlock: Expected last utxo op to be delete expired nonces operation for block %d",
+				desoBlock.Header.Height)
+		}
+		if len(deleteExpiredNoncesUtxoOps) != 1 {
+			return fmt.Errorf(
+				"DisconnectBlock: Expected exactly utxo op for deleting expired nonces operation for block %d",
+				desoBlock.Header.Height)
+		}
+		deleteExpiredNoncesUtxoOp := deleteExpiredNoncesUtxoOps[0]
+		for _, nonceEntry := range deleteExpiredNoncesUtxoOp.PrevNonceEntries {
+			bav.SetTransactorNonceEntry(nonceEntry)
+		}
+		deletedNonceUtxoExists = 1
+	}
+
 	// Loop through the txns backwards to process them.
 	// Track the operation we're performing as we go.
-	for txnIndex := len(desoBlock.Txns) - 1; txnIndex >= 0; txnIndex-- {
+	for txnIndex := len(desoBlock.Txns) - 1 - deletedNonceUtxoExists; txnIndex >= 0; txnIndex-- {
 		currentTxn := desoBlock.Txns[txnIndex]
 		txnHash := txHashes[txnIndex]
 		utxoOpsForTxn := utxoOps[txnIndex]
@@ -3281,6 +3304,17 @@ func (bav *UtxoView) ConnectBlock(
 		return nil, RuleErrorBlockRewardExceedsMaxAllowed
 	}
 
+	if blockHeight >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) {
+		prevNonces := bav.GetTransactorNonceEntriesToDeleteAtBlockHeight(blockHeight)
+		utxoOps = append(utxoOps, []*UtxoOperation{{
+			Type:             OperationTypeDeleteExpiredNonces,
+			PrevNonceEntries: prevNonces,
+		}})
+		for _, prevNonceEntry := range prevNonces {
+			bav.DeleteTransactorNonceEntry(prevNonceEntry)
+		}
+	}
+
 	// If we made it to the end and this block is valid, advance the tip
 	// of the view to reflect that.
 	blockHash, err := desoBlock.Header.Hash()
@@ -3586,6 +3620,32 @@ func (bav *UtxoView) DeleteTransactorNonceEntry(nonceEntry *TransactorNonceEntry
 
 	nonceEntry.isDeleted = true
 	bav.SetTransactorNonceEntry(nonceEntry)
+}
+
+func (bav *UtxoView) GetTransactorNonceEntriesToDeleteAtBlockHeight(blockHeight uint64) []*TransactorNonceEntry {
+	dbExpiredNonceEntries, err := DbGetTransactorNonceEntriesToExpireAtBlockHeight(bav.Handle, blockHeight)
+	if err != nil {
+		glog.Errorf("GetTransactorNonceEntriesToDeleteAtBlockHeight: Error fetching expired nonce entries: %v", err)
+		return nil
+	}
+	// Add the db entries to the view
+	for _, dbNonceEntry := range dbExpiredNonceEntries {
+		// If the entry already exists, skip it and use what's in the view.
+		if _, exists := bav.TransactorNonceMapKeyToTransactorNonceEntry[dbNonceEntry.ToMapKey()]; exists {
+			continue
+		}
+		bav.SetTransactorNonceEntry(dbNonceEntry)
+	}
+	var transactorNoncesToExpire []*TransactorNonceEntry
+	for _, nonceEntry := range bav.TransactorNonceMapKeyToTransactorNonceEntry {
+		if nonceEntry.isDeleted {
+			continue
+		}
+		if nonceEntry.Nonce.ExpirationBlockHeight <= blockHeight {
+			transactorNoncesToExpire = append(transactorNoncesToExpire, nonceEntry)
+		}
+	}
+	return transactorNoncesToExpire
 }
 
 func (bav *UtxoView) ConstructNonceForPublicKey(publicKey []byte, blockHeight uint64) (*DeSoNonce, error) {
