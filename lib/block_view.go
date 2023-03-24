@@ -1199,7 +1199,6 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 		if err != nil {
 			return errors.Wrapf(err, "DisconnectTransaction: Problem getting account nonce for nonce %s and PKID %v", currentTxn.TxnNonce.String(), pkidEntry.PKID)
 		}
-		// TODO: Is it possible that the nonce is already deleted from badger? I don't think so, but I'm not sure.
 		if nonce == nil || nonce.isDeleted {
 			return fmt.Errorf("DisconnectTransaction: Nonce %s hasn't been seen for PKID %v", currentTxn.TxnNonce.String(), pkidEntry.PKID)
 		}

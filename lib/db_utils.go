@@ -10524,32 +10524,6 @@ func DbDeleteTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid
 		"DbDeleteTransactorNonceEntryWithTxn: Problem deleting nonce")
 }
 
-func DbDeleteExpiredTransactorNonceEntriesAtBlockHeight(handle *badger.DB, blockHeight uint64) error {
-	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteExpiredTransactorNonceEntriesAtBlockHeightWithTxn(txn, blockHeight)
-	})
-}
-
-func DbDeleteExpiredTransactorNonceEntriesAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	startPrefix := _dbKeyForTransactorNonceEntry(&DeSoNonce{ExpirationBlockHeight: blockHeight, PartialID: math.MaxUint64}, &MaxPKID)
-	endPrefix := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
-	opts := badger.DefaultIteratorOptions
-	opts.Reverse = true
-	nodeIterator := txn.NewIterator(opts)
-	defer nodeIterator.Close()
-	keysToDelete := [][]byte{}
-	for nodeIterator.Seek(startPrefix); nodeIterator.ValidForPrefix(endPrefix); nodeIterator.Next() {
-		keysToDelete = append(keysToDelete, nodeIterator.Item().Key())
-	}
-	for _, key := range keysToDelete {
-		if err := DBDeleteWithTxn(txn, nil, key); err != nil {
-			return errors.Wrapf(err,
-				"DbDeleteExpiredTransactorNonceEntriesAtBlockHeightWithTxn: Problem deleting key: %v", key)
-		}
-	}
-	return nil
-}
-
 func DbGetTransactorNonceEntriesToExpireAtBlockHeight(handle *badger.DB, blockHeight uint64) ([]*TransactorNonceEntry, error) {
 	var ret []*TransactorNonceEntry
 	err := handle.View(func(txn *badger.Txn) error {
