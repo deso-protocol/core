@@ -10,10 +10,11 @@ import (
 
 func TestValidatorRegistration(t *testing.T) {
 	_testValidatorRegistration(t, false)
-	//_testValidatorRegistration(t, true)
+	_testValidatorRegistration(t, true)
 }
 
 func _testValidatorRegistration(t *testing.T, flushToDB bool) {
+	// Local variables
 	var registerMetadata *RegisterAsValidatorMetadata
 	var validatorEntry *ValidatorEntry
 	var validatorEntries []*ValidatorEntry

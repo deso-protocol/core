@@ -72,6 +72,7 @@ func (validatorEntry *ValidatorEntry) RawEncodeWithoutMetadata(blockHeight uint6
 	}
 
 	data = append(data, BoolToByte(validatorEntry.DisableDelegatedStake))
+	data = append(data, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	data = append(data, UintToBuf(uint64(validatorEntry.CreatedAtBlockHeight))...)
 	data = append(data, EncodeExtraData(validatorEntry.ExtraData)...)
 	return data
@@ -113,6 +114,12 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 	validatorEntry.DisableDelegatedStake, err = ReadBoolByte(rr)
 	if err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading DisableDelegatedStake: ")
+	}
+
+	// TotalStakeAmountNanos
+	validatorEntry.TotalStakeAmountNanos, err = DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading TotalStakeAmountNanos: ")
 	}
 
 	// CreatedAtBlockHeight
@@ -485,7 +492,14 @@ func DBGetTopValidatorsByStake(
 
 	// For each PKID, retrieve the ValidatorEntry by PKID.
 	for _, validatorPKIDBytes := range validatorPKIDsBytes {
-		validatorEntry, err := DBGetValidatorByPKID(handle, snap, NewPKID(validatorPKIDBytes))
+		// Convert PKIDBytes to PKID.
+		validatorPKID := &PKID{}
+		exists, err := DecodeFromBytes(validatorPKID, bytes.NewReader(validatorPKIDBytes))
+		if !exists || err != nil {
+			return nil, errors.Wrapf(err, "DBGetTopValidatorsByStake: problem reading ValidatorPKID: ")
+		}
+		// Retrieve ValidatorEntry by PKID.
+		validatorEntry, err := DBGetValidatorByPKID(handle, snap, validatorPKID)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetTopValidatorsByStake: problem retrieving validator by PKID: ")
 		}
@@ -536,13 +550,12 @@ func DBPutValidatorWithTxn(
 	if validatorEntry == nil {
 		return nil
 	}
-	validatorEntryBytes := EncodeToBytes(blockHeight, validatorEntry)
 	var key []byte
 	var err error
 
 	// Set ValidatorEntry in PrefixValidatorByPKID.
 	key = DBKeyForValidatorByPKID(validatorEntry)
-	if err = DBSetWithTxn(txn, snap, key, validatorEntryBytes); err != nil {
+	if err = DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry)); err != nil {
 		return errors.Wrapf(
 			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByPKID",
 		)
@@ -550,7 +563,7 @@ func DBPutValidatorWithTxn(
 
 	// Set new entry in PrefixValidatorByStake.
 	key = DBKeyForValidatorByStake(validatorEntry)
-	if err = DBSetWithTxn(txn, snap, key, validatorEntry.ValidatorPKID.ToBytes()); err != nil {
+	if err = DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry.ValidatorPKID)); err != nil {
 		return errors.Wrapf(
 			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByPKID",
 		)
