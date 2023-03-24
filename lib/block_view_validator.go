@@ -56,10 +56,6 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 	}
 }
 
-func (validatorEntry *ValidatorEntry) Eq(other *ValidatorEntry, blockHeight uint64) bool {
-	return bytes.Equal(EncodeToBytes(blockHeight, validatorEntry), EncodeToBytes(blockHeight, other))
-}
-
 func (validatorEntry *ValidatorEntry) ToMapKey() ValidatorMapKey {
 	return ValidatorMapKey{ValidatorPKID: *validatorEntry.ValidatorPKID}
 }
@@ -463,14 +459,25 @@ func DBGetValidatorByPKIDWithTxn(txn *badger.Txn, snap *Snapshot, pkid *PKID) (*
 	return validatorEntry, nil
 }
 
-func DBGetTopValidatorsByStake(handle *badger.DB, snap *Snapshot, limit int) ([]*ValidatorEntry, error) {
+func DBGetTopValidatorsByStake(
+	handle *badger.DB,
+	snap *Snapshot,
+	limit int,
+	validatorEntriesToSkip []*ValidatorEntry,
+) ([]*ValidatorEntry, error) {
 	var validatorEntries []*ValidatorEntry
+
+	// Convert ValidatorEntriesToSkip to ValidatorEntryKeysToSkip.
+	validatorKeysToSkip := NewSet([]string{})
+	for _, validatorEntryToSkip := range validatorEntriesToSkip {
+		validatorKeysToSkip.Add(string(DBKeyForValidatorByStake(validatorEntryToSkip)))
+	}
 
 	// Retrieve top N ValidatorEntry PKIDs by stake.
 	var key []byte
 	key = append(key, Prefixes.PrefixValidatorByStake...)
 	_, validatorPKIDsBytes, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
-		handle, key, limit, nil, true, NewSet([]string{}),
+		handle, key, limit, nil, true, validatorKeysToSkip,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetTopValidatorsByStake: problem retrieving top validators: ")
@@ -1089,22 +1096,28 @@ func (bav *UtxoView) GetTopValidatorsByStake(limit int) ([]*ValidatorEntry, erro
 	if limit <= 0 {
 		return []*ValidatorEntry{}, nil
 	}
-	// Pull top ValidatorEntries from the database.
-	dbValidatorEntries, err := DBGetTopValidatorsByStake(bav.Handle, bav.Snapshot, limit)
+	// Create a slice of UtxoViewValidatorEntries. We want to skip pulling these from the database in
+	// case they have been updated in the UtxoView and the changes have not yet flushed to the database.
+	// Updates to a ValidatorEntry could include adding/removing stake or being deleted which would
+	// impact our ordering. We pull N ValidatorEntries not present in the UtxoView from the database
+	// then sort the UtxoViewValidatorEntries and DatabaseValidatorEntries together to find the top N
+	// ValidatorEntries by stake across both the UtxoView and database.
+	var utxoViewValidatorEntries []*ValidatorEntry
+	for _, validatorEntry := range bav.ValidatorMapKeyToValidatorEntry {
+		utxoViewValidatorEntries = append(utxoViewValidatorEntries, validatorEntry)
+	}
+	// Pull top N ValidatorEntries from the database (not present in the UtxoView).
+	validatorEntries, err := DBGetTopValidatorsByStake(bav.Handle, bav.Snapshot, limit, utxoViewValidatorEntries)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetTopValidatorsByStake: error retrieving entries from db: ")
 	}
-	// Add ValidatorEntries from the UtxoView.
-	// Convert from slice to set to prevent duplicates.
-	validatorSet := NewSet(dbValidatorEntries)
-	for _, validatorEntry := range bav.ValidatorMapKeyToValidatorEntry {
-		// TODO: We have to skip deleted ValidatorEntries when pulling top N from the db
+	// Add !isDeleted ValidatorEntries from the UtxoView to the ValidatorEntries from the db.
+	for _, validatorEntry := range utxoViewValidatorEntries {
 		if !validatorEntry.isDeleted {
-			validatorSet.Add(validatorEntry)
+			validatorEntries = append(validatorEntries, validatorEntry)
 		}
 	}
-	// Convert from set to slice to sort DESC by TotalStakeAmountNanos.
-	validatorEntries := validatorSet.ToSlice()
+	// Sort the ValidatorEntries DESC by TotalStakeAmountNanos.
 	sort.Slice(validatorEntries, func(ii, jj int) bool {
 		return validatorEntries[ii].TotalStakeAmountNanos.Cmp(validatorEntries[jj].TotalStakeAmountNanos) > 0
 	})
