@@ -2869,6 +2869,24 @@ type DeSoNonce struct {
 	PartialID             uint64
 }
 
+func (nonce *DeSoNonce) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, nonce.ToBytes()...)
+	return data
+}
+
+func (nonce *DeSoNonce) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	return nonce.ReadDeSoNonce(rr)
+}
+
+func (nonce *DeSoNonce) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (nonce *DeSoNonce) GetEncoderType() EncoderType {
+	return EncoderTypeDeSoNonce
+}
+
 func (nonce *DeSoNonce) ToBytes() []byte {
 	data := []byte{}
 	data = append(data, UintToBuf(nonce.ExpirationBlockHeight)...)

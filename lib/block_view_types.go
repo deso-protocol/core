@@ -108,6 +108,7 @@ const (
 	EncoderTypeNewMessageEntry
 	EncoderTypeAccessGroupMemberEnumerationEntry
 	EncoderTypeDmThreadEntry
+	EncoderTypeDeSoNonce
 	EncoderTypeTransactorNonceEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
@@ -231,6 +232,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMemberEnumerationEntry{}
 	case EncoderTypeDmThreadEntry:
 		return &DmThreadEntry{}
+	case EncoderTypeDeSoNonce:
+		return &DeSoNonce{}
 	case EncoderTypeTransactorNonceEntry:
 		return &TransactorNonceEntry{}
 	}
@@ -1765,15 +1768,10 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 
 		for ; numPrevNonceEntries > 0; numPrevNonceEntries-- {
 			prevNonceEntry := &TransactorNonceEntry{}
-			prevNonceEntry.Nonce = &DeSoNonce{}
-			if err = prevNonceEntry.Nonce.ReadDeSoNonce(rr); err != nil {
-				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading prevNonceEntry's DeSo Nonce")
+			if _, err = DecodeFromBytes(prevNonceEntry, rr); err != nil {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading prevNonceEntry")
 			}
-			transactorPKID := &PKID{}
-			if _, err = DecodeFromBytes(transactorPKID, rr); err != nil {
-				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading prevNonceEntry's TransactorPKID")
-			}
-			prevNonceEntry.TransactorPKID = transactorPKID
+			op.PrevNonceEntries = append(op.PrevNonceEntries, prevNonceEntry)
 		}
 	}
 
@@ -6066,23 +6064,25 @@ type TransactorNonceEntry struct {
 
 func (tne *TransactorNonceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
-	data = append(data, tne.Nonce.ToBytes()...)
+	data = append(data, EncodeToBytes(blockHeight, tne.Nonce, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, tne.TransactorPKID, skipMetadata...)...)
 	return data
 }
 
 func (tne *TransactorNonceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	nonce := &DeSoNonce{}
-	if err := nonce.ReadDeSoNonce(rr); err != nil {
+	if exists, err := DecodeFromBytes(nonce, rr); exists && err == nil {
+		tne.Nonce = nonce
+	} else if err != nil {
 		return err
 	}
-	tne.Nonce = nonce
 
 	transactorPKID := &PKID{}
-	if _, err := DecodeFromBytes(transactorPKID, rr); err != nil {
+	if exists, err := DecodeFromBytes(transactorPKID, rr); exists && err == nil {
+		tne.TransactorPKID = transactorPKID
+	} else if err != nil {
 		return err
 	}
-	tne.TransactorPKID = transactorPKID
 	return nil
 }
 
