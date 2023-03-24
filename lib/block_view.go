@@ -1432,7 +1432,6 @@ func (bav *UtxoView) DisconnectBlock(
 				"utxoOps (%d)", numOutputs, numAddUtxoOps)
 	}
 
-	var deletedNonceUtxoExists int
 	// After the balance model block height, we may have a delete expired nonces utxo operation.
 	// We need to revert this before iterating over the transactions in the block.
 	if desoBlock.Header.Height >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) {
@@ -1448,16 +1447,14 @@ func (bav *UtxoView) DisconnectBlock(
 				"DisconnectBlock: Expected exactly utxo op for deleting expired nonces operation for block %d",
 				desoBlock.Header.Height)
 		}
-		deleteExpiredNoncesUtxoOp := deleteExpiredNoncesUtxoOps[0]
-		for _, nonceEntry := range deleteExpiredNoncesUtxoOp.PrevNonceEntries {
+		for _, nonceEntry := range deleteExpiredNoncesUtxoOps[0].PrevNonceEntries {
 			bav.SetTransactorNonceEntry(nonceEntry)
 		}
-		deletedNonceUtxoExists = 1
 	}
 
 	// Loop through the txns backwards to process them.
 	// Track the operation we're performing as we go.
-	for txnIndex := len(desoBlock.Txns) - 1 - deletedNonceUtxoExists; txnIndex >= 0; txnIndex-- {
+	for txnIndex := len(desoBlock.Txns) - 1; txnIndex >= 0; txnIndex-- {
 		currentTxn := desoBlock.Txns[txnIndex]
 		txnHash := txHashes[txnIndex]
 		utxoOpsForTxn := utxoOps[txnIndex]

@@ -2153,17 +2153,8 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			// Since we don't have utxo operations in postgres, always write UTXO operations for the block to badger
 			err = bc.db.Update(func(txn *badger.Txn) error {
-				if innerErr := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); innerErr != nil {
-					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
-				}
-				//
-				//if blockHeight >= uint64(bc.params.ForkHeights.BalanceModelBlockHeight) {
-				//	if innerErr := DbDeleteExpiredTransactorNonceEntriesAtBlockHeightWithTxn(txn, blockHeight); innerErr != nil {
-				//		return errors.Wrapf(innerErr, "ProcessBlock: Problem deleting expired nonces at %v",
-				//			blockHeight)
-				//	}
-				//}
-				return nil
+				return errors.Wrapf(PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock),
+					"ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 			})
 		} else {
 			bc.timer.Start("Blockchain.ProcessBlock: Transactions Db put")
@@ -2189,16 +2180,6 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
-				//if blockHeight >= uint64(bc.params.ForkHeights.BalanceModelBlockHeight) {
-				//	bc.timer.Start("Blockchain.ProcessBlock: Transactions Db delete expired nonces")
-				//	if innerErr := DbDeleteExpiredTransactorNonceEntriesAtBlockHeightWithTxn(txn, blockHeight); innerErr != nil {
-				//		return errors.Wrapf(innerErr, "ProcessBlock: Problem deleting expired nonces at %v",
-				//			blockHeight)
-				//	}
-				//	bc.timer.End("Blockchain.ProcessBlock: Transactions Db delete expired nonces")
-				//}
-
-				// Write the modified utxo set to the view.
 				if innerErr := bc.blockView.FlushToDbWithTxn(txn, blockHeight); innerErr != nil {
 					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 				}
