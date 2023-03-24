@@ -1337,6 +1337,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			5000,
 			true)
 		require.NoError(err)
+		_ = utxoOps
 
 		// Verify that the db reflects the new global params entry.
 		expectedGlobalParams := &GlobalParamsEntry{
@@ -1349,6 +1350,22 @@ func TestUpdateGlobalParams(t *testing.T) {
 		}
 
 		require.Equal(DbGetGlobalParamsEntry(db, chain.snapshot), expectedGlobalParams)
+
+		// Make sure mempool won't accept expired nonces or nonces with expiration block heights
+		// that exceed the max offset.
+		txn := _assembleBasicTransferTxnFullySigned(t, chain, 200, 200, m0Pub, moneyPkString, m0Priv, mempool)
+		txn.TxnNonce.ExpirationBlockHeight = uint64(chain.blockTip().Height + 1 + 5001)
+		_signTxn(t, txn, m0Priv)
+		newMP := NewDeSoMempool(chain, 0, 0, "", true, "", "")
+		_, _, err = newMP.TryAcceptTransaction(txn, false, false)
+		require.Error(err)
+		require.Contains(err.Error(), TxErrorNonceExpirationBlockBufferExceeded)
+
+		txn.TxnNonce.ExpirationBlockHeight = uint64(chain.blockTip().Height - 1)
+		_signTxn(t, txn, m0Priv)
+		_, _, err = newMP.TryAcceptTransaction(txn, false, false)
+		require.Error(err)
+		require.Contains(err.Error(), TxErrorNonceExpired)
 
 		// Now let's do a disconnect and make sure the values reflect the previous entry.
 		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot)
@@ -1364,8 +1381,6 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 		// Check the balance of the updater after this txn
 		require.NotEqual(0, _getBalance(t, chain, nil, moneyPkString))
-
-		// TODO: make sure mempool won't accept the transaction w/ a high expiration.
 	}
 }
 
