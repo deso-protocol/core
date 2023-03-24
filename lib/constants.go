@@ -1318,12 +1318,11 @@ const (
 	MinAccessGroupKeyNameCharacters = 1
 	MaxAccessGroupKeyNameCharacters = 32
 
-	// TODO: What are reasonable values for these? Or do we even need them at all?
+	// TODO: What are reasonable values for these?
 	// Min/Max MaxNonceExpirationBlockHeightOffset - Min/max value to which the MaxNonceExpirationBlockHeightOffset can be set.
+	// Note: MaxMaxNonceExpirationBlockHeightOffset is used as the default value if the param updater hasn't set it yet.
 	MinMaxNonceExpirationBlockHeightOffset = 1
 	MaxMaxNonceExpirationBlockHeightOffset = 10000
-	// TODO: what's our initial value for this in the event that the global params entry isn't set?
-	InitialMaxNonceExpirationBlockHeightOffset = uint64(10000)
 
 	// TODO: Are these fields needed?
 	// Access group enumeration max recursion depth.

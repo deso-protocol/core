@@ -3654,9 +3654,17 @@ func (bav *UtxoView) ConstructNonceForPublicKey(publicKey []byte, blockHeight ui
 	return bav.ConstructNonceForPKID(pkidEntry.PKID, blockHeight, 2)
 }
 
+// ConstructNonceForPKID constructs a nonce for the given PKID. The depth parameter
+// must be less than or equal to 2 when calling this function. We check that the
+// randomly generated nonce is not already in use by the given PKID. If it is, we
+// try to generate another nonce w/ depth - 1. When depth is 0 and we fail to generate
+// a unique nonce, we return an error.
 func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64, depth uint8) (*DeSoNonce, error) {
+	if depth > 2 {
+		return nil, fmt.Errorf("ConstructNonceForPKID: Depth must be <= 2")
+	}
 	// construct nonce
-	expirationBuffer := InitialMaxNonceExpirationBlockHeightOffset
+	expirationBuffer := uint64(MaxMaxNonceExpirationBlockHeightOffset)
 	if bav.GlobalParamsEntry != nil && bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 {
 		expirationBuffer = bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset
 	}

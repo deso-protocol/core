@@ -1359,7 +1359,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 		newMP := NewDeSoMempool(chain, 0, 0, "", true, "", "")
 		_, _, err = newMP.TryAcceptTransaction(txn, false, false)
 		require.Error(err)
-		require.Contains(err.Error(), TxErrorNonceExpirationBlockBufferExceeded)
+		require.Contains(err.Error(), TxErrorNonceExpirationBlockHeightOffsetExceeded)
 
 		txn.TxnNonce.ExpirationBlockHeight = uint64(chain.blockTip().Height - 1)
 		_signTxn(t, txn, m0Priv)
