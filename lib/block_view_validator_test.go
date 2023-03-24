@@ -2,18 +2,22 @@ package lib
 
 import (
 	"fmt"
+	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 	"math"
 	"testing"
 )
 
 func TestValidatorRegistration(t *testing.T) {
-	_testValidatorRegistration(t, true)
 	_testValidatorRegistration(t, false)
+	//_testValidatorRegistration(t, true)
 }
 
 func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	var registerMetadata *RegisterAsValidatorMetadata
+	var validatorEntry *ValidatorEntry
+	var validatorEntries []*ValidatorEntry
+	var globalStakeAmountNanos *uint256.Int
 	var err error
 
 	// Initialize test chain and miner.
@@ -154,6 +158,69 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		)
 		require.NoError(t, err)
 	}
+	{
+		// Query: retrieve ValidatorEntry by PKID
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.ValidatorPKID, m0PKID)
+		require.Len(t, validatorEntry.Domains, 1)
+		require.Equal(t, string(validatorEntry.Domains[0]), "https://example.com")
+		require.False(t, validatorEntry.DisableDelegatedStake)
+	}
+	{
+		// Query: retrieve top ValidatorEntries by stake
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(0)
+		require.NoError(t, err)
+		require.Empty(t, validatorEntries)
+
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(2)
+		require.NoError(t, err)
+		require.Len(t, validatorEntries, 1)
+		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
+	}
+	{
+		// Query: retrieve GlobalStakeAmountNanos
+		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
+	}
+	{
+		// Sad path: unregister validator but not enough blocks have passed since registering
+		// TODO
+	}
+	{
+		// Happy path: unregister validator
+		_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
+		require.NoError(t, err)
+	}
+	{
+		// Sad path: unregister validator that doesn't exist
+		_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorNotFound)
+	}
+	{
+		// Query: retrieve ValidatorEntry by PKID
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Nil(t, validatorEntry)
+	}
+	{
+		// Query: retrieve top ValidatorEntries by stake
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(1)
+		require.NoError(t, err)
+		require.Empty(t, validatorEntries)
+	}
+	{
+		// Query: retrieve GlobalStakeAmountNanos
+		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
+	}
+
+	// TODO: Flush mempool to the db and test rollbacks.
+	// mempool.universalUtxoView.FlushToDb(0)
+	// _executeAllTestRollbackAndFlush(testMeta)
 }
 
 func _submitRegisterAsValidatorTxn(

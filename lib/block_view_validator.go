@@ -419,6 +419,7 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	var key []byte
 	key = append(key, Prefixes.PrefixValidatorByStake...)
+	// TODO: ensure that this left-pads the uint256 to be equal width
 	key = append(key, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)               // Highest stake first
 	key = append(key, _EncodeUint32(math.MaxUint32-validatorEntry.CreatedAtBlockHeight)...) // Oldest first
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
@@ -462,14 +463,14 @@ func DBGetValidatorByPKIDWithTxn(txn *badger.Txn, snap *Snapshot, pkid *PKID) (*
 	return validatorEntry, nil
 }
 
-func DBGetTopValidatorsByStake(handle *badger.DB, snap *Snapshot, limit uint64) ([]*ValidatorEntry, error) {
+func DBGetTopValidatorsByStake(handle *badger.DB, snap *Snapshot, limit int) ([]*ValidatorEntry, error) {
 	var validatorEntries []*ValidatorEntry
 
 	// Retrieve top N ValidatorEntry PKIDs by stake.
 	var key []byte
 	key = append(key, Prefixes.PrefixValidatorByStake...)
 	_, validatorPKIDsBytes, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
-		handle, key, int(limit), nil, true, NewSet([]string{}),
+		handle, key, limit, nil, true, NewSet([]string{}),
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetTopValidatorsByStake: problem retrieving top validators: ")
@@ -1075,19 +1076,19 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 
 func (bav *UtxoView) GetValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
 	// First check UtxoView.
-	for _, validatorEntry := range bav.ValidatorMapKeyToValidatorEntry {
-		if validatorEntry != nil && validatorEntry.ValidatorPKID.Eq(pkid) {
-			if validatorEntry.isDeleted {
-				return nil, nil
-			}
-			return validatorEntry, nil
-		}
+	validatorEntry, exists := bav.ValidatorMapKeyToValidatorEntry[ValidatorMapKey{ValidatorPKID: *pkid}]
+	if exists && validatorEntry != nil && !validatorEntry.isDeleted {
+		return validatorEntry, nil
 	}
 	// If not found, check database.
 	return DBGetValidatorByPKID(bav.Handle, bav.Snapshot, pkid)
 }
 
-func (bav *UtxoView) GetTopValidatorsByStake(limit uint64) ([]*ValidatorEntry, error) {
+func (bav *UtxoView) GetTopValidatorsByStake(limit int) ([]*ValidatorEntry, error) {
+	// Validate limit param.
+	if limit <= 0 {
+		return []*ValidatorEntry{}, nil
+	}
 	// Pull top ValidatorEntries from the database.
 	dbValidatorEntries, err := DBGetTopValidatorsByStake(bav.Handle, bav.Snapshot, limit)
 	if err != nil {
@@ -1097,7 +1098,10 @@ func (bav *UtxoView) GetTopValidatorsByStake(limit uint64) ([]*ValidatorEntry, e
 	// Convert from slice to set to prevent duplicates.
 	validatorSet := NewSet(dbValidatorEntries)
 	for _, validatorEntry := range bav.ValidatorMapKeyToValidatorEntry {
-		validatorSet.Add(validatorEntry)
+		// TODO: We have to skip deleted ValidatorEntries when pulling top N from the db
+		if !validatorEntry.isDeleted {
+			validatorSet.Add(validatorEntry)
+		}
 	}
 	// Convert from set to slice to sort DESC by TotalStakeAmountNanos.
 	validatorEntries := validatorSet.ToSlice()
@@ -1105,7 +1109,8 @@ func (bav *UtxoView) GetTopValidatorsByStake(limit uint64) ([]*ValidatorEntry, e
 		return validatorEntries[ii].TotalStakeAmountNanos.Cmp(validatorEntries[jj].TotalStakeAmountNanos) > 0
 	})
 	// Return top N.
-	return validatorEntries[0:limit], nil
+	upperBound := int(math.Min(float64(limit), float64(len(validatorEntries))))
+	return validatorEntries[0:upperBound], nil
 }
 
 func (bav *UtxoView) GetGlobalStakeAmountNanos() (*uint256.Int, error) {
