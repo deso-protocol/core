@@ -193,7 +193,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbFlush(event *DBFlushedEvent
 	_, err := stateChangeSyncer.StateChangeFile.Write(unflushedBytes.StateChangeBytes)
 
 	if err != nil {
-		glog.Fatal("Error writing to state change file: %v", err)
+		glog.Fatalf("Error writing to state change file: %v", err)
 	}
 
 	// Buffer to hold bytes for index file
