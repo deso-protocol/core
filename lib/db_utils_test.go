@@ -421,8 +421,8 @@ func TestPrivateMessages(t *testing.T) {
 	}
 
 	// Delete message3
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp3))
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk3, tstamp3))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp3, nil, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk3, tstamp3, nil, false))
 
 	// Now all the messages returned should exclude message3
 	{
@@ -457,17 +457,17 @@ func TestPrivateMessages(t *testing.T) {
 
 	// Delete all remaining messages
 	// message1
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp1))
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp1))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp1, nil, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp1, nil, false))
 	// message2
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp2))
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp2))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp2, nil, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp2, nil, false))
 	// message4
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp4))
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp4))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp4, nil, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp4, nil, false))
 	// message5
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp5))
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk3, tstamp5))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp5, nil, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk3, tstamp5, nil, false))
 
 	// Now all public keys should have zero messages.
 	{
@@ -578,8 +578,8 @@ func TestFollows(t *testing.T) {
 	}
 
 	// Delete PK2's follows.
-	require.NoError(DbDeleteFollowMappings(db, nil, pkid2, pkid1))
-	require.NoError(DbDeleteFollowMappings(db, nil, pkid2, pkid3))
+	require.NoError(DbDeleteFollowMappings(db, nil, pkid2, pkid1, nil, false))
+	require.NoError(DbDeleteFollowMappings(db, nil, pkid2, pkid3, nil, false))
 
 	// Check PK2's follows were actually deleted.
 	{
