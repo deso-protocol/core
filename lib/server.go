@@ -373,6 +373,7 @@ func NewServer(
 
 	var err error
 
+	fmt.Printf("About to create state change syncer with file path %v\n", _stateChangeFilePath)
 	stateChangeSyncer := NewStateChangeSyncer(_params, _stateChangeFilePath, _stateChangeIndexFilePath)
 	eventManager.OnDbTransactionConnected(stateChangeSyncer._handleDbTransaction)
 	eventManager.OnDbFlushed(stateChangeSyncer._handleDbFlush)
