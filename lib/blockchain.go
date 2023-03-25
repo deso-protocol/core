@@ -2458,7 +2458,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			for _, detachNode := range detachBlocks {
 				// Delete the utxo operations for the blocks we're detaching since we don't need
 				// them anymore.
-				if err := DeleteUtxoOperationsForBlockWithTxn(txn, bc.snapshot, detachNode.Hash); err != nil {
+				if err := DeleteUtxoOperationsForBlockWithTxn(txn, bc.snapshot, detachNode.Hash, bc.eventManager, true); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem deleting utxo operations for block")
 				}
 
@@ -2602,7 +2602,7 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapsho
 					"at height: (%v)", hash, node.Height)
 			}
 			if blockToDetach != nil {
-				if err = DeleteBlockReward(bc.db, snap, blockToDetach, bc.eventManager); err != nil {
+				if err = DeleteBlockReward(bc.db, snap, blockToDetach, bc.eventManager, true); err != nil {
 					return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward with hash: "+
 						"(%v) and at height: (%v)", hash, node.Height)
 				}
@@ -2664,11 +2664,11 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapsho
 
 			// Delete the utxo operations for the blocks we're detaching since we don't need
 			// them anymore.
-			if err := DeleteUtxoOperationsForBlockWithTxn(txn, snap, &hash); err != nil {
+			if err := DeleteUtxoOperationsForBlockWithTxn(txn, snap, &hash, bc.eventManager, true); err != nil {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting utxo operations for block")
 			}
 
-			if err := DeleteBlockRewardWithTxn(txn, snap, blockToDetach); err != nil {
+			if err := DeleteBlockRewardWithTxn(txn, snap, blockToDetach, bc.eventManager, true); err != nil {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward")
 			}
 

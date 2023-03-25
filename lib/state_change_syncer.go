@@ -20,11 +20,6 @@ const (
 	DbOperationTypeUpsert StateSyncerOperationType = 3
 )
 
-func createLogFile(fileName string) *os.File {
-	file, _ := os.Create(fileName)
-	return file
-}
-
 type UnflushedStateSyncerBytes struct {
 	StateChangeBytes     []byte
 	StateChangeBytesSize uint32
@@ -47,11 +42,33 @@ type StateChangeSyncer struct {
 	EntryCount       uint32
 }
 
+func openOrCreateLogFile(fileName string) (*os.File, error) {
+	// Open file, create if it doesn't exist.
+	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
 func NewStateChangeSyncer(desoParams *DeSoParams) *StateChangeSyncer {
+	stateChangeFile, err := openOrCreateLogFile("/tmp/db-state-changes")
+	if err != nil {
+		glog.Fatalf("Error opening stateChangeFile: %v", err)
+	}
+	stateChangeIndexFile, err := openOrCreateLogFile("/tmp/db-state-changes-index")
+	if err != nil {
+		glog.Fatalf("Error opening stateChangeIndexFile: %v", err)
+	}
+	stateChangeFileInfo, err := stateChangeFile.Stat()
+	if err != nil {
+		glog.Fatalf("Error getting stateChangeFileInfo: %v", err)
+	}
+
 	return &StateChangeSyncer{
-		StateChangeFile:      createLogFile("/tmp/db-state-changes"),
-		StateChangeIndexFile: createLogFile("/tmp/db-state-changes-index"),
-		StateChangeFileSize:  0,
+		StateChangeFile:      stateChangeFile,
+		StateChangeIndexFile: stateChangeIndexFile,
+		StateChangeFileSize:  uint32(stateChangeFileInfo.Size()),
 		DeSoParams:           desoParams,
 		UnflushedBytes:       make(map[uuid.UUID]UnflushedStateSyncerBytes),
 		StateSyncerMutex:     &sync.Mutex{},
@@ -90,8 +107,11 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	keyLenBytes := make([]byte, 2)
 	binary.LittleEndian.PutUint16(keyLenBytes, keyLen)
 
-	// Get byte length of value.
-	valueLen := uint32(len(valueBytes))
+	// Get byte length of value (will be nil for deletes).
+	valueLen := uint32(0)
+	if valueBytes != nil {
+		valueLen = uint32(len(valueBytes))
+	}
 	// Convert the value length to a byte slice.
 	valueLenBytes := make([]byte, 4)
 	binary.LittleEndian.PutUint32(valueLenBytes, valueLen)

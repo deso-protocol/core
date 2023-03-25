@@ -301,7 +301,7 @@ func (txi *TXIndex) Update() error {
 		err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
 			for _, txn := range blockMsg.Txns {
 				if err := DbDeleteTxindexTransactionMappingsWithTxn(dbTxn, nil,
-					blockHeight, txn, txi.Params, txi.CoreChain.eventManager); err != nil {
+					blockHeight, txn, txi.Params, txi.CoreChain.eventManager, true); err != nil {
 
 					return fmt.Errorf("Update: Problem deleting "+
 						"transaction mappings for transaction %v: %v", txn.Hash(), err)
@@ -347,7 +347,7 @@ func (txi *TXIndex) Update() error {
 				"%v: %v", blockToDetach, err)
 		}
 		err = txi.TXIndexChain.DB().Update(func(txn *badger.Txn) error {
-			if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, blockToDetach.Hash); err != nil {
+			if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, blockToDetach.Hash, txi.TXIndexChain.eventManager, true); err != nil {
 				return fmt.Errorf("Update: Error deleting UtxoOperations 1 for block %v, %v", blockToDetach.Hash, err)
 			}
 			if err := txn.Delete(BlockHashToBlockKey(blockToDetach.Hash)); err != nil {
