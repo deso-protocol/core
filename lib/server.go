@@ -366,12 +366,14 @@ func NewServer(
 	_trustedBlockProducerStartHeight uint64,
 	eventManager *EventManager,
 	_nodeMessageChan chan NodeMessage,
-	_forceChecksum bool) (
+	_forceChecksum bool,
+	_stateChangeFilePath string,
+	_stateChangeIndexFilePath string) (
 	_srv *Server, _err error, _shouldRestart bool) {
 
 	var err error
 
-	stateChangeSyncer := NewStateChangeSyncer(_params)
+	stateChangeSyncer := NewStateChangeSyncer(_params, _stateChangeFilePath, _stateChangeIndexFilePath)
 	eventManager.OnDbTransactionConnected(stateChangeSyncer._handleDbTransaction)
 	eventManager.OnDbFlushed(stateChangeSyncer._handleDbFlush)
 

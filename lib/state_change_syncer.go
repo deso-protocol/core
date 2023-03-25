@@ -51,12 +51,12 @@ func openOrCreateLogFile(fileName string) (*os.File, error) {
 	return file, nil
 }
 
-func NewStateChangeSyncer(desoParams *DeSoParams) *StateChangeSyncer {
-	stateChangeFile, err := openOrCreateLogFile("/tmp/db-state-changes")
+func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string, stateChangeIndexFilePath string) *StateChangeSyncer {
+	stateChangeFile, err := openOrCreateLogFile(stateChangeFilePath)
 	if err != nil {
 		glog.Fatalf("Error opening stateChangeFile: %v", err)
 	}
-	stateChangeIndexFile, err := openOrCreateLogFile("/tmp/db-state-changes-index")
+	stateChangeIndexFile, err := openOrCreateLogFile(stateChangeIndexFilePath)
 	if err != nil {
 		glog.Fatalf("Error opening stateChangeIndexFile: %v", err)
 	}

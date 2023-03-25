@@ -225,7 +225,9 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.TrustedBlockProducerStartHeight,
 		eventManager,
 		node.nodeMessageChan,
-		node.Config.ForceChecksum)
+		node.Config.ForceChecksum,
+		node.Config.StateChangeFilePath,
+		node.Config.StateChangeIndexFilePath)
 	if err != nil {
 		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral
 		// records to the DB. In this case, the snapshot is corrupted and needs to be computed. See the
