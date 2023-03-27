@@ -1212,12 +1212,13 @@ const (
 	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
-	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"
-	MinNetworkFeeNanosPerKBKey       = "MinNetworkFeeNanosPerKB"
-	CreateProfileFeeNanosKey         = "CreateProfileFeeNanos"
-	CreateNFTFeeNanosKey             = "CreateNFTFeeNanos"
-	MaxCopiesPerNFTKey               = "MaxCopiesPerNFT"
-	ForbiddenBlockSignaturePubKeyKey = "ForbiddenBlockSignaturePubKey"
+	USDCentsPerBitcoinKey                  = "USDCentsPerBitcoin"
+	MinNetworkFeeNanosPerKBKey             = "MinNetworkFeeNanosPerKB"
+	CreateProfileFeeNanosKey               = "CreateProfileFeeNanos"
+	CreateNFTFeeNanosKey                   = "CreateNFTFeeNanos"
+	MaxCopiesPerNFTKey                     = "MaxCopiesPerNFT"
+	MaxNonceExpirationBlockHeightOffsetKey = "MaxNonceExpirationBlockHeightOffset"
+	ForbiddenBlockSignaturePubKeyKey       = "ForbiddenBlockSignaturePubKey"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
@@ -1316,6 +1317,12 @@ const (
 	// Access group key constants
 	MinAccessGroupKeyNameCharacters = 1
 	MaxAccessGroupKeyNameCharacters = 32
+
+	// TODO: What are reasonable values for these?
+	// Min/Max MaxNonceExpirationBlockHeightOffset - Min/max value to which the MaxNonceExpirationBlockHeightOffset can be set.
+	// Note: MaxMaxNonceExpirationBlockHeightOffset is used as the default value if the param updater hasn't set it yet.
+	MinMaxNonceExpirationBlockHeightOffset = 1
+	MaxMaxNonceExpirationBlockHeightOffset = 10000
 
 	// TODO: Are these fields needed?
 	// Access group enumeration max recursion depth.

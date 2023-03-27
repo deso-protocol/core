@@ -990,6 +990,16 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 		return nil, nil, TxErrorIndividualBlockReward
 	}
 
+	if blockHeight >= uint64(mp.bc.params.ForkHeights.BalanceModelBlockHeight) {
+		if tx.TxnNonce.ExpirationBlockHeight < blockHeight {
+			return nil, nil, TxErrorNonceExpired
+		}
+		if mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 &&
+			tx.TxnNonce.ExpirationBlockHeight > blockHeight+mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset {
+			return nil, nil, TxErrorNonceExpirationBlockHeightOffsetExceeded
+		}
+	}
+
 	// Compute the hash of the transaction.
 	txHash := tx.Hash()
 	if txHash == nil {

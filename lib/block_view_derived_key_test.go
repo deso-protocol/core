@@ -456,6 +456,7 @@ func _doTxnWithBlockHeight(
 			maxCopiesPerNFT,
 			minNetworkFeeNanosPerKB,
 			nil,
+			-1,
 			feeRateNanosPerKB,
 			testMeta.mempool,
 			nil,
