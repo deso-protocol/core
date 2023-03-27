@@ -6101,6 +6101,15 @@ func (tne *TransactorNonceEntry) ToMapKey() TransactorNonceMapKey {
 	}
 }
 
+func (tne *TransactorNonceEntry) Copy() *TransactorNonceEntry {
+	copiedNonce := *tne.Nonce
+	return &TransactorNonceEntry{
+		Nonce:          &copiedNonce,
+		TransactorPKID: tne.TransactorPKID.NewPKID(),
+		isDeleted:      tne.isDeleted,
+	}
+}
+
 type TransactorNonceMapKey struct {
 	Nonce          DeSoNonce
 	TransactorPKID PKID

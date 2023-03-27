@@ -3589,7 +3589,7 @@ func (bav *UtxoView) GetTransactorNonceEntry(nonce *DeSoNonce, pkid *PKID) (*Tra
 	}
 
 	nonceEntry, exists := bav.TransactorNonceMapKeyToTransactorNonceEntry[mapKey]
-	if exists {
+	if exists && nonceEntry != nil {
 		return nonceEntry, nil
 	}
 	var err error
@@ -3620,8 +3620,10 @@ func (bav *UtxoView) DeleteTransactorNonceEntry(nonceEntry *TransactorNonceEntry
 		return
 	}
 
-	nonceEntry.isDeleted = true
-	bav.SetTransactorNonceEntry(nonceEntry)
+	tombstoneEntry := nonceEntry.Copy()
+
+	tombstoneEntry.isDeleted = true
+	bav.SetTransactorNonceEntry(tombstoneEntry)
 }
 
 func (bav *UtxoView) GetTransactorNonceEntriesToDeleteAtBlockHeight(blockHeight uint64) []*TransactorNonceEntry {
