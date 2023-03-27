@@ -2864,6 +2864,54 @@ func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) (*DeSoSignature, e
 	}, nil
 }
 
+type DeSoNonce struct {
+	ExpirationBlockHeight uint64
+	PartialID             uint64
+}
+
+func (nonce *DeSoNonce) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, nonce.ToBytes()...)
+	return data
+}
+
+func (nonce *DeSoNonce) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	return nonce.ReadDeSoNonce(rr)
+}
+
+func (nonce *DeSoNonce) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (nonce *DeSoNonce) GetEncoderType() EncoderType {
+	return EncoderTypeDeSoNonce
+}
+
+func (nonce *DeSoNonce) ToBytes() []byte {
+	data := []byte{}
+	data = append(data, UintToBuf(nonce.ExpirationBlockHeight)...)
+	data = append(data, UintToBuf(nonce.PartialID)...)
+	return data
+}
+
+func (nonce *DeSoNonce) String() string {
+	return fmt.Sprintf("DeSoNonce: ExpirationBlockHeight: %d, PartialID: %d",
+		nonce.ExpirationBlockHeight, nonce.PartialID)
+}
+
+func (nonce *DeSoNonce) ReadDeSoNonce(rr io.Reader) error {
+	var err error
+	nonce.ExpirationBlockHeight, err = ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	nonce.PartialID, err = ReadUvarint(rr)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 type MsgDeSoTxn struct {
 	// TxnVersion 0: UTXO model transactions.
 	// TxnVersion 1: balance model transactions, which include a nonce and fee nanos.
@@ -2878,7 +2926,7 @@ type MsgDeSoTxn struct {
 	TxnFeeNanos uint64
 	// In the balance model, a unique nonce is required for each transaction that a single
 	// public key makes.  This prevents transactions from being used in replay attacks.
-	TxnNonce uint64
+	TxnNonce *DeSoNonce
 
 	// DeSoTxnMetadata is an interface type that will give us information on how
 	// we should handle the transaction, including what type of transaction this
@@ -3011,7 +3059,7 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	if msg.TxnVersion != 0 {
 		data = append(data, UintToBuf(msg.TxnVersion)...)
 		data = append(data, UintToBuf(msg.TxnFeeNanos)...)
-		data = append(data, UintToBuf(msg.TxnNonce)...)
+		data = append(data, msg.TxnNonce.ToBytes()...)
 	}
 	return data, nil
 }
@@ -3194,7 +3242,8 @@ func _readTransactionV1Fields(rr io.Reader, ret *MsgDeSoTxn) error {
 	}
 	ret.TxnFeeNanos = txnFeeNanos
 
-	txnNonce, err := ReadUvarint(rr)
+	txnNonce := &DeSoNonce{}
+	err = txnNonce.ReadDeSoNonce(rr)
 	if err != nil {
 		return errors.Wrapf(
 			err, "_readTransactionV1Fields: Problem parsing DeSoTxn.TxnNonce bytes")

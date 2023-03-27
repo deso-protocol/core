@@ -108,6 +108,8 @@ const (
 	EncoderTypeNewMessageEntry
 	EncoderTypeAccessGroupMemberEnumerationEntry
 	EncoderTypeDmThreadEntry
+	EncoderTypeDeSoNonce
+	EncoderTypeTransactorNonceEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -230,6 +232,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMemberEnumerationEntry{}
 	case EncoderTypeDmThreadEntry:
 		return &DmThreadEntry{}
+	case EncoderTypeDeSoNonce:
+		return &DeSoNonce{}
+	case EncoderTypeTransactorNonceEntry:
+		return &TransactorNonceEntry{}
 	}
 
 	// Txindex encoder types
@@ -571,8 +577,8 @@ const (
 	OperationTypeNewMessage                   OperationType = 35
 	OperationTypeAddBalance                   OperationType = 36
 	OperationTypeSpendBalance                 OperationType = 37
-
-	// NEXT_TAG = 38
+	OperationTypeDeleteExpiredNonces          OperationType = 38
+	// NEXT_TAG = 39
 )
 
 func (op OperationType) String() string {
@@ -651,6 +657,8 @@ func (op OperationType) String() string {
 		return "OperationTypeAddBalance"
 	case OperationTypeSpendBalance:
 		return "OperationTypeSpendBalance"
+	case OperationTypeDeleteExpiredNonces:
+		return "OperationTypeDeleteExpiredNonces"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -832,6 +840,9 @@ type UtxoOperation struct {
 	// When we add to or spend balance, we keep track of the public key and amount.
 	BalancePublicKey   []byte
 	BalanceAmountNanos uint64
+
+	// When we connect a block, we delete expired nonce entries.
+	PrevNonceEntries []*TransactorNonceEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1140,9 +1151,13 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 	}
 
 	if MigrationTriggered(blockHeight, BalanceModelMigration) {
-
 		data = append(data, EncodeByteArray(op.BalancePublicKey)...)
 		data = append(data, UintToBuf(op.BalanceAmountNanos)...)
+
+		data = append(data, UintToBuf(uint64(len(op.PrevNonceEntries)))...)
+		for _, entry := range op.PrevNonceEntries {
+			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
+		}
 	}
 
 	return data
@@ -1743,6 +1758,20 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		op.BalanceAmountNanos, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading BalanceAmountNanos")
+		}
+
+		var numPrevNonceEntries uint64
+		numPrevNonceEntries, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading numPrevNonceEntries")
+		}
+
+		for ; numPrevNonceEntries > 0; numPrevNonceEntries-- {
+			prevNonceEntry := &TransactorNonceEntry{}
+			if _, err = DecodeFromBytes(prevNonceEntry, rr); err != nil {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading prevNonceEntry")
+			}
+			op.PrevNonceEntries = append(op.PrevNonceEntries, prevNonceEntry)
 		}
 	}
 
@@ -3614,6 +3643,12 @@ type GlobalParamsEntry struct {
 
 	// The new minimum fee the network will accept
 	MinimumNetworkFeeNanosPerKB uint64
+
+	// MaxNonceExpirationBlockHeightOffset is maximum value nodes will
+	// tolerate for the difference between the current block height
+	// and the expiration block height specified in the nonce for a
+	// transaction.
+	MaxNonceExpirationBlockHeightOffset uint64
 }
 
 func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -3624,7 +3659,9 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 	data = append(data, UintToBuf(gp.CreateNFTFeeNanos)...)
 	data = append(data, UintToBuf(gp.MaxCopiesPerNFT)...)
 	data = append(data, UintToBuf(gp.MinimumNetworkFeeNanosPerKB)...)
-
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockHeightOffset)...)
+	}
 	return data
 }
 
@@ -3651,12 +3688,17 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	if err != nil {
 		return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MinimumNetworkFeeNanosPerKB")
 	}
-
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		gp.MaxNonceExpirationBlockHeightOffset, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxNonceExpirationBlockHeightOffset")
+		}
+	}
 	return nil
 }
 
 func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, BalanceModelMigration)
 }
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {
@@ -6012,4 +6054,63 @@ func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetVersionByte(block
 
 func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeNewMessageTxindexMetadata
+}
+
+type TransactorNonceEntry struct {
+	Nonce          *DeSoNonce
+	TransactorPKID *PKID
+	isDeleted      bool
+}
+
+func (tne *TransactorNonceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, tne.Nonce, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, tne.TransactorPKID, skipMetadata...)...)
+	return data
+}
+
+func (tne *TransactorNonceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	nonce := &DeSoNonce{}
+	if exists, err := DecodeFromBytes(nonce, rr); exists && err == nil {
+		tne.Nonce = nonce
+	} else if err != nil {
+		return err
+	}
+
+	transactorPKID := &PKID{}
+	if exists, err := DecodeFromBytes(transactorPKID, rr); exists && err == nil {
+		tne.TransactorPKID = transactorPKID
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (tne *TransactorNonceEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (tne *TransactorNonceEntry) GetEncoderType() EncoderType {
+	return EncoderTypeTransactorNonceEntry
+}
+
+func (tne *TransactorNonceEntry) ToMapKey() TransactorNonceMapKey {
+	return TransactorNonceMapKey{
+		Nonce:          *tne.Nonce,
+		TransactorPKID: *tne.TransactorPKID,
+	}
+}
+
+func (tne *TransactorNonceEntry) Copy() *TransactorNonceEntry {
+	copiedNonce := *tne.Nonce
+	return &TransactorNonceEntry{
+		Nonce:          &copiedNonce,
+		TransactorPKID: tne.TransactorPKID.NewPKID(),
+		isDeleted:      tne.isDeleted,
+	}
+}
+
+type TransactorNonceMapKey struct {
+	Nonce          DeSoNonce
+	TransactorPKID PKID
 }

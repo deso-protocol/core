@@ -2153,39 +2153,35 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 			// Since we don't have utxo operations in postgres, always write UTXO operations for the block to badger
 			err = bc.db.Update(func(txn *badger.Txn) error {
-				if err = PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
-					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
-				}
-				return nil
+				return errors.Wrapf(PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock),
+					"ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 			})
 		} else {
 			bc.timer.Start("Blockchain.ProcessBlock: Transactions Db put")
 			err = bc.db.Update(func(txn *badger.Txn) error {
 				// This will update the node's status.
 				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db height & hash")
-				if err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); err != nil {
+				if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/); innerErr != nil {
 					return errors.Wrapf(
-						err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation")
+						innerErr, "ProcessBlock: Problem calling PutHeightHashToNodeInfo after validation")
 				}
 
 				// Set the best node hash to this one. Note the header chain should already
 				// be fully aware of this block so we shouldn't update it here.
-				if err := PutBestHashWithTxn(txn, bc.snapshot, blockHash, ChainTypeDeSoBlock); err != nil {
-					return err
+				if innerErr := PutBestHashWithTxn(txn, bc.snapshot, blockHash, ChainTypeDeSoBlock); innerErr != nil {
+					return errors.Wrapf(innerErr, "ProcessBlock: Problem calling PutBestHash after validation")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db height & hash")
 				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db utxo flush")
 
 				// Write the utxo operations for this block to the db so we can have the
 				// ability to roll it back in the future.
-				if err := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); err != nil {
-					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+				if innerErr := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock); innerErr != nil {
+					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
-
-				// Write the modified utxo set to the view.
-				if err := bc.blockView.FlushToDbWithTxn(txn, blockHeight); err != nil {
-					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
+				if innerErr := bc.blockView.FlushToDbWithTxn(txn, blockHeight); innerErr != nil {
+					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db utxo flush")
 				bc.timer.Start("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
@@ -2814,32 +2810,6 @@ func ComputeMerkleRoot(txns []*MsgDeSoTxn) (_merkle *BlockHash, _txHashes []*Blo
 	return rootHash, txHashes, nil
 }
 
-func (bc *Blockchain) GetNextNonceForPKID(
-	publicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView,
-) (uint64, error) {
-
-	var err error
-	var utxoView *UtxoView
-	// Use the reference UtxoView if provided. Otherwise, try to get one from the mempool.
-	// This improves efficiency when we have a UtxoView already handy.
-	if referenceUtxoView != nil {
-		utxoView = referenceUtxoView
-	} else if mempool != nil {
-		utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(publicKeyBytes, nil)
-		if err != nil {
-			return 0, errors.Wrapf(
-				err, "Blockchain.GetNextNonceForPKID: Problem getting augmented UtxoView from mempool: ")
-		}
-	} else {
-		utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
-		if err != nil {
-			return 0, errors.Wrapf(err, "Blockchain.GetNextNonceForPKID: Problem initializing UtxoView: ")
-		}
-	}
-
-	return utxoView.GetNextNonceForPublicKey(publicKeyBytes)
-}
-
 func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
 	// If we have access to a mempool, use it to account for utxos we might not
 	// get otherwise.
@@ -3173,6 +3143,7 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	maxCopiesPerNFT int64,
 	minimumNetworkFeeNanosPerKb int64,
 	forbiddenPubKey []byte,
+	maxNonceExpirationBlockHeightOffset int64,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -3196,6 +3167,9 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	}
 	if len(forbiddenPubKey) > 0 {
 		extraData[ForbiddenBlockSignaturePubKeyKey] = forbiddenPubKey
+	}
+	if maxNonceExpirationBlockHeightOffset >= 0 {
+		extraData[MaxNonceExpirationBlockHeightOffsetKey] = UintToBuf(uint64(maxNonceExpirationBlockHeightOffset))
 	}
 
 	txn := &MsgDeSoTxn{
@@ -4742,12 +4716,12 @@ func (bc *Blockchain) CreateMaxSpend(
 		}
 		txn.TxOutputs[len(txn.TxOutputs)-1].AmountNanos = spendableBalance
 		txn.TxnVersion = 1
-		nextNonce, err := utxoView.GetNextNonceForPublicKey(senderPkBytes)
+		txn.TxnNonce, err = utxoView.ConstructNonceForPublicKey(senderPkBytes, uint64(bc.BlockTip().Height))
 		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err,
+			return nil, 0, 0, 0, errors.Wrapf(
+				err,
 				"Blockchain.CreateMaxSpend: Problem getting next nonce: ")
 		}
-		txn.TxnNonce = nextNonce
 
 		feeAmountNanos := uint64(0)
 		prevFeeAmountNanos := uint64(0)
@@ -4857,15 +4831,21 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 	// balance model transactions don't use UTXOs, they don't require change to be paid.
 	blockHeight := bc.blockTip().Height + 1
 	if blockHeight >= bc.params.ForkHeights.BalanceModelBlockHeight {
+
 		txArg.TxnVersion = 1
-		nextNonce, err := bc.GetNextNonceForPKID(txArg.PublicKey, mempool, nil)
+
+		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 		if err != nil {
-			return 0, 0, 0, 0, errors.Wrapf(
-				err, "AddInputsAndChangeToTransaction: Problem getting next nonce for public key %s: ",
+			return 0, 0, 0, 0, errors.Wrapf(err,
+				"AddInputsAndChangeToTransaction: Problem getting UtxoView: ")
+		}
+		txArg.TxnNonce, err = utxoView.ConstructNonceForPublicKey(txArg.PublicKey, uint64(blockHeight))
+		if err != nil {
+			return 0, 0, 0, 0, errors.Wrapf(err,
+				"AddInputsAndChangeToTransaction: Problem getting next nonce for public key %s: ",
 				PkToStringBoth(txArg.PublicKey),
 			)
 		}
-		txArg.TxnNonce = nextNonce
 
 		// Initialize to 0.
 		txArg.TxnFeeNanos = 0 // additionalFees
