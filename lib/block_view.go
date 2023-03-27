@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
@@ -828,6 +829,9 @@ func (bav *UtxoView) _spendBalance(
 	// First we must check that the public key has sufficient spendable balance.
 	spendableBalanceNanos, err :=
 		bav.GetSpendableDeSoBalanceNanosForPublicKey(balancePublicKey, tipHeight)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_spendBalance: ")
+	}
 	if spendableBalanceNanos < amountNanos {
 		return nil, errors.Wrapf(RuleErrorInsufficientBalance,
 			"_spendBalance: amountNanos (%d) exceeds spendable balance (%d) at tipHeight (%d)",
@@ -1001,23 +1005,26 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 	// we add the spent DESO + txn fees back to the sender's balance. In the balance model
 	// no UTXOs are stored so outputs do not need to be looked up or deleted.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-		totalSpend := currentTxn.TxnFeeNanos
 		for outputIndex := len(currentTxn.TxOutputs) - 1; outputIndex >= 0; outputIndex-- {
 			currentOutput := currentTxn.TxOutputs[outputIndex]
 			if err := bav._unAddBalance(currentOutput.AmountNanos, currentOutput.PublicKey); err != nil {
 				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unAdding output %v: ", currentOutput)
 			}
-			var err error
-			totalSpend, err = SafeUint64().Add(totalSpend, currentOutput.AmountNanos)
-			if err != nil {
-				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem adding %d to total spend %d", currentOutput.AmountNanos, totalSpend)
-			}
 		}
 		// Block reward transactions don't unspend DESO since it is newly created DESO
 		// and no input DESO was provided.
 		if currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-			if err := bav._unSpendBalance(totalSpend, currentTxn.PublicKey); err != nil {
-				return errors.Wrapf(err, "_disconnectBasicTransfer: Problem unSpending total spend %v: ", totalSpend)
+			// Iterate over utxo ops and unspend any balance that was spent by the transactor.
+			for _, utxoOp := range utxoOpsForTxn {
+				if utxoOp.Type != OperationTypeSpendBalance ||
+					!bytes.Equal(utxoOp.BalancePublicKey, currentTxn.PublicKey) {
+					continue
+				}
+				if err := bav._unSpendBalance(utxoOp.BalanceAmountNanos, currentTxn.PublicKey); err != nil {
+					return errors.Wrapf(err,
+						"_disconnectBasicTransfer: Problem unSpending balance of %v for transactor: ",
+						utxoOp.BalanceAmountNanos)
+				}
 			}
 		}
 		return nil
@@ -1613,6 +1620,12 @@ func IsDerivedSignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []
 
 func (bav *UtxoView) _connectBasicTransfer(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	uint64, uint64, []*UtxoOperation, error) {
+	return bav._connectBasicTransferWithExtraSpend(txn, txHash, blockHeight, 0, verifySignatures)
+}
+
+func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, extraSpend uint64, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	var utxoOpsForTxn []*UtxoOperation
@@ -1690,7 +1703,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		newUtxoOp, err := bav._spendUtxo(&utxoKey)
 
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem spending input utxo")
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem spending input utxo")
 		}
 
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
@@ -1698,7 +1711,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 
 	if len(txn.TxInputs) != len(utxoEntriesForInputs) {
 		// Something went wrong if these lists differ in length.
-		return 0, 0, nil, fmt.Errorf("_connectBasicTransfer: Length of list of " +
+		return 0, 0, nil, fmt.Errorf("_connectBasicTransferWithExtraSpend Length of list of " +
 			"UtxoEntries does not match length of input list; this should never happen")
 	}
 
@@ -1758,23 +1771,31 @@ func (bav *UtxoView) _connectBasicTransfer(
 		}
 		newUtxoOp, err := bav._addDESO(desoOutput.AmountNanos, desoOutput.PublicKey, getUtxoEntry, blockHeight)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem adding DESO")
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem adding DESO")
 		}
 
 		// Rosetta uses this UtxoOperation to provide INPUT amounts
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
 	}
 
-	// TODO: consolidate spending of UTXOs and spending balance.
 	// After the BalanceModelBlockHeight, we no longer spend UTXO inputs. Instead, we must
 	// spend the sender's balance. Note that we don't need to explicitly check that the
 	// sender's balance is sufficient because _spendBalance will error if it is insufficient.
 	// Note that for block reward transactions, we don't spend any balance; DESO is printed.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-		totalInput = totalOutput + txn.TxnFeeNanos
+		var err error
+		totalInput, err = SafeUint64().Add(totalOutput, txn.TxnFeeNanos)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem adding txn fee and total output")
+		}
+		totalInput, err = SafeUint64().Add(totalInput, extraSpend)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem adding extraSpend")
+		}
 		newUtxoOp, err := bav._spendBalance(totalInput, txn.PublicKey, blockHeight-1)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem spending balance")
+			return 0, 0, nil, errors.Wrapf(
+				err, "_connectBasicTransferWithExtraSpend Problem spending balance")
 		}
 
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
@@ -1802,7 +1823,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		if len(diamondPostHashBytes) != HashSizeBytes {
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorBasicTransferDiamondInvalidLengthForPostHashBytes,
-				"_connectBasicTransfer: DiamondPostHashBytes length: %d", len(diamondPostHashBytes))
+				"_connectBasicTransferWithExtraSpend DiamondPostHashBytes length: %d", len(diamondPostHashBytes))
 		}
 		copy(diamondPostHash[:], diamondPostHashBytes[:])
 
@@ -1822,7 +1843,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 		expectedDeSoNanosToTransfer, netNewDiamonds, err := bav.ValidateDiamondsAndGetNumDeSoNanos(
 			txn.PublicKey, diamondRecipientPubKey, diamondPostHash, diamondLevel, blockHeight)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: ")
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend ")
 		}
 		diamondRecipientTotal, _ := amountsByPublicKey[*NewPublicKey(diamondRecipientPubKey)]
 
@@ -1895,7 +1916,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 			}
 		} else {
 			if _, err := bav._verifySignature(txn, blockHeight); err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: Problem verifying txn signature: ")
+				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem verifying txn signature: ")
 			}
 		}
 	}
@@ -1903,7 +1924,7 @@ func (bav *UtxoView) _connectBasicTransfer(
 	if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		if derivedPkBytes, isDerivedSig, err := IsDerivedSignature(txn, blockHeight); isDerivedSig {
 			if err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransfer: "+
+				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend "+
 					"It looks like this transaction was signed with a derived key, but the signature is malformed: ")
 			}
 			// Now we check the transaction limits on the derived key.
@@ -3091,10 +3112,15 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			return nil, 0, 0, 0, RuleErrorTxnOutputExceedsInput
 		}
 		fees = totalInput - totalOutput
+		// After the balance model block height, fees are specified in the transaction and
+		// cannot be assumed to be equal to total input - total output.
+		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+			fees = txn.TxnFeeNanos
+		}
 	}
 	// Validate that totalInput - totalOutput is equal to the fee specified in the transaction metadata.
 	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
-		if totalInput-totalOutput != txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos {
+		if fees != txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos {
 			return nil, 0, 0, 0, RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee
 		}
 	}

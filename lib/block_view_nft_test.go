@@ -80,9 +80,8 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 		// Note: the "nftFee" is the "spendAmount" and therefore must be added to feesMake.
 		require.Equal(totalInputMake, changeAmountMake+feesMake+nftFee)
 	} else {
-		// The balance model does not have "implicit" outputs  or "change" like the UTXO model.
-		// Instead, all fees are explicitly baked into the "feesMake".
-		require.Equal(totalInputMake, feesMake)
+		// FeesMake represents the transaction fees PLUS the NFT fee should equal total input make
+		require.Equal(totalInputMake, feesMake+nftFee)
 	}
 
 	// Sign the transaction now that its inputs are set up.
@@ -96,10 +95,10 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
 	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		require.Equal(totalInput, totalOutput+fees)
 		// We should have one SPEND UtxoOperation for each input, one ADD operation
 		// for each output, and one OperationTypeCreateNFT operation at the end.
 		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
@@ -108,6 +107,7 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 		}
 		require.Equal(OperationTypeCreateNFT, utxoOps[len(utxoOps)-1].Type)
 	} else {
+		require.Equal(totalInput, totalOutput+fees+nftFee)
 		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 		require.Equal(OperationTypeCreateNFT, utxoOps[1].Type)
 	}
@@ -837,18 +837,24 @@ func TestBalanceModelNFTs(t *testing.T) {
 	TestNFTSerialNumberZeroBid(t)
 	TestNFTMinimumBidAmount(t)
 	TestNFTCreatedIsNotForSale(t)
-	TestNFTMoreErrorCases(t)
-	TestNFTBidsAreCanceledAfterAccept(t)
 }
 
-// Break up into two tests to keep memory footprint lower
+// Break up into multiple tests to keep memory footprint lower
 func TestBalanceModelNFTs2(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
+	TestNFTMoreErrorCases(t)
+	TestNFTBidsAreCanceledAfterAccept(t)
 	TestNFTDifferentMinBidAmountSerialNumbers(t)
 	TestNFTMaxCopiesGlobalParam(t)
 	TestNFTPreviousOwnersCantAcceptBids(t)
+}
+
+func TestBalanceModelNFTs3(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
 	TestNFTTransfersAndBurns(t)
 	TestBidAmountZero(t)
 	TestNFTBuyNow(t)
@@ -1264,9 +1270,11 @@ func TestNFTBasic(t *testing.T) {
 		if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
 			require.Contains(err.Error(), RuleErrorCreateNFTWithInsufficientFunds)
 		} else {
-			require.Contains(err.Error(), RuleErrorCreateNFTTxnWithInsufficientFee)
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
 		}
 	}
+	// After we tested the create NFT fee errors, lower the block reward maturity
+	params.BlockRewardMaturity = time.Second
 
 	// Creating an NFT with the correct NFT fee should succeed.
 	// This time set HasUnlockable to 'true'.

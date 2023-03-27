@@ -800,22 +800,34 @@ func TestBalanceModelCreatorCoins(t *testing.T) {
 	TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t)
 	TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t)
 	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
-	TestCreatorCoinTransferWithSwapIdentity(t)
-	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
-	TestCreatorCoinTransferWithMaxTransfers(t)
-	TestCreatorCoinTransferBelowMinThreshold(t)
 }
 
 func TestBalanceModelCreatorCoins2(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
+	TestCreatorCoinTransferWithSwapIdentity(t)
+	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
+	TestCreatorCoinTransferWithMaxTransfers(t)
+	TestCreatorCoinTransferBelowMinThreshold(t)
 	TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t)
+}
+
+func TestBalanceModelCreatorCoins3(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
 	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
 	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
 	TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t)
 	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
 	TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t)
+}
+
+func TestBalanceModelCreatorCoins4(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
 	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
 	TestCreatorCoinAroundThresholdBuySellAmounts(t)
 	TestSalomonSequence(t)
@@ -4331,7 +4343,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
-	if OperationType == CreatorCoinOperationTypeBuy && blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+	if OperationType == CreatorCoinOperationTypeBuy {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake+DeSoToSellNanos))
 	} else {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake))
@@ -4364,7 +4376,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		}
 	} else {
 		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
-		if numOps == 3 {
+		if OperationType == CreatorCoinOperationTypeBuy && numOps == 3 {
 			// Founder reward case.
 			require.Equal(OperationTypeAddBalance, utxoOps[1].Type)
 		}

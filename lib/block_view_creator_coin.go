@@ -609,8 +609,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransferWithExtraSpend(
+		txn, txHash, blockHeight, txn.TxnMeta.(*CreatorCoinMetadataa).DeSoToSellNanos, verifySignatures)
 	if err != nil {
 		return 0, 0, 0, 0, nil, errors.Wrapf(err, "_connectCreatorCoin: ")
 	}

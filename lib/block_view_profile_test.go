@@ -159,9 +159,9 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.Equal(totalInput, totalInputMake)
 
 	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		require.Equal(totalInput, totalInputMake)
 		// We should have one SPEND UtxoOperation for each input, one ADD operation
 		// for each output, and one OperationTypeUpdateProfile operation at the end.
 		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
@@ -169,6 +169,10 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
 		}
 	} else {
+		require.GreaterOrEqual(totalInput, totalInputMake)
+		if totalInput != totalInputMake {
+			require.Equal(totalInput, totalInputMake+utxoView.GlobalParamsEntry.CreateProfileFeeNanos)
+		}
 		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeUpdateProfile, utxoOps[len(utxoOps)-1].Type)
@@ -212,18 +216,24 @@ const (
 	otherShortPic string = "data:image/jpeg;base64,/9j/2wCEAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDIBCQkJDAsMGA0NGDIhHCEyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMv/AABEIAGQAZAMBIgACEQEDEQH/xAGiAAABBQEBAQEBAQAAAAAAAAAAAQIDBAUGBwgJCgsQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+gEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoLEQACAQIEBAMEBwUEBAABAncAAQIDEQQFITEGEkFRB2FxEyIygQgUQpGhscEJIzNS8BVictEKFiQ04SXxFxgZGiYnKCkqNTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqCg4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2dri4+Tl5ufo6ery8/T19vf4+fr/2gAMAwEAAhEDEQA/APf6KKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAoopGJVSQpYgcAd6AForyO++JmrHUJCgg05bZyj2dxHuckcEOeD/wB8fma7SDxpDH4Stte1OxurRJ3WNIVQyO5Y4UqBzhu2QDz0rSdKUEpPqZQrRnJxj08jqKKwbTxdp17p9/cwR3ZksB+/tGt2SdTjcAEbBJI6etXptasLU2KXU4gkvmCQRyAhmbaWwR2OAevpWZqaFFc5qfjfRtJv5bS5kuD5Gw3M8UDPFbb/ALvmOOFzViz8TQXfiSfQ2sryC5ihadZJkURyxhgu5SGJIJPcCgDbopnmx/N86/L97np9ar6hqVnpdjPe3twkNvAhkkdudq+uBzQBbopkM0c8SyROHRgCCD1p9ABRRRQAUjbtp2kBscZGRS0UAfP/AIkOqN4guzrccn29WAcW0a+XKv8AAU7gHpzkn7pzjFd34hsvEWo/DywXULaSbUlvbeaWOxTEiRrID9N4XqRgZ6V291o+n3t/a31zaxyXNoSYZGHKZ/n+PQ81exSV+rua1JwlFKMUn1fc8dvNEu7jQPE3m+H9WvVvmT+z2vYlkuxMImXe5z8qLwFPUZPFamt6UNU03wxqk3hm6uPsUyw3tvJbKZzCI2XG3PzLvIOPxr07FGKZkeb2R1HQb3WY7Xwvd3cerSQz2URRViRfLVDHMcny9u3pg8dKmvJ9Sk+IUtxbaPqcSHTH02O6EA8tZjJkPnP3B1z+lehYoxQB4gfCeq3Witaaf4fu7G8j0eaDUpJsAX05KlcHJ8w7lZg3vitbU9Ev/FDeJLj+wrqIz6PAlkt7EEYzp5nTk4YZ46dfevWcUYoA5/wetpHoax2miz6SqsN8M1uISz7RlsA8+mfaugoooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9k="
 )
 
-func TestBalanceModelUpdateProfileAndSwapIdentity(t *testing.T) {
+func TestBalanceModelUpdateProfile(t *testing.T) {
 	setBlockHeightGlobals()
 	defer resetBlockHeightGlobals()
 
 	TestUpdateProfile(t)
 	TestSpamUpdateProfile(t)
+	TestUpdateProfileChangeBack(t)
+}
+
+func TestBalanceModelSwapIdentity(t *testing.T) {
+	setBlockHeightGlobals()
+	defer resetBlockHeightGlobals()
+
 	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
 	TestSwapIdentityCreatorCoinBuySimple(t)
 	TestSwapIdentityFailureCases(t)
 	TestSwapIdentityMain(t)
 	TestSwapIdentityWithFollows(t)
-	TestUpdateProfileChangeBack(t)
 }
 
 func TestUpdateProfile(t *testing.T) {
@@ -240,6 +250,7 @@ func TestUpdateProfile(t *testing.T) {
 	// For testing purposes, we set the fix block height to be 0 for the ParamUpdaterProfileUpdateFixBlockHeight.
 	params.ForkHeights.ParamUpdaterProfileUpdateFixBlockHeight = 0
 	params.ForkHeights.UpdateProfileFixBlockHeight = 0
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -859,36 +870,10 @@ func TestUpdateProfile(t *testing.T) {
 			1.5*100*100,
 			false)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
-
 		blockHeight := chain.blockTip().Height + 1
-
-		// For the balance model, check the new RuleErrorCreateProfileTxnWithInsufficientFee
 		if blockHeight >= params.ForkHeights.BalanceModelBlockHeight {
-			// Reduce the minimum network fee to 1 nanos per kb but make the create profile fee 50.
-			updateGlobalParamsEntry(
-				100,
-				m3Pub,
-				m3Priv,
-				int64(InitialUSDCentsPerBitcoinExchangeRate),
-				1,
-				50)
-
-			// Update profile fails as the fee is too low
-			_, _, _, err = _updateProfile(
-				t, chain, db, params,
-				10,
-				m4Pub,
-				m4Priv,
-				m4PkBytes,
-				"m4_username",
-				"m4 description",
-				otherShortPic,
-				11*100,
-				1.5*100*100,
-				false,
-			)
-			require.Error(err)
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
+		} else {
 			require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
 		}
 

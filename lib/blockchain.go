@@ -3401,12 +3401,12 @@ func (bc *Blockchain) CreateSwapIdentityTxn(
 	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateProfileTxn: Problem adding inputs: ")
+		return nil, 0, 0, 0, errors.Wrapf(err, "CreateSwapIdentityTxn: Problem adding inputs: ")
 	}
 
 	// The spend amount should be zero for SwapIdentity txns.
 	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
-		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateProfileTxn: %v", err)
+		return nil, 0, 0, 0, fmt.Errorf("CreateSwapIdentityTxn: %v", err)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -3443,13 +3443,12 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 		// inputs and change.
 	}
 
-	totalInput, spendAmount, changeAmount, fees, err :=
+	totalInput, _, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransactionWithSubsidy(
 			txn, minFeeRateNanosPerKB, 0, mempool, DeSoToSellNanos)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
@@ -3629,21 +3628,16 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 	if metadata.CancelOrderID == nil {
 		// CancelOrderID is nil, so we know we're submitting a new order.
-		transactorOrder = &DAOCoinLimitOrderEntry{
-			OrderID:                   txn.Hash(),
-			TransactorPKID:            utxoView.GetPKIDForPublicKey(UpdaterPublicKey).PKID,
-			BuyingDAOCoinCreatorPKID:  utxoView.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-			SellingDAOCoinCreatorPKID: utxoView.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
-			ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
-			QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
-			OperationType:                             metadata.OperationType,
-			FillType:                                  metadata.FillType,
-			BlockHeight:                               blockHeight,
+		transactorOrder, err = utxoView.ConvertTxnToDAOCoinLimitOrderEntry(txn, blockHeight)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(
+				err,
+				"Blockchain.CreateDAOCoinLimitOrderTxn: error converting txn to DAO coin limit order entry: ")
 		}
 	}
 
-	// We use "additionalFees" to track how much we need to spend to cover the transactor's bid in DESO.
-	var additionalFees uint64
+	// We use "explicitSpend" to track how much we need to spend to cover the transactor's bid in DESO.
+	var explicitSpend uint64
 	if metadata.CancelOrderID == nil &&
 		metadata.BuyingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
 		// If buying $DESO, we need to find inputs from all the orders that match.
@@ -3744,80 +3738,15 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		}
 	} else if metadata.CancelOrderID == nil &&
 		metadata.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
-		// If selling $DESO for DAO coins, we need to find the matching orders
-		// and add that as an additional fee when adding inputs and outputs.
-		var lastSeenOrder *DAOCoinLimitOrderEntry
-
-		desoNanosToFulfillOrders := uint256.NewInt()
-		transactorQuantityToFill := transactorOrder.QuantityToFillInBaseUnits.Clone()
-
-		for transactorQuantityToFill.GtUint64(0) {
-			var matchingOrderEntries []*DAOCoinLimitOrderEntry
-			matchingOrderEntries, err = utxoView.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder, blockHeight)
-			if err != nil {
-				return nil, 0, 0, 0, errors.Wrapf(
-					err, "Blockchain.CreateDAOCoinLimitOrderTxn: Error getting orders to match: ")
-			}
-			if len(matchingOrderEntries) == 0 {
-				break
-			}
-			for _, matchingOrder := range matchingOrderEntries {
-				lastSeenOrder = matchingOrder
-
-				matchingOrderBalanceEntry := utxoView._getBalanceEntryForHODLerPKIDAndCreatorPKID(
-					matchingOrder.TransactorPKID, matchingOrder.SellingDAOCoinCreatorPKID, true)
-
-				// Skip if matching order doesn't own any of the DAO coins they're selling.
-				if matchingOrderBalanceEntry == nil || matchingOrderBalanceEntry.isDeleted {
-					continue
-				}
-
-				// Calculate updated order quantities and coins exchanged.
-				var updatedTransactorQuantityToFill *uint256.Int
-				var daoCoinNanosExchanged *uint256.Int
-				var desoNanosExchanged *uint256.Int
-
-				updatedTransactorQuantityToFill,
-					_, // matching order updated quantity, not used here
-					daoCoinNanosExchanged,
-					desoNanosExchanged,
-					err = _calculateDAOCoinsTransferredInLimitOrderMatch(
-					matchingOrder, transactorOrder.OperationType, transactorQuantityToFill)
-				if err != nil {
-					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: ")
-				}
-
-				// Skip if matching order doesn't own enough of the DAO coins they're selling.
-				if matchingOrderBalanceEntry.BalanceNanos.Lt(daoCoinNanosExchanged) {
-					continue
-				}
-
-				// Now that we know this is a legitimate matching order
-				// we can update the transactor quantity to fill.
-				transactorQuantityToFill = updatedTransactorQuantityToFill
-
-				// Track total $DESO exchanged across all matching orders.
-				desoNanosToFulfillOrders, err = SafeUint256().Add(
-					desoNanosToFulfillOrders, desoNanosExchanged)
-				if err != nil {
-					return nil, 0, 0, 0, errors.Wrapf(err,
-						"Blockchain.CreateDAOCoinLimitOrderTxn: overflow when adding up $DESO to fill orders")
-				}
-			}
+		explicitSpend, err = utxoView.GetDESONanosToFillOrder(transactorOrder, blockHeight)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: ")
 		}
-
-		// Validate $DESO doesn't overflow uint64.
-		if !desoNanosToFulfillOrders.IsUint64() {
-			return nil, 0, 0, 0, fmt.Errorf(
-				"Blockchain.CreateDAOCoinLimitOrderTxn: fulfilling order $DESO overflows uint64")
-		}
-
-		additionalFees = desoNanosToFulfillOrders.Uint64()
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, additionalFees)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, explicitSpend)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"CreateDAOCoinLimitOrderTxn: Problem adding inputs: ")
@@ -4015,14 +3944,14 @@ func (bc *Blockchain) CreateNFTBidTxn(
 		return nil, 0, 0, 0, errors.New(
 			"_computeInputsForTxn: nftEntry is deleted")
 	}
-	var additionalFees uint64
+	var explicitSpend uint64
 	if nftEntry != nil && nftEntry.IsBuyNow && nftEntry.BuyNowPriceNanos <= BidAmountNanos {
-		additionalFees = BidAmountNanos
+		explicitSpend = BidAmountNanos
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, additionalFees)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, explicitSpend)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNFTBidTxn: Problem adding inputs: ")
 	}
@@ -4922,6 +4851,48 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 	// Add additional fees to the spend amount.
 	spendAmount += additionalFees
+
+	totalInput := inputSubsidy
+	// At this point, if we are constructing a balance model transaction, we can bail. Since
+	// balance model transactions don't use UTXOs, they don't require change to be paid.
+	blockHeight := bc.blockTip().Height + 1
+	if blockHeight >= bc.params.ForkHeights.BalanceModelBlockHeight {
+		txArg.TxnVersion = 1
+		nextNonce, err := bc.GetNextNonceForPKID(txArg.PublicKey, mempool, nil)
+		if err != nil {
+			return 0, 0, 0, 0, errors.Wrapf(
+				err, "AddInputsAndChangeToTransaction: Problem getting next nonce for public key %s: ",
+				PkToStringBoth(txArg.PublicKey),
+			)
+		}
+		txArg.TxnNonce = nextNonce
+
+		// Initialize to 0.
+		txArg.TxnFeeNanos = 0 // additionalFees
+
+		feeAmountNanos := uint64(0)
+		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward && minFeeRateNanosPerKB != 0 {
+			prevFeeAmountNanos := uint64(0)
+			for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
+				prevFeeAmountNanos = feeAmountNanos
+				feeAmountNanos = _computeMaxTxV1Fee(txArg, minFeeRateNanosPerKB)
+				txArg.TxnFeeNanos = feeAmountNanos
+			}
+		}
+
+		if math.MaxUint64-spendAmount < totalInput {
+			return 0, 0, 0, 0, fmt.Errorf(
+				"AddInputsAndChangeToTransaction: overflow detected")
+		}
+		totalInput += spendAmount
+		if math.MaxUint64-txArg.TxnFeeNanos < totalInput {
+			return 0, 0, 0, 0, fmt.Errorf(
+				"AddInputsAndChangeToTransaction: overflow detected")
+		}
+		totalInput += txArg.TxnFeeNanos
+		return totalInput, spendAmount, 0, txArg.TxnFeeNanos, nil
+	}
+
 	// The public key of the transaction is assumed to be the one set at its
 	// top level.
 	spendPublicKeyBytes := txArg.PublicKey
@@ -4946,61 +4917,6 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		AmountNanos: math.MaxUint64,
 	}
 	txCopyWithChangeOutput.TxOutputs = append(txCopyWithChangeOutput.TxOutputs, changeOutput)
-
-	totalInput := inputSubsidy
-	// At this point, if we are constructing a balance model transaction, we can bail. Since
-	// balance model transactions don't use UTXOs, they don't require change to be paid.
-	blockHeight := bc.blockTip().Height + 1
-	if blockHeight >= bc.params.ForkHeights.BalanceModelBlockHeight {
-		txArg.TxnVersion = 1
-		nextNonce, err := bc.GetNextNonceForPKID(txArg.PublicKey, mempool, nil)
-		if err != nil {
-			return 0, 0, 0, 0, errors.Wrapf(
-				err, "AddInputsAndChangeToTransaction: Problem getting next nonce for public key %s: ",
-				PkToStringBoth(txArg.PublicKey),
-			)
-		}
-		txArg.TxnNonce = nextNonce
-
-		// Set to max uint64 so we can compute max fee
-		txArg.TxnFeeNanos = additionalFees
-
-		feeAmountNanos := uint64(0)
-		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward && minFeeRateNanosPerKB != 0 {
-			prevFeeAmountNanos := uint64(0)
-			for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
-				prevFeeAmountNanos = feeAmountNanos
-				feeAmountNanos = _computeMaxTxV1Fee(txArg, minFeeRateNanosPerKB)
-				if math.MaxUint64-feeAmountNanos < additionalFees {
-					return 0, 0, 0, 0, fmt.Errorf(
-						"AddInputsAndChangeToTransaction: overflow detected")
-				}
-				txArg.TxnFeeNanos = additionalFees + feeAmountNanos
-			}
-		}
-
-		// Prior to the BalanceModelBlockHeight, "additionalFees" such as the create profile
-		// fee were backed into the spend amount in order to create an "implicit" fee. However,
-		// in the balance model, all outputs and fees must be set explicitly, so it is included
-		// in TxnFeeNanos here instead.
-		if additionalFees > spendAmount {
-			return 0, 0, 0, 0, fmt.Errorf("AddInputsAndChangeToTransaction: " +
-				"underflow detected")
-		}
-		explicitSpendAmount := spendAmount - additionalFees
-
-		if math.MaxUint64-explicitSpendAmount < totalInput {
-			return 0, 0, 0, 0, fmt.Errorf(
-				"AddInputsAndChangeToTransaction: overflow detected")
-		}
-		totalInput += explicitSpendAmount
-		if math.MaxUint64-txArg.TxnFeeNanos < totalInput {
-			return 0, 0, 0, 0, fmt.Errorf(
-				"AddInputsAndChangeToTransaction: overflow detected")
-		}
-		totalInput += txArg.TxnFeeNanos
-		return totalInput, spendAmount, 0, txArg.TxnFeeNanos, nil
-	}
 
 	// Get the spendable UtxoEntrys.
 	spendableUtxos, err := bc.GetSpendableUtxosForPublicKey(spendPublicKeyBytes, mempool, nil)
