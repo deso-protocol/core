@@ -724,32 +724,31 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	createUTXO := func(amountNanos uint64, publicKeyArg []byte, utxoType UtxoType) (_err error) {
 		publicKey := publicKeyArg
 
-		getUtxoEntry := func() *UtxoEntry {
-			// nextUtxoIndex is guaranteed to be >= 0 after this increment
-			nextUtxoIndex += 1
+		// nextUtxoIndex is guaranteed to be >= 0 after this increment
+		nextUtxoIndex += 1
 
-			outputKey := &UtxoKey{
-				TxID:  *txHash,
-				Index: uint32(nextUtxoIndex),
-			}
-			daoCoinLimitOrderPaymentUtxoKeys = append(daoCoinLimitOrderPaymentUtxoKeys, outputKey)
-
-			return &UtxoEntry{
-				AmountNanos: amountNanos,
-				PublicKey:   publicKey,
-				BlockHeight: blockHeight,
-				UtxoType:    utxoType,
-
-				UtxoKey: outputKey,
-				// We leave the position unset and isSpent to false by default.
-				// The position will be set in the call to _addUtxo.
-			}
+		outputKey := &UtxoKey{
+			TxID:  *txHash,
+			Index: uint32(nextUtxoIndex),
 		}
 
-		utxoOp, err := bav._addDESO(amountNanos, publicKey, getUtxoEntry, blockHeight)
+		utxoEntry := UtxoEntry{
+			AmountNanos: amountNanos,
+			PublicKey:   publicKey,
+			BlockHeight: blockHeight,
+			UtxoType:    utxoType,
+
+			UtxoKey: outputKey,
+			// We leave the position unset and isSpent to false by default.
+			// The position will be set in the call to _addUtxo.
+		}
+
+		utxoOp, err := bav._addDESO(amountNanos, publicKey, &utxoEntry, blockHeight)
 		if err != nil {
 			return errors.Wrapf(err, "_connectDAOCoinLimitOrder: Problem adding output DESO")
 		}
+
+		daoCoinLimitOrderPaymentUtxoKeys = append(daoCoinLimitOrderPaymentUtxoKeys, outputKey)
 
 		// Rosetta uses this UtxoOperation to provide INPUT amounts
 		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)

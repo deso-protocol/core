@@ -5026,23 +5026,21 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 
 	// Add the seed balances to the view.
 	for index, txOutput := range params.SeedBalances {
-		getUtxoEntry := func() *UtxoEntry {
-			outputKey := UtxoKey{
-				TxID:  BlockHash{},
-				Index: uint32(index),
-			}
-			return &UtxoEntry{
-				AmountNanos: txOutput.AmountNanos,
-				PublicKey:   txOutput.PublicKey,
-				BlockHeight: 0,
-				// Just make this a normal transaction so that we don't have to wait for
-				// the block reward maturity.
-				UtxoType: UtxoTypeOutput,
-				UtxoKey:  &outputKey,
-			}
+		outputKey := UtxoKey{
+			TxID:  BlockHash{},
+			Index: uint32(index),
+		}
+		utxoEntry := UtxoEntry{
+			AmountNanos: txOutput.AmountNanos,
+			PublicKey:   txOutput.PublicKey,
+			BlockHeight: 0,
+			// Just make this a normal transaction so that we don't have to wait for
+			// the block reward maturity.
+			UtxoType: UtxoTypeOutput,
+			UtxoKey:  &outputKey,
 		}
 
-		if _, err = utxoView._addDESO(txOutput.AmountNanos, txOutput.PublicKey, getUtxoEntry, 0); err != nil {
+		if _, err = utxoView._addDESO(txOutput.AmountNanos, txOutput.PublicKey, &utxoEntry, 0); err != nil {
 			return fmt.Errorf("InitDbWithDeSoGenesisBlock: Error adding "+
 				"seed balance at index %v ; output: %v: %v", index, txOutput, err)
 		}

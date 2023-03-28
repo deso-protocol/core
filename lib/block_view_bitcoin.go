@@ -266,32 +266,30 @@ func (bav *UtxoView) _connectBitcoinExchange(
 	feeNanos := feeNanosBigint.Uint64()
 	userNanos := nanosToCreate - feeNanos
 
-	getUtxoEntry := func() *UtxoEntry {
-		// Now that we have all the information we need, save a UTXO allowing the user to
-		// spend the DeSo she's purchased in the future.
-		outputKey := UtxoKey{
-			TxID: *txn.Hash(),
-			// We give all UTXOs that are created as a result of BitcoinExchange transactions
-			// an index of zero. There is generally only one UTXO created in a BitcoinExchange
-			// transaction so this field doesn't really matter.
-			Index: 0,
-		}
-		return &UtxoEntry{
-			AmountNanos: userNanos,
-			PublicKey:   publicKey.SerializeCompressed(),
-			BlockHeight: blockHeight,
-			UtxoType:    UtxoTypeBitcoinBurn,
-			UtxoKey:     &outputKey,
-			// We leave the position unset and isSpent to false by default.
-			// The position will be set in the call to _addUtxo.
-		}
+	// Now that we have all the information we need, save a UTXO allowing the user to
+	// spend the DeSo she's purchased in the future.
+	outputKey := UtxoKey{
+		TxID: *txn.Hash(),
+		// We give all UTXOs that are created as a result of BitcoinExchange transactions
+		// an index of zero. There is generally only one UTXO created in a BitcoinExchange
+		// transaction so this field doesn't really matter.
+		Index: 0,
 	}
 
-	// TODO: update comment for balance model
-	// If we have a problem adding this utxo return an error but don't
+	utxoEntry := UtxoEntry{
+		AmountNanos: userNanos,
+		PublicKey:   publicKey.SerializeCompressed(),
+		BlockHeight: blockHeight,
+		UtxoType:    UtxoTypeBitcoinBurn,
+		UtxoKey:     &outputKey,
+		// We leave the position unset and isSpent to false by default.
+		// The position will be set in the call to _addUtxo.
+	}
+
+	// If we have a problem adding this utxo or balance return an error but don't
 	// mark this block as invalid since it's not a rule error and the block
 	// could therefore benefit from being processed in the future.
-	newUtxoOp, err := bav._addDESO(userNanos, publicKey.SerializeCompressed(), getUtxoEntry, blockHeight)
+	newUtxoOp, err := bav._addDESO(userNanos, publicKey.SerializeCompressed(), &utxoEntry, blockHeight)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectBitcoinExchange: Problem adding output DESO")
 	}

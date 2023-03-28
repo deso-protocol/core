@@ -795,12 +795,12 @@ func (bav *UtxoView) _addBalance(amountNanos uint64, balancePublicKey []byte,
 	}, nil
 }
 
-func (bav *UtxoView) _addDESO(amountNanos uint64, publicKey []byte, getUtxoEntry func() *UtxoEntry, blockHeight uint32,
+func (bav *UtxoView) _addDESO(amountNanos uint64, publicKey []byte, utxoEntry *UtxoEntry, blockHeight uint32,
 ) (*UtxoOperation, error) {
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return bav._addBalance(amountNanos, publicKey)
 	}
-	return bav._addUtxo(getUtxoEntry())
+	return bav._addUtxo(utxoEntry)
 }
 
 func (bav *UtxoView) _unAddBalance(amountNanos uint64, balancePublicKey []byte) error {
@@ -817,13 +817,6 @@ func (bav *UtxoView) _unAddBalance(amountNanos uint64, balancePublicKey []byte) 
 	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(balancePublicKey)] = desoBalanceNanos
 
 	return nil
-}
-
-func (bav *UtxoView) _unAddDESO(amountNanos uint64, publicKey []byte, getUtxoKey func() *UtxoKey, blockHeight uint32) error {
-	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-		return bav._unAddBalance(amountNanos, publicKey)
-	}
-	return bav._unAddUtxo(getUtxoKey())
 }
 
 func (bav *UtxoView) _spendBalance(
@@ -867,26 +860,6 @@ func (bav *UtxoView) _spendBalance(
 	}, nil
 }
 
-func (bav *UtxoView) _spendDESO(amountNanos uint64, publicKey []byte, getUtxoKeys func() []*UtxoKey, blockHeight uint32,
-) ([]*UtxoOperation, error) {
-	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-		utxoOp, err := bav._spendBalance(amountNanos, publicKey, blockHeight)
-		if err != nil {
-			return nil, err
-		}
-		return []*UtxoOperation{utxoOp}, nil
-	}
-	utxoOperations := []*UtxoOperation{}
-	for _, utxoKey := range getUtxoKeys() {
-		utxoOperation, err := bav._spendUtxo(utxoKey)
-		if err != nil {
-			return nil, err
-		}
-		utxoOperations = append(utxoOperations, utxoOperation)
-	}
-	return utxoOperations, nil
-}
-
 func (bav *UtxoView) _unSpendBalance(amountNanos uint64, balancePublicKey []byte) error {
 	// Get the current balance and add back the spent amountNanos.
 	desoBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(balancePublicKey)
@@ -901,19 +874,6 @@ func (bav *UtxoView) _unSpendBalance(amountNanos uint64, balancePublicKey []byte
 	}
 	bav.PublicKeyToDeSoBalanceNanos[*NewPublicKey(balancePublicKey)] = desoBalanceNanos
 
-	return nil
-}
-
-func (bav *UtxoView) _unSpendDESO(amountNanos uint64, publicKey []byte, getUtxoEntries func() []*UtxoEntry, blockHeight uint32) error {
-	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-		return bav._unSpendBalance(amountNanos, publicKey)
-	}
-	for _, utxoEntry := range getUtxoEntries() {
-		err := bav._unSpendUtxo(utxoEntry)
-		if err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -1773,26 +1733,37 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 		currentAmount, _ := amountsByPublicKey[*NewPublicKey(desoOutput.PublicKey)]
 		amountsByPublicKey[*NewPublicKey(desoOutput.PublicKey)] = currentAmount + desoOutput.AmountNanos
 
-		getUtxoEntry := func() *UtxoEntry {
-			// Create a new entry for this output and add it to the view. It should be
-			// added at the end of the utxo list.
-			outputKey := UtxoKey{
-				TxID:  *txHash,
-				Index: uint32(outputIndex),
-			}
-			utxoType := UtxoTypeOutput
-			if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
-				utxoType = UtxoTypeBlockReward
-			}
-			return &UtxoEntry{
-				AmountNanos: desoOutput.AmountNanos,
-				PublicKey:   desoOutput.PublicKey,
-				UtxoType:    utxoType,
-				UtxoKey:     &outputKey,
-				BlockHeight: blockHeight,
-			}
+		// A basic transfer cannot create any output other than a "normal" output
+		// or a BlockReward. Outputs of other types must be created after processing
+		// the "basic" outputs.
+
+		// Create a new entry for this output and add it to the view. It should be
+		// added at the end of the utxo list.
+		outputKey := UtxoKey{
+			TxID:  *txHash,
+			Index: uint32(outputIndex),
 		}
-		newUtxoOp, err := bav._addDESO(desoOutput.AmountNanos, desoOutput.PublicKey, getUtxoEntry, blockHeight)
+		utxoType := UtxoTypeOutput
+		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+			utxoType = UtxoTypeBlockReward
+		}
+		// A basic transfer cannot create any output other than a "normal" output
+		// or a BlockReward. Outputs of other types must be created after processing
+		// the "basic" outputs.
+
+		utxoEntry := UtxoEntry{
+			AmountNanos: desoOutput.AmountNanos,
+			PublicKey:   desoOutput.PublicKey,
+			BlockHeight: blockHeight,
+			UtxoType:    utxoType,
+			UtxoKey:     &outputKey,
+			// We leave the position unset and isSpent to false by default.
+			// The position will be set in the call to _addUtxo.
+		}
+		// If we have a problem adding this utxo or balance return an error but don't
+		// mark this block as invalid since it's not a rule error and the block
+		// could therefore benefit from being processed in the future.
+		newUtxoOp, err := bav._addDESO(desoOutput.AmountNanos, desoOutput.PublicKey, &utxoEntry, blockHeight)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem adding DESO")
 		}

@@ -999,26 +999,24 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	// Finally, if the creator is getting a deso founder reward, add a UTXO for it.
 	var outputKey *UtxoKey
 	if blockHeight > bav.Params.ForkHeights.DeSoFounderRewardBlockHeight && desoFounderRewardNanos > 0 {
-		getFounderRewardUtxoEntry := func() *UtxoEntry {
-			// Create a new entry for this output and add it to the view. It should be
-			// added at the end of the utxo list.
-			outputKey = &UtxoKey{
-				TxID: *txHash,
-				// The output is like an extra virtual output at the end of the transaction.
-				Index: uint32(len(txn.TxOutputs)),
-			}
-
-			return &UtxoEntry{
-				AmountNanos: desoFounderRewardNanos,
-				PublicKey:   existingProfileEntry.PublicKey,
-				BlockHeight: blockHeight,
-				UtxoType:    UtxoTypeCreatorCoinFounderReward,
-				UtxoKey:     outputKey,
-				// We leave the position unset and isSpent to false by default.
-				// The position will be set in the call to _addUtxo.
-			}
+		// Create a new entry for this output and add it to the view. It should be
+		// added at the end of the utxo list.
+		outputKey = &UtxoKey{
+			TxID: *txHash,
+			// The output is like an extra virtual output at the end of the transaction.
+			Index: uint32(len(txn.TxOutputs)),
 		}
-		utxoOp, err := bav._addDESO(desoFounderRewardNanos, existingProfileEntry.PublicKey, getFounderRewardUtxoEntry, blockHeight)
+
+		utxoEntry := UtxoEntry{
+			AmountNanos: desoFounderRewardNanos,
+			PublicKey:   existingProfileEntry.PublicKey,
+			BlockHeight: blockHeight,
+			UtxoType:    UtxoTypeCreatorCoinFounderReward,
+			UtxoKey:     outputKey,
+			// We leave the position unset and isSpent to false by default.
+			// The position will be set in the call to _addUtxo.
+		}
+		utxoOp, err := bav._addDESO(desoFounderRewardNanos, existingProfileEntry.PublicKey, &utxoEntry, blockHeight)
 		if err != nil {
 			return 0, 0, 0, 0, nil, errors.Wrapf(err, "HelpConnectCreatorCoinBuy: Problem adding utxo or balance")
 		}
@@ -1302,25 +1300,26 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 				"%v, amount user needed: %v",
 			desoAfterFeesNanos, txMeta.MinDeSoExpectedNanos)
 	}
-	getCreatorCoinSaleUtxoEntry := func() *UtxoEntry {
-		// Now that we have all the information we need, save a UTXO allowing the user to
-		// spend the DESO from the sale in the future.
-		outputKey := UtxoKey{
-			TxID: *txn.Hash(),
-			// The output is like an extra virtual output at the end of the transaction.
-			Index: uint32(len(txn.TxOutputs)),
-		}
-		return &UtxoEntry{
-			AmountNanos: desoAfterFeesNanos,
-			PublicKey:   txn.PublicKey,
-			BlockHeight: blockHeight,
-			UtxoType:    UtxoTypeCreatorCoinSale,
-			UtxoKey:     &outputKey,
-			// We leave the position unset and isSpent to false by default.
-			// The position will be set in the call to _addUtxo.
-		}
+	// Now that we have all the information we need, save a UTXO allowing the user to
+	// spend the DESO from the sale in the future.
+	outputKey := UtxoKey{
+		TxID: *txn.Hash(),
+		// The output is like an extra virtual output at the end of the transaction.
+		Index: uint32(len(txn.TxOutputs)),
 	}
-	utxoOp, err := bav._addDESO(desoAfterFeesNanos, txn.PublicKey, getCreatorCoinSaleUtxoEntry, blockHeight)
+	utxoEntry := UtxoEntry{
+		AmountNanos: desoAfterFeesNanos,
+		PublicKey:   txn.PublicKey,
+		BlockHeight: blockHeight,
+		UtxoType:    UtxoTypeCreatorCoinSale,
+		UtxoKey:     &outputKey,
+		// We leave the position unset and isSpent to false by default.
+		// The position will be set in the call to _addUtxo.
+	}
+	// If we have a problem adding this utxo or balance return an error but don't
+	// mark this block as invalid since it's not a rule error and the block
+	// could therefore benefit from being processed in the future.
+	utxoOp, err := bav._addDESO(desoAfterFeesNanos, txn.PublicKey, &utxoEntry, blockHeight)
 	if err != nil {
 		return 0, 0, 0, nil, errors.Wrapf(err, "_connectCreatorCoin: Problem adding utxo or balance")
 	}

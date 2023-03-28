@@ -1159,7 +1159,15 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 				}
 				totalBidderInput += bidderUtxoEntry.AmountNanos
 
+				// Make sure we spend the utxo so that the bidder can't reuse it.
+				utxoOp, err := bav._spendUtxo(&bidderUtxoKey)
+				if err != nil {
+					return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: Problem spending bidder utxo")
+				}
 				spentUtxoEntries = append(spentUtxoEntries, bidderUtxoEntry)
+
+				// Track the UtxoOperations so we can rollback, and for Rosetta
+				utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 			}
 
 			if totalBidderInput < args.BidAmountNanos {
@@ -1169,13 +1177,6 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 			// The bidder gets back any unspent nanos from the inputs specified.
 			bidderChangeNanos = totalBidderInput - args.BidAmountNanos
 		}
-		// Make sure we spend the utxo or balance so that the bidder can't reuse it.
-		bidderDESOUtxoOperations, err := bav._spendDESO(args.BidAmountNanos, bidderPublicKey, func() []*UtxoKey { return utxoKeys }, blockHeight)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: Problem spending bidder DESO")
-		}
-		// Track the UtxoOperations so we can rollback, and for Rosetta
-		utxoOpsForTxn = append(utxoOpsForTxn, bidderDESOUtxoOperations...)
 	case TxnTypeNFTBid:
 		// If we're here, we know we're dealing with a "buy now" NFT because that is
 		// the only situation in which a bid would result in an NFT being sold vs the
@@ -1373,29 +1374,30 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	createAddUtxoOrAddBalance := func(amountNanos uint64, publicKeyArg []byte, utxoType UtxoType) (_err error) {
 		publicKey := publicKeyArg
 		nextUtxoIndex += 1
-		royaltyOutputKey := UtxoKey{
+		royaltyOutputKey := &UtxoKey{
 			TxID:  *args.TxHash,
 			Index: uint32(nextUtxoIndex),
 		}
-		getUtxoEntry := func() *UtxoEntry {
-			return &UtxoEntry{
-				AmountNanos: amountNanos,
-				PublicKey:   publicKey,
-				BlockHeight: blockHeight,
-				UtxoType:    utxoType,
-				UtxoKey:     &royaltyOutputKey,
-			}
+		utxoEntry := UtxoEntry{
+			AmountNanos: amountNanos,
+			PublicKey:   publicKey,
+			BlockHeight: blockHeight,
+			UtxoType:    utxoType,
+
+			UtxoKey: royaltyOutputKey,
+			// We leave the position unset and isSpent to false by default.
+			// The position will be set in the call to _addUtxo.
 		}
 		utxoOp, err := bav._addDESO(
 			amountNanos,
 			publicKey,
-			getUtxoEntry,
+			&utxoEntry,
 			blockHeight)
 		if err != nil {
 			return errors.Wrapf(err, "_helpConnectNFTSold: Problem adding utxo or balance")
 		}
 		if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
-			nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, &royaltyOutputKey)
+			nftPaymentUtxoKeys = append(nftPaymentUtxoKeys, royaltyOutputKey)
 		}
 
 		// Rosetta uses this UtxoOperation to provide INPUT amounts
