@@ -292,8 +292,8 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 }
 
 func TestBalanceModelSubmitPost(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestSubmitPost(t)
 	TestDeSoDiamonds(t)

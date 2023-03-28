@@ -432,26 +432,36 @@ func _getBalanceWithView(t *testing.T, chain *Blockchain, utxoView *UtxoView, pk
 	return balanceNanos
 }
 
-//
-//func TestBalanceModelBlockTests(t *testing.T) {
-//	setBlockHeightGlobals()
-//	defer resetBlockHeightGlobals()
-//	TestBasicTransferReorg(t)
-//	TestProcessBlockConnectBlocks(t)
-//	TestProcessHeaderskReorgBlocks(t)
-//	// The below two tests check utxos and need to be updated for balance model
-//	//TestProcessBlockReorgBlocks(t)
-//	//TestAddInputsAndChangeToTransaction(t)
-//	TestValidateBasicTransfer(t)
-//	TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t)
-//	TestCalcNextDifficultyTargetHittingLimitsSlow(t)
-//	TestCalcNextDifficultyTargetHittingLimitsFast(t)
-//	TestCalcNextDifficultyTargetJustRight(t)
-//	TestCalcNextDifficultyTargetSlightlyOff(t)
-//	TestBadMerkleRoot(t)
-//	TestBadBlockSignature(t)
-//	TestForbiddenBlockSignaturePubKey(t)
-//}
+
+func TestBalanceModelBlockTests(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+	TestBasicTransferReorg(t)
+	TestProcessBlockConnectBlocks(t)
+	TestProcessHeaderskReorgBlocks(t)
+	// The below two tests check utxos and need to be updated for balance model
+	//TestProcessBlockReorgBlocks(t)
+	//TestAddInputsAndChangeToTransaction(t)
+	TestValidateBasicTransfer(t)
+}
+
+func TestBalanceModelBlockTests2(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+	TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t)
+	TestCalcNextDifficultyTargetHittingLimitsSlow(t)
+	TestCalcNextDifficultyTargetHittingLimitsFast(t)
+	TestCalcNextDifficultyTargetJustRight(t)
+}
+
+func TestBalanceModelBlockTests3(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+	TestCalcNextDifficultyTargetSlightlyOff(t)
+	TestBadMerkleRoot(t)
+	TestBadBlockSignature(t)
+	TestForbiddenBlockSignaturePubKey(t)
+}
 
 func TestBasicTransferReorg(t *testing.T) {
 	assert := assert.New(t)

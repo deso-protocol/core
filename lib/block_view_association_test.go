@@ -11,8 +11,8 @@ import (
 )
 
 func TestBalanceModelAssociations(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestAssociations(t)
 }

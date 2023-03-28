@@ -66,16 +66,15 @@ var (
 	paramUpdaterPkBytes, _, _ = Base58CheckDecode(paramUpdaterPub)
 )
 
-func setBlockHeightGlobals() {
+func setBalanceModelBlockHeights() {
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
 }
 
-func resetBlockHeightGlobals() {
+func resetBalanceModelBlockHeights() {
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.DeSoDiamondsBlockHeight = 1000000
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
@@ -1166,8 +1165,8 @@ func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
 }
 
 func TestBalanceModelUpdateGlobalParams(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestUpdateGlobalParams(t)
 }
@@ -1385,8 +1384,8 @@ func TestUpdateGlobalParams(t *testing.T) {
 }
 
 func TestBalanceModelBasicTransfers(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestBasicTransfer(t)
 	TestBasicTransferSignatures(t)

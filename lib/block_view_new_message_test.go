@@ -50,8 +50,8 @@ func (data *NewMessageTestData) GetInputType() transactionTestInputType {
 }
 
 func TestBalanceModelNewMessages(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestNewMessage(t)
 }

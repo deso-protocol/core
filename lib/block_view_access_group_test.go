@@ -32,8 +32,8 @@ func (data *AccessGroupTestData) GetInputType() transactionTestInputType {
 }
 
 func TestBalanceModelAccessGroups(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestAccessGroup(t)
 	TestAccessGroupTxnWithDerivedKey(t)

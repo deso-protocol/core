@@ -1363,7 +1363,7 @@ func (bav *UtxoView) DisconnectBlock(
 	//    - Block rewards have no spend.
 	//    - AcceptNFTBidTxns have 2 spends (one for the seller and one for the bidder).
 	//    - DAOCoinLimitOrderTxns have n spends
-	//    - Buy Now NFTs?
+	//    - Buy Now NFTs have 2 spends (one for the seller and one for the bidder).
 	// TODO: this needs some checking
 	// TODO: this condition is hard to satisfy w/ DAO coin limit orders since we don't have bidder inputs
 	// specified.

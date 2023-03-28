@@ -217,8 +217,8 @@ const (
 )
 
 func TestBalanceModelUpdateProfile(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestUpdateProfile(t)
 	TestSpamUpdateProfile(t)
@@ -226,8 +226,8 @@ func TestBalanceModelUpdateProfile(t *testing.T) {
 }
 
 func TestBalanceModelSwapIdentity(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
 	TestSwapIdentityCreatorCoinBuySimple(t)

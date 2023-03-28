@@ -868,8 +868,8 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(testMeta *TestMeta, utxoView 
 }
 
 func TestBalanceModelAuthorizeDerivedKey(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestAuthorizeDerivedKeyBasic(t)
 	TestAuthorizeDerivedKeyBasicWithTransactionLimits(t)

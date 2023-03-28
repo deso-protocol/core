@@ -591,8 +591,8 @@ func TestFollows(t *testing.T) {
 }
 
 func TestDeleteExpiredTransactorNonceEntries(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert

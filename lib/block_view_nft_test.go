@@ -829,8 +829,8 @@ func _burnNFTWithTestMeta(
 }
 
 func TestBalanceModelNFTs(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestNFTBasic(t)
 	TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t)
@@ -841,8 +841,8 @@ func TestBalanceModelNFTs(t *testing.T) {
 
 // Break up into multiple tests to keep memory footprint lower
 func TestBalanceModelNFTs2(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestNFTMoreErrorCases(t)
 	TestNFTBidsAreCanceledAfterAccept(t)
@@ -852,8 +852,8 @@ func TestBalanceModelNFTs2(t *testing.T) {
 }
 
 func TestBalanceModelNFTs3(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestNFTTransfersAndBurns(t)
 	TestBidAmountZero(t)

@@ -49,8 +49,8 @@ func (data *accessGroupMembersTestData) GetInputType() transactionTestInputType 
 }
 
 func TestBalanceModelAccessGroupMembers(t *testing.T) {
-	setBlockHeightGlobals()
-	defer resetBlockHeightGlobals()
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
 
 	TestAccessGroupMembersAdd(t)
 	TestAccessGroupMembersUpdate(t)

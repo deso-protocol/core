@@ -2984,7 +2984,6 @@ func (msg *MsgDeSoTxn) String() string {
 		msg.Hash(), msg.TxnMeta.GetTxnType(), PkToStringMainnet(pubKey))
 }
 
-// TODO: need to pass block height in here to handle migration
 func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
@@ -3054,8 +3053,8 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	data = append(data, UintToBuf(uint64(len(sigBytes)))...)
 	data = append(data, sigBytes...)
 
-	// If txnFee is non-zero, this is a post-UTXO model transaction and we must encode the
-	// fee and the nonce.
+	// If TxnVersion is non-zero, this is a post-UTXO model transaction, and we must encode the
+	// version, fee, and the nonce.
 	if msg.TxnVersion != 0 {
 		data = append(data, UintToBuf(msg.TxnVersion)...)
 		data = append(data, UintToBuf(msg.TxnFeeNanos)...)
@@ -3223,7 +3222,7 @@ func _readTransactionV0Fields(rr io.Reader, ret *MsgDeSoTxn) error {
 }
 
 // This function takes an io.Reader and attempts to read the transaction fields that were
-// added after the BalanceModelBlockHeight, if the has not reached EOF. See the comments
+// added after the BalanceModelBlockHeight, if the reader has not reached EOF. See the comments
 // in _readTransaction() and above _readTransactionV0Fields() for more info.
 func _readTransactionV1Fields(rr io.Reader, ret *MsgDeSoTxn) error {
 	txnVersion, err := ReadUvarint(rr)
