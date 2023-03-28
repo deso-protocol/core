@@ -432,7 +432,6 @@ func _getBalanceWithView(t *testing.T, chain *Blockchain, utxoView *UtxoView, pk
 	return balanceNanos
 }
 
-
 func TestBalanceModelBlockTests(t *testing.T) {
 	setBalanceModelBlockHeights()
 	defer resetBalanceModelBlockHeights()
