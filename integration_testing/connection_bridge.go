@@ -31,14 +31,11 @@ import (
 //
 // Let's say we have two nodes, nodeA and nodeB, that we want to bridge together. The connection bridge will then
 // simulate the creation of two outbound and two inbound node connections:
-//
 //	nodeA : connectionOutboundA -> connectionInboundB : nodeB
 //	nodeB : connectionOutboundB -> connectionInboundA : nodeA
-//
 // For example, let's say nodeA wants to send a GET_HEADERS message to nodeB, the traffic will look like this:
-//
-//		GET_HEADERS: nodeA -> connectionOutboundA -> connectionInboundB -> nodeB
-//	 HEADER_BUNDLE: nodeB -> connectionInboundB -> connectionOutboundA -> nodeA
+// 	GET_HEADERS: nodeA -> connectionOutboundA -> connectionInboundB -> nodeB
+//  HEADER_BUNDLE: nodeB -> connectionInboundB -> connectionOutboundA -> nodeA
 //
 // This middleware design of the ConnectionBridge allows us to have much higher control over the communication
 // between the two nodes. In particular, we have full control over the `connectionOutboundA -> connectionInboundB`

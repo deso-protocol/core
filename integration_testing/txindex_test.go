@@ -10,11 +10,11 @@ import (
 )
 
 // TestSimpleTxIndex test if a node can successfully build txindex after block syncing from another node:
-//  1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
-//  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator, and builds txindex afterwards.
-//  3. bridge node1 and node2
-//  4. node2 syncs MaxSyncBlockHeight blocks from node1, and builds txindex afterwards.
-//  5. compare node1 db and txindex matches node2.
+//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
+//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator, and builds txindex afterwards.
+//	3. bridge node1 and node2
+//	4. node2 syncs MaxSyncBlockHeight blocks from node1, and builds txindex afterwards.
+//	5. compare node1 db and txindex matches node2.
 func TestSimpleTxIndex(t *testing.T) {
 	require := require.New(t)
 	_ = require

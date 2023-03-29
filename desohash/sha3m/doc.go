@@ -4,15 +4,15 @@
 
 // Package sha3m implements the SHA-3 fixed-output-length hash functions with modifications for DeSo proof-of-work
 //
-// # Guidance
+// Guidance
 //
-// # Security strengths
+// Security strengths
 //
 // The SHA3-x (x equals 224, 256, 384, or 512) functions have a security
 // strength against preimage attacks of x bits. Since they only produce "x"
 // bits of output, their collision-resistance is only "x/2" bits.
 //
-// # The sponge construction
+// The sponge construction
 //
 // A sponge builds a pseudo-random function from a public pseudo-random
 // permutation, by applying the permutation to a state of "rate + capacity"

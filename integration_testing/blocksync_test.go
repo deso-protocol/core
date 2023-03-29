@@ -10,11 +10,11 @@ import (
 )
 
 // TestSimpleBlockSync test if a node can successfully sync from another node:
-//  1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
-//  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
-//  3. bridge node1 and node2
-//  4. node2 syncs MaxSyncBlockHeight blocks from node1.
-//  5. compare node1 db matches node2 db.
+//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
+//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
+//	3. bridge node1 and node2
+//	4. node2 syncs MaxSyncBlockHeight blocks from node1.
+//	5. compare node1 db matches node2 db.
 func TestSimpleBlockSync(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -54,13 +54,13 @@ func TestSimpleBlockSync(t *testing.T) {
 }
 
 // TestSimpleSyncRestart tests if a node can successfully restart while syncing blocks.
-//  1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
-//  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
-//  3. bridge node1 and node2
-//  4. node2 syncs between 10 and MaxSyncBlockHeight blocks from node1.
+//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks.
+//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
+//	3. bridge node1 and node2
+//	4. node2 syncs between 10 and MaxSyncBlockHeight blocks from node1.
 //  5. node2 disconnects from node1 and reboots.
 //  6. node2 reconnects with node1 and syncs remaining blocks.
-//  7. compare node1 db matches node2 db.
+//	7. compare node1 db matches node2 db.
 func TestSimpleSyncRestart(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -105,14 +105,14 @@ func TestSimpleSyncRestart(t *testing.T) {
 
 // TestSimpleSyncDisconnectWithSwitchingToNewPeer tests if a node can successfully restart while syncing blocks, and
 // then connect to a different node and sync the remaining blocks.
-//  1. Spawn three nodes node1, node2, node3 with max block height of MaxSyncBlockHeight blocks.
-//  2. node1 and node3 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
-//  3. bridge node1 and node2
-//  4. node2 syncs between 10 and MaxSyncBlockHeight blocks from node1.
+//	1. Spawn three nodes node1, node2, node3 with max block height of MaxSyncBlockHeight blocks.
+//	2. node1 and node3 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
+//	3. bridge node1 and node2
+//	4. node2 syncs between 10 and MaxSyncBlockHeight blocks from node1.
 //  5. node2 disconnects from node1 and reboots.
 //  6. node2 reconnects with node3 and syncs remaining blocks.
-//  7. compare node1 state matches node2 state.
-//  8. compare node3 state matches node2 state.
+//	7. compare node1 state matches node2 state.
+//	8. compare node3 state matches node2 state.
 func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	require := require.New(t)
 	_ = require

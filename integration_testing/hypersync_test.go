@@ -10,11 +10,11 @@ import (
 )
 
 // TestSimpleHyperSync test if a node can successfully hyper sync from another node:
-//  1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod.
-//  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
-//  3. bridge node1 and node2.
-//  4. node2 hypersyncs from node1
-//  5. once done, compare node1 state, db, and checksum matches node2.
+//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod.
+//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
+//	3. bridge node1 and node2.
+//	4. node2 hypersyncs from node1
+//	5. once done, compare node1 state, db, and checksum matches node2.
 func TestSimpleHyperSync(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -58,12 +58,12 @@ func TestSimpleHyperSync(t *testing.T) {
 }
 
 // TestHyperSyncFromHyperSyncedNode test if a node can successfully hypersync from another hypersynced node:
-//  1. Spawn three nodes node1, node2, node3 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod
-//  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
-//  3. bridge node1 and node2.
-//  4. node2 hypersyncs state.
-//  5. once done, bridge node3 and node2 so that node3 hypersyncs from node2.
-//  6. compare node1 state, db, and checksum matches node2, and node3.
+//	1. Spawn three nodes node1, node2, node3 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod
+//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
+//	3. bridge node1 and node2.
+//	4. node2 hypersyncs state.
+//	5. once done, bridge node3 and node2 so that node3 hypersyncs from node2.
+//	6. compare node1 state, db, and checksum matches node2, and node3.
 func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -128,12 +128,12 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 }
 
 // TestSimpleHyperSyncRestart test if a node can successfully hyper sync from another node:
-//  1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod.
-//  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
-//  3. bridge node1 and node2.
-//  4. node2 hyper syncs a portion of the state from node1 and then restarts.
-//  5. node2 reconnects to node1 and hypersyncs again.
-//  6. Once node2 finishes sync, compare node1 state, db, and checksum matches node2.
+//	1. Spawn two nodes node1, node2 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod.
+//	2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
+//	3. bridge node1 and node2.
+//	4. node2 hyper syncs a portion of the state from node1 and then restarts.
+//	5. node2 reconnects to node1 and hypersyncs again.
+//	6. Once node2 finishes sync, compare node1 state, db, and checksum matches node2.
 func TestSimpleHyperSyncRestart(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -183,12 +183,12 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 }
 
 // TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer tests if a node can successfully restart while hypersyncing.
-//  1. Spawn three nodes node1, node2, and node3 with max block height of MaxSyncBlockHeight blocks.
-//  2. node1, node3 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
-//  3. bridge node1 and node2
-//  4. node2 hypersyncs from node1 but we restart node2 midway.
-//  5. after restart, bridge node2 with node3 and resume hypersync.
-//  6. once node2 finishes, compare node1, node2, node3 state, db, and checksums are identical.
+//	1. Spawn three nodes node1, node2, and node3 with max block height of MaxSyncBlockHeight blocks.
+//	2. node1, node3 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator.
+//	3. bridge node1 and node2
+//	4. node2 hypersyncs from node1 but we restart node2 midway.
+//	5. after restart, bridge node2 with node3 and resume hypersync.
+//	6. once node2 finishes, compare node1, node2, node3 state, db, and checksums are identical.
 func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	require := require.New(t)
 	_ = require
