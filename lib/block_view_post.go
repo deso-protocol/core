@@ -704,10 +704,7 @@ func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *BlockHash,
 	return quoteReposterPubKeys, quoteReposterPubKeyToPosts, nil
 }
 
-func (bav *UtxoView) _connectSubmitPost(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32,
-	verifySignatures bool, ignoreUtxos bool) (
-	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+func (bav *UtxoView) _connectSubmitPost(txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, ignoreUtxos bool, emitMempoolTxn bool) (_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeSubmitPost {
@@ -1110,6 +1107,17 @@ func (bav *UtxoView) _connectSubmitPost(
 		PrevRepostEntry:          prevRepostEntry,
 		Type:                     OperationTypeSubmitPost,
 	})
+
+	if bav.EventManager != nil && emitMempoolTxn {
+		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+			Encoder:     newPostEntry,
+			KeyBytes:    _dbKeyForPostEntryHash(newPostEntry.PostHash),
+			UtxoOps:     utxoOpsForTxn,
+			BlockHeight: uint64(blockHeight),
+			TxHash:      txHash,
+			IsConnected: true,
+		})
+	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

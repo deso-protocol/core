@@ -2149,6 +2149,12 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				return false, false, errors.Wrapf(err, "ProcessBlock: Problem upserting block and transactions")
 			}
 
+			if bc.eventManager != nil {
+				bc.eventManager.blockValidated(&BlockEvent{
+					Block: desoBlock,
+				})
+			}
+
 			// Write the modified utxo set to the view.
 			// FIXME: This codepath breaks the balance computation in handleBlock for Rosetta
 			// because it clears the UtxoView before balances can be snapshotted.
@@ -2187,6 +2193,15 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 					return errors.Wrapf(err, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
+
+				// At this point, our block has been validated. Before the block entries are flushed to badger,
+				// emit the block validated event.
+				if bc.eventManager != nil {
+					bc.eventManager.blockValidated(&BlockEvent{
+						Block: desoBlock,
+					})
+				}
+				fmt.Printf("After block validated event")
 
 				// Write the modified utxo set to the view.
 				if err := bc.blockView.FlushToDbWithTxn(txn, blockHeight); err != nil {
@@ -2749,14 +2764,7 @@ func (bc *Blockchain) ValidateTransaction(
 	}
 	txnSize := int64(len(txnBytes))
 	// We don't care about the utxoOps or the fee it returns.
-	_, _, _, _, err = utxoView._connectTransaction(
-		txnMsg,
-		txHash,
-		txnSize,
-		blockHeight,
-		verifySignatures,
-		false, /*ignoreUtxos*/
-	)
+	_, _, _, _, err = utxoView._connectTransaction(txnMsg, txHash, txnSize, blockHeight, verifySignatures, false, false)
 	if err != nil {
 		return errors.Wrapf(err, "ValidateTransaction: Problem validating transaction: ")
 	}

@@ -2628,17 +2628,11 @@ func (bav *UtxoView) ConnectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
 	_fees uint64, _err error) {
 
-	return bav._connectTransaction(txn, txHash,
-		txnSizeBytes,
-		blockHeight, verifySignatures,
-		ignoreUtxos)
+	return bav._connectTransaction(txn, txHash, txnSizeBytes, blockHeight, verifySignatures, ignoreUtxos, false)
 
 }
 
-func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
-	txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
-	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
-	_fees uint64, _err error) {
+func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool, emitMempoolTransaction bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
 
 	// Do a quick sanity check before trying to connect.
 	if err := CheckTransactionSanity(txn); err != nil {
@@ -2681,7 +2675,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectSubmitPost(
-				txn, txHash, blockHeight, verifySignatures, ignoreUtxos)
+				txn, txHash, blockHeight, verifySignatures, ignoreUtxos, emitMempoolTransaction)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
 		totalInput, totalOutput, utxoOpsForTxn, err =

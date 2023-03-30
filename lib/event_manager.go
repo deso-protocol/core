@@ -4,6 +4,7 @@ import "github.com/google/uuid"
 
 type TransactionEventFunc func(event *TransactionEvent)
 type DBTransactionEventFunc func(event *DBTransactionEvent)
+type MempoolTransactionConnectedEventFunc func(event *MempoolTransactionEvent)
 type DBFlushedEventFunc func(event *DBFlushedEvent)
 type BlockEventFunc func(event *BlockEvent)
 type SnapshotCompletedEventFunc func()
@@ -13,6 +14,15 @@ type DBTransactionEvent struct {
 	Value         []byte
 	OperationType StateSyncerOperationType
 	FlushId       uuid.UUID
+}
+
+type MempoolTransactionEvent struct {
+	Encoder     DeSoEncoder
+	KeyBytes    []byte
+	UtxoOps     []*UtxoOperation
+	BlockHeight uint64
+	IsConnected bool
+	TxHash      *BlockHash
 }
 
 type DBFlushedEvent struct {
@@ -38,13 +48,15 @@ type BlockEvent struct {
 }
 
 type EventManager struct {
-	transactionConnectedHandlers   []TransactionEventFunc
-	dbTransactionConnectedHandlers []DBTransactionEventFunc
-	dbFlushedHandlers              []DBFlushedEventFunc
-	blockConnectedHandlers         []BlockEventFunc
-	blockDisconnectedHandlers      []BlockEventFunc
-	blockAcceptedHandlers          []BlockEventFunc
-	snapshotCompletedHandlers      []SnapshotCompletedEventFunc
+	transactionConnectedHandlers        []TransactionEventFunc
+	dbTransactionConnectedHandlers      []DBTransactionEventFunc
+	mempoolTransactionConnectedHandlers []MempoolTransactionConnectedEventFunc
+	dbFlushedHandlers                   []DBFlushedEventFunc
+	blockValidatedHandlers              []BlockEventFunc
+	blockConnectedHandlers              []BlockEventFunc
+	blockDisconnectedHandlers           []BlockEventFunc
+	blockAcceptedHandlers               []BlockEventFunc
+	snapshotCompletedHandlers           []SnapshotCompletedEventFunc
 }
 
 func NewEventManager() *EventManager {
@@ -65,6 +77,16 @@ func (em *EventManager) dbTransactionConnected(event *DBTransactionEvent) {
 	}
 }
 
+func (em *EventManager) OnMempoolTransactionConnected(handler MempoolTransactionConnectedEventFunc) {
+	em.mempoolTransactionConnectedHandlers = append(em.mempoolTransactionConnectedHandlers, handler)
+}
+
+func (em *EventManager) mempoolTransactionConnected(event *MempoolTransactionEvent) {
+	for _, handler := range em.mempoolTransactionConnectedHandlers {
+		handler(event)
+	}
+}
+
 func (em *EventManager) dbFlushed(event *DBFlushedEvent) {
 	for _, handler := range em.dbFlushedHandlers {
 		handler(event)
@@ -77,6 +99,16 @@ func (em *EventManager) OnTransactionConnected(handler TransactionEventFunc) {
 
 func (em *EventManager) transactionConnected(event *TransactionEvent) {
 	for _, handler := range em.transactionConnectedHandlers {
+		handler(event)
+	}
+}
+
+func (em *EventManager) OnBlockValidated(handler BlockEventFunc) {
+	em.blockValidatedHandlers = append(em.blockValidatedHandlers, handler)
+}
+
+func (em *EventManager) blockValidated(event *BlockEvent) {
+	for _, handler := range em.blockValidatedHandlers {
 		handler(event)
 	}
 }

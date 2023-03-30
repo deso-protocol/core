@@ -344,6 +344,40 @@ func (mp *DeSoMempool) resetPool(newPool *DeSoMempool) {
 	// the old values should be unaffected.
 }
 
+func (mp *DeSoMempool) EmitDisconnectsAfterBlockValidated(block *MsgDeSoBlock) error {
+	// Protect concurrent access.
+	mp.mtx.Lock()
+	defer mp.mtx.Unlock()
+
+	// Make a map of all the txns in the block except the block reward.
+	txnsInBlock := make(map[BlockHash]bool)
+	for _, txn := range block.Txns[1:] {
+		txHash := txn.Hash()
+		txnsInBlock[*txHash] = true
+	}
+
+	// Get all the connected transactions from the old pool object.
+	oldMempoolTxns, _, err := mp._getTransactionsOrderedByTimeAdded()
+	if err != nil {
+		return fmt.Errorf("EmitDisconnectsAfterBlockValidated: Problem getting transactions: %v", err)
+	}
+
+	for _, mempoolTx := range oldMempoolTxns {
+		if _, exists := txnsInBlock[*mempoolTx.Hash]; exists {
+			// Emit disconnect
+			// We don't need to include the entry or utxoOps here, those will be retrieved from the state syncer
+			// map - they were stored on transaction connect.
+			mp.bc.eventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+				BlockHeight: block.Header.Height,
+				IsConnected: false,
+				TxHash:      mempoolTx.Hash,
+			})
+			continue
+		}
+	}
+	return nil
+}
+
 // UpdateAfterConnectBlock updates the mempool after a block has been added to the
 // blockchain. It does this by basically removing all known transactions in the block
 // from the mempool as follows:
@@ -400,7 +434,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		// Attempt to add the txn to the mempool as we go. If it fails that's fine.
 		txnsAccepted, err := newPool.processTransaction(
 			mempoolTx.Tx, true /*allowUnconnected*/, false, /*rateLimit*/
-			0 /*peerID*/, false /*verifySignatures*/)
+			0 /*peerID*/, false /*verifySignatures*/, false)
 		if err != nil {
 			glog.Warning(errors.Wrapf(err, "UpdateAfterConnectBlock: "))
 		}
@@ -424,7 +458,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		unconnectedTxns := true
 		verifySignatures := false
 		// TODO: This is pretty pretty inefficient.
-		_, err := newPool.processTransaction(unconnectedTx.tx, unconnectedTxns, rateLimit, unconnectedTx.peerID, verifySignatures)
+		_, err := newPool.processTransaction(unconnectedTx.tx, unconnectedTxns, rateLimit, unconnectedTx.peerID, verifySignatures, false)
 		if err != nil {
 			glog.Warning(errors.Wrapf(err, "UpdateAfterConnectBlock: "))
 		}
@@ -497,7 +531,7 @@ func (mp *DeSoMempool) UpdateAfterDisconnectBlock(blk *MsgDeSoBlock) {
 		allowUnconnectedTxns := false
 		peerID := uint64(0)
 		verifySignatures := false
-		_, err := newPool.processTransaction(txn, allowUnconnectedTxns, rateLimit, peerID, verifySignatures)
+		_, err := newPool.processTransaction(txn, allowUnconnectedTxns, rateLimit, peerID, verifySignatures, false)
 		if err != nil {
 			// Log errors but don't stop adding transactions. We do this because we'd prefer
 			// to drop a transaction here or there rather than lose the whole block because
@@ -518,7 +552,7 @@ func (mp *DeSoMempool) UpdateAfterDisconnectBlock(blk *MsgDeSoBlock) {
 		// Attempt to add the txn to the mempool as we go. If it fails that's fine.
 		txnsAccepted, err := newPool.processTransaction(
 			mempoolTx.Tx, true /*allowUnconnectedTxns*/, false, /*rateLimit*/
-			0 /*peerID*/, false /*verifySignatures*/)
+			0 /*peerID*/, false /*verifySignatures*/, false)
 		if err != nil {
 			glog.Warning(errors.Wrapf(err, "UpdateAfterDisconnectBlock: "))
 		}
@@ -532,7 +566,7 @@ func (mp *DeSoMempool) UpdateAfterDisconnectBlock(blk *MsgDeSoBlock) {
 		rateLimit := false
 		allowUnconnectedTxns := true
 		verifySignatures := false
-		_, err := newPool.processTransaction(oTx.tx, allowUnconnectedTxns, rateLimit, oTx.peerID, verifySignatures)
+		_, err := newPool.processTransaction(oTx.tx, allowUnconnectedTxns, rateLimit, oTx.peerID, verifySignatures, false)
 		if err != nil {
 			glog.Warning(errors.Wrapf(err, "UpdateAfterDisconnectBlock: "))
 		}
@@ -806,7 +840,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 // only be called when one is sure that a transaction is valid. Otherwise, it could
 // mess up the UtxoViews that we store internally.
 func (mp *DeSoMempool) addTransaction(
-	tx *MsgDeSoTxn, height uint32, fee uint64, updateBackupView bool) (*MempoolTx, error) {
+	tx *MsgDeSoTxn, height uint32, fee uint64, updateBackupView bool, emitTransactionStateChange bool) (*MempoolTx, error) {
 
 	// Add the transaction to the pool and mark the referenced outpoints
 	// as spent by the pool.
@@ -864,7 +898,7 @@ func (mp *DeSoMempool) addTransaction(
 	// Add it to the universal view. We assume the txn was already added to the
 	// backup view.
 	_, _, _, _, err = mp.universalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
-		false /*verifySignatures*/, false /*ignoreUtxos*/)
+		false /*verifySignatures*/, false /*ignoreUtxos*/, emitTransactionStateChange /*emitMempoolTxnEvent*/)
 	if err != nil {
 		return nil, fmt.Errorf("ERROR addTransaction: _connectTransaction " +
 			"failed on universalUtxoView; this is a HUGE problem and should never happen")
@@ -872,8 +906,7 @@ func (mp *DeSoMempool) addTransaction(
 	// Add it to the universalTransactionList if it made it through the view
 	mp.universalTransactionList = append(mp.universalTransactionList, mempoolTx)
 	if updateBackupView {
-		_, _, _, _, err = mp.backupUniversalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
-			false /*verifySignatures*/, false /*ignoreUtxos*/)
+		_, _, _, _, err = mp.backupUniversalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height, false, false, false)
 		if err != nil {
 			return nil, fmt.Errorf("ERROR addTransaction: _connectTransaction " +
 				"failed on backupUniversalUtxoView; this is a HUGE problem and should never happen")
@@ -953,8 +986,7 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 	// transaction will only get this far once we are positive the BitcoinManager
 	// has the block corresponding to the transaction.
 	// We skip verifying txn size for bitcoin exchange transactions.
-	_, _, _, txFee, err := utxoView._connectTransaction(
-		tx, txHash, 0, bestHeight, false, false)
+	_, _, _, txFee, err := utxoView._connectTransaction(tx, txHash, 0, bestHeight, false, false, false)
 	if err != nil {
 		// Note this can happen in odd cases where a transaction's dependency was removed
 		// but the transaction depending on it was not. See the comment on
@@ -981,7 +1013,7 @@ func (mp *DeSoMempool) rebuildBackupView() {
 //
 // TODO: Allow replacing a transaction with a higher fee.
 func (mp *DeSoMempool) tryAcceptTransaction(
-	tx *MsgDeSoTxn, rateLimit bool, rejectDupUnconnected bool, verifySignatures bool) (
+	tx *MsgDeSoTxn, rateLimit bool, rejectDupUnconnected bool, verifySignatures bool, emitTransactionStateChange bool) (
 	_missingParents []*BlockHash, _mempoolTx *MempoolTx, _err error) {
 
 	blockHeight := uint64(mp.bc.blockTip().Height + 1)
@@ -1033,8 +1065,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	usdCentsPerBitcoinBefore := mp.backupUniversalUtxoView.GetCurrentUSDCentsPerBitcoin()
 	bestHeight := uint32(mp.bc.blockTip().Height + 1)
 	// We can skip verifying the transaction size as related to the minimum fee here.
-	utxoOps, totalInput, totalOutput, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
-		tx, txHash, 0, bestHeight, verifySignatures, false)
+	utxoOps, totalInput, totalOutput, txFee, err := mp.backupUniversalUtxoView._connectTransaction(tx, txHash, 0, bestHeight, verifySignatures, false, false)
 	if err != nil {
 		mp.rebuildBackupView()
 		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: Problem "+
@@ -1101,7 +1132,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 	// Add to transaction pool. Don't update the backup view since the call above
 	// will have already done this.
-	mempoolTx, err := mp.addTransaction(tx, bestHeight, txFee, false /*updateBackupUniversalView*/)
+	mempoolTx, err := mp.addTransaction(tx, bestHeight, txFee, false /*updateBackupUniversalView*/, emitTransactionStateChange)
 	if err != nil {
 		mp.rebuildBackupView()
 		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: ")
@@ -2024,8 +2055,7 @@ func ConnectTxnAndComputeTransactionMetadata(
 
 	totalNanosPurchasedBefore := utxoView.NanosPurchased
 	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
-	utxoOps, totalInput, totalOutput, fees, err := utxoView._connectTransaction(
-		txn, txn.Hash(), 0, blockHeight, false, false)
+	utxoOps, totalInput, totalOutput, fees, err := utxoView._connectTransaction(txn, txn.Hash(), 0, blockHeight, false, false, false)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"UpdateTxindex: Error connecting txn to UtxoView: %v", err)
@@ -2040,18 +2070,18 @@ func ConnectTxnAndComputeTransactionMetadata(
 // accept the txn if these validations pass.
 //
 // The ChainLock must be held for reading calling this function.
-func (mp *DeSoMempool) TryAcceptTransaction(tx *MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*BlockHash, *MempoolTx, error) {
+func (mp *DeSoMempool) TryAcceptTransaction(tx *MsgDeSoTxn, rateLimit bool, verifySignatures bool, emitTxStateChange bool) ([]*BlockHash, *MempoolTx, error) {
 	// Protect concurrent access.
 	mp.mtx.Lock()
 	defer mp.mtx.Unlock()
 
-	hashes, mempoolTx, err := mp.tryAcceptTransaction(tx, rateLimit, true, verifySignatures)
+	hashes, mempoolTx, err := mp.tryAcceptTransaction(tx, rateLimit, true, verifySignatures, emitTxStateChange)
 
 	return hashes, mempoolTx, err
 }
 
 // See comment on ProcessUnconnectedTransactions
-func (mp *DeSoMempool) processUnconnectedTransactions(acceptedTx *MsgDeSoTxn, rateLimit bool, verifySignatures bool) []*MempoolTx {
+func (mp *DeSoMempool) processUnconnectedTransactions(acceptedTx *MsgDeSoTxn, rateLimit bool, verifySignatures bool, emitTxStateChange bool) []*MempoolTx {
 	var acceptedTxns []*MempoolTx
 
 	processList := list.New()
@@ -2075,7 +2105,7 @@ func (mp *DeSoMempool) processUnconnectedTransactions(acceptedTx *MsgDeSoTxn, ra
 
 			for _, tx := range unconnectedTxns {
 				missing, mempoolTx, err := mp.tryAcceptTransaction(
-					tx, rateLimit, false, verifySignatures)
+					tx, rateLimit, false, verifySignatures, emitTxStateChange)
 				if err != nil {
 					mp.removeUnconnectedTxn(tx, true)
 					break
@@ -2103,9 +2133,9 @@ func (mp *DeSoMempool) processUnconnectedTransactions(acceptedTx *MsgDeSoTxn, ra
 }
 
 // ProcessUnconnectedTransactions tries to see if any unconnectedTxns can now be added to the pool.
-func (mp *DeSoMempool) ProcessUnconnectedTransactions(acceptedTx *MsgDeSoTxn, rateLimit bool, verifySignatures bool) []*MempoolTx {
+func (mp *DeSoMempool) ProcessUnconnectedTransactions(acceptedTx *MsgDeSoTxn, rateLimit bool, verifySignatures bool, emitTxStateChange bool) []*MempoolTx {
 	mp.mtx.Lock()
-	acceptedTxns := mp.processUnconnectedTransactions(acceptedTx, rateLimit, verifySignatures)
+	acceptedTxns := mp.processUnconnectedTransactions(acceptedTx, rateLimit, verifySignatures, emitTxStateChange)
 	mp.mtx.Unlock()
 
 	return acceptedTxns
@@ -2214,7 +2244,7 @@ func (mp *DeSoMempool) _addMempoolTxToPubKeyOutputMap(mempoolTx *MempoolTx) {
 
 func (mp *DeSoMempool) processTransaction(
 	tx *MsgDeSoTxn, allowUnconnectedTxn, rateLimit bool,
-	peerID uint64, verifySignatures bool) ([]*MempoolTx, error) {
+	peerID uint64, verifySignatures bool, emitTxStateChange bool) ([]*MempoolTx, error) {
 
 	txHash := tx.Hash()
 	if txHash == nil {
@@ -2224,7 +2254,7 @@ func (mp *DeSoMempool) processTransaction(
 
 	// Run validation and try to add this txn to the pool.
 	missingParents, mempoolTx, err := mp.tryAcceptTransaction(
-		tx, rateLimit, true, verifySignatures)
+		tx, rateLimit, true, verifySignatures, emitTxStateChange)
 	if err != nil {
 		return nil, err
 	}
@@ -2241,7 +2271,7 @@ func (mp *DeSoMempool) processTransaction(
 	mp.totalProcessTransactionCalls += 1
 
 	if len(missingParents) == 0 {
-		newTxs := mp.processUnconnectedTransactions(tx, rateLimit, verifySignatures)
+		newTxs := mp.processUnconnectedTransactions(tx, rateLimit, verifySignatures, emitTxStateChange)
 		acceptedTxs, err := SafeMakeSliceWithLength[*MempoolTx](uint64(len(newTxs) + 1))
 		if err != nil {
 			return nil, err
@@ -2276,7 +2306,7 @@ func (mp *DeSoMempool) ProcessTransaction(tx *MsgDeSoTxn, allowUnconnectedTxn bo
 	mp.mtx.Lock()
 	defer mp.mtx.Unlock()
 
-	return mp.processTransaction(tx, allowUnconnectedTxn, rateLimit, peerID, verifySignatures)
+	return mp.processTransaction(tx, allowUnconnectedTxn, rateLimit, peerID, verifySignatures, true)
 }
 
 // Returns an estimate of the number of txns in the mempool. This is an estimate because
@@ -2368,7 +2398,7 @@ func (mp *DeSoMempool) inefficientRemoveTransaction(tx *MsgDeSoTxn) {
 		// Attempt to add the txn to the mempool as we go. If it fails that's fine.
 		txnsAccepted, err := newPool.processTransaction(
 			mempoolTx.Tx, false /*allowUnconnectedTxn*/, false, /*rateLimit*/
-			0 /*peerID*/, false /*verifySignatures*/)
+			0 /*peerID*/, false /*verifySignatures*/, false)
 		if err != nil {
 			glog.Warning(errors.Wrapf(err, "inefficientRemoveTransaction: "))
 		}
@@ -2381,7 +2411,7 @@ func (mp *DeSoMempool) inefficientRemoveTransaction(tx *MsgDeSoTxn) {
 		rateLimit := false
 		allowUnconnectedTxn := true
 		verifySignatures := false
-		_, err := newPool.processTransaction(oTx.tx, allowUnconnectedTxn, rateLimit, oTx.peerID, verifySignatures)
+		_, err := newPool.processTransaction(oTx.tx, allowUnconnectedTxn, rateLimit, oTx.peerID, verifySignatures, false)
 		if err != nil {
 			glog.Warning(errors.Wrapf(err, "inefficientRemoveTransaction: "))
 		}
@@ -2542,7 +2572,7 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 	}
 
 	for _, mempoolTxn := range dbMempoolTxnsOrderedByTime {
-		_, err := mp.processTransaction(mempoolTxn, false, false, 0, false)
+		_, err := mp.processTransaction(mempoolTxn, false, false, 0, false, false)
 		if err != nil {
 			// Log errors but don't stop adding transactions. We do this because we'd prefer
 			// to drop a transaction here or there rather than lose the whole block because

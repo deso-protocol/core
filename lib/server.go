@@ -377,6 +377,7 @@ func NewServer(
 	stateChangeSyncer := NewStateChangeSyncer(_params, _stateChangeFilePath, _stateChangeIndexFilePath)
 	eventManager.OnDbTransactionConnected(stateChangeSyncer._handleDbTransaction)
 	eventManager.OnDbFlushed(stateChangeSyncer._handleDbFlush)
+	eventManager.OnMempoolTransactionConnected(stateChangeSyncer._handleMempoolTransaction)
 
 	// Setup snapshot
 	var _snapshot *Snapshot
@@ -431,6 +432,7 @@ func NewServer(
 	// TODO: Would be nice if this heavier-weight operation were moved to Start() to
 	// keep this constructor fast.
 	srv.eventManager = eventManager
+	eventManager.OnBlockValidated(srv._handleBlockMainChainValidated)
 	eventManager.OnBlockConnected(srv._handleBlockMainChainConnectedd)
 	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
 	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
@@ -1654,6 +1656,12 @@ func (srv *Server) _addNewTxn(
 	glog.V(1).Infof("Server._addNewTxnAndRelay: newlyAcceptedTxns: %v, Peer: %v", newlyAcceptedTxns, pp)
 
 	return newlyAcceptedTxns, nil
+}
+
+//
+func (srv *Server) _handleBlockMainChainValidated(event *BlockEvent) {
+	blk := event.Block
+	srv.mempool.EmitDisconnectsAfterBlockValidated(blk)
 }
 
 // It's assumed that the caller will hold the ChainLock for reading so
