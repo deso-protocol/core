@@ -115,7 +115,7 @@ func TestPrivateMessage(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Allow extra data
@@ -755,7 +755,7 @@ func TestMessagingKeys(t *testing.T) {
 	_ = require
 	_ = assert
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Allow extra data
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
@@ -1793,7 +1793,7 @@ func TestGroupMessages(t *testing.T) {
 	_ = require
 	_ = assert
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_ = miner
 

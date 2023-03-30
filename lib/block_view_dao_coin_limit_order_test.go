@@ -21,7 +21,7 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 
 	// Initialize test chain and miner.
 	require := require.New(t)
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
@@ -605,7 +605,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 	// Initialize test chain and miner.
 	require := require.New(t)
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
@@ -4200,7 +4200,7 @@ func TestFlushingDAOCoinLimitOrders(t *testing.T) {
 	var err error
 
 	// Initialize test chain and miner.
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)

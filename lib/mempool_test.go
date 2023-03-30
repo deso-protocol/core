@@ -19,7 +19,7 @@ func _filterOutBlockRewards(utxoEntries []*UtxoEntry) []*UtxoEntry {
 
 func _setupFiveBlocks(t *testing.T) (*Blockchain, *DeSoParams, []byte, []byte) {
 	require := require.New(t)
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	_ = db
 
 	_, _, blockB1, blockB2, blockB3, blockB4, blockB5 := getForkedChain(t)

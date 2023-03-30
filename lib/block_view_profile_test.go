@@ -210,7 +210,7 @@ func TestUpdateProfile(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	// Make m3 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
@@ -1166,7 +1166,7 @@ func TestSpamUpdateProfile(t *testing.T) {
 	pprof.StartCPUProfile(f)
 	defer pprof.StopCPUProfile()
 
-	chain, params, _ := NewLowDifficultyBlockchain()
+	chain, params, _ := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
@@ -1983,7 +1983,7 @@ func TestSwapIdentityFailureCases(t *testing.T) {
 	_, _ = assert, require
 
 	// Set up a blockchain
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	feeRateNanosPerKB := uint64(11)
 	_, _ = mempool, miner
@@ -3024,7 +3024,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 	// This test fails non-deterministically so we wrap it in a loop to make it
 	// not flake.
 	for ii := 0; ii < 10; ii++ {
-		chain, params, db := NewLowDifficultyBlockchain()
+		chain, params, db := NewLowDifficultyBlockchain(t)
 		mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 		// Make m3 a paramUpdater for this test
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true

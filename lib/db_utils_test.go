@@ -4,7 +4,6 @@ import (
 	"io/ioutil"
 	"log"
 	"math/big"
-	"os"
 	"testing"
 	"time"
 
@@ -110,8 +109,8 @@ func TestBlockNodePutGet(t *testing.T) {
 	_ = require
 
 	// Create a test db and clean up the files at the end.
-	db, dir := GetTestBadgerDb()
-	defer os.RemoveAll(dir)
+	db, _ := GetTestBadgerDb()
+	defer CleanUpBadger(db)
 
 	// Make a blockchain that looks as follows:
 	// b1 - -> b2 -> b3
@@ -190,8 +189,8 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	_ = require
 
 	// Create a test db and clean up the files at the end.
-	db, dir := GetTestBadgerDb()
-	defer os.RemoveAll(dir)
+	db, _ := GetTestBadgerDb()
+	defer CleanUpBadger(db)
 
 	err := InitDbWithDeSoGenesisBlock(&DeSoTestnetParams, db, nil, nil)
 	require.NoError(err)
@@ -220,8 +219,8 @@ func TestPrivateMessages(t *testing.T) {
 	_ = require
 
 	// Create a test db and clean up the files at the end.
-	db, dir := GetTestBadgerDb()
-	defer os.RemoveAll(dir)
+	db, _ := GetTestBadgerDb()
+	defer CleanUpBadger(db)
 
 	priv1, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
@@ -494,8 +493,8 @@ func TestFollows(t *testing.T) {
 	_ = require
 
 	// Create a test db and clean up the files at the end.
-	db, dir := GetTestBadgerDb()
-	defer os.RemoveAll(dir)
+	db, _ := GetTestBadgerDb()
+	defer CleanUpBadger(db)
 
 	priv1, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)

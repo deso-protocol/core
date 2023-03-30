@@ -69,7 +69,7 @@ func TestLikeTxns(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 
 	// Mine a few blocks to give the senderPkString some money.

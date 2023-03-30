@@ -20,7 +20,7 @@ func TestComputeMaxTPS(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_, _ = mempool, db
 
@@ -148,10 +148,11 @@ func TestComputeMaxTPS(t *testing.T) {
 
 	// At this point we have some number of transactions. Clear the mempool and see how
 	// long it takes to add them all to the mempool.
-	mempool.resetPool(NewDeSoMempool(mempool.bc, 0, /* rateLimitFeeRateNanosPerKB */
+	newMP := NewDeSoMempool(mempool.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, ""))
+		"" /*dataDir*/, "")
+	mempool.resetPool(newMP)
 	{
 		timeStart := time.Now()
 		for _, tx := range txns {
@@ -185,7 +186,7 @@ func TestComputeMaxTPS(t *testing.T) {
 	// Apply the blocks to a new chain with timings
 	{
 
-		newChain, newParams, newDB := NewLowDifficultyBlockchain()
+		newChain, newParams, newDB := NewLowDifficultyBlockchain(t)
 		_, _ = newParams, newDB
 		timeStart := time.Now()
 		for _, blockToConnect := range blocksMined {
@@ -197,6 +198,11 @@ func TestComputeMaxTPS(t *testing.T) {
 			len(txns), elapsedSecs,
 			float64(len(txns))/float64((elapsedSecs)))
 	}
+	t.Cleanup(func() {
+		if !newMP.stopped {
+			newMP.Stop()
+		}
+	})
 }
 
 // Increase numBlocksToMine to load test
@@ -206,7 +212,7 @@ func TestConnectBlocksLoadTest(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain()
+	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_, _ = mempool, db
 
@@ -224,7 +230,7 @@ func TestConnectBlocksLoadTest(t *testing.T) {
 
 	// Apply the blocks to a new chain with timings
 	{
-		newChain, newParams, newDB := NewLowDifficultyBlockchain()
+		newChain, newParams, newDB := NewLowDifficultyBlockchain(t)
 		_, _ = newParams, newDB
 		ff, err := os.Create("/tmp/block-processing-profile")
 		require.NoError(err)
