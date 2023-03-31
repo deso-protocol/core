@@ -10,23 +10,30 @@ type BlockEventFunc func(event *BlockEvent)
 type SnapshotCompletedEventFunc func()
 
 type DBTransactionEvent struct {
-	Key           []byte
-	Value         []byte
-	OperationType StateSyncerOperationType
-	FlushId       uuid.UUID
+	// The details needed to represent this state change to a data consumer.
+	StateChangeEntry *StateChangeEntry
+	// An ID to map the event to the db flush that it is included in.
+	FlushId uuid.UUID
 }
 
 type MempoolTransactionEvent struct {
-	Encoder     DeSoEncoder
-	KeyBytes    []byte
-	UtxoOps     []*UtxoOperation
-	BlockHeight uint64
+	// The details needed to represent this state change to a data consumer.
+	StateChangeEntry *StateChangeEntry
+	// Whether the transaction is being connected or disconnected.
 	IsConnected bool
-	TxHash      *BlockHash
+	// The blockheight of the transaction
+	BlockHeight uint64
+	// The transaction hash is used to store the transaction in a map so that we can
+	// later look up the entry and UTXO Ops for the transaction upon disconnect.
+	TxHash *BlockHash
 }
 
 type DBFlushedEvent struct {
-	FlushId   uuid.UUID
+	// The id of the flush.
+	// Note that when blocksyncing, everything runs on a single thread, so the UUID.Nil value is used, since
+	// there is only ever one flush, so disambiguating them is unnecessary.
+	FlushId uuid.UUID
+	// Whether the flush succeeded or not.
 	Succeeded bool
 }
 

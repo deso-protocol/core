@@ -368,6 +368,12 @@ func (mp *DeSoMempool) EmitDisconnectsAfterBlockValidated(block *MsgDeSoBlock) e
 			// We don't need to include the entry or utxoOps here, those will be retrieved from the state syncer
 			// map - they were stored on transaction connect.
 			mp.bc.eventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+				StateChangeEntry: &StateChangeEntry{
+					// On disconnect, we only care about the utxo operations, which will have their own db operations assigned
+					// to them. We assign skip to the parent entry so that the consumer doesn't process it.
+					OperationType: DbOperationTypeSkip,
+					IsMempoolTx:   true,
+				},
 				BlockHeight: block.Header.Height,
 				IsConnected: false,
 				TxHash:      mempoolTx.Hash,
@@ -840,7 +846,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 // only be called when one is sure that a transaction is valid. Otherwise, it could
 // mess up the UtxoViews that we store internally.
 func (mp *DeSoMempool) addTransaction(
-	tx *MsgDeSoTxn, height uint32, fee uint64, updateBackupView bool, emitTransactionStateChange bool) (*MempoolTx, error) {
+	tx *MsgDeSoTxn, height uint32, fee uint64, updateBackupView bool, emitTxStateChange bool) (*MempoolTx, error) {
 
 	// Add the transaction to the pool and mark the referenced outpoints
 	// as spent by the pool.
@@ -898,7 +904,7 @@ func (mp *DeSoMempool) addTransaction(
 	// Add it to the universal view. We assume the txn was already added to the
 	// backup view.
 	_, _, _, _, err = mp.universalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
-		false /*verifySignatures*/, false /*ignoreUtxos*/, emitTransactionStateChange /*emitMempoolTxnEvent*/)
+		false /*verifySignatures*/, false /*ignoreUtxos*/, emitTxStateChange /*emitMempoolTxnEvent*/)
 	if err != nil {
 		return nil, fmt.Errorf("ERROR addTransaction: _connectTransaction " +
 			"failed on universalUtxoView; this is a HUGE problem and should never happen")
@@ -1013,7 +1019,7 @@ func (mp *DeSoMempool) rebuildBackupView() {
 //
 // TODO: Allow replacing a transaction with a higher fee.
 func (mp *DeSoMempool) tryAcceptTransaction(
-	tx *MsgDeSoTxn, rateLimit bool, rejectDupUnconnected bool, verifySignatures bool, emitTransactionStateChange bool) (
+	tx *MsgDeSoTxn, rateLimit bool, rejectDupUnconnected bool, verifySignatures bool, emitTxStateChange bool) (
 	_missingParents []*BlockHash, _mempoolTx *MempoolTx, _err error) {
 
 	blockHeight := uint64(mp.bc.blockTip().Height + 1)
@@ -1132,7 +1138,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 	// Add to transaction pool. Don't update the backup view since the call above
 	// will have already done this.
-	mempoolTx, err := mp.addTransaction(tx, bestHeight, txFee, false /*updateBackupUniversalView*/, emitTransactionStateChange)
+	mempoolTx, err := mp.addTransaction(tx, bestHeight, txFee, false /*updateBackupUniversalView*/, emitTxStateChange)
 	if err != nil {
 		mp.rebuildBackupView()
 		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: ")

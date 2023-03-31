@@ -1236,10 +1236,13 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		for _, dbEntry := range chunk {
 			localErr := wb.Set(dbEntry.Key, dbEntry.Value) // Will create txns as needed.
 			snap.eventManager.dbTransactionConnected(&DBTransactionEvent{
-				Key:           dbEntry.Key,
-				Value:         dbEntry.Value,
-				OperationType: DbOperationTypeInsert,
-				FlushId:       dbFlushId,
+				StateChangeEntry: &StateChangeEntry{
+					OperationType: DbOperationTypeInsert,
+					KeyBytes:      dbEntry.Key,
+					EncoderBytes:  dbEntry.Value,
+					IsMempoolTx:   false,
+				},
+				FlushId: dbFlushId,
 			})
 			if localErr != nil {
 				glog.Errorf("Snapshot.SetSnapshotChunk: Problem setting db entry in write batch")

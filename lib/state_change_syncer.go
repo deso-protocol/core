@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/golang/glog"
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
 	"os"
 	"sync"
 )
@@ -20,6 +21,124 @@ const (
 	DbOperationTypeSkip   StateSyncerOperationType = 4
 )
 
+// StateChangeEntry represents a single change to the database. It is used to capture the state of the database.
+// These changes are then written to a file, which is then used to sync data consumers who subscribe to changes to
+// that file.
+type StateChangeEntry struct {
+	// The type of operation that should be performed on the database.
+	OperationType StateSyncerOperationType
+	// The key that should be used for the operation.
+	KeyBytes []byte
+	// The encoder that is being captured by this state change.
+	Encoder DeSoEncoder
+	// The encoder represented in bytes. This could be created by just calling EncodeToBytes on the encoder, but
+	// during operations like hypersync, we are given the raw bytes of the encoder, which is all we need to encode the
+	// StateChangeEntry. Thus, we store the raw bytes here to avoid having to re-encode the encoder.
+	EncoderBytes []byte
+	// The type of encoder that should be used for the operation.
+	EncoderType EncoderType
+	// If this transaction is a mempool transaction.
+	IsMempoolTx bool
+	// The length of the UtxoOps bytes.
+	UtxoOpsBytesSize uint64
+	// The UtxoOps bytes.
+	UtxoOps []*UtxoOperation
+}
+
+// Construct the bytes to be written to the file.
+// The format is:
+// [operation type (varint)][encoder type (varint)][key length (varint)][key bytes]
+// [encoder length (varint)][encoder bytes][is mempool (1 byte)][utxo ops length (varint)][utxo ops bytes]
+func (stateChangeEntry *StateChangeEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	// Get byte length of keyBytes (will be nil for mempool transactions)
+	var data []byte
+
+	data = append(data, UintToBuf(uint64(stateChangeEntry.OperationType))...)
+	data = append(data, UintToBuf(uint64(stateChangeEntry.EncoderType))...)
+	data = append(data, EncodeByteArray(stateChangeEntry.KeyBytes)...)
+
+	// The encoder can either be represented in bytes or as an encoder. If it's represented in bytes, we use that.
+	// This is because during hypersync, we are given the raw bytes of the encoder, which is all we need to encode the
+	// StateChangeEntry. Thus, we store the raw bytes here to avoid having to re-encode the encoder.
+
+	// Get bytes for the encoder.
+	encoderBytes := stateChangeEntry.EncoderBytes
+
+	// If the encoderBytes is nil and the encoder is not nil, encode the encoder.
+	if encoderBytes == nil && stateChangeEntry.Encoder != nil {
+		encoderBytes = EncodeToBytes(blockHeight, stateChangeEntry.Encoder)
+	}
+
+	data = append(data, encoderBytes...)
+	data = append(data, BoolToByte(stateChangeEntry.IsMempoolTx))
+	utxoOpsBytes := []byte{}
+
+	// If there are utxo ops (i.e. this is a mempool disconnect event), encode them.
+	if len(stateChangeEntry.UtxoOps) > 0 {
+		utxoOpsBytes = EncodeUtxoOpsToBytes(blockHeight, stateChangeEntry.UtxoOps, false)
+	}
+	data = append(data, EncodeByteArray(utxoOpsBytes)...)
+
+	return data
+}
+
+func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	// Decode OperationType
+	operationType, err := ReadUvarint(rr)
+	if err != nil || operationType > 4 {
+		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding operation type")
+	}
+	stateChangeEntry.OperationType = StateSyncerOperationType(operationType)
+
+	// Decode EncoderType
+	encoderType, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding encoder type")
+	}
+	stateChangeEntry.EncoderType = EncoderType(encoderType)
+
+	stateChangeEntry.KeyBytes, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding key bytes")
+	}
+
+	encoder := stateChangeEntry.EncoderType.New()
+	if exist, err := DecodeFromBytes(encoder, rr); exist && err == nil {
+		stateChangeEntry.Encoder = encoder
+		// TODO: is there any reason to set the encoder bytes here?
+	} else if err != nil {
+		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding encoder")
+	}
+
+	if stateChangeEntry.IsMempoolTx, err = ReadBoolByte(rr); err != nil {
+		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding isMempoolTx")
+	}
+
+	utxoOpsBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding utxoOpsBytes")
+	}
+
+	var utxoOps []*UtxoOperation
+	if len(utxoOpsBytes) > 0 {
+		utxoOps, err = DecodeUtxoOpsFromBytes(utxoOpsBytes)
+		if err != nil {
+			return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding utxoOps")
+		}
+		stateChangeEntry.UtxoOps = utxoOps
+	}
+	return nil
+}
+
+func (stateChangeEntry *StateChangeEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (stateChangeEntry *StateChangeEntry) GetEncoderType() EncoderType {
+	return EncoderTypeStateChangeEntry
+}
+
+// UnflushedStateSyncerBytes is used to keep track of the bytes that should be written to the state change file upon a db flush.
 type UnflushedStateSyncerBytes struct {
 	StateChangeBytes     []byte
 	StateChangeBytesSize uint32
@@ -27,12 +146,7 @@ type UnflushedStateSyncerBytes struct {
 	StateChangeOperationIndexes []uint32
 }
 
-type ConnectedMempoolTx struct {
-	Encoder  DeSoEncoder
-	KeyBytes []byte
-	UtxoOps  []*UtxoOperation
-}
-
+// StateChangeSyncer is used to keep track of the state changes that should be written to the state change file.
 type StateChangeSyncer struct {
 	StateChangeFile      *os.File
 	StateChangeIndexFile *os.File
@@ -48,7 +162,7 @@ type StateChangeSyncer struct {
 	// Mutex to prevent concurrent writes to the state change file or .
 	StateSyncerMutex      *sync.Mutex
 	EntryCount            uint32
-	ConnectedMempoolTxMap map[BlockHash]*ConnectedMempoolTx
+	ConnectedMempoolTxMap map[BlockHash]*StateChangeEntry
 }
 
 func openOrCreateLogFile(fileName string) (*os.File, error) {
@@ -81,7 +195,7 @@ func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string, st
 		DeSoParams:            desoParams,
 		UnflushedBytes:        make(map[uuid.UUID]UnflushedStateSyncerBytes),
 		StateSyncerMutex:      &sync.Mutex{},
-		ConnectedMempoolTxMap: make(map[BlockHash]*ConnectedMempoolTx),
+		ConnectedMempoolTxMap: make(map[BlockHash]*StateChangeEntry),
 	}
 }
 
@@ -91,38 +205,42 @@ func (stateChangeSyncer *StateChangeSyncer) _handleMempoolTransaction(event *Mem
 	stateChangeSyncer.StateSyncerMutex.Lock()
 	defer stateChangeSyncer.StateSyncerMutex.Unlock()
 
+	stateChangeEntry := event.StateChangeEntry
+	stateChangeEntry.IsMempoolTx = true
+
 	// If the transaction is connected, add it to the connected mempool map. Upon disconnect, we'll look this up and pass
 	// it to the state change file so the consumer can use them to revert the mempool transaction.
 	if event.IsConnected {
-		stateChangeSyncer.ConnectedMempoolTxMap[*event.TxHash] = &ConnectedMempoolTx{
-			Encoder:  event.Encoder,
-			UtxoOps:  event.UtxoOps,
-			KeyBytes: event.KeyBytes,
+		// Check to see if the index in question has a "core_state" annotation in its definition.
+		if !isCoreStateKey(stateChangeEntry.KeyBytes) {
+			return
 		}
+		// Create a copy of the state change entry for the map so that the utxoOps don't get deleted.
+		mapStateChangeEntry := *stateChangeEntry
+		stateChangeSyncer.ConnectedMempoolTxMap[*event.TxHash] = &mapStateChangeEntry
 		// Only pass UtxoOps to the state change syncer if this is a disconnect transaction (we need them to revert the
 		// connected mempool transaction.
-		event.UtxoOps = nil
+		stateChangeEntry.UtxoOps = nil
 	} else {
+		// Get the cached mempool transaction from the connected mempool map.
 		if connectedMempoolTx, ok := stateChangeSyncer.ConnectedMempoolTxMap[*event.TxHash]; ok {
-			event.Encoder = connectedMempoolTx.Encoder
-			event.KeyBytes = connectedMempoolTx.KeyBytes
-			event.UtxoOps = connectedMempoolTx.UtxoOps
-		} else {
-			glog.Fatalf("StateChangeSyncer._handleMempoolTransaction: Mempool transaction %v not found in "+
-				"connected mempool map", *event.TxHash)
+			// Check to see if the index in question has a "core_state" annotation in its definition.
+			if !isCoreStateKey(connectedMempoolTx.KeyBytes) {
+				return
+			}
+
+			stateChangeEntry.Encoder = connectedMempoolTx.Encoder
+			stateChangeEntry.KeyBytes = connectedMempoolTx.KeyBytes
+			stateChangeEntry.UtxoOps = connectedMempoolTx.UtxoOps
 		}
 	}
 
-	// Encode the entry to bytes.
-	valueBytes := EncodeToBytes(event.BlockHeight, event.Encoder, false)
+	// Set the encoder type.
+	stateChangeEntry.EncoderType = stateChangeEntry.Encoder.GetEncoderType()
 
-	writeBytes, err := stateChangeSyncer.composeWriteBytes(event.KeyBytes, valueBytes, DbOperationTypeUpsert,
-		event.UtxoOps, event.BlockHeight, event.Encoder.GetEncoderType(), true)
-	if err != nil {
-		glog.Fatalf("StateChangeSyncer._handleMempoolTransaction: Error composing write bytes: %v", err)
-	}
-
-	fmt.Printf("\n\n**********Mempool transaction: %+v\n\n**********\n\n", writeBytes)
+	// Encode the state change entry. We encode as a byte array, so the consumer can buffer just the bytes needed
+	// to decode this entry when reading from file.
+	writeBytes := EncodeByteArray(EncodeToBytes(0, stateChangeEntry, false))
 
 	// All mempool transactions occur within the same thread, so they'll be on the uuid.Nil flush.
 	stateChangeSyncer.addTransactionToQueue(uuid.Nil, writeBytes)
@@ -130,7 +248,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleMempoolTransaction(event *Mem
 	if event.IsConnected {
 		// With mempool connects, instantly flush to db.
 		// As soon as this callback is called, the mempool transaction is considered "connected".
-		err = stateChangeSyncer.FlushTransactionsToFile(&DBFlushedEvent{FlushId: uuid.Nil, Succeeded: true})
+		err := stateChangeSyncer.FlushTransactionsToFile(&DBFlushedEvent{FlushId: uuid.Nil, Succeeded: true})
 		if err != nil {
 			glog.Fatalf("StateChangeSyncer._handleMempoolTransaction: Error flushing mempool transaction to file: %v", err)
 		}
@@ -149,27 +267,26 @@ func (stateChangeSyncer *StateChangeSyncer) _handleMempoolTransaction(event *Mem
 func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransactionEvent) {
 	stateChangeSyncer.StateSyncerMutex.Lock()
 	defer stateChangeSyncer.StateSyncerMutex.Unlock()
-	keyBytes := event.Key
-	valueBytes := event.Value
-	// Check to see if the index in question has a "core_state" annotation in it's definition.
-	if !isCoreStateKey(keyBytes) {
+	stateChangeEntry := event.StateChangeEntry
+	// Check to see if the index in question has a "core_state" annotation in its definition.
+	if !isCoreStateKey(stateChangeEntry.KeyBytes) {
 		return
 	}
 
 	// Get the relevant deso encoder for this keyBytes.
 	var encoderType EncoderType
-	if isEncoder, encoder := StateKeyToDeSoEncoder(keyBytes); isEncoder && encoder != nil {
+	if isEncoder, encoder := StateKeyToDeSoEncoder(stateChangeEntry.KeyBytes); isEncoder && encoder != nil {
 		encoderType = encoder.GetEncoderType()
 	} else {
 		glog.Fatalf("Server._handleDbTransaction: Problem getting deso encoder from keyBytes")
 	}
 
-	writeBytes, err := stateChangeSyncer.composeWriteBytes(keyBytes, valueBytes, event.OperationType, nil,
-		0, encoderType, false)
+	// Set the encoder type.
+	stateChangeEntry.EncoderType = encoderType
 
-	if err != nil {
-		glog.Fatalf(err.Error())
-	}
+	// Encode the state change entry. We encode as a byte array, so the consumer can buffer just the bytes needed
+	// to decode this entry when reading from file.
+	writeBytes := EncodeByteArray(EncodeToBytes(0, stateChangeEntry, false))
 
 	stateChangeSyncer.addTransactionToQueue(event.FlushId, writeBytes)
 }
@@ -188,7 +305,7 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *DBFlu
 	// Also delete any unconnected mempool txns from our cache.
 	if !event.Succeeded {
 		delete(stateChangeSyncer.UnflushedBytes, event.FlushId)
-		stateChangeSyncer.ConnectedMempoolTxMap = make(map[BlockHash]*ConnectedMempoolTx)
+		stateChangeSyncer.ConnectedMempoolTxMap = make(map[BlockHash]*StateChangeEntry)
 	}
 
 	unflushedBytes, exists := stateChangeSyncer.UnflushedBytes[event.FlushId]
@@ -202,7 +319,7 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *DBFlu
 		return fmt.Errorf("Error flushing state change file: FlushId %v has nil bytes\n", event.FlushId)
 	}
 
-	fmt.Printf("\n\n*****Printing to file: %+v\n\n", unflushedBytes.StateChangeBytes)
+	//fmt.Printf("\n\n*****Printing to file: %+v\n\n", unflushedBytes.StateChangeBytes)
 
 	// Write the bytes to the state changer file.
 	_, err := stateChangeSyncer.StateChangeFile.Write(unflushedBytes.StateChangeBytes)
@@ -243,13 +360,13 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *DBFlu
 }
 
 // EncodeArrayToBytes encodes an array of UtxoOps to bytes.
-func EncodeUtxoOpsToBytes(blockHeight uint64, utxoOps []*UtxoOperation, skipMetadata bool) ([]byte, error) {
+func EncodeUtxoOpsToBytes(blockHeight uint64, utxoOps []*UtxoOperation, skipMetadata bool) []byte {
 	var encodedOps [][]byte
 	for _, op := range utxoOps {
 		encodedOp := EncodeToBytes(blockHeight, op, skipMetadata)
 		encodedOps = append(encodedOps, encodedOp)
 	}
-	return bytes.Join(encodedOps, []byte{}), nil
+	return bytes.Join(encodedOps, []byte{})
 }
 
 // DecodeArrayFromBytes decodes an array of UtxoOps from bytes.
@@ -267,82 +384,6 @@ func DecodeUtxoOpsFromBytes(encodedOps []byte) ([]*UtxoOperation, error) {
 	return utxoOps, nil
 }
 
-// TODO: DeSoStateChange should become its own DeSoEncoder.
-// composeWriteBytes takes in a keyBytes, valueBytes, and operationType and returns a byte slice
-// representing a state change operation to the DeSo blockchain. It also takes in a list of utxoOps
-// that can be used to revert mempool transactions that may be disconnected.
-func (stateChangeSyncer *StateChangeSyncer) composeWriteBytes(keyBytes []byte, valueBytes []byte,
-	operationType StateSyncerOperationType, utxoOps []*UtxoOperation,
-	blockheight uint64, encoderType EncoderType, isMempool bool) ([]byte, error) {
-
-	// Get byte length of keyBytes (will be nil for mempool transactions)
-	keyLen := uint16(len(keyBytes))
-	keyLenBytes := make([]byte, 2)
-	binary.LittleEndian.PutUint16(keyLenBytes, keyLen)
-
-	// Get byte length of value (will be nil for deletes).
-	valueLen := uint32(0)
-	if valueBytes != nil {
-		valueLen = uint32(len(valueBytes))
-	}
-	// Convert the value length to a byte slice.
-	valueLenBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(valueLenBytes, valueLen)
-
-	// Convert the encoder type to a byte slice.
-	encoderTypeBytes := make([]byte, 2)
-	binary.LittleEndian.PutUint16(encoderTypeBytes, uint16(encoderType))
-
-	// Convert the encoder type to a byte slice.
-	operationTypeBytes := make([]byte, 1)
-	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.LittleEndian, operationType)
-	operationTypeBytes = buf.Bytes()
-
-	isMempoolBytes := make([]byte, 1)
-	if isMempool {
-		isMempoolBytes[0] = 1
-	} else {
-		isMempoolBytes[0] = 0
-	}
-
-	// Get byte length of utxoOps (will be nil for non-mempool, non-disconnect txns).
-	utxoOpsLen := uint32(0)
-
-	utxoOpsBytes := []byte{}
-	if len(utxoOps) > 0 {
-		fmt.Printf("\n\n****Encoding utxo ops")
-		var err error
-		utxoOpsBytes, err = EncodeUtxoOpsToBytes(blockheight, utxoOps, false)
-		if err != nil {
-			return nil, err
-		}
-		fmt.Printf("\n\n****Utxo ops bytes: %+v", utxoOpsBytes)
-		utxoOpsLen = uint32(len(utxoOpsBytes))
-	}
-
-	utxoOpsLenBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(utxoOpsLenBytes, utxoOpsLen)
-
-	// Construct the bytes to be written to the file.
-	// The format is:
-	// [operation type (1 byte)][encoder type (2 bytes)][key length (2 bytes)][key bytes]
-	// [value length (4 bytes)][value bytes][is mempool (1 byte)][utxo ops length (4 bytes)][utxo ops bytes]
-	writeBytes := append(operationTypeBytes, encoderTypeBytes...)
-	writeBytes = append(writeBytes, keyLenBytes...)
-	writeBytes = append(writeBytes, keyBytes...)
-	writeBytes = append(writeBytes, valueLenBytes...)
-	writeBytes = append(writeBytes, valueBytes...)
-	writeBytes = append(writeBytes, isMempoolBytes...)
-	writeBytes = append(writeBytes, utxoOpsLenBytes...)
-
-	if utxoOpsLen > 0 {
-		writeBytes = append(writeBytes, utxoOpsBytes...)
-	}
-
-	return writeBytes, nil
-}
-
 // Add a transaction to the queue of transactions to be flushed to disk upon badger db flush.
 func (stateChangeSyncer *StateChangeSyncer) addTransactionToQueue(flushId uuid.UUID, writeBytes []byte) {
 	stateChangeSyncer.EntryCount++
@@ -356,7 +397,7 @@ func (stateChangeSyncer *StateChangeSyncer) addTransactionToQueue(flushId uuid.U
 		}
 	}
 
-	fmt.Printf("\n\n*****Adding to write bytes queue: %v\n\n", writeBytes)
+	//fmt.Printf("\n\n*****Adding to write bytes queue: %v\n\n", writeBytes)
 	unflushedBytes.StateChangeBytes = append(unflushedBytes.StateChangeBytes, writeBytes...)
 
 	// Get the byte index of where this transaction occurs in the unflushed bytes, and add it to the list of

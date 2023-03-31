@@ -913,10 +913,13 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 	// If we have an event manager, we fire off the on db transaction event.
 	if eventManager != nil {
 		eventManager.dbTransactionConnected(&DBTransactionEvent{
-			Key:           key,
-			Value:         value,
-			OperationType: DbOperationTypeUpsert,
-			FlushId:       uuid.Nil,
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeUpsert,
+				KeyBytes:      key,
+				EncoderBytes:  value,
+				IsMempoolTx:   false,
+			},
+			FlushId: uuid.Nil,
 		})
 	}
 	return nil
@@ -1011,10 +1014,13 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 	// same transaction), we fire off the on db transaction event.
 	if eventManager != nil {
 		eventManager.dbTransactionConnected(&DBTransactionEvent{
-			Key:           key,
-			Value:         nil,
-			OperationType: DbOperationTypeDelete,
-			FlushId:       uuid.Nil,
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeDelete,
+				KeyBytes:      key,
+				EncoderBytes:  nil,
+				IsMempoolTx:   false,
+			},
+			FlushId: uuid.Nil,
 		})
 	}
 	return nil

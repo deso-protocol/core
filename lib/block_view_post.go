@@ -1110,9 +1110,12 @@ func (bav *UtxoView) _connectSubmitPost(txn *MsgDeSoTxn, txHash *BlockHash, bloc
 
 	if bav.EventManager != nil && emitMempoolTxn {
 		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			Encoder:     newPostEntry,
-			KeyBytes:    _dbKeyForPostEntryHash(newPostEntry.PostHash),
-			UtxoOps:     utxoOpsForTxn,
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeUpsert,
+				Encoder:       newPostEntry,
+				KeyBytes:      _dbKeyForPostEntryHash(newPostEntry.PostHash),
+				UtxoOps:       utxoOpsForTxn,
+			},
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,

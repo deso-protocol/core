@@ -108,6 +108,7 @@ const (
 	EncoderTypeNewMessageEntry
 	EncoderTypeAccessGroupMemberEnumerationEntry
 	EncoderTypeDmThreadEntry
+	EncoderTypeStateChangeEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -230,6 +231,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMemberEnumerationEntry{}
 	case EncoderTypeDmThreadEntry:
 		return &DmThreadEntry{}
+	case EncoderTypeStateChangeEntry:
+		return &StateChangeEntry{}
 	}
 
 	// Txindex encoder types
