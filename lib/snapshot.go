@@ -1235,15 +1235,17 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		// TODO: Should we split the chunk into batches of 8MB so that we don't write too much data at once?
 		for _, dbEntry := range chunk {
 			localErr := wb.Set(dbEntry.Key, dbEntry.Value) // Will create txns as needed.
-			snap.eventManager.dbTransactionConnected(&DBTransactionEvent{
-				StateChangeEntry: &StateChangeEntry{
-					OperationType: DbOperationTypeInsert,
-					KeyBytes:      dbEntry.Key,
-					EncoderBytes:  dbEntry.Value,
-					IsMempoolTx:   false,
-				},
-				FlushId: dbFlushId,
-			})
+			if snap.eventManager != nil {
+				snap.eventManager.dbTransactionConnected(&DBTransactionEvent{
+					StateChangeEntry: &StateChangeEntry{
+						OperationType: DbOperationTypeInsert,
+						KeyBytes:      dbEntry.Key,
+						EncoderBytes:  dbEntry.Value,
+						IsMempoolTx:   false,
+					},
+					FlushId: dbFlushId,
+				})
+			}
 			if localErr != nil {
 				glog.Errorf("Snapshot.SetSnapshotChunk: Problem setting db entry in write batch")
 				err = localErr
@@ -1251,10 +1253,12 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 			}
 		}
 		if localErr := wb.Flush(); localErr != nil {
-			snap.eventManager.dbFlushed(&DBFlushedEvent{
-				FlushId:   dbFlushId,
-				Succeeded: false,
-			})
+			if snap.eventManager != nil {
+				snap.eventManager.dbFlushed(&DBFlushedEvent{
+					FlushId:   dbFlushId,
+					Succeeded: false,
+				})
+			}
 			glog.Errorf("Snapshot.SetSnapshotChunk: Problem flushing write batch to db")
 			err = localErr
 			return
@@ -1285,10 +1289,12 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 
 	// If there's a problem setting the snapshot checksum, we'll reschedule this snapshot chunk set.
 	if err != nil {
-		snap.eventManager.dbFlushed(&DBFlushedEvent{
-			FlushId:   dbFlushId,
-			Succeeded: false,
-		})
+		if snap.eventManager != nil {
+			snap.eventManager.dbFlushed(&DBFlushedEvent{
+				FlushId:   dbFlushId,
+				Succeeded: false,
+			})
+		}
 		glog.Infof("Snapshot.SetSnapshotChunk: Problem setting the snapshot chunk, error (%v)", err)
 
 		// We reset the snapshot checksum so its initial value, so we won't overlap with processing the next snapshot chunk.
@@ -1301,10 +1307,12 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		return err
 	}
 
-	snap.eventManager.dbFlushed(&DBFlushedEvent{
-		FlushId:   dbFlushId,
-		Succeeded: true,
-	})
+	if snap.eventManager != nil {
+		snap.eventManager.dbFlushed(&DBFlushedEvent{
+			FlushId:   dbFlushId,
+			Succeeded: true,
+		})
+	}
 
 	snap.timer.End("SetSnapshotChunk.Total")
 

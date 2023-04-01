@@ -232,6 +232,8 @@ func (stateChangeSyncer *StateChangeSyncer) _handleMempoolTransaction(event *Mem
 			stateChangeEntry.Encoder = connectedMempoolTx.Encoder
 			stateChangeEntry.KeyBytes = connectedMempoolTx.KeyBytes
 			stateChangeEntry.UtxoOps = connectedMempoolTx.UtxoOps
+		} else {
+			return
 		}
 	}
 
