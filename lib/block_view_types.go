@@ -6056,3 +6056,9 @@ func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetVersionByte(block
 func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeNewMessageTxindexMetadata
 }
+
+type BlockRewardEntry struct {
+	blockReward uint64
+	blockHash   *BlockHash
+	isDeleted   bool
+}
