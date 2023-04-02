@@ -279,46 +279,46 @@ type ForkHeights struct {
 //     step is to define a new value in ForkHeights, and set the value accordingly for
 //     mainnet, testnet, and regtest param structs. Add a name for your migration so that
 //     it can be accessed robustly.
-//	1. Define a new block height in the EncoderMigrationHeights struct. This should map
+//  1. Define a new block height in the EncoderMigrationHeights struct. This should map
 //     1:1 with the fork height defined prior.
-//	2. Add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods that
+//  2. Add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods that
 //     trigger at the defined height.
-//	3. Add a condition to GetVersionByte to return version associated with the migration height.
+//  3. Add a condition to GetVersionByte to return version associated with the migration height.
 //
 // So for example, let's say you want to add a migration for UtxoEntry at height 1200.
 //
-// 0. Add a field to ForkHeight that marks the point at which this entry will come
-//    into play:
+//  0. Add a field to ForkHeight that marks the point at which this entry will come
+//     into play:
 //     - Add the following to the ForkHeight struct:
-//         UtxoEntryTestHeight uint64
+//     UtxoEntryTestHeight uint64
 //     - Add the following to the individual param structs (MainnetForkHeights, TestnetForkHeights,
-//       and RegtestForkHeights):
-//         UtxoEntryTestHeight: 1200 (may differ for mainnet vs testnet & regtest)
+//     and RegtestForkHeights):
+//     UtxoEntryTestHeight: 1200 (may differ for mainnet vs testnet & regtest)
 //     - Add the migration name below DefaultMigration
-//     		UtxoEntryTestHeight MigrationName = "UtxoEntryTestHeight"
+//     UtxoEntryTestHeight MigrationName = "UtxoEntryTestHeight"
 //
-// 1. Add a field to the EncoderMigrationHeights that looks like this:
-//		UtxoEntryTestHeight MigrationHeight
+//  1. Add a field to the EncoderMigrationHeights that looks like this:
+//     UtxoEntryTestHeight MigrationHeight
 //
-// 2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
-//	end of RawEncodeWithoutMetadata (note the usage of the MigrationName UtxoEntryTestHeight):
-//		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
-//			data = append(data, byte(127))
-//		}
-//	And this at the end of RawDecodeWithoutMetadata:
-//		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
-//			_, err = rr.ReadByte()
-//			if err != nil {
-//				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte.")
-//			}
-//		}
-//	MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
+//  2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
+//     end of RawEncodeWithoutMetadata (note the usage of the MigrationName UtxoEntryTestHeight):
+//     if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
+//     data = append(data, byte(127))
+//     }
+//     And this at the end of RawDecodeWithoutMetadata:
+//     if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
+//     _, err = rr.ReadByte()
+//     if err != nil {
+//     return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte.")
+//     }
+//     }
+//     MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
 //
-// 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. Use the
-//		function GetMigrationVersion to chain encoder migrations (Note the variadic parameter of GetMigrationVersion and
-//		the usage of the MigrationName UtxoEntryTestHeight)
+//  3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. Use the
+//     function GetMigrationVersion to chain encoder migrations (Note the variadic parameter of GetMigrationVersion and
+//     the usage of the MigrationName UtxoEntryTestHeight)
 //
-//		return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
+//     return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
 //
 // That's it!
 type MigrationName string
@@ -764,7 +764,7 @@ var MainnetForkHeights = ForkHeights{
 	// Wed Mar 8 2023 @ 5pm PST
 	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(213487),
 
-	// TODO: set to real height
+	// FIXME: set to real height
 	BalanceModelBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -1027,7 +1027,7 @@ var TestnetForkHeights = ForkHeights{
 	// Mon Mar 6 2023 @ 7pm PT
 	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(642270),
 
-	// TODO: set to real height
+	// FIXME: set to real height
 	BalanceModelBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -1318,7 +1318,7 @@ const (
 	MinAccessGroupKeyNameCharacters = 1
 	MaxAccessGroupKeyNameCharacters = 32
 
-	// TODO: What are reasonable values for these?
+	// FIXME: What are reasonable values for these?
 	// Min/Max MaxNonceExpirationBlockHeightOffset - Min/max value to which the MaxNonceExpirationBlockHeightOffset can be set.
 	// Note: MaxMaxNonceExpirationBlockHeightOffset is used as the default value if the param updater hasn't set it yet.
 	MinMaxNonceExpirationBlockHeightOffset = 1

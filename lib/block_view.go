@@ -964,7 +964,7 @@ func (bav *UtxoView) _disconnectBasicTransfer(currentTxn *MsgDeSoTxn, txnHash *B
 	}
 
 	// If this is a balance model basic transfer, the disconnect is simplified.  We first
-	// loop over the outputs and subtract the amounts from each recipients balance, then
+	// loop over the outputs and subtract the amounts from each recipient's balance, then
 	// we add the spent DESO + txn fees back to the sender's balance. In the balance model
 	// no UTXOs are stored so outputs do not need to be looked up or deleted.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
@@ -1737,6 +1737,26 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 		// or a BlockReward. Outputs of other types must be created after processing
 		// the "basic" outputs.
 
+		// If we have transitioned to the balance model, then always attempt to spend
+		// the output from the transactor's balance before adding it to the recipient's
+		// balance. This ensures we never enter situations where we are calling _addDeSo
+		// before we call _spendBalance to verify that the transactor has the coins.
+		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+			var err error
+			totalInput, err = SafeUint64().Add(totalInput, desoOutput.AmountNanos)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(err,
+					"_connectBasicTransferWithExtraSpend: Problem adding "+
+						"output amount %v to total input %v: %v", desoOutput.AmountNanos, totalInput, err)
+			}
+			newUtxoOp, err := bav._spendBalance(desoOutput.AmountNanos, txn.PublicKey, blockHeight-1)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(
+					err, "_connectBasicTransferWithExtraSpend Problem spending balance")
+			}
+			utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
+		}
+
 		// Create a new entry for this output and add it to the view. It should be
 		// added at the end of the utxo list.
 		outputKey := UtxoKey{
@@ -1760,6 +1780,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 			// We leave the position unset and isSpent to false by default.
 			// The position will be set in the call to _addUtxo.
 		}
+
 		// If we have a problem adding this utxo or balance return an error but don't
 		// mark this block as invalid since it's not a rule error and the block
 		// could therefore benefit from being processed in the future.
@@ -1778,20 +1799,27 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 	// Note that for block reward transactions, we don't spend any balance; DESO is printed.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 		var err error
-		totalInput, err = SafeUint64().Add(totalOutput, txn.TxnFeeNanos)
+		feePlusExtraSpend := txn.TxnFeeNanos
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem adding txn fee and total output")
 		}
-		totalInput, err = SafeUint64().Add(totalInput, extraSpend)
+		feePlusExtraSpend, err = SafeUint64().Add(feePlusExtraSpend, extraSpend)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem adding extraSpend")
 		}
-		newUtxoOp, err := bav._spendBalance(totalInput, txn.PublicKey, blockHeight-1)
+
+		totalInput, err = SafeUint64().Add(totalInput, feePlusExtraSpend)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err,
+				"_connectBasicTransferWithExtraSpend: Problem adding "+
+					"amount %v to total input %v: %v", feePlusExtraSpend, totalInput, err)
+		}
+
+		newUtxoOp, err := bav._spendBalance(feePlusExtraSpend, txn.PublicKey, blockHeight-1)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(
 				err, "_connectBasicTransferWithExtraSpend Problem spending balance")
 		}
-
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
 	}
 
