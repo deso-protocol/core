@@ -3001,7 +3001,42 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: Profile not found for "+
 				"public key: %v", PkToString(creatorCoinTxnMeta.ProfilePublicKey, bav.Params))
 		}
-		creatorCoinSnapshot = &creatorProfile.CreatorCoinEntry
+		creatorCoinSnapshot = creatorProfile.CreatorCoinEntry.Copy()
+	}
+	nftCreatorCoinRoyaltyEntriesSnapshot := make(map[PKID]*CoinEntry)
+	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid || txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+		// We don't really care if it's an NFT buy now bid or not. We just want to
+		// capture the royalties that occur to account for ALL DESO.
+		var nftPostHash *BlockHash
+		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+			nftPostHash = txn.TxnMeta.(*AcceptNFTBidMetadata).NFTPostHash
+		} else {
+			nftPostHash = txn.TxnMeta.(*NFTBidMetadata).NFTPostHash
+		}
+		postEntry := bav.GetPostEntryForPostHash(nftPostHash)
+		if postEntry == nil || postEntry.IsDeleted() {
+			return nil, 0, 0, 0, errors.Wrapf(RuleErrorNFTBidOnNonExistentPost, "_connectTransaction: PostEntry not found for "+
+				"post hash: %v", nftPostHash.String())
+		}
+		nftCreatorProfileEntry := bav.GetProfileEntryForPublicKey(postEntry.PosterPublicKey)
+		if nftCreatorProfileEntry == nil || nftCreatorProfileEntry.IsDeleted() {
+			return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: Profile not found for "+
+				"public key: %v", PkToString(postEntry.PosterPublicKey, bav.Params))
+		}
+		pkidEntry := bav.GetPKIDForPublicKey(postEntry.PosterPublicKey)
+		if pkidEntry == nil || pkidEntry.isDeleted {
+			return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: PKID not found for "+
+				"public key: %v", PkToString(postEntry.PosterPublicKey, bav.Params))
+		}
+		nftCreatorCoinRoyaltyEntriesSnapshot[*(pkidEntry.PKID)] = nftCreatorProfileEntry.CreatorCoinEntry.Copy()
+		for pkid, _ := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
+			profileEntry := bav.GetProfileEntryForPKID(&pkid)
+			if profileEntry == nil || profileEntry.IsDeleted() {
+				return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: Profile not found for "+
+					"pkid: %v", PkToString(pkid.ToBytes(), bav.Params))
+			}
+			nftCreatorCoinRoyaltyEntriesSnapshot[pkid] = profileEntry.CreatorCoinEntry.Copy()
+		}
 	}
 
 	var totalInput, totalOutput uint64
@@ -3215,6 +3250,19 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 			}
 			desoLockedDelta = big.NewInt(0).Sub(big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
 				big.NewInt(0).SetUint64(creatorCoinSnapshot.DeSoLockedNanos))
+		}
+		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid || txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+			for pkid, coinEntry := range nftCreatorCoinRoyaltyEntriesSnapshot {
+				creatorProfile := bav.GetProfileEntryForPKID(&pkid)
+				if creatorProfile == nil || creatorProfile.IsDeleted() {
+					return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: Profile for NFT being sold does not exist")
+				}
+				desoLockedDelta = desoLockedDelta.Sub(desoLockedDelta,
+					big.NewInt(0).Sub(
+					big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
+					big.NewInt(0).SetUint64(coinEntry.DeSoLockedNanos)),
+				)
+			}
 		}
 		if big.NewInt(0).Add(balanceDelta, desoLockedDelta).Sign() > 0 {
 			return nil, 0, 0, 0, RuleErrorBalanceChangeGreaterThanZero
