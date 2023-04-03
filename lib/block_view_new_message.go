@@ -591,11 +591,11 @@ func (bav *UtxoView) deleteDmThreadIndex(dmThreadKey DmThreadKey) {
 // with a uint64 unix timestamp in nanoseconds TimestampNanos. The first AccessGroupId identifies the sender of the message,
 // and the second AccessGroupId identifies the recipient of the message, i.e. we have the following basic index structure:
 //
-//      Nothing that an AccessGroupId consists of an owner public key and a group key name (string)
-//      ...
-//		NewMessageEntry indexing:
-//	 	<SenderAccessGroupOwnerPublicKey, SenderAccessGroupKeyName,
-//	 	RecipientAccessGroupOwnerPublicKey, RecipientAccessGroupKeyName, TimestampNanos> -> NewMessageEntry
+//	     Nothing that an AccessGroupId consists of an owner public key and a group key name (string)
+//	     ...
+//			NewMessageEntry indexing:
+//		 	<SenderAccessGroupOwnerPublicKey, SenderAccessGroupKeyName,
+//		 	RecipientAccessGroupOwnerPublicKey, RecipientAccessGroupKeyName, TimestampNanos> -> NewMessageEntry
 //
 // Depending on the type of the thread, this message will be indexed in different ways. For example, if the thread is a
 // dm thread, then we will store a single NewMessageEntry for each message sent, and two DmThreadEntry entries for

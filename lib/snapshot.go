@@ -189,7 +189,8 @@ var (
 // allowing forward progress. Doing it this way would also have avoided situations in which a
 // snapshot can break, thus eliminating any reliance on block disconnecting in our codebase.
 // But we live and learn.
-//  ---@petern: Fear not the complexity. Embrace it, and the parity semaphores will love you back.
+//
+//	---@petern: Fear not the complexity. Embrace it, and the parity semaphores will love you back.
 //
 // In addition to all of the above, there is one more cool thing that a snapshot does, which is that
 // it keeps track of an "online" checksum of all keys and values in the snapshot. This is done using
