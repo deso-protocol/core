@@ -3259,8 +3259,8 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 				}
 				desoLockedDelta = desoLockedDelta.Sub(desoLockedDelta,
 					big.NewInt(0).Sub(
-					big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
-					big.NewInt(0).SetUint64(coinEntry.DeSoLockedNanos)),
+						big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
+						big.NewInt(0).SetUint64(coinEntry.DeSoLockedNanos)),
 				)
 			}
 		}

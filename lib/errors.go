@@ -479,7 +479,7 @@ const (
 	RuleErrorCreatorCoinBuyWithInsufficientFee   RuleError = "RuleErrorCreatorCoinBuyWithInsufficientFee"
 	RuleErrorReusedNonce                         RuleError = "RuleErrorReusedNonce"
 	RuleErrorNonceExpired                        RuleError = "RuleErrorNonceExpired"
-	RuleErrorBalanceChangeGreaterThanZero		 RuleError = "RuleErrorBalanceChangeGreaterThanZero"
+	RuleErrorBalanceChangeGreaterThanZero        RuleError = "RuleErrorBalanceChangeGreaterThanZero"
 
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"
 	HeaderErrorNilPrevHash                                                       RuleError = "HeaderErrorNilPrevHash"
