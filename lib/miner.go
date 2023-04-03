@@ -319,18 +319,18 @@ func CopyBytesIntoBlockHash(data []byte) *BlockHash {
 
 // ProofOfWorkHash is a hash function designed for computing DeSo block hashes.
 // It seems the optimal hash function is one that satisfies two properties:
-// 1) It is not computable by any existing ASICs. If this property isn't satisfied
-//    then miners with pre-existing investments in ASICs for other coins can very
-//    cheaply mine on our chain for a short period of time to pull off a 51% attack.
-//    This has actually happened with "merge-mined" coins like Namecoin.
-// 2) If implemented on an ASIC, there is an "orders of magnitude" speed-up over
-//    using a CPU or GPU. This is because ASICs require some amount of capital
-//    expenditure up-front in order to mine, which then aligns the owner of the
-//    ASIC to care about the health of the network over a longer period of time. In
-//    contrast, a hash function that is CPU or GPU-mineable can be attacked with
-//    an AWS fleet early on. This also may result in a more eco-friendly chain, since
-//    the hash power will be more bottlenecked by up-front CapEx rather than ongoing
-//    electricity cost, as is the case with GPU-mined coins.
+//  1. It is not computable by any existing ASICs. If this property isn't satisfied
+//     then miners with pre-existing investments in ASICs for other coins can very
+//     cheaply mine on our chain for a short period of time to pull off a 51% attack.
+//     This has actually happened with "merge-mined" coins like Namecoin.
+//  2. If implemented on an ASIC, there is an "orders of magnitude" speed-up over
+//     using a CPU or GPU. This is because ASICs require some amount of capital
+//     expenditure up-front in order to mine, which then aligns the owner of the
+//     ASIC to care about the health of the network over a longer period of time. In
+//     contrast, a hash function that is CPU or GPU-mineable can be attacked with
+//     an AWS fleet early on. This also may result in a more eco-friendly chain, since
+//     the hash power will be more bottlenecked by up-front CapEx rather than ongoing
+//     electricity cost, as is the case with GPU-mined coins.
 //
 // Note that our pursuit of (2) above runs counter to existing dogma which seeks to
 // prioritize "ASIC-resistance" in hash functions.
