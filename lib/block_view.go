@@ -3029,7 +3029,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 				"public key: %v", PkToString(postEntry.PosterPublicKey, bav.Params))
 		}
 		nftCreatorCoinRoyaltyEntriesSnapshot[*(pkidEntry.PKID)] = nftCreatorProfileEntry.CreatorCoinEntry.Copy()
-		for pkid, _ := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
+		for pkid := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
 			profileEntry := bav.GetProfileEntryForPKID(&pkid)
 			if profileEntry == nil || profileEntry.IsDeleted() {
 				return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: Profile not found for "+
