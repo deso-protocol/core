@@ -3237,9 +3237,9 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	// For all transactions other than block rewards, validate the nonce and balance changes.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-		balanceDelta, _, err := bav.CompareBalancesToSnapshot(balanceSnapshot)
+		balanceDelta, _, err := bav._compareBalancesToSnapshot(balanceSnapshot)
 		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error validating balance changes")
+			return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error comparing current balances to snapshot")
 		}
 		desoLockedDelta := big.NewInt(0)
 		if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
@@ -3299,7 +3299,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
 }
 
-func (bav *UtxoView) CompareBalancesToSnapshot(balanceSnapshot map[PublicKey]uint64) (
+func (bav *UtxoView) _compareBalancesToSnapshot(balanceSnapshot map[PublicKey]uint64) (
 	*big.Int, map[PublicKey]*big.Int, error) {
 	runningTotal := big.NewInt(0)
 	balanceDeltasMap := make(map[PublicKey]*big.Int)

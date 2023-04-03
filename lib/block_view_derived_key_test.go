@@ -557,9 +557,6 @@ func _doTxnWithBlockHeight(
 	if isBuyNowBid {
 		utxoOpExpectation++
 	}
-	if utxoOpExpectation != len(utxoOps) {
-		fmt.Println("here")
-	}
 	require.Equal(utxoOpExpectation, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
 		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
