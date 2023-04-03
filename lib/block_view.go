@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
 	"math"
+	"math/big"
 	"math/rand"
 	"reflect"
 	"strings"
@@ -2990,6 +2991,18 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	for publicKey, balance := range bav.PublicKeyToDeSoBalanceNanos {
 		balanceSnapshot[publicKey] = balance
 	}
+	// Special case: take snapshot of the creator coin entry.
+	var creatorCoinSnapshot *CoinEntry
+	if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
+		// Get the creator coin entry.
+		creatorCoinTxnMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
+		creatorProfile := bav.GetProfileEntryForPublicKey(creatorCoinTxnMeta.ProfilePublicKey)
+		if creatorProfile == nil || creatorProfile.IsDeleted() {
+			return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: Profile not found for "+
+				"public key: %v", PkToString(creatorCoinTxnMeta.ProfilePublicKey, bav.Params))
+		}
+		creatorCoinSnapshot = &creatorProfile.CreatorCoinEntry
+	}
 
 	var totalInput, totalOutput uint64
 	var utxoOpsForTxn []*UtxoOperation
@@ -3187,8 +3200,25 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		}
 	}
 
-	// For all transactions other than block rewards, validate the nonce.
+	// For all transactions other than block rewards, validate the nonce and balance changes.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		balanceDelta, _, err := bav.CompareBalancesToSnapshot(balanceSnapshot)
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error validating balance changes")
+		}
+		desoLockedDelta := big.NewInt(0)
+		if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
+			ccMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
+			creatorProfile := bav.GetProfileEntryForPublicKey(ccMeta.ProfilePublicKey)
+			if creatorProfile == nil || creatorProfile.IsDeleted() {
+				return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: Profile for CreatorCoin being sold does not exist")
+			}
+			desoLockedDelta = big.NewInt(0).Sub(big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
+				big.NewInt(0).SetUint64(creatorCoinSnapshot.DeSoLockedNanos))
+		}
+		if big.NewInt(0).Add(balanceDelta, desoLockedDelta).Sign() > 0 {
+			return nil, 0, 0, 0, RuleErrorBalanceChangeGreaterThanZero
+		}
 		if txn.TxnNonce.ExpirationBlockHeight < uint64(blockHeight) {
 			return nil, 0, 0, 0, errors.Wrapf(RuleErrorNonceExpired,
 				"ConnectTransaction: Nonce %s has expired for public key %v",
@@ -3219,6 +3249,29 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	}
 
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
+}
+
+func (bav *UtxoView) CompareBalancesToSnapshot(balanceSnapshot map[PublicKey]uint64) (
+	*big.Int, map[PublicKey]*big.Int, error) {
+	runningTotal := big.NewInt(0)
+	balanceDeltasMap := make(map[PublicKey]*big.Int)
+	for publicKey, balance := range bav.PublicKeyToDeSoBalanceNanos {
+		snapshotBalance, exists := balanceSnapshot[publicKey]
+		if !exists {
+			// Get it from the DB
+			dbBalance, err := DbGetDeSoBalanceNanosForPublicKey(bav.Handle, bav.Snapshot, publicKey.ToBytes())
+			if err != nil {
+				return nil, nil, err
+			}
+			snapshotBalance = dbBalance
+			balanceSnapshot[publicKey] = snapshotBalance
+		}
+		// New - Old
+		delta := big.NewInt(0).Sub(big.NewInt(0).SetUint64(balance), big.NewInt(0).SetUint64(snapshotBalance))
+		balanceDeltasMap[publicKey] = delta
+		runningTotal = big.NewInt(0).Add(runningTotal, delta)
+	}
+	return runningTotal, balanceDeltasMap, nil
 }
 
 func (bav *UtxoView) ConnectBlock(
