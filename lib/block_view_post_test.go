@@ -186,8 +186,7 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 	} else {
 		require.Equal(t, OperationTypeSpendBalance, utxoOps[0].Type)
 		require.Equal(t, OperationTypeAddBalance, utxoOps[1].Type)
-		require.Equal(t, OperationTypeSpendBalance, utxoOps[2].Type)
-		require.Equal(t, OperationTypeDeSoDiamond, utxoOps[3].Type)
+		require.Equal(t, OperationTypeDeSoDiamond, utxoOps[2].Type)
 	}
 	require.NoError(t, utxoView.FlushToDb(0))
 
