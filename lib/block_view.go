@@ -3235,8 +3235,8 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		}
 	}
 
-	// For all transactions other than block rewards, validate the nonce and balance changes.
-	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+	// Validate that we aren't printing any DESO
+	if txn.TxnMeta.GetTxnType() != TxnTypeBlockReward && txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange {
 		balanceDelta, _, err := bav._compareBalancesToSnapshot(balanceSnapshot)
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error comparing current balances to snapshot")
@@ -3267,6 +3267,10 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		if big.NewInt(0).Add(balanceDelta, desoLockedDelta).Sign() > 0 {
 			return nil, 0, 0, 0, RuleErrorBalanceChangeGreaterThanZero
 		}
+	}
+
+	// For all transactions other than block rewards, validate the nonce.
+	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 		if txn.TxnNonce.ExpirationBlockHeight < uint64(blockHeight) {
 			return nil, 0, 0, 0, errors.Wrapf(RuleErrorNonceExpired,
 				"ConnectTransaction: Nonce %s has expired for public key %v",
