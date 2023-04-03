@@ -3311,7 +3311,7 @@ func (bav *UtxoView) _compareBalancesToSnapshot(balanceSnapshot map[PublicKey]ui
 		snapshotBalance, exists := balanceSnapshot[publicKey]
 		if !exists {
 			// Get it from the DB
-			dbBalance, err := DbGetDeSoBalanceNanosForPublicKey(bav.Handle, bav.Snapshot, publicKey.ToBytes())
+			dbBalance, err := bav.GetDbAdapter().GetDeSoBalanceForPublicKey(publicKey.ToBytes())
 			if err != nil {
 				return nil, nil, err
 			}
