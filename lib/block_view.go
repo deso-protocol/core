@@ -2985,6 +2985,12 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		return nil, 0, 0, 0, RuleErrorTxnTooBig
 	}
 
+	// Take snapshot of balance
+	balanceSnapshot := make(map[PublicKey]uint64)
+	for publicKey, balance := range bav.PublicKeyToDeSoBalanceNanos {
+		balanceSnapshot[publicKey] = balance
+	}
+
 	var totalInput, totalOutput uint64
 	var utxoOpsForTxn []*UtxoOperation
 	switch txn.TxnMeta.GetTxnType() {

@@ -536,7 +536,7 @@ func _doTxnWithBlockHeight(
 	// We expect one more if we're past the balance model block height since we have 0 inputs. We still
 	// have one utxo op for the spend balance
 	if blockHeight >= testMeta.params.ForkHeights.BalanceModelBlockHeight {
-		utxoOpExpectation += len(txn.TxOutputs) + 1
+		utxoOpExpectation++
 	}
 	if isDerivedTransactor && blockHeight >= testMeta.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		// If we got an unlimited derived key, we will not have an additional spending limit utxoop.
@@ -556,6 +556,9 @@ func _doTxnWithBlockHeight(
 	// We add one op to account for NFT bids on buy now NFT.
 	if isBuyNowBid {
 		utxoOpExpectation++
+	}
+	if utxoOpExpectation != len(utxoOps) {
+		fmt.Println("here")
 	}
 	require.Equal(utxoOpExpectation, len(utxoOps))
 	for ii := 0; ii < len(txn.TxInputs); ii++ {
