@@ -1651,14 +1651,16 @@ func TestBasicTransfer(t *testing.T) {
 
 // TestBasicTransferSignatures thoroughly tests all possible ways to sign a DeSo transaction.
 // There are three available signature schemas that are accepted by the DeSo blockchain:
+//
 //	(1) Transaction signed by user's main public key
 //	(2) Transaction signed by user's derived key with "DerivedPublicKey" passed in ExtraData
-// 	(3) Transaction signed by user's derived key using DESO-DER signature standard.
+//	(3) Transaction signed by user's derived key using DESO-DER signature standard.
 //
 // We will try all these schemas while running three main tests scenarios:
-// 	- try signing and processing a basicTransfer
-// 	- try signing and processing a authorizeDerivedKey
-// 	- try signing and processing a authorizeDerivedKey followed by a basicTransfer
+//   - try signing and processing a basicTransfer
+//   - try signing and processing a authorizeDerivedKey
+//   - try signing and processing a authorizeDerivedKey followed by a basicTransfer
+//
 // We use basicTransfer as a placeholder for a normal DeSo transaction (alternatively, we could have used a post,
 // follow, nft, etc transaction). For each scenario we try signing the transaction with either user's main public
 // key, a derived key, or a random key. Basically, we try every possible context in which a transaction can be signed.

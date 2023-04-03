@@ -347,16 +347,16 @@ func (mp *DeSoMempool) resetPool(newPool *DeSoMempool) {
 // UpdateAfterConnectBlock updates the mempool after a block has been added to the
 // blockchain. It does this by basically removing all known transactions in the block
 // from the mempool as follows:
-// - Build a map of all of the transactions in the block indexed by their hash.
-// - Create a new mempool object.
-// - Iterate through all the transactions in the mempool and add the transactions
-//   to the new pool object *only if* they don't appear in the block. Do this for
-//   transactions in the pool and in the unconnectedTx pool.
-// - Compute which transactions were newly-accepted into the pool by effectively diffing
-//   the new pool's transactions with the old pool's transactions.
-// - Once the new pool object is up-to-date, the fields of the new pool object
-//   replace the fields of the original pool object.
-// - Return the newly added transactions computed earlier.
+//   - Build a map of all of the transactions in the block indexed by their hash.
+//   - Create a new mempool object.
+//   - Iterate through all the transactions in the mempool and add the transactions
+//     to the new pool object *only if* they don't appear in the block. Do this for
+//     transactions in the pool and in the unconnectedTx pool.
+//   - Compute which transactions were newly-accepted into the pool by effectively diffing
+//     the new pool's transactions with the old pool's transactions.
+//   - Once the new pool object is up-to-date, the fields of the new pool object
+//     replace the fields of the original pool object.
+//   - Return the newly added transactions computed earlier.
 //
 // TODO: This is fairly inefficient but the story is the same as for
 // UpdateAfterDisconnectBlock.
@@ -454,15 +454,15 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 // UpdateAfterDisconnectBlock updates the mempool to reflect that a block has been
 // disconnected from the blockchain. It does this by basically adding all the
 // transactions in the block back to the mempool as follows:
-// - A new pool object is created containing no transactions.
-// - The block's transactions are added to this new pool object. This is done in order
-//   to minimize dependency-related conflicts with transactions already in the mempool.
-// - Then the transactions in the original pool are layered on top of the block's
-//   transactions in the new pool object. Again this is done to avoid dependency
-//   issues since the ordering of <block txns> followed by <original mempool txns>
-//   is much less likely to have issues.
-// - Then, once the new pool object is up-to-date, the fields of the new pool object
-//   replace the fields of the original pool object.
+//   - A new pool object is created containing no transactions.
+//   - The block's transactions are added to this new pool object. This is done in order
+//     to minimize dependency-related conflicts with transactions already in the mempool.
+//   - Then the transactions in the original pool are layered on top of the block's
+//     transactions in the new pool object. Again this is done to avoid dependency
+//     issues since the ordering of <block txns> followed by <original mempool txns>
+//     is much less likely to have issues.
+//   - Then, once the new pool object is up-to-date, the fields of the new pool object
+//     replace the fields of the original pool object.
 //
 // This function is safe for concurrent access. It is assumed the ChainLock is
 // held before this function is a accessed.
