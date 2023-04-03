@@ -1712,6 +1712,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 	// the outputs.
 	var totalOutput uint64
 	amountsByPublicKey := make(map[PublicKey]uint64)
+	utxoEntries := []UtxoEntry{}
 	for outputIndex, desoOutput := range txn.TxOutputs {
 		// Sanity check the amount of the output. Mark the block as invalid and
 		// return an error if it isn't sane.
@@ -1737,10 +1738,8 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 		// or a BlockReward. Outputs of other types must be created after processing
 		// the "basic" outputs.
 
-		// If we have transitioned to the balance model, then always attempt to spend
-		// the output from the transactor's balance before adding it to the recipient's
-		// balance. This ensures we never enter situations where we are calling _addDeSo
-		// before we call _spendBalance to verify that the transactor has the coins.
+		// If we have transitioned to balance model, we need to add to the total input
+		// as we will spend the total output before adding DESO for the outputs.
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 			var err error
 			totalInput, err = SafeUint64().Add(totalInput, desoOutput.AmountNanos)
@@ -1749,12 +1748,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 					"_connectBasicTransferWithExtraSpend: Problem adding "+
 						"output amount %v to total input %v: %v", desoOutput.AmountNanos, totalInput, err)
 			}
-			newUtxoOp, err := bav._spendBalance(desoOutput.AmountNanos, txn.PublicKey, blockHeight-1)
-			if err != nil {
-				return 0, 0, nil, errors.Wrapf(
-					err, "_connectBasicTransferWithExtraSpend Problem spending balance")
-			}
-			utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
+
 		}
 
 		// Create a new entry for this output and add it to the view. It should be
@@ -1771,7 +1765,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 		// or a BlockReward. Outputs of other types must be created after processing
 		// the "basic" outputs.
 
-		utxoEntry := UtxoEntry{
+		utxoEntries = append(utxoEntries, UtxoEntry{
 			AmountNanos: desoOutput.AmountNanos,
 			PublicKey:   desoOutput.PublicKey,
 			BlockHeight: blockHeight,
@@ -1779,24 +1773,17 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 			UtxoKey:     &outputKey,
 			// We leave the position unset and isSpent to false by default.
 			// The position will be set in the call to _addUtxo.
-		}
-
-		// If we have a problem adding this utxo or balance return an error but don't
-		// mark this block as invalid since it's not a rule error and the block
-		// could therefore benefit from being processed in the future.
-		newUtxoOp, err := bav._addDESO(desoOutput.AmountNanos, desoOutput.PublicKey, &utxoEntry, blockHeight)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem adding DESO")
-		}
-
-		// Rosetta uses this UtxoOperation to provide INPUT amounts
-		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
+		})
 	}
 
 	// After the BalanceModelBlockHeight, we no longer spend UTXO inputs. Instead, we must
 	// spend the sender's balance. Note that we don't need to explicitly check that the
 	// sender's balance is sufficient because _spendBalance will error if it is insufficient.
 	// Note that for block reward transactions, we don't spend any balance; DESO is printed.
+	// If we have transitioned to the balance model, then always attempt to spend
+	// the output from the transactor's balance before adding it to the recipient's
+	// balance. This ensures we never enter situations where we are calling _addDeSo
+	// before we call _spendBalance to verify that the transactor has the coins.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 		var err error
 		feePlusExtraSpend := txn.TxnFeeNanos
@@ -1815,11 +1802,26 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 					"amount %v to total input %v: %v", feePlusExtraSpend, totalInput, err)
 		}
 
-		newUtxoOp, err := bav._spendBalance(feePlusExtraSpend, txn.PublicKey, blockHeight-1)
+		newUtxoOp, err := bav._spendBalance(totalInput, txn.PublicKey, blockHeight-1)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(
 				err, "_connectBasicTransferWithExtraSpend Problem spending balance")
 		}
+		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
+	}
+
+	// Now that we've constructed the utxo entries for each output and spent the
+	// transactor's balance to pay for all of them, we can call _addDeSo safely.
+	for _, utxoEntry := range utxoEntries {
+		// If we have a problem adding this utxo or balance return an error but don't
+		// mark this block as invalid since it's not a rule error and the block
+		// could therefore benefit from being processed in the future.
+		newUtxoOp, err := bav._addDESO(utxoEntry.AmountNanos, utxoEntry.PublicKey, &utxoEntry, blockHeight)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem adding DESO")
+		}
+
+		// Rosetta uses this UtxoOperation to provide INPUT amounts
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
 	}
 
@@ -3685,7 +3687,7 @@ func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64, depth
 	if err != nil {
 		return nil, errors.Wrapf(err, "ConstructNonceForPKID: ")
 	}
-	if nonceEntry == nil {
+	if nonceEntry == nil || nonceEntry.isDeleted {
 		return &nonce, nil
 	}
 	if depth == 0 {

@@ -2872,6 +2872,19 @@ func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) (*DeSoSignature, e
 	}, nil
 }
 
+// DeSoNonce is a nonce that can be used to prevent replay attacks. It is used in the DeSo protocol
+// to prevent replay attacks when a user is trying to create a transaction. The nonce comprises
+// two uint64s: the expiration block height and the partial ID. The expiration block height is the
+// block height at which the nonce expires. The partial ID is a random uint64 that is used to
+// prevent nonce reuse. This scheme allows us to re-order transactions based on fees while
+// optimizing developer UX. Nonce schemes used in other protocols require monotonically
+// increasing nonces. In DeSo, this would cause issues if a user tried to create a transaction
+// with a higher fee after creating a bunch of transactions with lower fees. For example,
+// a user may perform a normal social transactions such as posts and follows with low fees
+// and then wants to bid on an NFT and use a higher fee to ensure their bid is processed
+// quickly. If the nonce scheme required monotonically increasing nonces, the user would
+// have to wait for all of their low-fee transactions to be processed before they could
+// create a transaction with a higher fee.
 type DeSoNonce struct {
 	ExpirationBlockHeight uint64
 	PartialID             uint64
