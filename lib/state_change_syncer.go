@@ -67,6 +67,9 @@ func (stateChangeEntry *StateChangeEntry) RawEncodeWithoutMetadata(blockHeight u
 	// If the encoderBytes is nil and the encoder is not nil, encode the encoder.
 	if encoderBytes == nil && stateChangeEntry.Encoder != nil {
 		encoderBytes = EncodeToBytes(blockHeight, stateChangeEntry.Encoder)
+	} else if encoderBytes == nil && stateChangeEntry.Encoder == nil {
+		// If both the encoder and encoder bytes are null, encode a blank encoder.
+		encoderBytes = EncodeToBytes(blockHeight, stateChangeEntry.EncoderType.New())
 	}
 
 	data = append(data, encoderBytes...)
@@ -242,7 +245,8 @@ func (stateChangeSyncer *StateChangeSyncer) _handleMempoolTransaction(event *Mem
 
 	// Encode the state change entry. We encode as a byte array, so the consumer can buffer just the bytes needed
 	// to decode this entry when reading from file.
-	writeBytes := EncodeByteArray(EncodeToBytes(0, stateChangeEntry, false))
+	entryBytes := EncodeToBytes(0, stateChangeEntry, false)
+	writeBytes := EncodeByteArray(entryBytes)
 
 	// All mempool transactions occur within the same thread, so they'll be on the uuid.Nil flush.
 	stateChangeSyncer.addTransactionToQueue(uuid.Nil, writeBytes)
@@ -255,7 +259,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleMempoolTransaction(event *Mem
 			glog.Fatalf("StateChangeSyncer._handleMempoolTransaction: Error flushing mempool transaction to file: %v", err)
 		}
 	} else {
-		// After the disconnect completes, remove this mempool tx from our map.
+		// After the disconnect is written to file, remove this mempool tx from our map.
 		delete(stateChangeSyncer.ConnectedMempoolTxMap, *event.TxHash)
 	}
 }
@@ -288,8 +292,9 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 
 	// Encode the state change entry. We encode as a byte array, so the consumer can buffer just the bytes needed
 	// to decode this entry when reading from file.
-	writeBytes := EncodeByteArray(EncodeToBytes(0, stateChangeEntry, false))
-
+	entryBytes := EncodeToBytes(0, stateChangeEntry, false)
+	writeBytes := EncodeByteArray(entryBytes)
+	
 	stateChangeSyncer.addTransactionToQueue(event.FlushId, writeBytes)
 }
 
@@ -303,6 +308,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbFlush(event *DBFlushedEvent
 }
 
 func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *DBFlushedEvent) error {
+
 	// If the flush failed, delete the unflushed bytes and associated metadata.
 	// Also delete any unconnected mempool txns from our cache.
 	if !event.Succeeded {
