@@ -414,7 +414,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// Since we don't have bidder inputs in the balance model, we add the transactor
 			// to the prev balances map if it doesn't exist and the matching order is buying
 			// DESO.
-			if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && transactorOrder.SellingDAOCoinCreatorPKID.IsZeroPKID() {
+			if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight &&
+				transactorOrder.SellingDAOCoinCreatorPKID.IsZeroPKID() {
+
 				if _, exists := prevBalances[*matchingOrder.TransactorPKID][ZeroPKID]; !exists {
 					bav.balanceChange(matchingOrder.TransactorPKID, &ZeroPKID, big.NewInt(0), nil, prevBalances)
 				}
@@ -818,12 +820,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				// to deduct the fees specified in the metadata from the output
 				// we will create. We do not need to do this for balance model
 				// as the fees are already deducted in the basic transfer.
-				if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight && transactorPKIDEntry.PKID.Eq(&userPKID) {
+				if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight &&
+					transactorPKIDEntry.PKID.Eq(&userPKID) {
+
 					newDESOSurplus = big.NewInt(0).Sub(newDESOSurplus, big.NewInt(0).SetUint64(txMeta.FeeNanos))
 				}
 
 				if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-					// TODO: need some check to ensure we aren't printing any DESO.
 					cmpVal := newDESOSurplus.Cmp(big.NewInt(0))
 					if cmpVal == 0 {
 						continue
