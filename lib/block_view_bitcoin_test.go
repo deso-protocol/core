@@ -381,7 +381,7 @@ func TestBitcoinExchange(t *testing.T) {
 	// Applying the full transaction with its merkle proof should work.
 	{
 		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/,
+			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
 			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxs))
@@ -1094,7 +1094,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// replace the existing "unmined" version that we added previously.
 	{
 		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/,
+			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
 			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxs))
@@ -1108,7 +1108,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// Applying the full txns a second time should fail.
 	{
 		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/,
+			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
 			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.Error(err)
 		require.Equal(0, len(mempoolTxs))
@@ -1831,7 +1831,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			BitcoinMerkleProof: []*merkletree.ProofPart{},
 		}
 		mempoolTxs, err := mempool.processTransaction(
-			&txnCopy, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/,
+			&txnCopy, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
 			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxs))
@@ -2431,7 +2431,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	// Applying the full transaction with its merkle proof to the mempool should work
 	{
 		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/,
+			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
 			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxs))

@@ -55,9 +55,9 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 	// Validate this txn.
 	mp := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0  /* minFeeRateNanosPerKB */, "", true,
+		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
-	_, err := mp.processTransaction(txn1, false /*allowUnconnectedTxn*/, false /*rateLimit*/,
+	_, err := mp.processTransaction(txn1, false /*allowUnconnectedTxn*/, false, /*rateLimit*/
 		0 /*peerID*/, true /*verifySignatures*/, false /*EmitTxStateChange*/)
 	require.NoError(err)
 
@@ -89,7 +89,7 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 		}
 		//_signTxn(t, newTxn, false [>isSender is false since this is the recipient<])
 
-		_, err := mp.processTransaction(newTxn, false /*allowUnconnectedTxn*/, false /*rateLimit*/,
+		_, err := mp.processTransaction(newTxn, false /*allowUnconnectedTxn*/, false, /*rateLimit*/
 			0 /*peerID*/, false /*verifySignatures*/, false /*EmitTxStateChange*/)
 		require.NoErrorf(err, "Error processing txn %d", ii)
 
@@ -116,7 +116,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	// accept all of the transactions we're about to create without fail.
 	mpNoMinFees := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0  /* minFeeRateNanosPerKB */, "", true,
+		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 
 	// Create a transaction that sends 1 DeSo to the recipient as its
@@ -125,8 +125,8 @@ func TestMempoolRateLimit(t *testing.T) {
 		senderPkString, recipientPkString, senderPrivString, nil)
 
 	// Validate this txn with the no-fee mempool.
-	_, err := mpNoMinFees.processTransaction(txn1, false /*allowUnconnectedTxn*/,
-		false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/,
+	_, err := mpNoMinFees.processTransaction(txn1, false, /*allowUnconnectedTxn*/
+		false /*rateLimit*/, 0 /*peerID*/, true, /*verifySignatures*/
 		false /*EmitTxStateChange*/)
 	require.NoError(err)
 
@@ -135,15 +135,15 @@ func TestMempoolRateLimit(t *testing.T) {
 	mpWithMinFee := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		100 /* minFeeRateNanosPerKB */, "", true,
-		""  /*dataDir*/, "")
-	_, err = mpWithMinFee.processTransaction(txn1, false /*allowUnconnectedTxn*/,
-		true /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/,
+		"" /*dataDir*/, "")
+	_, err = mpWithMinFee.processTransaction(txn1, false, /*allowUnconnectedTxn*/
+		true /*rateLimit*/, 0 /*peerID*/, false, /*verifySignatures*/
 		false /*EmitTxStateChange*/)
 	require.Error(err)
 	require.Contains(err.Error(), TxErrorInsufficientFeeMinFee)
 
 	// It shoud be accepted if we set rateLimit to false.
-	_, err = mpWithMinFee.processTransaction(txn1, false /*allowUnconnectedTxn*/,
+	_, err = mpWithMinFee.processTransaction(txn1, false, /*allowUnconnectedTxn*/
 		false /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/, false /*EmitTxStateChange*/)
 	require.NoError(err)
 
@@ -174,7 +174,7 @@ func TestMempoolRateLimit(t *testing.T) {
 		}
 		//_signTxn(t, newTxn, false [>isSender is false since this is the recipient<])
 
-		_, err := mpNoMinFees.processTransaction(newTxn, false /*allowUnconnectedTxn*/,
+		_, err := mpNoMinFees.processTransaction(newTxn, false, /*allowUnconnectedTxn*/
 			false /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/, false /*EmitTxStateChange*/)
 		require.NoErrorf(err, "Error processing txn %d", ii)
 
@@ -187,12 +187,12 @@ func TestMempoolRateLimit(t *testing.T) {
 	// feerate set since 24 transactions should be ~2400 bytes.
 	mpWithRateLimit := NewDeSoMempool(
 		chain, 100, /* rateLimitFeeRateNanosPerKB */
-		0  /* minFeeRateNanosPerKB */, "", true,
+		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	processingErrors := []error{}
 	for _, txn := range txnsCreated {
-		_, err := mpWithRateLimit.processTransaction(txn, false /*allowUnconnectedTxn*/,
-			true /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/,
+		_, err := mpWithRateLimit.processTransaction(txn, false, /*allowUnconnectedTxn*/
+			true /*rateLimit*/, 0 /*peerID*/, false, /*verifySignatures*/
 			false /*EmitTxStateChange*/)
 		processingErrors = append(processingErrors, err)
 	}
@@ -310,12 +310,12 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	// not testing that here.
 	mp := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0  /* minFeeRateNanosPerKB */, "", true,
+		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 
 	// Process the first transaction.
-	mempoolTx1, err := mp.processTransaction(txn1, false /*allowUnconnectedTxn*/,
-		false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/,
+	mempoolTx1, err := mp.processTransaction(txn1, false, /*allowUnconnectedTxn*/
+		false /*rateLimit*/, 0 /*peerID*/, true, /*verifySignatures*/
 		false /*EmitTxStateChange*/)
 	require.NoError(err)
 	{
@@ -351,8 +351,8 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	}
 
 	// Process the second transaction, which is dependent on the first.
-	mempoolTx2, err := mp.processTransaction(txn2, false /*allowUnconnectedTxn*/,
-		false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/,
+	mempoolTx2, err := mp.processTransaction(txn2, false, /*allowUnconnectedTxn*/
+		false /*rateLimit*/, 0 /*peerID*/, true, /*verifySignatures*/
 		false /*EmitTxStateChange*/)
 	require.NoError(err)
 	{
@@ -371,8 +371,8 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	}
 
 	// Process the third transaction, which is dependent on the second.
-	mempoolTx3, err := mp.processTransaction(txn3, false /*allowUnconnectedTxn*/,
-		false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/,
+	mempoolTx3, err := mp.processTransaction(txn3, false, /*allowUnconnectedTxn*/
+		false /*rateLimit*/, 0 /*peerID*/, true, /*verifySignatures*/
 		false /*EmitTxStateChange*/)
 	require.NoError(err)
 	{
@@ -391,8 +391,8 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	}
 
 	// Process the fourth transaction, which is dependent on the first and second.
-	mempoolTx4, err := mp.processTransaction(txn4, false /*allowUnconnectedTxn*/,
-		false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/,
+	mempoolTx4, err := mp.processTransaction(txn4, false, /*allowUnconnectedTxn*/
+		false /*rateLimit*/, 0 /*peerID*/, true, /*verifySignatures*/
 		false /*EmitTxStateChange*/)
 	require.NoError(err)
 	{
