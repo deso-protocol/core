@@ -367,17 +367,19 @@ func NewServer(
 	eventManager *EventManager,
 	_nodeMessageChan chan NodeMessage,
 	_forceChecksum bool,
-	_stateChangeFilePath string,
-	_stateChangeIndexFilePath string) (
+	_stateChangeFilePath string) (
 	_srv *Server, _err error, _shouldRestart bool) {
 
 	var err error
 
-	fmt.Printf("About to create state change syncer with file path %v\n", _stateChangeFilePath)
-	stateChangeSyncer := NewStateChangeSyncer(_params, _stateChangeFilePath, _stateChangeIndexFilePath)
-	eventManager.OnDbTransactionConnected(stateChangeSyncer._handleDbTransaction)
-	eventManager.OnDbFlushed(stateChangeSyncer._handleDbFlush)
-	eventManager.OnMempoolTransactionConnected(stateChangeSyncer._handleMempoolTransaction)
+	// Only initialize state change syncer if the directories are defined.
+	var stateChangeSyncer *StateChangeSyncer
+	if _stateChangeFilePath != "" {
+		stateChangeSyncer = NewStateChangeSyncer(_params, _stateChangeFilePath)
+		eventManager.OnDbTransactionConnected(stateChangeSyncer._handleDbTransaction)
+		eventManager.OnDbFlushed(stateChangeSyncer._handleDbFlush)
+		eventManager.OnMempoolTransactionConnected(stateChangeSyncer._handleMempoolTransaction)
+	}
 
 	// Setup snapshot
 	var _snapshot *Snapshot
@@ -432,7 +434,10 @@ func NewServer(
 	// TODO: Would be nice if this heavier-weight operation were moved to Start() to
 	// keep this constructor fast.
 	srv.eventManager = eventManager
-	eventManager.OnBlockValidated(srv._handleBlockMainChainValidated)
+	// Only fire off block validation events if we're syncing state changes.
+	if _stateChangeFilePath != "" {
+		eventManager.OnBlockValidated(srv._handleBlockMainChainValidated)
+	}
 	eventManager.OnBlockConnected(srv._handleBlockMainChainConnectedd)
 	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
 	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
@@ -442,6 +447,11 @@ func NewServer(
 		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
+	}
+
+	// If the chain is empty and state changes are being synced, reset the state change syncer files.
+	if _chain.headerTip().Height == 0 && stateChangeSyncer != nil {
+		stateChangeSyncer.Reset()
 	}
 
 	glog.V(1).Infof("Initialized chain: Best Header Height: %d, Header Hash: %s, Header CumWork: %s, Best Block Height: %d, Block Hash: %s, Block CumWork: %s",
@@ -549,6 +559,7 @@ func NewServer(
 	// This can happen if the node was terminated mid-operation last time it was running. The recovery process rolls back
 	// blocks to the beginning of the current snapshot epoch and resets to the state checksum to the epoch checksum.
 	if shouldRestart {
+		stateChangeSyncer.Reset()
 		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
 			"properly last time"))
 		if err := _snapshot.ForceResetToLastSnapshot(_chain); err != nil {

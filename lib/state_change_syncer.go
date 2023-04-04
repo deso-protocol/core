@@ -177,7 +177,8 @@ func openOrCreateLogFile(fileName string) (*os.File, error) {
 	return file, nil
 }
 
-func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string, stateChangeIndexFilePath string) *StateChangeSyncer {
+func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string) *StateChangeSyncer {
+	stateChangeIndexFilePath := fmt.Sprintf("%s-index", stateChangeFilePath)
 	stateChangeFile, err := openOrCreateLogFile(stateChangeFilePath)
 	if err != nil {
 		glog.Fatalf("Error opening stateChangeFile: %v", err)
@@ -200,6 +201,22 @@ func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string, st
 		StateSyncerMutex:      &sync.Mutex{},
 		ConnectedMempoolTxMap: make(map[BlockHash]*StateChangeEntry),
 	}
+}
+
+func (stateChangeSyncer *StateChangeSyncer) Reset() {
+	err := stateChangeSyncer.StateChangeFile.Truncate(0)
+	if err != nil {
+		glog.Fatalf("Error truncating stateChangeFile: %v", err)
+	}
+
+	err = stateChangeSyncer.StateChangeIndexFile.Truncate(0)
+	if err != nil {
+		glog.Fatalf("Error truncating stateChangeIndexFile: %v", err)
+	}
+
+	stateChangeSyncer.StateChangeFileSize = 0
+
+	stateChangeSyncer.EntryCount = 0
 }
 
 func (stateChangeSyncer *StateChangeSyncer) _handleMempoolTransaction(event *MempoolTransactionEvent) {
@@ -294,7 +311,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	// to decode this entry when reading from file.
 	entryBytes := EncodeToBytes(0, stateChangeEntry, false)
 	writeBytes := EncodeByteArray(entryBytes)
-	
+
 	stateChangeSyncer.addTransactionToQueue(event.FlushId, writeBytes)
 }
 
@@ -321,11 +338,12 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *DBFlu
 	if !exists {
 		return nil
 	}
-	fmt.Printf("\n\n*****Handling flush completed: %+v\n\n", event)
 
 	if unflushedBytes.StateChangeBytes == nil || unflushedBytes.StateChangeOperationIndexes == nil || len(unflushedBytes.StateChangeOperationIndexes) == 0 {
 		return fmt.Errorf("Error flushing state change file: FlushId %v has nil bytes\n", event.FlushId)
 	}
+
+	fmt.Printf("\n\n*****Handling flush completed: %+v\n\n", event)
 
 	//fmt.Printf("\n\n*****Printing to file: %+v\n\n", unflushedBytes.StateChangeBytes)
 
