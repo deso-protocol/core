@@ -1471,7 +1471,8 @@ func TestBasicTransferSignatures(t *testing.T) {
 
 	// Add a transaction to the mempool.
 	mempoolProcess := func(txn *MsgDeSoTxn) (_mempoolTxs []*MempoolTx, _err error) {
-		mempoolTxs, err := mempool.processTransaction(txn, true, true, 0, true)
+		mempoolTxs, err := mempool.processTransaction(txn, true, true, 0,
+			true, false /*EmitTxStateChange*/)
 		if err != nil {
 			return nil, err
 		}

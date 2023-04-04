@@ -381,7 +381,8 @@ func TestBitcoinExchange(t *testing.T) {
 	// Applying the full transaction with its merkle proof should work.
 	{
 		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
+			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/,
+			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxs))
 		require.Equal(1, len(mempool.poolMap))
@@ -408,7 +409,7 @@ func TestBitcoinExchange(t *testing.T) {
 	{
 		mempoolTxsAdded, err := mempool.processTransaction(
 			burnTxn2, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-			true /*verifySignatures*/)
+			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxsAdded))
 		require.Equal(2, len(mempool.poolMap))
@@ -702,7 +703,7 @@ func TestBitcoinExchange(t *testing.T) {
 			require.Equal(ii, len(mempool.poolMap))
 			mempoolTxsAdded, err := mempool.processTransaction(
 				burnTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
+				true /*verifySignatures*/, false /*emitTxStateChange*/)
 			require.NoErrorf(err, "on index: %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
@@ -769,7 +770,7 @@ func TestBitcoinExchange(t *testing.T) {
 		for _, burnTxn := range bitcoinExchangeTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				burnTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
+				true /*verifySignatures*/, false /*emitTxStateChange*/)
 			require.NoError(err)
 			require.Equal(1, len(mempoolTxsAdded))
 			//require.Equal(0, len(mempool.immatureBitcoinTxns))
@@ -1093,7 +1094,8 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// replace the existing "unmined" version that we added previously.
 	{
 		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
+			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/,
+			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxs))
 		require.Equal(1, len(mempool.poolMap))
@@ -1106,7 +1108,8 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// Applying the full txns a second time should fail.
 	{
 		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
+			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/,
+			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.Error(err)
 		require.Equal(0, len(mempoolTxs))
 		require.Equal(1, len(mempool.poolMap))
@@ -1132,7 +1135,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	{
 		mempoolTxsAdded, err := mempool.processTransaction(
 			burnTxn2, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-			true /*verifySignatures*/)
+			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxsAdded))
 		require.Equal(2, len(mempool.poolMap))
@@ -1436,7 +1439,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 			require.Equal(ii, len(mempool.poolMap))
 			mempoolTxsAdded, err := mempool.processTransaction(
 				burnTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
+				true /*verifySignatures*/, false /*emitTxStateChange*/)
 			require.NoErrorf(err, "on index: %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
@@ -1503,7 +1506,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 		for _, burnTxn := range bitcoinExchangeTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				burnTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
+				true /*verifySignatures*/, false /*emitTxStateChange*/)
 			require.NoError(err)
 			require.Equal(1, len(mempoolTxsAdded))
 			//require.Equal(0, len(mempool.immatureBitcoinTxns))
@@ -1828,7 +1831,8 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			BitcoinMerkleProof: []*merkletree.ProofPart{},
 		}
 		mempoolTxs, err := mempool.processTransaction(
-			&txnCopy, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
+			&txnCopy, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/,
+			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxs))
 		require.Equal(1, len(mempool.poolMap))
@@ -1863,7 +1867,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 		}
 		mempoolTxsAdded, err := mempool.processTransaction(
 			&txnCopy, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-			true /*verifySignatures*/)
+			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxsAdded))
 		require.Equal(2, len(mempool.poolMap))
@@ -1930,7 +1934,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 				require.Equal(realIndex, len(mempool.poolMap))
 				mempoolTxsAdded, err := mempool.processTransaction(
 					burnTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-					true /*verifySignatures*/)
+					true /*verifySignatures*/, false /*emitTxStateChange*/)
 				require.NoErrorf(err, "on index: %v", realIndex)
 				require.Equal(1, len(mempoolTxsAdded))
 
@@ -1947,7 +1951,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			require.Equal(realIndex, len(mempool.poolMap))
 			mempoolTxsAdded, err := mempool.processTransaction(
 				&txnCopy, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
+				true /*verifySignatures*/, false /*emitTxStateChange*/)
 			require.NoErrorf(err, "on index: %v", realIndex)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
@@ -1999,7 +2003,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			desoPriv1, mempool)
 		mempoolTxsAdded, err := mempool.processTransaction(
 			txn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-			true /*verifySignatures*/)
+			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxsAdded))
 		bitcoinExchangeTxns = append(bitcoinExchangeTxns, txn)
@@ -2010,7 +2014,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			desoPriv3, mempool)
 		mempoolTxsAdded, err := mempool.processTransaction(
 			txn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-			true /*verifySignatures*/)
+			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxsAdded))
 		bitcoinExchangeTxns = append(bitcoinExchangeTxns, txn)
@@ -2021,7 +2025,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 			desoPriv2, mempool)
 		mempoolTxsAdded, err := mempool.processTransaction(
 			txn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-			true /*verifySignatures*/)
+			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxsAdded))
 		bitcoinExchangeTxns = append(bitcoinExchangeTxns, txn)
@@ -2427,7 +2431,8 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	// Applying the full transaction with its merkle proof to the mempool should work
 	{
 		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
+			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/,
+			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxs))
 		require.Equal(1, len(mempool.poolMap))
@@ -2454,7 +2459,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	{
 		mempoolTxsAdded, err := mempool.processTransaction(
 			burnTxn2, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-			true /*verifySignatures*/)
+			true /*verifySignatures*/, false /*emitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxsAdded))
 		require.Equal(2, len(mempool.poolMap))
@@ -2735,7 +2740,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 			require.Equal(ii, len(mempool.poolMap))
 			mempoolTxsAdded, err := mempool.processTransaction(
 				burnTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
+				true /*verifySignatures*/, false /*emitTxStateChange*/)
 			require.NoErrorf(err, "on index: %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
@@ -2794,7 +2799,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 		for _, burnTxn := range bitcoinExchangeTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				burnTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/)
+				true /*verifySignatures*/, false /*emitTxStateChange*/)
 			require.NoError(err)
 			require.Equal(1, len(mempoolTxsAdded))
 			//require.Equal(0, len(mempool.immatureBitcoinTxns))

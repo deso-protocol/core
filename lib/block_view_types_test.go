@@ -270,7 +270,8 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 	// Applying the full transaction with its merkle proof should work.
 	{
 		mempoolTxs, err := mempool.processTransaction(
-			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
+			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/, false /*EmitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxs))
 		require.Equal(1, len(mempool.poolMap))
@@ -289,7 +290,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 	{
 		mempoolTxsAdded, err := mempool.processTransaction(
 			burnTxn2, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-			true /*verifySignatures*/)
+			true /*verifySignatures*/, false /*EmitTxStateChange*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxsAdded))
 		require.Equal(2, len(mempool.poolMap))
