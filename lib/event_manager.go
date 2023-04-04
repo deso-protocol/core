@@ -9,6 +9,7 @@ type DBFlushedEventFunc func(event *DBFlushedEvent)
 type BlockEventFunc func(event *BlockEvent)
 type SnapshotCompletedEventFunc func()
 
+// DBTransactionEvent is an event that is fired when an entry is connected or disconnected from the badger db.
 type DBTransactionEvent struct {
 	// The details needed to represent this state change to a data consumer.
 	StateChangeEntry *StateChangeEntry
@@ -16,6 +17,7 @@ type DBTransactionEvent struct {
 	FlushId uuid.UUID
 }
 
+// MemPoolTransactionEvent is an event that is fired when a transaction is connected or disconnected from the mempool.
 type MempoolTransactionEvent struct {
 	// The details needed to represent this state change to a data consumer.
 	StateChangeEntry *StateChangeEntry
@@ -28,6 +30,7 @@ type MempoolTransactionEvent struct {
 	TxHash *BlockHash
 }
 
+// DBFlushedEvent is an event that is fired when the badger db is flushed.
 type DBFlushedEvent struct {
 	// The id of the flush.
 	// Note that when blocksyncing, everything runs on a single thread, so the UUID.Nil value is used, since

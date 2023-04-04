@@ -344,6 +344,11 @@ func (mp *DeSoMempool) resetPool(newPool *DeSoMempool) {
 	// the old values should be unaffected.
 }
 
+// EmitDisconnectsAfterBlockValidated emits disconnect state syncer events for all the transactions in the mempool
+// that have been added to a block. This is done to ensure that transactions aren't counted twice by the state syncer -
+// once when they are added to the mempool and once when they are added to a block. Reverting every mempool transaction
+// in this way ensures that the state syncer never gets into an invalid state where transactions are applied in an
+// inconsistent order.
 func (mp *DeSoMempool) EmitDisconnectsAfterBlockValidated(block *MsgDeSoBlock) error {
 	// Protect concurrent access.
 	mp.mtx.Lock()
@@ -421,7 +426,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		"" /*dataDir*/, "")
+		""     /*dataDir*/, "")
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()

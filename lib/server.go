@@ -375,6 +375,8 @@ func NewServer(
 	// Only initialize state change syncer if the directories are defined.
 	var stateChangeSyncer *StateChangeSyncer
 	if _stateChangeFilePath != "" {
+		// Create the state change syncer to handle syncing state changes to disk, and assign some of its methods
+		// to the event manager.
 		stateChangeSyncer = NewStateChangeSyncer(_params, _stateChangeFilePath)
 		eventManager.OnDbTransactionConnected(stateChangeSyncer._handleDbTransaction)
 		eventManager.OnDbFlushed(stateChangeSyncer._handleDbFlush)
@@ -435,8 +437,9 @@ func NewServer(
 	// keep this constructor fast.
 	srv.eventManager = eventManager
 	// Only fire off block validation events if we're syncing state changes.
+	// This event handler is responsible for syncing mempool disconnects once a block is validated.
 	if _stateChangeFilePath != "" {
-		eventManager.OnBlockValidated(srv._handleBlockMainChainValidated)
+		eventManager.OnBlockValidated(srv._handleBlockValidated)
 	}
 	eventManager.OnBlockConnected(srv._handleBlockMainChainConnectedd)
 	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
@@ -447,11 +450,6 @@ func NewServer(
 		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
-	}
-
-	// If the chain is empty and state changes are being synced, reset the state change syncer files.
-	if _chain.headerTip().Height == 0 && stateChangeSyncer != nil {
-		stateChangeSyncer.Reset()
 	}
 
 	glog.V(1).Infof("Initialized chain: Best Header Height: %d, Header Hash: %s, Header CumWork: %s, Best Block Height: %d, Block Hash: %s, Block CumWork: %s",
@@ -1669,9 +1667,14 @@ func (srv *Server) _addNewTxn(
 	return newlyAcceptedTxns, nil
 }
 
-//
-func (srv *Server) _handleBlockMainChainValidated(event *BlockEvent) {
+// _handleBlockValidated is called when a block has been validated, but before the changes in that block have been
+// flushed to the utxoView.
+func (srv *Server) _handleBlockValidated(event *BlockEvent) {
 	blk := event.Block
+	// Once a block has been validated, emit a mempool disconnect state change for every mempool transaction that
+	// is about to be mined and flushed to db. We want to make sure that the state syncer emits the appropriate
+	// disconnect events for these soon-to-be-mined mempool transactions before it emits the connect events for the
+	// mined transactions.
 	srv.mempool.EmitDisconnectsAfterBlockValidated(blk)
 }
 
