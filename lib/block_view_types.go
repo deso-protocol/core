@@ -4209,6 +4209,18 @@ type CoinEntry struct {
 	TransferRestrictionStatus TransferRestrictionStatus
 }
 
+func (ce *CoinEntry) Copy() *CoinEntry {
+	return &CoinEntry{
+		CreatorBasisPoints:        ce.CreatorBasisPoints,
+		DeSoLockedNanos:           ce.DeSoLockedNanos,
+		NumberOfHolders:           ce.NumberOfHolders,
+		CoinsInCirculationNanos:   *uint256.NewInt().Set(&ce.CoinsInCirculationNanos),
+		CoinWatermarkNanos:        ce.CoinWatermarkNanos,
+		MintingDisabled:           ce.MintingDisabled,
+		TransferRestrictionStatus: ce.TransferRestrictionStatus,
+	}
+}
+
 func (ce *CoinEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
