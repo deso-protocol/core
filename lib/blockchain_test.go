@@ -1640,7 +1640,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	// Process the signed transaction.
 	txDescsAdded, err := mempool.processTransaction(
 		txn, true /*allowOrphan*/, true /*rateLimit*/, 0, /*peerID*/
-		true /*verifySignatures*/)
+		true /*verifySignatures*/, false /*emitTxStateChange*/)
 	require.NoError(err)
 	require.Equal(1, len(txDescsAdded))
 
