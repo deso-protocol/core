@@ -830,13 +830,13 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					}
 					var utxoOp *UtxoOperation
 					if cmpVal > 0 {
-						if utxoOp, err = bav._addBalance(newDESOSurplus.Uint64(), pubKey); err != nil {
-							return 0, 0, nil, err
-						}
 						// Add the DESO to the total output.
 						if !newDESOSurplus.IsUint64() {
 							return 0, 0, nil, errors.New(
 								"_connectDAOCoinLimitOrder: New DESO surplus is not uint64")
+						}
+						if utxoOp, err = bav._addBalance(newDESOSurplus.Uint64(), pubKey); err != nil {
+							return 0, 0, nil, err
 						}
 						totalOutput, err = SafeUint64().Add(totalOutput, newDESOSurplus.Uint64())
 						if err != nil {

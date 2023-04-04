@@ -3181,7 +3181,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	// For all transactions other than block rewards, validate the nonce.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-		if txn.TxnNonce.ExpirationBlockHeight < uint64(blockHeight) {
+		if uint64(blockHeight) > txn.TxnNonce.ExpirationBlockHeight {
 			return nil, 0, 0, 0, errors.Wrapf(RuleErrorNonceExpired,
 				"ConnectTransaction: Nonce %s has expired for public key %v",
 				txn.TxnNonce.String(), PkToStringBoth(txn.PublicKey))
@@ -3658,7 +3658,7 @@ func (bav *UtxoView) ConstructNonceForPublicKey(publicKey []byte, blockHeight ui
 			"ConstructNonceForPublicKey: No PKID entry found for public key %s",
 			PkToStringBoth(publicKey))
 	}
-	return bav.ConstructNonceForPKID(pkidEntry.PKID, blockHeight, 2)
+	return bav.ConstructNonceForPKID(pkidEntry.PKID, blockHeight)
 }
 
 // ConstructNonceForPKID constructs a nonce for the given PKID. The depth parameter
@@ -3666,10 +3666,7 @@ func (bav *UtxoView) ConstructNonceForPublicKey(publicKey []byte, blockHeight ui
 // randomly generated nonce is not already in use by the given PKID. If it is, we
 // try to generate another nonce w/ depth - 1. When depth is 0 and we fail to generate
 // a unique nonce, we return an error.
-func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64, depth uint8) (*DeSoNonce, error) {
-	if depth > 2 {
-		return nil, fmt.Errorf("ConstructNonceForPKID: Depth must be <= 2")
-	}
+func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64) (*DeSoNonce, error) {
 	// construct nonce
 	expirationBuffer := uint64(MaxMaxNonceExpirationBlockHeightOffset)
 	if bav.GlobalParamsEntry != nil && bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 {
@@ -3685,13 +3682,11 @@ func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64, depth
 	if err != nil {
 		return nil, errors.Wrapf(err, "ConstructNonceForPKID: ")
 	}
-	if nonceEntry == nil {
-		return &nonce, nil
+	if nonceEntry != nil && !nonceEntry.isDeleted {
+		return nil, errors.New("ConstructNonceForPKID: Nonce already exists")
 	}
-	if depth == 0 {
-		return nil, errors.New("ConstructNonceForPKID: Exhausted depth")
-	}
-	return bav.ConstructNonceForPKID(pkid, blockHeight, depth-1)
+
+	return &nonce, nil
 }
 
 // GetUnspentUtxoEntrysForPublicKey returns the UtxoEntrys corresponding to the

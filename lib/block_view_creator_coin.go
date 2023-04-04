@@ -250,7 +250,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 			numUtxoOrBalanceAdds += 1
 		}
 		// Under the balance model, there may be an "Add Balance" operation baked into the UTXO
-		// operations for this transaction.  These ops are added when a founder reward is paid
+		// operations for this transaction. These ops are added when a founder reward is paid
 		// or when the signer sells creator coins.  We handle the "unAddBalance" here since the
 		// operation data tells us how much to unAdd and from which public key.
 		if utxoOp.Type == OperationTypeAddBalance {
