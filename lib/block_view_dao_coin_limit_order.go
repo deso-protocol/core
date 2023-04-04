@@ -857,6 +857,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 								"_connectDAOCoinLimitOrder: Spend amount is not uint64")
 						}
 						spendAmount := spendAmountUint256.Uint64()
+						// _spendBalance looks for immature block rewards to determine the public key's
+						// spendable balance. Since the block reward does not exist for this block yet,
+						// we need to subtract one from the block height.
 						if utxoOp, err = bav._spendBalance(spendAmount, pubKey, blockHeight-1); err != nil {
 							return 0, 0, nil, err
 						}

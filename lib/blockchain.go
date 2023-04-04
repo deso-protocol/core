@@ -2920,6 +2920,11 @@ func _computeMaxTxFee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	return maxSizeBytes * minFeeRateNanosPerKB / 1000
 }
 
+// _computeMaxTxV1Fee computes the maximum fee for a V1 transaction. This is
+// slightly different from _computeMaxTxFee, so we can appropriately compute
+// tx fees for V1 transactions in our test cases when the fee rate > 100 but
+// less than 1000. Without the line to add 1 to the result, we would end up
+// with a fee that is too low in many of our test cases.
 func _computeMaxTxV1Fee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	if minFeeRateNanosPerKB > 1 && minFeeRateNanosPerKB <= 100 {
 		return _computeMaxTxFee(_tx, minFeeRateNanosPerKB)
@@ -4750,6 +4755,9 @@ func (bc *Blockchain) CreateMaxSpend(
 		for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 			prevFeeAmountNanos = feeAmountNanos
 			feeAmountNanos = _computeMaxTxV1Fee(txn, minFeeRateNanosPerKB)
+			if feeAmountNanos < prevFeeAmountNanos {
+				break
+			}
 			txn.TxnFeeNanos = feeAmountNanos
 			txn.TxOutputs[len(txn.TxOutputs)-1].AmountNanos = spendableBalance - feeAmountNanos
 		}
@@ -4857,6 +4865,13 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		txArg.TxnVersion = 1
 
 		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+		if mempool != nil {
+			utxoView, err = mempool.GetAugmentedUniversalView()
+			if err != nil {
+				return 0, 0, 0, 0, errors.Wrapf(
+					err, "_computeInputsForTxn: error getting augmented universal view: ")
+			}
+		}
 		if err != nil {
 			return 0, 0, 0, 0, errors.Wrapf(err,
 				"AddInputsAndChangeToTransaction: Problem getting UtxoView: ")
@@ -4878,6 +4893,9 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 				prevFeeAmountNanos = feeAmountNanos
 				feeAmountNanos = _computeMaxTxV1Fee(txArg, minFeeRateNanosPerKB)
+				if feeAmountNanos < prevFeeAmountNanos {
+					break
+				}
 				txArg.TxnFeeNanos = feeAmountNanos
 			}
 		}
