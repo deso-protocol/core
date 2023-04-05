@@ -764,7 +764,7 @@ var MainnetForkHeights = ForkHeights{
 	// Wed Mar 8 2023 @ 5pm PST
 	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(213487),
 
-	// TODO: set to real height
+	// FIXME: set to real height
 	BalanceModelBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -1027,7 +1027,7 @@ var TestnetForkHeights = ForkHeights{
 	// Mon Mar 6 2023 @ 7pm PT
 	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(642270),
 
-	// TODO: set to real height
+	// FIXME: set to real height
 	BalanceModelBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -1318,11 +1318,9 @@ const (
 	MinAccessGroupKeyNameCharacters = 1
 	MaxAccessGroupKeyNameCharacters = 32
 
-	// TODO: What are reasonable values for these?
-	// Min/Max MaxNonceExpirationBlockHeightOffset - Min/max value to which the MaxNonceExpirationBlockHeightOffset can be set.
-	// Note: MaxMaxNonceExpirationBlockHeightOffset is used as the default value if the param updater hasn't set it yet.
-	MinMaxNonceExpirationBlockHeightOffset = 1
-	MaxMaxNonceExpirationBlockHeightOffset = 10000
+	// DefaultMaxNonceExpirationBlockHeightOffset - default value to which the MaxNonceExpirationBlockHeightOffset
+	// is set to before specified by ParamUpdater.
+	DefaultMaxNonceExpirationBlockHeightOffset = 288
 
 	// TODO: Are these fields needed?
 	// Access group enumeration max recursion depth.

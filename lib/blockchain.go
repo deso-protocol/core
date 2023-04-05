@@ -1787,7 +1787,6 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
 
-	blockHeight32 := bc.BlockTip().Height + 1
 	blockHeight := uint64(bc.BlockTip().Height + 1)
 
 	bc.timer.Start("Blockchain.ProcessBlock: Initial")
@@ -1982,7 +1981,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			return false, false, RuleErrorMoreThanOneBlockReward
 		}
 
-		if err = CheckTransactionSanity(txn, blockHeight32, bc.params); err != nil {
+		if err = CheckTransactionSanity(txn, uint32(blockHeight), bc.params); err != nil {
 			bc.MarkBlockInvalid(
 				nodeToValidate, RuleError(errors.Wrapf(RuleErrorTxnSanity, "Error: %v", err).Error()))
 			return false, false, err
@@ -2921,6 +2920,11 @@ func _computeMaxTxFee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	return maxSizeBytes * minFeeRateNanosPerKB / 1000
 }
 
+// _computeMaxTxV1Fee computes the maximum fee for a V1 transaction. This is
+// slightly different from _computeMaxTxFee, so we can appropriately compute
+// tx fees for V1 transactions in our test cases when the fee rate > 100 but
+// less than 1000. Without the line to add 1 to the result, we would end up
+// with a fee that is too low in many of our test cases.
 func _computeMaxTxV1Fee(_tx *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	if minFeeRateNanosPerKB > 1 && minFeeRateNanosPerKB <= 100 {
 		return _computeMaxTxFee(_tx, minFeeRateNanosPerKB)
@@ -3429,7 +3433,10 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
+	// NOTE: This is no longer needed after we transition to balance model
+	if len(txn.TxInputs) == 0 &&
+		bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
+
 		return nil, 0, 0, 0, fmt.Errorf("CreateCreatorCoinTxn: CreatorCoin txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
@@ -3689,13 +3696,15 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 			var inputs []*DeSoInput
 			publicKey := NewPublicKey(utxoView.GetPublicKeyForPKID(&pkid))
 			if blockHeight >= bc.params.ForkHeights.BalanceModelBlockHeight {
-				spendableBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(publicKey.ToBytes(), blockHeight-1)
+				spendableBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
+					publicKey.ToBytes(), blockHeight-1)
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateDAOCoinLimitOrderTxn: Problem getting spendable balance: ")
 				}
 				if spendableBalance < desoNanosToConsume {
 					return nil, 0, 0, 0, fmt.Errorf(
-						"Blockchain.CreateDAOCoinLimitOrderTxn: Spendable balance (%d) insufficient for bid amount (%d) for public key %v: ",
+						"Blockchain.CreateDAOCoinLimitOrderTxn: Spendable balance (%d) insufficient for "+
+							"bid amount (%d) for public key %v: ",
 						spendableBalance, desoNanosToConsume, PkToString(publicKey.ToBytes(), bc.params))
 				}
 			} else {
@@ -3826,7 +3835,9 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
+	if len(txn.TxInputs) == 0 &&
+		bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
+
 		return nil, 0, 0, 0, fmt.Errorf("CreateCreateNFTTxn: CreateNFT txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
@@ -3935,7 +3946,9 @@ func (bc *Blockchain) CreateNFTBidTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
+	if len(txn.TxInputs) == 0 &&
+		bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
+
 		return nil, 0, 0, 0, fmt.Errorf("CreateNFTBidTxn: NFTBid txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
@@ -4015,7 +4028,9 @@ func (bc *Blockchain) CreateAcceptNFTTransferTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
+	if len(txn.TxInputs) == 0 &&
+		bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
+
 		return nil, 0, 0, 0, fmt.Errorf(
 			"CreateAcceptNFTTransferTxn: AcceptNFTTransfer txn must have at least one input" +
 				" but had zero inputs instead. Try increasing the fee rate.")
@@ -4133,7 +4148,9 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 && blockHeight < bc.params.ForkHeights.BalanceModelBlockHeight {
+	if len(txn.TxInputs) == 0 &&
+		blockHeight < bc.params.ForkHeights.BalanceModelBlockHeight {
+
 		return nil, 0, 0, 0, fmt.Errorf("CreateAcceptNFTBidTxn: AcceptNFTBid txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
@@ -4185,7 +4202,9 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
+	if len(txn.TxInputs) == 0 &&
+		bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
+
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateNFTTxn: CreateUpdateNFT txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
@@ -4439,7 +4458,9 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 && blockHeight < bc.params.ForkHeights.BalanceModelBlockHeight {
+	if len(txn.TxInputs) == 0 &&
+		blockHeight < bc.params.ForkHeights.BalanceModelBlockHeight {
+
 		return nil, 0, 0, 0, fmt.Errorf(
 			"CreateCreatorCoinTransferTxnWithDiamonds: CreatorCoinTransfer txn must have at" +
 				" least one input but had zero inputs instead. Try increasing the fee rate.")
@@ -4668,7 +4689,9 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 && blockHeight < bc.params.ForkHeights.BalanceModelBlockHeight {
+	if len(txn.TxInputs) == 0 &&
+		blockHeight < bc.params.ForkHeights.BalanceModelBlockHeight {
+
 		return nil, 0, 0, 0, 0, fmt.Errorf(
 			"CreateBasicTransferTxnWithDiamonds: Txn must have at" +
 				" least one input but had zero inputs instead. Try increasing the fee rate.")
@@ -4712,7 +4735,8 @@ func (bc *Blockchain) CreateMaxSpend(
 					"Blockchain.CreateMaxSpend: Problem getting UtxoView: ")
 			}
 		}
-		spendableBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(senderPkBytes, bc.BlockTip().Height)
+		spendableBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
+			senderPkBytes, bc.BlockTip().Height)
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"Blockchain.CreateMaxSpend: Problem getting spendable balance: ")
@@ -4731,6 +4755,9 @@ func (bc *Blockchain) CreateMaxSpend(
 		for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 			prevFeeAmountNanos = feeAmountNanos
 			feeAmountNanos = _computeMaxTxV1Fee(txn, minFeeRateNanosPerKB)
+			if feeAmountNanos < prevFeeAmountNanos {
+				break
+			}
 			txn.TxnFeeNanos = feeAmountNanos
 			txn.TxOutputs[len(txn.TxOutputs)-1].AmountNanos = spendableBalance - feeAmountNanos
 		}
@@ -4838,6 +4865,13 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		txArg.TxnVersion = 1
 
 		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+		if mempool != nil {
+			utxoView, err = mempool.GetAugmentedUniversalView()
+			if err != nil {
+				return 0, 0, 0, 0, errors.Wrapf(
+					err, "_computeInputsForTxn: error getting augmented universal view: ")
+			}
+		}
 		if err != nil {
 			return 0, 0, 0, 0, errors.Wrapf(err,
 				"AddInputsAndChangeToTransaction: Problem getting UtxoView: ")
@@ -4859,6 +4893,9 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 				prevFeeAmountNanos = feeAmountNanos
 				feeAmountNanos = _computeMaxTxV1Fee(txArg, minFeeRateNanosPerKB)
+				if feeAmountNanos < prevFeeAmountNanos {
+					break
+				}
 				txArg.TxnFeeNanos = feeAmountNanos
 			}
 		}

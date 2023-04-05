@@ -1107,6 +1107,11 @@ func (msg *MsgDeSoTransactionBundle) String() string {
 //   - Note that the crucial difference between the original TransactionBundle and
 //     TransactionBundleV2 is that TransactionBundleV2 includes the number of bytes per
 //     transaction in the transaction serialization.
+//   - This was needed when we switched
+//     from UTXOs to a balance model because we had to add a field to the end of MsgDeSoTxn,
+//     which meant we could no longer implicitly determine where one transaction ended and
+//     another began within a bundle. Hence the need for a new v2 bundle type that encodes
+//     the number of bytes per txn.
 // ==================================================================
 
 type MsgDeSoTransactionBundleV2 struct {
@@ -1129,7 +1134,9 @@ func (msg *MsgDeSoTransactionBundleV2) ToBytes(preSignature bool) ([]byte, error
 		if err != nil {
 			return nil, errors.Wrapf(err, "MsgDeSoTransactionBundleV2.ToBytes: Problem encoding transaction")
 		}
+		// The number of bytes in each txn is the only difference between v2 bundles and v1 bundles.
 		data = append(data, UintToBuf(uint64(len(transactionBytes)))...)
+		// Encode the txn just like in v1 bundles.
 		data = append(data, transactionBytes...)
 	}
 
@@ -2339,7 +2346,8 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem decoding txn length")
 		}
 		if txBytesLen > MaxMessagePayload {
-			return fmt.Errorf("MsgDeSoBlock.FromBytes: Txn %d length %d longer than max %d", ii, txBytesLen, MaxMessagePayload)
+			return fmt.Errorf("MsgDeSoBlock.FromBytes: Txn %d length %d longer than max %d",
+				ii, txBytesLen, MaxMessagePayload)
 		}
 		txBytes, err := SafeMakeSliceWithLength[byte](txBytesLen)
 		if err != nil {
@@ -2864,6 +2872,19 @@ func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) (*DeSoSignature, e
 	}, nil
 }
 
+// DeSoNonce is a nonce that can be used to prevent replay attacks. It is used in the DeSo protocol
+// to prevent replay attacks when a user is trying to create a transaction. The nonce comprises
+// two uint64s: the expiration block height and the partial ID. The expiration block height is the
+// block height at which the nonce expires. The partial ID is a random uint64 that is used to
+// prevent nonce reuse. This scheme allows us to re-order transactions based on fees while
+// optimizing developer UX. Nonce schemes used in other protocols require monotonically
+// increasing nonces. In DeSo, this would cause issues if a user tried to create a transaction
+// with a higher fee after creating a bunch of transactions with lower fees. For example,
+// a user may perform a normal social transactions such as posts and follows with low fees
+// and then wants to bid on an NFT and use a higher fee to ensure their bid is processed
+// quickly. If the nonce scheme required monotonically increasing nonces, the user would
+// have to wait for all of their low-fee transactions to be processed before they could
+// create a transaction with a higher fee.
 type DeSoNonce struct {
 	ExpirationBlockHeight uint64
 	PartialID             uint64
@@ -2914,7 +2935,7 @@ func (nonce *DeSoNonce) ReadDeSoNonce(rr io.Reader) error {
 
 type MsgDeSoTxn struct {
 	// TxnVersion 0: UTXO model transactions.
-	// TxnVersion 1: balance model transactions, which include a nonce and fee nanos.
+	// TxnVersion 1: Balance model transactions, which include a nonce and fee nanos.
 	TxnVersion uint64
 
 	TxInputs  []*DeSoInput
@@ -2922,10 +2943,11 @@ type MsgDeSoTxn struct {
 
 	// In the UTXO model, a transaction's "fee" is simply the DESO input nanos that aren't
 	// spent in the transaction outputs. Since the balance model does not use inputs, each
-	// transaction must explicitly its fee nanos.
+	// transaction must explicitly specify its fee nanos.
 	TxnFeeNanos uint64
 	// In the balance model, a unique nonce is required for each transaction that a single
-	// public key makes.  This prevents transactions from being used in replay attacks.
+	// public key makes. Without this field, it would be possible to rebroadcast a user's
+	// transactions repeatedly, aka a "replay attack."
 	TxnNonce *DeSoNonce
 
 	// DeSoTxnMetadata is an interface type that will give us information on how
@@ -3055,6 +3077,13 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 
 	// If TxnVersion is non-zero, this is a post-UTXO model transaction, and we must encode the
 	// version, fee, and the nonce.
+	//
+	// In an ideal world, the TxnVersion would appear at the beginning. However, because we
+	// introduced TxnVersion later on, putting it at the end allowed for v2 transactions to
+	// remain mostly backwards-compatible with v1 transactions, without needing to introduce
+	// a MsgDeSoTxnV2. This was highly-advantageous because it meant that all of the old v1
+	// transaction processing code could be left as-is, without needing to support two different
+	// message types.
 	if msg.TxnVersion != 0 {
 		data = append(data, UintToBuf(msg.TxnVersion)...)
 		data = append(data, UintToBuf(msg.TxnFeeNanos)...)

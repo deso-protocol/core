@@ -414,7 +414,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// Since we don't have bidder inputs in the balance model, we add the transactor
 			// to the prev balances map if it doesn't exist and the matching order is buying
 			// DESO.
-			if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && transactorOrder.SellingDAOCoinCreatorPKID.IsZeroPKID() {
+			if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight &&
+				transactorOrder.SellingDAOCoinCreatorPKID.IsZeroPKID() {
+
 				if _, exists := prevBalances[*matchingOrder.TransactorPKID][ZeroPKID]; !exists {
 					bav.balanceChange(matchingOrder.TransactorPKID, &ZeroPKID, big.NewInt(0), nil, prevBalances)
 				}
@@ -818,25 +820,26 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				// to deduct the fees specified in the metadata from the output
 				// we will create. We do not need to do this for balance model
 				// as the fees are already deducted in the basic transfer.
-				if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight && transactorPKIDEntry.PKID.Eq(&userPKID) {
+				if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight &&
+					transactorPKIDEntry.PKID.Eq(&userPKID) {
+
 					newDESOSurplus = big.NewInt(0).Sub(newDESOSurplus, big.NewInt(0).SetUint64(txMeta.FeeNanos))
 				}
 
 				if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-					// TODO: need some check to ensure we aren't printing any DESO.
 					cmpVal := newDESOSurplus.Cmp(big.NewInt(0))
 					if cmpVal == 0 {
 						continue
 					}
 					var utxoOp *UtxoOperation
 					if cmpVal > 0 {
-						if utxoOp, err = bav._addBalance(newDESOSurplus.Uint64(), pubKey); err != nil {
-							return 0, 0, nil, err
-						}
 						// Add the DESO to the total output.
 						if !newDESOSurplus.IsUint64() {
 							return 0, 0, nil, errors.New(
 								"_connectDAOCoinLimitOrder: New DESO surplus is not uint64")
+						}
+						if utxoOp, err = bav._addBalance(newDESOSurplus.Uint64(), pubKey); err != nil {
+							return 0, 0, nil, err
 						}
 						totalOutput, err = SafeUint64().Add(totalOutput, newDESOSurplus.Uint64())
 						if err != nil {
@@ -854,6 +857,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 								"_connectDAOCoinLimitOrder: Spend amount is not uint64")
 						}
 						spendAmount := spendAmountUint256.Uint64()
+						// _spendBalance looks for immature block rewards to determine the public key's
+						// spendable balance. Since the block reward does not exist for this block yet,
+						// we need to subtract one from the block height.
 						if utxoOp, err = bav._spendBalance(spendAmount, pubKey, blockHeight-1); err != nil {
 							return 0, 0, nil, err
 						}

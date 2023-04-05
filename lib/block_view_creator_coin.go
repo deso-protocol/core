@@ -250,7 +250,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 			numUtxoOrBalanceAdds += 1
 		}
 		// Under the balance model, there may be an "Add Balance" operation baked into the UTXO
-		// operations for this transaction.  These ops are added when a founder reward is paid
+		// operations for this transaction. These ops are added when a founder reward is paid
 		// or when the signer sells creator coins.  We handle the "unAddBalance" here since the
 		// operation data tells us how much to unAdd and from which public key.
 		if utxoOp.Type == OperationTypeAddBalance {
@@ -375,7 +375,9 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		bav._setCreatorCoinBalanceEntryMappings(transactorBalanceEntry)
 
 		// If a DeSo founder reward UTXO was created, revert it (not relevant for balance model).
-		if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight && operationData.FounderRewardUtxoKey != nil {
+		if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight &&
+			operationData.FounderRewardUtxoKey != nil {
+
 			if err := bav._unAddUtxo(operationData.FounderRewardUtxoKey); err != nil {
 				return errors.Wrapf(err, "_disconnectCreatorCoin: Problem unAdding utxo %v: ", operationData.FounderRewardUtxoKey)
 			}

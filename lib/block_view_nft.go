@@ -1132,7 +1132,10 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	case TxnTypeAcceptNFTBid:
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 			totalBidderInput = args.BidAmountNanos
-			utxoOp, err := bav._spendBalance(args.BidAmountNanos, bidderPublicKey, blockHeight)
+			// _spendBalance looks for immature block rewards to determine the public key's
+			// spendable balance. Since the block reward does not exist for this block yet,
+			// we need to subtract one from the block height.
+			utxoOp, err := bav._spendBalance(args.BidAmountNanos, bidderPublicKey, blockHeight-1)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: error spending balance for bidder: ")
 			}
@@ -1509,7 +1512,6 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		PrevAcceptedNFTBidEntries:  prevAcceptedBidHistory,
 		PrevNFTBidEntry:            args.PrevNFTBidEntry,
 	}
-	// TODO: does this need to change at all for balance model
 	if args.Txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 		transactionUtxoOp.Type = OperationTypeAcceptNFTBid
 		// Rosetta fields
@@ -2289,7 +2291,9 @@ func (bav *UtxoView) _disconnectAcceptNFTBid(
 		currentTxn, txnHash, utxoOpsForTxn[:operationIndex+1], blockHeight)
 }
 
-func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPostHash *BlockHash, blockHeight uint32) error {
+func (bav *UtxoView) _helpDisconnectNFTSold(operationData *UtxoOperation, nftPostHash *BlockHash,
+	blockHeight uint32) error {
+
 	// In order to disconnect the selling of an NFT, we need to do the following:
 
 	// In order to disconnect an accepted bid, we need to do the following:

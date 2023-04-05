@@ -842,10 +842,13 @@ func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.D
 		}
 	} else {
 		require.Equal(0, len(txn.TxInputs))
-		for ii := 0; ii < len(txn.TxOutputs); ii++ {
+		// The first utxo operation is the transactor paying for
+		// fees and the DESO sent to outputs.
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		// The remaining utxo operations are the outputs.
+		for ii := 1; ii < len(txn.TxOutputs); ii++ {
 			require.Equal(OperationTypeAddBalance, utxoOps[ii].Type)
 		}
-		require.Equal(OperationTypeSpendBalance, utxoOps[len(txn.TxOutputs)].Type)
 	}
 
 	require.NoError(utxoView.FlushToDb(uint64(chain.blockTip().Height)))
