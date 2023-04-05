@@ -3792,9 +3792,18 @@ func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64) (*DeS
 	if bav.GlobalParamsEntry != nil && bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 {
 		expirationBuffer = bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset
 	}
+	// Some tests use a very low expiration buffer to test
+	// that expired nonces get deleted. We don't want to
+	// underflow the expiration buffer, so we only subtract
+	// 10 if the expiration buffer is greater than 10.
+	// We subtract 10 from the expiration buffer so that
+	// nodes that are slightly behind do not reject transactions.
+	if expirationBuffer > 10 {
+		expirationBuffer -= 10
+	}
 	nonce := DeSoNonce{
 		PartialID:             rand.Uint64(),
-		ExpirationBlockHeight: blockHeight + expirationBuffer - 100,
+		ExpirationBlockHeight: blockHeight + expirationBuffer,
 	}
 
 	// Make sure we don't have a collision.
