@@ -474,7 +474,7 @@ type DBPrefixes struct {
 	PrefixValidatorByPKID []byte `prefix_id:"[77]" is_state:"true"`
 
 	// PrefixValidatorByStake: Retrieve the top N validators by stake.
-	// Prefix, TotalStakeAmountNanos, MaxUint32 - CreatedAtBlockHeight, ValidatorPKID -> ValidatorPKID
+	// Prefix, TotalStakeAmountNanos, MaxUint64 - RegisteredAtBlockHeight, ValidatorPKID -> ValidatorPKID
 	PrefixValidatorByStake []byte `prefix_id:"[78]" is_state:"true"`
 
 	// PrefixGlobalStakeAmountNanos: Retrieve the cumulative stake across all validators.

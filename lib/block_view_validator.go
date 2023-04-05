@@ -17,14 +17,14 @@ import (
 //
 
 type ValidatorEntry struct {
-	ValidatorID           *BlockHash
-	ValidatorPKID         *PKID
-	Domains               [][]byte
-	DisableDelegatedStake bool
-	TotalStakeAmountNanos *uint256.Int
-	CreatedAtBlockHeight  uint32
-	ExtraData             map[string][]byte
-	isDeleted             bool
+	ValidatorID             *BlockHash
+	ValidatorPKID           *PKID
+	Domains                 [][]byte
+	DisableDelegatedStake   bool
+	TotalStakeAmountNanos   *uint256.Int
+	RegisteredAtBlockHeight uint64
+	ExtraData               map[string][]byte
+	isDeleted               bool
 }
 
 type ValidatorMapKey struct {
@@ -46,13 +46,13 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 
 	// Return new ValidatorEntry.
 	return &ValidatorEntry{
-		ValidatorID:           validatorEntry.ValidatorID.NewBlockHash(),
-		ValidatorPKID:         validatorEntry.ValidatorPKID.NewPKID(),
-		Domains:               domainsCopy,
-		DisableDelegatedStake: validatorEntry.DisableDelegatedStake,
-		CreatedAtBlockHeight:  validatorEntry.CreatedAtBlockHeight,
-		ExtraData:             extraDataCopy,
-		isDeleted:             validatorEntry.isDeleted,
+		ValidatorID:             validatorEntry.ValidatorID.NewBlockHash(),
+		ValidatorPKID:           validatorEntry.ValidatorPKID.NewPKID(),
+		Domains:                 domainsCopy,
+		DisableDelegatedStake:   validatorEntry.DisableDelegatedStake,
+		RegisteredAtBlockHeight: validatorEntry.RegisteredAtBlockHeight,
+		ExtraData:               extraDataCopy,
+		isDeleted:               validatorEntry.isDeleted,
 	}
 }
 
@@ -73,7 +73,7 @@ func (validatorEntry *ValidatorEntry) RawEncodeWithoutMetadata(blockHeight uint6
 
 	data = append(data, BoolToByte(validatorEntry.DisableDelegatedStake))
 	data = append(data, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
-	data = append(data, UintToBuf(uint64(validatorEntry.CreatedAtBlockHeight))...)
+	data = append(data, UintToBuf(validatorEntry.RegisteredAtBlockHeight)...)
 	data = append(data, EncodeExtraData(validatorEntry.ExtraData)...)
 	return data
 }
@@ -122,18 +122,11 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading TotalStakeAmountNanos: ")
 	}
 
-	// CreatedAtBlockHeight
-	createdAtBlockHeight, err := ReadUvarint(rr)
+	// RegisteredAtBlockHeight
+	validatorEntry.RegisteredAtBlockHeight, err = ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading CreatedAtBlockHeight: ")
+		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading RegisteredAtBlockHeight: ")
 	}
-	if blockHeight > uint64(math.MaxUint32) {
-		return fmt.Errorf(
-			"ValidatorEntry.Decode: CreatedAtBlockHeight %d greater than max uint32",
-			createdAtBlockHeight,
-		)
-	}
-	validatorEntry.CreatedAtBlockHeight = uint32(createdAtBlockHeight)
 
 	// ExtraData
 	validatorEntry.ExtraData, err = DecodeExtraData(rr)
@@ -422,8 +415,8 @@ func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	var key []byte
 	key = append(key, Prefixes.PrefixValidatorByStake...)
 	// TODO: ensure that this left-pads the uint256 to be equal width
-	key = append(key, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)               // Highest stake first
-	key = append(key, _EncodeUint32(math.MaxUint32-validatorEntry.CreatedAtBlockHeight)...) // Oldest first
+	key = append(key, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)                 // Highest stake first
+	key = append(key, EncodeUint64(math.MaxUint64-validatorEntry.RegisteredAtBlockHeight)...) // Oldest first
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
 	return key
 }
@@ -871,10 +864,10 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	// TODO: Calculate TotalStakeAmountNanos.
 	totalStakeAmountNanos := uint256.NewInt()
 
-	// Set CreatedAtBlockHeight only if this is a new ValidatorEntry.
-	createdAtBlockHeight := blockHeight
+	// Set RegisteredAtBlockHeight only if this is a new ValidatorEntry.
+	registeredAtBlockHeight := uint64(blockHeight)
 	if prevValidatorEntry != nil {
-		createdAtBlockHeight = prevValidatorEntry.CreatedAtBlockHeight
+		registeredAtBlockHeight = prevValidatorEntry.RegisteredAtBlockHeight
 	}
 
 	// Retrieve existing ExtraData to merge with any new ExtraData.
@@ -886,13 +879,13 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 
 	// Construct new ValidatorEntry from metadata.
 	currentValidatorEntry := &ValidatorEntry{
-		ValidatorID:           validatorID,
-		ValidatorPKID:         transactorPKIDEntry.PKID,
-		Domains:               txMeta.Domains,
-		DisableDelegatedStake: txMeta.DisableDelegatedStake,
-		TotalStakeAmountNanos: totalStakeAmountNanos,
-		CreatedAtBlockHeight:  createdAtBlockHeight,
-		ExtraData:             mergeExtraData(prevExtraData, txn.ExtraData),
+		ValidatorID:             validatorID,
+		ValidatorPKID:           transactorPKIDEntry.PKID,
+		Domains:                 txMeta.Domains,
+		DisableDelegatedStake:   txMeta.DisableDelegatedStake,
+		TotalStakeAmountNanos:   totalStakeAmountNanos,
+		RegisteredAtBlockHeight: registeredAtBlockHeight,
+		ExtraData:               mergeExtraData(prevExtraData, txn.ExtraData),
 	}
 	// Set the ValidatorEntry.
 	bav._setValidatorEntryMappings(currentValidatorEntry)
