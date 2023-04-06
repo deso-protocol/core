@@ -938,7 +938,9 @@ func (bav *UtxoView) _disconnectRegisterAsValidator(
 	}
 	bav._deleteValidatorEntryMappings(currentValidatorEntry)
 
-	// Restore the prev ValidatorEntry, if exists.
+	// Restore the PrevValidatorEntry, if exists. The PrevValidatorEntry won't exist if this was
+	// the first time this ValidatorEntry was created. The PrevValidatorEntry will exist if this
+	// was an update operation on an existing ValidatorEntry.
 	prevValidatorEntry := operationData.PrevValidatorEntry
 	if prevValidatorEntry != nil {
 		bav._setValidatorEntryMappings(prevValidatorEntry)
@@ -1003,11 +1005,10 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: ")
 	}
 	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
-	if prevValidatorEntry != nil {
-		bav._deleteValidatorEntryMappings(prevValidatorEntry)
-	} else {
+	if prevValidatorEntry == nil {
 		return 0, 0, nil, RuleErrorValidatorNotFound
 	}
+	bav._deleteValidatorEntryMappings(prevValidatorEntry)
 
 	// Add a UTXO operation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
@@ -1033,13 +1034,13 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	operationData := utxoOpsForTxn[operationIndex]
 	if operationData.Type != OperationTypeUnregisterAsValidator {
 		return fmt.Errorf(
-			"_disconnectUnegisterAsValidator: trying to revert %v but found %v",
+			"_disconnectUnregisterAsValidator: trying to revert %v but found %v",
 			OperationTypeUnregisterAsValidator,
 			operationData.Type,
 		)
 	}
 
-	// Restore the prev ValidatorEntry.
+	// Restore the PrevValidatorEntry.
 	prevValidatorEntry := operationData.PrevValidatorEntry
 	if prevValidatorEntry == nil {
 		// This should never happen.
@@ -1089,7 +1090,11 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 func (bav *UtxoView) GetValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
 	// First check UtxoView.
 	validatorEntry, exists := bav.ValidatorMapKeyToValidatorEntry[ValidatorMapKey{ValidatorPKID: *pkid}]
-	if exists && validatorEntry != nil && !validatorEntry.isDeleted {
+	if exists && validatorEntry != nil {
+		// Return not found if ValidatorEntry isDeleted.
+		if validatorEntry.isDeleted {
+			return nil, nil
+		}
 		return validatorEntry, nil
 	}
 	// If not found, check database.
@@ -1163,10 +1168,10 @@ func (bav *UtxoView) _deleteValidatorEntryMappings(validatorEntry *ValidatorEntr
 		return
 	}
 	// Create a tombstone entry.
-	tombstoneEntry := validatorEntry
+	tombstoneEntry := *validatorEntry
 	tombstoneEntry.isDeleted = true
 	// Set the mappings to the point to the tombstone entry.
-	bav._setValidatorEntryMappings(tombstoneEntry)
+	bav._setValidatorEntryMappings(&tombstoneEntry)
 }
 
 func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
