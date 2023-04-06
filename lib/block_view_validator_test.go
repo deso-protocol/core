@@ -217,16 +217,22 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Equal(t, string(validatorEntry.ExtraData["TestKey"]), "TestValue2")
 	}
 	{
+		// Sad path: unregister validator that doesn't exist
+		_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m1Pub, m1Priv, flushToDB)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorNotFound)
+	}
+	{
 		// Happy path: unregister validator
 		_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
 		require.NoError(t, err)
 	}
-	//{
-	//	// Sad path: unregister validator that doesn't exist
-	//	_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
-	//	require.Error(t, err)
-	//	require.Contains(t, err.Error(), RuleErrorValidatorNotFound)
-	//}
+	{
+		// Sad path: unregister validator that doesn't exist
+		_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorNotFound)
+	}
 	{
 		// Query: retrieve ValidatorEntry by PKID
 		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
@@ -247,7 +253,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 
 	// Flush mempool to the db and test rollbacks.
-	mempool.universalUtxoView.FlushToDb(0)
+	require.NoError(t, mempool.universalUtxoView.FlushToDb(0))
 	_executeAllTestRollbackAndFlush(testMeta)
 }
 

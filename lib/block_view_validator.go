@@ -754,6 +754,30 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 		// we've added all the inputs and change.
 	}
 
+	// Create a new UtxoView. If we have access to a mempool object, use
+	// it to get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrap(
+			err, "Blockchain.CreateRegisterAsValidatorTxn: problem creating new utxo view: ",
+		)
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(
+				err, "Blockchain.CreateRegisterAsValidatorTxn: problem getting augmented utxo view from mempool: ",
+			)
+		}
+	}
+
+	// Validate txn metadata.
+	if err = utxoView.IsValidUnregisterAsValidatorMetadata(transactorPublicKey, metadata); err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateUnregisterAsValidatorTxn: invalid txn metadata: ",
+		)
+	}
+
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
@@ -991,6 +1015,14 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 		// public key so there is no need to verify anything further.
 	}
 
+	// Grab the txn metadata.
+	txMeta := txn.TxnMeta.(*UnregisterAsValidatorMetadata)
+
+	// Validate the txn metadata.
+	if err = bav.IsValidUnregisterAsValidatorMetadata(txn.PublicKey, txMeta); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: ")
+	}
+
 	// Convert TransactorPublicKey to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
@@ -1043,7 +1075,8 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	// Restore the PrevValidatorEntry.
 	prevValidatorEntry := operationData.PrevValidatorEntry
 	if prevValidatorEntry == nil {
-		// This should never happen.
+		// This should never happen as you can only unregister an existing ValidatorEntry
+		// when connecting. So disconnecting should always have a PrevValidatorEntry.
 		return fmt.Errorf(
 			"_disconnectUnregisterAsValidator: no deleted ValidatorEntry found for %v", currentTxn.PublicKey,
 		)
@@ -1082,6 +1115,25 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 	}
 	if len(NewSet(domainStrings).ToSlice()) != len(domainStrings) {
 		return RuleErrorValidatorDuplicateDomains
+	}
+
+	return nil
+}
+
+func (bav *UtxoView) IsValidUnregisterAsValidatorMetadata(transactorPublicKey []byte, metadata *UnregisterAsValidatorMetadata) error {
+	// Validate ValidatorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return RuleErrorInvalidValidatorPKID
+	}
+
+	// Validate ValidatorEntry exists.
+	validatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "IsValidUnregisterAsValidatorMetadata: ")
+	}
+	if validatorEntry == nil {
+		return RuleErrorValidatorNotFound
 	}
 
 	return nil
