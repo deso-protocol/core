@@ -1,5 +1,3 @@
-//go:build relic
-
 package lib
 
 import (

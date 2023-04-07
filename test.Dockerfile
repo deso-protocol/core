@@ -2,14 +2,16 @@ FROM alpine:latest AS core
 
 RUN apk update
 RUN apk upgrade
-RUN apk add --update go gcc g++ vips vips-dev
+RUN apk add --update bash cmake git go gcc g++ make vips vips-dev
 
 WORKDIR /deso/src/core
 
 COPY go.mod .
 COPY go.sum .
-
 RUN go mod download
+
+COPY scripts/install-relic.sh .
+RUN ./install-relic.sh
 
 COPY desohash desohash
 COPY cmd       cmd
@@ -21,4 +23,4 @@ COPY main.go   .
 # build backend
 RUN GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core main.go
 
-ENTRYPOINT ["go", "test", "-v", "github.com/deso-protocol/core/lib"]
+ENTRYPOINT ["go", "test", "-tags", "relic", "-v", "github.com/deso-protocol/core/lib"]
