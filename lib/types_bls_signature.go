@@ -1,8 +1,10 @@
+//go:build relic
+
 package lib
 
 import (
+	"bytes"
 	flowCrypto "github.com/onflow/flow-go/crypto"
-	"github.com/onflow/flow-go/crypto/hash"
 	"io"
 )
 
@@ -12,7 +14,7 @@ import (
 
 const BLSSigningAlgorithm = flowCrypto.BLSBLS12381
 
-var BLSHashingAlgorithm = hash.NewSHA2_256()
+var BLSHashingAlgorithm = flowCrypto.NewExpandMsgXOFKMAC128("deso-protocol")
 
 type BLSPublicKey struct {
 	PublicKey flowCrypto.PublicKey
@@ -64,4 +66,8 @@ func (blsSignature *BLSSignature) FromBytes(rr io.Reader) error {
 	var err error
 	blsSignature.Signature, err = DecodeByteArray(rr)
 	return err
+}
+
+func (blsSignature *BLSSignature) Eq(other *BLSSignature) bool {
+	return bytes.Equal(blsSignature.ToBytes(), other.ToBytes())
 }
