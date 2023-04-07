@@ -24,9 +24,6 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
-	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
-	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
 	utxoView := func() *UtxoView {
 		newUtxoView, err := mempool.GetAugmentedUniversalView()
@@ -84,7 +81,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 	{
 		// RuleErrorProofOfStakeTxnBeforeBlockHeight
-		params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = math.MaxUint32
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = math.MaxUint32
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
