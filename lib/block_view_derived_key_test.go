@@ -2633,10 +2633,11 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
-	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = unlimitedDerivedKeysBlockHeight
-	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 100
+	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = 0
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = unlimitedDerivedKeysBlockHeight
 	GlobalDeSoParams = *params
 
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
@@ -2892,7 +2893,7 @@ REPEAT:
 		// Use EncoderBlockHeight 1 to make sure we use the new spending limit encoding.
 		blockHeight, err = GetBlockTipHeight(db, false)
 		require.NoError(err)
-		_doTxnWithTestMetaWithBlockHeight(
+		errAuthorize := _doTxnWithTextMetaWithBlockHeightWithError(
 			testMeta,
 			10,
 			m1Pub,
@@ -2923,7 +2924,8 @@ REPEAT:
 			blockHeight+1,
 		)
 		if blockHeight+1 < uint64(unlimitedDerivedKeysBlockHeight) {
-			require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
+			require.Contains(errAuthorize.Error(), RuleErrorUnlimitedDerivedKeyBeforeBlockHeight)
+			require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinOperationNotAuthorized)
 		} else {
 			require.NoError(err)
 		}
@@ -2948,7 +2950,7 @@ REPEAT:
 			blockHeight+1,
 		)
 		if blockHeight+1 < uint64(unlimitedDerivedKeysBlockHeight) {
-			require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
+			require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinOperationNotAuthorized)
 		} else {
 			require.NoError(err)
 		}
@@ -3270,7 +3272,7 @@ REPEAT:
 		extraData := make(map[string]interface{})
 		extraData[TransactionSpendingLimitKey] = transactionSpendingLimit
 		// Use EncoderBlockHeight 1 to make sure we use the new spending limit encoding.
-		_doTxnWithTestMetaWithBlockHeight(
+		authorizeError := _doTxnWithTextMetaWithBlockHeightWithError(
 			testMeta,
 			10,
 			m0Pub,
@@ -3300,7 +3302,8 @@ REPEAT:
 			blockHeight+1,
 		)
 		if blockHeight+1 < uint64(unlimitedDerivedKeysBlockHeight) {
-			require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
+			require.Contains(authorizeError.Error(), RuleErrorUnlimitedDerivedKeyBeforeBlockHeight)
+			require.Contains(err.Error(), RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized)
 		} else {
 			require.NoError(err)
 		}
