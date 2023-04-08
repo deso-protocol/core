@@ -1,9 +1,11 @@
 package lib
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/pkg/errors"
+	"io"
 	"log"
 	"math"
 	"math/big"
@@ -72,7 +74,33 @@ const (
 	// EnableTimer
 	EnableTimer  = true
 	DisableTimer = false
+
+	// AccessGroupSpendingLimitSafetyBytesCount is the number of safety 0xff bytes included in the encoding of
+	// TransactionSpendingLimit for access groups. There was a bug in the encoding of access group spending limits
+	// that resulted in the incorrect computation of state checksum. To fix it, a new encoding was introduced that
+	// includes the safety bytes as a precaution against potentially overlapping encodings.
+	AccessGroupSpendingLimitSafetyBytesCount = 10
 )
+
+// AccessGroupSpendingLimitSafetyToBytes encodes an array of 0xff safety bytes.
+// These bytes are added at the end of the access group transaction spending limits encoding to ensure the same entry
+// is encoded differently before and after the patch.
+func AccessGroupSpendingLimitSafetyToBytes() []byte {
+	safetyBytes := make([]byte, AccessGroupSpendingLimitSafetyBytesCount)
+	for ii := 0; ii < AccessGroupSpendingLimitSafetyBytesCount; ii++ {
+		safetyBytes[ii] = 0xff
+	}
+	return safetyBytes
+}
+
+// AccessGroupSpendingLimitSafetyFromBytes decodes an array of 0xff safety bytes.
+func AccessGroupSpendingLimitSafetyFromBytes(rr *bytes.Reader) error {
+	safetyBytes := make([]byte, AccessGroupSpendingLimitSafetyBytesCount)
+	if _, err := io.ReadFull(rr, safetyBytes); err != nil {
+		return errors.Wrapf(err, "AccessGroupSpendingLimitSafetyFromBytes: Problem reading safety bytes")
+	}
+	return nil
+}
 
 type NetworkType uint64
 

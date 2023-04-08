@@ -5717,7 +5717,18 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 		}
 	}
 
-	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
+	// There happened to be a bug in the encoding of access group spending limits before the balance model fork.
+	// The problem was non-deterministic encoding of the tsl.AccessGroupMap. The bug was left for backwards-compatibility,
+	// and can be found in the tsl.AccessGroupsToBytesLegacy method.
+	//
+	// As a result of this bug, checksum computation became non-deterministic, hindering node's ability to accurately
+	// compute the checksum. To solve this problem, we patched the encoding in the BalanceModelMigration. Having a new
+	// migration will force all nodes on the network to re-encode their checksum using the newest encoding.
+	// In the new encoding, the map is encoded in a deterministic way. In addition, we add "safety bytes" after the
+	// access group spending limit bytes to ensure there is never an overlap between the legacy and new encodings.
+	// This prevents potential issues that could arise in the migration checksum computation.
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+
 		accessGroupLimitMapLength := uint64(len(tsl.AccessGroupMap))
 		data = append(data, UintToBuf(accessGroupLimitMapLength)...)
 		if accessGroupLimitMapLength > 0 {
@@ -5731,10 +5742,13 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 			sort.Slice(keys, func(ii, jj int) bool {
 				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
 			})
-			for key := range tsl.AccessGroupMap {
+			for _, key := range keys {
 				data = append(data, key.Encode()...)
 				data = append(data, UintToBuf(tsl.AccessGroupMap[key])...)
 			}
+
+			// We add the safety bytes here to ensure there is no possible overlap between the past and new encodings.
+			data = append(data, AccessGroupSpendingLimitSafetyToBytes()...)
 		}
 
 		accessGroupMemberLimitMapLength := uint64(len(tsl.AccessGroupMemberMap))
@@ -5755,6 +5769,13 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 				data = append(data, UintToBuf(tsl.AccessGroupMemberMap[key])...)
 			}
 		}
+
+	} else if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
+		accessGroupsBytes, err := tsl.AccessGroupsToBytesLegacy(blockHeight)
+		if err != nil {
+			return nil, err
+		}
+		data = append(data, accessGroupsBytes...)
 	}
 
 	return data, nil
@@ -5914,7 +5935,9 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
-	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
+	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) ||
+		MigrationTriggered(blockHeight, BalanceModelMigration) {
+
 		// Access Group Map
 		accessGroupLimitMapLen, err := ReadUvarint(rr)
 		if err != nil {
@@ -5936,6 +5959,12 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 					return fmt.Errorf("Access group limit key already exists")
 				}
 				tsl.AccessGroupMap[*accessGroupLimitKey] = operationCount
+			}
+
+			if MigrationTriggered(blockHeight, BalanceModelMigration) {
+				if err := AccessGroupSpendingLimitSafetyFromBytes(rr); err != nil {
+					return errors.Wrapf(err, "TransactionSpendingLimit.FromBytes:")
+				}
 			}
 		}
 
@@ -5965,6 +5994,49 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 	}
 
 	return nil
+}
+
+func (tsl *TransactionSpendingLimit) AccessGroupsToBytesLegacy(blockHeight uint64) ([]byte, error) {
+	data := []byte{}
+
+	accessGroupLimitMapLength := uint64(len(tsl.AccessGroupMap))
+	data = append(data, UintToBuf(accessGroupLimitMapLength)...)
+	if accessGroupLimitMapLength > 0 {
+		keys, err := SafeMakeSliceWithLengthAndCapacity[AccessGroupLimitKey](0, accessGroupLimitMapLength)
+		if err != nil {
+			return nil, err
+		}
+		for key := range tsl.AccessGroupMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+		})
+		for key := range tsl.AccessGroupMap {
+			data = append(data, key.Encode()...)
+			data = append(data, UintToBuf(tsl.AccessGroupMap[key])...)
+		}
+	}
+
+	accessGroupMemberLimitMapLength := uint64(len(tsl.AccessGroupMemberMap))
+	data = append(data, UintToBuf(accessGroupMemberLimitMapLength)...)
+	if accessGroupMemberLimitMapLength > 0 {
+		keys, err := SafeMakeSliceWithLengthAndCapacity[AccessGroupMemberLimitKey](0, accessGroupMemberLimitMapLength)
+		if err != nil {
+			return nil, err
+		}
+		for key := range tsl.AccessGroupMemberMap {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(ii, jj int) bool {
+			return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+		})
+		for _, key := range keys {
+			data = append(data, key.Encode()...)
+			data = append(data, UintToBuf(tsl.AccessGroupMemberMap[key])...)
+		}
+	}
+	return data, nil
 }
 
 func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
