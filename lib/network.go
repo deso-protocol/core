@@ -5746,9 +5746,6 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 				data = append(data, key.Encode()...)
 				data = append(data, UintToBuf(tsl.AccessGroupMap[key])...)
 			}
-
-			// We add the safety bytes here to ensure there is no possible overlap between the past and new encodings.
-			data = append(data, AccessGroupSpendingLimitSafetyToBytes()...)
 		}
 
 		accessGroupMemberLimitMapLength := uint64(len(tsl.AccessGroupMemberMap))
@@ -5959,12 +5956,6 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 					return fmt.Errorf("Access group limit key already exists")
 				}
 				tsl.AccessGroupMap[*accessGroupLimitKey] = operationCount
-			}
-
-			if MigrationTriggered(blockHeight, BalanceModelMigration) {
-				if err := AccessGroupSpendingLimitSafetyFromBytes(rr); err != nil {
-					return errors.Wrapf(err, "TransactionSpendingLimit.FromBytes:")
-				}
 			}
 		}
 
