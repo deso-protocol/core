@@ -2933,10 +2933,17 @@ func (nonce *DeSoNonce) ReadDeSoNonce(rr io.Reader) error {
 	return nil
 }
 
+type DeSoTxnVersion uint64
+
+const (
+	DeSoTxnVersion0 DeSoTxnVersion = 0
+	DeSoTxnVersion1 DeSoTxnVersion = 1
+)
+
 type MsgDeSoTxn struct {
 	// TxnVersion 0: UTXO model transactions.
 	// TxnVersion 1: Balance model transactions, which include a nonce and fee nanos.
-	TxnVersion uint64
+	TxnVersion DeSoTxnVersion
 
 	TxInputs  []*DeSoInput
 	TxOutputs []*DeSoOutput
@@ -3085,7 +3092,7 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	// transaction processing code could be left as-is, without needing to support two different
 	// message types.
 	if msg.TxnVersion != 0 {
-		data = append(data, UintToBuf(msg.TxnVersion)...)
+		data = append(data, UintToBuf(uint64(msg.TxnVersion))...)
 		data = append(data, UintToBuf(msg.TxnFeeNanos)...)
 		data = append(data, msg.TxnNonce.ToBytes()...)
 	}
@@ -3261,7 +3268,7 @@ func _readTransactionV1Fields(rr io.Reader, ret *MsgDeSoTxn) error {
 		return errors.Wrapf(
 			err, "_readTransactionV1Fields: Problem parsing DeSoTxn.TxnVersion bytes")
 	}
-	ret.TxnVersion = txnVersion
+	ret.TxnVersion = DeSoTxnVersion(txnVersion)
 
 	txnFeeNanos, err := ReadUvarint(rr)
 	if err != nil {

@@ -2895,8 +2895,23 @@ func amountEqualsAdditionalOutputs(spendAmount uint64, additionalOutputs []*DeSo
 // transaction without the signature and then accounts for the maximum possible
 // size the signature could be.
 func _computeMaxTxSize(_tx *MsgDeSoTxn) uint64 {
+	// Clone the txn
+	txnCloneBytes, _ := _tx.ToBytes(true)
+	var txnClone MsgDeSoTxn
+	txnClone.FromBytes(txnCloneBytes)
+
+	// Set the nonce to the maximum-sized uint64 so that we eliminate variability due
+	// to nonce sizing. This also makes it so that fees can be computed deterministically
+	// for a particular account, assuming the output amount is the same. If we didn't do
+	// this, then the size of the PartialID could change the size of the txn when serializing
+	// as a Uvarint, which would cause different max fees each time.
+	if txnClone.TxnVersion == DeSoTxnVersion1 {
+		txnClone.TxnNonce.PartialID = math.MaxUint64
+		txnClone.TxnNonce.ExpirationBlockHeight = math.MaxUint64
+	}
+
 	// Compute the size of the transaction without the signature.
-	txBytesNoSignature, _ := _tx.ToBytes(true /*preSignature*/)
+	txBytesNoSignature, _ := txnClone.ToBytes(true /*preSignature*/)
 	// Return the size the transaction would be if the signature had its
 	// absolute maximum length.
 

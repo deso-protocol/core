@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/btcsuite/btcd/wire"
 	"math"
 	"math/big"
-	"math/rand"
 	"reflect"
 	"strings"
 	"time"
@@ -3801,8 +3801,12 @@ func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64) (*DeS
 	if bav.GlobalParamsEntry != nil && bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 {
 		expirationBuffer = bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset
 	}
+	randomUint64, err := wire.RandomUint64()
+	if err != nil {
+		return nil, errors.Wrapf(err, "ConstructNonceForPKID: Error generating random uint64: ")
+	}
 	nonce := DeSoNonce{
-		PartialID:             rand.Uint64(),
+		PartialID:             randomUint64,
 		ExpirationBlockHeight: blockHeight + expirationBuffer,
 	}
 
