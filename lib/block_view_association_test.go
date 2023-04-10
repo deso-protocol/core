@@ -2215,6 +2215,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	chain.snapshot = nil
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
