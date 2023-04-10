@@ -10,6 +10,13 @@ import (
 	"testing"
 )
 
+func TestBalanceModelAssociations(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestAssociations(t)
+}
+
 func TestAssociations(t *testing.T) {
 	// Run all tests twice: once flushing all txns to the
 	// db, and once just keeping all txns in the mempool.
@@ -2261,10 +2268,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		derivedKeyAuthPrivBase58Check := Base58CheckEncode(derivedKeyAuthPriv.Serialize(), true, params)
 
 		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraDataAndSpendingLimits(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			testMeta.feeRateNanosPerKb,
 			senderPkBytes,

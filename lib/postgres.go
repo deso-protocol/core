@@ -1137,11 +1137,12 @@ type PGGlobalParams struct {
 
 	ID uint64
 
-	USDCentsPerBitcoin      uint64 `pg:",use_zero"`
-	CreateProfileFeeNanos   uint64 `pg:",use_zero"`
-	CreateNFTFeeNanos       uint64 `pg:",use_zero"`
-	MaxCopiesPerNFT         uint64 `pg:",use_zero"`
-	MinNetworkFeeNanosPerKB uint64 `pg:",use_zero"`
+	USDCentsPerBitcoin                  uint64 `pg:",use_zero"`
+	CreateProfileFeeNanos               uint64 `pg:",use_zero"`
+	CreateNFTFeeNanos                   uint64 `pg:",use_zero"`
+	MaxCopiesPerNFT                     uint64 `pg:",use_zero"`
+	MinNetworkFeeNanosPerKB             uint64 `pg:",use_zero"`
+	MaxNonceExpirationBlockHeightOffset uint64 `pg:",use_zero"`
 }
 
 type PGRepost struct {

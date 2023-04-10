@@ -195,7 +195,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.MinDeSoExpectedNanos,
 			realTxMeta.MinCreatorCoinExpectedNanos,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil)
 		require.NoError(err)
 		operationType = OperationTypeCreatorCoin
@@ -207,7 +207,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.CreatorCoinToTransferNanos,
 			realTxMeta.ReceiverPublicKey,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -218,7 +218,7 @@ func _doTxnWithBlockHeight(
 			transactorPublicKey,
 			realTxMeta,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -229,7 +229,7 @@ func _doTxnWithBlockHeight(
 			transactorPublicKey,
 			realTxMeta,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -251,7 +251,7 @@ func _doTxnWithBlockHeight(
 			isBuyNow,
 			buyNowPriceNanos,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -290,7 +290,7 @@ func _doTxnWithBlockHeight(
 			additionalCoinRoyaltyMap,
 			nil,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -305,7 +305,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.BidAmountNanos,
 			realTxMeta.UnlockableText,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -317,7 +317,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.NFTPostHash,
 			realTxMeta.SerialNumber,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -330,7 +330,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.SerialNumber,
 			realTxMeta.BidAmountNanos,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -349,7 +349,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.SerialNumber,
 			realTxMeta.UnlockableText,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -361,7 +361,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.NFTPostHash,
 			realTxMeta.SerialNumber,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -393,7 +393,7 @@ func _doTxnWithBlockHeight(
 			memo,
 			hex.EncodeToString(transactionSpendingLimitBytes),
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -412,7 +412,7 @@ func _doTxnWithBlockHeight(
 			0,
 			nil,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -431,7 +431,7 @@ func _doTxnWithBlockHeight(
 			nil,
 			realTxMeta.IsHidden,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -456,8 +456,9 @@ func _doTxnWithBlockHeight(
 			maxCopiesPerNFT,
 			minNetworkFeeNanosPerKB,
 			nil,
+			-1,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -487,7 +488,7 @@ func _doTxnWithBlockHeight(
 		// Add inputs to the transaction and do signing, validation, and broadcast
 		// depending on what the user requested.
 		totalInputMake, _, changeAmountMake, feesMake, err = chain.AddInputsAndChangeToTransaction(
-			txn, feeRateNanosPerKB, nil)
+			txn, feeRateNanosPerKB, testMeta.mempool)
 		require.NoError(err)
 		operationType = OperationTypeSpendUtxo
 	case TxnTypeDAOCoinLimitOrder:
@@ -496,7 +497,7 @@ func _doTxnWithBlockHeight(
 			transactorPublicKey,
 			realTxMeta,
 			feeRateNanosPerKB,
-			nil,
+			testMeta.mempool,
 			nil,
 		)
 		require.NoError(err)
@@ -522,12 +523,21 @@ func _doTxnWithBlockHeight(
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.Equal(totalInput, totalInputMake)
+	// It's okay to have the totalInput be greater than the make for balance model
+	// since we may spend additional DESO in the transaction that wasn't in the fee.
+	if blockHeight < testMeta.params.ForkHeights.BalanceModelBlockHeight {
+		require.Equal(totalInput, totalInputMake)
+	}
 
 	// We should have one SPEND UtxoOperation for each input, one ADD operation
 	// for each output, and one operation that corresponds to the txn type at the end.
 	// TODO: generalize?
 	utxoOpExpectation := len(txn.TxInputs) + len(txn.TxOutputs) + 1
+	// We expect one more if we're past the balance model block height since we have 0 inputs. We still
+	// have one utxo op for the spend balance
+	if blockHeight >= testMeta.params.ForkHeights.BalanceModelBlockHeight {
+		utxoOpExpectation++
+	}
 	if isDerivedTransactor && blockHeight >= testMeta.params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		// If we got an unlimited derived key, we will not have an additional spending limit utxoop.
 		// ====== Access Group Fork ======
@@ -772,25 +782,24 @@ func _getAccessSignature(
 	return accessSignature.Serialize(), nil
 }
 
-func _doAuthorizeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
+func _doAuthorizeTxn(testMeta *TestMeta, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
 	derivedPublicKey []byte, derivedPrivBase58Check string, expirationBlock uint64,
 	accessSignature []byte, deleteKey bool,
 	memo []byte, transactionSpendingLimit *TransactionSpendingLimit) (_utxoOps []*UtxoOperation,
 	_txn *MsgDeSoTxn, _height uint32, _err error) {
-	return _doAuthorizeTxnWithExtraDataAndSpendingLimits(t, chain, db, params, utxoView, feeRateNanosPerKB, ownerPublicKey,
+	return _doAuthorizeTxnWithExtraDataAndSpendingLimits(testMeta, utxoView, feeRateNanosPerKB, ownerPublicKey,
 		derivedPublicKey, derivedPrivBase58Check, expirationBlock, accessSignature, deleteKey,
 		nil, memo, transactionSpendingLimit)
 }
 
 // Create a new AuthorizeDerivedKey txn and connect it to the utxoView
-func _doAuthorizeTxnWithExtraDataAndSpendingLimits(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
+func _doAuthorizeTxnWithExtraDataAndSpendingLimits(testMeta *TestMeta, utxoView *UtxoView, feeRateNanosPerKB uint64, ownerPublicKey []byte,
 	derivedPublicKey []byte, derivedPrivBase58Check string, expirationBlock uint64,
 	accessSignature []byte, deleteKey bool, extraData map[string][]byte,
 	memo []byte, transactionSpendingLimit *TransactionSpendingLimit) (_utxoOps []*UtxoOperation,
 	_txn *MsgDeSoTxn, _height uint32, _err error) {
 
+	t, chain, params := testMeta.t, testMeta.chain, testMeta.params
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -812,7 +821,7 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(t *testing.T, chain *Blockcha
 		memo,
 		hex.EncodeToString(transactionSpendingLimitBytes),
 		feeRateNanosPerKB,
-		nil, /*mempool*/
+		testMeta.mempool, /*mempool*/
 		[]*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
@@ -843,15 +852,32 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(t *testing.T, chain *Blockcha
 	if blockHeight >= params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
 		transactionSpendingLimitCount++
 	}
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeUpdateProfile operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+transactionSpendingLimitCount+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeUpdateProfile operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+transactionSpendingLimitCount+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeAuthorizeDerivedKey, utxoOps[len(utxoOps)-1].Type)
 
 	return utxoOps, txn, blockHeight, nil
+}
+
+func TestBalanceModelAuthorizeDerivedKey(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestAuthorizeDerivedKeyBasic(t)
+	TestAuthorizeDerivedKeyBasicWithTransactionLimits(t)
+	TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t)
+	// We need to set the block height here to 7 so that encoder migrations have the proper version and heights.
+	// Otherwise, the access groups and associations migrations do not run when encoding Utxo Operations.
+	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
+	TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
 }
 
 func TestAuthorizeDerivedKeyBasic(t *testing.T) {
@@ -863,6 +889,15 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	dbAdapter := chain.NewDbAdapter()
+
+	testMeta := &TestMeta{
+		t:       t,
+		chain:   chain,
+		params:  params,
+		mempool: mempool,
+		miner:   miner,
+		db:      db,
+	}
 
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
@@ -914,10 +949,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		_, _, _, err = _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -947,10 +979,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		accessSignatureRandom, err := randomPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -991,10 +1020,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			"test": []byte("result"),
 		}
 		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraDataAndSpendingLimits(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -1373,10 +1399,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(err)
 		utxoOps, txn, _, err := _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -1446,10 +1469,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(err)
 		utxoOps, txn, _, err := _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -1507,10 +1527,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -1585,10 +1602,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoView, err := mempool.GetAugmentedUniversalView()
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -1633,10 +1647,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -1727,6 +1738,15 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	GlobalDeSoParams = *params
 
+	testMeta := &TestMeta{
+		t:       t,
+		chain:   chain,
+		params:  params,
+		db:      db,
+		mempool: mempool,
+		miner:   miner,
+	}
+
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
@@ -1783,10 +1803,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		_, _, _, err = _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -1816,10 +1833,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		accessSignatureRandom, err := randomPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -1856,10 +1870,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(err)
 		utxoOps, txn, _, err := _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -2148,10 +2159,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 			TransactionCountLimitMap: addlBasicTransferMap,
 		}
 		authorizeUTXOOps, authorizeTxn, _, err := _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -2280,10 +2288,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(err)
 		utxoOps, txn, _, err := _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -2353,10 +2358,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(err)
 		utxoOps, txn, _, err := _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -2414,10 +2416,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -2492,10 +2491,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		utxoView, err := mempool.GetAugmentedUniversalView()
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -2540,10 +2536,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			10,
 			senderPkBytes,
@@ -2640,10 +2633,11 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
-	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = unlimitedDerivedKeysBlockHeight
-	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 100
+	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = 0
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = unlimitedDerivedKeysBlockHeight
 	GlobalDeSoParams = *params
 
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
@@ -2899,7 +2893,7 @@ REPEAT:
 		// Use EncoderBlockHeight 1 to make sure we use the new spending limit encoding.
 		blockHeight, err = GetBlockTipHeight(db, false)
 		require.NoError(err)
-		_doTxnWithTestMetaWithBlockHeight(
+		errAuthorize := _doTxnWithTextMetaWithBlockHeightWithError(
 			testMeta,
 			10,
 			m1Pub,
@@ -2930,7 +2924,8 @@ REPEAT:
 			blockHeight+1,
 		)
 		if blockHeight+1 < uint64(unlimitedDerivedKeysBlockHeight) {
-			require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
+			require.Contains(errAuthorize.Error(), RuleErrorUnlimitedDerivedKeyBeforeBlockHeight)
+			require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinOperationNotAuthorized)
 		} else {
 			require.NoError(err)
 		}
@@ -2955,7 +2950,7 @@ REPEAT:
 			blockHeight+1,
 		)
 		if blockHeight+1 < uint64(unlimitedDerivedKeysBlockHeight) {
-			require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
+			require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinOperationNotAuthorized)
 		} else {
 			require.NoError(err)
 		}
@@ -3277,7 +3272,7 @@ REPEAT:
 		extraData := make(map[string]interface{})
 		extraData[TransactionSpendingLimitKey] = transactionSpendingLimit
 		// Use EncoderBlockHeight 1 to make sure we use the new spending limit encoding.
-		_doTxnWithTestMetaWithBlockHeight(
+		authorizeError := _doTxnWithTextMetaWithBlockHeightWithError(
 			testMeta,
 			10,
 			m0Pub,
@@ -3307,7 +3302,8 @@ REPEAT:
 			blockHeight+1,
 		)
 		if blockHeight+1 < uint64(unlimitedDerivedKeysBlockHeight) {
-			require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
+			require.Contains(authorizeError.Error(), RuleErrorUnlimitedDerivedKeyBeforeBlockHeight)
+			require.Contains(err.Error(), RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized)
 		} else {
 			require.NoError(err)
 		}
@@ -3582,7 +3578,8 @@ REPEAT:
 		// Let's confirm that the global deso limit has been reduced on the tracker
 		derivedKeyEntry := dbAdapter.GetOwnerToDerivedKeyMapping(*NewPublicKey(m0PkBytes), *NewPublicKey(m0AuthTxnMeta.DerivedPublicKey))
 		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.GlobalDESOLimit,
-			uint64(0)) // 6 - (5 + 1) (Buy Now Price + fee)
+			uint64(0)) // 6-(5+1) for balance model
+
 		require.Equal(derivedKeyEntry.TransactionSpendingLimitTracker.
 			NFTOperationLimitMap[MakeNFTOperationLimitKey(*post1Hash, 1, NFTBidOperation)],
 			uint64(0))
@@ -4187,6 +4184,7 @@ func _setTestDerivedKeyWithAccessGroupParams(tm *transactionTestMeta) {
 	tm.params.EncoderMigrationHeights = GetEncoderMigrationHeights(&tm.params.ForkHeights)
 	tm.params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&tm.params.ForkHeights)
 	tm.params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	tm.params.BlockRewardMaturity = time.Second
 	GlobalDeSoParams = *tm.params
 }
 

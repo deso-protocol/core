@@ -264,6 +264,10 @@ type ForkHeights struct {
 	// introduced a few improvements for associations' derived key spending limits.
 	AssociationsDerivedKeySpendingLimitBlockHeight uint32
 
+	// BalanceModelBlockHeight defines the height at which we convert from a UTXO model
+	// to an account balance model for accounting.
+	BalanceModelBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -327,6 +331,7 @@ const (
 	DefaultMigration                     MigrationName = "DefaultMigration"
 	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
 	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
+	BalanceModelMigration                MigrationName = "BalanceModelMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -337,6 +342,9 @@ type EncoderMigrationHeights struct {
 
 	// This coincides with the AssociationsAndAccessGroups block
 	AssociationsAndAccessGroups MigrationHeight
+
+	// This coincides with the BalanceModel block
+	BalanceModel MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -355,6 +363,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 2,
 			Height:  uint64(forkHeights.AssociationsAndAccessGroupsBlockHeight),
 			Name:    AssociationsAndAccessGroupsMigration,
+		},
+		BalanceModel: MigrationHeight{
+			Version: 3,
+			Height:  uint64(forkHeights.BalanceModelBlockHeight),
+			Name:    BalanceModelMigration,
 		},
 	}
 }
@@ -598,6 +611,9 @@ var RegtestForkHeights = ForkHeights{
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
 	AssociationsAndAccessGroupsBlockHeight:               uint32(0),
 	AssociationsDerivedKeySpendingLimitBlockHeight:       uint32(0),
+	// For convenience, we set the block height to 1 since the
+	// genesis block was created using the utxo model.
+	BalanceModelBlockHeight: uint32(1),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -746,6 +762,9 @@ var MainnetForkHeights = ForkHeights{
 
 	// Wed Mar 8 2023 @ 5pm PST
 	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(213487),
+
+	// Mon Apr 24 2023 @ 9am PST
+	BalanceModelBlockHeight: uint32(226839),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1007,6 +1026,9 @@ var TestnetForkHeights = ForkHeights{
 	// Mon Mar 6 2023 @ 7pm PT
 	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(642270),
 
+	// Tues Apr 11 2023 @ 5pm PT
+	BalanceModelBlockHeight: uint32(683058),
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -1189,12 +1211,13 @@ const (
 	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
-	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"
-	MinNetworkFeeNanosPerKBKey       = "MinNetworkFeeNanosPerKB"
-	CreateProfileFeeNanosKey         = "CreateProfileFeeNanos"
-	CreateNFTFeeNanosKey             = "CreateNFTFeeNanos"
-	MaxCopiesPerNFTKey               = "MaxCopiesPerNFT"
-	ForbiddenBlockSignaturePubKeyKey = "ForbiddenBlockSignaturePubKey"
+	USDCentsPerBitcoinKey                  = "USDCentsPerBitcoin"
+	MinNetworkFeeNanosPerKBKey             = "MinNetworkFeeNanosPerKB"
+	CreateProfileFeeNanosKey               = "CreateProfileFeeNanos"
+	CreateNFTFeeNanosKey                   = "CreateNFTFeeNanos"
+	MaxCopiesPerNFTKey                     = "MaxCopiesPerNFT"
+	MaxNonceExpirationBlockHeightOffsetKey = "MaxNonceExpirationBlockHeightOffset"
+	ForbiddenBlockSignaturePubKeyKey       = "ForbiddenBlockSignaturePubKey"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
@@ -1293,6 +1316,10 @@ const (
 	// Access group key constants
 	MinAccessGroupKeyNameCharacters = 1
 	MaxAccessGroupKeyNameCharacters = 32
+
+	// DefaultMaxNonceExpirationBlockHeightOffset - default value to which the MaxNonceExpirationBlockHeightOffset
+	// is set to before specified by ParamUpdater.
+	DefaultMaxNonceExpirationBlockHeightOffset = 288
 
 	// TODO: Are these fields needed?
 	// Access group enumeration max recursion depth.

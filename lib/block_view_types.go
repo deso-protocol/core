@@ -108,6 +108,8 @@ const (
 	EncoderTypeNewMessageEntry
 	EncoderTypeAccessGroupMemberEnumerationEntry
 	EncoderTypeDmThreadEntry
+	EncoderTypeDeSoNonce
+	EncoderTypeTransactorNonceEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -230,6 +232,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMemberEnumerationEntry{}
 	case EncoderTypeDmThreadEntry:
 		return &DmThreadEntry{}
+	case EncoderTypeDeSoNonce:
+		return &DeSoNonce{}
+	case EncoderTypeTransactorNonceEntry:
+		return &TransactorNonceEntry{}
 	}
 
 	// Txindex encoder types
@@ -569,152 +575,90 @@ const (
 	OperationTypeAccessGroup                  OperationType = 33
 	OperationTypeAccessGroupMembers           OperationType = 34
 	OperationTypeNewMessage                   OperationType = 35
-
-	// NEXT_TAG = 36
+	OperationTypeAddBalance                   OperationType = 36
+	OperationTypeSpendBalance                 OperationType = 37
+	OperationTypeDeleteExpiredNonces          OperationType = 38
+	// NEXT_TAG = 39
 )
 
 func (op OperationType) String() string {
 	switch op {
 	case OperationTypeAddUtxo:
-		{
-			return "OperationTypeAddUtxo"
-		}
+		return "OperationTypeAddUtxo"
 	case OperationTypeSpendUtxo:
-		{
-			return "OperationTypeSpendUtxo"
-		}
+		return "OperationTypeSpendUtxo"
 	case OperationTypeBitcoinExchange:
-		{
-			return "OperationTypeBitcoinExchange"
-		}
+		return "OperationTypeBitcoinExchange"
 	case OperationTypePrivateMessage:
-		{
-			return "OperationTypePrivateMessage"
-		}
+		return "OperationTypePrivateMessage"
 	case OperationTypeSubmitPost:
-		{
-			return "OperationTypeSubmitPost"
-		}
+		return "OperationTypeSubmitPost"
 	case OperationTypeUpdateProfile:
-		{
-			return "OperationTypeUpdateProfile"
-		}
+		return "OperationTypeUpdateProfile"
 	case OperationTypeDeletePost:
-		{
-			return "OperationTypeDeletePost"
-		}
+		return "OperationTypeDeletePost"
 	case OperationTypeUpdateBitcoinUSDExchangeRate:
-		{
-			return "OperationTypeUpdateBitcoinUSDExchangeRate"
-		}
+		return "OperationTypeUpdateBitcoinUSDExchangeRate"
 	case OperationTypeFollow:
-		{
-			return "OperationTypeFollow"
-		}
+		return "OperationTypeFollow"
 	case OperationTypeLike:
-		{
-			return "OperationTypeLike"
-		}
+		return "OperationTypeLike"
 	case OperationTypeCreatorCoin:
-		{
-			return "OperationTypeCreatorCoin"
-		}
+		return "OperationTypeCreatorCoin"
 	case OperationTypeSwapIdentity:
-		{
-			return "OperationTypeSwapIdentity"
-		}
+		return "OperationTypeSwapIdentity"
 	case OperationTypeUpdateGlobalParams:
-		{
-			return "OperationTypeUpdateGlobalParams"
-		}
+		return "OperationTypeUpdateGlobalParams"
 	case OperationTypeCreatorCoinTransfer:
-		{
-			return "OperationTypeCreatorCoinTransfer"
-		}
+		return "OperationTypeCreatorCoinTransfer"
 	case OperationTypeCreateNFT:
-		{
-			return "OperationTypeCreateNFT"
-		}
+		return "OperationTypeCreateNFT"
 	case OperationTypeUpdateNFT:
-		{
-			return "OperationTypeUpdateNFT"
-		}
+		return "OperationTypeUpdateNFT"
 	case OperationTypeAcceptNFTBid:
-		{
-			return "OperationTypeAcceptNFTBid"
-		}
+		return "OperationTypeAcceptNFTBid"
 	case OperationTypeNFTBid:
-		{
-			return "OperationTypeNFTBid"
-		}
+		return "OperationTypeNFTBid"
 	case OperationTypeDeSoDiamond:
-		{
-			return "OperationTypeDeSoDiamond"
-		}
+		return "OperationTypeDeSoDiamond"
 	case OperationTypeNFTTransfer:
-		{
-			return "OperationTypeNFTTransfer"
-		}
+		return "OperationTypeNFTTransfer"
 	case OperationTypeAcceptNFTTransfer:
-		{
-			return "OperationTypeAcceptNFTTransfer"
-		}
+		return "OperationTypeAcceptNFTTransfer"
 	case OperationTypeBurnNFT:
-		{
-			return "OperationTypeBurnNFT"
-		}
+		return "OperationTypeBurnNFT"
 	case OperationTypeAuthorizeDerivedKey:
-		{
-			return "OperationTypeAuthorizeDerivedKey"
-		}
+		return "OperationTypeAuthorizeDerivedKey"
 	case OperationTypeMessagingKey:
-		{
-			return "OperationTypeMessagingKey"
-		}
+		return "OperationTypeMessagingKey"
 	case OperationTypeDAOCoin:
-		{
-			return "OperationTypeDAOCoin"
-		}
+		return "OperationTypeDAOCoin"
 	case OperationTypeDAOCoinTransfer:
-		{
-			return "OperationTypeDAOCoinTransfer"
-		}
+		return "OperationTypeDAOCoinTransfer"
 	case OperationTypeSpendingLimitAccounting:
-		{
-			return "OperationTypeSpendingLimitAccounting"
-		}
+		return "OperationTypeSpendingLimitAccounting"
 	case OperationTypeDAOCoinLimitOrder:
-		{
-			return "OperationTypeDAOCoinLimitOrder"
-		}
+		return "OperationTypeDAOCoinLimitOrder"
 	case OperationTypeCreateUserAssociation:
-		{
-			return "OperationTypeCreateUserAssociation"
-		}
+		return "OperationTypeCreateUserAssociation"
 	case OperationTypeDeleteUserAssociation:
-		{
-			return "OperationTypeDeleteUserAssociation"
-		}
+		return "OperationTypeDeleteUserAssociation"
 	case OperationTypeCreatePostAssociation:
-		{
-			return "OperationTypeCreatePostAssociation"
-		}
+		return "OperationTypeCreatePostAssociation"
 	case OperationTypeDeletePostAssociation:
-		{
-			return "OperationTypeDeletePostAssociation"
-		}
+		return "OperationTypeDeletePostAssociation"
 	case OperationTypeAccessGroup:
-		{
-			return "OperationTypeAccessGroup"
-		}
+		return "OperationTypeAccessGroup"
 	case OperationTypeAccessGroupMembers:
-		{
-			return "OperationTypeAccessGroupMembers"
-		}
+		return "OperationTypeAccessGroupMembers"
 	case OperationTypeNewMessage:
-		{
-			return "OperationTypeNewMessage"
-		}
+		return "OperationTypeNewMessage"
+	case OperationTypeAddBalance:
+		return "OperationTypeAddBalance"
+	case OperationTypeSpendBalance:
+		return "OperationTypeSpendBalance"
+	case OperationTypeDeleteExpiredNonces:
+		return "OperationTypeDeleteExpiredNonces"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -892,6 +836,13 @@ type UtxoOperation struct {
 	PrevNewMessageEntry *NewMessageEntry
 	// PrevDmThreadEntry is used for disconnecting DM message threads.
 	PrevDmThreadEntry *DmThreadEntry
+
+	// When we add to or spend balance, we keep track of the public key and amount.
+	BalancePublicKey   []byte
+	BalanceAmountNanos uint64
+
+	// When we connect a block, we delete expired nonce entries.
+	PrevNonceEntries []*TransactorNonceEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1197,6 +1148,16 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// PrevDmThreadEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevDmThreadEntry, skipMetadata...)...)
+	}
+
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		data = append(data, EncodeByteArray(op.BalancePublicKey)...)
+		data = append(data, UintToBuf(op.BalanceAmountNanos)...)
+
+		data = append(data, UintToBuf(uint64(len(op.PrevNonceEntries)))...)
+		for _, entry := range op.PrevNonceEntries {
+			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
+		}
 	}
 
 	return data
@@ -1789,11 +1750,36 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 	}
 
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		op.BalancePublicKey, err = DecodeByteArray(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PublicKeyBytes")
+		}
+		op.BalanceAmountNanos, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading BalanceAmountNanos")
+		}
+
+		var numPrevNonceEntries uint64
+		numPrevNonceEntries, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading numPrevNonceEntries")
+		}
+
+		for ; numPrevNonceEntries > 0; numPrevNonceEntries-- {
+			prevNonceEntry := &TransactorNonceEntry{}
+			if _, err = DecodeFromBytes(prevNonceEntry, rr); err != nil {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading prevNonceEntry")
+			}
+			op.PrevNonceEntries = append(op.PrevNonceEntries, prevNonceEntry)
+		}
+	}
+
 	return nil
 }
 
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration)
+	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration, BalanceModelMigration)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {
@@ -3429,7 +3415,8 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration, AssociationsAndAccessGroupsMigration)
+	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration, AssociationsAndAccessGroupsMigration,
+		BalanceModelMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {
@@ -3657,6 +3644,12 @@ type GlobalParamsEntry struct {
 
 	// The new minimum fee the network will accept
 	MinimumNetworkFeeNanosPerKB uint64
+
+	// MaxNonceExpirationBlockHeightOffset is maximum value nodes will
+	// tolerate for the difference between the current block height
+	// and the expiration block height specified in the nonce for a
+	// transaction.
+	MaxNonceExpirationBlockHeightOffset uint64
 }
 
 func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -3667,7 +3660,9 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 	data = append(data, UintToBuf(gp.CreateNFTFeeNanos)...)
 	data = append(data, UintToBuf(gp.MaxCopiesPerNFT)...)
 	data = append(data, UintToBuf(gp.MinimumNetworkFeeNanosPerKB)...)
-
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockHeightOffset)...)
+	}
 	return data
 }
 
@@ -3694,12 +3689,17 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	if err != nil {
 		return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MinimumNetworkFeeNanosPerKB")
 	}
-
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		gp.MaxNonceExpirationBlockHeightOffset, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxNonceExpirationBlockHeightOffset")
+		}
+	}
 	return nil
 }
 
 func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, BalanceModelMigration)
 }
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {
@@ -4208,6 +4208,18 @@ type CoinEntry struct {
 	MintingDisabled bool
 
 	TransferRestrictionStatus TransferRestrictionStatus
+}
+
+func (ce *CoinEntry) Copy() *CoinEntry {
+	return &CoinEntry{
+		CreatorBasisPoints:        ce.CreatorBasisPoints,
+		DeSoLockedNanos:           ce.DeSoLockedNanos,
+		NumberOfHolders:           ce.NumberOfHolders,
+		CoinsInCirculationNanos:   *uint256.NewInt().Set(&ce.CoinsInCirculationNanos),
+		CoinWatermarkNanos:        ce.CoinWatermarkNanos,
+		MintingDisabled:           ce.MintingDisabled,
+		TransferRestrictionStatus: ce.TransferRestrictionStatus,
+	}
 }
 
 func (ce *CoinEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -6055,4 +6067,63 @@ func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetVersionByte(block
 
 func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeNewMessageTxindexMetadata
+}
+
+type TransactorNonceEntry struct {
+	Nonce          *DeSoNonce
+	TransactorPKID *PKID
+	isDeleted      bool
+}
+
+func (tne *TransactorNonceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, tne.Nonce, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, tne.TransactorPKID, skipMetadata...)...)
+	return data
+}
+
+func (tne *TransactorNonceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	nonce := &DeSoNonce{}
+	if exists, err := DecodeFromBytes(nonce, rr); exists && err == nil {
+		tne.Nonce = nonce
+	} else if err != nil {
+		return err
+	}
+
+	transactorPKID := &PKID{}
+	if exists, err := DecodeFromBytes(transactorPKID, rr); exists && err == nil {
+		tne.TransactorPKID = transactorPKID
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (tne *TransactorNonceEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (tne *TransactorNonceEntry) GetEncoderType() EncoderType {
+	return EncoderTypeTransactorNonceEntry
+}
+
+func (tne *TransactorNonceEntry) ToMapKey() TransactorNonceMapKey {
+	return TransactorNonceMapKey{
+		Nonce:          *tne.Nonce,
+		TransactorPKID: *tne.TransactorPKID,
+	}
+}
+
+func (tne *TransactorNonceEntry) Copy() *TransactorNonceEntry {
+	copiedNonce := *tne.Nonce
+	return &TransactorNonceEntry{
+		Nonce:          &copiedNonce,
+		TransactorPKID: tne.TransactorPKID.NewPKID(),
+		isDeleted:      tne.isDeleted,
+	}
+}
+
+type TransactorNonceMapKey struct {
+	Nonce          DeSoNonce
+	TransactorPKID PKID
 }
