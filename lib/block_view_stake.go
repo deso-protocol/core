@@ -543,12 +543,12 @@ func DBKeyForStakeByValidatorByStaker(stakeEntry *StakeEntry) []byte {
 	return data
 }
 
-func DBKeyForLockedStakeByStakerByLockedAtByValidator(lockedStakeEntry *LockedStakeEntry) []byte {
+func DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry *LockedStakeEntry) []byte {
 	var data []byte
-	data = append(data, Prefixes.PrefixLockedStakeByStakerByLockedAtByValidator...)
+	data = append(data, Prefixes.PrefixLockedStakeByValidatorByStakerByLockedAt...)
+	data = append(data, lockedStakeEntry.ValidatorPKID.ToBytes()...)
 	data = append(data, lockedStakeEntry.StakerPKID.ToBytes()...)
 	data = append(data, UintToBuf(lockedStakeEntry.LockedAtEpochNumber)...)
-	data = append(data, lockedStakeEntry.ValidatorPKID.ToBytes()...)
 	return data
 }
 
@@ -593,36 +593,36 @@ func DBGetStakeByValidatorByStakerWithTxn(
 	return stakeEntry, nil
 }
 
-func DBGetLockedStakeByStakerByLockedAtByValidator(
+func DBGetLockedStakeByValidatorByStakerByLockedAt(
 	handle *badger.DB,
 	snap *Snapshot,
+	validatorPKID *PKID,
 	stakerPKID *PKID,
 	lockedAtEpochNumber uint64,
-	validatorPKID *PKID,
 ) (*LockedStakeEntry, error) {
 	var ret *LockedStakeEntry
 	var err error
 	handle.View(func(txn *badger.Txn) error {
-		ret, err = DBGetLockedStakeByStakerByLockedAtByValidatorWithTxn(
-			txn, snap, stakerPKID, lockedAtEpochNumber, validatorPKID,
+		ret, err = DBGetLockedStakeByValidatorByStakerByLockedAtWithTxn(
+			txn, snap, validatorPKID, stakerPKID, lockedAtEpochNumber,
 		)
 		return nil
 	})
 	return ret, err
 }
 
-func DBGetLockedStakeByStakerByLockedAtByValidatorWithTxn(
+func DBGetLockedStakeByValidatorByStakerByLockedAtWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
+	validatorPKID *PKID,
 	stakerPKID *PKID,
 	lockedAtEpochNumber uint64,
-	validatorPKID *PKID,
 ) (*LockedStakeEntry, error) {
 	// Retrieve LockedStakeEntry from db.
-	key := DBKeyForLockedStakeByStakerByLockedAtByValidator(&LockedStakeEntry{
+	key := DBKeyForLockedStakeByValidatorByStakerByLockedAt(&LockedStakeEntry{
+		ValidatorPKID:       validatorPKID,
 		StakerPKID:          stakerPKID,
 		LockedAtEpochNumber: lockedAtEpochNumber,
-		ValidatorPKID:       validatorPKID,
 	})
 	lockedStakeEntryBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
@@ -631,7 +631,7 @@ func DBGetLockedStakeByStakerByLockedAtByValidatorWithTxn(
 			return nil, nil
 		}
 		return nil, errors.Wrapf(
-			err, "DBGetLockedStakeByStakerByLockedAtByValidator: problem retrieving LockedStakeEntry",
+			err, "DBGetLockedStakeByValidatorByStakerByLockedAt: problem retrieving LockedStakeEntry",
 		)
 	}
 
@@ -640,15 +640,16 @@ func DBGetLockedStakeByStakerByLockedAtByValidatorWithTxn(
 	rr := bytes.NewReader(lockedStakeEntryBytes)
 	if exist, err := DecodeFromBytes(lockedStakeEntry, rr); !exist || err != nil {
 		return nil, errors.Wrapf(
-			err, "DBGetLockedStakeByStakerByLockedAtByValidator: problem retrieving LockedStakeEntry",
+			err, "DBGetLockedStakeByValidatorByStakerByLockedAt: problem retrieving LockedStakeEntry",
 		)
 	}
 	return lockedStakeEntry, nil
 }
 
-func DBGetLockedStakeByStakerByEpochRange(
+func DBGetLockedStakeByValidatorByStakerByEpochRange(
 	handle *badger.DB,
 	snap *Snapshot,
+	validatorPKID *PKID,
 	stakerPKID *PKID,
 	startEpochNumber uint64,
 	endEpochNumber uint64,
@@ -657,7 +658,7 @@ func DBGetLockedStakeByStakerByEpochRange(
 	var err error
 	handle.View(func(txn *badger.Txn) error {
 		ret, err = DBGetLockedStakeByStakerByEpochRangeWithTxn(
-			txn, snap, stakerPKID, startEpochNumber, endEpochNumber,
+			txn, snap, validatorPKID, stakerPKID, startEpochNumber, endEpochNumber,
 		)
 		return nil
 	})
@@ -667,21 +668,15 @@ func DBGetLockedStakeByStakerByEpochRange(
 func DBGetLockedStakeByStakerByEpochRangeWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
+	validatorPKID *PKID,
 	stakerPKID *PKID,
 	startEpochNumber uint64,
 	endEpochNumber uint64,
 ) ([]*LockedStakeEntry, error) {
-	// Retrieve LockedStakeEntries from db matching StakerPKID and
+	// Retrieve LockedStakeEntries from db matching ValidatorPKID, StakerPKID, and
 	// StartEpochNumber <= LockedAtEpochNumber <= EndEpochNumber.
 	// TODO
-	var keys [][]byte
-	_ = keys
-
-	// Decode LockedStakeEntries from bytes.
-	// TODO
-	var lockedStakeEntries []*LockedStakeEntry
-
-	return lockedStakeEntries, nil
+	return nil, nil
 }
 
 func DBPutStakeWithTxn(
@@ -715,11 +710,11 @@ func DBPutLockedStakeWithTxn(
 		return nil
 	}
 
-	// Set LockedStakeEntry in PrefixLockedStakeByStakerByLockedAtByValidator.
-	key := DBKeyForLockedStakeByStakerByLockedAtByValidator(lockedStakeEntry)
+	// Set LockedStakeEntry in PrefixLockedStakeByValidatorByStakerByLockedAt.
+	key := DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry)
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, lockedStakeEntry)); err != nil {
 		return errors.Wrapf(
-			err, "DBPutLockedStakeWithTxn: problem storing LockedStakeEntry in index PrefixLockedStakeByStakerByLockedAtByValidator",
+			err, "DBPutLockedStakeWithTxn: problem storing LockedStakeEntry in index PrefixLockedStakeByValidatorByStakerByLockedAt",
 		)
 	}
 
@@ -757,11 +752,11 @@ func DBDeleteLockedStakeWithTxn(
 		return nil
 	}
 
-	// Delete LockedStakeEntry from PrefixLockedStakeByStakerByLockedAtByValidator.
-	key := DBKeyForLockedStakeByStakerByLockedAtByValidator(lockedStakeEntry)
+	// Delete LockedStakeEntry from PrefixLockedStakeByValidatorByStakerByLockedAt.
+	key := DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteLockedStakeWithTxn: problem deleting StakeEntry from index PrefixLockedStakeByStakerByLockedAtByValidator",
+			err, "DBDeleteLockedStakeWithTxn: problem deleting StakeEntry from index PrefixLockedStakeByValidatorByStakerByLockedAt",
 		)
 	}
 
