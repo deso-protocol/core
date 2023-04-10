@@ -379,7 +379,7 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Name:    BalanceModelMigration,
 		},
 		ProofOfStakeNewTxnTypesMigration: MigrationHeight{
-			Version: 3,
+			Version: 4,
 			Height:  uint64(forkHeights.ProofOfStakeNewTxnTypesBlockHeight),
 			Name:    ProofOfStakeNewTxnTypesMigration,
 		},
