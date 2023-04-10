@@ -17,6 +17,7 @@ type StakeEntry struct {
 	ValidatorPKID    *PKID
 	StakeAmountNanos *uint256.Int
 	ExtraData        map[string][]byte
+	isDeleted        bool
 }
 
 type StakeMapKey struct {
@@ -37,6 +38,7 @@ func (stakeEntry *StakeEntry) Copy() *StakeEntry {
 		ValidatorPKID:    stakeEntry.ValidatorPKID.NewPKID(),
 		StakeAmountNanos: stakeEntry.StakeAmountNanos.Clone(),
 		ExtraData:        extraDataCopy,
+		isDeleted:        stakeEntry.isDeleted,
 	}
 }
 
@@ -118,6 +120,7 @@ type LockedStakeEntry struct {
 	LockedAmountNanos   *uint256.Int
 	LockedAtEpochNumber uint64
 	ExtraData           map[string][]byte
+	isDeleted           bool
 }
 
 type LockedStakeEntryMapKey struct {
@@ -140,6 +143,7 @@ func (lockedStakeEntry *LockedStakeEntry) Copy() *LockedStakeEntry {
 		LockedAmountNanos:   lockedStakeEntry.LockedAmountNanos.Clone(),
 		LockedAtEpochNumber: lockedStakeEntry.LockedAtEpochNumber,
 		ExtraData:           extraDataCopy,
+		isDeleted:           lockedStakeEntry.isDeleted,
 	}
 }
 
@@ -642,6 +646,44 @@ func DBGetLockedStakeByStakerByLockedAtByValidatorWithTxn(
 	return lockedStakeEntry, nil
 }
 
+func DBGetLockedStakeByStakerByEpochRange(
+	handle *badger.DB,
+	snap *Snapshot,
+	stakerPKID *PKID,
+	startEpochNumber uint64,
+	endEpochNumber uint64,
+) ([]*LockedStakeEntry, error) {
+	var ret []*LockedStakeEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetLockedStakeByStakerByEpochRangeWithTxn(
+			txn, snap, stakerPKID, startEpochNumber, endEpochNumber,
+		)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetLockedStakeByStakerByEpochRangeWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	stakerPKID *PKID,
+	startEpochNumber uint64,
+	endEpochNumber uint64,
+) ([]*LockedStakeEntry, error) {
+	// Retrieve LockedStakeEntries from db matching StakerPKID and
+	// StartEpochNumber <= LockedAtEpochNumber <= EndEpochNumber.
+	// TODO
+	var keys [][]byte
+	_ = keys
+
+	// Decode LockedStakeEntries from bytes.
+	// TODO
+	var lockedStakeEntries []*LockedStakeEntry
+
+	return lockedStakeEntries, nil
+}
+
 func DBPutStakeWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
@@ -725,3 +767,172 @@ func DBDeleteLockedStakeWithTxn(
 
 	return nil
 }
+
+//
+// BLOCKCHAIN UTILS
+//
+
+func (bc *Blockchain) CreateStakeTxn(
+	transactorPublicKey []byte,
+	metadata *StakeMetadata,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	return nil, 0, 0, 0, nil
+}
+
+//
+// UTXO VIEW UTILS
+//
+
+func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *StakeMetadata) error {
+	// Validate TransactorPublicKey.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPkBytes)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return RuleErrorInvalidStaker
+	}
+
+	// Validate ValidatorPublicKey.
+	validatorPKIDEntry := bav.GetPKIDForPublicKey(metadata.ValidatorPublicKey.ToBytes())
+	if validatorPKIDEntry == nil || validatorPKIDEntry.isDeleted {
+		return RuleErrorInvalidValidatorPKID
+	}
+	validatorEntry, err := bav.GetValidatorByPKID(validatorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "IsValidStakeMetadata: ")
+	}
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
+	if validatorEntry == nil || validatorEntry.isDeleted {
+		return RuleErrorInvalidValidatorPKID
+	}
+
+	// Validate StakeAmountNanos.
+	// TODO: check transactor has enough balance to cover the StakeAmountNanos
+
+	return nil
+}
+
+func (bav *UtxoView) IsValidUnstakeMetadata(transactorPkBytes []byte, metadata *UnstakeMetadata) error {
+	// Validate TransactorPublicKey.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPkBytes)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return RuleErrorInvalidStaker
+	}
+
+	// Validate ValidatorPublicKey.
+	validatorPKIDEntry := bav.GetPKIDForPublicKey(metadata.ValidatorPublicKey.ToBytes())
+	if validatorPKIDEntry == nil || validatorPKIDEntry.isDeleted {
+		return RuleErrorInvalidValidatorPKID
+	}
+	validatorEntry, err := bav.GetValidatorByPKID(validatorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "IsValidUnstakeMetadata: ")
+	}
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
+	if validatorEntry == nil || validatorEntry.isDeleted {
+		return RuleErrorInvalidValidatorPKID
+	}
+
+	// Validate StakeEntry exists.
+	stakeEntry, err := bav.GetStakeByValidatorByStaker(validatorPKIDEntry.PKID, transactorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "IsValidUnstakeMetadata: ")
+	}
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
+	if stakeEntry == nil || stakeEntry.isDeleted {
+		return RuleErrorInvalidUnstakeNoStakeFound
+	}
+
+	// Validate StakeEntry.StakeAmountNanos >= UnstakeAmountNanos.
+	if stakeEntry.StakeAmountNanos.Cmp(metadata.UnstakeAmountNanos) < 0 {
+		return RuleErrorInvalidUnstakeInsufficientStakeFound
+	}
+
+	return nil
+}
+
+func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metadata *UnlockStakeMetadata) error {
+	// Validate TransactorPublicKey.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPkBytes)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return RuleErrorInvalidStaker
+	}
+
+	// Validate ValidatorPublicKey.
+	validatorPKIDEntry := bav.GetPKIDForPublicKey(metadata.ValidatorPublicKey.ToBytes())
+	if validatorPKIDEntry == nil || validatorPKIDEntry.isDeleted {
+		return RuleErrorInvalidValidatorPKID
+	}
+	validatorEntry, err := bav.GetValidatorByPKID(validatorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "IsValidUnlockStakeMetadata: ")
+	}
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
+	if validatorEntry == nil || validatorEntry.isDeleted {
+		return RuleErrorInvalidValidatorPKID
+	}
+
+	// Validate StartEpochNumber and EndEpochNumber.
+	if metadata.StartEpochNumber > metadata.EndEpochNumber {
+		return RuleErrorInvalidUnlockStakeEpochRange
+	}
+	// TODO: validate EndEpochNumber is <= CurrentEpochNumber - 2
+
+	// Validate LockedStakeEntries exist.
+	lockedStakeEntries, err := bav.GetLockedStakeByStakerByEpochRange(
+		transactorPKIDEntry.PKID, metadata.StartEpochNumber, metadata.EndEpochNumber,
+	)
+	lockedStakeEntryCount := uint64(0)
+	for _, lockedStakeEntry := range lockedStakeEntries {
+		// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
+		if lockedStakeEntry != nil && lockedStakeEntry.isDeleted {
+			lockedStakeEntryCount += 1
+		}
+	}
+	if lockedStakeEntryCount == 0 {
+		return RuleErrorInvalidUnlockStakeNoUnlockableStakeFound
+	}
+
+	return nil
+}
+
+func (bav *UtxoView) GetStakeByValidatorByStaker(validatorPKID *PKID, stakerPKID *PKID) (*StakeEntry, error) {
+	// TODO
+	return nil, nil
+}
+
+func (bav *UtxoView) GetLockedStakeByStakerByLockedAtByValidator(
+	stakerPKID *PKID,
+	lockedAtEpochNumber uint64,
+	validatorPKID *PKID,
+) (*LockedStakeEntry, error) {
+	// TODO
+	return nil, nil
+}
+
+func (bav *UtxoView) GetLockedStakeByStakerByEpochRange(
+	stakerPKID *PKID,
+	startEpochNumber uint64,
+	endEpochNumber uint64,
+) ([]*LockedStakeEntry, error) {
+	// TODO
+	return nil, nil
+}
+
+//
+// CONSTANTS
+//
+
+const RuleErrorInvalidStaker RuleError = "RuleErrorInvalidStaker"
+const RuleErrorInvalidUnstakeNoStakeFound RuleError = "RuleErrorInvalidUnstakeNoStakeFound"
+const RuleErrorInvalidUnstakeInsufficientStakeFound RuleError = "RuleErrorInvalidUnstakeInsufficientStakeFound"
+const RuleErrorInvalidUnlockStakeEpochRange RuleError = "RuleErrorInvalidUnlockStakeEpochRange"
+const RuleErrorInvalidUnlockStakeNoUnlockableStakeFound RuleError = "RuleErrorInvalidUnlockStakeNoUnlockableStakeFound"
