@@ -492,9 +492,6 @@ func _customCreateAccessGroupTxn(
 }
 
 func TestAccessGroupTxnWithDerivedKey(t *testing.T) {
-	TestDeSoEncoderSetup(t)
-	defer TestDeSoEncoderShutdown(t)
-
 	// Initialize fork heights.
 	setBalanceModelBlockHeights()
 	defer resetBalanceModelBlockHeights()

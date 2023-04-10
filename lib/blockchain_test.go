@@ -211,6 +211,7 @@ func NewLowDifficultyBlockchainWithParams(t *testing.T, params *DeSoParams) (
 
 func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams, usePostgres bool, postgresPort uint32) (
 	*Blockchain, *DeSoParams, *embeddedpostgres.EmbeddedPostgres) {
+	TestDeSoEncoderSetup(t)
 	AppendToMemLog(t, "START")
 
 	// Set the number of txns per view regeneration to one while creating the txns
@@ -261,6 +262,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 		}
 		CleanUpBadger(db)
 		AppendToMemLog(t, "CLEANUP_END")
+		TestDeSoEncoderShutdown(t)
 	})
 
 	return chain, &testParams, embpg

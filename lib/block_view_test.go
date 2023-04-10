@@ -290,9 +290,6 @@ func NewTransactionTestSuite(t *testing.T, testVectorBlocks []*transactionTestVe
 // Run is the main method of the transactionTestSuite. It will run the test suite and verify that all the testVectors are
 // pass a variety of tests.
 func (tes *transactionTestSuite) Run() {
-	tes.SetupTestSuite()
-	defer tes.ShutdownTestSuite()
-
 	// Make sure all test vectors have unique Ids.
 	tes.ValidateTestVectors()
 
@@ -302,14 +299,6 @@ func (tes *transactionTestSuite) Run() {
 	if tes.config.testPostgres {
 		tes.RunPostgresTest()
 	}
-}
-
-func (tes *transactionTestSuite) SetupTestSuite() {
-	TestDeSoEncoderSetup(tes.t)
-}
-
-func (tes *transactionTestSuite) ShutdownTestSuite() {
-	TestDeSoEncoderShutdown(tes.t)
 }
 
 const TestDeSoEncoderRetries = 3
