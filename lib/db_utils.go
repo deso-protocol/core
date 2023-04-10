@@ -488,7 +488,15 @@ type DBPrefixes struct {
 	// Prefix -> *uint256.Int
 	PrefixGlobalStakeAmountNanos []byte `prefix_id:"[80]" is_state:"true"`
 
-	// NEXT_TAG: 81
+	// PrefixStakeByValidatorByStaker: Retrieve a StakeEntry.
+	// Prefix, ValidatorPKID, StakerPKID -> StakeEntry
+	PrefixStakeByValidatorByStaker []byte `prefix_id:"[81]" is_state:"true"`
+
+	// PrefixLockedStakeByStakerByLockedAtByValidator: Retrieve a LockedStakeEntry.
+	// Prefix, StakerPKID, LockedAtEpochNumber, ValidatorPKID -> LockedStakeEntry
+	PrefixLockedStakeByStakerByLockedAtByValidator []byte `prefix_id:"[82]" is_state:"true"`
+
+	// NEXT_TAG: 83
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.

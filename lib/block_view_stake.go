@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
@@ -524,4 +525,203 @@ func (txindexMetadata *UnlockStakeTxindexMetadata) GetVersionByte(blockHeight ui
 
 func (txindexMetadata *UnlockStakeTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeUnlockStakeTxindexMetadata
+}
+
+//
+// DB UTILS
+//
+
+func DBKeyForStakeByValidatorByStaker(stakeEntry *StakeEntry) []byte {
+	var data []byte
+	data = append(data, Prefixes.PrefixStakeByValidatorByStaker...)
+	data = append(data, stakeEntry.ValidatorPKID.ToBytes()...)
+	data = append(data, stakeEntry.StakerPKID.ToBytes()...)
+	return data
+}
+
+func DBKeyForLockedStakeByStakerByLockedAtByValidator(lockedStakeEntry *LockedStakeEntry) []byte {
+	var data []byte
+	data = append(data, Prefixes.PrefixLockedStakeByStakerByLockedAtByValidator...)
+	data = append(data, lockedStakeEntry.StakerPKID.ToBytes()...)
+	data = append(data, UintToBuf(lockedStakeEntry.LockedAtEpochNumber)...)
+	data = append(data, lockedStakeEntry.ValidatorPKID.ToBytes()...)
+	return data
+}
+
+func DBGetStakeByValidatorByStaker(
+	handle *badger.DB,
+	snap *Snapshot,
+	validatorPKID *PKID,
+	stakerPKID *PKID,
+) (*StakeEntry, error) {
+	var ret *StakeEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetStakeByValidatorByStakerWithTxn(txn, snap, validatorPKID, stakerPKID)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetStakeByValidatorByStakerWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	validatorPKID *PKID,
+	stakerPKID *PKID,
+) (*StakeEntry, error) {
+	// Retrieve StakeEntry from db.
+	key := DBKeyForStakeByValidatorByStaker(&StakeEntry{ValidatorPKID: validatorPKID, StakerPKID: stakerPKID})
+	stakeEntryBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetStakeByValidatorByStaker: problem retrieving StakeEntry")
+	}
+
+	// Decode StakeEntry from bytes.
+	stakeEntry := &StakeEntry{}
+	rr := bytes.NewReader(stakeEntryBytes)
+	if exist, err := DecodeFromBytes(stakeEntry, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetStakeByValidatorByStaker: problem decoding StakeEntry")
+	}
+	return stakeEntry, nil
+}
+
+func DBGetLockedStakeByStakerByLockedAtByValidator(
+	handle *badger.DB,
+	snap *Snapshot,
+	stakerPKID *PKID,
+	lockedAtEpochNumber uint64,
+	validatorPKID *PKID,
+) (*LockedStakeEntry, error) {
+	var ret *LockedStakeEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetLockedStakeByStakerByLockedAtByValidatorWithTxn(
+			txn, snap, stakerPKID, lockedAtEpochNumber, validatorPKID,
+		)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetLockedStakeByStakerByLockedAtByValidatorWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	stakerPKID *PKID,
+	lockedAtEpochNumber uint64,
+	validatorPKID *PKID,
+) (*LockedStakeEntry, error) {
+	// Retrieve LockedStakeEntry from db.
+	key := DBKeyForLockedStakeByStakerByLockedAtByValidator(&LockedStakeEntry{
+		StakerPKID:          stakerPKID,
+		LockedAtEpochNumber: lockedAtEpochNumber,
+		ValidatorPKID:       validatorPKID,
+	})
+	lockedStakeEntryBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(
+			err, "DBGetLockedStakeByStakerByLockedAtByValidator: problem retrieving LockedStakeEntry",
+		)
+	}
+
+	// Decode LockedStakeEntry from bytes.
+	lockedStakeEntry := &LockedStakeEntry{}
+	rr := bytes.NewReader(lockedStakeEntryBytes)
+	if exist, err := DecodeFromBytes(lockedStakeEntry, rr); !exist || err != nil {
+		return nil, errors.Wrapf(
+			err, "DBGetLockedStakeByStakerByLockedAtByValidator: problem retrieving LockedStakeEntry",
+		)
+	}
+	return lockedStakeEntry, nil
+}
+
+func DBPutStakeWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	stakeEntry *StakeEntry,
+	blockHeight uint64,
+) error {
+	if stakeEntry == nil {
+		return nil
+	}
+
+	// Set StakeEntry in PrefixStakeByValidatorByStaker.
+	key := DBKeyForStakeByValidatorByStaker(stakeEntry)
+	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, stakeEntry)); err != nil {
+		return errors.Wrapf(
+			err, "DBPutStakeWithTxn: problem storing StakeEntry in index PrefixStakeByValidatorByStaker",
+		)
+	}
+
+	return nil
+}
+
+func DBPutLockedStakeWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	lockedStakeEntry *LockedStakeEntry,
+	blockHeight uint64,
+) error {
+	if lockedStakeEntry == nil {
+		return nil
+	}
+
+	// Set LockedStakeEntry in PrefixLockedStakeByStakerByLockedAtByValidator.
+	key := DBKeyForLockedStakeByStakerByLockedAtByValidator(lockedStakeEntry)
+	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, lockedStakeEntry)); err != nil {
+		return errors.Wrapf(
+			err, "DBPutLockedStakeWithTxn: problem storing LockedStakeEntry in index PrefixLockedStakeByStakerByLockedAtByValidator",
+		)
+	}
+
+	return nil
+}
+
+func DBDeleteStakeWtihTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	stakeEntry *StakeEntry,
+	blockHeight uint64,
+) error {
+	if stakeEntry == nil {
+		return nil
+	}
+
+	// Delete StakeEntry from PrefixStakeByValidatorByStaker.
+	key := DBKeyForStakeByValidatorByStaker(stakeEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteStakeWithTxn: problem deleting StakeEntry from index PrefixStakeByValidatorByStaker",
+		)
+	}
+
+	return nil
+}
+
+func DBDeleteLockedStakeWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	lockedStakeEntry *LockedStakeEntry,
+	blockHeight uint64,
+) error {
+	if lockedStakeEntry == nil {
+		return nil
+	}
+
+	// Delete LockedStakeEntry from PrefixLockedStakeByStakerByLockedAtByValidator.
+	key := DBKeyForLockedStakeByStakerByLockedAtByValidator(lockedStakeEntry)
+	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteLockedStakeWithTxn: problem deleting StakeEntry from index PrefixLockedStakeByStakerByLockedAtByValidator",
+		)
+	}
+
+	return nil
 }
