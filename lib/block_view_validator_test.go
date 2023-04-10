@@ -437,10 +437,7 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, senderPkString)
 
 		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraDataAndSpendingLimits(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			testMeta.feeRateNanosPerKb,
 			senderPkBytes,

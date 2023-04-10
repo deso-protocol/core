@@ -7,6 +7,7 @@ import (
 	"math"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func _createNFTWithAdditionalRoyalties(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
@@ -73,8 +74,15 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 		return nil, nil, 0, err
 	}
 
-	// Note: the "nftFee" is the "spendAmount" and therefore must be added to feesMake.
-	require.Equal(totalInputMake, changeAmountMake+feesMake+nftFee)
+	blockHeight := chain.blockTip().Height + 1
+
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// Note: the "nftFee" is the "spendAmount" and therefore must be added to feesMake.
+		require.Equal(totalInputMake, changeAmountMake+feesMake+nftFee)
+	} else {
+		// FeesMake represents the transaction fees PLUS the NFT fee should equal total input make
+		require.Equal(totalInputMake, feesMake+nftFee)
+	}
 
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(t, txn, updaterPrivBase58Check)
@@ -82,22 +90,27 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
-	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreateNFT operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		require.Equal(totalInput, totalOutput+fees)
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeCreateNFT operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeCreateNFT, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(totalInput, totalOutput+fees+nftFee)
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeCreateNFT, utxoOps[1].Type)
 	}
-	require.Equal(OperationTypeCreateNFT, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb(0))
 
@@ -300,14 +313,19 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeNFTBid operation at the end.
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		require.Equal(totalInput, totalInputMake)
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeNFTBid operation at the end.
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		require.Equal(OperationTypeNFTBid, utxoOps[len(utxoOps)-1].Type)
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		require.Equal(OperationTypeNFTBid, utxoOps[len(utxoOps)-1].Type)
 	}
-	require.Equal(OperationTypeNFTBid, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb(0))
 
@@ -398,19 +416,29 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	numTxnOutputs := len(txn.TxOutputs)
 	numBidderInputs := len(txn.TxnMeta.(*AcceptNFTBidMetadata).BidderInputs)
 	numOps := len(utxoOps)
-	ii := 0
-	for ; ii < numTxnInputs; ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		ii := 0
+		for ; ii < numTxnInputs; ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		for ; ii < numTxnInputs+numTxnOutputs; ii++ {
+			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+		}
+		for ; ii < numTxnInputs+numTxnOutputs+numBidderInputs; ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		for ; ii < numOps-1; ii++ {
+			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type) // Basic transfer spend.
+		require.Equal(OperationTypeSpendBalance, utxoOps[1].Type) // Spend bidder balance.
+		require.Equal(OperationTypeAddBalance, utxoOps[2].Type)   // Pay the seller.
+		if numOps == 5 {
+			require.Equal(OperationTypeAddBalance, utxoOps[3].Type) // Pay creator royalty (optional).
+		}
 	}
-	for ; ii < numTxnInputs+numTxnOutputs; ii++ {
-		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
-	}
-	for ; ii < numTxnInputs+numTxnOutputs+numBidderInputs; ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
-	}
-	for ; ii < numOps-1; ii++ {
-		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
-	}
+
 	require.Equal(OperationTypeAcceptNFTBid, utxoOps[numOps-1].Type)
 
 	require.NoError(utxoView.FlushToDb(0))
@@ -495,11 +523,15 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeUpdateNFT operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeUpdateNFT operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeUpdateNFT, utxoOps[len(utxoOps)-1].Type)
 
@@ -587,11 +619,15 @@ func _transferNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPa
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeNFTTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeNFTTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeNFTTransfer, utxoOps[len(utxoOps)-1].Type)
 
@@ -670,11 +706,15 @@ func _acceptNFTTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeNFTTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeNFTTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeAcceptNFTTransfer, utxoOps[len(utxoOps)-1].Type)
 
@@ -749,11 +789,15 @@ func _burnNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeNFTTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeNFTTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeBurnNFT, utxoOps[len(utxoOps)-1].Type)
 
@@ -784,6 +828,40 @@ func _burnNFTWithTestMeta(
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
+func TestBalanceModelNFTs(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestNFTBasic(t)
+	TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t)
+	TestNFTSerialNumberZeroBid(t)
+	TestNFTMinimumBidAmount(t)
+	TestNFTCreatedIsNotForSale(t)
+}
+
+// Break up into multiple tests to keep memory footprint lower
+func TestBalanceModelNFTs2(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestNFTMoreErrorCases(t)
+	TestNFTBidsAreCanceledAfterAccept(t)
+	TestNFTDifferentMinBidAmountSerialNumbers(t)
+	TestNFTMaxCopiesGlobalParam(t)
+	TestNFTPreviousOwnersCantAcceptBids(t)
+}
+
+func TestBalanceModelNFTs3(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestNFTTransfersAndBurns(t)
+	TestBidAmountZero(t)
+	TestNFTBuyNow(t)
+	TestNFTSplits(t)
+	TestNFTSplitsHardcorePKIDBug(t)
+}
+
 func TestNFTBasic(t *testing.T) {
 
 	assert := assert.New(t)
@@ -799,6 +877,7 @@ func TestNFTBasic(t *testing.T) {
 	params.ForkHeights.BrokenNFTBidsFixBlockHeight = uint32(0)
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -827,6 +906,8 @@ func TestNFTBasic(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 140)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 210)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 100)
+
+	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
 
 	// Set max copies to a non-zero value to activate NFTs.
 	{
@@ -1049,7 +1130,7 @@ func TestNFTBasic(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(28), m0BalBeforeNFT)
+		require.Equal(getConditionalBalance(28, 28), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -1070,7 +1151,7 @@ func TestNFTBasic(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(27), m0BalAfterNFT)
+		require.Equal(getConditionalBalance(27, 27), m0BalAfterNFT)
 	}
 
 	// Error case: cannot turn a post into an NFT twice.
@@ -1186,8 +1267,14 @@ func TestNFTBasic(t *testing.T) {
 			0,
 		)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateNFTWithInsufficientFunds)
+		if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorCreateNFTWithInsufficientFunds)
+		} else {
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
+		}
 	}
+	// After we tested the create NFT fee errors, lower the block reward maturity
+	params.BlockRewardMaturity = time.Second
 
 	// Creating an NFT with the correct NFT fee should succeed.
 	// This time set HasUnlockable to 'true'.
@@ -1200,7 +1287,7 @@ func TestNFTBasic(t *testing.T) {
 		nftFee := utxoView.GlobalParamsEntry.CreateNFTFeeNanos * numCopies
 
 		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(24), m0BalBeforeNFT)
+		require.Equal(getConditionalBalance(24, 24), m0BalBeforeNFT)
 
 		extraData := map[string][]byte{
 			"rarity": []byte("high"),
@@ -1227,7 +1314,7 @@ func TestNFTBasic(t *testing.T) {
 
 		// Check that m0 was charged the correct nftFee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(23)-nftFee, m0BalAfterNFT)
+		require.Equal(getConditionalBalance(24, 24)-1-nftFee, m0BalAfterNFT)
 
 		nftEntry := DBGetNFTEntryByPostHashSerialNumber(db, chain.snapshot, post2Hash, 1)
 		require.Len(nftEntry.ExtraData, 1)
@@ -1680,6 +1767,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -1707,6 +1795,8 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 1000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 15000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 100)
+
+	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
 
 	// Set max copies to a non-zero value to activate NFTs.
 	{
@@ -1769,7 +1859,8 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		)
 
 		m0Bal := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(30), m0Bal)
+		bal := getConditionalBalance(30, 30)
+		require.Equal(bal, m0Bal)
 	}
 	// Initial deso locked before royalties.
 	m0InitialDeSoLocked, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -1839,7 +1930,8 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(30), m0BalBeforeNFT)
+		balBefore := getConditionalBalance(30, 30)
+		require.Equal(balBefore, m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -1860,7 +1952,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(29), m0BalAfterNFT)
+		require.Equal(balBefore-1, m0BalAfterNFT)
 	}
 
 	// 1 nano bid: Have m1 make a bid on <post1, #1>, accept it and check the royalties.
@@ -1885,7 +1977,9 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		// Owner balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(29), m0BalBefore)
+		m0Before := getConditionalBalance(29, 29)
+		txnFee := getConditionalBalance(2, 2)
+		require.Equal(m0Before, m0BalBefore)
 
 		// Bidder balance before.
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
@@ -1911,8 +2005,7 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		expectedCoinRoyalty := bidAmountNanos / 10
 		require.Equal(uint64(0), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
-		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(28), m0BalAfter)
+		require.Equal(m0BalBefore-txnFee+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
 		// Make sure that the bidder's balance decreased by the bid amount.
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(m1BalBefore-bidAmountNanos, m1BalAfter)
@@ -1944,11 +2037,15 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(28), m0BalBefore)
+		m0Before := getConditionalBalance(28, 28)
 
 		// Bidder balance before.
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
-		require.Equal(uint64(997), m1BalBefore)
+		m1Before := uint64(997)
+
+		txnFee := getConditionalBalance(2, 2)
+		require.Equal(m0Before, m0BalBefore)
+		require.Equal(m1Before, m1BalBefore)
 
 		_acceptNFTBidWithTestMeta(
 			testMeta,
@@ -1969,12 +2066,10 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		expectedCoinRoyalty := 2 * bidAmountNanos / 10
 		require.Equal(uint64(2), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
-		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(34), m0BalAfter)
+		require.Equal(m0BalBefore-txnFee+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
 		// Make sure that the bidder's balance decreased by the bid amount.
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(m1BalBefore-bidAmountNanos, m1BalAfter)
-		require.Equal(uint64(987), m1BalAfter)
 		// Creator coin.
 		desoLocked, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
 		require.Equal(m0InitialDeSoLocked+expectedCoinRoyalty, desoLocked)
@@ -2005,11 +2100,13 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(34), m0BalBefore)
+		m0Before := getConditionalBalance(34, 34)
 
 		// Bidder balance before.
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(986), m1BalBefore)
+		txnFee := getConditionalBalance(2, 2)
+		require.Equal(m0Before, m0BalBefore)
 
 		_acceptNFTBidWithTestMeta(
 			testMeta,
@@ -2030,12 +2127,10 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		expectedCoinRoyalty := 2 * bidAmountNanos / 10
 		require.Equal(uint64(20), expectedCoinRoyalty)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
-		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(112), m0BalAfter)
+		require.Equal(m0BalBefore-txnFee+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
 		// Make sure that the bidder's balance decreased by the bid amount.
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(m1BalBefore-bidAmountNanos, m1BalAfter)
-		require.Equal(uint64(886), m1BalAfter)
 		// Creator coin.
 		desoLocked, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
 		require.Equal(m0DeSoLocked+expectedCoinRoyalty, desoLocked)
@@ -2082,11 +2177,13 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(112), m0BalBefore)
+		m0Before := getConditionalBalance(112, 112)
+		require.Equal(m0Before, m0BalBefore)
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
 		require.Equal(uint64(885), m1BalBefore)
 		m3BalBefore := _getBalance(t, chain, nil, m3Pub)
 		require.Equal(uint64(14999), m3BalBefore)
+		txnFee := getConditionalBalance(2, 2)
 
 		_acceptNFTBidWithTestMeta(
 			testMeta,
@@ -2109,11 +2206,11 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
 		require.Equal(m0BalBefore+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(1112), m0BalAfter)
+		require.Equal(getConditionalBalance(1112, 1112), m0BalAfter)
 
 		m1BalAfter := _getBalance(t, chain, nil, m1Pub)
-		require.Equal(m1BalBefore-2+bidAmountMinusRoyalties, m1BalAfter)
-		require.Equal(uint64(7883), m1BalAfter)
+		require.Equal(m1BalBefore-txnFee+bidAmountMinusRoyalties, m1BalAfter)
+		require.Equal(getConditionalBalance(7883, 7883), m1BalAfter)
 
 		// Make sure m3's balance was decreased appropriately.
 		m3BalAfter := _getBalance(t, chain, nil, m3Pub)
@@ -2166,7 +2263,9 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(3160), m0BalBefore)
+		require.Equal(getConditionalBalance(3160, 3160), m0BalBefore)
+
+		txnFee := getConditionalBalance(2, 2)
 
 		_acceptNFTBidWithTestMeta(
 			testMeta,
@@ -2188,8 +2287,8 @@ func TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t *testing.T) {
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty
 
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(uint64(3238), m0BalAfter)
+		require.Equal(m0BalBefore-txnFee+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
+		require.Equal(getConditionalBalance(3238, 3238), m0BalAfter)
 
 		// Creator coin --> Make sure no royalties were added.
 		desoLocked, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -2215,6 +2314,7 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -2243,6 +2343,8 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 15000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 15000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 100)
+
+	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
 
 	// Set max copies to a non-zero value to activate NFTs.
 	{
@@ -2305,7 +2407,8 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFTs := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(59), m0BalBeforeNFTs)
+		require.Equal(getConditionalBalance(59, 59), m0BalBeforeNFTs)
+		//txnFee := getConditionalBalance(2, 1)
 
 		// Create an NFT with a ton of copies for testing accepting bids.
 		_createNFTWithTestMeta(
@@ -2472,7 +2575,8 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(57), m0BalBefore)
+		require.Equal(getConditionalBalance(57, 57), m0BalBefore)
+		txnFees := getConditionalBalance(6, 6)
 
 		// This will accept m1's serial #0 bid.
 		_acceptNFTBidWithTestMeta(
@@ -2520,8 +2624,8 @@ func TestNFTSerialNumberZeroBid(t *testing.T) {
 
 		// This NFT doesn't have royalties so m0's balance should be directly related to the bids accepted.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(m0BalBefore-6+100+1000+999, m0BalAfter)
-		require.Equal(uint64(2150), m0BalAfter)
+		require.Equal(m0BalBefore-txnFees+100+1000+999, m0BalAfter)
+		require.Equal(getConditionalBalance(2150, 2150), m0BalAfter)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
@@ -2543,6 +2647,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -2571,6 +2676,8 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 15000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 15000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 100)
+
+	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
 
 	// Set max copies to a non-zero value to activate NFTs.
 	{
@@ -2620,7 +2727,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(14960), m0BalBeforeNFT)
+		require.Equal(getConditionalBalance(14960, 14960), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -2641,7 +2748,7 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(14959), m0BalAfterNFT)
+		require.Equal(getConditionalBalance(14959, 14959), m0BalAfterNFT)
 	}
 
 	// Error case: Attempt to make some bids below the minimum bid amount, they should error.
@@ -2737,7 +2844,9 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(14959), m0BalBefore)
+		require.Equal(getConditionalBalance(14959, 14959), m0BalBefore)
+
+		txnFees := getConditionalBalance(4, 4)
 
 		// This will accept m3's serial #1 bid.
 		_acceptNFTBidWithTestMeta(
@@ -2771,8 +2880,8 @@ func TestNFTMinimumBidAmount(t *testing.T) {
 
 		// This NFT doesn't have royalties so m0's balance should be directly related to the bids accepted.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(m0BalBefore-4+1113+10, m0BalAfter)
-		require.Equal(uint64(16078), m0BalAfter)
+		require.Equal(m0BalBefore-txnFees+1113+10, m0BalAfter)
+		require.Equal(getConditionalBalance(16078, 16078), m0BalAfter)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
@@ -2795,6 +2904,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -2823,6 +2933,8 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 15000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 15000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 100)
+
+	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
 
 	// Set max copies to a non-zero value to activate NFTs.
 	{
@@ -2872,7 +2984,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(14960), m0BalBeforeNFT)
+		require.Equal(getConditionalBalance(14960, 14960), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -2893,7 +3005,7 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(14959), m0BalAfterNFT)
+		require.Equal(getConditionalBalance(14959, 14959), m0BalAfterNFT)
 	}
 
 	// Error case: Attempt to make some bids on an NFT that is not for sale, they should error.
@@ -2962,7 +3074,9 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(14958), m0BalBefore)
+		require.Equal(getConditionalBalance(14958, 14958), m0BalBefore)
+
+		txnFee := getConditionalBalance(2, 2)
 
 		// This will accept m1's serial #1 bid.
 		_acceptNFTBidWithTestMeta(
@@ -2981,8 +3095,8 @@ func TestNFTCreatedIsNotForSale(t *testing.T) {
 
 		// This NFT doesn't have royalties so m0's balance should be directly related to the bids accepted.
 		m0BalAfter := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(m0BalBefore-2+1111, m0BalAfter)
-		require.Equal(uint64(16067), m0BalAfter)
+		require.Equal(m0BalBefore-txnFee+1111, m0BalAfter)
+		require.Equal(getConditionalBalance(16067, 16067), m0BalAfter)
 	}
 
 	// Roll all successful txns through connect and disconnect loops to make sure nothing breaks.
@@ -3011,6 +3125,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -3040,6 +3155,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 210)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 100)
 
+	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
 	// Set max copies to a non-zero value to activate NFTs.
 	{
 		_updateGlobalParamsEntryWithTestMeta(
@@ -3148,7 +3264,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(30), m0BalBeforeNFT)
+		require.Equal(getConditionalBalance(30, 30), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -3169,7 +3285,7 @@ func TestNFTMoreErrorCases(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(29), m0BalAfterNFT)
+		require.Equal(getConditionalBalance(29, 29), m0BalAfterNFT)
 	}
 
 	// Error case: Cannot mint the NFT a second time.
@@ -3359,6 +3475,7 @@ func TestNFTBidsAreCanceledAfterAccept(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -4250,6 +4367,7 @@ func TestNFTPreviousOwnersCantAcceptBids(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -4546,6 +4664,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 
 	params.ForkHeights.BrokenNFTBidsFixBlockHeight = uint32(0)
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -4573,6 +4692,8 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m1Pub, senderPrivString, 1000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 1000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 1000)
+
+	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
 
 	// Get PKIDs for checking nft ownership.
 	m0PkBytes, _, err := Base58CheckDecode(m0Pub)
@@ -4656,7 +4777,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(959), m0BalBeforeNFT)
+		require.Equal(getConditionalBalance(959, 959), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -4694,7 +4815,7 @@ func TestNFTTransfersAndBurns(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(957), m0BalAfterNFT)
+		require.Equal(getConditionalBalance(957, 957), m0BalAfterNFT)
 	}
 
 	// Have m1 bid on and win post #1 / serial #5.
@@ -5051,6 +5172,7 @@ func TestBidAmountZero(t *testing.T) {
 	// Make m3, m4 a paramUpdater for this test
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -5262,6 +5384,7 @@ func TestNFTBuyNow(t *testing.T) {
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -5290,6 +5413,8 @@ func TestNFTBuyNow(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m2Pub, senderPrivString, 1000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m3Pub, senderPrivString, 1000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 100)
+
+	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
 
 	// Set max copies to a non-zero value to activate NFTs.
 	{
@@ -5352,7 +5477,7 @@ func TestNFTBuyNow(t *testing.T) {
 		)
 
 		m0Bal := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(930), m0Bal)
+		require.Equal(getConditionalBalance(930, 930), m0Bal)
 	}
 	// Initial deso locked before royalties.
 	m0InitialDeSoLocked, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -5406,7 +5531,7 @@ func TestNFTBuyNow(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(930), m0BalBeforeNFT)
+		require.Equal(getConditionalBalance(930, 930), m0BalBeforeNFT)
 
 		_createNFTWithTestMeta(
 			testMeta,
@@ -5427,7 +5552,7 @@ func TestNFTBuyNow(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(928), m0BalAfterNFT)
+		require.Equal(getConditionalBalance(928, 929), m0BalAfterNFT)
 	}
 
 	// Have m1 buy serial #1.
@@ -5435,7 +5560,7 @@ func TestNFTBuyNow(t *testing.T) {
 		bidAmountNanos := uint64(100)
 		// Creator Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(928), m0BalBefore)
+		require.Equal(getConditionalBalance(928, 929), m0BalBefore)
 
 		// Bidder Balance before.
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
@@ -5467,7 +5592,7 @@ func TestNFTBuyNow(t *testing.T) {
 
 		// Balance after. M0's balance should increase by the bid amount (100) less coin royalties (20)
 		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(1008), m0BalAfter)
+		require.Equal(getConditionalBalance(1008, 1009), m0BalAfter)
 
 		// Balance after. m1 should pay for the bid amount + cover the transaction fee.
 		m1BalAfter := _getBalance(t, testMeta.chain, nil, m1Pub)
@@ -5520,11 +5645,11 @@ func TestNFTBuyNow(t *testing.T) {
 		bidAmountNanos := uint64(150)
 		// Creator Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(1008), m0BalBefore)
+		require.Equal(getConditionalBalance(1008, 1009), m0BalBefore)
 
 		// Seller Balance before.
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
-		require.Equal(uint64(897), m1BalBefore)
+		require.Equal(getConditionalBalance(897, 898), m1BalBefore)
 
 		// Bidder Balance before.
 		m2BalBefore := _getBalance(t, chain, nil, m2Pub)
@@ -5559,12 +5684,12 @@ func TestNFTBuyNow(t *testing.T) {
 
 		// Creator Balance after. M0's balance should increase by the creator royalties (15)
 		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(1023), m0BalAfter)
+		require.Equal(getConditionalBalance(1023, 1024), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore+15)
 
 		// Seller Balance after. M1's balance should increase by the bid amount (150) less coin royalties (30) and creator royalties (15)
 		m1BalAfter := _getBalance(t, testMeta.chain, nil, m1Pub)
-		require.Equal(uint64(1002), m1BalAfter)
+		require.Equal(getConditionalBalance(1002, 1003), m1BalAfter)
 		require.Equal(m1BalAfter, m1BalBefore+bidAmountNanos-30-15)
 
 		// Bidder Balance after. m2 should pay for the bid amount (150) + cover the transaction fee (1).
@@ -5660,7 +5785,7 @@ func TestNFTBuyNow(t *testing.T) {
 		bidAmountNanos := uint64(20)
 		// Creator Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(1022), m0BalBefore)
+		require.Equal(getConditionalBalance(1022, 1023), m0BalBefore)
 
 		// Bidder Balance before.
 		m3BalBefore := _getBalance(t, chain, nil, m3Pub)
@@ -5697,7 +5822,7 @@ func TestNFTBuyNow(t *testing.T) {
 
 		// Creator Balance after. M0's balance should increase by the creator royalties (2)
 		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(1024), m0BalAfter)
+		require.Equal(getConditionalBalance(1024, 1025), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore+2)
 
 		// Bidder Balance after. M3's balance should decrease by the bid amount (20)
@@ -5707,8 +5832,8 @@ func TestNFTBuyNow(t *testing.T) {
 
 		// Seller Balance after. m2's balance should increase by the bid amount (20) less creator royalties (2), coin royalties (4) and the transaction fee (2).
 		m2BalAfter := _getBalance(t, testMeta.chain, nil, m2Pub)
-		require.Equal(uint64(860), m2BalAfter)
-		require.Equal(m2BalAfter, m2BalBefore+20-4-2-2)
+		require.Equal(getConditionalBalance(860, 860), m2BalAfter)
+		require.Equal(m2BalAfter, m2BalBefore+20-4-2-getConditionalBalance(2, 2))
 
 		// Make sure royalties to creator and to coin are paid out correctly.
 		expectedCreatorRoyalty := bidAmountNanos / 10
@@ -5782,15 +5907,15 @@ func TestNFTBuyNow(t *testing.T) {
 		bidAmountNanos := uint64(30)
 		// Creator Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(1024), m0BalBefore)
+		require.Equal(getConditionalBalance(1024, 1025), m0BalBefore)
 
 		// Bidder Balance before.
 		m2BalBefore := _getBalance(t, chain, nil, m2Pub)
-		require.Equal(uint64(859), m2BalBefore)
+		require.Equal(getConditionalBalance(859, 859), m2BalBefore)
 
 		// Seller Balance before.
 		m3BalBefore := _getBalance(t, chain, nil, m3Pub)
-		require.Equal(uint64(977), m3BalBefore)
+		require.Equal(getConditionalBalance(977, 978), m3BalBefore)
 
 		// DESO locked before royalties.
 		m0DeSoLockedBefore, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -5819,18 +5944,18 @@ func TestNFTBuyNow(t *testing.T) {
 
 		// Creator Balance after. M0's balance should increase by the creator royalties (3)
 		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(1027), m0BalAfter)
+		require.Equal(getConditionalBalance(1027, 1028), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore+3)
 
 		// Bidder Balance after. M2's balance should decrease by the bid amount (30)
 		m2BalAfter := _getBalance(t, testMeta.chain, nil, m2Pub)
-		require.Equal(uint64(829), m2BalAfter)
+		require.Equal(getConditionalBalance(829, 829), m2BalAfter)
 		require.Equal(m2BalAfter, m2BalBefore-30)
 
 		// Seller Balance after. m3's balance should increase by the bid amount (30) less creator royalties (3), coin royalties (6) and the transaction fee (2).
 		m3BalAfter := _getBalance(t, testMeta.chain, nil, m3Pub)
-		require.Equal(uint64(996), m3BalAfter)
-		require.Equal(m3BalAfter, m3BalBefore+30-6-3-2)
+		require.Equal(getConditionalBalance(996, 997), m3BalAfter)
+		require.Equal(m3BalAfter, m3BalBefore+30-6-3-getConditionalBalance(2, 2))
 
 		// Make sure royalties to creator and to coin are paid out correctly.
 		expectedCreatorRoyalty := bidAmountNanos / 10
@@ -5904,11 +6029,11 @@ func TestNFTBuyNow(t *testing.T) {
 		bidAmountNanos := uint64(100)
 		// Creator & Bidder Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(1027), m0BalBefore)
+		require.Equal(getConditionalBalance(1027, 1028), m0BalBefore)
 
 		// Seller Balance before.
 		m2BalBefore := _getBalance(t, chain, nil, m2Pub)
-		require.Equal(uint64(827), m2BalBefore)
+		require.Equal(getConditionalBalance(827, 828), m2BalBefore)
 
 		// DESO locked before royalties.
 		m0DeSoLockedBefore, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -5935,12 +6060,12 @@ func TestNFTBuyNow(t *testing.T) {
 
 		// Creator & Buyer Balance after. M0's balance should increase by the creator royalties (10) minus the bid amount (100) and the transaction fee (3)
 		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(934), m0BalAfter)
-		require.Equal(m0BalAfter, m0BalBefore+10-100-3)
+		require.Equal(getConditionalBalance(934, 937), m0BalAfter)
+		require.Equal(m0BalAfter, m0BalBefore+10-100-getConditionalBalance(3, 1))
 
 		// Seller Balance after. m2's balance should increase by the bid amount (100) less creator royalties (10), coin royalties (20).
 		m2BalAfter := _getBalance(t, testMeta.chain, nil, m2Pub)
-		require.Equal(uint64(897), m2BalAfter)
+		require.Equal(getConditionalBalance(897, 898), m2BalAfter)
 		require.Equal(m2BalAfter, m2BalBefore+100-20-10)
 
 		// Make sure royalties to creator and to coin are paid out correctly.
@@ -5979,11 +6104,11 @@ func TestNFTBuyNow(t *testing.T) {
 		bidAmountNanos := uint64(60)
 		// Creator & Seller Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(932), m0BalBefore)
+		require.Equal(getConditionalBalance(932, 936), m0BalBefore)
 
 		// Buyer Balance before.
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
-		require.Equal(uint64(999), m1BalBefore)
+		require.Equal(getConditionalBalance(999, 1000), m1BalBefore)
 
 		// DESO locked before royalties.
 		m0DeSoLockedBefore, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -6010,12 +6135,12 @@ func TestNFTBuyNow(t *testing.T) {
 
 		// Creator & Seller Balance after. M0's balance should increase by the bid amount (60) minus the creator coin royalties (12)
 		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(980), m0BalAfter)
+		require.Equal(getConditionalBalance(980, 984), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore+60-12)
 
 		// Buyer's Balance after. m1's balance should decrease by the bid amount (60) plus transaction fee (1).
 		m1BalAfter := _getBalance(t, testMeta.chain, nil, m1Pub)
-		require.Equal(uint64(938), m1BalAfter)
+		require.Equal(getConditionalBalance(938, 939), m1BalAfter)
 		require.Equal(m1BalAfter, m1BalBefore-60-1)
 
 		// Make sure royalties to creator and to coin are paid out correctly.
@@ -6070,15 +6195,15 @@ func TestNFTBuyNow(t *testing.T) {
 		bidAmountNanos := uint64(5)
 		// Creator balance before
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(980), m0BalBefore)
+		require.Equal(getConditionalBalance(980, 984), m0BalBefore)
 
 		// Seller Balance before.
 		m1BalBefore := _getBalance(t, chain, nil, m1Pub)
-		require.Equal(uint64(936), m1BalBefore)
+		require.Equal(getConditionalBalance(936, 938), m1BalBefore)
 
 		// Buyer Balance before.
 		m2BalBefore := _getBalance(t, chain, nil, m2Pub)
-		require.Equal(uint64(896), m2BalBefore)
+		require.Equal(getConditionalBalance(896, 897), m2BalBefore)
 
 		// DESO locked before royalties.
 		m0DeSoLockedBefore, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -6105,17 +6230,17 @@ func TestNFTBuyNow(t *testing.T) {
 
 		// Creator & Seller Balance after. M0's balance won't increase all, since the creator royalties are 0 (10% of 5 is less than 1).
 		m0BalAfter := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(980), m0BalAfter)
+		require.Equal(getConditionalBalance(980, 984), m0BalAfter)
 		require.Equal(m0BalAfter, m0BalBefore)
 
 		// Seller's Balance after. m1's balance should increase by the bid amount (5) minus coin royalties (1). There are no creator royalties here.
 		m1BalAfter := _getBalance(t, testMeta.chain, nil, m1Pub)
-		require.Equal(uint64(940), m1BalAfter)
+		require.Equal(getConditionalBalance(940, 942), m1BalAfter)
 		require.Equal(m1BalAfter, m1BalBefore+5-1)
 
 		// Buyer's Balance after. m2's balance should decrease by the bid amount (5) and the transaction fee (1).
 		m2BalAfter := _getBalance(t, testMeta.chain, nil, m2Pub)
-		require.Equal(uint64(890), m2BalAfter)
+		require.Equal(getConditionalBalance(890, 891), m2BalAfter)
 		require.Equal(m2BalAfter, m2BalBefore-5-1)
 
 		// Make sure royalties to creator and to coin are paid out correctly.
@@ -6279,6 +6404,7 @@ func TestNFTSplits(t *testing.T) {
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -6310,9 +6436,7 @@ func TestNFTSplits(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m5Pub, senderPrivString, 1000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m6Pub, senderPrivString, 1000)
 
-	//m4PKID := DBGetPKIDEntryForPublicKey(db, m4PkBytes)
-	//m5PKID := DBGetPKIDEntryForPublicKey(db, m5PkBytes)
-	//m6PKID := DBGetPKIDEntryForPublicKey(db, m6PkBytes)
+	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
 
 	// Set max copies to a non-zero value to activate NFTs.
 	{
@@ -6401,7 +6525,7 @@ func TestNFTSplits(t *testing.T) {
 		)
 
 		m0Bal := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(uint64(930), m0Bal)
+		require.Equal(getConditionalBalance(930, 930), m0Bal)
 
 		_creatorCoinTxnWithTestMeta(
 			testMeta,
@@ -6418,7 +6542,7 @@ func TestNFTSplits(t *testing.T) {
 		)
 
 		m1Bal := _getBalance(t, testMeta.chain, nil, m1Pub)
-		require.Equal(uint64(931), m1Bal)
+		require.Equal(getConditionalBalance(931, 931), m1Bal)
 	}
 	// Initial deso locked before royalties.
 	m0InitialDeSoLocked, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -6694,7 +6818,7 @@ func TestNFTSplits(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(uint64(930), m0BalBeforeNFT)
+		require.Equal(getConditionalBalance(930, 930), m0BalBeforeNFT)
 
 		additionalDESORoyaltyMap := make(map[PublicKey]uint64)
 		additionalDESORoyaltyMap[*NewPublicKey(m2PkBytes)] = 100
@@ -6723,7 +6847,7 @@ func TestNFTSplits(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(int64(928), int64(m0BalAfterNFT))
+		require.Equal(getConditionalBalance(928, 928), m0BalAfterNFT)
 	}
 
 	// Have m3 bid on serial #1. Have m0 accept bid.
@@ -6731,7 +6855,7 @@ func TestNFTSplits(t *testing.T) {
 		bidAmountNanos := uint64(100)
 		// Creator Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(int64(928), int64(m0BalBefore))
+		require.Equal(getConditionalBalance(928, 928), m0BalBefore)
 
 		// Bidder Balance before.
 		m3BalBefore := _getBalance(t, chain, nil, m3Pub)
@@ -6745,7 +6869,7 @@ func TestNFTSplits(t *testing.T) {
 
 		// M2's balance before
 		m2BalBefore := _getBalance(t, chain, nil, m2Pub)
-		require.Equal(int64(961), int64(m2BalBefore))
+		require.Equal(getConditionalBalance(961, 961), m2BalBefore)
 
 		// There are no bids before.
 		bidEntries := DBGetNFTBidEntries(db, post1Hash, 1)
@@ -6795,12 +6919,13 @@ func TestNFTSplits(t *testing.T) {
 		expectedM2Royalty := bidAmountNanos / 100
 		require.Equal(int64(1), int64(expectedM2Royalty))
 		// Check creator's balance
+		txnFee := getConditionalBalance(2, 2)
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty - expectedM1CoinRoyalty - expectedM2Royalty
-		require.Equal(m0BalBefore-2+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(int64(1000), int64(m0BalAfter))
+		require.Equal(m0BalBefore-txnFee+bidAmountMinusRoyalties+expectedCreatorRoyalty, m0BalAfter)
+		require.Equal(getConditionalBalance(1000, 1000), m0BalAfter)
 		// Check m2's balance
 		require.Equal(m2BalBefore+expectedM2Royalty, m2BalAfter)
-		require.Equal(int64(962), int64(m2BalAfter))
+		require.Equal(getConditionalBalance(962, 962), m2BalAfter)
 		// Make sure that the bidder's balance decreased by the bid amount.
 		m3BalAfter := _getBalance(t, chain, nil, m3Pub)
 		require.Equal(m3BalAfterBid-bidAmountNanos, m3BalAfter)
@@ -6835,15 +6960,15 @@ func TestNFTSplits(t *testing.T) {
 		bidAmountNanos := uint64(200)
 		// Creator Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(int64(1000), int64(m0BalBefore))
+		require.Equal(getConditionalBalance(1000, 1000), m0BalBefore)
 
 		// Bidder/m2 Balance before.
 		m2BalBefore := _getBalance(t, chain, nil, m2Pub)
-		require.Equal(int64(962), int64(m2BalBefore))
+		require.Equal(getConditionalBalance(962, 962), m2BalBefore)
 
 		// Seller balance before
 		m3BalBefore := _getBalance(t, chain, nil, m3Pub)
-		require.Equal(int64(897), int64(m3BalBefore))
+		require.Equal(getConditionalBalance(897, 898), m3BalBefore)
 
 		// Creator's DESO locked before
 		m0DeSoLockedBefore, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -6885,14 +7010,15 @@ func TestNFTSplits(t *testing.T) {
 		// Check creator's balance
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty - expectedM1CoinRoyalty - expectedM2Royalty
 		require.Equal(m0BalBefore+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(int64(1020), int64(m0BalAfter))
+		require.Equal(getConditionalBalance(1020, 1020), m0BalAfter)
 		// Check m2's balance - m2 is the buyer but also receives a royalty (and pays 2 nanos in fees for the bid)
-		require.Equal(m2BalBefore+expectedM2Royalty-bidAmountNanos-2, m2BalAfter)
-		require.Equal(int64(762), int64(m2BalAfter))
+		txnFee := getConditionalBalance(2, 1)
+		require.Equal(m2BalBefore+expectedM2Royalty-bidAmountNanos-txnFee, m2BalAfter)
+		require.Equal(getConditionalBalance(762, 763), m2BalAfter)
 		// Make sure that the seller's balance decreased by the bid amount minus royalties.
 		m3BalAfter := _getBalance(t, chain, nil, m3Pub)
 		require.Equal(m3BalBefore+bidAmountMinusRoyalties, m3BalAfter)
-		require.Equal(int64(1025), int64(m3BalAfter))
+		require.Equal(getConditionalBalance(1025, 1026), m3BalAfter)
 
 		// Check coin royalties
 		desoLocked, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -6923,11 +7049,11 @@ func TestNFTSplits(t *testing.T) {
 		bidAmountNanos := uint64(500)
 		// Creator/Bidder Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(int64(1020), int64(m0BalBefore))
+		require.Equal(getConditionalBalance(1020, 1020), m0BalBefore)
 
 		// Seller/m2 Balance before.
 		m2BalBefore := _getBalance(t, chain, nil, m2Pub)
-		require.Equal(int64(760), int64(m2BalBefore))
+		require.Equal(getConditionalBalance(760, 762), m2BalBefore)
 
 		// Creator's DESO locked before
 		m0DeSoLockedBefore, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -6968,11 +7094,12 @@ func TestNFTSplits(t *testing.T) {
 		require.Equal(int64(5), int64(expectedM2Royalty))
 		// Check creator's balance
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty - expectedM1CoinRoyalty - expectedM2Royalty
-		require.Equal(m0BalBefore+expectedCreatorRoyalty-bidAmountNanos-2, m0BalAfter)
-		require.Equal(int64(568), int64(m0BalAfter))
+		txnFee := getConditionalBalance(2, 1)
+		require.Equal(m0BalBefore+expectedCreatorRoyalty-bidAmountNanos-txnFee, m0BalAfter)
+		require.Equal(getConditionalBalance(568, 569), m0BalAfter)
 		// Check m2's balance - m2 is the seller and also receives a royalty
 		require.Equal(m2BalBefore+expectedM2Royalty+bidAmountMinusRoyalties, m2BalAfter)
-		require.Equal(int64(1085), int64(m2BalAfter))
+		require.Equal(getConditionalBalance(1085, 1087), m2BalAfter)
 
 		// Check coin royalties
 		desoLocked, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -7002,7 +7129,7 @@ func TestNFTSplits(t *testing.T) {
 	{
 		// Balance before.
 		m0BalBeforeNFT := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(int64(567), int64(m0BalBeforeNFT))
+		require.Equal(getConditionalBalance(567, 568), m0BalBeforeNFT)
 
 		additionalCoinRoyaltyMap := make(map[PublicKey]uint64)
 		additionalCoinRoyaltyMap[*NewPublicKey(m2PkBytes)] = 500
@@ -7028,7 +7155,7 @@ func TestNFTSplits(t *testing.T) {
 
 		// Balance after. Since the default NFT fee is 0, m0 is only charged the nanos per kb fee.
 		m0BalAfterNFT := _getBalance(t, testMeta.chain, nil, m0Pub)
-		require.Equal(int64(565), int64(m0BalAfterNFT))
+		require.Equal(getConditionalBalance(565, 566), m0BalAfterNFT)
 	}
 
 	// Have m3 buy it "now"
@@ -7037,11 +7164,11 @@ func TestNFTSplits(t *testing.T) {
 		bidAmountNanos := uint64(100)
 		// Creator Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(int64(565), int64(m0BalBefore))
+		require.Equal(getConditionalBalance(565, 566), m0BalBefore)
 
 		// Seller balance before
 		m3BalBefore := _getBalance(t, chain, nil, m3Pub)
-		require.Equal(int64(1025), int64(m3BalBefore))
+		require.Equal(getConditionalBalance(1025, 1026), m3BalBefore)
 
 		// Creator's DESO locked before
 		m0DeSoLockedBefore, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -7079,11 +7206,11 @@ func TestNFTSplits(t *testing.T) {
 		// Check creator's balance
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty - expectedM2CoinRoyalty
 		require.Equal(m0BalBefore+expectedCreatorRoyalty+bidAmountMinusRoyalties, m0BalAfter)
-		require.Equal(int64(640), int64(m0BalAfter))
+		require.Equal(getConditionalBalance(640, 641), m0BalAfter)
 
 		// Check bidder's balance
 		require.Equal(m3BalBefore-bidAmountNanos-1, m3BalAfter)
-		require.Equal(int64(924), int64(m3BalAfter))
+		require.Equal(getConditionalBalance(924, 925), m3BalAfter)
 
 		// Check coin royalties
 		desoLocked, _ := _getCreatorCoinInfo(t, chain, params, m0Pub)
@@ -7111,7 +7238,7 @@ func TestNFTSplits(t *testing.T) {
 		)
 
 		m2Bal := _getBalance(t, testMeta.chain, nil, m2Pub)
-		require.Equal(int64(1054), int64(m2Bal))
+		require.Equal(getConditionalBalance(1054, 1057), m2Bal)
 	}
 
 	// Swap identity of m3 and m2.
@@ -7141,13 +7268,13 @@ func TestNFTSplits(t *testing.T) {
 		bidAmountNanos := uint64(200)
 		// Creator Balance before.
 		m0BalBefore := _getBalance(t, chain, nil, m0Pub)
-		require.Equal(int64(640), int64(m0BalBefore))
+		require.Equal(getConditionalBalance(640, 641), m0BalBefore)
 
 		// Seller Balance before.
 		m2BalBefore := _getBalance(t, chain, nil, m2Pub)
 		m3BalBefore := _getBalance(t, chain, nil, m3Pub)
-		require.Equal(int64(1052), int64(m2BalBefore))
-		require.Equal(int64(924), int64(m3BalBefore))
+		require.Equal(getConditionalBalance(1052, 1056), m2BalBefore)
+		require.Equal(getConditionalBalance(924, 925), m3BalBefore)
 
 		// Bidder balance before
 		m4BalBefore := _getBalance(t, chain, nil, m4Pub)
@@ -7192,14 +7319,14 @@ func TestNFTSplits(t *testing.T) {
 		// Check creator's balance
 		bidAmountMinusRoyalties := bidAmountNanos - expectedCoinRoyalty - expectedCreatorRoyalty - expectedM2CoinRoyalty
 		require.Equal(m0BalBefore+expectedCreatorRoyalty, m0BalAfter)
-		require.Equal(int64(660), int64(m0BalAfter))
+		require.Equal(getConditionalBalance(660, 661), m0BalAfter)
 
 		// Check seller's balance
 		require.Equal(m2BalBefore+bidAmountMinusRoyalties, m2BalAfter)
-		require.Equal(int64(1182), int64(m2BalAfter))
+		require.Equal(getConditionalBalance(1182, 1186), m2BalAfter)
 
 		require.Equal(m3BalBefore, m3BalAfter)
-		require.Equal(int64(924), int64(m3BalAfter))
+		require.Equal(getConditionalBalance(924, 925), m3BalAfter)
 
 		// Check bidder's balance
 		require.Equal(m4BalBefore-bidAmountNanos-1, m4BalAfter)
@@ -7256,6 +7383,7 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m4PkBytes)] = true
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -7286,10 +7414,6 @@ func TestNFTSplitsHardcorePKIDBug(t *testing.T) {
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m4Pub, senderPrivString, 10000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m5Pub, senderPrivString, 10000)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, m6Pub, senderPrivString, 10000)
-
-	//m4PKID := DBGetPKIDEntryForPublicKey(db, m4PkBytes)
-	//m5PKID := DBGetPKIDEntryForPublicKey(db, m5PkBytes)
-	//m6PKID := DBGetPKIDEntryForPublicKey(db, m6PkBytes)
 
 	// Set max copies to a non-zero value to activate NFTs.
 	{

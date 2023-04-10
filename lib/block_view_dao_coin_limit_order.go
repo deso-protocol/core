@@ -411,6 +411,17 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				continue
 			}
 
+			// Since we don't have bidder inputs in the balance model, we add the transactor
+			// to the prev balances map if it doesn't exist and the matching order is buying
+			// DESO.
+			if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight &&
+				transactorOrder.SellingDAOCoinCreatorPKID.IsZeroPKID() {
+
+				if _, exists := prevBalances[*matchingOrder.TransactorPKID][ZeroPKID]; !exists {
+					bav.balanceChange(matchingOrder.TransactorPKID, &ZeroPKID, big.NewInt(0), nil, prevBalances)
+				}
+			}
+
 			// Calculate leftover transactor and matching order quantities
 			// as well as the number of coins exchanged.
 			updatedTransactorOrderQuantityToFill,
@@ -583,6 +594,19 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 	}
 
+	var extraSpend uint64
+	if txMeta.SellingDAOCoinCreatorPublicKey.IsZeroPublicKey() {
+		desoDelta := balanceDeltas[*transactorPKIDEntry.PKID][ZeroPKID]
+		if desoDelta != nil && desoDelta.Sign() < 0 {
+			desoDeltaNeg := big.NewInt(0).Neg(desoDelta)
+			if !desoDeltaNeg.IsUint64() {
+				return 0, 0, nil, fmt.Errorf("_connectDAOCoinLimitOrder: "+
+					"DesoDelta %v overflows uint64", desoDelta)
+			}
+			extraSpend = desoDeltaNeg.Uint64()
+		}
+	}
+
 	// Now, we need to update all the balances of all the users who were involved in
 	// all of the matching that we did above. We do this via the following steps:
 	//
@@ -599,8 +623,8 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransferWithExtraSpend(
+		txn, txHash, blockHeight, extraSpend, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
 	}
@@ -613,10 +637,14 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	// Start by adding the output minus input for the transactor, since they can
 	// technically spend this amount if they want. Later on, we'll make sure that
 	// we're accounting for the fee as well.
-	if totalInput > totalOutput {
+	if totalInput > totalOutput && blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = totalInput - totalOutput
 	} else {
 		desoAllowedToSpendByPublicKey[*NewPublicKey(txn.PublicKey)] = 0
+	}
+
+	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && len(txMeta.BidderInputs) != 0 {
+		return 0, 0, nil, fmt.Errorf("_connectDAOCoinLimitOrder: BidderInputs should be empty for balance model %d", blockHeight)
 	}
 	// Iterate through all the inputs and spend them. Any amount we don't use will be returned
 	// as change.
@@ -717,9 +745,9 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			// The position will be set in the call to _addUtxo.
 		}
 
-		utxoOp, err := bav._addUtxo(&utxoEntry)
+		utxoOp, err := bav._addDESO(amountNanos, publicKey, &utxoEntry, blockHeight)
 		if err != nil {
-			return errors.Wrapf(err, "_connectDAOCoinLimitOrder: Problem adding output utxo")
+			return errors.Wrapf(err, "_connectDAOCoinLimitOrder: Problem adding output DESO")
 		}
 
 		daoCoinLimitOrderPaymentUtxoKeys = append(daoCoinLimitOrderPaymentUtxoKeys, outputKey)
@@ -765,6 +793,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		userPKID := userPKIDIter
 		userPKIDs = append(userPKIDs, userPKID)
 	}
+	var transactorDESOSpendAmount uint64
 	sortedUserPKIDs := SortPKIDs(userPKIDs)
 	for _, userPKIDIter := range sortedUserPKIDs {
 		userPKID := userPKIDIter
@@ -789,35 +818,84 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 				// If the current delta is for the transactor, we need
 				// to deduct the fees specified in the metadata from the output
-				// we will create.
-				if transactorPKIDEntry.PKID.Eq(&userPKID) {
+				// we will create. We do not need to do this for balance model
+				// as the fees are already deducted in the basic transfer.
+				if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight &&
+					transactorPKIDEntry.PKID.Eq(&userPKID) {
+
 					newDESOSurplus = big.NewInt(0).Sub(newDESOSurplus, big.NewInt(0).SetUint64(txMeta.FeeNanos))
 				}
 
-				// Check that we didn't overflow or underflow the DESO surplus.
-				// Note that if we ever go negative then that's an error because
-				// we already maxed out the DESO we're allowed to spend before
-				// entering this loop.
-				if newDESOSurplus.Cmp(big.NewInt(0)) < 0 {
-					return 0, 0, nil, RuleErrorDAOCoinLimitOrderOverspendingDESO
-				}
-				if newDESOSurplus.Cmp(big.NewInt(0).SetUint64(math.MaxUint64)) > 0 {
-					return 0, 0, nil, RuleErrorDAOCoinLimitOrderOverflowsDESO
-				}
-
-				// Now create an implicit output for whatever surplus remains, if any.
-				if newDESOSurplus.Uint64() != 0 {
-					if err = createUTXO(newDESOSurplus.Uint64(), pubKey, UtxoTypeDAOCoinLimitOrderPayout); err != nil {
-						return 0, 0, nil, err
+				if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+					cmpVal := newDESOSurplus.Cmp(big.NewInt(0))
+					if cmpVal == 0 {
+						continue
+					}
+					var utxoOp *UtxoOperation
+					if cmpVal > 0 {
+						// Add the DESO to the total output.
+						if !newDESOSurplus.IsUint64() {
+							return 0, 0, nil, errors.New(
+								"_connectDAOCoinLimitOrder: New DESO surplus is not uint64")
+						}
+						if utxoOp, err = bav._addBalance(newDESOSurplus.Uint64(), pubKey); err != nil {
+							return 0, 0, nil, err
+						}
+						totalOutput, err = SafeUint64().Add(totalOutput, newDESOSurplus.Uint64())
+						if err != nil {
+							return 0, 0, nil, errors.Wrapf(
+								err, "_connectDAOCoinLimitOrder: Problem adding total output: ")
+						}
+					} else {
+						// We've already spent the DESO for the transactor.
+						if bytes.Equal(pubKey, txn.PublicKey) {
+							continue
+						}
+						spendAmountUint256 := newDESOSurplus.Neg(newDESOSurplus)
+						if !spendAmountUint256.IsUint64() {
+							return 0, 0, nil, errors.New(
+								"_connectDAOCoinLimitOrder: Spend amount is not uint64")
+						}
+						spendAmount := spendAmountUint256.Uint64()
+						// When spending balances, we need to check for immature block rewards. Since we don't have
+						// the block rewards yet for the current block, we subtract one from the current block height
+						// when spending balances.
+						if utxoOp, err = bav._spendBalance(spendAmount, pubKey, blockHeight-1); err != nil {
+							return 0, 0, nil, err
+						}
+						// Add the spend amount to the total input
+						// The spend amount is already accounted for in the
+						// basic transfer for the transactor.
+						totalInput += spendAmount
+					}
+					utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
+				} else {
+					// Check that we didn't overflow or underflow the DESO surplus.
+					// Note that if we ever go negative then that's an error because
+					// we already maxed out the DESO we're allowed to spend before
+					// entering this loop.
+					if newDESOSurplus.Cmp(big.NewInt(0)) < 0 {
+						return 0, 0, nil, RuleErrorDAOCoinLimitOrderOverspendingDESO
+					}
+					if newDESOSurplus.Cmp(big.NewInt(0).SetUint64(math.MaxUint64)) > 0 {
+						return 0, 0, nil, RuleErrorDAOCoinLimitOrderOverflowsDESO
 					}
 
-					// Increase totalOutput to account for outputs generated by matching orders.
-					totalOutput, err = SafeUint64().Add(totalOutput, newDESOSurplus.Uint64())
-					if err != nil {
-						return 0, 0, nil, errors.Wrapf(err,
-							"_connectDAOCoinLimitOrder: Adding to totalOutput overflows uint64: ")
+					// Now create an implicit output for whatever surplus remains, if any.
+					if newDESOSurplus.Uint64() != 0 {
+						if err = createUTXO(newDESOSurplus.Uint64(), pubKey, UtxoTypeDAOCoinLimitOrderPayout); err != nil {
+							return 0, 0, nil, err
+						}
+
+						// Increase totalOutput to account for outputs generated by matching orders.
+						totalOutput, err = SafeUint64().Add(totalOutput, newDESOSurplus.Uint64())
+						if err != nil {
+							return 0, 0, nil, errors.Wrapf(err,
+								"_connectDAOCoinLimitOrder: Adding to totalOutput overflows uint64: ")
+						}
 					}
 				}
+
 			} else {
 				// In this case we're dealing with a DAO coin so simply
 				// update the value in the DB and call it a day.
@@ -876,14 +954,19 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		FilledDAOCoinLimitOrders:             filledOrders,
 	})
 
-	// Just to be safe, we confirm that totalOutput doesn't exceed totalInput.
-	if totalInput < totalOutput {
+	outputAndSpendAmount, err := SafeUint64().Add(totalOutput, transactorDESOSpendAmount)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err,
+			"_connectDAOCoinLimitOrder: Adding to totalOutput and transactorDESOSpendAmount overflows uint64: ")
+	}
+	// Just to be safe, we confirm that totalOutput plus transactor DESO spend amount doesn't exceed totalInput.
+	if totalInput < outputAndSpendAmount {
 		return 0, 0, nil, RuleErrorTxnOutputExceedsInput
 	}
 
 	// The difference between totalInput and totalOutput should be EXACTLY equal to the fee specified
 	// in the transaction metadata.
-	if totalInput-totalOutput != txMeta.FeeNanos {
+	if totalInput-outputAndSpendAmount != txMeta.FeeNanos {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderTotalInputMinusTotalOutputNotEqualToFee
 	}
 
@@ -1037,9 +1120,20 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	// list of UtxoOperations. The number of implicit outputs is equal to
 	// the total number of "Add" operations minus the explicit outputs.
 	numUtxoAdds := 0
-	for _, utxoOp := range utxoOpsForTxn {
+	// We skip the first utxo op because it's the basic transfer to pay for the fee.
+	for _, utxoOp := range utxoOpsForTxn[1:] {
 		if utxoOp.Type == OperationTypeAddUtxo {
 			numUtxoAdds += 1
+		}
+		if utxoOp.Type == OperationTypeAddBalance {
+			if err := bav._unAddBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
+				return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unAdding balance: ")
+			}
+		}
+		if utxoOp.Type == OperationTypeSpendBalance {
+			if err := bav._unSpendBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
+				return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unSpendBalance: ")
+			}
 		}
 	}
 
@@ -1062,12 +1156,15 @@ func (bav *UtxoView) _disconnectDAOCoinLimitOrder(
 	}
 
 	// Unspend utxos for matched bid transactors.
-	for jj := operationIndex; jj > operationIndex-numMatchingOrderInputs; jj-- {
-		utxoOp := utxoOpsForTxn[jj]
-		if err := bav._unSpendUtxo(utxoOp.Entry); err != nil {
-			return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unSpending UTXO %v: ", utxoOp.Entry)
+	if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
+		for jj := operationIndex; jj > operationIndex-numMatchingOrderInputs; jj-- {
+			utxoOp := utxoOpsForTxn[jj]
+			if err := bav._unSpendUtxo(utxoOp.Entry); err != nil {
+				return errors.Wrapf(err, "_disconnectDAOCoinLimitOrder: Problem unSpending UTXO %v: ", utxoOp.Entry)
+			}
 		}
 	}
+
 	// Set operation index appropriately.
 	operationIndex = operationIndex - numMatchingOrderInputs
 
@@ -1867,4 +1964,100 @@ func ScaleFloatFormatStringToUint256(floatStr string, scaleFactor *uint256.Int) 
 	}
 
 	return ret, nil
+}
+
+func (bav *UtxoView) GetDESONanosToFillOrder(transactorOrder *DAOCoinLimitOrderEntry, blockHeight uint32) (uint64, error) {
+	// If selling $DESO for DAO coins, we need to find the matching orders
+	// and add that as an additional fee when adding inputs and outputs.
+	var lastSeenOrder *DAOCoinLimitOrderEntry
+
+	desoNanosToFulfillOrders := uint256.NewInt()
+	transactorQuantityToFill := transactorOrder.QuantityToFillInBaseUnits.Clone()
+
+	for transactorQuantityToFill.GtUint64(0) {
+		matchingOrderEntries, err := bav.GetNextLimitOrdersToFill(transactorOrder, lastSeenOrder, blockHeight)
+		if err != nil {
+			return 0, errors.Wrapf(
+				err, "GetDESONanosToFillOrder: Error getting orders to match: ")
+		}
+		if len(matchingOrderEntries) == 0 {
+			break
+		}
+		for _, matchingOrder := range matchingOrderEntries {
+			lastSeenOrder = matchingOrder
+
+			matchingOrderBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(
+				matchingOrder.TransactorPKID, matchingOrder.SellingDAOCoinCreatorPKID, true)
+
+			// Skip if matching order doesn't own any of the DAO coins they're selling.
+			if matchingOrderBalanceEntry == nil || matchingOrderBalanceEntry.isDeleted {
+				continue
+			}
+
+			// Calculate updated order quantities and coins exchanged.
+			var updatedTransactorQuantityToFill *uint256.Int
+			var daoCoinNanosExchanged *uint256.Int
+			var desoNanosExchanged *uint256.Int
+
+			updatedTransactorQuantityToFill,
+				_, // matching order updated quantity, not used here
+				daoCoinNanosExchanged,
+				desoNanosExchanged,
+				err = _calculateDAOCoinsTransferredInLimitOrderMatch(
+				matchingOrder, transactorOrder.OperationType, transactorQuantityToFill)
+			if err != nil {
+				return 0, errors.Wrapf(err, "GetDESONanosToFillOrder: ")
+			}
+
+			// Skip if matching order doesn't own enough of the DAO coins they're selling.
+			if matchingOrderBalanceEntry.BalanceNanos.Lt(daoCoinNanosExchanged) {
+				continue
+			}
+
+			// Now that we know this is a legitimate matching order
+			// we can update the transactor quantity to fill.
+			transactorQuantityToFill = updatedTransactorQuantityToFill
+
+			// Track total $DESO exchanged across all matching orders.
+			desoNanosToFulfillOrders, err = SafeUint256().Add(
+				desoNanosToFulfillOrders, desoNanosExchanged)
+			if err != nil {
+				return 0, errors.Wrapf(err,
+					"GetDESONanosToFillOrder: overflow when adding up $DESO to fill orders")
+			}
+		}
+	}
+
+	// Validate $DESO doesn't overflow uint64.
+	if !desoNanosToFulfillOrders.IsUint64() {
+		return 0, fmt.Errorf(
+			"GetDESONanosToFillOrder: fulfilling order $DESO overflows uint64")
+	}
+
+	return desoNanosToFulfillOrders.Uint64(), nil
+}
+
+func (bav *UtxoView) ConvertTxnToDAOCoinLimitOrderEntry(txn *MsgDeSoTxn, blockHeight uint32) (
+	*DAOCoinLimitOrderEntry, error) {
+	if txn.TxnMeta.GetTxnType() != TxnTypeDAOCoinLimitOrder {
+		return nil, fmt.Errorf(
+			"_convertTxnToDAOCoinLimitOrderEntry: called with bad TxnType %s",
+			txn.TxnMeta.GetTxnType().String())
+	}
+	metadata := txn.TxnMeta.(*DAOCoinLimitOrderMetadata)
+	if metadata == nil {
+		return nil, fmt.Errorf(
+			"_convertTxnToDAOCoinLimitOrderEntry: Error casting txn metadata to type *DAOCoinLimitOrderMetadata")
+	}
+	return &DAOCoinLimitOrderEntry{
+		OrderID:                   txn.Hash(),
+		TransactorPKID:            bav.GetPKIDForPublicKey(txn.PublicKey).PKID,
+		BuyingDAOCoinCreatorPKID:  bav.GetPKIDForPublicKey(metadata.BuyingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+		SellingDAOCoinCreatorPKID: bav.GetPKIDForPublicKey(metadata.SellingDAOCoinCreatorPublicKey.ToBytes()).PKID,
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: metadata.ScaledExchangeRateCoinsToSellPerCoinToBuy.Clone(),
+		QuantityToFillInBaseUnits:                 metadata.QuantityToFillInBaseUnits.Clone(),
+		OperationType:                             metadata.OperationType,
+		FillType:                                  metadata.FillType,
+		BlockHeight:                               blockHeight,
+	}, nil
 }

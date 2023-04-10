@@ -469,20 +469,26 @@ type DBPrefixes struct {
 	// It's worth noting that two of these entries are stored for each Dm thread, one being the inverse of the other.
 	PrefixDmThreadIndex []byte `prefix_id:"[76]" is_state:"true"`
 
+	// PrefixNoncePKIDIndex is used to track unexpired nonces. Each nonce is uniquely identified by its expiration block
+	// height, the PKID of the user who created it, and a partial ID that is unique to the nonce. The partial ID is any
+	// random uint64.
+	// The index has the following structure:
+	// 	<prefix, expirationBlockHeight, PKID, partialID> -> <>
+	PrefixNoncePKIDIndex []byte `prefix_id:"[77]" is_state:"true"`
+
 	// PrefixValidatorByPKID: Retrieve a validator by PKID.
 	// Prefix, ValidatorPKID -> ValidatorEntry
-	PrefixValidatorByPKID []byte `prefix_id:"[77]" is_state:"true"`
+	PrefixValidatorByPKID []byte `prefix_id:"[78]" is_state:"true"`
 
 	// PrefixValidatorByStake: Retrieve the top N validators by stake.
 	// Prefix, TotalStakeAmountNanos, MaxUint64 - RegisteredAtBlockHeight, ValidatorPKID -> ValidatorPKID
-	PrefixValidatorByStake []byte `prefix_id:"[78]" is_state:"true"`
+	PrefixValidatorByStake []byte `prefix_id:"[79]" is_state:"true"`
 
 	// PrefixGlobalStakeAmountNanos: Retrieve the cumulative stake across all validators.
 	// Prefix -> *uint256.Int
-	PrefixGlobalStakeAmountNanos []byte `prefix_id:"[79]" is_state:"true"`
+	PrefixGlobalStakeAmountNanos []byte `prefix_id:"[80]" is_state:"true"`
 
-	// NEXT_TAG: 80
-
+	// NEXT_TAG: 81
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -681,14 +687,17 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixDmThreadIndex) {
 		// prefix_id:"[76]"
 		return true, &DmThreadEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByPKID) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixNoncePKIDIndex) {
 		// prefix_id:"[77]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByPKID) {
+		// prefix_id:"[78]"
 		return true, &ValidatorEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStake) {
-		// prefix_id:"[78]"
+		// prefix_id:"[79]"
 		return true, &PKID{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixGlobalStakeAmountNanos) {
-		// prefix_id:"[79]"
+		// prefix_id:"[80]"
 		return false, nil
 	}
 
@@ -5051,8 +5060,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 			UtxoKey:  &outputKey,
 		}
 
-		_, err := utxoView._addUtxo(&utxoEntry)
-		if err != nil {
+		if _, err = utxoView._addDESO(txOutput.AmountNanos, txOutput.PublicKey, &utxoEntry, 0); err != nil {
 			return fmt.Errorf("InitDbWithDeSoGenesisBlock: Error adding "+
 				"seed balance at index %v ; output: %v: %v", index, txOutput, err)
 		}
@@ -10497,6 +10505,124 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 	}
 	return nil
 }
+
+// -------------------------------------------------------------------------------------
+// DeSo nonce mapping functions
+// -------------------------------------------------------------------------------------
+
+func _dbKeyForTransactorNonceEntry(nonce *DeSoNonce, pkid *PKID) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
+	key := append(prefixCopy, EncodeUint64(nonce.ExpirationBlockHeight)...)
+	key = append(key, pkid.ToBytes()...)
+	key = append(key, EncodeUint64(nonce.PartialID)...)
+	return key
+}
+
+func _dbPrefixForNonceEntryIndexWithBlockHeight(blockHeight uint64) []byte {
+	prefixCopy := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
+	return append(prefixCopy, EncodeUint64(blockHeight)...)
+}
+
+func DbGetTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) (*TransactorNonceEntry, error) {
+	key := _dbKeyForTransactorNonceEntry(nonce, pkid)
+	_, err := txn.Get(key)
+	if err == badger.ErrKeyNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &TransactorNonceEntry{
+		Nonce:          nonce,
+		TransactorPKID: pkid,
+	}, nil
+}
+
+func DbGetTransactorNonceEntry(db *badger.DB, nonce *DeSoNonce, pkid *PKID) (*TransactorNonceEntry, error) {
+	var ret *TransactorNonceEntry
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DbGetTransactorNonceEntryWithTxn(txn, nonce, pkid)
+		return errors.Wrap(err, "DbGetTransactorNonceEntry: ")
+	})
+	if dbErr != nil {
+		return nil, dbErr
+	}
+	return ret, nil
+}
+
+func DbPutTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) error {
+	return errors.Wrap(txn.Set(_dbKeyForTransactorNonceEntry(nonce, pkid), []byte{}),
+		"DbPutTransactorNonceEntryWithTxn: Problem setting nonce")
+}
+
+func DbPutTransactorNonceEntry(handle *badger.DB, nonce *DeSoNonce, pkid *PKID) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		return DbPutTransactorNonceEntryWithTxn(txn, nonce, pkid)
+	})
+}
+
+func DbDeleteTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) error {
+	return errors.Wrap(
+		txn.Delete(_dbKeyForTransactorNonceEntry(nonce, pkid)),
+		"DbDeleteTransactorNonceEntryWithTxn: Problem deleting nonce")
+}
+
+func DbGetTransactorNonceEntriesToExpireAtBlockHeight(handle *badger.DB, blockHeight uint64) ([]*TransactorNonceEntry, error) {
+	var ret []*TransactorNonceEntry
+	err := handle.View(func(txn *badger.Txn) error {
+		ret = DbGetTransactorNonceEntriesToExpireAtBlockHeightWithTxn(txn, blockHeight)
+		return nil
+	})
+	return ret, err
+}
+
+func DbGetTransactorNonceEntriesToExpireAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint64) []*TransactorNonceEntry {
+	startPrefix := _dbKeyForTransactorNonceEntry(&DeSoNonce{ExpirationBlockHeight: blockHeight, PartialID: math.MaxUint64}, &MaxPKID)
+	endPrefix := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
+	opts := badger.DefaultIteratorOptions
+	opts.Reverse = true
+	nodeIterator := txn.NewIterator(opts)
+	defer nodeIterator.Close()
+	var transactorNonceEntries []*TransactorNonceEntry
+	for nodeIterator.Seek(startPrefix); nodeIterator.ValidForPrefix(endPrefix); nodeIterator.Next() {
+		transactorNonceEntries = append(transactorNonceEntries,
+			TransactorNonceKeyToTransactorNonceEntry(nodeIterator.Item().Key()))
+	}
+	return transactorNonceEntries
+}
+
+func DbGetAllTransactorNonceEntries(handle *badger.DB) []*TransactorNonceEntry {
+	keys, _ := EnumerateKeysForPrefix(handle, Prefixes.PrefixNoncePKIDIndex)
+	nonceEntries := []*TransactorNonceEntry{}
+	for _, key := range keys {
+		// Convert key to nonce entry.
+		nonceEntries = append(nonceEntries, TransactorNonceKeyToTransactorNonceEntry(key))
+	}
+	return nonceEntries
+}
+
+func TransactorNonceKeyToTransactorNonceEntry(key []byte) *TransactorNonceEntry {
+	keyWithoutPrefix := key[1:]
+	lenEncodedUint64 := 8
+	expirationHeight := DecodeUint64(keyWithoutPrefix[:lenEncodedUint64])
+	pkid := &PKID{}
+	pkidEndIdx := lenEncodedUint64 + PublicKeyLenCompressed
+	copy(pkid[:], keyWithoutPrefix[lenEncodedUint64:pkidEndIdx])
+	partialID := DecodeUint64(keyWithoutPrefix[pkidEndIdx:])
+	return &TransactorNonceEntry{
+		Nonce: &DeSoNonce{
+			ExpirationBlockHeight: expirationHeight,
+			PartialID:             partialID,
+		},
+		TransactorPKID: pkid,
+	}
+}
+
+// -------------------------------------------------------------------------------------
+// Badger seek functions
+// -------------------------------------------------------------------------------------
 
 func EnumerateKeysForPrefixWithLimitOffsetOrder(
 	db *badger.DB,
