@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 	"math"
@@ -11,6 +12,7 @@ import (
 func TestValidatorRegistration(t *testing.T) {
 	_testValidatorRegistration(t, false)
 	_testValidatorRegistration(t, true)
+	_testValidatorRegistrationWithDerivedKey(t)
 }
 
 func _testValidatorRegistration(t *testing.T, flushToDB bool) {
@@ -368,4 +370,109 @@ func _submitUnregisterAsValidatorTxn(
 	testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 	testMeta.txns = append(testMeta.txns, txn)
 	return utxoOps, txn, testMeta.savedHeight, nil
+}
+
+func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
+	var err error
+
+	// Initialize test chain and miner.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Initialize fork heights.
+	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
+	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
+	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(0)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err = miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height) + 1
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       uint32(blockHeight),
+		feeRateNanosPerKb: uint64(101),
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+	require.NoError(t, err)
+	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
+	require.NoError(t, err)
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+
+	createDerivedKey := func(txnType TxnType, count uint64) error {
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				TxnTypeAuthorizeDerivedKey: 1,
+				txnType:                    count,
+			},
+		}
+
+		derivedKeyMetadata, derivedKeyAuthPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
+			t, senderPrivKey, blockHeight+5, txnSpendingLimit, false, blockHeight,
+		)
+		derivedKeyAuthPrivBase58Check := Base58CheckEncode(derivedKeyAuthPriv.Serialize(), true, params)
+
+		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, senderPkString)
+
+		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraDataAndSpendingLimits(
+			t,
+			chain,
+			db,
+			params,
+			utxoView,
+			testMeta.feeRateNanosPerKb,
+			senderPkBytes,
+			derivedKeyMetadata.DerivedPublicKey,
+			derivedKeyAuthPrivBase58Check,
+			derivedKeyMetadata.ExpirationBlock,
+			derivedKeyMetadata.AccessSignature,
+			false,
+			nil,
+			nil,
+			txnSpendingLimit,
+		)
+		if err != nil {
+			return err
+		}
+		require.NoError(t, utxoView.FlushToDb(0))
+		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
+		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+		testMeta.txns = append(testMeta.txns, txn)
+
+		return utxoView.ValidateDerivedKey(
+			senderPkBytes, derivedKeyMetadata.DerivedPublicKey, blockHeight,
+		)
+	}
+
+	{
+		// Create RegisterAsValidator derived key.
+		err = createDerivedKey(TxnTypeRegisterAsValidator, 1)
+		require.NoError(t, err)
+	}
+
+	// Flush mempool to the db and test rollbacks.
+	require.NoError(t, mempool.universalUtxoView.FlushToDb(0))
+	_executeAllTestRollbackAndFlush(testMeta)
 }
