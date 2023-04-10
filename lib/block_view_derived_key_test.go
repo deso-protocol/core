@@ -886,7 +886,6 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	_ = assert
 	_ = require
 
-	resetBalanceModelBlockHeights()
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	dbAdapter := chain.NewDbAdapter()
@@ -902,6 +901,10 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = 1000000
+	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = 1000000
+	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = 1000000
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1000000
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
