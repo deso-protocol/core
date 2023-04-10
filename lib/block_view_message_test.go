@@ -1818,6 +1818,7 @@ func TestGroupMessages(t *testing.T) {
 	_ = require
 	_ = assert
 
+	resetBalanceModelBlockHeights()
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_ = miner

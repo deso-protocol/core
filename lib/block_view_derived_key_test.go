@@ -886,6 +886,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	_ = assert
 	_ = require
 
+	resetBalanceModelBlockHeights()
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	dbAdapter := chain.NewDbAdapter()
@@ -2633,8 +2634,8 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
-	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = 0
-	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
+	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(0)
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = unlimitedDerivedKeysBlockHeight
