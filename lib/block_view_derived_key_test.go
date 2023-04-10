@@ -901,6 +901,10 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = 1000000
+	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = 1000000
+	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = 1000000
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1000000
 
 	// Mine two blocks to give the sender some DeSo.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -2633,8 +2637,8 @@ func TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t *testing.T) {
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 	params.ForkHeights.BuyNowAndNFTSplitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
-	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = 0
-	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
+	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(0)
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = unlimitedDerivedKeysBlockHeight
