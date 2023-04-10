@@ -2844,6 +2844,12 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 		if maxNonceExpirationBlockHeightOffsetBytesRead <= 0 {
 			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode MaxNonceExpirationBlockHeightOffset as uint64")
 		}
+		if newMaxNonceExpirationBlockHeightOffset < MinMaxNonceExpirationBlockHeightOffset {
+			return 0, 0, nil, RuleErrorMaxNonceExpirationBlockHeightOffsetTooLow
+		}
+		if newMaxNonceExpirationBlockHeightOffset > MaxMaxNonceExpirationBlockHeightOffset {
+			return 0, 0, nil, RuleErrorMaxNonceExpirationBlockHeightOffsetTooHigh
+		}
 		newGlobalParamsEntry.MaxNonceExpirationBlockHeightOffset = newMaxNonceExpirationBlockHeightOffset
 	}
 
@@ -3791,7 +3797,7 @@ func (bav *UtxoView) ConstructNonceForPublicKey(publicKey []byte, blockHeight ui
 // a unique nonce, we return an error.
 func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64) (*DeSoNonce, error) {
 	// construct nonce
-	expirationBuffer := uint64(DefaultMaxNonceExpirationBlockHeightOffset)
+	expirationBuffer := uint64(MaxMaxNonceExpirationBlockHeightOffset)
 	if bav.GlobalParamsEntry != nil && bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 {
 		expirationBuffer = bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset
 	}
