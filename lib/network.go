@@ -5731,7 +5731,9 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 	// As a result of this bug, checksum computation became non-deterministic, hindering node's ability to accurately
 	// compute the checksum. To solve this problem, we patched the encoding in the BalanceModelMigration. Having a new
 	// migration will force all nodes on the network to re-encode their checksum using the newest encoding.
-	// In the new encoding, the map is encoded in a deterministic way.
+	// In the new encoding, the map is encoded in a deterministic way. In addition, we add "safety bytes" after the
+	// access group spending limit bytes to ensure there is never an overlap between the legacy and new encodings.
+	// This prevents potential issues that could arise in the migration checksum computation.
 	if MigrationTriggered(blockHeight, BalanceModelMigration) {
 
 		accessGroupLimitMapLength := uint64(len(tsl.AccessGroupMap))

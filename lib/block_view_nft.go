@@ -1132,7 +1132,10 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	case TxnTypeAcceptNFTBid:
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 			totalBidderInput = args.BidAmountNanos
-			utxoOp, err := bav._spendBalance(args.BidAmountNanos, bidderPublicKey, blockHeight)
+			// When spending balances, we need to check for immature block rewards. Since we don't have
+			// the block rewards yet for the current block, we subtract one from the current block height
+			// when spending balances.
+			utxoOp, err := bav._spendBalance(args.BidAmountNanos, bidderPublicKey, blockHeight-1)
 			if err != nil {
 				return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: error spending balance for bidder: ")
 			}
