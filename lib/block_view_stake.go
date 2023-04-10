@@ -103,8 +103,7 @@ func (stakeEntry *StakeEntry) GetVersionByte(blockHeight uint64) byte {
 }
 
 func (stakeEntry *StakeEntry) GetEncoderType() EncoderType {
-	// TODO: EncoderTypeStakeEntry
-	return EncoderTypeValidatorEntry
+	return EncoderTypeStakeEntry
 }
 
 //
@@ -215,6 +214,314 @@ func (lockedStakeEntry *LockedStakeEntry) GetVersionByte(blockHeight uint64) byt
 }
 
 func (lockedStakeEntry *LockedStakeEntry) GetEncoderType() EncoderType {
-	// TODO: EncoderTypeLockedStakeEntry
-	return EncoderTypeValidatorEntry
+	return EncoderTypeLockedStakeEntry
+}
+
+//
+// TYPES: StakeMetadata
+//
+
+type StakeMetadata struct {
+	ValidatorPublicKey *PublicKey
+	StakeAmountNanos   *uint256.Int
+}
+
+func (txnData *StakeMetadata) GetTxnType() TxnType {
+	return TxnTypeStake
+}
+
+func (txnData *StakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.ValidatorPublicKey.ToBytes())...)
+	data = append(data, EncodeUint256(txnData.StakeAmountNanos)...)
+	return data, nil
+}
+
+func (txnData *StakeMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// ValidatorPublicKey
+	validatorPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StakeMetadata.FromBytes: Problem reading ValidatorPublicKey: ")
+	}
+	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
+
+	// StakeAmountNanos
+	txnData.StakeAmountNanos, err = DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StakeMetadata.FromBytes: Problem reading StakeAmountNanos: ")
+	}
+
+	return nil
+}
+
+func (txnData *StakeMetadata) New() DeSoTxnMetadata {
+	return &StakeMetadata{}
+}
+
+//
+// TYPES: UnstakeMetadata
+//
+
+type UnstakeMetadata struct {
+	ValidatorPublicKey *PublicKey
+	UnstakeAmountNanos *uint256.Int
+}
+
+func (txnData *UnstakeMetadata) GetTxnType() TxnType {
+	return TxnTypeUnstake
+}
+
+func (txnData *UnstakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.ValidatorPublicKey.ToBytes())...)
+	data = append(data, EncodeUint256(txnData.UnstakeAmountNanos)...)
+	return data, nil
+}
+
+func (txnData *UnstakeMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// ValidatorPublicKey
+	validatorPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnstakeMetadata.FromBytes: Problem reading ValidatorPublicKey: ")
+	}
+	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
+
+	// UnstakeAmountNanos
+	txnData.UnstakeAmountNanos, err = DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnstakeMetadata.FromBytes: Problem reading UnstakeAmountNanos: ")
+	}
+
+	return nil
+}
+
+func (txnData *UnstakeMetadata) New() DeSoTxnMetadata {
+	return &UnstakeMetadata{}
+}
+
+//
+// TYPES: UnlockStakeMetadata
+//
+
+type UnlockStakeMetadata struct {
+	ValidatorPublicKey *PublicKey
+	StartEpochNumber   uint64
+	EndEpochNumber     uint64
+}
+
+func (txnData *UnlockStakeMetadata) GetTxnType() TxnType {
+	return TxnTypeUnlockStake
+}
+
+func (txnData *UnlockStakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	var data []byte
+	data = append(data, EncodeByteArray(txnData.ValidatorPublicKey.ToBytes())...)
+	data = append(data, UintToBuf(txnData.StartEpochNumber)...)
+	data = append(data, UintToBuf(txnData.EndEpochNumber)...)
+	return data, nil
+}
+
+func (txnData *UnlockStakeMetadata) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+
+	// ValidatorPublicKey
+	validatorPublicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnlockStakeMetadata.FromBytes: Problem reading ValidatorPublicKey: ")
+	}
+	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
+
+	// StartEpochNumber
+	txnData.StartEpochNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnlockStakeMetadata.FromBytes: Problem reading StartEpochNumber: ")
+	}
+
+	// EndEpochNumber
+	txnData.EndEpochNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnlockStakeMetadata.FromBytes: Problem reading EndEpochNumber: ")
+	}
+
+	return nil
+}
+
+func (txnData *UnlockStakeMetadata) New() DeSoTxnMetadata {
+	return &UnlockStakeMetadata{}
+}
+
+//
+// TYPES: StakeTxindexMetadata
+//
+
+type StakeTxindexMetadata struct {
+	StakerPublicKeyBase58Check    string
+	ValidatorPublicKeyBase58Check string
+	StakeAmountNanos              *uint256.Int
+}
+
+func (txindexMetadata *StakeTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(txindexMetadata.StakerPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(txindexMetadata.ValidatorPublicKeyBase58Check))...)
+	data = append(data, EncodeUint256(txindexMetadata.StakeAmountNanos)...)
+	return data
+}
+
+func (txindexMetadata *StakeTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	// StakerPublicKeyBase58Check
+	stakerPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StakeTxindexMetadata.Decode: Problem reading StakerPublicKeyBase58Check: ")
+	}
+	txindexMetadata.StakerPublicKeyBase58Check = string(stakerPublicKeyBase58CheckBytes)
+
+	// ValidatorPublicKeyBase58Check
+	validatorPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StakeTxindexMetadata.Decode: Problem reading ValidatorPublicKeyBase58Check: ")
+	}
+	txindexMetadata.ValidatorPublicKeyBase58Check = string(validatorPublicKeyBase58CheckBytes)
+
+	// StakeAmountNanos
+	txindexMetadata.StakeAmountNanos, err = DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StakeTxindexMetadata.Decode: Problem reading StakeAmountNanos: ")
+	}
+
+	return nil
+}
+
+func (txindexMetadata *StakeTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txindexMetadata *StakeTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeStakeTxindexMetadata
+}
+
+//
+// TYPES: UnstakeTxindexMetadata
+//
+
+type UnstakeTxindexMetadata struct {
+	StakerPublicKeyBase58Check    string
+	ValidatorPublicKeyBase58Check string
+	UnstakeAmountNanos            *uint256.Int
+}
+
+func (txindexMetadata *UnstakeTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(txindexMetadata.StakerPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(txindexMetadata.ValidatorPublicKeyBase58Check))...)
+	data = append(data, EncodeUint256(txindexMetadata.UnstakeAmountNanos)...)
+	return data
+}
+
+func (txindexMetadata *UnstakeTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	// StakerPublicKeyBase58Check
+	stakerPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnstakeTxindexMetadata.Decode: Problem reading StakerPublicKeyBase58Check: ")
+	}
+	txindexMetadata.StakerPublicKeyBase58Check = string(stakerPublicKeyBase58CheckBytes)
+
+	// ValidatorPublicKeyBase58Check
+	validatorPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnstakeTxindexMetadata.Decode: Problem reading ValidatorPublicKeyBase58Check: ")
+	}
+	txindexMetadata.ValidatorPublicKeyBase58Check = string(validatorPublicKeyBase58CheckBytes)
+
+	// UnstakeAmountNanos
+	txindexMetadata.UnstakeAmountNanos, err = DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnstakeTxindexMetadata.Decode: Problem reading UnstakeAmountNanos: ")
+	}
+
+	return nil
+}
+
+func (txindexMetadata *UnstakeTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txindexMetadata *UnstakeTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUnstakeTxindexMetadata
+}
+
+//
+// TYPES: UnlockStakeTxindexMetadata
+//
+
+type UnlockStakeTxindexMetadata struct {
+	StakerPublicKeyBase58Check    string
+	ValidatorPublicKeyBase58Check string
+	StartEpochNumber              uint64
+	EndEpochNumber                uint64
+	TotalUnlockedAmountNanos      *uint256.Int
+}
+
+func (txindexMetadata *UnlockStakeTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(txindexMetadata.StakerPublicKeyBase58Check))...)
+	data = append(data, EncodeByteArray([]byte(txindexMetadata.ValidatorPublicKeyBase58Check))...)
+	data = append(data, UintToBuf(txindexMetadata.StartEpochNumber)...)
+	data = append(data, UintToBuf(txindexMetadata.EndEpochNumber)...)
+	data = append(data, EncodeUint256(txindexMetadata.TotalUnlockedAmountNanos)...)
+	return data
+}
+
+func (txindexMetadata *UnlockStakeTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	// StakerPublicKeyBase58Check
+	stakerPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnlockStakeTxindexMetadata.Decode: Problem reading StakerPublicKeyBase58Check: ")
+	}
+	txindexMetadata.StakerPublicKeyBase58Check = string(stakerPublicKeyBase58CheckBytes)
+
+	// ValidatorPublicKeyBase58Check
+	validatorPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnlockStakeTxindexMetadata.Decode: Problem reading ValidatorPublicKeyBase58Check: ")
+	}
+	txindexMetadata.ValidatorPublicKeyBase58Check = string(validatorPublicKeyBase58CheckBytes)
+
+	// StartEpochNumber
+	txindexMetadata.StartEpochNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnlockStakeTxindexMetadata.Decode: Problem reading StartEpochNumber: ")
+	}
+
+	// EndEpochNumber
+	txindexMetadata.EndEpochNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnlockStakeTxindexMetadata.Decode: Problem reading EndEpochNumber: ")
+	}
+
+	// TotalUnlockedAmountNanos
+	txindexMetadata.TotalUnlockedAmountNanos, err = DecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnlockStakeTxindexMetadata.Decode: Problem reading TotalUnlockedAmountNanos: ")
+	}
+
+	return nil
+}
+
+func (txindexMetadata *UnlockStakeTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txindexMetadata *UnlockStakeTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUnlockStakeTxindexMetadata
 }

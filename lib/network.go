@@ -241,8 +241,11 @@ const (
 	TxnTypeNewMessage                   TxnType = 33
 	TxnTypeRegisterAsValidator          TxnType = 34
 	TxnTypeUnregisterAsValidator        TxnType = 35
+	TxnTypeStake                        TxnType = 36
+	TxnTypeUnstake                      TxnType = 37
+	TxnTypeUnlockStake                  TxnType = 38
 
-	// NEXT_ID = 36
+	// NEXT_ID = 39
 )
 
 type TxnString string
@@ -284,6 +287,9 @@ const (
 	TxnStringNewMessage                   TxnString = "NEW_MESSAGE"
 	TxnStringRegisterAsValidator          TxnString = "REGISTER_AS_VALIDATOR"
 	TxnStringUnregisterAsValidator        TxnString = "UNREGISTER_AS_VALIDATOR"
+	TxnStringStake                        TxnString = "STAKE"
+	TxnStringUnstake                      TxnString = "UNSTAKE"
+	TxnStringUnlockStake                  TxnString = "UNLOCK_STAKE"
 )
 
 var (
@@ -296,7 +302,7 @@ var (
 		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeCreateUserAssociation,
 		TxnTypeDeleteUserAssociation, TxnTypeCreatePostAssociation, TxnTypeDeletePostAssociation,
 		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage, TxnTypeRegisterAsValidator,
-		TxnTypeUnregisterAsValidator,
+		TxnTypeUnregisterAsValidator, TxnTypeStake, TxnTypeUnstake, TxnTypeUnlockStake,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -307,7 +313,7 @@ var (
 		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringCreateUserAssociation,
 		TxnStringDeleteUserAssociation, TxnStringCreatePostAssociation, TxnStringDeletePostAssociation,
 		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage, TxnStringRegisterAsValidator,
-		TxnStringUnregisterAsValidator,
+		TxnStringUnregisterAsValidator, TxnStringStake, TxnStringUnstake, TxnStringUnlockStake,
 	}
 )
 
@@ -391,6 +397,12 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringRegisterAsValidator
 	case TxnTypeUnregisterAsValidator:
 		return TxnStringUnregisterAsValidator
+	case TxnTypeStake:
+		return TxnStringStake
+	case TxnTypeUnstake:
+		return TxnStringUnstake
+	case TxnTypeUnlockStake:
+		return TxnStringUnlockStake
 	default:
 		return TxnStringUndefined
 	}
@@ -468,6 +480,12 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeRegisterAsValidator
 	case TxnStringUnregisterAsValidator:
 		return TxnTypeUnregisterAsValidator
+	case TxnStringStake:
+		return TxnTypeStake
+	case TxnStringUnstake:
+		return TxnTypeUnstake
+	case TxnStringUnlockStake:
+		return TxnTypeUnlockStake
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -553,6 +571,12 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&RegisterAsValidatorMetadata{}).New(), nil
 	case TxnTypeUnregisterAsValidator:
 		return (&UnregisterAsValidatorMetadata{}).New(), nil
+	case TxnTypeStake:
+		return (&StakeMetadata{}).New(), nil
+	case TxnTypeUnstake:
+		return (&UnstakeMetadata{}).New(), nil
+	case TxnTypeUnlockStake:
+		return (&UnlockStakeMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}

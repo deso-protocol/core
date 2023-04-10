@@ -111,6 +111,8 @@ const (
 	EncoderTypeDeSoNonce
 	EncoderTypeTransactorNonceEntry
 	EncoderTypeValidatorEntry
+	EncoderTypeStakeEntry
+	EncoderTypeLockedStakeEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -150,6 +152,9 @@ const (
 	EncoderTypeNewMessageTxindexMetadata
 	EncoderTypeRegisterAsValidatorTxindexMetadata
 	EncoderTypeUnregisterAsValidatorTxindexMetadata
+	EncoderTypeStakeTxindexMetadata
+	EncoderTypeUnstakeTxindexMetadata
+	EncoderTypeUnlockStakeTxindexMetadata
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndTxIndex
@@ -241,6 +246,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &TransactorNonceEntry{}
 	case EncoderTypeValidatorEntry:
 		return &ValidatorEntry{}
+	case EncoderTypeStakeEntry:
+		return &StakeEntry{}
+	case EncoderTypeLockedStakeEntry:
+		return &LockedStakeEntry{}
 	}
 
 	// Txindex encoder types
@@ -309,6 +318,12 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &RegisterAsValidatorTxindexMetadata{}
 	case EncoderTypeUnregisterAsValidatorTxindexMetadata:
 		return &UnregisterAsValidatorTxindexMetadata{}
+	case EncoderTypeStakeTxindexMetadata:
+		return &StakeTxindexMetadata{}
+	case EncoderTypeUnstakeTxindexMetadata:
+		return &UnstakeTxindexMetadata{}
+	case EncoderTypeUnlockStakeTxindexMetadata:
+		return &UnlockStakeTxindexMetadata{}
 	default:
 		return nil
 	}
