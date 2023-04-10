@@ -261,8 +261,8 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 			CleanUpBadger(snap.SnapshotDb)
 		}
 		CleanUpBadger(db)
-		AppendToMemLog(t, "CLEANUP_END")
 		TestDeSoEncoderShutdown(t)
+		AppendToMemLog(t, "CLEANUP_END")
 	})
 
 	return chain, &testParams, embpg
