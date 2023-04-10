@@ -1818,12 +1818,17 @@ func TestGroupMessages(t *testing.T) {
 	_ = require
 	_ = assert
 
-	resetBalanceModelBlockHeights()
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
 	_ = miner
 
 	// Set the DeSo V3 messages block height to 0
+	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = 1000000
+	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = 1000000
+	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = 1000000
+	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = 1000000
+	params.ForkHeights.ExtraDataOnEntriesBlockHeight = 1000000
+	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1000000
 	params.ForkHeights.DeSoV3MessagesBlockHeight = 0
 
 	// Mine two blocks to give the sender some DeSo.
