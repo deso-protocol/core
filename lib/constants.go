@@ -1318,9 +1318,11 @@ const (
 	MinAccessGroupKeyNameCharacters = 1
 	MaxAccessGroupKeyNameCharacters = 32
 
-	// DefaultMaxNonceExpirationBlockHeightOffset - default value to which the MaxNonceExpirationBlockHeightOffset
-	// is set to before specified by ParamUpdater.
-	DefaultMaxNonceExpirationBlockHeightOffset = 288
+	// FIXME: What are reasonable values for these?
+	// Min/Max MaxNonceExpirationBlockHeightOffset - Min/max value to which the MaxNonceExpirationBlockHeightOffset can be set.
+	// Note: MaxMaxNonceExpirationBlockHeightOffset is used as the default value if the param updater hasn't set it yet.
+	MinMaxNonceExpirationBlockHeightOffset = 1
+	MaxMaxNonceExpirationBlockHeightOffset = 10000
 
 	// TODO: Are these fields needed?
 	// Access group enumeration max recursion depth.

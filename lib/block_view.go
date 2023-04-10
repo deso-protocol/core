@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/btcsuite/btcd/wire"
 	"math"
 	"math/big"
-	"math/rand"
 	"reflect"
 	"strings"
 	"time"
@@ -1806,9 +1806,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 				"_connectBasicTransferWithExtraSpend: Problem adding "+
 					"amount %v to total input %v: %v", feePlusExtraSpend, totalInput, err)
 		}
-		// _spendBalance looks for immature block rewards to determine the public key's
-		// spendable balance. Since the block reward does not exist for this block yet,
-		// we need to subtract one from the block height.
+
 		newUtxoOp, err := bav._spendBalance(totalInput, txn.PublicKey, blockHeight-1)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(
@@ -3244,6 +3242,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	// Validate that we aren't printing any DESO
 	if txn.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
 		txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange {
+
 		balanceDelta, _, err := bav._compareBalancesToSnapshot(balanceSnapshot)
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error comparing current balances to snapshot")
@@ -3785,24 +3784,23 @@ func (bav *UtxoView) ConstructNonceForPublicKey(publicKey []byte, blockHeight ui
 	return bav.ConstructNonceForPKID(pkidEntry.PKID, blockHeight)
 }
 
-// ConstructNonceForPKID constructs a nonce for the given PKID.
+// ConstructNonceForPKID constructs a nonce for the given PKID. The depth parameter
+// must be less than or equal to 2 when calling this function. We check that the
+// randomly generated nonce is not already in use by the given PKID. If it is, we
+// try to generate another nonce w/ depth - 1. When depth is 0 and we fail to generate
+// a unique nonce, we return an error.
 func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64) (*DeSoNonce, error) {
 	// construct nonce
 	expirationBuffer := uint64(DefaultMaxNonceExpirationBlockHeightOffset)
 	if bav.GlobalParamsEntry != nil && bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 {
 		expirationBuffer = bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset
 	}
-	// Some tests use a very low expiration buffer to test
-	// that expired nonces get deleted. We don't want to
-	// underflow the expiration buffer, so we only subtract
-	// 10 if the expiration buffer is greater than 10.
-	// We subtract 10 from the expiration buffer so that
-	// nodes that are slightly behind do not reject transactions.
-	if expirationBuffer > 10 {
-		expirationBuffer -= 10
+	randomUint64, err := wire.RandomUint64()
+	if err != nil {
+		return nil, errors.Wrapf(err, "ConstructNonceForPKID: Error generating random uint64: ")
 	}
 	nonce := DeSoNonce{
-		PartialID:             rand.Uint64(),
+		PartialID:             randomUint64,
 		ExpirationBlockHeight: blockHeight + expirationBuffer,
 	}
 
