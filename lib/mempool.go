@@ -1946,6 +1946,18 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		txindexMetadata, affectedPublicKeys := utxoView.CreateUnregisterAsValidatorTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
 		txnMeta.UnregisterAsValidatorTxindexMetadata = txindexMetadata
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	case TxnTypeStake:
+		txindexMetadata, affectedPublicKeys := utxoView.CreateStakeTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
+		txnMeta.StakeTxindexMetadata = txindexMetadata
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	case TxnTypeUnstake:
+		txindexMetadata, affectedPublicKeys := utxoView.CreateUnstakeTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
+		txnMeta.UnstakeTxindexMetadata = txindexMetadata
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	case TxnTypeUnlockStake:
+		txindexMetadata, affectedPublicKeys := utxoView.CreateUnlockStakeTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
+		txnMeta.UnlockStakeTxindexMetadata = txindexMetadata
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
 	}
 	return txnMeta
 }

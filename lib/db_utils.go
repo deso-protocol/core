@@ -6771,6 +6771,9 @@ type TransactionMetadata struct {
 	NewMessageTxindexMetadata            *NewMessageTxindexMetadata            `json:",omitempty"`
 	RegisterAsValidatorTxindexMetadata   *RegisterAsValidatorTxindexMetadata   `json:",omitempty"`
 	UnregisterAsValidatorTxindexMetadata *UnregisterAsValidatorTxindexMetadata `json:",omitempty"`
+	StakeTxindexMetadata                 *StakeTxindexMetadata                 `json:",omitempty"`
+	UnstakeTxindexMetadata               *UnstakeTxindexMetadata               `json:",omitempty"`
+	UnlockStakeTxindexMetadata           *UnlockStakeTxindexMetadata           `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -6857,6 +6860,12 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.RegisterAsValidatorTxindexMetadata, skipMetadata...)...)
 		// encoding UnregisterAsValidatorTxindexMetadata
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnregisterAsValidatorTxindexMetadata, skipMetadata...)...)
+		// encoding StakeTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.StakeTxindexMetadata, skipMetadata...)...)
+		// encoding UnstakeTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnstakeTxindexMetadata, skipMetadata...)...)
+		// encoding UnlockStakeTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnlockStakeTxindexMetadata, skipMetadata...)...)
 	}
 
 	return data
@@ -7122,6 +7131,27 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 			txnMeta.UnregisterAsValidatorTxindexMetadata = CopyUnregisterAsValidatorTxindexMetadata
 		} else {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnregisterAsValidatorTxindexMetadata")
+		}
+		// decoding StakeTxindexMetadata
+		CopyStakeTxindexMetadata := &StakeTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyStakeTxindexMetadata, rr); exist && err == nil {
+			txnMeta.StakeTxindexMetadata = CopyStakeTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading StakeTxindexMetadata")
+		}
+		// decoding UnstakeTxindexMetadata
+		CopyUnstakeTxindexMetadata := &UnstakeTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyUnstakeTxindexMetadata, rr); exist && err == nil {
+			txnMeta.UnstakeTxindexMetadata = CopyUnstakeTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnstakeTxindexMetadata")
+		}
+		// decoding UnlockStakeTxindexMetadata
+		CopyUnlockStakeTxindexMetadata := &UnlockStakeTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyUnlockStakeTxindexMetadata, rr); exist && err == nil {
+			txnMeta.UnlockStakeTxindexMetadata = CopyUnlockStakeTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnlockStakeTxindexMetadata")
 		}
 	}
 
