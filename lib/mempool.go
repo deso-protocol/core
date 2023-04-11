@@ -1938,6 +1938,14 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.RecipientAccessGroupOwnerPublicKey.ToBytes(), utxoView.Params),
 			Metadata:             "NewMessageRecipientAccessGroupOwnerPublicKe",
 		})
+	case TxnTypeRegisterAsValidator:
+		txindexMetadata, affectedPublicKeys := utxoView.CreateRegisterAsValidatorTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
+		txnMeta.RegisterAsValidatorTxindexMetadata = txindexMetadata
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	case TxnTypeUnregisterAsValidator:
+		txindexMetadata, affectedPublicKeys := utxoView.CreateUnregisterAsValidatorTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
+		txnMeta.UnregisterAsValidatorTxindexMetadata = txindexMetadata
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
 	}
 	return txnMeta
 }
