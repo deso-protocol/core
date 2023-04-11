@@ -116,7 +116,7 @@ type DBPrefixes struct {
 	// a message sends from pkFrom to pkTo then there will be two separate entries,
 	// one for pkFrom and one for pkTo. The exact format is as follows:
 	// <public key (33 bytes) || uint64 big-endian> -> <MessageEntry>
-	PrefixPublicKeyTimestampToPrivateMessage []byte `prefix_id:"[12]" is_state:"true"`
+	PrefixPublicKeyTimestampToPrivateMessage []byte `prefix_id:"[12]" is_state:"true" core_state:"true"`
 
 	// Tracks the tip of the transaction index. This is used to determine
 	// which blocks need to be processed in order to update the index.
@@ -149,7 +149,7 @@ type DBPrefixes struct {
 
 	// Main profile index
 	// <prefix_id, PKID [33]byte> -> ProfileEntry
-	PrefixPKIDToProfileEntry []byte `prefix_id:"[23]" is_state:"true" core_state:"false"`
+	PrefixPKIDToProfileEntry []byte `prefix_id:"[23]" is_state:"true" core_state:"true"`
 	// Profile sorts
 	// For username, we set the PKID as a value since the username is not fixed width.
 	// We always lowercase usernames when using them as map keys in order to make
@@ -166,20 +166,20 @@ type DBPrefixes struct {
 	// Prefixes for follows:
 	// <prefix_id, follower PKID [33]byte, followed PKID [33]byte> -> <>
 	// <prefix_id, followed PKID [33]byte, follower PKID [33]byte> -> <>
-	PrefixFollowerPKIDToFollowedPKID []byte `prefix_id:"[28]" is_state:"true"`
+	PrefixFollowerPKIDToFollowedPKID []byte `prefix_id:"[28]" is_state:"true" core_state:"true"`
 	PrefixFollowedPKIDToFollowerPKID []byte `prefix_id:"[29]" is_state:"true"`
 
 	// Prefixes for likes:
 	// <prefix_id, user pub key [33]byte, liked post hash [32]byte> -> <>
 	// <prefix_id, post hash [32]byte, user pub key [33]byte> -> <>
-	PrefixLikerPubKeyToLikedPostHash []byte `prefix_id:"[30]" is_state:"true"`
+	PrefixLikerPubKeyToLikedPostHash []byte `prefix_id:"[30]" is_state:"true" core_state:"true"`
 	PrefixLikedPostHashToLikerPubKey []byte `prefix_id:"[31]" is_state:"true"`
 
 	// Prefixes for creator coin fields:
 	// <prefix_id, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
 	// <prefix_id, creator PKID [33]byte, HODLer PKID [33]byte> -> <BalanceEntry>
 	PrefixHODLerPKIDCreatorPKIDToBalanceEntry []byte `prefix_id:"[33]" is_state:"true"`
-	PrefixCreatorPKIDHODLerPKIDToBalanceEntry []byte `prefix_id:"[34]" is_state:"true"`
+	PrefixCreatorPKIDHODLerPKIDToBalanceEntry []byte `prefix_id:"[34]" is_state:"true" core_state:"true"`
 
 	PrefixPosterPublicKeyTimestampPostHash []byte `prefix_id:"[35]" is_state:"true"`
 	// If no mapping exists for a particular public key, then the PKID is simply
@@ -200,7 +200,7 @@ type DBPrefixes struct {
 	//  <prefix_id, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <DiamondEntry>
 	//  <prefix_id, DiamondSenderPKID [33]byte, DiamondReceiverPKID [33]byte, posthash> -> <DiamondEntry>
 	PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash []byte `prefix_id:"[41]" is_state:"true"`
-	PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash []byte `prefix_id:"[43]" is_state:"true"`
+	PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash []byte `prefix_id:"[43]" is_state:"true" core_state:"true"`
 	// Public keys that have been restricted from signing blocks.
 	// <prefix_id, ForbiddenPublicKey [33]byte> -> <>
 	PrefixForbiddenBlockSignaturePubKeys []byte `prefix_id:"[44]" is_state:"true"`
@@ -214,17 +214,17 @@ type DBPrefixes struct {
 	PrefixDiamondedPostHashDiamonderPKIDDiamondLevel   []byte `prefix_id:"[47]" is_state:"true"`
 	// Prefixes for NFT ownership:
 	// 	<prefix_id, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
-	PrefixPostHashSerialNumberToNFTEntry []byte `prefix_id:"[48]" is_state:"true"`
+	PrefixPostHashSerialNumberToNFTEntry []byte `prefix_id:"[48]" is_state:"true" core_state:"true"`
 	//  <prefix_id, PKID [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
 	PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry []byte `prefix_id:"[49]" is_state:"true"`
 	// Prefixes for NFT bids:
 	//  <prefix_id, NFTPostHash [32]byte, SerialNumber uint64, BidNanos uint64, PKID [33]byte> -> <>
-	PrefixPostHashSerialNumberBidNanosBidderPKID []byte `prefix_id:"[50]" is_state:"true"`
+	PrefixPostHashSerialNumberBidNanosBidderPKID []byte `prefix_id:"[50]" is_state:"true" core_state:"true"`
 	//  <prefix_id, BidderPKID [33]byte, NFTPostHash [32]byte, SerialNumber uint64> -> <BidNanos uint64>
 	PrefixBidderPKIDPostHashSerialNumberToBidNanos []byte `prefix_id:"[51]" is_state:"true"`
 
 	// <prefix_id, PublicKey [33]byte> -> uint64
-	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"`
+	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true" core_state:"true"`
 
 	// Block reward prefix:
 	//   - This index is needed because block rewards take N blocks to mature, which means we need
@@ -242,7 +242,7 @@ type DBPrefixes struct {
 	// Prefixes for DAO coin fields:
 	// <prefix, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
 	// <prefix, creator PKID [33]byte, HODLer PKID [33]byte> -> <BalanceEntry>
-	PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry []byte `prefix_id:"[55]" is_state:"true"`
+	PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry []byte `prefix_id:"[55]" is_state:"true" core_state:"true"`
 	PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry []byte `prefix_id:"[56]" is_state:"true"`
 
 	// Prefix for MessagingGroupEntries indexed by OwnerPublicKey and GroupKeyName:
@@ -292,7 +292,7 @@ type DBPrefixes struct {
 
 	// Prefix for Authorize Derived Key transactions:
 	// 		<prefix_id, OwnerPublicKey [33]byte, DerivedPublicKey [33]byte> -> <DerivedKeyEntry>
-	PrefixAuthorizeDerivedKey []byte `prefix_id:"[59]" is_state:"true"`
+	PrefixAuthorizeDerivedKey []byte `prefix_id:"[59]" is_state:"true" core_state:"true"`
 
 	// Prefixes for DAO coin limit orders
 	// This index powers the order book.
@@ -330,7 +330,7 @@ type DBPrefixes struct {
 	//   PrefixUserAssociationByID
 	//   AssociationID [32]byte
 	//  > -> < UserAssociationEntry >
-	PrefixUserAssociationByID []byte `prefix_id:"[63]" is_state:"true"`
+	PrefixUserAssociationByID []byte `prefix_id:"[63]" is_state:"true" core_state:"true"`
 	// PrefixUserAssociationByTransactor:
 	//  <
 	//   PrefixUserAssociationByTransactor
@@ -368,7 +368,7 @@ type DBPrefixes struct {
 	//   PrefixPostAssociationByID
 	//   AssociationID [32]byte
 	//  > -> < PostAssociationEntry >
-	PrefixPostAssociationByID []byte `prefix_id:"[67]" is_state:"true"`
+	PrefixPostAssociationByID []byte `prefix_id:"[67]" is_state:"true" core_state:"true"`
 	// PrefixPostAssociationByTransactor
 	//  <
 	//   PrefixPostAssociationByTransactor
@@ -418,7 +418,7 @@ type DBPrefixes struct {
 	//   easy access to the owner key for decrypting messages.
 	//
 	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupEntry>
-	PrefixAccessGroupEntriesByAccessGroupId []byte `prefix_id:"[71]" is_state:"true"`
+	PrefixAccessGroupEntriesByAccessGroupId []byte `prefix_id:"[71]" is_state:"true" core_state:"true"`
 
 	// This prefix is used to store all mappings for access group members. The group owner has a
 	// special-case mapping with <groupOwnerPk, groupOwnerPk, groupName> and then everybody else has
@@ -438,7 +438,7 @@ type DBPrefixes struct {
 	//
 	// New <GroupMembershipIndex> :
 	// <prefix, AccessGroupMemberPublicKey [33]byte, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupMemberEntry>
-	PrefixAccessGroupMembershipIndex []byte `prefix_id:"[72]" is_state:"true"`
+	PrefixAccessGroupMembershipIndex []byte `prefix_id:"[72]" is_state:"true" core_state:"true"`
 
 	// Prefix for enumerating all the members of a group. Note that the previous index allows us to
 	// answer the question, "what groups is this person a member of?" while this index allows us to
@@ -450,7 +450,7 @@ type DBPrefixes struct {
 	// PrefixGroupChatMessagesIndex is modified by the NewMessage transaction and is used to store group chat
 	// NewMessageEntry objects for each message sent to a group chat. The index has the following structure:
 	// 	<prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
-	PrefixGroupChatMessagesIndex []byte `prefix_id:"[74]" is_state:"true"`
+	PrefixGroupChatMessagesIndex []byte `prefix_id:"[74]" is_state:"true" core_state:"true"`
 
 	// PrefixDmMessagesIndex is modified by the NewMessage transaction and is used to store NewMessageEntry objects for
 	// each message sent to a Dm thread. It answers the question: "Give me all the messages between these two users."
@@ -472,6 +472,26 @@ type DBPrefixes struct {
 
 	// NEXT_TAG: 77
 
+}
+
+// DecodeStateKey decodes a state key into a DeSoEncoder type. This is useful for encoders which don't have a stored
+// value in badger (meaning all info is stored via the key).
+func DecodeStateKey(key []byte) (DeSoEncoder, error) {
+	prefix := key[:1]
+	if bytes.Equal(prefix, Prefixes.PrefixLikerPubKeyToLikedPostHash) {
+		if likeEntry, err := _decodeDbKeyForLikerPubKeyToLikedPostHashMapping(key); err != nil {
+			return nil, err
+		} else {
+			return likeEntry, nil
+		}
+	} else if bytes.Equal(prefix, Prefixes.PrefixFollowerPKIDToFollowedPKID) {
+		if followEntry, err := _decodeDbKeyForFollowerToFollowedMapping(key); err != nil {
+			return nil, err
+		} else {
+			return followEntry, nil
+		}
+	}
+	return nil, fmt.Errorf("DecodeStateKey: No encoder found for prefix: %v", prefix)
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -1012,7 +1032,7 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 	}
 	// If we have an event manager, and the entry's isDeleted==true (i.e. it isn't going to be re-inserted later on in the
 	// same transaction), we fire off the on db transaction event.
-	if eventManager != nil {
+	if eventManager != nil && entryIsDeleted {
 		eventManager.dbTransactionConnected(&DBTransactionEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType: DbOperationTypeDelete,
@@ -3244,6 +3264,17 @@ func _dbKeyForLikerPubKeyToLikedPostHashMapping(
 	return key
 }
 
+func _decodeDbKeyForLikerPubKeyToLikedPostHashMapping(key []byte) (*LikeEntry, error) {
+	if len(key) != HashSizeBytes+btcec.PubKeyBytesLenCompressed+1 {
+		return nil, fmt.Errorf("DecodeDbKeyForLikerPubKeyToLikedPostHashMapping: key is incorrect length: %v", len(key))
+	}
+	likeEntry := &LikeEntry{}
+	likeEntry.LikerPubKey = key[1 : btcec.PubKeyBytesLenCompressed+1]
+	likeEntry.LikedPostHash = &BlockHash{}
+	copy(likeEntry.LikedPostHash[:], key[btcec.PubKeyBytesLenCompressed+1:])
+	return likeEntry, nil
+}
+
 func _dbKeyForLikedPostHashToLikerPubKeyMapping(
 	likedPostHash BlockHash, userPubKey []byte) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
@@ -3586,6 +3617,22 @@ func _dbKeyForFollowerToFollowedMapping(
 	key := append(prefixCopy, followerPKID[:]...)
 	key = append(key, followedPKID[:]...)
 	return key
+}
+
+func _decodeDbKeyForFollowerToFollowedMapping(key []byte) (*FollowEntry, error) {
+	if len(key) != (btcec.PubKeyBytesLenCompressed*2)+1 {
+		return nil, fmt.Errorf("_decodeDbKeyForFollowerToFollowedMapping: key is incorrect length: %v", len(key))
+	}
+	followEntry := &FollowEntry{}
+	followerPKIDBytes := key[1 : btcec.PubKeyBytesLenCompressed+1]
+	followerPKID := &PKID{}
+	copy(followerPKID[:], followerPKIDBytes)
+	followedPKIDBytes := key[btcec.PubKeyBytesLenCompressed+1:]
+	followedPKID := &PKID{}
+	copy(followedPKID[:], followedPKIDBytes)
+	followEntry.FollowerPKID = followerPKID
+	followEntry.FollowedPKID = followedPKID
+	return followEntry, nil
 }
 
 func _dbKeyForFollowedToFollowerMapping(

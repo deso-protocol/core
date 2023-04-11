@@ -428,8 +428,7 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	// Connect basic txn to get the total input and the total output without considering the transaction metadata.
 	// Note that it doesn't matter when we do this, because if the transaction fails later on, we will just revert the
 	// UtxoView to a previous stable state that isn't corrupted with partial block view entries.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: ")
 	}

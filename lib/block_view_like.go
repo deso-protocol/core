@@ -122,8 +122,7 @@ func (bav *UtxoView) _connectLike(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectLike: ")
 	}
@@ -196,6 +195,31 @@ func (bav *UtxoView) _connectLike(
 		PrevLikeEntry: existingLikeEntry,
 		PrevLikeCount: existingPostEntry.LikeCount,
 	})
+
+	var operationType StateSyncerOperationType
+	if txMeta.IsUnlike {
+		operationType = DbOperationTypeDelete
+	} else {
+		operationType = DbOperationTypeUpsert
+	}
+
+	if bav.EventManager != nil {
+		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: operationType,
+				Encoder: &LikeEntry{
+					LikerPubKey:   txn.PublicKey,
+					LikedPostHash: txMeta.LikedPostHash,
+				},
+				KeyBytes: _dbKeyForLikerPubKeyToLikedPostHashMapping(
+					txn.PublicKey, *txMeta.LikedPostHash),
+				UtxoOps: utxoOpsForTxn,
+			},
+			BlockHeight: uint64(blockHeight),
+			TxHash:      txHash,
+			IsConnected: true,
+		})
+	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

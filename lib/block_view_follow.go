@@ -224,8 +224,7 @@ func (bav *UtxoView) _connectFollow(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectFollow: ")
 	}
@@ -283,6 +282,30 @@ func (bav *UtxoView) _connectFollow(
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type: OperationTypeFollow,
 	})
+
+	if bav.EventManager != nil {
+		var operationType StateSyncerOperationType
+		if txMeta.IsUnfollow {
+			operationType = DbOperationTypeDelete
+		} else {
+			operationType = DbOperationTypeUpsert
+		}
+
+		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: operationType,
+				Encoder: &FollowEntry{
+					FollowerPKID: followerPKID.PKID,
+					FollowedPKID: followedPKID.PKID,
+				},
+				KeyBytes: _dbKeyForFollowerToFollowedMapping(followerPKID.PKID, followedPKID.PKID),
+				UtxoOps:  utxoOpsForTxn,
+			},
+			BlockHeight: uint64(blockHeight),
+			TxHash:      txHash,
+			IsConnected: true,
+		})
+	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

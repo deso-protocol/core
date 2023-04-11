@@ -32,9 +32,7 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 
 	// Connect a basic transfer to get the total input and the
 	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures,
-	)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreateUserAssociation: ")
 	}
@@ -124,9 +122,7 @@ func (bav *UtxoView) _connectDeleteUserAssociation(
 
 	// Connect a basic transfer to get the total input and the
 	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures,
-	)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectDeleteUserAssociation: ")
 	}
@@ -196,9 +192,7 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 
 	// Connect a basic transfer to get the total input and the
 	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures,
-	)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreatePostAssociation: ")
 	}
@@ -288,9 +282,7 @@ func (bav *UtxoView) _connectDeletePostAssociation(
 
 	// Connect a basic transfer to get the total input and the
 	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures,
-	)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectDeleteUserAssociation: ")
 	}

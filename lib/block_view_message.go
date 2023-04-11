@@ -384,7 +384,7 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicK
 }
 
 func (bav *UtxoView) _connectPrivateMessage(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -417,8 +417,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: ")
 	}
@@ -572,6 +571,21 @@ func (bav *UtxoView) _connectPrivateMessage(
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type: OperationTypePrivateMessage,
 	})
+
+	if bav.EventManager != nil && emitMempoolTxn {
+		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeUpsert,
+				Encoder:       messageEntry,
+				KeyBytes:      _dbKeyForMessageEntry(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos),
+				UtxoOps:       utxoOpsForTxn,
+			},
+			BlockHeight: uint64(blockHeight),
+			TxHash:      txHash,
+			IsConnected: true,
+		})
+
+	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -802,8 +816,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: ")
 	}

@@ -1368,9 +1368,7 @@ func IsDerivedSignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []
 
 }
 
-func (bav *UtxoView) _connectBasicTransfer(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
-	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+func (bav *UtxoView) _connectBasicTransfer(txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	var utxoOpsForTxn []*UtxoOperation
 
@@ -1613,6 +1611,20 @@ func (bav *UtxoView) _connectBasicTransfer(
 			PrevPostEntry:    previousDiamondPostEntry,
 			PrevDiamondEntry: previousDiamondEntry,
 		})
+
+		if bav.EventManager != nil && emitMempoolTxn {
+			bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+				StateChangeEntry: &StateChangeEntry{
+					OperationType: DbOperationTypeUpsert,
+					Encoder:       newDiamondEntry,
+					KeyBytes:      _dbKeyForDiamondSenderToDiamondReceiverMapping(newDiamondEntry),
+					UtxoOps:       utxoOpsForTxn,
+				},
+				BlockHeight: uint64(blockHeight),
+				TxHash:      txHash,
+				IsConnected: true,
+			})
+		}
 	}
 
 	// If signature verification is requested then do that as well.
@@ -2546,8 +2558,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateGlobalParams: ")
 	}
@@ -2642,7 +2653,7 @@ func (bav *UtxoView) ConnectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 }
 
-func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool, emitMempoolTransaction bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
+func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool, emitMempoolTxn bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
 
 	// Do a quick sanity check before trying to connect.
 	if err := CheckTransactionSanity(txn); err != nil {
@@ -2664,8 +2675,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 	// TODO: Switch this to a switch-case
 	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward || txn.TxnMeta.GetTxnType() == TxnTypeBasicTransfer {
 		totalInput, totalOutput, utxoOpsForTxn, err =
-			bav._connectBasicTransfer(
-				txn, txHash, blockHeight, verifySignatures)
+			bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange {
 		totalInput, totalOutput, utxoOpsForTxn, err =
@@ -2675,7 +2685,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 	} else if txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectPrivateMessage(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeMessagingGroup {
 		totalInput, totalOutput, utxoOpsForTxn, err =
@@ -2685,12 +2695,12 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeSubmitPost {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectSubmitPost(
-				txn, txHash, blockHeight, verifySignatures, ignoreUtxos, emitMempoolTransaction)
+				txn, txHash, blockHeight, verifySignatures, ignoreUtxos, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateProfile {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectUpdateProfile(
-				txn, txHash, blockHeight, verifySignatures, ignoreUtxos)
+				txn, txHash, blockHeight, verifySignatures, ignoreUtxos, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateBitcoinUSDExchangeRate {
 		totalInput, totalOutput, utxoOpsForTxn, err =
@@ -2714,22 +2724,22 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectCreatorCoin(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoinTransfer {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectCreatorCoinTransfer(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoin {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectDAOCoin(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinTransfer {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectDAOCoinTransfer(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
 		totalInput, totalOutput, utxoOpsForTxn, err =
@@ -2744,37 +2754,37 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateNFT {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectCreateNFT(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeUpdateNFT {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectUpdateNFT(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAcceptNFTBid(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNFTBid(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeNFTTransfer {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNFTTransfer(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTTransfer {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAcceptNFTTransfer(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeBurnNFT {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectBurnNFT(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
 		totalInput, totalOutput, utxoOpsForTxn, err =

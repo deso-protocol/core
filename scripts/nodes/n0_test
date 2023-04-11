@@ -25,7 +25,6 @@ rm /tmp/main.*.log
   --testnet=true  \
   --api-port=18001 \
   --protocol-port=18000 \
-  --txindex \
   --num-mining-threads=1 \
   --miner-public-keys=BC1YLjJ3FNgo1Q8NU9sEzK3B2obeuq9GvzYr1GnAJgpsVnYCuczcYBe \
   --block-producer-seed='essence camp ghost remove document vault ladder swim pupil index apart ring' \

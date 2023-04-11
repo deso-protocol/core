@@ -724,8 +724,7 @@ func (bav *UtxoView) _connectSubmitPost(txn *MsgDeSoTxn, txHash *BlockHash, bloc
 	var utxoOpsForTxn = []*UtxoOperation{}
 	var err error
 	if !ignoreUtxos {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransfer(
-			txn, txHash, blockHeight, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectSubmitPost: ")
 		}

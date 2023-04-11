@@ -67,9 +67,9 @@ func (stateChangeEntry *StateChangeEntry) RawEncodeWithoutMetadata(blockHeight u
 	encoderBytes := stateChangeEntry.EncoderBytes
 
 	// If the encoderBytes is nil and the encoder is not nil, encode the encoder.
-	if encoderBytes == nil && stateChangeEntry.Encoder != nil {
+	if len(encoderBytes) == 0 && stateChangeEntry.Encoder != nil {
 		encoderBytes = EncodeToBytes(blockHeight, stateChangeEntry.Encoder)
-	} else if encoderBytes == nil && stateChangeEntry.Encoder == nil {
+	} else if len(encoderBytes) == 0 && stateChangeEntry.Encoder == nil {
 		// If both the encoder and encoder bytes are null, encode a blank encoder.
 		// This will happen with delete operations.
 		encoderBytes = EncodeToBytes(blockHeight, stateChangeEntry.EncoderType.New())
@@ -300,7 +300,9 @@ func (stateChangeSyncer *StateChangeSyncer) _handleMempoolTransaction(event *Mem
 func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransactionEvent) {
 	stateChangeSyncer.StateSyncerMutex.Lock()
 	defer stateChangeSyncer.StateSyncerMutex.Unlock()
+
 	stateChangeEntry := event.StateChangeEntry
+
 	// Check to see if the index in question has a "core_state" annotation in its definition.
 	if !isCoreStateKey(stateChangeEntry.KeyBytes) {
 		return
@@ -311,9 +313,14 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	if isEncoder, encoder := StateKeyToDeSoEncoder(stateChangeEntry.KeyBytes); isEncoder && encoder != nil {
 		encoderType = encoder.GetEncoderType()
 	} else {
-		glog.Fatalf("Server._handleDbTransaction: Problem getting deso encoder from keyBytes")
+		// If the keyBytes is not an encoder, then we decode the entry from the key value.
+		keyEncoder, err := DecodeStateKey(stateChangeEntry.KeyBytes)
+		if err != nil {
+			glog.Fatalf("Server._handleDbTransaction: Error decoding state key: %v", err)
+		}
+		encoderType = keyEncoder.GetEncoderType()
+		stateChangeEntry.Encoder = keyEncoder
 	}
-
 	// Set the encoder type.
 	stateChangeEntry.EncoderType = encoderType
 
@@ -324,7 +331,6 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 
 	decodedStateChangeEntry := &StateChangeEntry{}
 	DecodeFromBytes(decodedStateChangeEntry, bytes.NewReader(entryBytes))
-
 	// Add the StateChangeEntry bytes to the queue of bytes to be written to the state change file upon Badger db flush.
 	stateChangeSyncer.addTransactionToQueue(event.FlushId, writeBytes)
 }

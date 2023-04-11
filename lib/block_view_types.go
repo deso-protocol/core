@@ -109,6 +109,7 @@ const (
 	EncoderTypeAccessGroupMemberEnumerationEntry
 	EncoderTypeDmThreadEntry
 	EncoderTypeStateChangeEntry
+	EncoderTypeFollowEntry
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView
@@ -231,6 +232,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMemberEnumerationEntry{}
 	case EncoderTypeDmThreadEntry:
 		return &DmThreadEntry{}
+	case EncoderTypeFollowEntry:
+		return &FollowEntry{}
 	case EncoderTypeStateChangeEntry:
 		return &StateChangeEntry{}
 	}
@@ -3030,6 +3033,16 @@ func (likeEntry *LikeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 	return nil
 }
 
+func (likeEntry *LikeEntry) DecodeLikeEntryFromLikerPubKeyToLikedPostHashKey(key []byte) error {
+	if len(key) < HashSizeBytes+btcec.PubKeyBytesLenCompressed+1 {
+		return fmt.Errorf("LikeEntry.RawDecodeWithoutMetadataFromKey: key is too short: %v", len(key))
+	}
+	likeEntry.LikerPubKey = key[1 : btcec.PubKeyBytesLenCompressed+1]
+	likeEntry.LikedPostHash = &BlockHash{}
+	copy(likeEntry.LikedPostHash[:], key[btcec.PubKeyBytesLenCompressed+1:])
+	return nil
+}
+
 func (likeEntry *LikeEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -3490,6 +3503,40 @@ type FollowEntry struct {
 
 func (fe *FollowEntry) IsDeleted() bool {
 	return fe.isDeleted
+}
+
+func (fe *FollowEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, fe.FollowerPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, fe.FollowedPKID, skipMetadata...)...)
+	return data
+}
+
+func (fe *FollowEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	followerPKID := &PKID{}
+	if exist, err := DecodeFromBytes(followerPKID, rr); exist && err == nil {
+		fe.FollowerPKID = followerPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "FollowEntry.Decode: Problem reading FollowerPKID")
+	}
+
+	// FollowedPKID
+	followedPKID := &PKID{}
+	if exist, err := DecodeFromBytes(followedPKID, rr); exist && err == nil {
+		fe.FollowedPKID = followedPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "FollowEntry.Decode: Problem reading FollowedPKID")
+	}
+
+	return nil
+}
+
+func (fe *FollowEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (fe *FollowEntry) GetEncoderType() EncoderType {
+	return EncoderTypeFollowEntry
 }
 
 type DiamondKey struct {
