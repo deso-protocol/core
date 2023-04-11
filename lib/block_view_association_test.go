@@ -2209,12 +2209,13 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	// Initialize fork heights.
 	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
+	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	chain.snapshot = nil
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -2284,7 +2285,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		if err != nil {
 			return "", err
 		}
-		require.NoError(t, utxoView.FlushToDb(0))
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
 		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 		testMeta.txns = append(testMeta.txns, txn)
 
@@ -2341,7 +2342,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			return err
 		}
 		// Flush UTXO view to the db.
-		require.NoError(t, utxoView.FlushToDb(0))
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
 		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 		testMeta.txns = append(testMeta.txns, txn)
 		return nil
@@ -2542,6 +2543,9 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		)
 		_, err = _submitAuthorizeDerivedKeyTxn(TxnTypeCreateUserAssociation, associationLimitKey, 1)
 		require.NoError(t, err)
+		if chain.snapshot != nil {
+			chain.snapshot.WaitForAllOperationsToFinish()
+		}
 		params.ForkHeights.AssociationsDerivedKeySpendingLimitBlockHeight = uint32(0)
 		_, err = _submitAuthorizeDerivedKeyTxn(TxnTypeCreateUserAssociation, associationLimitKey, 1)
 		require.Error(t, err)
