@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"errors"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/holiman/uint256"
@@ -416,8 +417,9 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
 	require.NoError(t, err)
 	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	senderPKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, senderPkBytes).PKID
 
-	createDerivedKey := func(txnType TxnType, count uint64) error {
+	_submitAuthorizeDerivedKeyTxn := func(txnType TxnType, count uint64) (string, error) {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
 
@@ -451,22 +453,157 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 			txnSpendingLimit,
 		)
 		if err != nil {
-			return err
+			return "", err
 		}
 		require.NoError(t, utxoView.FlushToDb(0))
 		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
 		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 		testMeta.txns = append(testMeta.txns, txn)
 
-		return utxoView.ValidateDerivedKey(
+		err = utxoView.ValidateDerivedKey(
 			senderPkBytes, derivedKeyMetadata.DerivedPublicKey, blockHeight,
 		)
+		require.NoError(t, err)
+		return derivedKeyAuthPrivBase58Check, nil
+	}
+
+	_submitValidatorTxnWithDerivedKey := func(
+		transactorPkBytes []byte, derivedKeyPrivBase58Check string, inputTxn MsgDeSoTxn,
+	) error {
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		var txn *MsgDeSoTxn
+
+		switch inputTxn.TxnMeta.GetTxnType() {
+		// Construct txn.
+		case TxnTypeRegisterAsValidator:
+			txn, _, _, _, err = testMeta.chain.CreateRegisterAsValidatorTxn(
+				transactorPkBytes,
+				inputTxn.TxnMeta.(*RegisterAsValidatorMetadata),
+				make(map[string][]byte),
+				testMeta.feeRateNanosPerKb,
+				mempool,
+				[]*DeSoOutput{},
+			)
+		case TxnTypeUnregisterAsValidator:
+			txn, _, _, _, err = testMeta.chain.CreateUnregisterAsValidatorTxn(
+				transactorPkBytes,
+				inputTxn.TxnMeta.(*UnregisterAsValidatorMetadata),
+				make(map[string][]byte),
+				testMeta.feeRateNanosPerKb,
+				mempool,
+				[]*DeSoOutput{},
+			)
+		default:
+			return errors.New("invalid txn type")
+		}
+		if err != nil {
+			return err
+		}
+		// Sign txn.
+		_signTxnWithDerivedKey(t, txn, derivedKeyPrivBase58Check)
+		// Store the original transactor balance.
+		transactorPublicKeyBase58Check := Base58CheckEncode(transactorPkBytes, false, params)
+		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
+		// Connect txn.
+		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
+			txn,
+			txn.Hash(),
+			getTxnSize(*txn),
+			testMeta.savedHeight,
+			true,
+			false,
+		)
+		if err != nil {
+			return err
+		}
+		// Flush UTXO view to the db.
+		require.NoError(t, utxoView.FlushToDb(0))
+		// Track txn for rolling back.
+		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
+		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+		testMeta.txns = append(testMeta.txns, txn)
+		return nil
 	}
 
 	{
-		// Create RegisterAsValidator derived key.
-		err = createDerivedKey(TxnTypeRegisterAsValidator, 1)
+		// Submit a RegisterAsValidator txn using a DerivedKey.
+
+		// Create a DerivedKey that can perform one RegisterAsValidator txn.
+		derivedKeyPriv, err := _submitAuthorizeDerivedKeyTxn(TxnTypeRegisterAsValidator, 1)
 		require.NoError(t, err)
+
+		// Perform a RegisterAsValidator txn. No error expected.
+		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
+			Domains: [][]byte{[]byte("https://example.com")},
+		}
+		err = _submitValidatorTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: registerAsValidatorMetadata},
+		)
+		require.NoError(t, err)
+
+		// Validate the ValidatorEntry exists.
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		validatorEntry, err := utxoView.GetValidatorByPKID(senderPKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Len(t, validatorEntry.Domains, 1)
+		require.Equal(t, validatorEntry.Domains[0], []byte("https://example.com"))
+
+		// Perform a second RegisterAsValidator txn. Error expected.
+		err = _submitValidatorTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: registerAsValidatorMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "No more transactions of type REGISTER_AS_VALIDATOR are allowed on this Derived Key")
+
+		// Perform an UnregisterAsValidator txn. Error expected.
+		unregisterAsValidatorMetadata := &UnregisterAsValidatorMetadata{}
+		err = _submitValidatorTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unregisterAsValidatorMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "No more transactions of type UNREGISTER_AS_VALIDATOR are allowed on this Derived Key")
+	}
+	{
+		// Submit an UnregisterAsValidator txn using a DerivedKey.
+
+		// Create a DerivedKey that can perform one UnregisterAsValidator txn.
+		derivedKeyPriv, err := _submitAuthorizeDerivedKeyTxn(TxnTypeUnregisterAsValidator, 1)
+		require.NoError(t, err)
+
+		// Perform an UnregisterAsValidator txn. No error expected.
+		unregisterAsValidatorMetadata := &UnregisterAsValidatorMetadata{}
+		err = _submitValidatorTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unregisterAsValidatorMetadata},
+		)
+		require.NoError(t, err)
+
+		// Validate the ValidatorEntry no longer exists.
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		validatorEntry, err := utxoView.GetValidatorByPKID(senderPKID)
+		require.NoError(t, err)
+		require.Nil(t, validatorEntry)
+
+		// Perform a second UnregisterAsValidator txn. Error expected. Validator not found.
+		err = _submitValidatorTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unregisterAsValidatorMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorNotFound)
+
+		// Perform a RegisterAsValidator txn. Error expected.
+		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
+			Domains: [][]byte{[]byte("https://example.com")},
+		}
+		err = _submitValidatorTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: registerAsValidatorMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "No more transactions of type REGISTER_AS_VALIDATOR are allowed on this Derived Key")
+
 	}
 
 	// Flush mempool to the db and test rollbacks.
