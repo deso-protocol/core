@@ -1124,6 +1124,104 @@ func (bav *UtxoView) _flushLockedStakeEntriesToDbWithTxn(txn *badger.Txn, blockH
 }
 
 //
+// MEMPOOL UTILS
+//
+
+func (bav *UtxoView) CreateStakeTxindexMetadata(utxoOp *UtxoOperation, txn *MsgDeSoTxn) (*StakeTxindexMetadata, []*AffectedPublicKey) {
+	metadata := txn.TxnMeta.(*StakeMetadata)
+
+	// Cast TransactorPublicKeyBytes to StakerPublicKeyBase58Check.
+	stakerPublicKeyBase58Check := PkToString(txn.PublicKey, bav.Params)
+
+	// Cast ValidatorPublicKey to ValidatorPublicKeyBase58Check.
+	validatorPublicKeyBase58Check := PkToString(metadata.ValidatorPublicKey.ToBytes(), bav.Params)
+
+	// Construct TxindexMetadata.
+	txindexMetadata := &StakeTxindexMetadata{
+		StakerPublicKeyBase58Check:    stakerPublicKeyBase58Check,
+		ValidatorPublicKeyBase58Check: validatorPublicKeyBase58Check,
+		StakeAmountNanos:              metadata.StakeAmountNanos,
+	}
+
+	// Construct AffectedPublicKeys.
+	affectedPublicKeys := []*AffectedPublicKey{
+		{
+			PublicKeyBase58Check: stakerPublicKeyBase58Check,
+			Metadata:             "StakerPublicKeyBase58Check",
+		},
+		{
+			PublicKeyBase58Check: validatorPublicKeyBase58Check,
+			Metadata:             "ValidatorStakedToPublicKeyBase58Check",
+		},
+	}
+
+	return txindexMetadata, affectedPublicKeys
+}
+
+func (bav *UtxoView) CreateUnstakeTxindexMetadata(utxoOp *UtxoOperation, txn *MsgDeSoTxn) (*UnstakeTxindexMetadata, []*AffectedPublicKey) {
+	metadata := txn.TxnMeta.(*UnstakeMetadata)
+
+	// Cast TransactorPublicKeyBytes to StakerPublicKeyBase58Check.
+	stakerPublicKeyBase58Check := PkToString(txn.PublicKey, bav.Params)
+
+	// Cast ValidatorPublicKey to ValidatorPublicKeyBase58Check.
+	validatorPublicKeyBase58Check := PkToString(metadata.ValidatorPublicKey.ToBytes(), bav.Params)
+
+	// Construct TxindexMetadata.
+	txindexMetadata := &UnstakeTxindexMetadata{
+		StakerPublicKeyBase58Check:    stakerPublicKeyBase58Check,
+		ValidatorPublicKeyBase58Check: validatorPublicKeyBase58Check,
+		UnstakeAmountNanos:            metadata.UnstakeAmountNanos,
+	}
+
+	// Construct AffectedPublicKeys.
+	affectedPublicKeys := []*AffectedPublicKey{
+		{
+			PublicKeyBase58Check: stakerPublicKeyBase58Check,
+			Metadata:             "UnstakerPublicKeyBase58Check",
+		},
+		{
+			PublicKeyBase58Check: validatorPublicKeyBase58Check,
+			Metadata:             "ValidatorUnstakedFromPublicKeyBase58Check",
+		},
+	}
+
+	return txindexMetadata, affectedPublicKeys
+}
+
+func (bav *UtxoView) CreateUnlockStakeTxindexMetadata(utxoOp *UtxoOperation, txn *MsgDeSoTxn) (*UnlockStakeTxindexMetadata, []*AffectedPublicKey) {
+	metadata := txn.TxnMeta.(*UnlockStakeMetadata)
+
+	// Cast TransactorPublicKeyBytes to StakerPublicKeyBase58Check.
+	stakerPublicKeyBase58Check := PkToString(txn.PublicKey, bav.Params)
+
+	// Cast ValidatorPublicKey to ValidatorPublicKeyBase58Check.
+	validatorPublicKeyBase58Check := PkToString(metadata.ValidatorPublicKey.ToBytes(), bav.Params)
+
+	// TODO: Calculate TotalUnlockedAmountNanos.
+	totalUnlockedAmountNanos := uint256.NewInt()
+
+	// Construct TxindexMetadata.
+	txindexMetadata := &UnlockStakeTxindexMetadata{
+		StakerPublicKeyBase58Check:    stakerPublicKeyBase58Check,
+		ValidatorPublicKeyBase58Check: validatorPublicKeyBase58Check,
+		StartEpochNumber:              metadata.StartEpochNumber,
+		EndEpochNumber:                metadata.EndEpochNumber,
+		TotalUnlockedAmountNanos:      totalUnlockedAmountNanos,
+	}
+
+	// Construct AffectedPublicKeys.
+	affectedPublicKeys := []*AffectedPublicKey{
+		{
+			PublicKeyBase58Check: stakerPublicKeyBase58Check,
+			Metadata:             "UnlockedStakerPublicKeyBase58Check",
+		},
+	}
+
+	return txindexMetadata, affectedPublicKeys
+}
+
+//
 // CONSTANTS
 //
 
