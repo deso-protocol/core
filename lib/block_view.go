@@ -116,7 +116,9 @@ type UtxoView struct {
 
 	// Validator mappings
 	ValidatorMapKeyToValidatorEntry map[ValidatorMapKey]*ValidatorEntry
-	GlobalStakeAmountNanos          *uint256.Int
+
+	// Global stake across validators
+	GlobalStakeAmountNanos *uint256.Int
 
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
@@ -209,6 +211,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// ValidatorEntries
 	bav.ValidatorMapKeyToValidatorEntry = make(map[ValidatorMapKey]*ValidatorEntry)
+
+	// Global stake across validators
 	bav.GlobalStakeAmountNanos = uint256.NewInt()
 }
 
@@ -468,6 +472,8 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newEntry := *entry
 		newView.ValidatorMapKeyToValidatorEntry[entryKey] = &newEntry
 	}
+
+	// Copy the GlobalStakeAmountNanos.
 	newView.GlobalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
 
 	return newView, nil
