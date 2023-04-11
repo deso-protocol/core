@@ -620,8 +620,11 @@ const (
 	OperationTypeDeleteExpiredNonces          OperationType = 38
 	OperationTypeRegisterAsValidator          OperationType = 39
 	OperationTypeUnregisterAsValidator        OperationType = 40
+	OperationTypeStake                        OperationType = 41
+	OperationTypeUnstake                      OperationType = 42
+	OperationTypeUnlockStake                  OperationType = 43
 
-	// NEXT_TAG = 41
+	// NEXT_TAG = 44
 )
 
 func (op OperationType) String() string {
@@ -706,6 +709,12 @@ func (op OperationType) String() string {
 		return "OperationTypeRegisterAsValidator"
 	case OperationTypeUnregisterAsValidator:
 		return "OperationTypeUnregisterAsValidator"
+	case OperationTypeStake:
+		return "OperationTypeStake"
+	case OperationTypeUnstake:
+		return "OperationTypeUnstake"
+	case OperationTypeUnlockStake:
+		return "OperationTypeUnlockStake"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -891,8 +900,21 @@ type UtxoOperation struct {
 	// When we connect a block, we delete expired nonce entries.
 	PrevNonceEntries []*TransactorNonceEntry
 
-	// PrevValidatorEntry is the previous ValidatorEntry prior to a register or unregister txn.
+	// PrevValidatorEntry is the previous ValidatorEntry prior to a
+	// register, unregister, stake, or unstake txn.
 	PrevValidatorEntry *ValidatorEntry
+
+	// PrevGlobalStakeAmountNanos is the previous GlobalStakeAmountNanos
+	// prior to a stake or unstake operation txn.
+	PrevGlobalStakeAmountNanos *uint256.Int
+
+	// PrevStakeEntries is a slice of StakeEntries prior to
+	// a register, unregister, stake, or unstake txn.
+	PrevStakeEntries []*StakeEntry
+
+	// PrevLockedStakeEntries is a slice of LockedStakeEntries
+	// prior to a unstake or unlock stake txn.
+	PrevLockedStakeEntries []*LockedStakeEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1213,6 +1235,23 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
 		// PrevValidatorEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
+
+		// PrevGlobalStakeAmountNanos
+		data = append(data, EncodeUint256(op.PrevGlobalStakeAmountNanos)...)
+
+		// PrevStakeEntries
+		numPrevStakeEntries := uint64(len(op.PrevStakeEntries))
+		data = append(data, UintToBuf(numPrevStakeEntries)...)
+		for _, stakeEntry := range op.PrevStakeEntries {
+			data = append(data, EncodeToBytes(blockHeight, stakeEntry, skipMetadata...)...)
+		}
+
+		// PrevLockedStakeEntries
+		numPrevLockedStakeEntries := uint64(len(op.PrevLockedStakeEntries))
+		data = append(data, UintToBuf(numPrevLockedStakeEntries)...)
+		for _, lockedStakeEntry := range op.PrevLockedStakeEntries {
+			data = append(data, EncodeToBytes(blockHeight, lockedStakeEntry, skipMetadata...)...)
+		}
 	}
 
 	return data
@@ -1836,7 +1875,42 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		if exist, err := DecodeFromBytes(prevValidatorEntry, rr); exist && err == nil {
 			op.PrevValidatorEntry = prevValidatorEntry
 		} else if err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry")
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry: ")
+		}
+
+		// PrevGlobalStakeAmountNanos
+		if prevGlobalStakeAmountNanos, err := DecodeUint256(rr); err != nil {
+			op.PrevGlobalStakeAmountNanos = prevGlobalStakeAmountNanos
+		} else {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalStakeAmountNanos: ")
+		}
+
+		// PrevStakeEntries
+		numPrevStakeEntries, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevStakeEntries: ")
+		}
+		for ii := 0; ii < int(numPrevStakeEntries); ii++ {
+			prevStakeEntry := &StakeEntry{}
+			if exist, err := DecodeFromBytes(prevStakeEntry, rr); exist && err == nil {
+				op.PrevStakeEntries = append(op.PrevStakeEntries, prevStakeEntry)
+			} else if err != nil {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevStakeEntries: ")
+			}
+		}
+
+		// PrevLockedStakeEntries
+		numPrevLockedStakeEntries, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedStakeEntries: ")
+		}
+		for ii := 0; ii < int(numPrevLockedStakeEntries); ii++ {
+			prevLockedStakeEntry := &LockedStakeEntry{}
+			if exist, err := DecodeFromBytes(prevLockedStakeEntry, rr); exist && err == nil {
+				op.PrevLockedStakeEntries = append(op.PrevLockedStakeEntries, prevLockedStakeEntry)
+			} else if err != nil {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedStakeEntries: ")
+			}
 		}
 	}
 

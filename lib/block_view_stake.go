@@ -1018,11 +1018,24 @@ func (bav *UtxoView) _connectStake(
 	// Set the new ValidatorEntry.
 	bav._setValidatorEntryMappings(currentValidatorEntry)
 
+	// Increase the GlobalStakeAmountNanos.
+	prevGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectStake: error retrieving GlobalStakeAmountNanos: ")
+	}
+	globalStakeAmountNanos, err := SafeUint256().Add(prevGlobalStakeAmountNanos, txMeta.StakeAmountNanos)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectStake: error calculating updated GlobalStakeAmountNanos: ")
+	}
+	// Set the new GlobalStakeAmountNanos.
+	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
+
 	// Add a UTXO operation
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:               OperationTypeRegisterAsValidator,
-		PrevValidatorEntry: prevValidatorEntry,
-		// PrevStakeEntries: prevStakeEntries, // TODO: in subsequent PR
+		Type:                       OperationTypeRegisterAsValidator,
+		PrevValidatorEntry:         prevValidatorEntry,
+		PrevStakeEntries:           []*StakeEntry{prevStakeEntry},
+		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -1034,6 +1047,55 @@ func (bav *UtxoView) _disconnectStake(
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
+	// Validate the last operation is a Stake operation.
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectStake: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	operationData := utxoOpsForTxn[operationIndex]
+	if operationData.Type != OperationTypeStake {
+		return fmt.Errorf(
+			"_disconnectStake: trying to revert %v but found %v",
+			OperationTypeStake,
+			operationData.Type,
+		)
+	}
+
+	// Convert TransactorPublicKey to TransactorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return RuleErrorInvalidStakerPKID
+	}
+
+	// Delete the CurrentValidatorEntry.
+	currentValidatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectStake: ")
+	}
+	if currentValidatorEntry == nil {
+		return fmt.Errorf(
+			"_disconnectStake: no current ValidatorEntry found for %v", transactorPKIDEntry.PKID,
+		)
+	}
+	bav._deleteValidatorEntryMappings(currentValidatorEntry)
+
+	// Restore the PrevValidatorEntry.
+	prevValidatorEntry := operationData.PrevValidatorEntry
+	if prevValidatorEntry == nil {
+		return fmt.Errorf(
+			"_disconnectStake: no prev ValidatorEntry found for %v", transactorPKIDEntry.PKID,
+		)
+	}
+	bav._setValidatorEntryMappings(prevValidatorEntry)
+
+	// Restore the PrevValidatorEntry.
+	if operationData.PrevValidatorEntry == nil {
+
+	}
+
+	// Restore the PrevStakeEntry, if exists. If not, delete the CurrentStakeEntry.
+	// Restore the PrevGlobalStakeAmountNanos.
+	// TODO: Increase DESO balance of transactor.
 	return nil
 }
 
@@ -1201,6 +1263,67 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	}
 
 	return nil
+}
+
+func (bav *UtxoView) AddStake(validatorPKID *PKID, stakerPKID *PKID, amountNanos *uint256.Int) (
+	_prevValidatorEntry *ValidatorEntry,
+	_prevStakeEntry *StakeEntry,
+	_prevGlobalStakeAmountNanos *uint256.Int,
+	_currentValidatorEntry *ValidatorEntry,
+	_currentStakeEntry *StakeEntry,
+	_currentGlobalStakeAmountNanos *uint256.Int,
+	_err error,
+) {
+	prevValidatorEntry, prevStakeEntry, prevGlobalStakeAmountNanos, err := bav._getPrevValidatorAndStake(validatorPKID, stakerPKID)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, errors.Wrapf(err, "UtxoView.AddStake: ")
+	}
+
+	// PrevValidatorEntry has to exist in order to receive stake.
+	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted || prevValidatorEntry.DisableDelegatedStake {
+		return nil, nil, nil, nil, nil, nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.AddStake: ")
+	}
+
+	// Update CurrentValidatorEntry.TotalStakeAmountNanos.
+	currentValidatorEntry := prevValidatorEntry.Copy()
+	currentValidatorEntry.TotalStakeAmountNanos, err = SafeUint256().Add(currentValidatorEntry.TotalStakeAmountNanos, amountNanos)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, errors.Wrapf(err, "UtxoView.AddStake: error computing ValidatorEntry.TotalStakeAmountNanos: ")
+	}
+
+	currentStakeEntry := prevStakeEntry.Copy()
+	currentStakeEntry
+}
+
+func (bav *UtxoView) RemoveStake(validatorPKID *PKID, stakerPKID *PKID, amountNanos *uint256.Int) error {
+
+}
+
+func (bav *UtxoView) _getPrevValidatorAndStake(validatorPKID *PKID, stakerPKID *PKID) (
+	_prevValidatorEntry *ValidatorEntry,
+	_prevStakeEntry *StakeEntry,
+	_prevGlobalStakeAmountNanos *uint256.Int,
+	_err error,
+) {
+	// Retrieve PrevValidatorEntry.
+	prevValidatorEntry, err := bav.GetValidatorByPKID(validatorPKID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Retrieve PrevStakeEntry.
+	prevStakeEntry, err := bav.GetStakeEntry(validatorPKID, stakerPKID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Retrieve PrevGlobalStakeAmountNanos.
+	prevGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return prevValidatorEntry, prevStakeEntry, prevGlobalStakeAmountNanos, nil
 }
 
 func (bav *UtxoView) GetStakeEntry(validatorPKID *PKID, stakerPKID *PKID) (*StakeEntry, error) {

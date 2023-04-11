@@ -1229,6 +1229,9 @@ func (bav *UtxoView) GetGlobalStakeAmountNanos() (*uint256.Int, error) {
 		if err != nil {
 			return nil, err
 		}
+		if globalStakeAmountNanos == nil {
+			globalStakeAmountNanos = uint256.NewInt()
+		}
 		bav.GlobalStakeAmountNanos = globalStakeAmountNanos
 	}
 	return globalStakeAmountNanos, nil
