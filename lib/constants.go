@@ -269,8 +269,9 @@ type ForkHeights struct {
 	// to an account balance model for accounting.
 	BalanceModelBlockHeight uint32
 
-	// ProofOfStakeNewTxnTypesBlockHeight defines the height at which
-	// we introduced the new txn types to support Proof of Stake.
+	// ProofOfStakeNewTxnTypesBlockHeight defines the height at which we introduced the
+	// new txn types to support Proof of Stake. These txns include: RegisterAsValidator,
+	// UnregisterAsValidator, Stake, Unstake, and UnlockStake.
 	ProofOfStakeNewTxnTypesBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via

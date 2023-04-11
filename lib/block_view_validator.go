@@ -492,7 +492,7 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	var key []byte
 	key = append(key, Prefixes.PrefixValidatorByStake...)
-	// TODO: ensure that this left-pads the uint256 to be equal width
+	// FIXME: ensure that this left-pads the uint256 to be equal width
 	key = append(key, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)                 // Highest stake first
 	key = append(key, EncodeUint64(math.MaxUint64-validatorEntry.RegisteredAtBlockHeight)...) // Oldest first
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
@@ -957,13 +957,13 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		validatorID = prevValidatorEntry.ValidatorID
 	}
 
-	// TODO: Unstake delegated stakers if updating DisableDelegatedStake=true.
+	// TODO: In subsequent PR, unstake delegated stakers if updating DisableDelegatedStake=true.
 	if prevValidatorEntry != nil &&
 		!prevValidatorEntry.DisableDelegatedStake && // Validator previously allowed delegated stake.
 		txMeta.DisableDelegatedStake { // Validator no longer allows delegated stake.
 	}
 
-	// TODO: Calculate TotalStakeAmountNanos.
+	// TODO: In subsequent PR, calculate TotalStakeAmountNanos.
 	totalStakeAmountNanos := uint256.NewInt()
 
 	// Set RegisteredAtBlockHeight only if this is a new ValidatorEntry.
@@ -999,7 +999,7 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:               OperationTypeRegisterAsValidator,
 		PrevValidatorEntry: prevValidatorEntry,
-		// PrevStakeEntries: prevStakeEntries, // TODO
+		// PrevStakeEntries: prevStakeEntries, // TODO: in subsequent PR
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -1051,7 +1051,8 @@ func (bav *UtxoView) _disconnectRegisterAsValidator(
 		bav._setValidatorEntryMappings(prevValidatorEntry)
 	}
 
-	// TODO: If PrevStakeEntries, delete the current StakeEntries and restore the prev StakeEntries.
+	// TODO: In subsequent PR, if PrevStakeEntries, delete the
+	// current StakeEntries and restore the prev StakeEntries.
 
 	// Disconnect the BasicTransfer.
 	return bav._disconnectBasicTransfer(
@@ -1110,7 +1111,7 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 		return 0, 0, nil, RuleErrorInvalidValidatorPKID
 	}
 
-	// TODO: Unstake all StakeEntries for this validator.
+	// TODO: In subsequent PR, unstake all StakeEntries for this validator.
 
 	// Delete the existing ValidatorEntry.
 	prevValidatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
@@ -1127,7 +1128,7 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:               OperationTypeUnregisterAsValidator,
 		PrevValidatorEntry: prevValidatorEntry,
-		// PrevStakeEntries: prevStakeEntries, // TODO
+		// PrevStakeEntries: prevStakeEntries, // TODO: in subsequent PR
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -1164,7 +1165,7 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	}
 	bav._setValidatorEntryMappings(prevValidatorEntry)
 
-	// TODO: Restore the prev StakeEntries, if any.
+	// TODO: In subsequent PR, restore the prev StakeEntries, if any.
 
 	// Disconnect the BasicTransfer.
 	return bav._disconnectBasicTransfer(
@@ -1198,7 +1199,7 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 		return RuleErrorValidatorDuplicateDomains
 	}
 
-	// TODO: Validate VotingPublicKey, VotingPublicKeySignature, and VotingSignatureBlockHeight.
+	// TODO: In subsequent PR, validate VotingPublicKey, VotingPublicKeySignature, and VotingSignatureBlockHeight.
 	return nil
 }
 
@@ -1376,7 +1377,7 @@ func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
 		domains = append(domains, string(domain))
 	}
 
-	// TODO: Pull UnstakedStakers from PrevStakeEntries on UtxoOperation.
+	// TODO: In subsequent PR, pull UnstakedStakers from PrevStakeEntries on UtxoOperation.
 	var unstakedStakers []*UnstakedStakerTxindexMetadata
 
 	// Construct TxindexMetadata.
@@ -1417,7 +1418,7 @@ func (bav *UtxoView) CreateUnregisterAsValidatorTxindexMetadata(
 	// Cast ValidatorPublicKey to ValidatorPublicKeyBase58Check.
 	validatorPublicKeyBase58Check := PkToString(txn.PublicKey, bav.Params)
 
-	// TODO: Pull UnstakedStakers from PrevStakeEntries on UtxoOperation.
+	// TODO: In subsequent PR, pull UnstakedStakers from PrevStakeEntries on UtxoOperation.
 	var unstakedStakers []*UnstakedStakerTxindexMetadata
 
 	// Construct TxindexMetadata.

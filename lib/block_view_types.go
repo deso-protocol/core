@@ -70,94 +70,94 @@ type EncoderType uint32
 
 // Block view encoder types. These types to different structs implementing the DeSoEncoder interface.
 const (
-	EncoderTypeUtxoEntry EncoderType = iota
-	EncoderTypeUtxoOperation
-	EncoderTypeUtxoOperationBundle
-	EncoderTypeMessageEntry
-	EncoderTypeGroupKeyName
-	EncoderTypeMessagingGroupEntry
-	EncoderTypeMessagingGroupMember
-	EncoderTypeForbiddenPubKeyEntry
-	EncoderTypeLikeEntry
-	EncoderTypeNFTEntry
-	EncoderTypeNFTBidEntry
-	EncoderTypeNFTBidEntryBundle
-	EncoderTypeDerivedKeyEntry
-	EncoderTypeDiamondEntry
-	EncoderTypeRepostEntry
-	EncoderTypeGlobalParamsEntry
-	EncoderTypePostEntry
-	EncoderTypeBalanceEntry
-	EncoderTypeCoinEntry
-	EncoderTypePublicKeyRoyaltyPair
-	EncoderTypePKIDEntry
-	EncoderTypeProfileEntry
-	EncoderTypeAffectedPublicKey
-	EncoderTypeUtxoKey
-	EncoderTypeDeSoOutput
-	EncoderTypePKID
-	EncoderTypePublicKey
-	EncoderTypeBlockHash
-	EncoderTypeDAOCoinLimitOrderEntry
-	EncoderTypeFilledDAOCoinLimitOrder
-	EncoderTypeUserAssociationEntry
-	EncoderTypePostAssociationEntry
-	EncoderTypeAccessGroupEntry
-	EncoderTypeAccessGroupMemberEntry
-	EncoderTypeGroupMembershipKey
-	EncoderTypeNewMessageEntry
-	EncoderTypeAccessGroupMemberEnumerationEntry
-	EncoderTypeDmThreadEntry
-	EncoderTypeDeSoNonce
-	EncoderTypeTransactorNonceEntry
-	EncoderTypeValidatorEntry
-	EncoderTypeStakeEntry
-	EncoderTypeLockedStakeEntry
+	EncoderTypeUtxoEntry                         EncoderType = 0
+	EncoderTypeUtxoOperation                     EncoderType = 1
+	EncoderTypeUtxoOperationBundle               EncoderType = 2
+	EncoderTypeMessageEntry                      EncoderType = 3
+	EncoderTypeGroupKeyName                      EncoderType = 4
+	EncoderTypeMessagingGroupEntry               EncoderType = 5
+	EncoderTypeMessagingGroupMember              EncoderType = 6
+	EncoderTypeForbiddenPubKeyEntry              EncoderType = 7
+	EncoderTypeLikeEntry                         EncoderType = 8
+	EncoderTypeNFTEntry                          EncoderType = 9
+	EncoderTypeNFTBidEntry                       EncoderType = 10
+	EncoderTypeNFTBidEntryBundle                 EncoderType = 11
+	EncoderTypeDerivedKeyEntry                   EncoderType = 12
+	EncoderTypeDiamondEntry                      EncoderType = 13
+	EncoderTypeRepostEntry                       EncoderType = 14
+	EncoderTypeGlobalParamsEntry                 EncoderType = 15
+	EncoderTypePostEntry                         EncoderType = 16
+	EncoderTypeBalanceEntry                      EncoderType = 17
+	EncoderTypeCoinEntry                         EncoderType = 18
+	EncoderTypePublicKeyRoyaltyPair              EncoderType = 19
+	EncoderTypePKIDEntry                         EncoderType = 20
+	EncoderTypeProfileEntry                      EncoderType = 21
+	EncoderTypeAffectedPublicKey                 EncoderType = 22
+	EncoderTypeUtxoKey                           EncoderType = 23
+	EncoderTypeDeSoOutput                        EncoderType = 24
+	EncoderTypePKID                              EncoderType = 25
+	EncoderTypePublicKey                         EncoderType = 26
+	EncoderTypeBlockHash                         EncoderType = 27
+	EncoderTypeDAOCoinLimitOrderEntry            EncoderType = 28
+	EncoderTypeFilledDAOCoinLimitOrder           EncoderType = 29
+	EncoderTypeUserAssociationEntry              EncoderType = 30
+	EncoderTypePostAssociationEntry              EncoderType = 31
+	EncoderTypeAccessGroupEntry                  EncoderType = 32
+	EncoderTypeAccessGroupMemberEntry            EncoderType = 33
+	EncoderTypeGroupMembershipKey                EncoderType = 34
+	EncoderTypeNewMessageEntry                   EncoderType = 35
+	EncoderTypeAccessGroupMemberEnumerationEntry EncoderType = 36
+	EncoderTypeDmThreadEntry                     EncoderType = 37
+	EncoderTypeDeSoNonce                         EncoderType = 38
+	EncoderTypeTransactorNonceEntry              EncoderType = 39
+	EncoderTypeValidatorEntry                    EncoderType = 40
+	EncoderTypeStakeEntry                        EncoderType = 41
+	EncoderTypeLockedStakeEntry                  EncoderType = 42
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView
+	EncoderTypeEndBlockView EncoderType = 43
 )
 
 // Txindex encoder types.
 const (
-	EncoderTypeTransactionMetadata EncoderType = 1000000 + iota
-	EncoderTypeBasicTransferTxindexMetadata
-	EncoderTypeBitcoinExchangeTxindexMetadata
-	EncoderTypeCreatorCoinTxindexMetadata
-	EncoderTypeCreatorCoinTransferTxindexMetadata
-	EncoderTypeDAOCoinTransferTxindexMetadata
-	EncoderTypeFilledDAOCoinLimitOrderMetadata
-	EncoderTypeDAOCoinLimitOrderTxindexMetadata
-	EncoderTypeUpdateProfileTxindexMetadata
-	EncoderTypeSubmitPostTxindexMetadata
-	EncoderTypeLikeTxindexMetadata
-	EncoderTypeFollowTxindexMetadata
-	EncoderTypePrivateMessageTxindexMetadata
-	EncoderTypeSwapIdentityTxindexMetadata
-	EncoderTypeNFTRoyaltiesMetadata
-	EncoderTypeNFTBidTxindexMetadata
-	EncoderTypeAcceptNFTBidTxindexMetadata
-	EncoderTypeNFTTransferTxindexMetadata
-	EncoderTypeAcceptNFTTransferTxindexMetadata
-	EncoderTypeBurnNFTTxindexMetadata
-	EncoderTypeDAOCoinTxindexMetadata
-	EncoderTypeCreateNFTTxindexMetadata
-	EncoderTypeUpdateNFTTxindexMetadata
-	EncoderTypeCreateUserAssociationTxindexMetadata
-	EncoderTypeDeleteUserAssociationTxindexMetadata
-	EncoderTypeCreatePostAssociationTxindexMetadata
-	EncoderTypeDeletePostAssociationTxindexMetadata
-	EncoderTypeAccessGroupTxindexMetadata
-	EncoderTypeAccessGroupMembersTxindexMetadata
-	EncoderTypeNewMessageTxindexMetadata
-	EncoderTypeRegisterAsValidatorTxindexMetadata
-	EncoderTypeUnregisterAsValidatorTxindexMetadata
-	EncoderTypeStakeTxindexMetadata
-	EncoderTypeUnstakeTxindexMetadata
-	EncoderTypeUnlockStakeTxindexMetadata
+	EncoderTypeTransactionMetadata                  EncoderType = 1000000
+	EncoderTypeBasicTransferTxindexMetadata         EncoderType = 1000001
+	EncoderTypeBitcoinExchangeTxindexMetadata       EncoderType = 1000002
+	EncoderTypeCreatorCoinTxindexMetadata           EncoderType = 1000003
+	EncoderTypeCreatorCoinTransferTxindexMetadata   EncoderType = 1000004
+	EncoderTypeDAOCoinTransferTxindexMetadata       EncoderType = 1000005
+	EncoderTypeFilledDAOCoinLimitOrderMetadata      EncoderType = 1000006
+	EncoderTypeDAOCoinLimitOrderTxindexMetadata     EncoderType = 1000007
+	EncoderTypeUpdateProfileTxindexMetadata         EncoderType = 1000008
+	EncoderTypeSubmitPostTxindexMetadata            EncoderType = 1000009
+	EncoderTypeLikeTxindexMetadata                  EncoderType = 1000010
+	EncoderTypeFollowTxindexMetadata                EncoderType = 1000011
+	EncoderTypePrivateMessageTxindexMetadata        EncoderType = 1000012
+	EncoderTypeSwapIdentityTxindexMetadata          EncoderType = 1000013
+	EncoderTypeNFTRoyaltiesMetadata                 EncoderType = 1000014
+	EncoderTypeNFTBidTxindexMetadata                EncoderType = 1000015
+	EncoderTypeAcceptNFTBidTxindexMetadata          EncoderType = 1000016
+	EncoderTypeNFTTransferTxindexMetadata           EncoderType = 1000017
+	EncoderTypeAcceptNFTTransferTxindexMetadata     EncoderType = 1000018
+	EncoderTypeBurnNFTTxindexMetadata               EncoderType = 1000019
+	EncoderTypeDAOCoinTxindexMetadata               EncoderType = 1000020
+	EncoderTypeCreateNFTTxindexMetadata             EncoderType = 1000021
+	EncoderTypeUpdateNFTTxindexMetadata             EncoderType = 1000022
+	EncoderTypeCreateUserAssociationTxindexMetadata EncoderType = 1000023
+	EncoderTypeDeleteUserAssociationTxindexMetadata EncoderType = 1000024
+	EncoderTypeCreatePostAssociationTxindexMetadata EncoderType = 1000025
+	EncoderTypeDeletePostAssociationTxindexMetadata EncoderType = 1000026
+	EncoderTypeAccessGroupTxindexMetadata           EncoderType = 1000027
+	EncoderTypeAccessGroupMembersTxindexMetadata    EncoderType = 1000028
+	EncoderTypeNewMessageTxindexMetadata            EncoderType = 1000029
+	EncoderTypeRegisterAsValidatorTxindexMetadata   EncoderType = 1000030
+	EncoderTypeUnregisterAsValidatorTxindexMetadata EncoderType = 1000031
+	EncoderTypeStakeTxindexMetadata                 EncoderType = 1000032
+	EncoderTypeUnstakeTxindexMetadata               EncoderType = 1000033
+	EncoderTypeUnlockStakeTxindexMetadata           EncoderType = 1000034
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndTxIndex
+	EncoderTypeEndTxIndex EncoderType = 1000035
 )
 
 // This function translates the EncoderType into an empty DeSoEncoder struct.
@@ -352,10 +352,18 @@ type DeSoEncoder interface {
 	GetEncoderType() EncoderType
 }
 
+type EncodeToBytesFunc func(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte
+
+var EncodeToBytesImpl EncodeToBytesFunc = encodeToBytes
+
 // EncodeToBytes encodes a DeSoEncoder type to bytes, including encoder metadata such as existence byte, the encoder
 // type, and the current blockHeight. The skipMetadata parameter should be always passed if we're nesting DeSoEncoders,
 // but in general it shouldn't be passed. This parameter is only used when we're computing the state checksum.
 func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
+	return EncodeToBytesImpl(blockHeight, encoder, skipMetadata...)
+}
+
+func encodeToBytes(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
 	var data []byte
 
 	// Encoding without metadata is used in the checksum computation. We do this because metadata is kind of arbitrary.
@@ -387,9 +395,17 @@ func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool
 	return data
 }
 
+type DecodeFromByteFunc func(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool, _error error)
+
+var DecodeFromBytesImpl = decodeFromBytes
+
 // DecodeFromBytes decodes a DeSoEncoder type from bytes. We check
 // for the existence byte, which tells us whether actual data was encoded, or a nil pointer.
 func DecodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool, _error error) {
+	return DecodeFromBytesImpl(encoder, rr)
+}
+
+func decodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool, _error error) {
 	if existenceByte, err := ReadBoolByte(rr); existenceByte && err == nil {
 
 		encoderType, err := ReadUvarint(rr)
@@ -1828,8 +1844,12 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 }
 
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
-	// TODO: Update to ProofOfStakeNewTxnTypesMigration.
-	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration, BalanceModelMigration)
+	return GetMigrationVersion(
+		blockHeight,
+		AssociationsAndAccessGroupsMigration,
+		BalanceModelMigration,
+		ProofOfStakeNewTxnTypesMigration,
+	)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {

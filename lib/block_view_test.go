@@ -67,6 +67,12 @@ var (
 )
 
 func setBalanceModelBlockHeights() {
+	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = 0
+	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = 0
+	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = 0
+	DeSoTestnetParams.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = 0
+	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
+	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
@@ -74,6 +80,12 @@ func setBalanceModelBlockHeights() {
 }
 
 func resetBalanceModelBlockHeights() {
+	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = 1000000
+	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = 1000000
+	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = 1000000
+	DeSoTestnetParams.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = 1000000
+	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = 1000000
+	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1000000
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1000000
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
@@ -287,6 +299,35 @@ func (tes *transactionTestSuite) Run() {
 	if tes.config.testPostgres {
 		tes.RunPostgresTest()
 	}
+}
+
+const TestDeSoEncoderRetries = 3
+
+func TestDeSoEncoderSetup(t *testing.T) {
+	EncodeToBytesImpl = func(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
+		encodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
+
+		// Check for deterministic encoding, try re-encoding the same encoder a couple of times and compare it with
+		// the original bytes.
+		{
+			for ii := 0; ii < TestDeSoEncoderRetries; ii++ {
+				reEncodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
+				if !bytes.Equal(encodingBytes, reEncodingBytes) {
+					t.Fatalf("EncodeToBytes: Found non-deterministic encoding for a DeSoEncoder. Attempted "+
+						"encoder type (%v), version byte (%v) at block height (%v).\n "+
+						"First encoding: (%v)\n"+"Second encoding: (%v)\n",
+						encoder.GetEncoderType(), encoder.GetVersionByte(blockHeight),
+						blockHeight, hex.EncodeToString(encodingBytes), hex.EncodeToString(reEncodingBytes))
+				}
+			}
+		}
+
+		return encodingBytes
+	}
+}
+
+func TestDeSoEncoderShutdown(t *testing.T) {
+	EncodeToBytesImpl = encodeToBytes
 }
 
 // Iterate over all testVectors and ensure all of them have unique Ids.

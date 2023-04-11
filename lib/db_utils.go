@@ -7129,7 +7129,7 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 }
 
 func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, ProofOfStakeNewTxnTypesMigration)
+	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration, ProofOfStakeNewTxnTypesMigration)
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {
