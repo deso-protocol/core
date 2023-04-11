@@ -2,9 +2,12 @@ package lib
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
+	"sort"
 )
 
 //
@@ -21,8 +24,8 @@ type StakeEntry struct {
 }
 
 type StakeMapKey struct {
-	StakerPKID    PKID
 	ValidatorPKID PKID
+	StakerPKID    PKID
 }
 
 func (stakeEntry *StakeEntry) Copy() *StakeEntry {
@@ -40,6 +43,10 @@ func (stakeEntry *StakeEntry) Copy() *StakeEntry {
 		ExtraData:        extraDataCopy,
 		isDeleted:        stakeEntry.isDeleted,
 	}
+}
+
+func (stakeEntry *StakeEntry) Eq(other *StakeEntry) bool {
+	return stakeEntry.StakeID.IsEqual(other.StakeID)
 }
 
 func (stakeEntry *StakeEntry) ToMapKey() StakeMapKey {
@@ -123,9 +130,9 @@ type LockedStakeEntry struct {
 	isDeleted           bool
 }
 
-type LockedStakeEntryMapKey struct {
-	StakerPKID          PKID
+type LockedStakeMapKey struct {
 	ValidatorPKID       PKID
+	StakerPKID          PKID
 	LockedAtEpochNumber uint64
 }
 
@@ -147,8 +154,12 @@ func (lockedStakeEntry *LockedStakeEntry) Copy() *LockedStakeEntry {
 	}
 }
 
-func (lockedStakeEntry *LockedStakeEntry) ToMapKey() LockedStakeEntryMapKey {
-	return LockedStakeEntryMapKey{
+func (lockedStakeEntry *LockedStakeEntry) Eq(other *LockedStakeEntry) bool {
+	return lockedStakeEntry.LockedStakeID.IsEqual(other.LockedStakeID)
+}
+
+func (lockedStakeEntry *LockedStakeEntry) ToMapKey() LockedStakeMapKey {
+	return LockedStakeMapKey{
 		StakerPKID:          *lockedStakeEntry.StakerPKID,
 		ValidatorPKID:       *lockedStakeEntry.ValidatorPKID,
 		LockedAtEpochNumber: lockedStakeEntry.LockedAtEpochNumber,
@@ -552,7 +563,7 @@ func DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry *LockedSt
 	return data
 }
 
-func DBGetStakeByValidatorByStaker(
+func DBGetStakeEntry(
 	handle *badger.DB,
 	snap *Snapshot,
 	validatorPKID *PKID,
@@ -561,13 +572,13 @@ func DBGetStakeByValidatorByStaker(
 	var ret *StakeEntry
 	var err error
 	handle.View(func(txn *badger.Txn) error {
-		ret, err = DBGetStakeByValidatorByStakerWithTxn(txn, snap, validatorPKID, stakerPKID)
+		ret, err = DBGetStakeEntryWithTxn(txn, snap, validatorPKID, stakerPKID)
 		return nil
 	})
 	return ret, err
 }
 
-func DBGetStakeByValidatorByStakerWithTxn(
+func DBGetStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
 	validatorPKID *PKID,
@@ -593,7 +604,7 @@ func DBGetStakeByValidatorByStakerWithTxn(
 	return stakeEntry, nil
 }
 
-func DBGetLockedStakeByValidatorByStakerByLockedAt(
+func DBGetLockedStakeEntry(
 	handle *badger.DB,
 	snap *Snapshot,
 	validatorPKID *PKID,
@@ -603,7 +614,7 @@ func DBGetLockedStakeByValidatorByStakerByLockedAt(
 	var ret *LockedStakeEntry
 	var err error
 	handle.View(func(txn *badger.Txn) error {
-		ret, err = DBGetLockedStakeByValidatorByStakerByLockedAtWithTxn(
+		ret, err = DBGetLockedStakeEntryWithTxn(
 			txn, snap, validatorPKID, stakerPKID, lockedAtEpochNumber,
 		)
 		return nil
@@ -611,7 +622,7 @@ func DBGetLockedStakeByValidatorByStakerByLockedAt(
 	return ret, err
 }
 
-func DBGetLockedStakeByValidatorByStakerByLockedAtWithTxn(
+func DBGetLockedStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
 	validatorPKID *PKID,
@@ -646,7 +657,7 @@ func DBGetLockedStakeByValidatorByStakerByLockedAtWithTxn(
 	return lockedStakeEntry, nil
 }
 
-func DBGetLockedStakeByValidatorByStakerByEpochRange(
+func DBGetLockedStakeEntriesInRange(
 	handle *badger.DB,
 	snap *Snapshot,
 	validatorPKID *PKID,
@@ -657,7 +668,7 @@ func DBGetLockedStakeByValidatorByStakerByEpochRange(
 	var ret []*LockedStakeEntry
 	var err error
 	handle.View(func(txn *badger.Txn) error {
-		ret, err = DBGetLockedStakeByStakerByEpochRangeWithTxn(
+		ret, err = DBGetLockedStakeEntriesInRangeWithTxn(
 			txn, snap, validatorPKID, stakerPKID, startEpochNumber, endEpochNumber,
 		)
 		return nil
@@ -665,7 +676,7 @@ func DBGetLockedStakeByValidatorByStakerByEpochRange(
 	return ret, err
 }
 
-func DBGetLockedStakeByStakerByEpochRangeWithTxn(
+func DBGetLockedStakeEntriesInRangeWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
 	validatorPKID *PKID,
@@ -679,7 +690,7 @@ func DBGetLockedStakeByStakerByEpochRangeWithTxn(
 	return nil, nil
 }
 
-func DBPutStakeWithTxn(
+func DBPutStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
 	stakeEntry *StakeEntry,
@@ -700,7 +711,7 @@ func DBPutStakeWithTxn(
 	return nil
 }
 
-func DBPutLockedStakeWithTxn(
+func DBPutLockedStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
 	lockedStakeEntry *LockedStakeEntry,
@@ -721,7 +732,7 @@ func DBPutLockedStakeWithTxn(
 	return nil
 }
 
-func DBDeleteStakeWtihTxn(
+func DBDeleteStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
 	stakeEntry *StakeEntry,
@@ -742,7 +753,7 @@ func DBDeleteStakeWtihTxn(
 	return nil
 }
 
-func DBDeleteLockedStakeWithTxn(
+func DBDeleteLockedStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
 	lockedStakeEntry *LockedStakeEntry,
@@ -837,7 +848,7 @@ func (bav *UtxoView) IsValidUnstakeMetadata(transactorPkBytes []byte, metadata *
 	}
 
 	// Validate StakeEntry exists.
-	stakeEntry, err := bav.GetStakeByValidatorByStaker(validatorPKIDEntry.PKID, transactorPKIDEntry.PKID)
+	stakeEntry, err := bav.GetStakeEntry(validatorPKIDEntry.PKID, transactorPKIDEntry.PKID)
 	if err != nil {
 		return errors.Wrapf(err, "IsValidUnstakeMetadata: ")
 	}
@@ -882,8 +893,8 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	// TODO: validate EndEpochNumber is <= CurrentEpochNumber - 2
 
 	// Validate LockedStakeEntries exist.
-	lockedStakeEntries, err := bav.GetLockedStakeByStakerByEpochRange(
-		transactorPKIDEntry.PKID, metadata.StartEpochNumber, metadata.EndEpochNumber,
+	lockedStakeEntries, err := bav.GetLockedStakeEntriesInRange(
+		validatorPKIDEntry.PKID, transactorPKIDEntry.PKID, metadata.StartEpochNumber, metadata.EndEpochNumber,
 	)
 	lockedStakeEntryCount := uint64(0)
 	for _, lockedStakeEntry := range lockedStakeEntries {
@@ -899,27 +910,217 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	return nil
 }
 
-func (bav *UtxoView) GetStakeByValidatorByStaker(validatorPKID *PKID, stakerPKID *PKID) (*StakeEntry, error) {
-	// TODO
-	return nil, nil
+func (bav *UtxoView) GetStakeEntry(validatorPKID *PKID, stakerPKID *PKID) (*StakeEntry, error) {
+	// First, check the UtxoView.
+	stakeMapKey := StakeMapKey{ValidatorPKID: *validatorPKID, StakerPKID: *stakerPKID}
+	if stakeEntry, exists := bav.StakeMapKeyToStakeEntry[stakeMapKey]; exists {
+		// If StakeEntry.isDeleted, return nil.
+		if stakeEntry.isDeleted {
+			return nil, nil
+		}
+		return stakeEntry, nil
+	}
+	// Then, check the database.
+	return DBGetStakeEntry(bav.Handle, bav.Snapshot, validatorPKID, stakerPKID)
 }
 
-func (bav *UtxoView) GetLockedStakeByStakerByLockedAtByValidator(
+func (bav *UtxoView) GetLockedStakeEntry(
+	validatorPKID *PKID,
 	stakerPKID *PKID,
 	lockedAtEpochNumber uint64,
-	validatorPKID *PKID,
 ) (*LockedStakeEntry, error) {
-	// TODO
-	return nil, nil
+	// First, check the UtxoView.
+	lockedStakeMapKey := LockedStakeMapKey{
+		ValidatorPKID:       *validatorPKID,
+		StakerPKID:          *stakerPKID,
+		LockedAtEpochNumber: lockedAtEpochNumber,
+	}
+	if lockedStakeEntry, exists := bav.LockedStakeMapKeyToLockedStakeEntry[lockedStakeMapKey]; exists {
+		// If LockedStakeEntry.isDeleted, return nil.
+		if lockedStakeEntry.isDeleted {
+			return nil, nil
+		}
+		return lockedStakeEntry, nil
+	}
+	// Then, check the database.
+	return DBGetLockedStakeEntry(bav.Handle, bav.Snapshot, validatorPKID, stakerPKID, lockedAtEpochNumber)
 }
 
-func (bav *UtxoView) GetLockedStakeByStakerByEpochRange(
+func (bav *UtxoView) GetLockedStakeEntriesInRange(
+	validatorPKID *PKID,
 	stakerPKID *PKID,
 	startEpochNumber uint64,
 	endEpochNumber uint64,
 ) ([]*LockedStakeEntry, error) {
-	// TODO
-	return nil, nil
+	// Store matching LockedStakeEntries in a set to prevent
+	// returning duplicates between the db and UtxoView.
+	lockedStakeEntriesSet := NewSet([]*LockedStakeEntry{})
+
+	// First, pull matching LockedStakeEntries from the db.
+	dbLockedStakeEntries, err := DBGetLockedStakeEntriesInRange(
+		bav.Handle, bav.Snapshot, validatorPKID, stakerPKID, startEpochNumber, endEpochNumber,
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GetLockedStakeEntriesInRange: ")
+	}
+	for _, lockedStakeEntry := range dbLockedStakeEntries {
+		lockedStakeEntriesSet.Add(lockedStakeEntry)
+	}
+
+	// Then, pull matching LockedStakeEntries from the UtxoView.
+	// Loop through all LockedStakeEntries in the UtxoView.
+	for _, lockedStakeEntry := range bav.LockedStakeMapKeyToLockedStakeEntry {
+		// Filter to matching LockedStakeEntries.
+		if !lockedStakeEntry.ValidatorPKID.Eq(validatorPKID) ||
+			!lockedStakeEntry.StakerPKID.Eq(stakerPKID) ||
+			lockedStakeEntry.LockedAtEpochNumber < startEpochNumber ||
+			lockedStakeEntry.LockedAtEpochNumber > endEpochNumber {
+			continue
+		}
+
+		if lockedStakeEntry.isDeleted {
+			// Remove from set if isDeleted.
+			lockedStakeEntriesSet.Remove(lockedStakeEntry)
+		} else {
+			// Otherwise, add to set.
+			lockedStakeEntriesSet.Add(lockedStakeEntry)
+		}
+	}
+
+	// Convert LockedStakeEntries set to slice, sorted by LockedAtEpochNumber ASC.
+	lockedStakeEntries := lockedStakeEntriesSet.ToSlice()
+	sort.Slice(lockedStakeEntries, func(ii, jj int) bool {
+		return lockedStakeEntries[ii].LockedAtEpochNumber < lockedStakeEntries[jj].LockedAtEpochNumber
+	})
+	return lockedStakeEntries, nil
+}
+
+func (bav *UtxoView) _setStakeEntryMappings(stakeEntry *StakeEntry) {
+	// This function shouldn't be called with nil.
+	if stakeEntry == nil {
+		glog.Errorf("_setStakeEntryMappings: called with nil entry, this should never happen")
+		return
+	}
+	bav.StakeMapKeyToStakeEntry[stakeEntry.ToMapKey()] = stakeEntry
+}
+
+func (bav *UtxoView) _setLockedStakeEntryMappings(lockedStakeEntry *LockedStakeEntry) {
+	// This function shouldn't be called with nil.
+	if lockedStakeEntry == nil {
+		glog.Errorf("_setLockedStakeEntryMappings: called with nil entry, this should never happen")
+		return
+	}
+	bav.LockedStakeMapKeyToLockedStakeEntry[lockedStakeEntry.ToMapKey()] = lockedStakeEntry
+}
+
+func (bav *UtxoView) _deleteStakeEntryMappings(stakeEntry *StakeEntry) {
+	// This function shouldn't be called with nil.
+	if stakeEntry == nil {
+		glog.Errorf("_deleteStakeEntryMappings: called with nil entry, this should never happen")
+		return
+	}
+	// Create a tombstone entry.
+	tombstoneEntry := *stakeEntry
+	tombstoneEntry.isDeleted = true
+	// Set the mappings to the point to the tombstone entry.
+	bav._setStakeEntryMappings(&tombstoneEntry)
+}
+
+func (bav *UtxoView) _deleteLockedStakeEntryMappings(lockedStakeEntry *LockedStakeEntry) {
+	// This function shouldn't be called with nil.
+	if lockedStakeEntry == nil {
+		glog.Errorf("_deleteLockedStakeEntryMappings: called with nil entry, this should never happen")
+		return
+	}
+	// Create a tombstone entry.
+	tombstoneEntry := *lockedStakeEntry
+	tombstoneEntry.isDeleted = true
+	// Set the mappings to the point to the tombstone entry.
+	bav._setLockedStakeEntryMappings(&tombstoneEntry)
+}
+
+func (bav *UtxoView) _flushStakeEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Delete all entries in the UtxoView map.
+	for mapKeyIter, entryIter := range bav.StakeMapKeyToStakeEntry {
+		// Make a copy of the iterators since we make references to them below.
+		mapKey := mapKeyIter
+		entry := *entryIter
+
+		// Sanity-check that the entry matches the map key.
+		mapKeyInEntry := entry.ToMapKey()
+		if mapKeyInEntry != mapKey {
+			return fmt.Errorf(
+				"_flushStakeEntriesToDbWithTxn: StakeEntry key %v doesn't match MapKey %v",
+				&mapKeyInEntry,
+				&mapKey,
+			)
+		}
+
+		// Delete the existing mappings in the db for this MapKey. They will be
+		// re-added if the corresponding entry in-memory has isDeleted=false.
+		if err := DBDeleteStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight); err != nil {
+			return errors.Wrapf(err, "_flushStakeEntriesToDbWithTxn: ")
+		}
+	}
+
+	// Set any !isDeleted entries in the UtxoView map.
+	for _, entryIter := range bav.StakeMapKeyToStakeEntry {
+		entry := *entryIter
+		if entry.isDeleted {
+			// If isDeleted then there's nothing to do because
+			// we already deleted the entry above.
+		} else {
+			// If !isDeleted then we put the corresponding
+			// mappings for it into the db.
+			if err := DBPutStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight); err != nil {
+				return errors.Wrapf(err, "_flushStakeEntriesToDbWithTxn: ")
+			}
+		}
+	}
+
+	return nil
+}
+
+func (bav *UtxoView) _flushLockedStakeEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Delete all entries in the UtxoView map.
+	for mapKeyIter, entryIter := range bav.LockedStakeMapKeyToLockedStakeEntry {
+		// Make a copy of the iterators since we make references to them below.
+		mapKey := mapKeyIter
+		entry := *entryIter
+
+		// Sanity-check that the entry matches the map key.
+		mapKeyInEntry := entry.ToMapKey()
+		if mapKeyInEntry != mapKey {
+			return fmt.Errorf(
+				"_flushLockedStakeEntriesToDbWithTxn: StakeEntry key %v doesn't match MapKey %v",
+				&mapKeyInEntry,
+				&mapKey,
+			)
+		}
+
+		// Delete the existing mappings in the db for this MapKey. They will be
+		// re-added if the corresponding entry in-memory has isDeleted=false.
+		if err := DBDeleteLockedStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight); err != nil {
+			return errors.Wrapf(err, "_flushLockedStakeEntriesToDbWithTxn: ")
+		}
+	}
+
+	// Set any !isDeleted entries in the UtxoView map.
+	for _, entryIter := range bav.LockedStakeMapKeyToLockedStakeEntry {
+		entry := *entryIter
+		if entry.isDeleted {
+			// If isDeleted then there's nothing to do because
+			// we already deleted the entry above.
+		} else {
+			// If !isDeleted then we put the corresponding
+			// mappings for it into the db.
+			if err := DBPutLockedStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight); err != nil {
+				return errors.Wrapf(err, "_flushLockedStakeEntriesToDbWithTxn: ")
+			}
+		}
+	}
+
+	return nil
 }
 
 //

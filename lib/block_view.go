@@ -120,6 +120,10 @@ type UtxoView struct {
 	// Global stake across validators
 	GlobalStakeAmountNanos *uint256.Int
 
+	// Stake mappings
+	StakeMapKeyToStakeEntry             map[StakeMapKey]*StakeEntry
+	LockedStakeMapKeyToLockedStakeEntry map[LockedStakeMapKey]*LockedStakeEntry
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -214,6 +218,10 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Global stake across validators
 	bav.GlobalStakeAmountNanos = uint256.NewInt()
+
+	// StakeEntries
+	bav.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry)
+	bav.LockedStakeMapKeyToLockedStakeEntry = make(map[LockedStakeMapKey]*LockedStakeEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -475,6 +483,22 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 
 	// Copy the GlobalStakeAmountNanos.
 	newView.GlobalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
+
+	// Copy the StakeEntries
+	newView.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry, len(bav.StakeMapKeyToStakeEntry))
+	for entryKey, entry := range bav.StakeMapKeyToStakeEntry {
+		newEntry := *entry
+		newView.StakeMapKeyToStakeEntry[entryKey] = &newEntry
+	}
+
+	// Copy the LockedStakeEntries
+	newView.LockedStakeMapKeyToLockedStakeEntry = make(
+		map[LockedStakeMapKey]*LockedStakeEntry, len(bav.LockedStakeMapKeyToLockedStakeEntry),
+	)
+	for entryKey, entry := range bav.LockedStakeMapKeyToLockedStakeEntry {
+		newEntry := *entry
+		newView.LockedStakeMapKeyToLockedStakeEntry[entryKey] = &newEntry
+	}
 
 	return newView, nil
 }
