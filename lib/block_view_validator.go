@@ -1320,7 +1320,7 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 		validatorMapKeyInEntry := validatorEntry.ToMapKey()
 		if validatorMapKeyInEntry != validatorMapKey {
 			return fmt.Errorf(
-				"_flushValidatorEntriesToDbWithTxn: validator entry key %v doesn't match map key %v",
+				"_flushValidatorEntriesToDbWithTxn: ValidatorEnry key %v doesn't match MapKey %v",
 				&validatorMapKeyInEntry,
 				&validatorMapKey,
 			)
@@ -1329,11 +1329,7 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 		// Delete the existing mappings in the db for this ValidatorMapKey. They
 		// will be re-added if the corresponding entry in memory has isDeleted=false.
 		if err := DBDeleteValidatorWithTxn(txn, bav.Snapshot, &validatorEntry); err != nil {
-			return fmt.Errorf(
-				"_flushValidatorEntriesToDbWithTxn: problem deleting association mappings for map key %v: %v",
-				&validatorMapKey,
-				err,
-			)
+			return errors.Wrapf(err, "_flushValidatorEntriesToDbWithTxn: ")
 		}
 	}
 
@@ -1347,7 +1343,7 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 			// If !ValidatorEntry.isDeleted then we put the
 			// corresponding mappings for it into the db.
 			if err := DBPutValidatorWithTxn(txn, bav.Snapshot, &validatorEntry, blockHeight); err != nil {
-				return fmt.Errorf("_flushValidatorEntriesToDbWithTxn: %v", err)
+				return errors.Wrapf(err, "_flushValidatorEntriesToDbWithTxn: ")
 			}
 		}
 	}
