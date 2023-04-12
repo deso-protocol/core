@@ -1413,6 +1413,93 @@ func (bav *UtxoView) _disconnectUnstake(
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
+	// Validate the last operation is an Unstake operation.
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectUnstake: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	operationData := utxoOpsForTxn[operationIndex]
+	if operationData.Type != OperationTypeUnstake {
+		return fmt.Errorf(
+			"_disconnectUnstake: trying to revert %v but found %v",
+			OperationTypeUnstake,
+			operationData.Type,
+		)
+	}
+	txMeta := currentTxn.TxnMeta.(*UnstakeMetadata)
+
+	// Convert TransactorPublicKey to TransactorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return RuleErrorInvalidStakerPKID
+	}
+
+	// Restore the PrevValidatorEntry.
+	prevValidatorEntry := operationData.PrevValidatorEntry
+	if prevValidatorEntry == nil {
+		return fmt.Errorf(
+			"_disconnectUnstake: no prev ValidatorEntry found for %v", txMeta.ValidatorPublicKey,
+		)
+	}
+	// 1. Delete the CurrentValidatorEntry.
+	currentValidatorEntry, err := bav.GetValidatorByPKID(prevValidatorEntry.ValidatorPKID)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectUnstake: ")
+	}
+	if currentValidatorEntry == nil {
+		return fmt.Errorf(
+			"_disconnectUnstake: no current ValidatorEntry found for %v", txMeta.ValidatorPublicKey,
+		)
+	}
+	bav._deleteValidatorEntryMappings(currentValidatorEntry)
+	// 2. Set the PrevValidatorEntry.
+	bav._setValidatorEntryMappings(prevValidatorEntry)
+
+	// Restore the PrevStakeEntry.
+	// 1. Delete the CurrentStakeEntry, if exists. The CurrentStakeEntry will exist if the transactor
+	//    still has stake assigned to this validator. The CurrentStakeEntry will not exist if the
+	//    transactor unstaked all stake.
+	currentStakeEntry, err := bav.GetStakeEntry(prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectUnstake: ")
+	}
+	if currentStakeEntry != nil {
+		return fmt.Errorf("_disconnectUnstake: no current StakeEntry found for %v", currentTxn.PublicKey)
+		bav._deleteStakeEntryMappings(currentStakeEntry)
+	}
+	// 2. Set the PrevStakeEntry.
+	if len(operationData.PrevStakeEntries) < 1 {
+		return fmt.Errorf("_disconnectUnstake: no prev StakeEntry found for %v", currentTxn.PublicKey)
+	}
+	if len(operationData.PrevStakeEntries) > 1 {
+		return fmt.Errorf("_disconnectUnstake: more than one prev StakeEntry found for %v", currentTxn.PublicKey)
+	}
+	bav._setStakeEntryMappings(operationData.PrevStakeEntries[0])
+
+	// Restore the PrevGlobalStakeAmountNanos.
+	bav._setGlobalStakeAmountNanos(operationData.PrevGlobalStakeAmountNanos)
+
+	// Restore the PrevLockedStakeEntry, if exists. The PrevLockedStakeEntry will exist if the
+	// transactor has previously unstaked stake assigned to this validator within the same epoch.
+	// The PrevLockedStakeEntry will not exist otherwise.
+	currentEpochNumber := uint64(0) // TODO: set this
+	// 1. Retrieve the CurrentLockedStakeEntry.
+	currentLockedStakeEntry, err := bav.GetLockedStakeEntry(
+		prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID, currentEpochNumber,
+	)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectUnstake: ")
+	}
+	// 2. Delete the CurrentLockedStakeEntry.
+	bav._deleteLockedStakeEntryMappings(currentLockedStakeEntry)
+	// 3. Set the PrevLockedStakeEntry, if exists.
+	if len(operationData.PrevLockedStakeEntries) > 1 {
+		return fmt.Errorf("_disconnectUnstake: more than one prev LockedStakeEntry found for %v", currentTxn.PublicKey)
+	}
+	if len(operationData.PrevLockedStakeEntries) == 1 {
+		bav._setLockedStakeEntryMappings(operationData.PrevLockedStakeEntries[0])
+	}
+
 	return nil
 }
 
