@@ -1345,8 +1345,20 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	case TxnTypeUnregisterAsValidator:
 		return bav._disconnectUnregisterAsValidator(
 			OperationTypeUnregisterAsValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
-	}
 
+	case TxnTypeStake:
+		return bav._disconnectStake(
+			OperationTypeStake, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeUnstake:
+		return bav._disconnectUnstake(
+			OperationTypeUnstake, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeUnlockStake:
+		return bav._disconnectUnlockStake(
+			OperationTypeUnlockStake, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	}
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
 }
 
@@ -3253,6 +3265,15 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	case TxnTypeUnregisterAsValidator:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnregisterAsValidator(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeStake:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectStake(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeUnstake:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnstake(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeUnlockStake:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnlockStake(txn, txHash, blockHeight, verifySignatures)
 
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())

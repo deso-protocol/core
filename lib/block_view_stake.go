@@ -792,7 +792,68 @@ func (bc *Blockchain) CreateStakeTxn(
 	_fees uint64,
 	_err error,
 ) {
-	return nil, 0, 0, 0, nil
+	// TODO: incorporate DESO being spent by transactor + balance model
+	// Create a txn containing the metadata fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+
+	// Create a new UtxoView. If we have access to a mempool object, use
+	// it to get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrap(
+			err, "Blockchain.CreateStakeTxn: problem creating new utxo view: ",
+		)
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(
+				err, "Blockchain.CreateStakeTxn: problem getting augmented utxo view from mempool: ",
+			)
+		}
+	}
+
+	// Validate txn metadata.
+	blockHeight := bc.blockTip().Height + 1
+	if err = utxoView.IsValidStakeMetadata(transactorPublicKey, metadata, blockHeight); err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateStakeTxn: invalid txn metadata: ",
+		)
+	}
+
+	// We don't need to make any tweaks to the amount because
+	// it's basically a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
+		txn, minFeeRateNanosPerKB, mempool,
+	)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateStakeTxn: problem adding inputs: ",
+		)
+	}
+
+	// Validate that the transaction has at least one input, even if it all goes
+	// to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, errors.New(
+			"Blockchain.CreateStakeTxn: txn has zero inputs, try increasing the fee rate",
+		)
+	}
+
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"Blockchain.CreateStakeTxn: spend amount is non-zero: %d", spendAmount,
+		)
+	}
+	return txn, totalInput, changeAmount, fees, nil
 }
 
 func (bc *Blockchain) CreateUnstakeTxn(
@@ -885,7 +946,67 @@ func (bc *Blockchain) CreateUnlockStakeTxn(
 	_fees uint64,
 	_err error,
 ) {
-	return nil, 0, 0, 0, nil
+	// TODO: incorporate DESO being returned to transactor + balance model
+	// Create a txn containing the metadata fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+
+	// Create a new UtxoView. If we have access to a mempool object, use
+	// it to get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrap(
+			err, "Blockchain.CreateUnlockStakeTxn: problem creating new utxo view: ",
+		)
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(
+				err, "Blockchain.CreateUnlockStakeTxn: problem getting augmented utxo view from mempool: ",
+			)
+		}
+	}
+
+	// Validate txn metadata.
+	if err = utxoView.IsValidUnlockStakeMetadata(transactorPublicKey, metadata); err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateUnlockStakeTxn: invalid txn metadata: ",
+		)
+	}
+
+	// We don't need to make any tweaks to the amount because
+	// it's basically a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
+		txn, minFeeRateNanosPerKB, mempool,
+	)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateUnlockStakeTxn: problem adding inputs: ",
+		)
+	}
+
+	// Validate that the transaction has at least one input, even if it all goes
+	// to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 {
+		return nil, 0, 0, 0, errors.New(
+			"Blockchain.CreateUnlockStakeTxn: txn has zero inputs, try increasing the fee rate",
+		)
+	}
+
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"Blockchain.CreateUnlockStakeTxn: spend amount is non-zero: %d", spendAmount,
+		)
+	}
+	return txn, totalInput, changeAmount, fees, nil
 }
 
 //
@@ -948,6 +1069,8 @@ func (bav *UtxoView) _connectStake(
 	if validatorPKIDEntry == nil || validatorPKIDEntry.isDeleted {
 		return 0, 0, nil, RuleErrorInvalidValidatorPKID
 	}
+	// Retrieve the existing ValidatorEntry. It must exist.
+	// The PrevValidatorEntry will be restored if we disconnect this transaction.
 	prevValidatorEntry, err := bav.GetValidatorByPKID(validatorPKIDEntry.PKID)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectStake: ")
@@ -955,8 +1078,6 @@ func (bav *UtxoView) _connectStake(
 	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted || prevValidatorEntry.DisableDelegatedStake {
 		return 0, 0, nil, RuleErrorInvalidValidatorPKID
 	}
-	// Delete the existing ValidatorEntry.
-	bav._deleteValidatorEntryMappings(prevValidatorEntry)
 
 	// TODO: decrease staker's DESO balance.
 
@@ -1005,7 +1126,10 @@ func (bav *UtxoView) _connectStake(
 	// Set the new StakeEntry.
 	bav._setStakeEntryMappings(currentStakeEntry)
 
-	// Construct a new ValidatorEntry.
+	// Update the ValidatorEntry.TotalStakeAmountNanos.
+	// 1. Delete the existing ValidatorEntry.
+	bav._deleteValidatorEntryMappings(prevValidatorEntry)
+	// 2. Create a new ValidatorEntry with the updated TotalStakeAmountNanos.
 	currentValidatorEntry := prevValidatorEntry.Copy()
 	currentValidatorEntry.TotalStakeAmountNanos, err = SafeUint256().Add(
 		currentValidatorEntry.TotalStakeAmountNanos, txMeta.StakeAmountNanos,
@@ -1015,10 +1139,12 @@ func (bav *UtxoView) _connectStake(
 			"_connectStake: %v: %v", RuleErrorInvalidStakeAmountNanos, err,
 		)
 	}
-	// Set the new ValidatorEntry.
+	// 3. Set the new ValidatorEntry.
 	bav._setValidatorEntryMappings(currentValidatorEntry)
 
 	// Increase the GlobalStakeAmountNanos.
+	// Retrieve the existing GlobalStakeAmountNanos.
+	// The PrevGlobalStakeAmountNanos will be restored if we disconnect this transaction.
 	prevGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectStake: error retrieving GlobalStakeAmountNanos: ")
@@ -1032,7 +1158,7 @@ func (bav *UtxoView) _connectStake(
 
 	// Add a UTXO operation
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                       OperationTypeRegisterAsValidator,
+		Type:                       OperationTypeStake,
 		PrevValidatorEntry:         prevValidatorEntry,
 		PrevStakeEntries:           []*StakeEntry{prevStakeEntry},
 		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
@@ -1060,6 +1186,7 @@ func (bav *UtxoView) _disconnectStake(
 			operationData.Type,
 		)
 	}
+	txMeta := currentTxn.TxnMeta.(*StakeMetadata)
 
 	// Convert TransactorPublicKey to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
@@ -1067,34 +1194,49 @@ func (bav *UtxoView) _disconnectStake(
 		return RuleErrorInvalidStakerPKID
 	}
 
-	// Delete the CurrentValidatorEntry.
-	currentValidatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
+	// Restore the PrevValidatorEntry.
+	prevValidatorEntry := operationData.PrevValidatorEntry
+	if prevValidatorEntry == nil {
+		return fmt.Errorf(
+			"_disconnectStake: no prev ValidatorEntry found for %v", txMeta.ValidatorPublicKey,
+		)
+	}
+	// 1. Delete the CurrentValidatorEntry.
+	currentValidatorEntry, err := bav.GetValidatorByPKID(prevValidatorEntry.ValidatorPKID)
 	if err != nil {
 		return errors.Wrapf(err, "_disconnectStake: ")
 	}
 	if currentValidatorEntry == nil {
 		return fmt.Errorf(
-			"_disconnectStake: no current ValidatorEntry found for %v", transactorPKIDEntry.PKID,
+			"_disconnectStake: no current ValidatorEntry found for %v", txMeta.ValidatorPublicKey,
 		)
 	}
 	bav._deleteValidatorEntryMappings(currentValidatorEntry)
-
-	// Restore the PrevValidatorEntry.
-	prevValidatorEntry := operationData.PrevValidatorEntry
-	if prevValidatorEntry == nil {
-		return fmt.Errorf(
-			"_disconnectStake: no prev ValidatorEntry found for %v", transactorPKIDEntry.PKID,
-		)
-	}
+	// 2. Set the PrevValidatorEntry.
 	bav._setValidatorEntryMappings(prevValidatorEntry)
 
-	// Restore the PrevValidatorEntry.
-	if operationData.PrevValidatorEntry == nil {
-
+	// Restore the PrevStakeEntry.
+	// 1. Delete the CurrentStakeEntry.
+	currentStakeEntry, err := bav.GetStakeEntry(prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectStake: ")
+	}
+	if currentStakeEntry == nil {
+		return fmt.Errorf("_disconnectStake: no current StakeEntry found for %v", currentTxn.PublicKey)
+	}
+	bav._deleteStakeEntryMappings(currentStakeEntry)
+	// 2. Set the PrevStakeEntry, if exists. The PrevStakeEntry will exist if the transactor
+	//    was adding stake to an existing StakeEntry. It will not exist if this is the first
+	//    stake the transactor has staked with this validator.
+	if len(operationData.PrevStakeEntries) > 1 {
+		return fmt.Errorf("_disconnectStake: more than one prev StakeEntry found for %v", currentTxn.PublicKey)
+	} else if len(operationData.PrevStakeEntries) == 1 {
+		bav._setStakeEntryMappings(operationData.PrevStakeEntries[0])
 	}
 
-	// Restore the PrevStakeEntry, if exists. If not, delete the CurrentStakeEntry.
 	// Restore the PrevGlobalStakeAmountNanos.
+	bav._setGlobalStakeAmountNanos(operationData.PrevGlobalStakeAmountNanos)
+
 	// TODO: Increase DESO balance of transactor.
 	return nil
 }
@@ -1168,7 +1310,10 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 		return RuleErrorInvalidValidatorPKID
 	}
 
-	// Validate StakeAmountNanos.
+	// Validate 0 < StakeAmountNanos <= transactor's DESO Balance - txn fees.
+	if metadata.StakeAmountNanos.IsZero() {
+		return RuleErrorInvalidStakeAmountNanos
+	}
 	// TODO: should we include fees in this check?
 	transactorDeSoBalanceNanos, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(transactorPkBytes, blockHeight-1)
 	if err != nil {
@@ -1265,65 +1410,19 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	return nil
 }
 
-func (bav *UtxoView) AddStake(validatorPKID *PKID, stakerPKID *PKID, amountNanos *uint256.Int) (
-	_prevValidatorEntry *ValidatorEntry,
-	_prevStakeEntry *StakeEntry,
-	_prevGlobalStakeAmountNanos *uint256.Int,
-	_currentValidatorEntry *ValidatorEntry,
-	_currentStakeEntry *StakeEntry,
-	_currentGlobalStakeAmountNanos *uint256.Int,
-	_err error,
-) {
-	prevValidatorEntry, prevStakeEntry, prevGlobalStakeAmountNanos, err := bav._getPrevValidatorAndStake(validatorPKID, stakerPKID)
+func (bav *UtxoView) GetValidatorByPublicKey(validatorPublicKey *PublicKey) (*ValidatorEntry, error) {
+	validatorPKIDEntry := bav.GetPKIDForPublicKey(validatorPublicKey.ToBytes())
+	if validatorPKIDEntry == nil || validatorPKIDEntry.isDeleted {
+		return nil, RuleErrorInvalidValidatorPKID
+	}
+	validatorEntry, err := bav.GetValidatorByPKID(validatorPKIDEntry.PKID)
 	if err != nil {
-		return nil, nil, nil, nil, nil, nil, errors.Wrapf(err, "UtxoView.AddStake: ")
+		return nil, err
 	}
-
-	// PrevValidatorEntry has to exist in order to receive stake.
-	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted || prevValidatorEntry.DisableDelegatedStake {
-		return nil, nil, nil, nil, nil, nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.AddStake: ")
+	if validatorEntry == nil || validatorEntry.isDeleted {
+		return nil, RuleErrorInvalidValidatorPKID
 	}
-
-	// Update CurrentValidatorEntry.TotalStakeAmountNanos.
-	currentValidatorEntry := prevValidatorEntry.Copy()
-	currentValidatorEntry.TotalStakeAmountNanos, err = SafeUint256().Add(currentValidatorEntry.TotalStakeAmountNanos, amountNanos)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, errors.Wrapf(err, "UtxoView.AddStake: error computing ValidatorEntry.TotalStakeAmountNanos: ")
-	}
-
-	currentStakeEntry := prevStakeEntry.Copy()
-	currentStakeEntry
-}
-
-func (bav *UtxoView) RemoveStake(validatorPKID *PKID, stakerPKID *PKID, amountNanos *uint256.Int) error {
-
-}
-
-func (bav *UtxoView) _getPrevValidatorAndStake(validatorPKID *PKID, stakerPKID *PKID) (
-	_prevValidatorEntry *ValidatorEntry,
-	_prevStakeEntry *StakeEntry,
-	_prevGlobalStakeAmountNanos *uint256.Int,
-	_err error,
-) {
-	// Retrieve PrevValidatorEntry.
-	prevValidatorEntry, err := bav.GetValidatorByPKID(validatorPKID)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	// Retrieve PrevStakeEntry.
-	prevStakeEntry, err := bav.GetStakeEntry(validatorPKID, stakerPKID)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	// Retrieve PrevGlobalStakeAmountNanos.
-	prevGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	return prevValidatorEntry, prevStakeEntry, prevGlobalStakeAmountNanos, nil
+	return validatorEntry, nil
 }
 
 func (bav *UtxoView) GetStakeEntry(validatorPKID *PKID, stakerPKID *PKID) (*StakeEntry, error) {
