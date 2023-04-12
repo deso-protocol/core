@@ -222,6 +222,74 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	// UNSTAKING
 	//
 	{
+		// RuleErrorProofOfStakeTxnBeforeBlockHeight
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = math.MaxUint32
+		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(40),
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
+
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(0)
+		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	}
+	{
+		// RuleErrorInvalidValidatorPKID
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m2PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(40),
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidValidatorPKID)
+	}
+	{
+		// RuleErrorInvalidUnstakeNoStakeFound
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(40),
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, m2Pub, m2Priv, unstakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidUnstakeNoStakeFound)
+	}
+	{
+		// RuleErrorInvalidUnstakeAmountNanos
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt(),
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidUnstakeAmountNanos)
+	}
+	{
+		// RuleErrorInvalidUnstakeInsufficientStakeFound
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: MaxUint256,
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidUnstakeInsufficientStakeFound)
+	}
+	{
 		// m1 unstakes from m0.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
