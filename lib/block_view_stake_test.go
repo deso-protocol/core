@@ -153,10 +153,9 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m1 stakes with m0.
-		stakeAmountNanos := uint256.NewInt().SetUint64(100)
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   stakeAmountNanos,
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue")}
 		_, _, _, err = _submitStakeTxn(
@@ -167,23 +166,48 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
-		require.Equal(t, stakeEntry.StakeAmountNanos, stakeAmountNanos)
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(100))
 		require.Equal(t, stakeEntry.ExtraData["TestKey"], []byte("TestValue"))
 
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
 		require.NotNil(t, validatorEntry)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, stakeAmountNanos)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
 
 		globalStakeAmountNanos, err := utxoView().GetGlobalStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, stakeAmountNanos)
+		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(100))
 
 		// TODO: test m1's balance decreases
 	}
 	{
 		// m1 stakes again with m0.
-		// TODO
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(50),
+		}
+		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
+		_, _, _, err = _submitStakeTxn(
+			testMeta, m1Pub, m1Priv, stakeMetadata, extraData, flushToDB,
+		)
+		require.NoError(t, err)
+
+		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
+		require.NoError(t, err)
+		require.NotNil(t, stakeEntry)
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(150))
+		require.Equal(t, stakeEntry.ExtraData["TestKey"], []byte("TestValue2"))
+
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(150))
+
+		globalStakeAmountNanos, err := utxoView().GetGlobalStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(150))
+
+		// TODO: test m1's balance decreases
 	}
 
 	// TODO: Flush mempool to the db and test rollbacks.
