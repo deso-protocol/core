@@ -1587,7 +1587,7 @@ func (bav *UtxoView) _connectUnlockStake(
 
 	// Add a UTXO operation
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                   OperationTypeUnstake,
+		Type:                   OperationTypeUnlockStake,
 		PrevLockedStakeEntries: prevLockedStakeEntries,
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -1750,7 +1750,7 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	)
 	existsLockedStakeEntries := false
 	for _, lockedStakeEntry := range lockedStakeEntries {
-		if lockedStakeEntry != nil && lockedStakeEntry.isDeleted {
+		if lockedStakeEntry != nil && !lockedStakeEntry.isDeleted {
 			existsLockedStakeEntries = true
 			break
 		}
@@ -1997,10 +1997,10 @@ func (bav *UtxoView) _flushLockedStakeEntriesToDbWithTxn(txn *badger.Txn, blockH
 func (bav *UtxoView) CreateStakeTxindexMetadata(utxoOp *UtxoOperation, txn *MsgDeSoTxn) (*StakeTxindexMetadata, []*AffectedPublicKey) {
 	metadata := txn.TxnMeta.(*StakeMetadata)
 
-	// Cast TransactorPublicKeyBytes to StakerPublicKeyBase58Check.
+	// Convert TransactorPublicKeyBytes to StakerPublicKeyBase58Check.
 	stakerPublicKeyBase58Check := PkToString(txn.PublicKey, bav.Params)
 
-	// Cast ValidatorPublicKey to ValidatorPublicKeyBase58Check.
+	// Convert ValidatorPublicKey to ValidatorPublicKeyBase58Check.
 	validatorPublicKeyBase58Check := PkToString(metadata.ValidatorPublicKey.ToBytes(), bav.Params)
 
 	// Construct TxindexMetadata.
@@ -2028,10 +2028,10 @@ func (bav *UtxoView) CreateStakeTxindexMetadata(utxoOp *UtxoOperation, txn *MsgD
 func (bav *UtxoView) CreateUnstakeTxindexMetadata(utxoOp *UtxoOperation, txn *MsgDeSoTxn) (*UnstakeTxindexMetadata, []*AffectedPublicKey) {
 	metadata := txn.TxnMeta.(*UnstakeMetadata)
 
-	// Cast TransactorPublicKeyBytes to StakerPublicKeyBase58Check.
+	// Convert TransactorPublicKeyBytes to StakerPublicKeyBase58Check.
 	stakerPublicKeyBase58Check := PkToString(txn.PublicKey, bav.Params)
 
-	// Cast ValidatorPublicKey to ValidatorPublicKeyBase58Check.
+	// Convert ValidatorPublicKey to ValidatorPublicKeyBase58Check.
 	validatorPublicKeyBase58Check := PkToString(metadata.ValidatorPublicKey.ToBytes(), bav.Params)
 
 	// Construct TxindexMetadata.
@@ -2059,14 +2059,25 @@ func (bav *UtxoView) CreateUnstakeTxindexMetadata(utxoOp *UtxoOperation, txn *Ms
 func (bav *UtxoView) CreateUnlockStakeTxindexMetadata(utxoOp *UtxoOperation, txn *MsgDeSoTxn) (*UnlockStakeTxindexMetadata, []*AffectedPublicKey) {
 	metadata := txn.TxnMeta.(*UnlockStakeMetadata)
 
-	// Cast TransactorPublicKeyBytes to StakerPublicKeyBase58Check.
+	// Convert TransactorPublicKeyBytes to StakerPublicKeyBase58Check.
 	stakerPublicKeyBase58Check := PkToString(txn.PublicKey, bav.Params)
 
-	// Cast ValidatorPublicKey to ValidatorPublicKeyBase58Check.
+	// Convert ValidatorPublicKey to ValidatorPublicKeyBase58Check.
 	validatorPublicKeyBase58Check := PkToString(metadata.ValidatorPublicKey.ToBytes(), bav.Params)
 
-	// TODO: Calculate TotalUnlockedAmountNanos.
+	// Calculate TotalUnlockedAmountNanos.
 	totalUnlockedAmountNanos := uint256.NewInt()
+	var err error
+	for _, prevLockedStakeEntry := range utxoOp.PrevLockedStakeEntries {
+		totalUnlockedAmountNanos, err = SafeUint256().Add(
+			totalUnlockedAmountNanos, prevLockedStakeEntry.LockedAmountNanos,
+		)
+		if err != nil {
+			glog.Errorf("CreateUnlockStakeTxindexMetadata: error calculating TotalUnlockedAmountNanos: %v", err)
+			totalUnlockedAmountNanos = uint256.NewInt()
+			break
+		}
+	}
 
 	// Construct TxindexMetadata.
 	txindexMetadata := &UnlockStakeTxindexMetadata{

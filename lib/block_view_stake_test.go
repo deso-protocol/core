@@ -394,8 +394,39 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	// UNLOCK STAKE
 	//
 	{
-		// m1 unlocks stake.
-		// TODO
+		// m1 unlocks stake that was assigned to m0.
+		unlockStakeMetadata := &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StartEpochNumber:   0,
+			EndEpochNumber:     0,
+		}
+		_, _, _, err = _submitUnlockStakeTxn(
+			testMeta, m1Pub, m1Priv, unlockStakeMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		// Verify StakeEntry.isDeleted.
+		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
+		require.NoError(t, err)
+		require.Nil(t, stakeEntry)
+
+		// Verify ValidatorEntry.TotalStakeAmountNanos.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt())
+
+		// Verify GlobalStakeAmountNanos.
+		globalStakeAmountNanos, err := utxoView().GetGlobalStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
+
+		// Verify LockedStakeEntry.isDeleted.
+		currentEpochNumber := uint64(0) // TODO: set this
+		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
+		require.NoError(t, err)
+		require.Nil(t, lockedStakeEntry)
+
+		// TODO: Verify m1's DESO balance increases.
 	}
 
 	// TODO: Flush mempool to the db and test rollbacks.
@@ -509,6 +540,65 @@ func _submitUnstakeTxn(
 	require.Equal(testMeta.t, totalInput, totalOutput+fees)
 	require.Equal(testMeta.t, totalInput, totalInputMake)
 	require.Equal(testMeta.t, OperationTypeUnstake, utxoOps[len(utxoOps)-1].Type)
+	if flushToDB {
+		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(0))
+	}
+	require.NoError(testMeta.t, testMeta.mempool.RegenerateReadOnlyView())
+
+	// Record the txn.
+	testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
+	testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+	testMeta.txns = append(testMeta.txns, txn)
+	return utxoOps, txn, testMeta.savedHeight, nil
+}
+
+func _submitUnlockStakeTxn(
+	testMeta *TestMeta,
+	transactorPublicKeyBase58Check string,
+	transactorPrivateKeyBase58Check string,
+	metadata *UnlockStakeMetadata,
+	extraData map[string][]byte,
+	flushToDB bool,
+) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	// Record transactor's prevBalance.
+	prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
+
+	// Convert PublicKeyBase58Check to PkBytes.
+	updaterPkBytes, _, err := Base58CheckDecode(transactorPublicKeyBase58Check)
+	require.NoError(testMeta.t, err)
+
+	// Create the transaction.
+	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.chain.CreateUnlockStakeTxn(
+		updaterPkBytes,
+		metadata,
+		extraData,
+		testMeta.feeRateNanosPerKb,
+		testMeta.mempool,
+		[]*DeSoOutput{},
+	)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(testMeta.t, totalInputMake, changeAmountMake+feesMake)
+
+	// Sign the transaction now that its inputs are set up.
+	_signTxn(testMeta.t, txn, transactorPrivateKeyBase58Check)
+
+	// Connect the transaction.
+	utxoOps, totalInput, totalOutput, fees, err := testMeta.mempool.universalUtxoView.ConnectTransaction(
+		txn,
+		txn.Hash(),
+		getTxnSize(*txn),
+		testMeta.savedHeight,
+		true,
+		false,
+	)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	require.Equal(testMeta.t, totalInput, totalOutput+fees)
+	require.Equal(testMeta.t, totalInput, totalInputMake)
+	require.Equal(testMeta.t, OperationTypeUnlockStake, utxoOps[len(utxoOps)-1].Type)
 	if flushToDB {
 		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(0))
 	}
