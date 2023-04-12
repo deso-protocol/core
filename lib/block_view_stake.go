@@ -1514,7 +1514,83 @@ func (bav *UtxoView) _connectUnlockStake(
 	_utxoOps []*UtxoOperation,
 	_err error,
 ) {
-	return 0, 0, nil, nil
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
+	}
+
+	// Validate the txn TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeUnlockStake {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectUnlockStake: called with bad TxnType %s", txn.TxnMeta.GetTxnType().String(),
+		)
+	}
+
+	// Connect a basic transfer to get the total input and the
+	// total output without considering the txn metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: ")
+	}
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the txn is signed
+		// by the top-level public key, which we take to be the sender's
+		// public key so there is no need to verify anything further.
+	}
+
+	// Grab the txn metadata.
+	txMeta := txn.TxnMeta.(*UnlockStakeMetadata)
+
+	// Validate the txn metadata.
+	if err = bav.IsValidUnlockStakeMetadata(txn.PublicKey, txMeta); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: ")
+	}
+
+	// Convert TransactorPublicKey to TransactorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return 0, 0, nil, RuleErrorInvalidStakerPKID
+	}
+
+	// Convert ValidatorPublicKey to ValidatorPKID.
+	validatorPKIDEntry := bav.GetPKIDForPublicKey(txMeta.ValidatorPublicKey.ToBytes())
+	if validatorPKIDEntry == nil || validatorPKIDEntry.isDeleted {
+		return 0, 0, nil, RuleErrorInvalidValidatorPKID
+	}
+
+	// Retrieve the PrevLockedStakeEntries. These will be restored if we disconnect this txn.
+	prevLockedStakeEntries, err := bav.GetLockedStakeEntriesInRange(
+		validatorPKIDEntry.PKID, transactorPKIDEntry.PKID, txMeta.StartEpochNumber, txMeta.EndEpochNumber,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: ")
+	}
+	if len(prevLockedStakeEntries) == 0 {
+		return 0, 0, nil, RuleErrorInvalidUnlockStakeNoUnlockableStakeFound
+	}
+
+	// Calculate the TotalUnlockedAmountNanos and delete the PrevLockedStakeEntries.
+	totalUnlockedAmountNanos := uint256.NewInt()
+	for _, prevLockedStakeEntry := range prevLockedStakeEntries {
+		totalUnlockedAmountNanos, err = SafeUint256().Add(
+			totalUnlockedAmountNanos, prevLockedStakeEntry.LockedAmountNanos,
+		)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: ")
+		}
+		bav._deleteLockedStakeEntryMappings(prevLockedStakeEntry)
+	}
+
+	// TODO: send TotalUnlockedAmountNanos back to the transactor
+
+	// Add a UTXO operation
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                   OperationTypeUnstake,
+		PrevLockedStakeEntries: prevLockedStakeEntries,
+	})
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _disconnectUnlockStake(
@@ -1524,6 +1600,45 @@ func (bav *UtxoView) _disconnectUnlockStake(
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
+	// Validate the last operation is an UnlockStake operation.
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectUnlockStake: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	operationData := utxoOpsForTxn[operationIndex]
+	if operationData.Type != OperationTypeUnlockStake {
+		return fmt.Errorf(
+			"_disconnectUnlockStake: trying to revert %v but found %v",
+			OperationTypeUnlockStake,
+			operationData.Type,
+		)
+	}
+
+	// Convert TransactorPublicKey to TransactorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return RuleErrorInvalidStakerPKID
+	}
+
+	// Calculate the TotalUnlockedAmountNanos.
+	totalUnlockedAmountNanos := uint256.NewInt()
+	var err error
+	for _, prevLockedStakeEntry := range operationData.PrevLockedStakeEntries {
+		totalUnlockedAmountNanos, err = SafeUint256().Add(
+			totalUnlockedAmountNanos, prevLockedStakeEntry.LockedAmountNanos,
+		)
+		if err != nil {
+			return errors.Wrapf(err, "_disconnectUnlockStake: ")
+		}
+	}
+
+	// TODO: take TotalUnlockedAmountNanos from the transactor's DESO balance
+
+	// Restore the PrevLockedStakeEntries.
+	for _, prevLockedStakeEntry := range operationData.PrevLockedStakeEntries {
+		bav._setLockedStakeEntryMappings(prevLockedStakeEntry)
+	}
+
 	return nil
 }
 
@@ -1543,7 +1658,6 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 	if err != nil {
 		return errors.Wrapf(err, "IsValidStakeMetadata: ")
 	}
-	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
 	if validatorEntry == nil || validatorEntry.isDeleted || validatorEntry.DisableDelegatedStake {
 		return RuleErrorInvalidValidatorPKID
 	}
@@ -1580,7 +1694,6 @@ func (bav *UtxoView) IsValidUnstakeMetadata(transactorPkBytes []byte, metadata *
 	if err != nil {
 		return errors.Wrapf(err, "IsValidUnstakeMetadata: ")
 	}
-	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
 	if validatorEntry == nil || validatorEntry.isDeleted {
 		return RuleErrorInvalidValidatorPKID
 	}
@@ -1590,7 +1703,6 @@ func (bav *UtxoView) IsValidUnstakeMetadata(transactorPkBytes []byte, metadata *
 	if err != nil {
 		return errors.Wrapf(err, "IsValidUnstakeMetadata: ")
 	}
-	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
 	if stakeEntry == nil || stakeEntry.isDeleted {
 		return RuleErrorInvalidUnstakeNoStakeFound
 	}
@@ -1622,7 +1734,6 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	if err != nil {
 		return errors.Wrapf(err, "IsValidUnlockStakeMetadata: ")
 	}
-	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
 	if validatorEntry == nil || validatorEntry.isDeleted {
 		return RuleErrorInvalidValidatorPKID
 	}
@@ -1637,14 +1748,14 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	lockedStakeEntries, err := bav.GetLockedStakeEntriesInRange(
 		validatorPKIDEntry.PKID, transactorPKIDEntry.PKID, metadata.StartEpochNumber, metadata.EndEpochNumber,
 	)
-	lockedStakeEntryCount := uint64(0)
+	existsLockedStakeEntries := false
 	for _, lockedStakeEntry := range lockedStakeEntries {
-		// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
 		if lockedStakeEntry != nil && lockedStakeEntry.isDeleted {
-			lockedStakeEntryCount += 1
+			existsLockedStakeEntries = true
+			break
 		}
 	}
-	if lockedStakeEntryCount == 0 {
+	if !existsLockedStakeEntries {
 		return RuleErrorInvalidUnlockStakeNoUnlockableStakeFound
 	}
 

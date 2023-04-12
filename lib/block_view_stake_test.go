@@ -357,6 +357,46 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(70))
 		require.Equal(t, lockedStakeEntry.ExtraData["TestKey"], []byte("TestValue2"))
 	}
+	{
+		// m1 unstakes the rest of their stake with m0.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(80),
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		// Verify StakeEntry.isDeleted.
+		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
+		require.NoError(t, err)
+		require.Nil(t, stakeEntry)
+
+		// Verify ValidatorEntry.TotalStakeAmountNanos.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt())
+
+		// Verify GlobalStakeAmountNanos.
+		globalStakeAmountNanos, err := utxoView().GetGlobalStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
+
+		// Verify LockedStakeEntry.UnstakeAmountNanos.
+		currentEpochNumber := uint64(0) // TODO: set this
+		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
+		require.NoError(t, err)
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(150))
+		require.Equal(t, lockedStakeEntry.ExtraData["TestKey"], []byte("TestValue2"))
+	}
+	//
+	// UNLOCK STAKE
+	//
+	{
+		// m1 unlocks stake.
+		// TODO
+	}
 
 	// TODO: Flush mempool to the db and test rollbacks.
 	//require.NoError(t, mempool.universalUtxoView.FlushToDb(0))
