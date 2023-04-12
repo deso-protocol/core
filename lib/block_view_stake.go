@@ -1103,9 +1103,7 @@ func (bav *UtxoView) _connectStake(
 	if prevStakeEntry != nil {
 		stakeAmountNanos, err = SafeUint256().Add(stakeAmountNanos, prevStakeEntry.StakeAmountNanos)
 		if err != nil {
-			return 0, 0, nil, fmt.Errorf(
-				"_connectStake: %v: %v", RuleErrorInvalidStakeAmountNanos, err,
-			)
+			return 0, 0, nil, errors.Wrapf(err, "_connectStake: invalid StakeAmountNanos: ")
 		}
 	}
 
@@ -1135,9 +1133,7 @@ func (bav *UtxoView) _connectStake(
 		currentValidatorEntry.TotalStakeAmountNanos, txMeta.StakeAmountNanos,
 	)
 	if err != nil {
-		return 0, 0, nil, fmt.Errorf(
-			"_connectStake: %v: %v", RuleErrorInvalidStakeAmountNanos, err,
-		)
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: invalid StakeAmountNanos: ")
 	}
 	// 3. Set the new ValidatorEntry.
 	bav._setValidatorEntryMappings(currentValidatorEntry)
@@ -1160,8 +1156,8 @@ func (bav *UtxoView) _connectStake(
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                       OperationTypeStake,
 		PrevValidatorEntry:         prevValidatorEntry,
-		PrevStakeEntries:           []*StakeEntry{prevStakeEntry},
 		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
+		PrevStakeEntries:           []*StakeEntry{prevStakeEntry},
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -1252,7 +1248,162 @@ func (bav *UtxoView) _connectUnstake(
 	_utxoOps []*UtxoOperation,
 	_err error,
 ) {
-	return 0, 0, nil, nil
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
+	}
+
+	// Validate the txn TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeUnstake {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectUnstake: called with bad TxnType %s", txn.TxnMeta.GetTxnType().String(),
+		)
+	}
+
+	// Connect a basic transfer to get the total input and the
+	// total output without considering the txn metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
+	}
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the txn is signed
+		// by the top-level public key, which we take to be the sender's
+		// public key so there is no need to verify anything further.
+	}
+
+	// Grab the txn metadata.
+	txMeta := txn.TxnMeta.(*UnstakeMetadata)
+
+	// Validate the txn metadata.
+	if err = bav.IsValidUnstakeMetadata(txn.PublicKey, txMeta); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
+	}
+
+	// Convert TransactorPublicKey to TransactorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return 0, 0, nil, RuleErrorInvalidStakerPKID
+	}
+
+	// Retrieve PrevValidatorEntry. This will be restored if we disconnect the txn.
+	prevValidatorEntry, err := bav.GetValidatorByPublicKey(txMeta.ValidatorPublicKey)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
+	}
+	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted || prevValidatorEntry.DisableDelegatedStake {
+		return 0, 0, nil, RuleErrorInvalidValidatorPKID
+	}
+
+	// Retrieve PrevStakeEntry. This will be restored if we disconnect the txn.
+	prevStakeEntry, err := bav.GetStakeEntry(prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
+	}
+	if prevStakeEntry == nil || prevStakeEntry.isDeleted {
+		return 0, 0, nil, RuleErrorInvalidUnstakeNoStakeFound
+	}
+	if prevStakeEntry.StakeAmountNanos.Cmp(txMeta.UnstakeAmountNanos) < 0 {
+		return 0, 0, nil, RuleErrorInvalidUnstakeInsufficientStakeFound
+	}
+
+	// Update the StakeEntry, decreasing the StakeAmountNanos.
+	// 1. Calculate the updated StakeAmountNanos.
+	stakeAmountNanos, err := SafeUint256().Sub(prevStakeEntry.StakeAmountNanos, txMeta.UnstakeAmountNanos)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: invalid UnstakeAmountNanos: ")
+	}
+	// 2. Create a CurrentStakeEntry, if updated StakeAmountNanos > 0.
+	var currentStakeEntry *StakeEntry
+	if stakeAmountNanos.Cmp(uint256.NewInt()) > 0 {
+		currentStakeEntry = prevStakeEntry.Copy()
+		currentStakeEntry.StakeAmountNanos = stakeAmountNanos
+	}
+	// 3. Delete the PrevStakeEntry.
+	bav._deleteStakeEntryMappings(prevStakeEntry)
+	// 4. Set the CurrentStakeEntry, if exists. The CurrentStakeEntry will not exist
+	//    if the transactor has unstaked all stake assigned to this validator.
+	if currentStakeEntry != nil {
+		bav._setStakeEntryMappings(currentStakeEntry)
+	}
+
+	// Update the ValidatorEntry.TotalStakeAmountNanos.
+	// 1. Delete the existing ValidatorEntry.
+	bav._deleteValidatorEntryMappings(prevValidatorEntry)
+	// 2. Create a new ValidatorEntry with the updated TotalStakeAmountNanos.
+	currentValidatorEntry := prevValidatorEntry.Copy()
+	currentValidatorEntry.TotalStakeAmountNanos, err = SafeUint256().Sub(
+		currentValidatorEntry.TotalStakeAmountNanos, txMeta.UnstakeAmountNanos,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: invalid UnstakeAmountNanos: ")
+	}
+	// 3. Set the new ValidatorEntry.
+	bav._setValidatorEntryMappings(currentValidatorEntry)
+
+	// Decrease the GlobalStakeAmountNanos.
+	// 1. Retrieve the existing GlobalStakeAmountNanos. This will be restored if we disconnect this txn.
+	prevGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error retrieving GlobalStakeAmountNanos: ")
+	}
+	globalStakeAmountNanos, err := SafeUint256().Sub(prevGlobalStakeAmountNanos, txMeta.UnstakeAmountNanos)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error calculating updated GlobalStakeAmountNanos: ")
+	}
+	// 2. Set the new GlobalStakeAmountNanos.
+	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
+
+	// Update the LockedStakeEntry, if exists. Create if not.
+	currentEpochNumber := uint64(0) // TODO: set this
+	// 1. Retrieve the PrevLockedStakeEntry. This will be restored if we disconnect this txn.
+	prevLockedStakeEntry, err := bav.GetLockedStakeEntry(
+		prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID, currentEpochNumber,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
+	}
+	// 2. Create a CurrrentLockedStakeEntry.
+	var currentLockedStakeEntry *LockedStakeEntry
+	if prevLockedStakeEntry != nil {
+		// Update the existing LockedStakeEntry.
+		currentLockedStakeEntry = prevLockedStakeEntry.Copy()
+		currentLockedStakeEntry.LockedAmountNanos, err = SafeUint256().Add(
+			prevLockedStakeEntry.LockedAmountNanos, txMeta.UnstakeAmountNanos,
+		)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: invalid LockedAmountNanos")
+		}
+		currentLockedStakeEntry.ExtraData = mergeExtraData(prevLockedStakeEntry.ExtraData, txn.ExtraData)
+	} else {
+		// Create a new LockedStakeEntry.
+		currentLockedStakeEntry = &LockedStakeEntry{
+			LockedStakeID:       txn.Hash(),
+			StakerPKID:          transactorPKIDEntry.PKID,
+			ValidatorPKID:       prevValidatorEntry.ValidatorPKID,
+			LockedAmountNanos:   txMeta.UnstakeAmountNanos,
+			LockedAtEpochNumber: currentEpochNumber,
+			ExtraData:           txn.ExtraData,
+		}
+	}
+	// 3. Delete the PrevLockedStakeEntry, if exists.
+	if prevLockedStakeEntry != nil {
+		bav._deleteLockedStakeEntryMappings(prevLockedStakeEntry)
+	}
+	// 4. Set the CurrentLockedStakeEntry.
+	bav._setLockedStakeEntryMappings(currentLockedStakeEntry)
+
+	// Add a UTXO operation
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                       OperationTypeUnstake,
+		PrevValidatorEntry:         prevValidatorEntry,
+		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
+		PrevStakeEntries:           []*StakeEntry{prevStakeEntry},
+		PrevLockedStakeEntries:     []*LockedStakeEntry{prevLockedStakeEntry},
+	})
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _disconnectUnstake(
@@ -1357,7 +1508,10 @@ func (bav *UtxoView) IsValidUnstakeMetadata(transactorPkBytes []byte, metadata *
 		return RuleErrorInvalidUnstakeNoStakeFound
 	}
 
-	// Validate StakeEntry.StakeAmountNanos >= UnstakeAmountNanos.
+	// Validate 0 < UnstakeAmountNanos <= StakeEntry.StakeAmountNanos.
+	if metadata.UnstakeAmountNanos.IsZero() {
+		return RuleErrorInvalidUnstakeAmountNanos
+	}
 	if stakeEntry.StakeAmountNanos.Cmp(metadata.UnstakeAmountNanos) < 0 {
 		return RuleErrorInvalidUnstakeInsufficientStakeFound
 	}
@@ -1744,6 +1898,7 @@ const RuleErrorInvalidStakerPKID RuleError = "RuleErrorInvalidStakerPKID"
 const RuleErrorInvalidStakeAmountNanos RuleError = "RuleErrorInvalidStakeAmountNanos"
 const RuleErrorInvalidStakeInsufficientBalance RuleError = "RuleErrorInvalidStakeInsufficientBalance"
 const RuleErrorInvalidUnstakeNoStakeFound RuleError = "RuleErrorInvalidUnstakeNoStakeFound"
+const RuleErrorInvalidUnstakeAmountNanos RuleError = "RuleErrorInvalidUnstakeAmountNanos"
 const RuleErrorInvalidUnstakeInsufficientStakeFound RuleError = "RuleErrorInvalidUnstakeInsufficientStakeFound"
 const RuleErrorInvalidUnlockStakeEpochRange RuleError = "RuleErrorInvalidUnlockStakeEpochRange"
 const RuleErrorInvalidUnlockStakeNoUnlockableStakeFound RuleError = "RuleErrorInvalidUnlockStakeNoUnlockableStakeFound"
