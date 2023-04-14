@@ -323,7 +323,7 @@ func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 // that are is to store additional information about the access group. Access group extraData is the main venue for
 // utilizing the generality of access groups, ranging from on-chain private group chats, to private content.
 func (bav *UtxoView) _connectAccessGroup(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Make sure access groups are live.
@@ -443,10 +443,26 @@ func (bav *UtxoView) _connectAccessGroup(
 
 	// Construct UtxoOperation. Since we can only set/unset an access group with _connect/_disconnect, we don't need to
 	// store any information in the UtxoOperation. Transaction metadata is sufficient.
+
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                 OperationTypeAccessGroup,
 		PrevAccessGroupEntry: &prevAccessGroupEntry,
 	})
+
+	// Track the access group entry state event via the event manager.
+	if bav.EventManager != nil && emitMempoolTxn {
+		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeUpsert,
+				Encoder:       accessGroupEntry,
+				KeyBytes:      _dbKeyForAccessGroupEntry(*accessGroupEntry.AccessGroupOwnerPublicKey, *accessGroupEntry.AccessGroupKeyName),
+			},
+			PrevEncoder: &prevAccessGroupEntry,
+			BlockHeight: uint64(blockHeight),
+			TxHash:      txHash,
+			IsConnected: true,
+		})
+	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

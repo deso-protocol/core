@@ -580,15 +580,18 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		PrevDiamondEntry: previousDiamondEntry,
 	})
 
+	// Capture changes to the balance entries and coin entry to state syncer.
+	// Diamond entries are skipped here, as they are deprecated for CCs and thus will never be connected via a mempool txn.
 	if bav.EventManager != nil && emitMempoolTxn {
+
 		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType: DbOperationTypeUpsert,
 				Encoder:       senderBalanceEntry,
 				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
 					senderBalanceEntry.HODLerPKID, senderBalanceEntry.CreatorPKID, isDAOCoin),
-				UtxoOps: utxoOpsForTxn,
 			},
+			PrevEncoder: &prevSenderBalanceEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
@@ -600,8 +603,8 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 				Encoder:       receiverBalanceEntry,
 				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
 					receiverBalanceEntry.HODLerPKID, receiverBalanceEntry.CreatorPKID, isDAOCoin),
-				UtxoOps: utxoOpsForTxn,
 			},
+			PrevEncoder: prevReceiverBalanceEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,

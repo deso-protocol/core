@@ -1036,6 +1036,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
+	// Capture updates to the balance entry for the buyer and the creator for the state syncer.
 	if bav.EventManager != nil && emitMempoolTxn {
 		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
 			StateChangeEntry: &StateChangeEntry{
@@ -1043,8 +1044,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 				Encoder:       buyerBalanceEntry,
 				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
 					buyerBalanceEntry.HODLerPKID, buyerBalanceEntry.CreatorPKID, false),
-				UtxoOps: utxoOpsForTxn,
 			},
+			PrevEncoder: &prevBuyerBalanceEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
@@ -1056,8 +1057,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 				Encoder:       creatorBalanceEntry,
 				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
 					creatorBalanceEntry.HODLerPKID, creatorBalanceEntry.CreatorPKID, false),
-				UtxoOps: utxoOpsForTxn,
 			},
+			PrevEncoder: &prevCreatorBalanceEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
@@ -1368,6 +1369,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
+	// Capture changes to the balance entry for the seller.
 	if bav.EventManager != nil && emitMempoolTxn {
 		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
 			StateChangeEntry: &StateChangeEntry{
@@ -1375,8 +1377,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 				Encoder:       sellerBalanceEntry,
 				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
 					sellerBalanceEntry.HODLerPKID, sellerBalanceEntry.CreatorPKID, false),
-				UtxoOps: utxoOpsForTxn,
 			},
+			PrevEncoder: &prevTransactorBalanceEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,

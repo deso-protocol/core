@@ -374,10 +374,7 @@ func (mp *DeSoMempool) EmitDisconnectsAfterBlockValidated(block *MsgDeSoBlock) e
 			// map - they were stored on transaction connect.
 			mp.bc.eventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
 				StateChangeEntry: &StateChangeEntry{
-					// On disconnect, we only care about the utxo operations, which will have their own db operations assigned
-					// to them. We assign skip to the parent entry so that the consumer doesn't process it.
-					OperationType: DbOperationTypeSkip,
-					IsMempoolTx:   true,
+					IsMempoolTx: true,
 				},
 				BlockHeight: block.Header.Height,
 				IsConnected: false,

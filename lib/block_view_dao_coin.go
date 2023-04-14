@@ -435,6 +435,9 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 		PrevCreatorBalanceEntry: &prevProfileOwnerBalanceEntry,
 	})
 
+	// Capture the dao coin entry state change.
+	// Note that the coin entry state change is not captured, as the change to the entry (coins in circulation),
+	// is effectively captured by the balance entry state change.
 	if bav.EventManager != nil && emitMempoolTxn {
 		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
 			StateChangeEntry: &StateChangeEntry{
@@ -442,8 +445,8 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 				Encoder:       profileOwnerBalanceEntry,
 				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
 					profileOwnerBalanceEntry.HODLerPKID, profileOwnerBalanceEntry.CreatorPKID, true),
-				UtxoOps: utxoOpsForTxn,
 			},
+			PrevEncoder: &prevProfileOwnerBalanceEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
@@ -537,6 +540,8 @@ func (bav *UtxoView) HelpConnectDAOCoinBurn(
 		PrevTransactorBalanceEntry: &prevTransactorBalanceEntry,
 	})
 
+	// Capture the dao coin state change event.
+	// The coin entry change is ignored as the balance entry change captures the coins in circulation change.
 	if bav.EventManager != nil && emitMempoolTxn {
 		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
 			StateChangeEntry: &StateChangeEntry{
@@ -544,8 +549,8 @@ func (bav *UtxoView) HelpConnectDAOCoinBurn(
 				Encoder:       burnerBalanceEntry,
 				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
 					burnerBalanceEntry.HODLerPKID, burnerBalanceEntry.CreatorPKID, true),
-				UtxoOps: utxoOpsForTxn,
 			},
+			PrevEncoder: &prevTransactorBalanceEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
@@ -577,8 +582,9 @@ func (bav *UtxoView) HelpConnectDAOCoinDisableMinting(
 		return 0, 0, nil, RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled
 	}
 
-	// Save the previous coin entry and then set minting disabled on the existing profile
+	// Save the previous coin entry and creatorProfileEntry and then set minting disabled on the existing profile
 	prevCoinEntry := creatorProfileEntry.DAOCoinEntry
+	prevCreatorProfileEntry := *creatorProfileEntry
 	creatorProfileEntry.DAOCoinEntry.MintingDisabled = true
 
 	bav._setProfileEntryMappings(creatorProfileEntry)
@@ -597,13 +603,14 @@ func (bav *UtxoView) HelpConnectDAOCoinDisableMinting(
 				creatorProfileEntry.PublicKey)
 		}
 
+		// Capture change to the coin entry via the profile entry.
 		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType: DbOperationTypeUpsert,
 				Encoder:       creatorProfileEntry,
 				KeyBytes:      _dbKeyForPKIDToProfileEntry(viewPKIDEntry.PKID),
-				UtxoOps:       utxoOpsForTxn,
 			},
+			PrevEncoder: &prevCreatorProfileEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
@@ -643,6 +650,7 @@ func (bav *UtxoView) HelpConnectUpdateTransferRestrictionStatus(
 	}
 
 	prevCoinEntry := creatorProfileEntry.DAOCoinEntry
+	prevCreatorProfileEntry := *creatorProfileEntry
 	creatorProfileEntry.DAOCoinEntry.TransferRestrictionStatus = txMeta.TransferRestrictionStatus
 
 	bav._setProfileEntryMappings(creatorProfileEntry)
@@ -661,13 +669,14 @@ func (bav *UtxoView) HelpConnectUpdateTransferRestrictionStatus(
 				creatorProfileEntry.PublicKey)
 		}
 
+		// Capture the state change to the coin entry via the profile entry.
 		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType: DbOperationTypeUpsert,
 				Encoder:       creatorProfileEntry,
 				KeyBytes:      _dbKeyForPKIDToProfileEntry(viewPKIDEntry.PKID),
-				UtxoOps:       utxoOpsForTxn,
 			},
+			PrevEncoder: &prevCreatorProfileEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,

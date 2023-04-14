@@ -39,12 +39,10 @@ type StateChangeEntry struct {
 	EncoderBytes []byte
 	// The type of encoder that should be used for the operation.
 	EncoderType EncoderType
-	// If this transaction is a mempool transaction.
+	// If this state change represents a mempool transaction.
 	IsMempoolTx bool
-	// The length of the UtxoOps bytes.
-	UtxoOpsBytesSize uint64
-	// The UtxoOps for a transaction. This is used to disconnect mempool transactions that have been included in a block.
-	UtxoOps []*UtxoOperation
+	// If this represents a disconnect operation (e.g. a mempool transaction has been added to a block).
+	IsDisconnect bool
 }
 
 // RawEncodeWithoutMetadata constructs the bytes to represent a StateChangeEntry.
@@ -77,16 +75,7 @@ func (stateChangeEntry *StateChangeEntry) RawEncodeWithoutMetadata(blockHeight u
 
 	data = append(data, encoderBytes...)
 	data = append(data, BoolToByte(stateChangeEntry.IsMempoolTx))
-	utxoOpsBytes := []byte{}
-
-	utxoOpBundle := &UtxoOperationBundle{}
-
-	// If there are utxo ops (i.e. this is a mempool disconnect event), encode them as a bundle.
-	if len(stateChangeEntry.UtxoOps) > 0 {
-		utxoOpBundle.UtxoOpBundle = [][]*UtxoOperation{stateChangeEntry.UtxoOps}
-	}
-	utxoOpsBytes = EncodeToBytes(blockHeight, utxoOpBundle, false)
-	data = append(data, utxoOpsBytes...)
+	data = append(data, BoolToByte(stateChangeEntry.IsDisconnect))
 
 	return data
 }
@@ -123,13 +112,10 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding isMempoolTx")
 	}
 
-	// Decode utxo ops.
-	utxoOpBundle := &UtxoOperationBundle{}
-	if exist, err := DecodeFromBytes(utxoOpBundle, rr); exist && err == nil && len(utxoOpBundle.UtxoOpBundle) > 0 {
-		stateChangeEntry.UtxoOps = utxoOpBundle.UtxoOpBundle[0]
-	} else if err != nil {
-		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding utxoOpBundle")
+	if stateChangeEntry.IsDisconnect, err = ReadBoolByte(rr); err != nil {
+		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding isDisconnect")
 	}
+
 	return nil
 }
 
@@ -168,9 +154,10 @@ type StateChangeSyncer struct {
 	// Mutex to prevent concurrent writes to the state change file.
 	StateSyncerMutex *sync.Mutex
 	EntryCount       uint32
+	// TODO: This needs to be a map of block hashes to a slice of state change entries.
 	// ConnectedMempoolTxMap is used to keep track of the mempool transactions that are currently connected.
 	// Upon disconnect, we use the txn hash to look up the state change entry in this map and write it to the state change file.
-	ConnectedMempoolTxMap map[BlockHash]*StateChangeEntry
+	ConnectedMempoolTxMap map[BlockHash][]*StateChangeEntry
 }
 
 // Open a file, create if it doesn't exist.
@@ -205,7 +192,7 @@ func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string) *S
 		DeSoParams:            desoParams,
 		UnflushedBytes:        make(map[uuid.UUID]UnflushedStateSyncerBytes),
 		StateSyncerMutex:      &sync.Mutex{},
-		ConnectedMempoolTxMap: make(map[BlockHash]*StateChangeEntry),
+		ConnectedMempoolTxMap: make(map[BlockHash][]*StateChangeEntry),
 	}
 }
 
@@ -248,47 +235,71 @@ func (stateChangeSyncer *StateChangeSyncer) _handleMempoolTransaction(event *Mem
 		// Create a copy of the state change entry for the map so that the utxoOps don't get deleted when they're removed
 		//from the stateChangeEntry struct (utxoOps are only included for disconnects).
 		mapStateChangeEntry := *stateChangeEntry
-		stateChangeSyncer.ConnectedMempoolTxMap[*event.TxHash] = &mapStateChangeEntry
-		// Only pass UtxoOps to the state change syncer if this is a disconnect transaction (we need them to revert the
-		// connected mempool transaction.
-		stateChangeEntry.UtxoOps = nil
-	} else {
-		// Get the cached mempool transaction from the connected mempool map.
-		if connectedMempoolTx, ok := stateChangeSyncer.ConnectedMempoolTxMap[*event.TxHash]; ok {
-			// Check to see if the index in question has a "core_state" annotation in its definition.
-			if !isCoreStateKey(connectedMempoolTx.KeyBytes) {
-				return
-			}
+		// Set the encoder on the map entry to the previous encoder so that the consumer can use it to revert the
+		// mempool transaction upon disconnect.
+		mapStateChangeEntry.Encoder = event.PrevEncoder
+		stateChangeSyncer.ConnectedMempoolTxMap[*event.TxHash] = append(stateChangeSyncer.ConnectedMempoolTxMap[*event.TxHash], &mapStateChangeEntry)
+		stateChangeEntry.IsDisconnect = false
 
-			stateChangeEntry.Encoder = connectedMempoolTx.Encoder
-			stateChangeEntry.KeyBytes = connectedMempoolTx.KeyBytes
-			stateChangeEntry.UtxoOps = connectedMempoolTx.UtxoOps
-		} else {
-			return
-		}
-	}
+		// Set the encoder type.
+		stateChangeEntry.EncoderType = stateChangeEntry.Encoder.GetEncoderType()
 
-	// Set the encoder type.
-	stateChangeEntry.EncoderType = stateChangeEntry.Encoder.GetEncoderType()
+		// Encode the state change entry. They are encoded as a byte array, so the consumer can buffer just the bytes needed
+		// to decode this entry when reading from file.
+		entryBytes := EncodeToBytes(0, stateChangeEntry, false)
+		writeBytes := EncodeByteArray(entryBytes)
 
-	// Encode the state change entry. They are encoded as a byte array, so the consumer can buffer just the bytes needed
-	// to decode this entry when reading from file.
-	entryBytes := EncodeToBytes(0, stateChangeEntry, false)
-	writeBytes := EncodeByteArray(entryBytes)
+		// All mempool transactions occur within the same thread, so they'll be on the uuid.Nil flush ID.
+		stateChangeSyncer.addTransactionToQueue(uuid.Nil, writeBytes)
 
-	// All mempool transactions occur within the same thread, so they'll be on the uuid.Nil flush ID.
-	stateChangeSyncer.addTransactionToQueue(uuid.Nil, writeBytes)
-
-	if event.IsConnected {
 		// With mempool connects, instantly flush to db.
 		// As soon as this callback is called, the mempool transaction is considered "connected".
 		err := stateChangeSyncer.FlushTransactionsToFile(&DBFlushedEvent{FlushId: uuid.Nil, Succeeded: true})
 		if err != nil {
 			glog.Fatalf("StateChangeSyncer._handleMempoolTransaction: Error flushing mempool transaction to file: %v", err)
 		}
+		return
 	} else {
-		// After the disconnect is written to file, remove this mempool tx from our map.
-		delete(stateChangeSyncer.ConnectedMempoolTxMap, *event.TxHash)
+		// Event is a disconnect.
+		// Get the cached mempool transaction from the connected mempool map.
+		if connectedMempoolTxns, ok := stateChangeSyncer.ConnectedMempoolTxMap[*event.TxHash]; ok {
+			// Handle every entry change related to this transaction.
+			for _, connectedMempoolTx := range connectedMempoolTxns {
+				// Check to see if the index in question has a "core_state" annotation in its definition.
+				if !isCoreStateKey(connectedMempoolTx.KeyBytes) {
+					continue
+				}
+				stateChangeEntry.Encoder = connectedMempoolTx.Encoder
+				stateChangeEntry.KeyBytes = connectedMempoolTx.KeyBytes
+				stateChangeEntry.IsDisconnect = true
+
+				// Set the encoder type.
+				stateChangeEntry.EncoderType = stateChangeEntry.Encoder.GetEncoderType()
+
+				// If the encoder is nil, this means the entry was deleted. Set the operation type to delete so that
+				// the consumer knows to delete the entry.
+				if stateChangeEntry.Encoder == stateChangeEntry.EncoderType.New() {
+					stateChangeEntry.OperationType = DbOperationTypeDelete
+				} else {
+					// For non-nil entries, an upsert operation is performed.
+					stateChangeEntry.OperationType = DbOperationTypeUpsert
+				}
+
+				// Encode the state change entry. They are encoded as a byte array, so the consumer can buffer just the bytes needed
+				// to decode this entry when reading from file.
+				entryBytes := EncodeToBytes(0, stateChangeEntry, false)
+				writeBytes := EncodeByteArray(entryBytes)
+
+				// All mempool transactions occur within the same thread, so they'll be on the uuid.Nil flush ID.
+				stateChangeSyncer.addTransactionToQueue(uuid.Nil, writeBytes)
+			}
+
+			// After the disconnect entry events are written to file, remove this mempool tx from our map.
+			delete(stateChangeSyncer.ConnectedMempoolTxMap, *event.TxHash)
+
+			return
+		}
+		return
 	}
 }
 
@@ -302,6 +313,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	defer stateChangeSyncer.StateSyncerMutex.Unlock()
 
 	stateChangeEntry := event.StateChangeEntry
+	stateChangeEntry.IsDisconnect = false
 
 	// Check to see if the index in question has a "core_state" annotation in its definition.
 	if !isCoreStateKey(stateChangeEntry.KeyBytes) {
@@ -329,8 +341,6 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	entryBytes := EncodeToBytes(0, stateChangeEntry, false)
 	writeBytes := EncodeByteArray(entryBytes)
 
-	decodedStateChangeEntry := &StateChangeEntry{}
-	DecodeFromBytes(decodedStateChangeEntry, bytes.NewReader(entryBytes))
 	// Add the StateChangeEntry bytes to the queue of bytes to be written to the state change file upon Badger db flush.
 	stateChangeSyncer.addTransactionToQueue(event.FlushId, writeBytes)
 }
@@ -380,7 +390,7 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *DBFlu
 	// Also delete any unconnected mempool txns from our cache.
 	if !event.Succeeded {
 		delete(stateChangeSyncer.UnflushedBytes, event.FlushId)
-		stateChangeSyncer.ConnectedMempoolTxMap = make(map[BlockHash]*StateChangeEntry)
+		stateChangeSyncer.ConnectedMempoolTxMap = make(map[BlockHash][]*StateChangeEntry)
 	}
 
 	unflushedBytes, exists := stateChangeSyncer.UnflushedBytes[event.FlushId]

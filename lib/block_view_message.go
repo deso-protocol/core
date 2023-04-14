@@ -578,13 +578,12 @@ func (bav *UtxoView) _connectPrivateMessage(
 				OperationType: DbOperationTypeUpsert,
 				Encoder:       messageEntry,
 				KeyBytes:      _dbKeyForMessageEntry(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos),
-				UtxoOps:       utxoOpsForTxn,
 			},
+			PrevEncoder: nil,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
 		})
-
 	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil

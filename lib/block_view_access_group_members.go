@@ -375,7 +375,7 @@ func (bav *UtxoView) _deleteAccessGroupMembershipKeyToAccessGroupMemberMapping(a
 // looking at the index, that it is essentially a 2-access group relationship between the owner's access group and
 // member's access group.
 func (bav *UtxoView) _connectAccessGroupMembers(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Make sure access groups are live.
@@ -428,7 +428,7 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	// Connect basic txn to get the total input and the total output without considering the transaction metadata.
 	// Note that it doesn't matter when we do this, because if the transaction fails later on, we will just revert the
 	// UtxoView to a previous stable state that isn't corrupted with partial block view entries.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: ")
 	}
@@ -475,17 +475,17 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	// Determine the operation that we want to perform on the access group members.
 	switch txMeta.AccessGroupMemberOperationType {
 	case AccessGroupMemberOperationTypeAdd:
-		if err := bav._setUtxoViewMappingsForAccessGroupMemberOperationAdd(txMeta, uint64(blockHeight)); err != nil {
+		if err := bav._setUtxoViewMappingsForAccessGroupMemberOperationAdd(txMeta, uint64(blockHeight), txHash, emitMempoolTxn); err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: Problem adding access group members.")
 		}
 
 	case AccessGroupMemberOperationTypeRemove:
-		if prevAccessGroupMemberEntries, err = bav._setUtxoViewMappingsForAccessGroupMemberOperationRemove(txMeta, uint64(blockHeight)); err != nil {
+		if prevAccessGroupMemberEntries, err = bav._setUtxoViewMappingsForAccessGroupMemberOperationRemove(txMeta, uint64(blockHeight), txHash, emitMempoolTxn); err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: Problem removing access group members.")
 		}
 
 	case AccessGroupMemberOperationTypeUpdate:
-		if prevAccessGroupMemberEntries, err = bav._setUtxoViewMappingsForAccessGroupMemberOperationUpdate(txMeta, uint64(blockHeight)); err != nil {
+		if prevAccessGroupMemberEntries, err = bav._setUtxoViewMappingsForAccessGroupMemberOperationUpdate(txMeta, uint64(blockHeight), txHash, emitMempoolTxn); err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: Problem updating access group members.")
 		}
 
@@ -681,13 +681,16 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 }
 
 func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationAdd(txMeta *AccessGroupMembersMetadata,
-	blockHeight uint64) error {
+	blockHeight uint64, txHash *BlockHash, emitMempoolTxn bool) error {
 
 	// Sanity-check that all information about access group members in txMeta is correct.
 	if txMeta.AccessGroupMemberOperationType != AccessGroupMemberOperationTypeAdd {
 		return errors.Wrapf(RuleErrorAccessGroupMemberOperationTypeNotSupported, "_setUtxoViewMappingsForAccessGroupMemberOperationAdd: "+
 			"Operation type %v not supported.", txMeta.AccessGroupMemberOperationType)
 	}
+
+	accessGroupOwnerPublicKey := NewPublicKey(txMeta.AccessGroupOwnerPublicKey)
+	accessGroupKeyName := NewGroupKeyName(txMeta.AccessGroupKeyName)
 
 	// AccessGroupMemberOperationTypeAdd indicates that we want to add members to the access group.
 	// Members are added to the access group by their own existing access groups, identified by the pair of:
@@ -731,17 +734,34 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationAdd(txMeta
 		}
 
 		if err := bav._setAccessGroupMembershipKeyToAccessGroupMemberMapping(accessGroupMemberEntry,
-			NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName)); err != nil {
+			accessGroupOwnerPublicKey, accessGroupKeyName); err != nil {
 			return errors.Wrapf(err, "_setUtxoViewMappingsForAccessGroupMemberOperationAdd: "+
 				"Problem setting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
 				accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
 		}
+
+		// Emit the access group member add event to the state syncer.
+		if bav.EventManager != nil && emitMempoolTxn {
+			bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+				StateChangeEntry: &StateChangeEntry{
+					OperationType: DbOperationTypeUpsert,
+					Encoder:       accessGroupMemberEntry,
+					KeyBytes: _dbKeyForAccessGroupMemberEntry(
+						*accessGroupMemberEntry.AccessGroupMemberPublicKey, *accessGroupOwnerPublicKey, *accessGroupKeyName),
+				},
+				PrevEncoder: nil,
+				BlockHeight: blockHeight,
+				TxHash:      txHash,
+				IsConnected: true,
+			})
+		}
+
 	}
 	return nil
 }
 
 func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationRemove(txMeta *AccessGroupMembersMetadata,
-	blockHeight uint64) (_prevAccessGroupMemberEntries []*AccessGroupMemberEntry, _err error) {
+	blockHeight uint64, txHash *BlockHash, emitMempoolTxn bool) (_prevAccessGroupMemberEntries []*AccessGroupMemberEntry, _err error) {
 
 	// Sanity-check that the operation type is correct.
 	if txMeta.AccessGroupMemberOperationType != AccessGroupMemberOperationTypeRemove {
@@ -750,6 +770,9 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationRemove(txM
 				"OperationType should be AccessGroupMemberOperationTypeRemove, but received (OperationType=%v)",
 			txMeta.AccessGroupMemberOperationType)
 	}
+
+	accessGroupOwnerPublicKey := NewPublicKey(txMeta.AccessGroupOwnerPublicKey)
+	accessGroupKeyName := NewGroupKeyName(txMeta.AccessGroupKeyName)
 
 	// AccessGroupMemberOperationTypeRemove operation is used to remove members from an access group. The result of
 	// this operation is that all the members specified in the transaction's metadata will be purged from the DB as
@@ -782,7 +805,7 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationRemove(txM
 
 		// Fetch the access group member entry for each member from the transaction metadata.
 		existingGroupMemberEntry, err := bav.GetAccessGroupMemberEntry(NewPublicKey(accessMember.AccessGroupMemberPublicKey),
-			NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
+			accessGroupOwnerPublicKey, accessGroupKeyName)
 		if err != nil {
 			return nil, errors.Wrapf(err, "_setUtxoViewMappingsForAccessGroupMemberOperationRemove: "+
 				"Problem getting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
@@ -805,6 +828,22 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationRemove(txM
 		existingGroupMemberEntryCopy := *existingGroupMemberEntry
 		prevAccessGroupMemberEntries = append(prevAccessGroupMemberEntries, &existingGroupMemberEntryCopy)
 
+		// Emit the access group member entry state change to state syncer
+		if bav.EventManager != nil && emitMempoolTxn {
+			bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+				StateChangeEntry: &StateChangeEntry{
+					OperationType: DbOperationTypeDelete,
+					Encoder:       nil,
+					KeyBytes: _dbKeyForAccessGroupMemberEntry(
+						*existingGroupMemberEntryCopy.AccessGroupMemberPublicKey, *accessGroupOwnerPublicKey, *accessGroupKeyName),
+				},
+				PrevEncoder: &existingGroupMemberEntryCopy,
+				BlockHeight: blockHeight,
+				TxHash:      txHash,
+				IsConnected: true,
+			})
+		}
+
 		// Now delete the existing access group member entry.
 		if err := bav._deleteAccessGroupMembershipKeyToAccessGroupMemberMapping(&existingGroupMemberEntryCopy, NewPublicKey(txMeta.AccessGroupOwnerPublicKey),
 			NewGroupKeyName(txMeta.AccessGroupKeyName), blockHeight); err != nil {
@@ -819,7 +858,7 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationRemove(txM
 }
 
 func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationUpdate(txMeta *AccessGroupMembersMetadata,
-	blockHeight uint64) (_prevAccessGroupMemberEntries []*AccessGroupMemberEntry, _err error) {
+	blockHeight uint64, txHash *BlockHash, emitMempoolTxn bool) (_prevAccessGroupMemberEntries []*AccessGroupMemberEntry, _err error) {
 
 	// Sanity-check that the operation type is correct.
 	if txMeta.AccessGroupMemberOperationType != AccessGroupMemberOperationTypeUpdate {
@@ -828,6 +867,9 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationUpdate(txM
 				"OperationType should be AccessGroupMemberOperationTypeUpdate, but received (OperationType=%v)",
 			txMeta.AccessGroupMemberOperationType)
 	}
+
+	accessGroupOwnerPublicKey := NewPublicKey(txMeta.AccessGroupOwnerPublicKey)
+	accessGroupKeyName := NewGroupKeyName(txMeta.AccessGroupKeyName)
 
 	// AccessGroupMemberOperationTypeUpdate operation is used to update members in an access group.
 	// In this operation, all the members specified in the transaction's metadata will be updated to the values
@@ -868,10 +910,25 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationUpdate(txM
 			ExtraData:                  accessMember.ExtraData,
 		}
 		if err := bav._setAccessGroupMembershipKeyToAccessGroupMemberMapping(accessGroupMemberEntry,
-			NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName)); err != nil {
+			accessGroupOwnerPublicKey, accessGroupKeyName); err != nil {
 			return nil, errors.Wrapf(err, "_setUtxoViewMappingsForAccessGroupMemberOperationUpdate: "+
 				"Problem updating access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
 				accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
+		}
+		// Emit the access group member state change event.
+		if bav.EventManager != nil && emitMempoolTxn {
+			bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+				StateChangeEntry: &StateChangeEntry{
+					OperationType: DbOperationTypeUpsert,
+					Encoder:       accessGroupMemberEntry,
+					KeyBytes: _dbKeyForAccessGroupMemberEntry(
+						*accessGroupMemberEntry.AccessGroupMemberPublicKey, *accessGroupOwnerPublicKey, *accessGroupKeyName),
+				},
+				PrevEncoder: &existingGroupMemberEntryCopy,
+				BlockHeight: blockHeight,
+				TxHash:      txHash,
+				IsConnected: true,
+			})
 		}
 	}
 

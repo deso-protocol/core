@@ -94,7 +94,7 @@ func AssembleAccessBytesWithMetamaskStrings(derivedPublicKey []byte, expirationB
 }
 
 func (bav *UtxoView) _connectAuthorizeDerivedKey(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < bav.Params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight {
@@ -405,6 +405,21 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 		Type:                OperationTypeAuthorizeDerivedKey,
 		PrevDerivedKeyEntry: prevDerivedKeyEntry,
 	})
+
+	// Track the derived key state event via the event manager.
+	if bav.EventManager != nil && emitMempoolTxn {
+		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeUpsert,
+				Encoder:       &derivedKeyEntry,
+				KeyBytes:      _dbKeyForOwnerToDerivedKeyMapping(derivedKeyEntry.OwnerPublicKey, derivedKeyEntry.DerivedPublicKey),
+			},
+			PrevEncoder: prevDerivedKeyEntry,
+			BlockHeight: uint64(blockHeight),
+			TxHash:      txHash,
+			IsConnected: true,
+		})
+	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

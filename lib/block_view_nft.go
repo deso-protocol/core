@@ -731,13 +731,8 @@ func (bav *UtxoView) _connectCreateNFT(
 					Encoder:       nftEntry,
 					KeyBytes: _dbKeyForNFTPostHashSerialNumber(
 						nftEntry.NFTPostHash, nftEntry.SerialNumber),
-					UtxoOps: []*UtxoOperation{
-						&UtxoOperation{
-							Type:         OperationTypeCreateNFT,
-							PrevNFTEntry: nil,
-						},
-					},
 				},
+				PrevEncoder: nil,
 				BlockHeight: uint64(blockHeight),
 				TxHash:      txHash,
 				IsConnected: true,
@@ -757,14 +752,8 @@ func (bav *UtxoView) _connectCreateNFT(
 				OperationType: DbOperationTypeUpsert,
 				Encoder:       postEntry,
 				KeyBytes:      _dbKeyForPostEntryHash(postEntry.PostHash),
-				UtxoOps: []*UtxoOperation{
-					&UtxoOperation{
-						// We use submit post here so we can disambiguate between updating the post entry and creating an NFT entries.
-						Type:          OperationTypeSubmitPost,
-						PrevPostEntry: prevPostEntry,
-					},
-				},
 			},
+			PrevEncoder: prevPostEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
@@ -903,13 +892,8 @@ func (bav *UtxoView) _connectUpdateNFT(
 						OperationType: DbOperationTypeDelete,
 						Encoder:       nil,
 						KeyBytes:      _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry),
-						UtxoOps: []*UtxoOperation{
-							&UtxoOperation{
-								Type:            OperationTypeUpdateNFT,
-								PrevNFTBidEntry: bidEntry,
-							},
-						},
 					},
+					PrevEncoder: bidEntry,
 					BlockHeight: uint64(blockHeight),
 					TxHash:      txHash,
 					IsConnected: true,
@@ -942,13 +926,8 @@ func (bav *UtxoView) _connectUpdateNFT(
 				OperationType: DbOperationTypeUpsert,
 				Encoder:       postEntry,
 				KeyBytes:      _dbKeyForPostEntryHash(postEntry.PostHash),
-				UtxoOps: []*UtxoOperation{
-					&UtxoOperation{
-						Type:          OperationTypeSubmitPost,
-						PrevPostEntry: prevPostEntry,
-					},
-				},
 			},
+			PrevEncoder: prevPostEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
@@ -960,13 +939,8 @@ func (bav *UtxoView) _connectUpdateNFT(
 				Encoder:       newNFTEntry,
 				KeyBytes: _dbKeyForNFTPostHashSerialNumber(
 					newNFTEntry.NFTPostHash, newNFTEntry.SerialNumber),
-				UtxoOps: []*UtxoOperation{
-					&UtxoOperation{
-						Type:         OperationTypeUpdateNFT,
-						PrevNFTEntry: prevNFTEntry,
-					},
-				},
 			},
+			PrevEncoder: prevNFTEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
@@ -1424,13 +1398,8 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct, emitMemp
 				OperationType: DbOperationTypeUpsert,
 				Encoder:       acceptedNFTBidEntry,
 				KeyBytes:      _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(acceptedNFTBidEntry),
-				UtxoOps: []*UtxoOperation{
-					&UtxoOperation{
-						Type:            OperationTypeAcceptNFTBid,
-						PrevNFTBidEntry: nftBidEntry,
-					},
-				},
 			},
+			PrevEncoder: nftBidEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      args.TxHash,
 			IsConnected: true,
@@ -1456,13 +1425,8 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct, emitMemp
 					OperationType: DbOperationTypeDelete,
 					Encoder:       nil,
 					KeyBytes:      _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry),
-					UtxoOps: []*UtxoOperation{
-						&UtxoOperation{
-							Type:            OperationTypeAcceptNFTBid,
-							PrevNFTBidEntry: bidEntry,
-						},
-					},
 				},
+				PrevEncoder: bidEntry,
 				BlockHeight: uint64(blockHeight),
 				TxHash:      args.TxHash,
 				IsConnected: true,
@@ -1473,19 +1437,15 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct, emitMemp
 	// If this is a SerialNumber zero BidEntry, we must delete it specifically.
 	if nftBidEntry.SerialNumber == uint64(0) {
 		deletedBidEntries = append(deletedBidEntries, nftBidEntry)
+		// Emit bid entry deletion event to state syncer.
 		if bav.EventManager != nil && emitMempoolTxn {
 			bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
 				StateChangeEntry: &StateChangeEntry{
 					OperationType: DbOperationTypeDelete,
 					Encoder:       nil,
 					KeyBytes:      _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry),
-					UtxoOps: []*UtxoOperation{
-						&UtxoOperation{
-							Type:            OperationTypeAcceptNFTBid,
-							PrevNFTBidEntry: nftBidEntry,
-						},
-					},
 				},
+				PrevEncoder: nftBidEntry,
 				BlockHeight: uint64(blockHeight),
 				TxHash:      args.TxHash,
 				IsConnected: true,
@@ -1758,13 +1718,8 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct, emitMemp
 				Encoder:       newNFTEntry,
 				KeyBytes: _dbKeyForNFTPostHashSerialNumber(
 					newNFTEntry.NFTPostHash, newNFTEntry.SerialNumber),
-				UtxoOps: []*UtxoOperation{
-					&UtxoOperation{
-						Type:         OperationTypeAcceptNFTBid,
-						PrevNFTEntry: prevNFTEntry,
-					},
-				},
 			},
+			PrevEncoder: prevNFTEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      args.TxHash,
 			IsConnected: true,
@@ -1776,13 +1731,8 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct, emitMemp
 				OperationType: DbOperationTypeUpsert,
 				Encoder:       nftPostEntry,
 				KeyBytes:      _dbKeyForPostEntryHash(nftPostEntry.PostHash),
-				UtxoOps: []*UtxoOperation{
-					&UtxoOperation{
-						Type:          OperationTypeSubmitPost,
-						PrevPostEntry: prevPostEntry,
-					},
-				},
 			},
+			PrevEncoder: prevPostEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      args.TxHash,
 			IsConnected: true,
@@ -1941,13 +1891,8 @@ func (bav *UtxoView) _connectNFTBid(
 						OperationType: DbOperationTypeDelete,
 						Encoder:       nil,
 						KeyBytes:      _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(prevNFTBidEntry),
-						UtxoOps: []*UtxoOperation{
-							&UtxoOperation{
-								Type:            OperationTypeNFTBid,
-								PrevNFTBidEntry: prevNFTBidEntry,
-							},
-						},
 					},
+					PrevEncoder: prevNFTBidEntry,
 					BlockHeight: uint64(blockHeight),
 					TxHash:      txHash,
 					IsConnected: true,
@@ -1968,13 +1913,8 @@ func (bav *UtxoView) _connectNFTBid(
 						OperationType: DbOperationTypeUpsert,
 						Encoder:       newBidEntry,
 						KeyBytes:      _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(newBidEntry),
-						UtxoOps: []*UtxoOperation{
-							&UtxoOperation{
-								Type:            OperationTypeNFTBid,
-								PrevNFTBidEntry: nil,
-							},
-						},
 					},
+					PrevEncoder: nil,
 					BlockHeight: uint64(blockHeight),
 					TxHash:      txHash,
 					IsConnected: true,
@@ -2144,8 +2084,8 @@ func (bav *UtxoView) _connectNFTTransfer(
 				Encoder:       &newNFTEntry,
 				KeyBytes: _dbKeyForNFTPostHashSerialNumber(
 					newNFTEntry.NFTPostHash, newNFTEntry.SerialNumber),
-				UtxoOps: utxoOpsForTxn,
 			},
+			PrevEncoder: prevNFTEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
@@ -2245,8 +2185,8 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 				Encoder:       &newNFTEntry,
 				KeyBytes: _dbKeyForNFTPostHashSerialNumber(
 					newNFTEntry.NFTPostHash, newNFTEntry.SerialNumber),
-				UtxoOps: utxoOpsForTxn,
 			},
+			PrevEncoder: prevNFTEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
@@ -2353,13 +2293,8 @@ func (bav *UtxoView) _connectBurnNFT(
 				Encoder:       nil,
 				KeyBytes: _dbKeyForNFTPostHashSerialNumber(
 					nftEntry.NFTPostHash, nftEntry.SerialNumber),
-				UtxoOps: []*UtxoOperation{
-					&UtxoOperation{
-						Type:         OperationTypeBurnNFT,
-						PrevNFTEntry: &prevNFTEntry,
-					},
-				},
 			},
+			PrevEncoder: &prevNFTEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,
@@ -2371,13 +2306,8 @@ func (bav *UtxoView) _connectBurnNFT(
 				OperationType: DbOperationTypeUpsert,
 				Encoder:       nftPostEntry,
 				KeyBytes:      _dbKeyForPostEntryHash(nftPostEntry.PostHash),
-				UtxoOps: []*UtxoOperation{
-					&UtxoOperation{
-						Type:          OperationTypeBurnNFT,
-						PrevPostEntry: &prevPostEntry,
-					},
-				},
 			},
+			PrevEncoder: &prevPostEntry,
 			BlockHeight: uint64(blockHeight),
 			TxHash:      txHash,
 			IsConnected: true,

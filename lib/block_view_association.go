@@ -12,6 +12,7 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 	txHash *BlockHash,
 	blockHeight uint32,
 	verifySignatures bool,
+	emitMempoolTxn bool,
 ) (
 	_totalInput uint64,
 	_totalOutput uint64,
@@ -94,6 +95,22 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 		Type:                     OperationTypeCreateUserAssociation,
 		PrevUserAssociationEntry: prevAssociationEntry,
 	})
+
+	// Emit association creation state change event.
+	if bav.EventManager != nil && emitMempoolTxn {
+		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeUpsert,
+				Encoder:       currentAssociationEntry,
+				KeyBytes:      DBKeyForUserAssociationByID(currentAssociationEntry),
+			},
+			PrevEncoder: prevAssociationEntry,
+			BlockHeight: uint64(blockHeight),
+			TxHash:      txHash,
+			IsConnected: true,
+		})
+	}
+
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -102,6 +119,7 @@ func (bav *UtxoView) _connectDeleteUserAssociation(
 	txHash *BlockHash,
 	blockHeight uint32,
 	verifySignatures bool,
+	emitMempoolTxn bool,
 ) (
 	_totalInput uint64,
 	_totalOutput uint64,
@@ -164,6 +182,22 @@ func (bav *UtxoView) _connectDeleteUserAssociation(
 		Type:                     OperationTypeDeleteUserAssociation,
 		PrevUserAssociationEntry: prevAssociationEntry,
 	})
+
+	// Emit association entry state change event.
+	if bav.EventManager != nil && emitMempoolTxn {
+		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeDelete,
+				Encoder:       nil,
+				KeyBytes:      DBKeyForUserAssociationByID(prevAssociationEntry),
+			},
+			PrevEncoder: prevAssociationEntry,
+			BlockHeight: uint64(blockHeight),
+			TxHash:      txHash,
+			IsConnected: true,
+		})
+	}
+
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -172,6 +206,7 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 	txHash *BlockHash,
 	blockHeight uint32,
 	verifySignatures bool,
+	emitMempoolTxn bool,
 ) (
 	_totalInput uint64,
 	_totalOutput uint64,
@@ -254,6 +289,22 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 		Type:                     OperationTypeCreatePostAssociation,
 		PrevPostAssociationEntry: prevAssociationEntry,
 	})
+
+	// Emit association entry state change event.
+	if bav.EventManager != nil && emitMempoolTxn {
+		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeDelete,
+				Encoder:       currentAssociationEntry,
+				KeyBytes:      DBKeyForPostAssociationByID(currentAssociationEntry),
+			},
+			PrevEncoder: prevAssociationEntry,
+			BlockHeight: uint64(blockHeight),
+			TxHash:      txHash,
+			IsConnected: true,
+		})
+	}
+
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -262,6 +313,7 @@ func (bav *UtxoView) _connectDeletePostAssociation(
 	txHash *BlockHash,
 	blockHeight uint32,
 	verifySignatures bool,
+	emitMempoolTxn bool,
 ) (
 	_totalInput uint64,
 	_totalOutput uint64,
@@ -323,6 +375,22 @@ func (bav *UtxoView) _connectDeletePostAssociation(
 		Type:                     OperationTypeDeletePostAssociation,
 		PrevPostAssociationEntry: prevAssociationEntry,
 	})
+
+	// Emit association deletion state change event.
+	if bav.EventManager != nil && emitMempoolTxn {
+		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeDelete,
+				Encoder:       nil,
+				KeyBytes:      DBKeyForPostAssociationByID(prevAssociationEntry),
+			},
+			PrevEncoder: prevAssociationEntry,
+			BlockHeight: uint64(blockHeight),
+			TxHash:      txHash,
+			IsConnected: true,
+		})
+	}
+
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 

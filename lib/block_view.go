@@ -1618,8 +1618,8 @@ func (bav *UtxoView) _connectBasicTransfer(txn *MsgDeSoTxn, txHash *BlockHash, b
 					OperationType: DbOperationTypeUpsert,
 					Encoder:       newDiamondEntry,
 					KeyBytes:      _dbKeyForDiamondSenderToDiamondReceiverMapping(newDiamondEntry),
-					UtxoOps:       utxoOpsForTxn,
 				},
+				PrevEncoder: previousDiamondEntry,
 				BlockHeight: uint64(blockHeight),
 				TxHash:      txHash,
 				IsConnected: true,
@@ -2715,11 +2715,11 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeFollow {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectFollow(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeLike {
 		totalInput, totalOutput, utxoOpsForTxn, err =
-			bav._connectLike(txn, txHash, blockHeight, verifySignatures)
+			bav._connectLike(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
 		totalInput, totalOutput, utxoOpsForTxn, err =
@@ -2789,33 +2789,33 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeAuthorizeDerivedKey {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAuthorizeDerivedKey(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreateUserAssociation {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCreateUserAssociation(txn, txHash, blockHeight, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCreateUserAssociation(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeDeleteUserAssociation {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeleteUserAssociation(txn, txHash, blockHeight, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeleteUserAssociation(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeCreatePostAssociation {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCreatePostAssociation(txn, txHash, blockHeight, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCreatePostAssociation(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeDeletePostAssociation {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeletePostAssociation(txn, txHash, blockHeight, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDeletePostAssociation(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroup {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAccessGroup(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeAccessGroupMembers {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectAccessGroupMembers(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else if txn.TxnMeta.GetTxnType() == TxnTypeNewMessage {
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNewMessage(
-				txn, txHash, blockHeight, verifySignatures)
+				txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
 
 	} else {
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())

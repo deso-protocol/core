@@ -28,6 +28,11 @@ type MempoolTransactionEvent struct {
 	// The transaction hash is used to store the transaction in a map so that we can
 	// later look up the entry and UTXO Ops for the transaction upon disconnect.
 	TxHash *BlockHash
+	// The previous encoder value. This is used disconnecting mempool transactions that have been included in a block.
+	// This is similar to how UTXO operations are used to disconnect transactions, but unlike UTXO operations, only
+	// one encoder is needed to represent a StateChangeEntry disconnect.
+	// This encoder will always be the same type as the EncoderType for the StateChangeEntry.
+	PrevEncoder DeSoEncoder
 }
 
 // DBFlushedEvent is an event that is fired when the badger db is flushed.
