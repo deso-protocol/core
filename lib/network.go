@@ -3461,26 +3461,38 @@ func (msg *MsgDeSoTxn) UnmarshalJSON(data []byte) error {
 	// MsgDeSoTxn (which is admittedly very rare and a test can easily catch this
 	// by erroring when the number of fields changes with a helpful message).
 	anonymousTxn := struct {
-		TxInputs  []*DeSoInput
-		TxOutputs []*DeSoOutput
-		TxnMeta   DeSoTxnMetadata
-		PublicKey []byte
-		Signature DeSoSignature
-		TxnType   uint64
+		TxnVersion  DeSoTxnVersion
+		TxInputs    []*DeSoInput
+		TxOutputs   []*DeSoOutput
+		TxnFeeNanos uint64
+		TxnNonce    *DeSoNonce
+		TxnMeta     DeSoTxnMetadata
+		PublicKey   []byte
+		ExtraData   map[string][]byte
+		Signature   DeSoSignature
+		TxnType     uint64
 	}{
-		TxInputs:  msg.TxInputs,
-		TxOutputs: msg.TxOutputs,
-		TxnMeta:   msg.TxnMeta,
-		PublicKey: msg.PublicKey,
-		Signature: msg.Signature,
-		TxnType:   msg.TxnTypeJSON,
+		TxnVersion:  msg.TxnVersion,
+		TxInputs:    msg.TxInputs,
+		TxOutputs:   msg.TxOutputs,
+		TxnFeeNanos: msg.TxnFeeNanos,
+		TxnNonce:    msg.TxnNonce,
+		TxnMeta:     msg.TxnMeta,
+		PublicKey:   msg.PublicKey,
+		ExtraData:   msg.ExtraData,
+		Signature:   msg.Signature,
+		TxnType:     msg.TxnTypeJSON,
 	}
 	json.Unmarshal(data, &anonymousTxn)
 
+	msg.TxnVersion = anonymousTxn.TxnVersion
 	msg.TxInputs = anonymousTxn.TxInputs
 	msg.TxOutputs = anonymousTxn.TxOutputs
+	msg.TxnFeeNanos = anonymousTxn.TxnFeeNanos
+	msg.TxnNonce = anonymousTxn.TxnNonce
 	msg.TxnMeta = anonymousTxn.TxnMeta
 	msg.PublicKey = anonymousTxn.PublicKey
+	msg.ExtraData = anonymousTxn.ExtraData
 	msg.Signature = anonymousTxn.Signature
 	// Don't set the TxnTypeJSON when unmarshaling. It should never be used in
 	// Go code, only at the interface between Go and non-Go.
