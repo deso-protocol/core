@@ -28,6 +28,11 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
+	// Initialize fork heights.
+	params.ForkHeights.BalanceModelBlockHeight = uint32(1)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
 	utxoView := func() *UtxoView {
 		newUtxoView, err := mempool.GetAugmentedUniversalView()
 		require.NoError(t, err)
@@ -42,6 +47,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height + 1)
 	testMeta := &TestMeta{
 		t:                 t,
 		chain:             chain,
@@ -49,7 +55,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		db:                db,
 		mempool:           mempool,
 		miner:             miner,
-		savedHeight:       chain.blockTip().Height + 1,
+		savedHeight:       uint32(blockHeight),
 		feeRateNanosPerKb: uint64(101),
 	}
 
@@ -98,7 +104,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
 
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(0)
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	}
@@ -253,7 +259,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 
 	// Flush mempool to the db and test rollbacks.
-	require.NoError(t, mempool.universalUtxoView.FlushToDb(0))
+	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
 	_executeAllTestRollbackAndFlush(testMeta)
 }
 
@@ -305,7 +311,7 @@ func _submitRegisterAsValidatorTxn(
 	require.Equal(testMeta.t, totalInput, totalInputMake)
 	require.Equal(testMeta.t, OperationTypeRegisterAsValidator, utxoOps[len(utxoOps)-1].Type)
 	if flushToDB {
-		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(0))
+		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(uint64(testMeta.savedHeight)))
 	}
 	require.NoError(testMeta.t, testMeta.mempool.RegenerateReadOnlyView())
 
@@ -362,7 +368,7 @@ func _submitUnregisterAsValidatorTxn(
 	require.Equal(testMeta.t, totalInput, totalInputMake)
 	require.Equal(testMeta.t, OperationTypeUnregisterAsValidator, utxoOps[len(utxoOps)-1].Type)
 	if flushToDB {
-		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(0))
+		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(uint64(testMeta.savedHeight)))
 	}
 	require.NoError(testMeta.t, testMeta.mempool.RegenerateReadOnlyView())
 
@@ -387,7 +393,8 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
 	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
 	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(0)
+	params.ForkHeights.BalanceModelBlockHeight = uint32(1)
+	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -455,7 +462,7 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 		if err != nil {
 			return "", err
 		}
-		require.NoError(t, utxoView.FlushToDb(0))
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
 		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
 		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 		testMeta.txns = append(testMeta.txns, txn)
@@ -518,7 +525,7 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 			return err
 		}
 		// Flush UTXO view to the db.
-		require.NoError(t, utxoView.FlushToDb(0))
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
 		// Track txn for rolling back.
 		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
 		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
@@ -607,6 +614,6 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 	}
 
 	// Flush mempool to the db and test rollbacks.
-	require.NoError(t, mempool.universalUtxoView.FlushToDb(0))
+	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
 	_executeAllTestRollbackAndFlush(testMeta)
 }
