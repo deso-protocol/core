@@ -362,8 +362,9 @@ func (it *EFEncoderIterator) GetValue() uint64 {
 
 // Valid is used to test whether the iterator reached the end of the encoded sequence.
 // returns:
-// 		true  - if the iterator can be pushed forward.
-// 		false - if the iterator reached the end of the encoded list.
+//
+//	true  - if the iterator can be pushed forward.
+//	false - if the iterator reached the end of the encoded list.
 func (it *EFEncoderIterator) Valid() bool {
 	return it.position < it.encoder.size
 }
@@ -382,9 +383,10 @@ func (it *EFEncoderIterator) Reset() error {
 
 // Next pushes the iterator to the next element in the encoded sequence. The function returns
 // whether the iterator can be pushed further:
-// 		(true, nil)    - iterator was pushed forward.
-//		(false, nil)   - iterator end reached so the iterator wasn't pushed.
-//		(false, error) - failed
+//
+//	(true, nil)    - iterator was pushed forward.
+//	(false, nil)   - iterator end reached so the iterator wasn't pushed.
+//	(false, error) - failed
 func (it *EFEncoderIterator) Next() (_success bool, _err error) {
 	// Increment the position of the iterator.
 	it.position++
