@@ -555,11 +555,16 @@ func DBKeyForStakeByValidatorByStaker(stakeEntry *StakeEntry) []byte {
 }
 
 func DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry *LockedStakeEntry) []byte {
+	data := DBPrefixKeyForLockedStakeByValidatorByStaker(lockedStakeEntry)
+	data = append(data, UintToBuf(lockedStakeEntry.LockedAtEpochNumber)...)
+	return data
+}
+
+func DBPrefixKeyForLockedStakeByValidatorByStaker(lockedStakeEntry *LockedStakeEntry) []byte {
 	var data []byte
 	data = append(data, Prefixes.PrefixLockedStakeByValidatorByStakerByLockedAt...)
 	data = append(data, lockedStakeEntry.ValidatorPKID.ToBytes()...)
 	data = append(data, lockedStakeEntry.StakerPKID.ToBytes()...)
-	data = append(data, UintToBuf(lockedStakeEntry.LockedAtEpochNumber)...)
 	return data
 }
 
@@ -570,10 +575,10 @@ func DBGetStakeEntry(
 	stakerPKID *PKID,
 ) (*StakeEntry, error) {
 	var ret *StakeEntry
-	var err error
-	handle.View(func(txn *badger.Txn) error {
-		ret, err = DBGetStakeEntryWithTxn(txn, snap, validatorPKID, stakerPKID)
-		return nil
+	err := handle.View(func(txn *badger.Txn) error {
+		var innerErr error
+		ret, innerErr = DBGetStakeEntryWithTxn(txn, snap, validatorPKID, stakerPKID)
+		return innerErr
 	})
 	return ret, err
 }
@@ -612,12 +617,12 @@ func DBGetLockedStakeEntry(
 	lockedAtEpochNumber uint64,
 ) (*LockedStakeEntry, error) {
 	var ret *LockedStakeEntry
-	var err error
-	handle.View(func(txn *badger.Txn) error {
-		ret, err = DBGetLockedStakeEntryWithTxn(
+	err := handle.View(func(txn *badger.Txn) error {
+		var innerErr error
+		ret, innerErr = DBGetLockedStakeEntryWithTxn(
 			txn, snap, validatorPKID, stakerPKID, lockedAtEpochNumber,
 		)
-		return nil
+		return innerErr
 	})
 	return ret, err
 }
@@ -686,8 +691,52 @@ func DBGetLockedStakeEntriesInRangeWithTxn(
 ) ([]*LockedStakeEntry, error) {
 	// Retrieve LockedStakeEntries from db matching ValidatorPKID, StakerPKID, and
 	// StartEpochNumber <= LockedAtEpochNumber <= EndEpochNumber.
-	// TODO
-	return nil, nil
+
+	// Start at the StartEpochNumber.
+	startKey := DBKeyForLockedStakeByValidatorByStakerByLockedAt(&LockedStakeEntry{
+		ValidatorPKID:       validatorPKID,
+		StakerPKID:          stakerPKID,
+		LockedAtEpochNumber: startEpochNumber,
+	})
+
+	// Consider only LockedStakeEntries for this ValidatorPKID, StakerPKID.
+	prefixKey := DBPrefixKeyForLockedStakeByValidatorByStaker(&LockedStakeEntry{
+		ValidatorPKID: validatorPKID,
+		StakerPKID:    stakerPKID,
+	})
+
+	// Create an iterator.
+	iterator := txn.NewIterator(badger.DefaultIteratorOptions)
+	defer iterator.Close()
+
+	// Store matching LockedStakeEntries to return.
+	var lockedStakeEntries []*LockedStakeEntry
+
+	// Loop.
+	for iterator.Seek(startKey); iterator.ValidForPrefix(prefixKey); iterator.Next() {
+		// Retrieve the LockedStakeEntryBytes.
+		lockedStakeEntryBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetLockedStakeEntriesInRange: error retrieving LockedStakeEntry: ")
+		}
+
+		// Convert LockedStakeEntryBytes to LockedStakeEntry.
+		lockedStakeEntry := &LockedStakeEntry{}
+		rr := bytes.NewReader(lockedStakeEntryBytes)
+		if exist, err := DecodeFromBytes(lockedStakeEntry, rr); !exist || err != nil {
+			return nil, errors.Wrapf(err, "DBGetLockedStakeEntriesInRange: error decoding LockedStakeEntry: ")
+		}
+
+		// Break if LockedStakeEntry.LockedAtEpochNumber > EndEpochNumber.
+		if lockedStakeEntry.LockedAtEpochNumber > endEpochNumber {
+			break
+		}
+
+		// Add LockedStakeEntry to return slice.
+		lockedStakeEntries = append(lockedStakeEntries, lockedStakeEntry)
+	}
+
+	return lockedStakeEntries, nil
 }
 
 func DBPutStakeEntryWithTxn(
@@ -841,7 +890,7 @@ func (bc *Blockchain) CreateStakeTxn(
 
 	// Validate that the transaction has at least one input, even if it all goes
 	// to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
 		return nil, 0, 0, 0, errors.New(
 			"Blockchain.CreateStakeTxn: txn has zero inputs, try increasing the fee rate",
 		)
@@ -917,7 +966,7 @@ func (bc *Blockchain) CreateUnstakeTxn(
 
 	// Validate that the transaction has at least one input, even if it all goes
 	// to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
 		return nil, 0, 0, 0, errors.New(
 			"Blockchain.CreateUnstakeTxn: txn has zero inputs, try increasing the fee rate",
 		)
@@ -994,7 +1043,7 @@ func (bc *Blockchain) CreateUnlockStakeTxn(
 
 	// Validate that the transaction has at least one input, even if it all goes
 	// to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
 		return nil, 0, 0, 0, errors.New(
 			"Blockchain.CreateUnlockStakeTxn: txn has zero inputs, try increasing the fee rate",
 		)

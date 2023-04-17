@@ -20,6 +20,11 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
+	// Initialize fork heights.
+	params.ForkHeights.BalanceModelBlockHeight = uint32(1)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
 	utxoView := func() *UtxoView {
 		newUtxoView, err := mempool.GetAugmentedUniversalView()
 		require.NoError(t, err)
@@ -34,6 +39,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	}
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height + 1)
 	testMeta := &TestMeta{
 		t:                 t,
 		chain:             chain,
@@ -41,7 +47,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		db:                db,
 		mempool:           mempool,
 		miner:             miner,
-		savedHeight:       chain.blockTip().Height + 1,
+		savedHeight:       uint32(blockHeight),
 		feeRateNanosPerKb: uint64(101),
 	}
 
@@ -76,7 +82,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m0 registers as a validator.
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(0)
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -114,7 +120,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
 
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(0)
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	}
@@ -237,7 +243,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
 
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(0)
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	}
@@ -430,7 +436,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	}
 
 	// TODO: Flush mempool to the db and test rollbacks.
-	//require.NoError(t, mempool.universalUtxoView.FlushToDb(0))
+	//require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
 	//_executeAllTestRollbackAndFlush(testMeta)
 }
 
@@ -482,7 +488,7 @@ func _submitStakeTxn(
 	require.Equal(testMeta.t, totalInput, totalInputMake)
 	require.Equal(testMeta.t, OperationTypeStake, utxoOps[len(utxoOps)-1].Type)
 	if flushToDB {
-		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(0))
+		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(uint64(testMeta.savedHeight)))
 	}
 	require.NoError(testMeta.t, testMeta.mempool.RegenerateReadOnlyView())
 
@@ -541,7 +547,7 @@ func _submitUnstakeTxn(
 	require.Equal(testMeta.t, totalInput, totalInputMake)
 	require.Equal(testMeta.t, OperationTypeUnstake, utxoOps[len(utxoOps)-1].Type)
 	if flushToDB {
-		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(0))
+		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(uint64(testMeta.savedHeight)))
 	}
 	require.NoError(testMeta.t, testMeta.mempool.RegenerateReadOnlyView())
 
@@ -600,7 +606,7 @@ func _submitUnlockStakeTxn(
 	require.Equal(testMeta.t, totalInput, totalInputMake)
 	require.Equal(testMeta.t, OperationTypeUnlockStake, utxoOps[len(utxoOps)-1].Type)
 	if flushToDB {
-		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(0))
+		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(uint64(testMeta.savedHeight)))
 	}
 	require.NoError(testMeta.t, testMeta.mempool.RegenerateReadOnlyView())
 
