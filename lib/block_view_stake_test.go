@@ -400,6 +400,53 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	// UNLOCK STAKE
 	//
 	{
+		// RuleErrorProofOfStakeTxnBeforeBlockHeight
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = math.MaxUint32
+		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+		unlockStakeMetadata := &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StartEpochNumber:   0,
+			EndEpochNumber:     0,
+		}
+		_, _, _, err = _submitUnlockStakeTxn(
+			testMeta, m1Pub, m1Priv, unlockStakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
+
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	}
+	{
+		// RuleErrorInvalidValidatorPKID
+		unlockStakeMetadata := &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m2PkBytes),
+			StartEpochNumber:   0,
+			EndEpochNumber:     0,
+		}
+		_, _, _, err = _submitUnlockStakeTxn(
+			testMeta, m1Pub, m1Priv, unlockStakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidValidatorPKID)
+	}
+	{
+		// RuleErrorInvalidUnlockStakeEpochRange
+		unlockStakeMetadata := &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StartEpochNumber:   1,
+			EndEpochNumber:     0,
+		}
+		_, _, _, err = _submitUnlockStakeTxn(
+			testMeta, m1Pub, m1Priv, unlockStakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidUnlockStakeEpochRange)
+	}
+	{
 		// m1 unlocks stake that was assigned to m0.
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
@@ -433,6 +480,19 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Nil(t, lockedStakeEntry)
 
 		// TODO: Verify m1's DESO balance increases.
+	}
+	{
+		// RuleErrorInvalidUnlockStakeNoUnlockableStakeFound
+		unlockStakeMetadata := &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StartEpochNumber:   0,
+			EndEpochNumber:     0,
+		}
+		_, _, _, err = _submitUnlockStakeTxn(
+			testMeta, m1Pub, m1Priv, unlockStakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidUnlockStakeNoUnlockableStakeFound)
 	}
 
 	// TODO: Flush mempool to the db and test rollbacks.
