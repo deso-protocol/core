@@ -2304,6 +2304,24 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 			derivedKeyEntry, txnMeta); err != nil {
 			return utxoOpsForTxn, err
 		}
+	case TxnTypeStake:
+		txnMeta := txn.TxnMeta.(*StakeMetadata)
+		if derivedKeyEntry, err = bav._checkStakeTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txn.PublicKey, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeUnstake:
+		txnMeta := txn.TxnMeta.(*UnstakeMetadata)
+		if derivedKeyEntry, err = bav._checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txn.PublicKey, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeUnlockStake:
+		txnMeta := txn.TxnMeta.(*UnlockStakeMetadata)
+		if derivedKeyEntry, err = bav._checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txn.PublicKey, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
 	default:
 		// If we get here, it means we're dealing with a txn that doesn't have any special
 		// granular limits to deal with. This means we just check whether we have

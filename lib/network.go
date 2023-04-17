@@ -5379,6 +5379,14 @@ type TransactionSpendingLimit struct {
 	//   - AppScopeType: one of { Any, Scoped }
 	//   - AssociationOperation: one of { Any, Create, Delete }
 	AssociationLimitMap map[AssociationLimitKey]uint64
+
+	// ===== ENCODER MIGRATION ProofOfStakeNewTxnTypesMigration =====
+	// ValidatorPKID || StakerPKID to amount of stake-able DESO.
+	StakeLimitMap map[StakeLimitKey]uint64
+	// ValidatorPKID || StakerPKID to amount of unstake-able DESO.
+	UnstakeLimitMap map[StakeLimitKey]uint64
+	// ValidatorPKID || StakerPKID to number of UnlockStake transactions.
+	UnlockStakeLimitMap map[StakeLimitKey]uint64
 }
 
 // ToMetamaskString encodes the TransactionSpendingLimit into a Metamask-compatible string. The encoded string will
@@ -5623,6 +5631,10 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 		indentationCounter--
 	}
 
+	// TODO: StakeMap
+	// TODO: UnstakeMap
+	// TODO: UnlockStakeMap
+
 	// IsUnlimited
 	if tsl.IsUnlimited {
 		str += "Unlimited"
@@ -5836,6 +5848,69 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 		data = append(data, accessGroupsBytes...)
 	}
 
+	// StakeLimitMap, UnstakeLimitMap, and UnlockStakeLimitMap, gated by the encoder migration.
+	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+		// StakeLimitMap
+		stakeLimitMapLength := uint64(len(tsl.StakeLimitMap))
+		data = append(data, UintToBuf(stakeLimitMapLength)...)
+		if stakeLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[StakeLimitKey](0, stakeLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.StakeLimitMap {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.StakeLimitMap[key])...)
+			}
+		}
+
+		// UnstakeLimitMap
+		unstakeLimitMapLength := uint64(len(tsl.UnstakeLimitMap))
+		data = append(data, UintToBuf(unstakeLimitMapLength)...)
+		if unstakeLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[StakeLimitKey](0, unstakeLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.UnstakeLimitMap {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.UnstakeLimitMap[key])...)
+			}
+		}
+
+		// UnlockStakeLimitMap
+		unlockStakeLimitMapLength := uint64(len(tsl.UnlockStakeLimitMap))
+		data = append(data, UintToBuf(unlockStakeLimitMapLength)...)
+		if unlockStakeLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[StakeLimitKey](0, unlockStakeLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.UnlockStakeLimitMap {
+				keys = append(keys, key)
+			}
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.UnlockStakeLimitMap[key])...)
+			}
+		}
+	}
+
 	return data, nil
 }
 
@@ -6045,6 +6120,81 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
+	// StakeLimitMap, UnstakeLimitMap, and UnlockStakeLimitMap, gated by the encoder migration.
+	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+		// StakeLimitMap
+		stakeLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.StakeLimitMap = make(map[StakeLimitKey]uint64)
+		if stakeLimitMapLen > 0 {
+			for ii := uint64(0); ii < stakeLimitMapLen; ii++ {
+				stakeLimitKey := &StakeLimitKey{}
+				if err = stakeLimitKey.Decode(rr); err != nil {
+					return errors.Wrap(err, "Error decoding StakeLimitKey: ")
+				}
+				var stakeLimitDESONanos uint64
+				stakeLimitDESONanos, err = ReadUvarint(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.StakeLimitMap[*stakeLimitKey]; exists {
+					return errors.New("StakeLimitKey already exists in StakeLimitMap")
+				}
+				tsl.StakeLimitMap[*stakeLimitKey] = stakeLimitDESONanos
+			}
+		}
+
+		// UnstakeLimitMap
+		unstakeLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.UnstakeLimitMap = make(map[StakeLimitKey]uint64)
+		if unstakeLimitMapLen > 0 {
+			for ii := uint64(0); ii < unstakeLimitMapLen; ii++ {
+				stakeLimitKey := &StakeLimitKey{}
+				if err = stakeLimitKey.Decode(rr); err != nil {
+					return errors.Wrap(err, "Error decoding StakeLimitKey: ")
+				}
+				var unstakeLimitDESONanos uint64
+				unstakeLimitDESONanos, err = ReadUvarint(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.UnstakeLimitMap[*stakeLimitKey]; exists {
+					return errors.New("StakeLimitKey already exists in UnstakeLimitMap")
+				}
+				tsl.UnstakeLimitMap[*stakeLimitKey] = unstakeLimitDESONanos
+			}
+		}
+
+		// UnlockStakeLimitMap
+		unlockStakeLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.UnlockStakeLimitMap = make(map[StakeLimitKey]uint64)
+		if unlockStakeLimitMapLen > 0 {
+			for ii := uint64(0); ii < unlockStakeLimitMapLen; ii++ {
+				stakeLimitKey := &StakeLimitKey{}
+				if err = stakeLimitKey.Decode(rr); err != nil {
+					return errors.Wrap(err, "Error decoding StakeLimitKey: ")
+				}
+				var operationCount uint64
+				operationCount, err = ReadUvarint(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.UnlockStakeLimitMap[*stakeLimitKey]; exists {
+					return errors.New("StakeLimitKey already exists in UnlockStakeLimitMap")
+				}
+				tsl.UnlockStakeLimitMap[*stakeLimitKey] = operationCount
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -6141,6 +6291,18 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		copyTSL.AccessGroupMemberMap[accessGroupMemberLimitKey] = accessGroupMemberCount
 	}
 
+	for stakeLimitKey, stakeLimitDESONanos := range tsl.StakeLimitMap {
+		copyTSL.StakeLimitMap[stakeLimitKey] = stakeLimitDESONanos
+	}
+
+	for stakeLimitKey, unstakeLimitDESONanos := range tsl.UnstakeLimitMap {
+		copyTSL.UnstakeLimitMap[stakeLimitKey] = unstakeLimitDESONanos
+	}
+
+	for stakeLimitKey, unlockStakeOperationCount := range tsl.UnlockStakeLimitMap {
+		copyTSL.UnlockStakeLimitMap[stakeLimitKey] = unlockStakeOperationCount
+	}
+
 	return copyTSL
 }
 
@@ -6161,7 +6323,10 @@ func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpending
 		len(tsl.DAOCoinLimitOrderLimitMap) > 0 ||
 		len(tsl.AssociationLimitMap) > 0 ||
 		len(tsl.AccessGroupMap) > 0 ||
-		len(tsl.AccessGroupMemberMap) > 0) {
+		len(tsl.AccessGroupMemberMap) > 0) ||
+		len(tsl.StakeLimitMap) > 0 ||
+		len(tsl.UnstakeLimitMap) > 0 ||
+		len(tsl.UnlockStakeLimitMap) > 0 {
 		return tsl.IsUnlimited, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
 	}
 

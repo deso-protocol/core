@@ -2149,6 +2149,228 @@ func (bav *UtxoView) CreateUnlockStakeTxindexMetadata(utxoOp *UtxoOperation, txn
 }
 
 //
+// TRANSACTION SPENDING LIMITS
+//
+
+type StakeLimitKey struct {
+	ValidatorPKID PKID
+	StakerPKID    PKID
+}
+
+func MakeStakeLimitKey(validatorPKID *PKID, stakerPKID *PKID) StakeLimitKey {
+	return StakeLimitKey{
+		ValidatorPKID: *validatorPKID,
+		StakerPKID:    *stakerPKID,
+	}
+}
+
+func (stakeLimitKey *StakeLimitKey) Encode() []byte {
+	var data []byte
+	data = append(data, stakeLimitKey.ValidatorPKID.ToBytes()...)
+	data = append(data, stakeLimitKey.StakerPKID.ToBytes()...)
+	return data
+}
+
+func (stakeLimitKey *StakeLimitKey) Decode(rr *bytes.Reader) error {
+	var err error
+
+	// ValidatorPKID
+	validatorPKID := &PKID{}
+	if err = validatorPKID.FromBytes(rr); err != nil {
+		return errors.Wrap(err, "StakeLimitKey.Decode: Problem reading ValidatorPKID: ")
+	}
+	stakeLimitKey.ValidatorPKID = *validatorPKID
+
+	// StakerPKID
+	stakerPKID := &PKID{}
+	if err = stakerPKID.FromBytes(rr); err != nil {
+		return errors.Wrap(err, "StakeLimitKey.Decode: Problem reading StakerPKID: ")
+	}
+	stakeLimitKey.StakerPKID = *stakerPKID
+
+	return nil
+}
+
+func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
+	derivedKeyEntry DerivedKeyEntry,
+	transactorPublicKeyBytes []byte,
+	txMeta *StakeMetadata,
+) (DerivedKeyEntry, error) {
+	// The DerivedKeyEntry.TransactionSpendingLimit for staking maps
+	// ValidatorPKID || StakerPKID to the amount of stake-able DESO
+	// nanos allowed for this derived key.
+
+	// Convert TransactorPublicKeyBytes to StakerPKID.
+	stakerPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
+	if stakerPKIDEntry == nil || stakerPKIDEntry.isDeleted {
+		return derivedKeyEntry, RuleErrorInvalidStakerPKID
+	}
+
+	// Convert ValidatorPublicKey to ValidatorPKID.
+	validatorEntry, err := bav.GetValidatorByPublicKey(txMeta.ValidatorPublicKey)
+	if err != nil {
+		return derivedKeyEntry, errors.Wrapf(err, "_checkStakeTxnSpendingLimitAndUpdateDerivedKey: ")
+	}
+	if validatorEntry == nil || validatorEntry.isDeleted {
+		return derivedKeyEntry, RuleErrorInvalidValidatorPKID
+	}
+
+	// Check spending limit for this validator.
+	// If not found, check spending limit for any validator.
+	for _, validatorPKID := range []*PKID{validatorEntry.ValidatorPKID, &ZeroPKID} {
+		// Retrieve DerivedKeyEntry.TransactionSpendingLimit.
+		stakeLimitKey := MakeStakeLimitKey(validatorPKID, stakerPKIDEntry.PKID)
+		spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.StakeLimitMap[stakeLimitKey]
+		if !exists {
+			continue
+		}
+		spendingLimitUint256 := uint256.NewInt().SetUint64(spendingLimit)
+
+		// If the amount being staked exceeds the spending limit, error.
+		if spendingLimitUint256.Cmp(txMeta.StakeAmountNanos) < 0 {
+			return derivedKeyEntry, RuleErrorStakeTransactionSpendingLimitExceeded
+		}
+
+		// If the spending limit exceeds the amount being staked, update the spending limit.
+		if spendingLimitUint256.Cmp(txMeta.StakeAmountNanos) > 0 {
+			updatedSpendingLimit, err := SafeUint256().Sub(spendingLimitUint256, txMeta.StakeAmountNanos)
+			if err != nil {
+				return derivedKeyEntry, errors.Wrapf(err, "_checkStakeTxnSpendingLimitAndUpdateDerivedKey: ")
+			}
+			if !updatedSpendingLimit.IsUint64() {
+				// This should never happen, but good to double-check.
+				return derivedKeyEntry, errors.New(
+					"_checkStakeTxnSpendingLimitAndUpdateDerivedKey: updated spending limit exceeds uint64",
+				)
+			}
+			derivedKeyEntry.TransactionSpendingLimitTracker.StakeLimitMap[stakeLimitKey] = updatedSpendingLimit.Uint64()
+			return derivedKeyEntry, nil
+		}
+
+		// If we get to this point, the spending limit exactly equals
+		// the amount being staked. Delete the spending limit.
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.StakeLimitMap, stakeLimitKey)
+		return derivedKeyEntry, nil
+	}
+
+	// If we get to this point, we didn't find a matching spending limit.
+	return derivedKeyEntry, RuleErrorStakeTransactionSpendingLimitNotFound
+}
+
+func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
+	derivedKeyEntry DerivedKeyEntry,
+	transactorPublicKeyBytes []byte,
+	txMeta *UnstakeMetadata,
+) (DerivedKeyEntry, error) {
+	// The DerivedKeyEntry.TransactionSpendingLimit for unstaking maps
+	// ValidatorPKID || StakerPKID to the amount of unstake-able DESO
+	// nanos allowed for this derived key.
+
+	// Convert TransactorPublicKeyBytes to StakerPKID.
+	stakerPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
+	if stakerPKIDEntry == nil || stakerPKIDEntry.isDeleted {
+		return derivedKeyEntry, RuleErrorInvalidStakerPKID
+	}
+
+	// Convert ValidatorPublicKey to ValidatorPKID.
+	validatorEntry, err := bav.GetValidatorByPublicKey(txMeta.ValidatorPublicKey)
+	if err != nil {
+		return derivedKeyEntry, errors.Wrapf(err, "_checkUnstakeTxnSpendingLimitAndUpdateDerivedKey: ")
+	}
+	if validatorEntry == nil || validatorEntry.isDeleted {
+		return derivedKeyEntry, RuleErrorInvalidValidatorPKID
+	}
+
+	// Check spending limit for this validator.
+	// If not found, check spending limit for any validator.
+	for _, validatorPKID := range []*PKID{validatorEntry.ValidatorPKID, &ZeroPKID} {
+		// Retrieve DerivedKeyEntry.TransactionSpendingLimit.
+		stakeLimitKey := MakeStakeLimitKey(validatorPKID, stakerPKIDEntry.PKID)
+		spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.UnstakeLimitMap[stakeLimitKey]
+		if !exists {
+			continue
+		}
+		spendingLimitUint256 := uint256.NewInt().SetUint64(spendingLimit)
+
+		// If the amount being unstaked exceeds the spending limit, error.
+		if spendingLimitUint256.Cmp(txMeta.UnstakeAmountNanos) < 0 {
+			return derivedKeyEntry, RuleErrorUnstakeTransactionSpendingLimitExceeded
+		}
+
+		// If the spending limit exceeds the amount being unstaked, update the spending limit.
+		if spendingLimitUint256.Cmp(txMeta.UnstakeAmountNanos) > 0 {
+			updatedSpendingLimit, err := SafeUint256().Sub(spendingLimitUint256, txMeta.UnstakeAmountNanos)
+			if err != nil {
+				return derivedKeyEntry, errors.Wrapf(err, "_checkUnstakeTxnSpendingLimitAndUpdateDerivedKey: ")
+			}
+			if !updatedSpendingLimit.IsUint64() {
+				// This should never happen, but good to double-check.
+				return derivedKeyEntry, errors.New(
+					"_checkUnstakeTxnSpendingLimitAndUpdateDerivedKey: updated spending limit exceeds uint64",
+				)
+			}
+			derivedKeyEntry.TransactionSpendingLimitTracker.UnstakeLimitMap[stakeLimitKey] = updatedSpendingLimit.Uint64()
+			return derivedKeyEntry, nil
+		}
+
+		// If we get to this point, the spending limit exactly equals
+		// the amount being unstaked. Delete the spending limit.
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.UnstakeLimitMap, stakeLimitKey)
+		return derivedKeyEntry, nil
+	}
+
+	// If we get to this point, we didn't find a matching spending limit.
+	return derivedKeyEntry, RuleErrorUnstakeTransactionSpendingLimitNotFound
+}
+
+func (bav *UtxoView) _checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
+	derivedKeyEntry DerivedKeyEntry,
+	transactorPublicKeyBytes []byte,
+	txMeta *UnlockStakeMetadata,
+) (DerivedKeyEntry, error) {
+	// The DerivedKeyEntry.TransactionSpendingLimit for unlocking stake maps
+	// ValidatorPKID || StakerPKID to the number of UnlockStake transactions
+	// this derived key is allowed to perform.
+
+	// Convert TransactorPublicKeyBytes to StakerPKID.
+	stakerPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
+	if stakerPKIDEntry == nil || stakerPKIDEntry.isDeleted {
+		return derivedKeyEntry, RuleErrorInvalidStakerPKID
+	}
+
+	// Convert ValidatorPublicKey to ValidatorPKID.
+	validatorEntry, err := bav.GetValidatorByPublicKey(txMeta.ValidatorPublicKey)
+	if err != nil {
+		return derivedKeyEntry, errors.Wrapf(err, "_checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey: ")
+	}
+	if validatorEntry == nil || validatorEntry.isDeleted {
+		return derivedKeyEntry, RuleErrorInvalidValidatorPKID
+	}
+
+	// Check spending limit for this validator.
+	// If not found, check spending limit for any validator.
+	for _, validatorPKID := range []*PKID{validatorEntry.ValidatorPKID, &ZeroPKID} {
+		// Retrieve DerivedKeyEntry.TransactionSpendingLimit.
+		stakeLimitKey := MakeStakeLimitKey(validatorPKID, stakerPKIDEntry.PKID)
+		spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.UnlockStakeLimitMap[stakeLimitKey]
+		if !exists || spendingLimit <= 0 {
+			continue
+		}
+
+		// Delete the spending limit if we've exhausted the spending limit for this key.
+		if spendingLimit == 1 {
+			delete(derivedKeyEntry.TransactionSpendingLimitTracker.UnlockStakeLimitMap, stakeLimitKey)
+		} else {
+			// Otherwise decrement it by 1.
+			derivedKeyEntry.TransactionSpendingLimitTracker.UnlockStakeLimitMap[stakeLimitKey]--
+		}
+	}
+
+	// If we get to this point, we didn't find a matching spending limit.
+	return derivedKeyEntry, RuleErrorUnlockStakeTransactionSpendingLimitNotFound
+}
+
+//
 // CONSTANTS
 //
 
@@ -2160,3 +2382,8 @@ const RuleErrorInvalidUnstakeAmountNanos RuleError = "RuleErrorInvalidUnstakeAmo
 const RuleErrorInvalidUnstakeInsufficientStakeFound RuleError = "RuleErrorInvalidUnstakeInsufficientStakeFound"
 const RuleErrorInvalidUnlockStakeEpochRange RuleError = "RuleErrorInvalidUnlockStakeEpochRange"
 const RuleErrorInvalidUnlockStakeNoUnlockableStakeFound RuleError = "RuleErrorInvalidUnlockStakeNoUnlockableStakeFound"
+const RuleErrorStakeTransactionSpendingLimitNotFound RuleError = "RuleErrorStakeTransactionSpendingLimitNotFound"
+const RuleErrorStakeTransactionSpendingLimitExceeded RuleError = "RuleErrorStakeTransactionSpendingLimitExceeded"
+const RuleErrorUnstakeTransactionSpendingLimitNotFound RuleError = "RuleErrorUnstakeTransactionSpendingLimitNotFound"
+const RuleErrorUnstakeTransactionSpendingLimitExceeded RuleError = "RuleErrorUnstakeTransactionSpendingLimitExceeded"
+const RuleErrorUnlockStakeTransactionSpendingLimitNotFound RuleError = "RuleErrorUnlockStakeTransactionSpendingLimitNotFound"
