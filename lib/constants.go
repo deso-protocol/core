@@ -629,7 +629,7 @@ var RegtestForkHeights = ForkHeights{
 	// For convenience, we set the block height to 1 since the
 	// genesis block was created using the utxo model.
 	BalanceModelBlockHeight:            uint32(1),
-	ProofOfStakeNewTxnTypesBlockHeight: uint32(0),
+	ProofOfStakeNewTxnTypesBlockHeight: uint32(1),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.

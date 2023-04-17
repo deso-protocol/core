@@ -507,10 +507,10 @@ func DBKeyForGlobalStakeAmountNanos() []byte {
 
 func DBGetValidatorByPKID(handle *badger.DB, snap *Snapshot, pkid *PKID) (*ValidatorEntry, error) {
 	var ret *ValidatorEntry
-	var err error
-	handle.View(func(txn *badger.Txn) error {
-		ret, err = DBGetValidatorByPKIDWithTxn(txn, snap, pkid)
-		return nil
+	err := handle.View(func(txn *badger.Txn) error {
+		var innerErr error
+		ret, innerErr = DBGetValidatorByPKIDWithTxn(txn, snap, pkid)
+		return innerErr
 	})
 	return ret, err
 }
@@ -581,10 +581,10 @@ func DBGetTopValidatorsByStake(
 
 func DBGetGlobalStakeAmountNanos(handle *badger.DB, snap *Snapshot) (*uint256.Int, error) {
 	var ret *uint256.Int
-	var err error
-	handle.View(func(txn *badger.Txn) error {
-		ret, err = DBGetGlobalStakeAmountNanosWithTxn(txn, snap)
-		return nil
+	err := handle.View(func(txn *badger.Txn) error {
+		var innerErr error
+		ret, innerErr = DBGetGlobalStakeAmountNanosWithTxn(txn, snap)
+		return innerErr
 	})
 	return ret, err
 }
@@ -633,7 +633,7 @@ func DBPutValidatorWithTxn(
 	key = DBKeyForValidatorByStake(validatorEntry)
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry.ValidatorPKID)); err != nil {
 		return errors.Wrapf(
-			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByPKID",
+			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByStake",
 		)
 	}
 
@@ -657,7 +657,7 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorEntry *V
 	key = DBKeyForValidatorByStake(validatorEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByPKID",
+			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByStake",
 		)
 	}
 
@@ -739,7 +739,7 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 
 	// Validate that the transaction has at least one input, even if it all goes
 	// to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
 		return nil, 0, 0, 0, errors.New(
 			"Blockchain.CreateRegisterAsValidatorTxn: txn has zero inputs, try increasing the fee rate",
 		)
@@ -783,14 +783,14 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrap(
-			err, "Blockchain.CreateRegisterAsValidatorTxn: problem creating new utxo view: ",
+			err, "Blockchain.CreateUnregisterAsValidatorTxn: problem creating new utxo view: ",
 		)
 	}
 	if mempool != nil {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
-				err, "Blockchain.CreateRegisterAsValidatorTxn: problem getting augmented utxo view from mempool: ",
+				err, "Blockchain.CreateUnregisterAsValidatorTxn: problem getting augmented utxo view from mempool: ",
 			)
 		}
 	}
@@ -815,7 +815,7 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 
 	// Validate that the transaction has at least one input, even if it all goes
 	// to change. This ensures that the transaction will not be "replayable."
-	if len(txn.TxInputs) == 0 {
+	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
 		return nil, 0, 0, 0, errors.New(
 			"Blockchain.CreateUnregisterAsValidatorTxn: txn has zero inputs, try increasing the fee rate",
 		)
@@ -891,7 +891,10 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectRegisterAsValidator: ")
 	}
-	// Delete the existing ValidatorEntry, if exists.
+	// Delete the existing ValidatorEntry, if exists. There will be an existing ValidatorEntry
+	// if the transactor is updating their ValidatorEntry. There will not be, if the transactor
+	// is registering a ValidatorEntry for the first time (or it was previously unregistered).
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
 	if prevValidatorEntry != nil {
 		bav._deleteValidatorEntryMappings(prevValidatorEntry)
 	}
@@ -902,15 +905,18 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		validatorID = prevValidatorEntry.ValidatorID
 	}
 
+	// Calculate TotalStakeAmountNanos.
+	totalStakeAmountNanos := uint256.NewInt()
+	if prevValidatorEntry != nil {
+		totalStakeAmountNanos = prevValidatorEntry.TotalStakeAmountNanos
+	}
+
 	// TODO: In subsequent PR, unstake delegated stakers if updating DisableDelegatedStake=true.
-	// This should also update GlobalStakeAmountNanos.
+	// We will also need to update the TotalStakeAmountNanos and the GlobalStakeAmountNanos.
 	if prevValidatorEntry != nil &&
 		!prevValidatorEntry.DisableDelegatedStake && // Validator previously allowed delegated stake.
 		txMeta.DisableDelegatedStake { // Validator no longer allows delegated stake.
 	}
-
-	// TODO: In subsequent PR, calculate TotalStakeAmountNanos.
-	totalStakeAmountNanos := uint256.NewInt()
 
 	// Set RegisteredAtBlockHeight only if this is a new ValidatorEntry.
 	registeredAtBlockHeight := uint64(blockHeight)
@@ -956,6 +962,11 @@ func (bav *UtxoView) _disconnectRegisterAsValidator(
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+		return errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_disconnectRegisterAsValidator: ")
+	}
+
 	// Validate the last operation is a RegisterAsValidator operation.
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectRegisterAsValidator: utxoOperations are missing")
@@ -981,6 +992,7 @@ func (bav *UtxoView) _disconnectRegisterAsValidator(
 	if err != nil {
 		return errors.Wrapf(err, "_disconnectRegisterAsValidator: ")
 	}
+	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
 	if currentValidatorEntry == nil {
 		return fmt.Errorf(
 			"_disconnectRegisterAsValidator: no ValidatorEntry found for %v", transactorPKIDEntry.PKID,
@@ -1087,6 +1099,11 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+		return errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_disconnectUnregisterAsValidator: ")
+	}
+
 	// Validate the last operation is an UnregisterAsValidator operation.
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectUnregisterAsValidator: utxoOperations are missing")
@@ -1180,7 +1197,13 @@ func (bav *UtxoView) GetValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
 		return validatorEntry, nil
 	}
 	// If not found, check database.
-	return DBGetValidatorByPKID(bav.Handle, bav.Snapshot, pkid)
+	dbValidatorEntry, err := DBGetValidatorByPKID(bav.Handle, bav.Snapshot, pkid)
+	if err != nil {
+		return nil, err
+	}
+	// Cache the ValidatorEntry from the db in the UtxoView.
+	bav._setValidatorEntryMappings(dbValidatorEntry)
+	return dbValidatorEntry, nil
 }
 
 func (bav *UtxoView) GetTopValidatorsByStake(limit int) ([]*ValidatorEntry, error) {
@@ -1232,7 +1255,8 @@ func (bav *UtxoView) GetGlobalStakeAmountNanos() (*uint256.Int, error) {
 		if globalStakeAmountNanos == nil {
 			globalStakeAmountNanos = uint256.NewInt()
 		}
-		bav.GlobalStakeAmountNanos = globalStakeAmountNanos
+		// Cache the GlobaleStakeAmountNanos from the db in the UtxoView.
+		bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
 	}
 	return globalStakeAmountNanos, nil
 }
@@ -1265,7 +1289,7 @@ func (bav *UtxoView) _setGlobalStakeAmountNanos(globalStakeAmountNanos *uint256.
 		glog.Errorf("_setGlobalStakeAmountNanos: called with nil entry, this should never happen")
 		return
 	}
-	bav.GlobalStakeAmountNanos = globalStakeAmountNanos
+	bav.GlobalStakeAmountNanos = globalStakeAmountNanos.Clone()
 }
 
 func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
