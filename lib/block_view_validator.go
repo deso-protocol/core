@@ -1201,8 +1201,10 @@ func (bav *UtxoView) GetValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Cache the ValidatorEntry from the db in the UtxoView.
-	bav._setValidatorEntryMappings(dbValidatorEntry)
+	if dbValidatorEntry != nil {
+		// Cache the ValidatorEntry from the db in the UtxoView.
+		bav._setValidatorEntryMappings(dbValidatorEntry)
+	}
 	return dbValidatorEntry, nil
 }
 

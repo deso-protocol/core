@@ -221,6 +221,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// StakeEntries
 	bav.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry)
+
+	// LockedStakeEntries
 	bav.LockedStakeMapKeyToLockedStakeEntry = make(map[LockedStakeMapKey]*LockedStakeEntry)
 }
 
@@ -1357,8 +1359,8 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	case TxnTypeUnlockStake:
 		return bav._disconnectUnlockStake(
 			OperationTypeUnlockStake, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
-
 	}
+
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
 }
 
