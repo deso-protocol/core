@@ -16,14 +16,13 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	// Local variables
 	var err error
 
+	// Initialize fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
-
-	// Initialize fork heights.
-	params.ForkHeights.BalanceModelBlockHeight = uint32(1)
-	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
 	utxoView := func() *UtxoView {
 		newUtxoView, err := mempool.GetAugmentedUniversalView()
@@ -495,9 +494,9 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorInvalidUnlockStakeNoUnlockableStakeFound)
 	}
 
-	// TODO: Flush mempool to the db and test rollbacks.
-	//require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
-	//_executeAllTestRollbackAndFlush(testMeta)
+	// Flush mempool to the db and test rollbacks.
+	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func _submitStakeTxn(

@@ -24,14 +24,13 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	var globalStakeAmountNanos *uint256.Int
 	var err error
 
+	// Initialize fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
-
-	// Initialize fork heights.
-	params.ForkHeights.BalanceModelBlockHeight = uint32(1)
-	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
 	utxoView := func() *UtxoView {
 		newUtxoView, err := mempool.GetAugmentedUniversalView()

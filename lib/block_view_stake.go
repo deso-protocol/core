@@ -2008,7 +2008,7 @@ func (bav *UtxoView) _flushLockedStakeEntriesToDbWithTxn(txn *badger.Txn, blockH
 		mapKeyInEntry := entry.ToMapKey()
 		if mapKeyInEntry != mapKey {
 			return fmt.Errorf(
-				"_flushLockedStakeEntriesToDbWithTxn: StakeEntry key %v doesn't match MapKey %v",
+				"_flushLockedStakeEntriesToDbWithTxn: LockedStakeEntry key %v doesn't match MapKey %v",
 				&mapKeyInEntry,
 				&mapKey,
 			)
