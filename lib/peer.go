@@ -842,9 +842,9 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 	//
 	// NOTE: at the BalanceModelBlockHeight, MsgTypeTransactionBundle is replaced by
 	// the more capable MsgTypeTransactionBundleV2.
-	nextBlockHeight := pp.srv.blockchain.blockTip().Height + 1
 	expectedMsgType := MsgTypeTransactionBundle
-	if nextBlockHeight >= pp.srv.blockchain.params.ForkHeights.BalanceModelBlockHeight {
+	if pp.srv != nil && pp.srv.blockchain != nil && pp.srv.blockchain.blockTip() != nil &&
+		pp.srv.blockchain.blockTip().Height+1 >= pp.srv.blockchain.params.ForkHeights.BalanceModelBlockHeight {
 		expectedMsgType = MsgTypeTransactionBundleV2
 	}
 	if msg.GetMsgType() == MsgTypeGetTransactions {
