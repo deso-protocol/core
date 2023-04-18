@@ -1879,7 +1879,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 
 		// PrevGlobalStakeAmountNanos
-		if prevGlobalStakeAmountNanos, err := ReadOptionalUint256(rr); err != nil {
+		if prevGlobalStakeAmountNanos, err := ReadOptionalUint256(rr); err == nil {
 			op.PrevGlobalStakeAmountNanos = prevGlobalStakeAmountNanos
 		} else {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalStakeAmountNanos: ")
