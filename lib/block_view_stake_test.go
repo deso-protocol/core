@@ -1028,13 +1028,101 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		// sender unlocks stake using a DerivedKey.
 
 		// sender creates a DerivedKey to perform 1 unlock stake operation with m0.
-		// sender tries to unlock 50 $DESO nanos from m1 using the DerivedKey. Errors.
-		// sender unstakes 50 $DESO nanos from m1.
-		// sender tries to unlock 50 $DESO nanos from m1 using the DerivedKey. Errors.
-		// sender unlocks 50 $DESO nanos from m0 using the DerivedKey. Succeeds.
+		stakeLimitKey := MakeStakeLimitKey(m0PKID, senderPKID)
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+			UnlockStakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 1},
+		}
+		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
+		require.NoError(t, err)
+
+		// sender tries to unlock all stake from m1 using the DerivedKey. Errors.
+		epochNumber := uint64(0) // TODO: Get epoch number from the db.
+		unlockStakeMetadata := &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StartEpochNumber:   epochNumber,
+			EndEpochNumber:     epochNumber,
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidUnlockStakeNoUnlockableStakeFound)
+
+		// TODO: sender unstakes 50 $DESO nanos from m1.
+		//unstakeMetadata := &UnstakeMetadata{
+		//	ValidatorPublicKey: NewPublicKey(m1PkBytes),
+		//	UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
+		//}
+		//_, _, _, err = _submitUnstakeTxn(
+		//	testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
+		//)
+		//require.NoError(t, err)
+
+		// TODO: sender tries to unlock all stake from m1 using the DerivedKey. Errors.
+		//unlockStakeMetadata = &UnlockStakeMetadata{
+		//	ValidatorPublicKey: NewPublicKey(m1PkBytes),
+		//	StartEpochNumber:   epochNumber,
+		//	EndEpochNumber:     epochNumber,
+		//}
+		//err = _submitStakeTxnWithDerivedKey(
+		//	senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
+		//)
+		//require.Error(t, err)
+		//require.Contains(t, err.Error(), RuleErrorUnlockStakeTransactionSpendingLimitNotFound)
+
+		// sender unlocks all stake from m0 using the DerivedKey. Succeeds.
+		unlockStakeMetadata = &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StartEpochNumber:   epochNumber,
+			EndEpochNumber:     epochNumber + 1, // FIXME: off-by-one error
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
+		)
+		require.NoError(t, err)
+
 		// LockedStakeEntry was deleted.
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		lockedStakeEntry, err := utxoView.GetLockedStakeEntry(m0PKID, senderPKID, epochNumber)
+		require.NoError(t, err)
+		require.Nil(t, lockedStakeEntry)
 
 		// TODO: verify sender's DESO balance was increased by 50 DESO nanos.
+
+		// sender stakes + unstakes 50 $DESO nanos with m0.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(50),
+		}
+		_, _, _, err = _submitStakeTxn(
+			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
+
+		// sender tries to unlock all stake from m0 using the DerivedKey. Errors.
+		unlockStakeMetadata = &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StartEpochNumber:   epochNumber,
+			EndEpochNumber:     epochNumber + 1, // FIXME: off-by-one error
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorUnlockStakeTransactionSpendingLimitNotFound)
 	}
 
 	// TODO: Flush mempool to the db and test rollbacks.

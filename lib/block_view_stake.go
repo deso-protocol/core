@@ -2364,6 +2364,9 @@ func (bav *UtxoView) _checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
 			// Otherwise decrement it by 1.
 			derivedKeyEntry.TransactionSpendingLimitTracker.UnlockStakeLimitMap[stakeLimitKey]--
 		}
+
+		// If we get to this point, we found a matching spending limit which we either deleted or decremented.
+		return derivedKeyEntry, nil
 	}
 
 	// If we get to this point, we didn't find a matching spending limit.
