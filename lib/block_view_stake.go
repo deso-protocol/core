@@ -1712,7 +1712,7 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 	}
 
 	// Validate 0 < StakeAmountNanos <= transactor's DESO Balance - txn fees.
-	if metadata.StakeAmountNanos.IsZero() {
+	if metadata.StakeAmountNanos == nil || metadata.StakeAmountNanos.IsZero() {
 		return RuleErrorInvalidStakeAmountNanos
 	}
 	// TODO: should we include fees in this check?
@@ -1757,7 +1757,7 @@ func (bav *UtxoView) IsValidUnstakeMetadata(transactorPkBytes []byte, metadata *
 	}
 
 	// Validate 0 < UnstakeAmountNanos <= StakeEntry.StakeAmountNanos.
-	if metadata.UnstakeAmountNanos.IsZero() {
+	if metadata.UnstakeAmountNanos == nil || metadata.UnstakeAmountNanos.IsZero() {
 		return RuleErrorInvalidUnstakeAmountNanos
 	}
 	if stakeEntry.StakeAmountNanos.Cmp(metadata.UnstakeAmountNanos) < 0 {

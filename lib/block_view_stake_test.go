@@ -142,6 +142,18 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidStakeAmountNanos
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   nil,
+		}
+		_, _, _, err = _submitStakeTxn(
+			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidStakeAmountNanos)
+	}
+	{
+		// RuleErrorInvalidStakeAmountNanos
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			StakeAmountNanos:   uint256.NewInt(),
 		}
 		_, _, _, err = _submitStakeTxn(
@@ -272,6 +284,18 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorInvalidUnstakeNoStakeFound)
+	}
+	{
+		// RuleErrorInvalidUnstakeAmountNanos
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: nil,
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidUnstakeAmountNanos)
 	}
 	{
 		// RuleErrorInvalidUnstakeAmountNanos
@@ -730,10 +754,14 @@ func _testStakingWithDerivedKey(t *testing.T) {
 	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
 	senderPKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, senderPkBytes).PKID
 
-	_submitAuthorizeDerivedKeyTxn := func(txnSpendingLimit *TransactionSpendingLimit) (string, error) {
+	newUtxoView := func() *UtxoView {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
+		return utxoView
+	}
 
+	_submitAuthorizeDerivedKeyTxn := func(txnSpendingLimit *TransactionSpendingLimit) (string, error) {
+		utxoView := newUtxoView()
 		derivedKeyMetadata, derivedKeyAuthPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
 			t, senderPrivKey, blockHeight+5, txnSpendingLimit, false, blockHeight,
 		)
@@ -773,8 +801,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 	_submitStakeTxnWithDerivedKey := func(
 		transactorPkBytes []byte, derivedKeyPrivBase58Check string, inputTxn MsgDeSoTxn,
 	) error {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-		require.NoError(t, err)
+		utxoView := newUtxoView()
 		var txn *MsgDeSoTxn
 
 		switch inputTxn.TxnMeta.GetTxnType() {
@@ -921,9 +948,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// StakeEntry was created.
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-		require.NoError(t, err)
-		stakeEntry, err := utxoView.GetStakeEntry(m0PKID, senderPKID)
+		stakeEntry, err := newUtxoView().GetStakeEntry(m0PKID, senderPKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(100))
@@ -1010,16 +1035,14 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// StakeEntry was updated.
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-		require.NoError(t, err)
-		stakeEntry, err := utxoView.GetStakeEntry(m0PKID, senderPKID)
+		stakeEntry, err := newUtxoView().GetStakeEntry(m0PKID, senderPKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(50))
 
 		// LockedStakeEntry was created.
 		epochNumber := uint64(0) // TODO: Get epoch number from the db.
-		lockedStakeEntry, err := utxoView.GetLockedStakeEntry(m0PKID, senderPKID, epochNumber)
+		lockedStakeEntry, err := newUtxoView().GetLockedStakeEntry(m0PKID, senderPKID, epochNumber)
 		require.NoError(t, err)
 		require.NotNil(t, lockedStakeEntry)
 		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(50))
@@ -1052,33 +1075,33 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorInvalidUnlockStakeNoUnlockableStakeFound)
 
-		// TODO: sender unstakes 50 $DESO nanos from m1.
-		//unstakeMetadata := &UnstakeMetadata{
-		//	ValidatorPublicKey: NewPublicKey(m1PkBytes),
-		//	UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
-		//}
-		//_, _, _, err = _submitUnstakeTxn(
-		//	testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
-		//)
-		//require.NoError(t, err)
+		// sender unstakes 50 $DESO nanos from m1.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
 
-		// TODO: sender tries to unlock all stake from m1 using the DerivedKey. Errors.
-		//unlockStakeMetadata = &UnlockStakeMetadata{
-		//	ValidatorPublicKey: NewPublicKey(m1PkBytes),
-		//	StartEpochNumber:   epochNumber,
-		//	EndEpochNumber:     epochNumber,
-		//}
-		//err = _submitStakeTxnWithDerivedKey(
-		//	senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
-		//)
-		//require.Error(t, err)
-		//require.Contains(t, err.Error(), RuleErrorUnlockStakeTransactionSpendingLimitNotFound)
+		// sender tries to unlock all stake from m1 using the DerivedKey. Errors.
+		unlockStakeMetadata = &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StartEpochNumber:   epochNumber,
+			EndEpochNumber:     epochNumber,
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorUnlockStakeTransactionSpendingLimitNotFound)
 
 		// sender unlocks all stake from m0 using the DerivedKey. Succeeds.
 		unlockStakeMetadata = &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			StartEpochNumber:   epochNumber,
-			EndEpochNumber:     epochNumber + 1, // FIXME: off-by-one error
+			EndEpochNumber:     epochNumber,
 		}
 		err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
@@ -1086,9 +1109,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// LockedStakeEntry was deleted.
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-		require.NoError(t, err)
-		lockedStakeEntry, err := utxoView.GetLockedStakeEntry(m0PKID, senderPKID, epochNumber)
+		lockedStakeEntry, err := newUtxoView().GetLockedStakeEntry(m0PKID, senderPKID, epochNumber)
 		require.NoError(t, err)
 		require.Nil(t, lockedStakeEntry)
 
@@ -1103,7 +1124,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
 		)
 		require.NoError(t, err)
-		unstakeMetadata := &UnstakeMetadata{
+		unstakeMetadata = &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
 		}
@@ -1116,7 +1137,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		unlockStakeMetadata = &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			StartEpochNumber:   epochNumber,
-			EndEpochNumber:     epochNumber + 1, // FIXME: off-by-one error
+			EndEpochNumber:     epochNumber,
 		}
 		err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},

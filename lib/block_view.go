@@ -216,8 +216,10 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// ValidatorEntries
 	bav.ValidatorMapKeyToValidatorEntry = make(map[ValidatorMapKey]*ValidatorEntry)
 
-	// Global stake across validators
-	bav.GlobalStakeAmountNanos = uint256.NewInt()
+	// Global stake across validators. We deliberately want this to initialize to nil and not zero
+	// since a zero value will overwrite an existing GlobalStakeAmountNanos value in the db, whereas
+	// a nil GlobalStakeAmountNanos value signifies that this value was never set.
+	bav.GlobalStakeAmountNanos = nil
 
 	// StakeEntries
 	bav.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry)
@@ -484,7 +486,9 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	}
 
 	// Copy the GlobalStakeAmountNanos.
-	newView.GlobalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
+	if bav.GlobalStakeAmountNanos != nil {
+		newView.GlobalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
+	}
 
 	// Copy the StakeEntries
 	newView.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry, len(bav.StakeMapKeyToStakeEntry))

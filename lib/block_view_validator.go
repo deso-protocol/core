@@ -1247,8 +1247,11 @@ func (bav *UtxoView) GetGlobalStakeAmountNanos() (*uint256.Int, error) {
 	var globalStakeAmountNanos *uint256.Int
 	var err error
 	// Read the GlobalStakeAmountNanos from the UtxoView.
-	globalStakeAmountNanos = bav.GlobalStakeAmountNanos
+	if bav.GlobalStakeAmountNanos != nil {
+		globalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
+	}
 	// If not set, read the GlobalStakeAmountNanos from the db.
+	// TODO: Confirm if the GlobalStakeAmountNanos.IsZero() that we should look in the db.
 	if globalStakeAmountNanos == nil || globalStakeAmountNanos.IsZero() {
 		globalStakeAmountNanos, err = DBGetGlobalStakeAmountNanos(bav.Handle, bav.Snapshot)
 		if err != nil {
@@ -1337,6 +1340,11 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 }
 
 func (bav *UtxoView) _flushGlobalStakeAmountNanosToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// If GlobalStakeAmountNanos is nil, then it was never
+	// set and shouldn't overwrite the value in the db.
+	if bav.GlobalStakeAmountNanos == nil {
+		return nil
+	}
 	return DBPutGlobalStakeAmountNanosWithTxn(txn, bav.Snapshot, bav.GlobalStakeAmountNanos, blockHeight)
 }
 
