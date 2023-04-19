@@ -12,7 +12,7 @@ import (
 func TestStaking(t *testing.T) {
 	_testStaking(t, false)
 	_testStaking(t, true)
-	//_testStakingWithDerivedKey(t)
+	_testStakingWithDerivedKey(t)
 }
 
 func _testStaking(t *testing.T, flushToDB bool) {
@@ -780,18 +780,18 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		switch inputTxn.TxnMeta.GetTxnType() {
 		// Construct txn.
 		case TxnTypeStake:
-			txn, _, _, _, err = testMeta.chain.CreateRegisterAsValidatorTxn(
+			txn, _, _, _, err = testMeta.chain.CreateStakeTxn(
 				transactorPkBytes,
-				inputTxn.TxnMeta.(*RegisterAsValidatorMetadata),
+				inputTxn.TxnMeta.(*StakeMetadata),
 				make(map[string][]byte),
 				testMeta.feeRateNanosPerKb,
 				mempool,
 				[]*DeSoOutput{},
 			)
 		case TxnTypeUnstake:
-			txn, _, _, _, err = testMeta.chain.CreateUnregisterAsValidatorTxn(
+			txn, _, _, _, err = testMeta.chain.CreateUnstakeTxn(
 				transactorPkBytes,
-				inputTxn.TxnMeta.(*UnregisterAsValidatorMetadata),
+				inputTxn.TxnMeta.(*UnstakeMetadata),
 				make(map[string][]byte),
 				testMeta.feeRateNanosPerKb,
 				mempool,
@@ -888,7 +888,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
 		require.NoError(t, err)
 
-		// sender tries to stake 100 $DESO nanos with m1 using a DerivedKey. Errors.
+		// sender tries to stake 100 $DESO nanos with m1 using the DerivedKey. Errors.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
 			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
@@ -897,17 +897,144 @@ func _testStakingWithDerivedKey(t *testing.T) {
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: stakeMetadata},
 		)
 		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorStakeTransactionSpendingLimitNotFound)
 
-		// sender tries to stake 200 $DESO nanos with m0 using a DerivedKey. Errors.
+		// sender tries to stake 200 $DESO nanos with m0 using the DerivedKey. Errors.
+		stakeMetadata = &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(200),
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: stakeMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorStakeTransactionSpendingLimitExceeded)
 
-		// sender stakes 100 $DESO nanos with m0 using a DerivedKey. Succeeds.
+		// sender stakes 100 $DESO nanos with m0 using the DerivedKey. Succeeds.
+		stakeMetadata = &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: stakeMetadata},
+		)
+		require.NoError(t, err)
 
+		// StakeEntry was created.
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		stakeEntry, err := utxoView.GetStakeEntry(m0PKID, senderPKID)
+		require.NoError(t, err)
+		require.NotNil(t, stakeEntry)
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(100))
+
+		// TODO: verify sender's DESO balance is reduced by 100 $DESO nanos.
 	}
 	{
-		// sender unstakes with m0 using a DerivedKey.
+		// sender unstakes from m0 using a DerivedKey.
+
+		// sender creates a DerivedKey to unstake up to 50 $DESO nanos from m0.
+		stakeLimitKey := MakeStakeLimitKey(m0PKID, senderPKID)
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+			UnstakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 50},
+		}
+		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
+		require.NoError(t, err)
+
+		// sender tries to unstake 50 $DESO nanos from m1 using the DerivedKey. Errors.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidUnstakeNoStakeFound)
+
+		// sender stakes 50 $DESO nanos with m1.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(50),
+		}
+		_, _, _, err = _submitStakeTxn(
+			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
+
+		// sender tries to unstake 50 $DESO nanos from m1 using the DerivedKey. Errors.
+		unstakeMetadata = &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorUnstakeTransactionSpendingLimitNotFound)
+
+		// sender tries to unstake 200 $DESO nanos from m0 using the DerivedKey. Errors.
+		unstakeMetadata = &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(200),
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidUnstakeInsufficientStakeFound)
+
+		// sender tries to unstake 100 $DESO nanos from m0 using the DerivedKey. Errors.
+		unstakeMetadata = &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(100),
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorUnstakeTransactionSpendingLimitExceeded)
+
+		// sender unstakes 50 $DESO nanos from m0 using the DerivedKey. Succeeds.
+		unstakeMetadata = &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
+		)
+		require.NoError(t, err)
+
+		// StakeEntry was updated.
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		stakeEntry, err := utxoView.GetStakeEntry(m0PKID, senderPKID)
+		require.NoError(t, err)
+		require.NotNil(t, stakeEntry)
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(50))
+
+		// LockedStakeEntry was created.
+		epochNumber := uint64(0) // TODO: Get epoch number from the db.
+		lockedStakeEntry, err := utxoView.GetLockedStakeEntry(m0PKID, senderPKID, epochNumber)
+		require.NoError(t, err)
+		require.NotNil(t, lockedStakeEntry)
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(50))
 	}
 	{
 		// sender unlocks stake using a DerivedKey.
+
+		// sender creates a DerivedKey to perform 1 unlock stake operation with m0.
+		// sender tries to unlock 50 $DESO nanos from m1 using the DerivedKey. Errors.
+		// sender unstakes 50 $DESO nanos from m1.
+		// sender tries to unlock 50 $DESO nanos from m1 using the DerivedKey. Errors.
+		// sender unlocks 50 $DESO nanos from m0 using the DerivedKey. Succeeds.
+		// LockedStakeEntry was deleted.
+
+		// TODO: verify sender's DESO balance was increased by 50 DESO nanos.
 	}
 
 	// TODO: Flush mempool to the db and test rollbacks.

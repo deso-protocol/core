@@ -6251,6 +6251,9 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
 		AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
 		AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
+		StakeLimitMap:                make(map[StakeLimitKey]uint64),
+		UnstakeLimitMap:              make(map[StakeLimitKey]uint64),
+		UnlockStakeLimitMap:          make(map[StakeLimitKey]uint64),
 		IsUnlimited:                  tsl.IsUnlimited,
 	}
 
@@ -6323,10 +6326,10 @@ func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpending
 		len(tsl.DAOCoinLimitOrderLimitMap) > 0 ||
 		len(tsl.AssociationLimitMap) > 0 ||
 		len(tsl.AccessGroupMap) > 0 ||
-		len(tsl.AccessGroupMemberMap) > 0) ||
+		len(tsl.AccessGroupMemberMap) > 0 ||
 		len(tsl.StakeLimitMap) > 0 ||
 		len(tsl.UnstakeLimitMap) > 0 ||
-		len(tsl.UnlockStakeLimitMap) > 0 {
+		len(tsl.UnlockStakeLimitMap) > 0) {
 		return tsl.IsUnlimited, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
 	}
 
