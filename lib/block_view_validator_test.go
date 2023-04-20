@@ -73,7 +73,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	_, _, _, _, _ = m0PKID, m1PKID, m2PKID, m3PKID, m4PKID
 
 	{
-		// Param Updater set min fee rate to 101 nanos per KB
+		// ParamUpdater set min fee rate
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 		_updateGlobalParamsEntryWithTestMeta(
 			testMeta,
@@ -381,18 +381,15 @@ func _submitUnregisterAsValidatorTxn(
 func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 	var err error
 
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Initialize fork heights.
-	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
-	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
-	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
-	params.ForkHeights.BalanceModelBlockHeight = uint32(1)
 	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
@@ -532,6 +529,21 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 		return nil
 	}
 
+	{
+		// ParamUpdater set min fee rate
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1,
+			int64(testMeta.feeRateNanosPerKb),
+			-1,
+			-1,
+			-1,
+		)
+	}
 	{
 		// Submit a RegisterAsValidator txn using a DerivedKey.
 
