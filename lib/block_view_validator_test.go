@@ -504,7 +504,7 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 			return err
 		}
 		// Sign txn.
-		_signTxnWithDerivedKey(t, txn, derivedKeyPrivBase58Check)
+		_signTxnWithDerivedKeyAndType(t, txn, derivedKeyPrivBase58Check, 1)
 		// Store the original transactor balance.
 		transactorPublicKeyBase58Check := Base58CheckEncode(transactorPkBytes, false, params)
 		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
