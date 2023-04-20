@@ -716,6 +716,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Initialize fork heights.
+	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(0)
 	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
@@ -1315,14 +1316,76 @@ func _testStakingWithDerivedKey(t *testing.T) {
 	{
 		// sender stakes, unstakes, and unlocks stake using an IsUnlimited DerivedKey.
 
-		// TODO
 		// sender creates an IsUnlimited DerivedKey.
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: 0,
+			IsUnlimited:     true,
+		}
+		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
+		require.NoError(t, err)
+
 		// sender stakes with m0 using the DerivedKey.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(25),
+		}
+		_, _, _, err = _submitStakeTxn(
+			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
+
 		// sender stakes with m1 using the DerivedKey.
-		// sender unstakes with m0 using the DerivedKey.
-		// sender unstakes with m1 using the DerivedKey.
+		stakeMetadata = &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(25),
+		}
+		_, _, _, err = _submitStakeTxn(
+			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
+
+		// sender unstakes from m0 using the DerivedKey.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(25),
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
+
+		// sender unstakes from m1 using the DerivedKey.
+		unstakeMetadata = &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(25),
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
+
 		// sender unlocks stake from m0 using the DerivedKey.
+		epochNumber := uint64(0) // TODO: get current epoch number from db.
+		unlockStakeMetadata := &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StartEpochNumber:   epochNumber,
+			EndEpochNumber:     epochNumber,
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
+		)
+		require.NoError(t, err)
+
 		// sender unlocks stake from m1 using the DerivedKey.
+		unlockStakeMetadata = &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StartEpochNumber:   epochNumber,
+			EndEpochNumber:     epochNumber,
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
+		)
+		require.NoError(t, err)
 	}
 
 	// TODO: Flush mempool to the db and test rollbacks.
