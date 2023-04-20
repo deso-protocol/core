@@ -1283,7 +1283,11 @@ func (bav *UtxoView) _disconnectStake(
 	bav._setGlobalStakeAmountNanos(operationData.PrevGlobalStakeAmountNanos)
 
 	// TODO: Increase DESO balance of transactor.
-	return nil
+
+	// Disconnect the basic transfer.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txHash, utxoOpsForTxn[:operationIndex], blockHeight,
+	)
 }
 
 func (bav *UtxoView) _connectUnstake(
@@ -1513,7 +1517,6 @@ func (bav *UtxoView) _disconnectUnstake(
 		return errors.Wrapf(err, "_disconnectUnstake: ")
 	}
 	if currentStakeEntry != nil {
-		return fmt.Errorf("_disconnectUnstake: no current StakeEntry found for %v", currentTxn.PublicKey)
 		bav._deleteStakeEntryMappings(currentStakeEntry)
 	}
 	// 2. Set the PrevStakeEntry.
@@ -1549,7 +1552,10 @@ func (bav *UtxoView) _disconnectUnstake(
 		bav._setLockedStakeEntryMappings(operationData.PrevLockedStakeEntries[0])
 	}
 
-	return nil
+	// Disconnect the basic transfer.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txHash, utxoOpsForTxn[:operationIndex], blockHeight,
+	)
 }
 
 func (bav *UtxoView) _connectUnlockStake(
@@ -1688,7 +1694,10 @@ func (bav *UtxoView) _disconnectUnlockStake(
 		bav._setLockedStakeEntryMappings(prevLockedStakeEntry)
 	}
 
-	return nil
+	// Disconnect the basic transfer.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txHash, utxoOpsForTxn[:operationIndex], blockHeight,
+	)
 }
 
 func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *StakeMetadata, blockHeight uint32) error {
