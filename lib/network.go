@@ -5652,7 +5652,7 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			// StakeLimit
 			stakeLimitDESO := float64(limit) / float64(NanosPerUnit)
 			opString += _indt(indentationCounter) + "Staking Limit: " +
-				strconv.FormatFloat(stakeLimitDESO, 'f', 4, 64) + " $DESO\n"
+				strconv.FormatFloat(stakeLimitDESO, 'f', 2, 64) + " $DESO\n"
 
 			indentationCounter--
 			opString += _indt(indentationCounter) + "]\n"
@@ -5684,7 +5684,7 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			// UnstakeLimit
 			unstakeLimitDESO := float64(limit) / float64(NanosPerUnit)
 			opString += _indt(indentationCounter) + "Unstaking Limit: " +
-				strconv.FormatFloat(unstakeLimitDESO, 'f', 4, 64) + " $DESO\n"
+				strconv.FormatFloat(unstakeLimitDESO, 'f', 2, 64) + " $DESO\n"
 
 			indentationCounter--
 			opString += _indt(indentationCounter) + "]\n"
@@ -5695,7 +5695,35 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 		indentationCounter--
 	}
 
-	// TODO: UnlockStakeLimitMap
+	// UnlockStakeLimitMap
+	if len(tsl.UnlockStakeLimitMap) > 0 {
+		var unlockStakeLimitStr []string
+		str += _indt(indentationCounter) + "Unlocking Stake Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.UnlockStakeLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			// ValidatorPKID
+			validatorPublicKeyBase58Check := "Any"
+			if !limitKey.ValidatorPKID.Eq(&ZeroPKID) {
+				validatorPublicKeyBase58Check = Base58CheckEncode(limitKey.ValidatorPKID.ToBytes(), false, params)
+			}
+			opString += _indt(indentationCounter) + "Validator PKID: " + validatorPublicKeyBase58Check + "\n"
+			// StakerPKID
+			stakerPublicKeyBase58Check := Base58CheckEncode(limitKey.StakerPKID.ToBytes(), false, params)
+			opString += _indt(indentationCounter) + "Staker PKID: " + stakerPublicKeyBase58Check + "\n"
+			// UnlockStakeLimit
+			opString += _indt(indentationCounter) + "Transaction Count: " + strconv.FormatUint(limit, 10) + "\n"
+
+			indentationCounter--
+			opString += _indt(indentationCounter) + "]\n"
+			unlockStakeLimitStr = append(unlockStakeLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(unlockStakeLimitStr)
+		indentationCounter--
+	}
 
 	// IsUnlimited
 	if tsl.IsUnlimited {

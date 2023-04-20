@@ -1415,40 +1415,69 @@ func _testStakingWithDerivedKey(t *testing.T) {
 				"\t\t[\n"+
 				"\t\t\tValidator PKID: "+m0Pub+"\n"+
 				"\t\t\tStaker PKID: "+senderPkString+"\n"+
-				"\t\t\tStaking Limit: 1.5000 $DESO\n"+
+				"\t\t\tStaking Limit: 1.50 $DESO\n"+
 				"\t\t]\n"+
 				"\t\t[\n"+
 				"\t\t\tValidator PKID: "+m1Pub+"\n"+
 				"\t\t\tStaker PKID: "+senderPkString+"\n"+
-				"\t\t\tStaking Limit: 2.0000 $DESO\n"+
+				"\t\t\tStaking Limit: 2.00 $DESO\n"+
 				"\t\t]\n"+
 				"\tUnstaking Restrictions:\n"+
 				"\t\t[\n"+
 				"\t\t\tValidator PKID: "+m0Pub+"\n"+
 				"\t\t\tStaker PKID: "+senderPkString+"\n"+
-				"\t\t\tUnstaking Limit: 3.2500 $DESO\n"+
+				"\t\t\tUnstaking Limit: 3.25 $DESO\n"+
+				"\t\t]\n"+
+				"\tUnlocking Stake Restrictions:\n"+
+				"\t\t[\n"+
+				"\t\t\tValidator PKID: "+m0Pub+"\n"+
+				"\t\t\tStaker PKID: "+senderPkString+"\n"+
+				"\t\t\tTransaction Count: 2\n"+
+				"\t\t]\n"+
+				"\t\t[\n"+
+				"\t\t\tValidator PKID: "+m1Pub+"\n"+
+				"\t\t\tStaker PKID: "+senderPkString+"\n"+
+				"\t\t\tTransaction Count: 3\n"+
 				"\t\t]\n",
 		)
 	}
 	{
 		// Test TransactionSpendingLimit.ToMetamaskString() scoped to any validator.
-		//stakeLimitKey = MakeStakeLimitKey(&ZeroPKID, senderPKID)
-		//txnSpendingLimit = &TransactionSpendingLimit{
-		//	GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
-		//	TransactionCountLimitMap: map[TxnType]uint64{
-		//		TxnTypeAuthorizeDerivedKey: 1,
-		//	},
-		//	StakeLimitMap:       map[StakeLimitKey]uint64{stakeLimitKey: 100},
-		//	UnstakeLimitMap:     map[StakeLimitKey]uint64{stakeLimitKey: 100},
-		//	UnlockStakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 1},
-		//}
-		//metamaskStr = txnSpendingLimit.ToMetamaskString(params)
-		//require.Equal(t, metamaskStr,
-		//	"Spending limits on the derived key:\n"+
-		//		"	Total $DESO Limit: 1.0 $DESO\n"+
-		//		"	Transaction Count Limit: \n"+
-		//		"		AUTHORIZE_DERIVED_KEY: 1\n",
-		//)
+		stakeLimitKey := MakeStakeLimitKey(&ZeroPKID, senderPKID)
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+			StakeLimitMap:       map[StakeLimitKey]uint64{stakeLimitKey: uint64(0.65 * float64(NanosPerUnit))},
+			UnstakeLimitMap:     map[StakeLimitKey]uint64{stakeLimitKey: uint64(2.1 * float64(NanosPerUnit))},
+			UnlockStakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 1},
+		}
+		metamaskStr := txnSpendingLimit.ToMetamaskString(params)
+		require.Equal(t, metamaskStr,
+			"Spending limits on the derived key:\n"+
+				"\tTotal $DESO Limit: 1.0 $DESO\n"+
+				"\tTransaction Count Limit: \n"+
+				"\t\tAUTHORIZE_DERIVED_KEY: 1\n"+
+				"\tStaking Restrictions:\n"+
+				"\t\t[\n"+
+				"\t\t\tValidator PKID: Any\n"+
+				"\t\t\tStaker PKID: "+senderPkString+"\n"+
+				"\t\t\tStaking Limit: 0.65 $DESO\n"+
+				"\t\t]\n"+
+				"\tUnstaking Restrictions:\n"+
+				"\t\t[\n"+
+				"\t\t\tValidator PKID: Any\n"+
+				"\t\t\tStaker PKID: "+senderPkString+"\n"+
+				"\t\t\tUnstaking Limit: 2.10 $DESO\n"+
+				"\t\t]\n"+
+				"\tUnlocking Stake Restrictions:\n"+
+				"\t\t[\n"+
+				"\t\t\tValidator PKID: Any\n"+
+				"\t\t\tStaker PKID: "+senderPkString+"\n"+
+				"\t\t\tTransaction Count: 1\n"+
+				"\t\t]\n",
+		)
 	}
 
 	// TODO: Flush mempool to the db and test rollbacks.
