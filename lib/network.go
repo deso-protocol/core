@@ -5631,9 +5631,71 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 		indentationCounter--
 	}
 
-	// TODO: StakeMap
-	// TODO: UnstakeMap
-	// TODO: UnlockStakeMap
+	// StakeLimitMap
+	if len(tsl.StakeLimitMap) > 0 {
+		var stakeLimitStr []string
+		str += _indt(indentationCounter) + "Staking Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.StakeLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			// ValidatorPKID
+			validatorPublicKeyBase58Check := "Any"
+			if !limitKey.ValidatorPKID.Eq(&ZeroPKID) {
+				validatorPublicKeyBase58Check = Base58CheckEncode(limitKey.ValidatorPKID.ToBytes(), false, params)
+			}
+			opString += _indt(indentationCounter) + "Validator PKID: " + validatorPublicKeyBase58Check + "\n"
+			// StakerPKID
+			stakerPublicKeyBase58Check := Base58CheckEncode(limitKey.StakerPKID.ToBytes(), false, params)
+			opString += _indt(indentationCounter) + "Staker PKID: " + stakerPublicKeyBase58Check + "\n"
+			// StakeLimit
+			stakeLimitDESO := float64(limit) / float64(NanosPerUnit)
+			opString += _indt(indentationCounter) + "Staking Limit: " +
+				strconv.FormatFloat(stakeLimitDESO, 'f', 4, 64) + " $DESO\n"
+
+			indentationCounter--
+			opString += _indt(indentationCounter) + "]\n"
+			stakeLimitStr = append(stakeLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(stakeLimitStr)
+		indentationCounter--
+	}
+
+	// UnstakeLimitMap
+	if len(tsl.UnstakeLimitMap) > 0 {
+		var unstakeLimitStr []string
+		str += _indt(indentationCounter) + "Unstaking Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.UnstakeLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			// ValidatorPKID
+			validatorPublicKeyBase58Check := "Any"
+			if !limitKey.ValidatorPKID.Eq(&ZeroPKID) {
+				validatorPublicKeyBase58Check = Base58CheckEncode(limitKey.ValidatorPKID.ToBytes(), false, params)
+			}
+			opString += _indt(indentationCounter) + "Validator PKID: " + validatorPublicKeyBase58Check + "\n"
+			// StakerPKID
+			stakerPublicKeyBase58Check := Base58CheckEncode(limitKey.StakerPKID.ToBytes(), false, params)
+			opString += _indt(indentationCounter) + "Staker PKID: " + stakerPublicKeyBase58Check + "\n"
+			// UnstakeLimit
+			unstakeLimitDESO := float64(limit) / float64(NanosPerUnit)
+			opString += _indt(indentationCounter) + "Unstaking Limit: " +
+				strconv.FormatFloat(unstakeLimitDESO, 'f', 4, 64) + " $DESO\n"
+
+			indentationCounter--
+			opString += _indt(indentationCounter) + "]\n"
+			unstakeLimitStr = append(unstakeLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(unstakeLimitStr)
+		indentationCounter--
+	}
+
+	// TODO: UnlockStakeLimitMap
 
 	// IsUnlimited
 	if tsl.IsUnlimited {
