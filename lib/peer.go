@@ -833,6 +833,14 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 		})
 	}
 
+	// If we're sending a GetSnapshot message, the peer should respond within a few seconds with a SnapshotData.
+	if msg.GetMsgType() == MsgTypeGetSnapshot {
+		pp._addExpectedResponse(&ExpectedResponse{
+			TimeExpected: time.Now().Add(stallTimeout),
+			MessageType:  MsgTypeSnapshotData,
+		})
+	}
+
 	// If we're sending a GetTransactions message, the Peer should respond within
 	// a few seconds with a TransactionBundle. Every GetTransactions message should
 	// receive a TransactionBundle in response. The
@@ -842,9 +850,17 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 	//
 	// NOTE: at the BalanceModelBlockHeight, MsgTypeTransactionBundle is replaced by
 	// the more capable MsgTypeTransactionBundleV2.
+	defer func() {
+		if r := recover(); r != nil {
+			isSrvNil := pp.srv == nil
+			isBlockchainNil := isSrvNil && pp.srv.blockchain == nil
+			isBlockTipNil := !isSrvNil && !isBlockchainNil && pp.srv.blockchain.blockTip() == nil
+			glog.Errorf(
+				"Peer._handleOutExpectedResponse: Recovered from panic: %v.\nsrv is nil: %t\nsrv.Blockchain is nil: %t\n,srv.Blockchain.BlockTip is nil: %t", r, isSrvNil, isBlockchainNil, isBlockTipNil)
+		}
+	}()
 	expectedMsgType := MsgTypeTransactionBundle
-	if pp.srv != nil && pp.srv.blockchain != nil && pp.srv.blockchain.blockTip() != nil &&
-		pp.srv.blockchain.blockTip().Height+1 >= pp.Params.ForkHeights.BalanceModelBlockHeight {
+	if pp.srv.blockchain.blockTip().Height+1 >= pp.Params.ForkHeights.BalanceModelBlockHeight {
 		expectedMsgType = MsgTypeTransactionBundleV2
 	}
 	if msg.GetMsgType() == MsgTypeGetTransactions {
@@ -853,14 +869,6 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 			MessageType:  expectedMsgType,
 			// The Server handles situations in which the Peer doesn't send us all of
 			// the hashes we were expecting using timeouts on requested hashes.
-		})
-	}
-
-	// If we're sending a GetSnapshot message, the peer should respond within a few seconds with a SnapshotData.
-	if msg.GetMsgType() == MsgTypeGetSnapshot {
-		pp._addExpectedResponse(&ExpectedResponse{
-			TimeExpected: time.Now().Add(stallTimeout),
-			MessageType:  MsgTypeSnapshotData,
 		})
 	}
 }
