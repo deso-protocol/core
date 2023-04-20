@@ -521,9 +521,9 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorInvalidUnlockStakeNoUnlockableStakeFound)
 	}
 
-	// TODO: Flush mempool to the db and test rollbacks.
-	//require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
-	//_executeAllTestRollbackAndFlush(testMeta)
+	// Flush mempool to the db and test rollbacks.
+	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func _submitStakeTxn(
@@ -1480,7 +1480,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		)
 	}
 
-	// TODO: Flush mempool to the db and test rollbacks.
-	//require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
-	//_executeAllTestRollbackAndFlush(testMeta)
+	// Flush mempool to the db and test rollbacks.
+	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
+	_executeAllTestRollbackAndFlush(testMeta)
 }
