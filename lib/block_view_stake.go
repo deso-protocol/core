@@ -2373,6 +2373,30 @@ func (bav *UtxoView) _checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
 	return derivedKeyEntry, RuleErrorUnlockStakeTransactionSpendingLimitNotFound
 }
 
+func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stakeLimitKey StakeLimitKey) error {
+	// Convert TransactorPublicKeyBytes to TransactorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return RuleErrorTransactionSpendingLimitInvalidStaker
+	}
+
+	// Verify TransactorPKID == StakerPKID.
+	if !transactorPKIDEntry.PKID.Eq(&stakeLimitKey.StakerPKID) {
+		return RuleErrorTransactionSpendingLimitInvalidStaker
+	}
+
+	// Verify ValidatorEntry.
+	validatorEntry, err := bav.GetValidatorByPKID(&stakeLimitKey.ValidatorPKID)
+	if err != nil {
+		return errors.Wrapf(err, "IsValidStakeLimitKey: ")
+	}
+	if validatorEntry == nil || validatorEntry.isDeleted || validatorEntry.DisableDelegatedStake {
+		return RuleErrorTransactionSpendingLimitInvalidValidator
+	}
+
+	return nil
+}
+
 //
 // CONSTANTS
 //
@@ -2390,3 +2414,5 @@ const RuleErrorStakeTransactionSpendingLimitExceeded RuleError = "RuleErrorStake
 const RuleErrorUnstakeTransactionSpendingLimitNotFound RuleError = "RuleErrorUnstakeTransactionSpendingLimitNotFound"
 const RuleErrorUnstakeTransactionSpendingLimitExceeded RuleError = "RuleErrorUnstakeTransactionSpendingLimitExceeded"
 const RuleErrorUnlockStakeTransactionSpendingLimitNotFound RuleError = "RuleErrorUnlockStakeTransactionSpendingLimitNotFound"
+const RuleErrorTransactionSpendingLimitInvalidStaker RuleError = "RuleErrorTransactionSpendingLimitInvalidStaker"
+const RuleErrorTransactionSpendingLimitInvalidValidator RuleError = "RuleErrorTransactionSpendingLimitInvalidValidator"

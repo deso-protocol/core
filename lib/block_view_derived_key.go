@@ -313,6 +313,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 					if blockHeight >= bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
 						// StakeLimitMap
 						for stakeLimitKey, stakingLimit := range transactionSpendingLimit.StakeLimitMap {
+							if err = bav.IsValidStakeLimitKey(txn.PublicKey, stakeLimitKey); err != nil {
+								return 0, 0, nil, err
+							}
 							if stakingLimit == 0 {
 								delete(newTransactionSpendingLimit.StakeLimitMap, stakeLimitKey)
 							} else {
@@ -321,6 +324,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						}
 						// UnstakeLimitMap
 						for unstakeLimitKey, unstakingLimit := range transactionSpendingLimit.UnstakeLimitMap {
+							if err = bav.IsValidStakeLimitKey(txn.PublicKey, unstakeLimitKey); err != nil {
+								return 0, 0, nil, err
+							}
 							if unstakingLimit == 0 {
 								delete(newTransactionSpendingLimit.UnstakeLimitMap, unstakeLimitKey)
 							} else {
@@ -329,6 +335,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						}
 						// UnlockStakeLimitMap
 						for unlockStakeLimitKey, transactionCount := range transactionSpendingLimit.UnlockStakeLimitMap {
+							if err = bav.IsValidStakeLimitKey(txn.PublicKey, unlockStakeLimitKey); err != nil {
+								return 0, 0, nil, err
+							}
 							if transactionCount == 0 {
 								delete(newTransactionSpendingLimit.UnlockStakeLimitMap, unlockStakeLimitKey)
 							} else {
