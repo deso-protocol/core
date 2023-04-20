@@ -850,6 +850,7 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 	//
 	// NOTE: at the BalanceModelBlockHeight, MsgTypeTransactionBundle is replaced by
 	// the more capable MsgTypeTransactionBundleV2.
+	// TODO: After fork, remove this recover block and always expect msg type MsgTypeTransactionBundleV2.
 	defer func() {
 		if r := recover(); r != nil {
 			isSrvNil := pp.srv == nil
