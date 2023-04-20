@@ -1235,26 +1235,94 @@ func _testStakingWithDerivedKey(t *testing.T) {
 	{
 		// sender stakes, unstakes, and unlocks stake using a DerivedKey scoped to any validator.
 
-		// TODO
 		// sender creates a DerivedKey that can stake, unstake, and unlock stake with any validator.
-		// sender stakes with m0.
-		// sender stakes with m1.
-		// sender unstakes with m0.
-		// sender unstakes with m1.
-		// sender unlocks stake from m0.
-		// sender unlocks stake from m1.
+		stakeLimitKey := MakeStakeLimitKey(&ZeroPKID, senderPKID)
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+			StakeLimitMap:       map[StakeLimitKey]uint64{stakeLimitKey: 50},
+			UnstakeLimitMap:     map[StakeLimitKey]uint64{stakeLimitKey: 50},
+			UnlockStakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 2},
+		}
+		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
+		require.NoError(t, err)
+
+		// sender stakes with m0 using the DerivedKey.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(25),
+		}
+		_, _, _, err = _submitStakeTxn(
+			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
+
+		// sender stakes with m1 using the DerivedKey.
+		stakeMetadata = &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(25),
+		}
+		_, _, _, err = _submitStakeTxn(
+			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
+
+		// sender unstakes from m0 using the DerivedKey.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(25),
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
+
+		// sender unstakes from m1 using the DerivedKey.
+		unstakeMetadata = &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(25),
+		}
+		_, _, _, err = _submitUnstakeTxn(
+			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
+
+		// sender unlocks stake from m0 using the DerivedKey.
+		epochNumber := uint64(0) // TODO: get current epoch number from db.
+		unlockStakeMetadata := &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StartEpochNumber:   epochNumber,
+			EndEpochNumber:     epochNumber,
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
+		)
+		require.NoError(t, err)
+
+		// sender unlocks stake from m1 using the DerivedKey.
+		unlockStakeMetadata = &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StartEpochNumber:   epochNumber,
+			EndEpochNumber:     epochNumber,
+		}
+		err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
+		)
+		require.NoError(t, err)
 	}
 	{
 		// sender stakes, unstakes, and unlocks stake using an IsUnlimited DerivedKey.
 
 		// TODO
 		// sender creates an IsUnlimited DerivedKey.
-		// sender stakes with m0.
-		// sender stakes with m1.
-		// sender unstakes with m0.
-		// sender unstakes with m1.
-		// sender unlocks stake from m0.
-		// sender unlocks stake from m1.
+		// sender stakes with m0 using the DerivedKey.
+		// sender stakes with m1 using the DerivedKey.
+		// sender unstakes with m0 using the DerivedKey.
+		// sender unstakes with m1 using the DerivedKey.
+		// sender unlocks stake from m0 using the DerivedKey.
+		// sender unlocks stake from m1 using the DerivedKey.
 	}
 
 	// TODO: Flush mempool to the db and test rollbacks.

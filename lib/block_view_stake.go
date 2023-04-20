@@ -2386,6 +2386,12 @@ func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stake
 	}
 
 	// Verify ValidatorEntry.
+	if stakeLimitKey.ValidatorPKID.Eq(&ZeroPKID) {
+		// The ZeroPKID is a special case that indicates that the spending limit
+		// applies to any validator. In this case, we don't need to check that the
+		// validator exists, as there is no validator registered for the ZeroPKID.
+		return nil
+	}
 	validatorEntry, err := bav.GetValidatorByPKID(&stakeLimitKey.ValidatorPKID)
 	if err != nil {
 		return errors.Wrapf(err, "IsValidStakeLimitKey: ")
