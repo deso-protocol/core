@@ -2,7 +2,6 @@ package lib
 
 import (
 	"bytes"
-	"fmt"
 	"github.com/pkg/errors"
 )
 
@@ -80,19 +79,15 @@ func MapSet[T comparable, K any](set *Set[T], mapFunc func(elem T) (K, error)) (
 
 // Pass in nil as the entry
 func DecodeDeSoEncoder[T DeSoEncoder](entry T, rr *bytes.Reader) (T, error) {
-	result := entry.GetEncoderType().New()
-	exist, err := DecodeFromBytes(result, rr)
+	var emptyEntry T
+	exist, err := DecodeFromBytes(entry, rr)
 	if !exist {
-		return entry, nil
+		return emptyEntry, nil
 	}
 	if err != nil {
-		return entry, errors.Wrapf(err, "DecodeDeSoEncoder: Problem decoding from bytes")
+		return emptyEntry, errors.Wrapf(err, "DecodeDeSoEncoder: Problem decoding from bytes")
 	}
-	castResult, ok := result.(T)
-	if !ok {
-		return entry, fmt.Errorf("DecodeDeSoEncoder: Failed to cast result to type %T", entry)
-	}
-	return castResult, nil
+	return entry, nil
 }
 
 func EncodeDeSoEncoderSlice[T DeSoEncoder](inputSlice []T, blockHeight uint64, skipMetadata ...bool) []byte {
@@ -114,7 +109,7 @@ func DecodeDeSoEncoderSlice[T DeSoEncoder](rr *bytes.Reader) ([]T, error) {
 	inputs := make([]T, numItems)
 	var results []T
 	for ii := uint64(0); ii < numItems; ii++ {
-		entry, err := DecodeDeSoEncoder[T](inputs[ii], rr)
+		entry, err := DecodeDeSoEncoder[T](inputs[ii].GetEncoderType().New().(T), rr)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DecodeSlice: Problem decoding item %d of %d", ii, numItems)
 		}
