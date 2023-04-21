@@ -1694,6 +1694,11 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNewMessageEntry")
 		}
+
+		op.PrevDmThreadEntry, err = DecodeDeSoEncoder(&DmThreadEntry{}, rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevDmThreadEntry")
+		}
 	}
 
 	if MigrationTriggered(blockHeight, BalanceModelMigration) {
