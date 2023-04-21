@@ -3993,12 +3993,16 @@ func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[stri
 
 	// Add the values from the oldMap
 	for kk, vv := range oldMap {
-		retMap[kk] = vv
+		vvCopy := make([]byte, len(vv))
+		copy(vvCopy, vv)
+		retMap[kk] = vvCopy
 	}
 	// Add the values from the newMap. Allow the newMap values to overwrite the
 	// oldMap values during the merge.
 	for kk, vv := range newMap {
-		retMap[kk] = vv
+		vvCopy := make([]byte, len(vv))
+		copy(vvCopy, vv)
+		retMap[kk] = vvCopy
 	}
 
 	return retMap
