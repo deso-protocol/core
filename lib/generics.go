@@ -77,7 +77,6 @@ func MapSet[T comparable, K any](set *Set[T], mapFunc func(elem T) (K, error)) (
 	return results, nil
 }
 
-// Pass in nil as the entry
 func DecodeDeSoEncoder[T DeSoEncoder](entry T, rr *bytes.Reader) (T, error) {
 	var emptyEntry T
 	exist, err := DecodeFromBytes(entry, rr)

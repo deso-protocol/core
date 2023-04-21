@@ -1262,18 +1262,14 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	op.Type = OperationType(uint(typeUint64))
 
 	// Entry
-	entry := &UtxoEntry{}
-	if exist, err := DecodeFromBytes(entry, rr); exist && err == nil {
-		op.Entry = entry
-	} else if err != nil {
+	op.Entry, err = DecodeDeSoEncoder(&UtxoEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading Entry")
 	}
 
 	// Key
-	key := &UtxoKey{}
-	if exist, err := DecodeFromBytes(key, rr); exist && err == nil {
-		op.Key = key
-	} else if err != nil {
+	op.Key, err = DecodeDeSoEncoder(&UtxoKey{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading Key")
 	}
 
@@ -1290,50 +1286,38 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	}
 
 	// PrevPostEntry
-	prevPostEntry := &PostEntry{}
-	if exist, err := DecodeFromBytes(prevPostEntry, rr); exist && err == nil {
-		op.PrevPostEntry = prevPostEntry
-	} else if err != nil {
+	op.PrevPostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevPostEntry")
 	}
 
 	// PrevParentPostEntry
-	prevParentPostEntry := &PostEntry{}
-	if exist, err := DecodeFromBytes(prevParentPostEntry, rr); exist && err == nil {
-		op.PrevParentPostEntry = prevParentPostEntry
-	} else if err != nil {
+	op.PrevParentPostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevParentPostEntry")
 	}
 
 	// PrevGrandparentPostEntry
-	prevGrandparentPostEntry := &PostEntry{}
-	if exist, err := DecodeFromBytes(prevGrandparentPostEntry, rr); exist && err == nil {
-		op.PrevGrandparentPostEntry = prevGrandparentPostEntry
-	} else if err != nil {
+	op.PrevGrandparentPostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGrandparentPostEntry")
 	}
 
 	// PrevRepostedPostEntry
-	prevRepostedPostEntry := &PostEntry{}
-	if exist, err := DecodeFromBytes(prevRepostedPostEntry, rr); exist && err == nil {
-		op.PrevRepostedPostEntry = prevRepostedPostEntry
-	} else if err != nil {
+	op.PrevRepostedPostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevRepostedPostEntry")
 	}
 
 	// PrevProfileEntry
-	prevProfileEntry := &ProfileEntry{}
-	if exist, err := DecodeFromBytes(prevProfileEntry, rr); exist && err == nil {
-		op.PrevProfileEntry = prevProfileEntry
-	} else if err != nil {
+	op.PrevProfileEntry, err = DecodeDeSoEncoder(&ProfileEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevProfileEntry")
 	}
 
 	// PrevLikeEntry
-	prevLikeEntry := &LikeEntry{}
-	if exist, err := DecodeFromBytes(prevLikeEntry, rr); exist && err == nil {
-		op.PrevLikeEntry = prevLikeEntry
-	} else if err != nil {
+	op.PrevLikeEntry, err = DecodeDeSoEncoder(&LikeEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLikeEntry")
 	}
 
@@ -1344,69 +1328,39 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	}
 
 	// PrevDiamondEntry
-	prevDiamondEntry := &DiamondEntry{}
-	if exist, err := DecodeFromBytes(prevDiamondEntry, rr); exist && err == nil {
-		op.PrevDiamondEntry = prevDiamondEntry
-	} else if err != nil {
+	op.PrevDiamondEntry, err = DecodeDeSoEncoder(&DiamondEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevDiamondEntry")
 	}
 
 	// PrevNFTEntry
-	prevNFTEntry := &NFTEntry{}
-	if exist, err := DecodeFromBytes(prevNFTEntry, rr); exist && err == nil {
-		op.PrevNFTEntry = prevNFTEntry
-	} else if err != nil {
+	op.PrevNFTEntry, err = DecodeDeSoEncoder(&NFTEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNFTEntry")
 	}
 
 	// PrevNFTBidEntry
-	prevNFTBidEntry := &NFTBidEntry{}
-	if exist, err := DecodeFromBytes(prevNFTBidEntry, rr); exist && err == nil {
-		op.PrevNFTBidEntry = prevNFTBidEntry
-	} else if err != nil {
+	op.PrevNFTBidEntry, err = DecodeDeSoEncoder(&NFTBidEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNFTBidEntry")
 	}
 
 	// DeletedNFTBidEntries
-	lenDeletedNFTBidEntries, err := ReadUvarint(rr)
+	op.DeletedNFTBidEntries, err = DecodeDeSoEncoderSlice[*NFTBidEntry](rr)
 	if err != nil {
-		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of DeletedNFTBidEntries")
-	}
-	for ; lenDeletedNFTBidEntries > 0; lenDeletedNFTBidEntries-- {
-		deletedNFTBidEntry := &NFTBidEntry{}
-		if exist, err := DecodeFromBytes(deletedNFTBidEntry, rr); exist && err == nil {
-			op.DeletedNFTBidEntries = append(op.DeletedNFTBidEntries, deletedNFTBidEntry)
-		} else {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading deletedNFTBidEntry")
-		}
+		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading DeletedNFTBidEntries")
 	}
 
 	// NFTPaymentUtxoKeys
-	lenNFTPaymentUtxoKeys, err := ReadUvarint(rr)
+	op.NFTPaymentUtxoKeys, err = DecodeDeSoEncoderSlice[*UtxoKey](rr)
 	if err != nil {
-		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of NFTPaymentUtxoKeys")
-	}
-	for ; lenNFTPaymentUtxoKeys > 0; lenNFTPaymentUtxoKeys-- {
-		NFTPaymentUtxoKey := &UtxoKey{}
-		if exist, err := DecodeFromBytes(NFTPaymentUtxoKey, rr); exist && err == nil {
-			op.NFTPaymentUtxoKeys = append(op.NFTPaymentUtxoKeys, NFTPaymentUtxoKey)
-		} else {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTPaymentUtxoKey")
-		}
+		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTPaymentUtxoKeys")
 	}
 
 	// NFTSpentUtxoEntries
-	lenNFTSpentUtxoEntries, err := ReadUvarint(rr)
+	op.NFTSpentUtxoEntries, err = DecodeDeSoEncoderSlice[*UtxoEntry](rr)
 	if err != nil {
-		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of NFTSpentUtxoEntries")
-	}
-	for ; lenNFTSpentUtxoEntries > 0; lenNFTSpentUtxoEntries-- {
-		NFTSpentUtxoEntry := &UtxoEntry{}
-		if exist, err := DecodeFromBytes(NFTSpentUtxoEntry, rr); exist && err == nil {
-			op.NFTSpentUtxoEntries = append(op.NFTSpentUtxoEntries, NFTSpentUtxoEntry)
-		} else {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTSpentUtxoEntry")
-		}
+		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTSpentUtxoEntries")
 	}
 
 	// PrevAcceptedNFTBidEntries
@@ -1432,26 +1386,20 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	}
 
 	// PrevDerivedKeyEntry
-	prevDerivedKeyEntry := &DerivedKeyEntry{}
-	if exist, err := DecodeFromBytes(prevDerivedKeyEntry, rr); exist && err == nil {
-		op.PrevDerivedKeyEntry = prevDerivedKeyEntry
-	} else if err != nil {
+	op.PrevDerivedKeyEntry, err = DecodeDeSoEncoder(&DerivedKeyEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevDerivedKeyEntry")
 	}
 
 	// PrevMessagingKeyEntry
-	prevMessagingKeyEntry := &MessagingGroupEntry{}
-	if exist, err := DecodeFromBytes(prevMessagingKeyEntry, rr); exist && err == nil {
-		op.PrevMessagingKeyEntry = prevMessagingKeyEntry
-	} else if err != nil {
+	op.PrevMessagingKeyEntry, err = DecodeDeSoEncoder(&MessagingGroupEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevMessagingKeyEntry")
 	}
 
 	// PrevRepostEntry
-	prevRepostEntry := &RepostEntry{}
-	if exist, err := DecodeFromBytes(prevRepostEntry, rr); exist && err == nil {
-		op.PrevRepostEntry = prevRepostEntry
-	} else if err != nil {
+	op.PrevRepostEntry, err = DecodeDeSoEncoder(&RepostEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevRepostEntry")
 	}
 
@@ -1462,10 +1410,8 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	}
 
 	// PrevCoinEntry
-	prevCoinEntry := &CoinEntry{}
-	if exist, err := DecodeFromBytes(prevCoinEntry, rr); exist && err == nil {
-		op.PrevCoinEntry = prevCoinEntry
-	} else if err != nil {
+	op.PrevCoinEntry, err = DecodeDeSoEncoder(&CoinEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevCoinEntry")
 	}
 
@@ -1511,58 +1457,44 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	}
 
 	// PrevTransactorBalanceEntry
-	prevTransactorBalanceEntry := &BalanceEntry{}
-	if exist, err := DecodeFromBytes(prevTransactorBalanceEntry, rr); exist && err == nil {
-		op.PrevTransactorBalanceEntry = prevTransactorBalanceEntry
-	} else if err != nil {
+	op.PrevTransactorBalanceEntry, err = DecodeDeSoEncoder(&BalanceEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevTransactorBalanceEntry")
 	}
 
 	// PrevCreatorBalanceEntry
-	prevCreatorBalanceEntry := &BalanceEntry{}
-	if exist, err := DecodeFromBytes(prevCreatorBalanceEntry, rr); exist && err == nil {
-		op.PrevCreatorBalanceEntry = prevCreatorBalanceEntry
-	} else if err != nil {
+	op.PrevCreatorBalanceEntry, err = DecodeDeSoEncoder(&BalanceEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevCreatorBalanceEntry")
 	}
 
 	// FounderRewardUtxoKey
-	founderRewardUtxoKey := &UtxoKey{}
-	if exist, err := DecodeFromBytes(founderRewardUtxoKey, rr); exist && err == nil {
-		op.FounderRewardUtxoKey = founderRewardUtxoKey
-	} else if err != nil {
+	op.FounderRewardUtxoKey, err = DecodeDeSoEncoder(&UtxoKey{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FounderRewardUtxoKey")
 	}
 
 	// PrevSenderBalanceEntry
-	prevSenderBalanceEntry := &BalanceEntry{}
-	if exist, err := DecodeFromBytes(prevSenderBalanceEntry, rr); exist && err == nil {
-		op.PrevSenderBalanceEntry = prevSenderBalanceEntry
-	} else if err != nil {
+	op.PrevSenderBalanceEntry, err = DecodeDeSoEncoder(&BalanceEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevSenderBalanceEntry")
 	}
 
 	// PrevReceiverBalanceEntry
-	prevReceiverBalanceEntry := &BalanceEntry{}
-	if exist, err := DecodeFromBytes(prevReceiverBalanceEntry, rr); exist && err == nil {
-		op.PrevReceiverBalanceEntry = prevReceiverBalanceEntry
-	} else if err != nil {
+	op.PrevReceiverBalanceEntry, err = DecodeDeSoEncoder(&BalanceEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevReceiverBalanceEntry")
 	}
 
 	// PrevGlobalParamsEntry
-	prevGlobalParamsEntry := &GlobalParamsEntry{}
-	if exist, err := DecodeFromBytes(prevGlobalParamsEntry, rr); exist && err == nil {
-		op.PrevGlobalParamsEntry = prevGlobalParamsEntry
-	} else if err != nil {
+	op.PrevGlobalParamsEntry, err = DecodeDeSoEncoder(&GlobalParamsEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalParamsEntry")
 	}
 
 	// PrevForbiddenPubKeyEntry
-	prevForbiddenPubKeyEntry := &ForbiddenPubKeyEntry{}
-	if exist, err := DecodeFromBytes(prevForbiddenPubKeyEntry, rr); exist && err == nil {
-		op.PrevForbiddenPubKeyEntry = prevForbiddenPubKeyEntry
-	} else if err != nil {
+	op.PrevForbiddenPubKeyEntry, err = DecodeDeSoEncoder(&ForbiddenPubKeyEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevForbiddenPubKeyEntry")
 	}
 
@@ -1616,31 +1548,15 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	}
 
 	// AcceptNFTBidAdditionalCoinRoyalties
-	lenAcceptNFTBidAdditionalCoinRoyalties, err := ReadUvarint(rr)
+	op.AcceptNFTBidAdditionalCoinRoyalties, err = DecodeDeSoEncoderSlice[*PublicKeyRoyaltyPair](rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidAdditionalCoinRoyalties")
 	}
-	for ; lenAcceptNFTBidAdditionalCoinRoyalties > 0; lenAcceptNFTBidAdditionalCoinRoyalties-- {
-		pair := &PublicKeyRoyaltyPair{}
-		if exist, err := DecodeFromBytes(pair, rr); exist && err == nil {
-			op.AcceptNFTBidAdditionalCoinRoyalties = append(op.AcceptNFTBidAdditionalCoinRoyalties, pair)
-		} else {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidAdditionalCoinRoyalties")
-		}
-	}
 
 	// AcceptNFTBidAdditionalDESORoyalties
-	lenAcceptNFTBidAdditionalDESORoyalties, err := ReadUvarint(rr)
+	op.AcceptNFTBidAdditionalDESORoyalties, err = DecodeDeSoEncoderSlice[*PublicKeyRoyaltyPair](rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidAdditionalDESORoyalties")
-	}
-	for ; lenAcceptNFTBidAdditionalDESORoyalties > 0; lenAcceptNFTBidAdditionalDESORoyalties-- {
-		pair := &PublicKeyRoyaltyPair{}
-		if exist, err := DecodeFromBytes(pair, rr); exist && err == nil {
-			op.AcceptNFTBidAdditionalDESORoyalties = append(op.AcceptNFTBidAdditionalDESORoyalties, pair)
-		} else {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading AcceptNFTBidAdditionalDESORoyalties")
-		}
 	}
 
 	// NFTBidCreatorPublicKey
@@ -1668,39 +1584,20 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	}
 
 	// NFTBidAdditionalCoinRoyalties
-	lenNFTBidAdditionalCoinRoyalties, err := ReadUvarint(rr)
+	op.NFTBidAdditionalCoinRoyalties, err = DecodeDeSoEncoderSlice[*PublicKeyRoyaltyPair](rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidAdditionalCoinRoyalties")
 	}
-	for ; lenNFTBidAdditionalCoinRoyalties > 0; lenNFTBidAdditionalCoinRoyalties-- {
-		pair := &PublicKeyRoyaltyPair{}
-		if exist, err := DecodeFromBytes(pair, rr); exist && err == nil {
-			op.NFTBidAdditionalCoinRoyalties = append(op.NFTBidAdditionalCoinRoyalties, pair)
-		} else {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidAdditionalCoinRoyalties")
-		}
-
-	}
 
 	// NFTBidAdditionalDESORoyalties
-	lenNFTBidAdditionalDESORoyalties, err := ReadUvarint(rr)
+	op.NFTBidAdditionalDESORoyalties, err = DecodeDeSoEncoderSlice[*PublicKeyRoyaltyPair](rr)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidAdditionalDESORoyalties")
 	}
-	for ; lenNFTBidAdditionalDESORoyalties > 0; lenNFTBidAdditionalDESORoyalties-- {
-		pair := &PublicKeyRoyaltyPair{}
-		if exist, err := DecodeFromBytes(pair, rr); exist && err == nil {
-			op.NFTBidAdditionalDESORoyalties = append(op.NFTBidAdditionalDESORoyalties, pair)
-		} else {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading NFTBidAdditionalDESORoyalties")
-		}
-	}
 
 	// PrevTransactorDAOCoinLimitOrderEntry
-	prevTransactorDAOCoinLimitOrderEntry := &DAOCoinLimitOrderEntry{}
-	if exist, err := DecodeFromBytes(prevTransactorDAOCoinLimitOrderEntry, rr); exist && err == nil {
-		op.PrevTransactorDAOCoinLimitOrderEntry = prevTransactorDAOCoinLimitOrderEntry
-	} else if err != nil {
+	op.PrevTransactorDAOCoinLimitOrderEntry, err = DecodeDeSoEncoder(&DAOCoinLimitOrderEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevTransactorDAOCoinLimitOrderEntry")
 	}
 
@@ -1756,86 +1653,46 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 	}
 
 	// PrevMatchingOrders
-	if lenPrevMatchingOrders, err := ReadUvarint(rr); err == nil {
-		for ; lenPrevMatchingOrders > 0; lenPrevMatchingOrders-- {
-			prevOrder := &DAOCoinLimitOrderEntry{}
-			if exist, err := DecodeFromBytes(prevOrder, rr); exist && err == nil {
-				op.PrevMatchingOrders = append(op.PrevMatchingOrders, prevOrder)
-			} else {
-				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevMatchingOrders")
-			}
-		}
-	} else {
+	op.PrevMatchingOrders, err = DecodeDeSoEncoderSlice[*DAOCoinLimitOrderEntry](rr)
+	if err != nil {
 		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevMatchingOrders")
 	}
 
 	// FilledDAOCoinLimitOrders
-	if lenFilledDAOCoinLimitOrders, err := ReadUvarint(rr); err == nil {
-		for ; lenFilledDAOCoinLimitOrders > 0; lenFilledDAOCoinLimitOrders-- {
-			filledDAOCoinLimitOrder := &FilledDAOCoinLimitOrder{}
-			if exist, err := DecodeFromBytes(filledDAOCoinLimitOrder, rr); exist && err == nil {
-				op.FilledDAOCoinLimitOrders = append(op.FilledDAOCoinLimitOrders, filledDAOCoinLimitOrder)
-			} else {
-				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FilledDAOCoinLimitOrder")
-			}
-		}
-	} else {
-		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FilledDAOCoinLimitOrder")
+	op.FilledDAOCoinLimitOrders, err = DecodeDeSoEncoderSlice[*FilledDAOCoinLimitOrder](rr)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading FilledDAOCoinLimitOrders")
 	}
 
 	if MigrationTriggered(blockHeight, AssociationsAndAccessGroupsMigration) {
 		// PrevUserAssociationEntry
-		prevUserAssociationEntry := &UserAssociationEntry{}
-		if exist, err := DecodeFromBytes(prevUserAssociationEntry, rr); exist && err == nil {
-			op.PrevUserAssociationEntry = prevUserAssociationEntry
-		} else if err != nil {
+		op.PrevUserAssociationEntry, err = DecodeDeSoEncoder(&UserAssociationEntry{}, rr)
+		if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevUserAssociationEntry")
 		}
 
 		// PrevPostAssociationEntry
-		prevPostAssociationEntry := &PostAssociationEntry{}
-		if exist, err := DecodeFromBytes(prevPostAssociationEntry, rr); exist && err == nil {
-			op.PrevPostAssociationEntry = prevPostAssociationEntry
-		} else if err != nil {
+		op.PrevPostAssociationEntry, err = DecodeDeSoEncoder(&PostAssociationEntry{}, rr)
+		if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevPostAssociationEntry")
 		}
 
 		// PrevAccessGroupEntry
-		accessGroupEntry := &AccessGroupEntry{}
-		if exist, err := DecodeFromBytes(accessGroupEntry, rr); exist && err == nil {
-			op.PrevAccessGroupEntry = accessGroupEntry
-		} else if err != nil {
+		op.PrevAccessGroupEntry, err = DecodeDeSoEncoder(&AccessGroupEntry{}, rr)
+		if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevAccessGroupEntry")
 		}
 
 		// PrevAccessGroupMembersList
-		if lenPrevAccessGroupMembersList, err := ReadUvarint(rr); err == nil {
-			for ; lenPrevAccessGroupMembersList > 0; lenPrevAccessGroupMembersList-- {
-				accessGroupMemberEntry := &AccessGroupMemberEntry{}
-				if exist, err := DecodeFromBytes(accessGroupMemberEntry, rr); exist && err == nil {
-					op.PrevAccessGroupMembersList = append(op.PrevAccessGroupMembersList, accessGroupMemberEntry)
-				} else {
-					return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevAccessGroupMembersList")
-				}
-			}
-		} else {
+		op.PrevAccessGroupMembersList, err = DecodeDeSoEncoderSlice[*AccessGroupMemberEntry](rr)
+		if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevAccessGroupMembersList")
 		}
 
 		// PrevNewMessageEntry
-		newMessageEntry := &NewMessageEntry{}
-		if exist, err := DecodeFromBytes(newMessageEntry, rr); exist && err == nil {
-			op.PrevNewMessageEntry = newMessageEntry
-		} else if err != nil {
+		op.PrevNewMessageEntry, err = DecodeDeSoEncoder(&NewMessageEntry{}, rr)
+		if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNewMessageEntry")
-		}
-
-		// PrevDmThreadEntry
-		dmThreadExistence := &DmThreadEntry{}
-		if exist, err := DecodeFromBytes(dmThreadExistence, rr); exist && err == nil {
-			op.PrevDmThreadEntry = dmThreadExistence
-		} else if err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevDmThreadEntry")
 		}
 	}
 
@@ -1849,18 +1706,9 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading BalanceAmountNanos")
 		}
 
-		var numPrevNonceEntries uint64
-		numPrevNonceEntries, err = ReadUvarint(rr)
+		op.PrevNonceEntries, err = DecodeDeSoEncoderSlice[*TransactorNonceEntry](rr)
 		if err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading numPrevNonceEntries")
-		}
-
-		for ; numPrevNonceEntries > 0; numPrevNonceEntries-- {
-			prevNonceEntry := &TransactorNonceEntry{}
-			if _, err = DecodeFromBytes(prevNonceEntry, rr); err != nil {
-				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading prevNonceEntry")
-			}
-			op.PrevNonceEntries = append(op.PrevNonceEntries, prevNonceEntry)
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevNonceEntries")
 		}
 	}
 
@@ -2069,18 +1917,14 @@ func (message *MessageEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 func (message *MessageEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
-	senderPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(senderPublicKey, rr); exist && err == nil {
-		message.SenderPublicKey = senderPublicKey
-	} else if err != nil {
+	message.SenderPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: Problem reading SenderPublicKey")
 	}
 
-	recipientPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(recipientPublicKey, rr); exist && err == nil {
-		message.RecipientPublicKey = recipientPublicKey
-	} else if err != nil {
-		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding recipient public key")
+	message.RecipientPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessageEntry.Decode: Problem reading RecipientPublicKey")
 	}
 
 	message.EncryptedText, err = DecodeByteArray(rr)
@@ -2099,34 +1943,25 @@ func (message *MessageEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	}
 	message.Version = uint8(versionBytes)
 
-	senderMessagingPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(senderMessagingPublicKey, rr); exist && err == nil {
-		message.SenderMessagingPublicKey = senderMessagingPublicKey
-	} else if err != nil {
+	message.SenderMessagingPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding sender messaging public key")
 	}
 
-	senderMessagingKeyName := &GroupKeyName{}
-	if exist, err := DecodeFromBytes(senderMessagingKeyName, rr); exist && err == nil {
-		message.SenderMessagingGroupKeyName = senderMessagingKeyName
-	} else if err != nil {
+	message.SenderMessagingGroupKeyName, err = DecodeDeSoEncoder(&GroupKeyName{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding sender messaging key name")
 	}
 
-	recipientMessagingPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(recipientMessagingPublicKey, rr); exist && err == nil {
-		message.RecipientMessagingPublicKey = recipientMessagingPublicKey
-	} else if err != nil {
+	message.RecipientMessagingPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding sender messaging key name")
 	}
 
-	recipientMessagingKeyName := &GroupKeyName{}
-	if exist, err := DecodeFromBytes(recipientMessagingKeyName, rr); exist && err == nil {
-		message.RecipientMessagingGroupKeyName = recipientMessagingKeyName
-	} else if err != nil {
+	message.RecipientMessagingGroupKeyName, err = DecodeDeSoEncoder(&GroupKeyName{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "MessageEntry.Decode: problem decoding sender messaging key name")
 	}
-	message.RecipientMessagingGroupKeyName = recipientMessagingKeyName
 
 	message.ExtraData, err = DecodeExtraData(rr)
 	if err != nil && strings.Contains(err.Error(), "EOF") {
@@ -2213,46 +2048,34 @@ func (message *NewMessageEntry) RawEncodeWithoutMetadata(blockHeight uint64, ski
 func (message *NewMessageEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
-	senderAccessGroupOwnerPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(senderAccessGroupOwnerPublicKey, rr); exist && err == nil {
-		message.SenderAccessGroupOwnerPublicKey = senderAccessGroupOwnerPublicKey
-	} else if err != nil {
+	message.SenderAccessGroupOwnerPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "NewMessageEntry.Decode: Problem reading SenderAccessGroupOwnerPublicKey")
 	}
 
-	senderAccessGroupKeyName := &GroupKeyName{}
-	if exist, err := DecodeFromBytes(senderAccessGroupKeyName, rr); exist && err == nil {
-		message.SenderAccessGroupKeyName = senderAccessGroupKeyName
-	} else if err != nil {
-		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding SenderAccessGroupKeyName")
+	message.SenderAccessGroupKeyName, err = DecodeDeSoEncoder(&GroupKeyName{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: Problem reading SenderAccessGroupKeyName")
 	}
 
-	senderAccessPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(senderAccessPublicKey, rr); exist && err == nil {
-		message.SenderAccessGroupPublicKey = senderAccessPublicKey
-	} else if err != nil {
-		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding SenderAccessGroupPublicKey")
+	message.SenderAccessGroupPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: Problem reading SenderAccessGroupPublicKey")
 	}
 
-	recipientAccessGroupOwnerPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(recipientAccessGroupOwnerPublicKey, rr); exist && err == nil {
-		message.RecipientAccessGroupOwnerPublicKey = recipientAccessGroupOwnerPublicKey
-	} else if err != nil {
-		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding RecipientAccessGroupOwnerPublicKey")
+	message.RecipientAccessGroupOwnerPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: Problem reading RecipientAccessGroupOwnerPublicKey")
 	}
 
-	recipientAccessGroupKeyName := &GroupKeyName{}
-	if exist, err := DecodeFromBytes(recipientAccessGroupKeyName, rr); exist && err == nil {
-		message.RecipientAccessGroupKeyName = recipientAccessGroupKeyName
-	} else if err != nil {
-		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding RecipientAccessGroupKeyName")
+	message.RecipientAccessGroupKeyName, err = DecodeDeSoEncoder(&GroupKeyName{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: Problem reading RecipientAccessGroupKeyName")
 	}
 
-	recipientAccessPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(recipientAccessPublicKey, rr); exist && err == nil {
-		message.RecipientAccessGroupPublicKey = recipientAccessPublicKey
-	} else if err != nil {
-		return errors.Wrapf(err, "NewMessageEntry.Decode: problem decoding RecipientAccessGroupPublicKey")
+	message.RecipientAccessGroupPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "NewMessageEntry.Decode: Problem reading RecipientAccessGroupPublicKey")
 	}
 
 	message.EncryptedText, err = DecodeByteArray(rr)
