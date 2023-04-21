@@ -17,10 +17,14 @@ import (
 //
 
 type ValidatorEntry struct {
-	ValidatorID                *BlockHash
-	ValidatorPKID              *PKID
-	Domains                    [][]byte
-	DisableDelegatedStake      bool
+	ValidatorID   *BlockHash
+	ValidatorPKID *PKID
+	// Note: if someone is updating their ValidatorEntry, they need to include
+	// all domains. The Domains field is not appended to. It is overwritten.
+	Domains               [][]byte
+	DisableDelegatedStake bool
+	// TODO: We will implement BLS public keys and signatures in a subsequent PR.
+	// For now, we include them just as a placeholder byte slice.
 	VotingPublicKey            []byte
 	VotingPublicKeySignature   []byte
 	VotingSignatureBlockHeight uint64
@@ -44,7 +48,9 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 	// Copy ExtraData.
 	extraDataCopy := make(map[string][]byte)
 	for key, value := range validatorEntry.ExtraData {
-		extraDataCopy[key] = value
+		valueCopy := make([]byte, len(value))
+		copy(valueCopy, value)
+		extraDataCopy[key] = valueCopy
 	}
 
 	// Return new ValidatorEntry.
@@ -483,15 +489,13 @@ func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetEncoderType() En
 //
 
 func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
-	var key []byte
-	key = append(key, Prefixes.PrefixValidatorByPKID...)
+	key := append([]byte{}, Prefixes.PrefixValidatorByPKID...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
 	return key
 }
 
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
-	var key []byte
-	key = append(key, Prefixes.PrefixValidatorByStake...)
+	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
 	// FIXME: ensure that this left-pads the uint256 to be equal width
 	key = append(key, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)                 // Highest stake first
 	key = append(key, EncodeUint64(math.MaxUint64-validatorEntry.RegisteredAtBlockHeight)...) // Oldest first
@@ -500,9 +504,7 @@ func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 }
 
 func DBKeyForGlobalStakeAmountNanos() []byte {
-	var key []byte
-	key = append(key, Prefixes.PrefixGlobalStakeAmountNanos...)
-	return key
+	return append([]byte{}, Prefixes.PrefixGlobalStakeAmountNanos...)
 }
 
 func DBGetValidatorByPKID(handle *badger.DB, snap *Snapshot, pkid *PKID) (*ValidatorEntry, error) {
@@ -618,6 +620,8 @@ func DBPutValidatorWithTxn(
 	blockHeight uint64,
 ) error {
 	if validatorEntry == nil {
+		// This should never happen but is a sanity check.
+		glog.Errorf("DBPutValidatorWithTxn: called with nil ValidatorEntry")
 		return nil
 	}
 
@@ -642,6 +646,8 @@ func DBPutValidatorWithTxn(
 
 func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorEntry *ValidatorEntry) error {
 	if validatorEntry == nil {
+		// This should never happen but is a sanity check.
+		glog.Errorf("DBDeleteValidatorWithTxn: called with nil ValidatorEntry")
 		return nil
 	}
 
@@ -670,6 +676,12 @@ func DBPutGlobalStakeAmountNanosWithTxn(
 	globalStakeAmountNanos *uint256.Int,
 	blockHeight uint64,
 ) error {
+	if globalStakeAmountNanos == nil {
+		// This should never happen but is a sanity check.
+		glog.Errorf("DBPutGlobalStakeAmountNanosWithTxn: called with nil GlobalStakeAmountNanos")
+		return nil
+	}
+
 	key := DBKeyForGlobalStakeAmountNanos()
 	return DBSetWithTxn(txn, snap, key, EncodeUint256(globalStakeAmountNanos))
 }
@@ -900,15 +912,15 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	}
 
 	// Set ValidatorID only if this is a new ValidatorEntry.
-	validatorID := txHash
+	validatorID := txHash.NewBlockHash()
 	if prevValidatorEntry != nil {
-		validatorID = prevValidatorEntry.ValidatorID
+		validatorID = prevValidatorEntry.ValidatorID.NewBlockHash()
 	}
 
 	// Calculate TotalStakeAmountNanos.
 	totalStakeAmountNanos := uint256.NewInt()
 	if prevValidatorEntry != nil {
-		totalStakeAmountNanos = prevValidatorEntry.TotalStakeAmountNanos
+		totalStakeAmountNanos = prevValidatorEntry.TotalStakeAmountNanos.Clone()
 	}
 
 	// TODO: In subsequent PR, unstake delegated stakers if updating DisableDelegatedStake=true.
@@ -932,8 +944,10 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 
 	// Construct new ValidatorEntry from metadata.
 	currentValidatorEntry := &ValidatorEntry{
-		ValidatorID:                validatorID,
-		ValidatorPKID:              transactorPKIDEntry.PKID,
+		ValidatorID:   validatorID,
+		ValidatorPKID: transactorPKIDEntry.PKID,
+		// Note: if someone is updating their ValidatorEntry, they need to include
+		// all domains. The Domains field is not appended to. It is overwritten.
 		Domains:                    txMeta.Domains,
 		DisableDelegatedStake:      txMeta.DisableDelegatedStake,
 		VotingPublicKey:            txMeta.VotingPublicKey,
@@ -1245,12 +1259,17 @@ func (bav *UtxoView) GetGlobalStakeAmountNanos() (*uint256.Int, error) {
 	var globalStakeAmountNanos *uint256.Int
 	var err error
 	// Read the GlobalStakeAmountNanos from the UtxoView.
-	globalStakeAmountNanos = bav.GlobalStakeAmountNanos
+	if bav.GlobalStakeAmountNanos != nil {
+		globalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
+	}
 	// If not set, read the GlobalStakeAmountNanos from the db.
 	if globalStakeAmountNanos == nil || globalStakeAmountNanos.IsZero() {
 		globalStakeAmountNanos, err = DBGetGlobalStakeAmountNanos(bav.Handle, bav.Snapshot)
 		if err != nil {
 			return nil, err
+		}
+		if globalStakeAmountNanos == nil {
+			globalStakeAmountNanos = uint256.NewInt()
 		}
 		// Cache the GlobaleStakeAmountNanos from the db in the UtxoView.
 		bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
@@ -1365,10 +1384,11 @@ func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
 		ValidatorPublicKeyBase58Check: validatorPublicKeyBase58Check,
 		Domains:                       domains,
 		DisableDelegatedStake:         metadata.DisableDelegatedStake,
-		VotingPublicKey:               string(metadata.VotingPublicKey),
-		VotingPublicKeySignature:      string(metadata.VotingPublicKeySignature),
-		VotingSignatureBlockHeight:    metadata.VotingSignatureBlockHeight,
-		UnstakedStakers:               unstakedStakers,
+		// TODO: In a subsequent PR, update to convert BLS public keys and signatures to strings.
+		VotingPublicKey:            string(metadata.VotingPublicKey),
+		VotingPublicKeySignature:   string(metadata.VotingPublicKeySignature),
+		VotingSignatureBlockHeight: metadata.VotingSignatureBlockHeight,
+		UnstakedStakers:            unstakedStakers,
 	}
 
 	// Construct AffectedPublicKeys.
