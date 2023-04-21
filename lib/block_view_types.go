@@ -1866,10 +1866,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 
 	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
 		// PrevValidatorEntry
-		prevValidatorEntry := &ValidatorEntry{}
-		if exist, err := DecodeFromBytes(prevValidatorEntry, rr); exist && err == nil {
-			op.PrevValidatorEntry = prevValidatorEntry
-		} else if err != nil {
+		if op.PrevValidatorEntry, err = DecodeDeSoEncoder[*ValidatorEntry](nil, rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry: ")
 		}
 

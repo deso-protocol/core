@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/pkg/errors"
 )
 
@@ -77,6 +78,23 @@ func MapSet[T comparable, K any](set *Set[T], mapFunc func(elem T) (K, error)) (
 	return results, nil
 }
 
+// Pass in nil as the entry
+func DecodeDeSoEncoder[T DeSoEncoder](entry T, rr *bytes.Reader) (T, error) {
+	result := entry.GetEncoderType().New()
+	exist, err := DecodeFromBytes(result, rr)
+	if !exist {
+		return entry, nil
+	}
+	if err != nil {
+		return entry, errors.Wrapf(err, "DecodeDeSoEncoder: Problem decoding from bytes")
+	}
+	castResult, ok := result.(T)
+	if !ok {
+		return entry, fmt.Errorf("DecodeDeSoEncoder: Failed to cast result to type %T", entry)
+	}
+	return castResult, nil
+}
+
 func EncodeDeSoEncoderSlice[T DeSoEncoder](inputSlice []T, blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	numItems := uint64(len(inputSlice))
@@ -93,14 +111,14 @@ func DecodeDeSoEncoderSlice[T DeSoEncoder](rr *bytes.Reader) ([]T, error) {
 		return nil, errors.Wrapf(err, "DecodeSlice: Problem decoding numItems")
 	}
 	// Note: is it more efficient to do a make with specific length and set at each index?
-	inputs := make([]T, numItems)
 	var results []T
 	for ii := uint64(0); ii < numItems; ii++ {
-		prevEntry := inputs[ii].GetEncoderType().New()
-		if exist, err := DecodeFromBytes(prevEntry, rr); exist && err == nil {
-			results = append(results, prevEntry.(T))
-		} else if err != nil {
+		entry, err := DecodeDeSoEncoder[T](nil, rr)
+		if err != nil {
 			return nil, errors.Wrapf(err, "DecodeSlice: Problem decoding item %d of %d", ii, numItems)
+		}
+		if entry != nil {
+			results = append(results, entry)
 		}
 	}
 	return results, nil
