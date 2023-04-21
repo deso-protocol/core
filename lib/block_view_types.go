@@ -1766,10 +1766,7 @@ func (opBundle *UtxoOperationBundle) RawEncodeWithoutMetadata(blockHeight uint64
 
 	data = append(data, UintToBuf(uint64(len(opBundle.UtxoOpBundle)))...)
 	for _, opList := range opBundle.UtxoOpBundle {
-		data = append(data, UintToBuf(uint64(len(opList)))...)
-		for _, op := range opList {
-			data = append(data, EncodeToBytes(blockHeight, op, skipMetadata...)...)
-		}
+		data = append(data, EncodeDeSoEncoderSlice[*UtxoOperation](opList, blockHeight, skipMetadata...)...)
 	}
 	return data
 }
@@ -1782,18 +1779,9 @@ func (opBundle *UtxoOperationBundle) RawDecodeWithoutMetadata(blockHeight uint64
 	}
 
 	for ; opListLen > 0; opListLen-- {
-		opLen, err := ReadUvarint(rr)
+		opList, err := DecodeDeSoEncoderSlice[*UtxoOperation](rr)
 		if err != nil {
 			return err
-		}
-
-		var opList []*UtxoOperation
-		for ; opLen > 0; opLen-- {
-			op := &UtxoOperation{}
-			if exists, err := DecodeFromBytes(op, rr); !exists || err != nil {
-				return err
-			}
-			opList = append(opList, op)
 		}
 		opBundle.UtxoOpBundle = append(opBundle.UtxoOpBundle, opList)
 	}
@@ -2532,36 +2520,30 @@ func (entry *AccessGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, skip
 }
 
 func (entry *AccessGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	accessGroupOwnerPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(accessGroupOwnerPublicKey, rr); exist && err == nil {
-		entry.AccessGroupOwnerPublicKey = accessGroupOwnerPublicKey
-	} else if err != nil {
+	var err error
+	entry.AccessGroupOwnerPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "AccessGroupEntry.Decode: Problem reading "+
 			"AccessGroupOwnerPublicKey")
 	}
 
-	accessGroupKeyName := &GroupKeyName{}
-	if exist, err := DecodeFromBytes(accessGroupKeyName, rr); exist && err == nil {
-		entry.AccessGroupKeyName = accessGroupKeyName
-	} else if err != nil {
+	entry.AccessGroupKeyName, err = DecodeDeSoEncoder(&GroupKeyName{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "AccessGroupEntry.Decode: Problem reading "+
 			"AccessGroupKeyName")
 	}
 
-	accessGroupPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(accessGroupPublicKey, rr); exist && err == nil {
-		entry.AccessGroupPublicKey = accessGroupPublicKey
-	} else if err != nil {
+	entry.AccessGroupPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "AccessGroupEntry.Decode: Problem reading "+
 			"AccessGroupPublicKey")
 	}
 
-	extraData, err := DecodeExtraData(rr)
+	entry.ExtraData, err = DecodeExtraData(rr)
 	if err != nil {
 		return errors.Wrapf(err, "AccessGroupEntry.Decode: Problem reading "+
 			"ExtraData")
 	}
-	entry.ExtraData = extraData
 
 	return nil
 }
@@ -2635,50 +2617,38 @@ func (entry *MessagingGroupEntry) RawEncodeWithoutMetadata(blockHeight uint64, s
 	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.GroupOwnerPublicKey, skipMetadata...)...)
 	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.MessagingPublicKey, skipMetadata...)...)
 	entryBytes = append(entryBytes, EncodeToBytes(blockHeight, entry.MessagingGroupKeyName, skipMetadata...)...)
-	entryBytes = append(entryBytes, UintToBuf(uint64(len(entry.MessagingGroupMembers)))...)
 	// We sort the MessagingGroupMembers because they can be added while iterating over
 	// a map, which could lead to inconsistent orderings across nodes when encoding.
 	members := sortMessagingGroupMembers(entry.MessagingGroupMembers)
-	for ii := 0; ii < len(members); ii++ {
-		entryBytes = append(entryBytes, EncodeToBytes(blockHeight, members[ii], skipMetadata...)...)
-	}
+	entryBytes = append(entryBytes, EncodeDeSoEncoderSlice(members, blockHeight, skipMetadata...)...)
 	entryBytes = append(entryBytes, EncodeExtraData(entry.ExtraData)...)
 	return entryBytes
 }
 
 func (entry *MessagingGroupEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	groupOwnerPublicKeyBytes := &PublicKey{}
-	if exist, err := DecodeFromBytes(groupOwnerPublicKeyBytes, rr); exist && err == nil {
-		entry.GroupOwnerPublicKey = groupOwnerPublicKeyBytes
-	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding groupOwnerPublicKeyBytes")
-	}
-
-	messagingPublicKeyBytes := &PublicKey{}
-	if exist, err := DecodeFromBytes(messagingPublicKeyBytes, rr); exist && err == nil {
-		entry.MessagingPublicKey = messagingPublicKeyBytes
-	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding messagingPublicKey")
-	}
-
-	messagingKeyNameBytes := &GroupKeyName{}
-	if exist, err := DecodeFromBytes(messagingKeyNameBytes, rr); exist && err == nil {
-		entry.MessagingGroupKeyName = messagingKeyNameBytes
-	} else if err != nil {
-		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding messagingKeyName")
-	}
-
-	recipientsLen, err := ReadUvarint(rr)
+	var err error
+	entry.GroupOwnerPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
 	if err != nil {
-		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding recipients length")
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem reading "+
+			"GroupOwnerPublicKey")
 	}
-	for ; recipientsLen > 0; recipientsLen-- {
-		recipient := &MessagingGroupMember{}
-		if exist, err := DecodeFromBytes(recipient, rr); exist && err == nil {
-			entry.MessagingGroupMembers = append(entry.MessagingGroupMembers, recipient)
-		} else if err != nil {
-			return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem decoding recipient")
-		}
+
+	entry.MessagingPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem reading "+
+			"MessagingPublicKey")
+	}
+
+	entry.MessagingGroupKeyName, err = DecodeDeSoEncoder(&GroupKeyName{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem reading "+
+			"MessagingGroupKeyName")
+	}
+
+	entry.MessagingGroupMembers, err = DecodeDeSoEncoderSlice[*MessagingGroupMember](rr)
+	if err != nil {
+		return errors.Wrapf(err, "MessagingGroupEntry.Decode: Problem reading "+
+			"MessagingGroupMembers")
 	}
 
 	entry.ExtraData, err = DecodeExtraData(rr)
@@ -2746,18 +2716,18 @@ func (entry *AccessGroupMemberEntry) RawEncodeWithoutMetadata(blockHeight uint64
 }
 
 func (entry *AccessGroupMemberEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	accessGroupMemberPublicKeyBytes := &PublicKey{}
-	if exist, err := DecodeFromBytes(accessGroupMemberPublicKeyBytes, rr); exist && err == nil {
-		entry.AccessGroupMemberPublicKey = accessGroupMemberPublicKeyBytes
-	} else if err != nil {
-		return errors.Wrapf(err, "AccessGroupMemberEntry.Decode: Problem decoding accessGroupMemberPublicKeyBytes")
+	var err error
+
+	entry.AccessGroupMemberPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMemberEntry.Decode: Problem reading "+
+			"AccessGroupMemberPublicKey")
 	}
 
-	accessGroupMemberKeyNameBytes := &GroupKeyName{}
-	if exist, err := DecodeFromBytes(accessGroupMemberKeyNameBytes, rr); exist && err == nil {
-		entry.AccessGroupMemberKeyName = accessGroupMemberKeyNameBytes
-	} else if err != nil {
-		return errors.Wrapf(err, "AccessGroupMemberEntry.Decode: Problem decoding accessGroupMemberKeyNameBytes")
+	entry.AccessGroupMemberKeyName, err = DecodeDeSoEncoder(&GroupKeyName{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "AccessGroupMemberEntry.Decode: Problem reading "+
+			"AccessGroupMemberKeyName")
 	}
 
 	encryptedKey, err := DecodeByteArray(rr)
@@ -2851,18 +2821,14 @@ func (rec *MessagingGroupMember) RawEncodeWithoutMetadata(blockHeight uint64, sk
 func (rec *MessagingGroupMember) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
-	groupMemberPublicKey := &PublicKey{}
-	if exist, err := DecodeFromBytes(groupMemberPublicKey, rr); exist && err == nil {
-		rec.GroupMemberPublicKey = groupMemberPublicKey
-	} else if err != nil {
+	rec.GroupMemberPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberPublicKey")
 	}
 
-	groupMemberKeyName := &GroupKeyName{}
-	if exist, err := DecodeFromBytes(groupMemberKeyName, rr); exist && err == nil {
-		rec.GroupMemberKeyName = groupMemberKeyName
-	} else if err != nil {
+	rec.GroupMemberKeyName, err = DecodeDeSoEncoder(&GroupKeyName{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "MessagingGroupMember.Decode: Problem reading "+
 			"GroupMemberKeyName")
 	}
@@ -2950,10 +2916,8 @@ func (likeEntry *LikeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 	if err != nil {
 		return errors.Wrapf(err, "LikeEntry.Decode: problem reading LikerPubKey")
 	}
-	likedPostHash := &BlockHash{}
-	if exist, err := DecodeFromBytes(likedPostHash, rr); exist && err == nil {
-		likeEntry.LikedPostHash = likedPostHash
-	} else if err != nil {
+	likeEntry.LikedPostHash, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "LikeEntry.Decode: problem reading LikedPostHash")
 	}
 	return nil
@@ -3028,24 +2992,18 @@ func (nft *NFTEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata .
 func (nft *NFTEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
-	lastOwnerPKID := &PKID{}
-	if exist, err := DecodeFromBytes(lastOwnerPKID, rr); exist && err == nil {
-		nft.LastOwnerPKID = lastOwnerPKID
-	} else if err != nil {
+	nft.LastOwnerPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "NFTEntry.Decode: Problem reading LastOwnerPKID")
 	}
 
-	ownerPKID := &PKID{}
-	if exist, err := DecodeFromBytes(ownerPKID, rr); exist && err == nil {
-		nft.OwnerPKID = ownerPKID
-	} else if err != nil {
+	nft.OwnerPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "NFTEntry.Decode: Problem reading OwnerPKID")
 	}
 
-	NFTPostHash := &BlockHash{}
-	if exist, err := DecodeFromBytes(NFTPostHash, rr); exist && err == nil {
-		nft.NFTPostHash = NFTPostHash
-	} else if err != nil {
+	nft.NFTPostHash, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "NFTEntry.Decode: Problem reading NFTPostHash")
 	}
 	nft.SerialNumber, err = ReadUvarint(rr)
@@ -3152,18 +3110,16 @@ func (be *NFTBidEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata
 func (be *NFTBidEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
-	bidderPKID := &PKID{}
-	if exist, err := DecodeFromBytes(bidderPKID, rr); exist && err == nil {
-		be.BidderPKID = bidderPKID
-	} else if err != nil {
+	be.BidderPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "NFTBidEntry.Decode: Problem reading BidderPKID")
 	}
-	NFTPostHash := &BlockHash{}
-	if exist, err := DecodeFromBytes(NFTPostHash, rr); exist && err == nil {
-		be.NFTPostHash = NFTPostHash
-	} else if err != nil {
+
+	be.NFTPostHash, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "NFTBidEntry.Decode: Problem reading NFTPostHash")
 	}
+
 	be.SerialNumber, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "NFTBidEntry.Decode: Problem reading SerialNubmer")
@@ -3210,41 +3166,13 @@ type NFTBidEntryBundle struct {
 }
 
 func (bundle *NFTBidEntryBundle) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	var data []byte
-
-	if bundle.nftBidEntryBundle != nil {
-		numEntries := uint64(len(bundle.nftBidEntryBundle))
-		data = append(data, UintToBuf(numEntries)...)
-
-		for _, entry := range bundle.nftBidEntryBundle {
-			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
-		}
-	} else {
-		data = append(data, UintToBuf(0)...)
-	}
-
-	return data
+	return EncodeDeSoEncoderSlice[*NFTBidEntry](bundle.nftBidEntryBundle, blockHeight, skipMetadata...)
 }
 
 func (bundle *NFTBidEntryBundle) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-
-	numEntries, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "NFTBidEntryBundle.RawDecodeWithoutMetadata: Problem decoding number of nft bids")
-	}
-	bundle.nftBidEntryBundle, err = SafeMakeSliceWithLength[*NFTBidEntry](numEntries)
-	if err != nil {
-		return errors.Wrapf(err, "NFTBidEntryBundle.RawDecodeWithoutMetadata: Problem creating slice for nftBidEntryBundle")
-	}
-	for ii := uint64(0); ii < numEntries; ii++ {
-		bidEntry := &NFTBidEntry{}
-		if exists, err := DecodeFromBytes(bidEntry, rr); !exists || err != nil {
-			return errors.Wrapf(err, "NFTBidEntryBundle.RawDecodeWithoutMetadata: Problem decoding nft bids at index ii: %v", ii)
-		}
-		bundle.nftBidEntryBundle = append(bundle.nftBidEntryBundle, bidEntry)
-	}
-
-	return nil
+	var err error
+	bundle.nftBidEntryBundle, err = DecodeDeSoEncoderSlice[*NFTBidEntry](rr)
+	return errors.Wrapf(err, "NFTBidEntryBundle.RawDecodeWithoutMetadata: Problem decoding nftBidEntryBundle")
 }
 
 func (bundle *NFTBidEntryBundle) GetVersionByte(blockHeight uint64) byte {
@@ -3466,25 +3394,20 @@ func (de *DiamondEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadat
 }
 
 func (de *DiamondEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	senderPKID := &PKID{}
-	if exist, err := DecodeFromBytes(senderPKID, rr); exist && err == nil {
-		de.SenderPKID = senderPKID
-	} else if err != nil {
+	var err error
+	de.SenderPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "DiamondEntry.Decode: Problem reading SenderPKID")
 	}
 
 	// ReceiverPKID
-	receiverPKID := &PKID{}
-	if exist, err := DecodeFromBytes(receiverPKID, rr); exist && err == nil {
-		de.ReceiverPKID = receiverPKID
-	} else if err != nil {
+	de.ReceiverPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "DiamondEntry.Decode: Problem reading ReceiverPKID")
 	}
 
-	diamondPostHash := &BlockHash{}
-	if exist, err := DecodeFromBytes(diamondPostHash, rr); exist && err == nil {
-		de.DiamondPostHash = diamondPostHash
-	} else if err != nil {
+	de.DiamondPostHash, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "DiamondEntry.Decode: Problem reading DiamondPostHash")
 	}
 
@@ -3550,20 +3473,15 @@ func (re *RepostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Re
 		return errors.Wrapf(err, "RepostEntry.Decode: Problem reading ReposterPubKey")
 	}
 
-	repostPostHash := &BlockHash{}
-	if exist, err := DecodeFromBytes(repostPostHash, rr); exist && err == nil {
-		re.RepostPostHash = repostPostHash
-	} else if err != nil {
+	re.RepostPostHash, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "RepostEntry.Decode: Problem reading RepostPostHash")
 	}
 
-	repostedPostHash := &BlockHash{}
-	if exist, err := DecodeFromBytes(repostedPostHash, rr); exist && err == nil {
-		re.RepostedPostHash = repostedPostHash
-	} else if err != nil {
+	re.RepostedPostHash, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "RepostEntry.Decode: Problem reading RepostedPostHash")
 	}
-
 	return nil
 }
 
@@ -3837,10 +3755,8 @@ func (pe *PostEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata .
 func (pe *PostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
-	postHash := &BlockHash{}
-	if exist, err := DecodeFromBytes(postHash, rr); exist && err == nil {
-		pe.PostHash = postHash
-	} else if err != nil {
+	pe.PostHash, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "PostEntry.Decode: Problem reading PostHash")
 	}
 	pe.PosterPublicKey, err = DecodeByteArray(rr)
@@ -3856,10 +3772,8 @@ func (pe *PostEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 		return errors.Wrapf(err, "PostEntry.Decode: Problem reading Body")
 	}
 
-	repostedPostHash := &BlockHash{}
-	if exist, err := DecodeFromBytes(repostedPostHash, rr); exist && err == nil {
-		pe.RepostedPostHash = repostedPostHash
-	} else if err != nil {
+	pe.RepostedPostHash, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "PostEntry.Decode: Problem reading RepostedPostHash")
 	}
 
@@ -4036,18 +3950,13 @@ func (be *BalanceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadat
 }
 
 func (be *BalanceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-
-	HODLerPKID := &PKID{}
-	if exist, err := DecodeFromBytes(HODLerPKID, rr); exist && err == nil {
-		be.HODLerPKID = HODLerPKID
-	} else if err != nil {
+	var err error
+	be.HODLerPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "BalanceEntry.Decode: Problem decoding HODLerPKID")
 	}
-
-	creatorPKID := &PKID{}
-	if exist, err := DecodeFromBytes(creatorPKID, rr); exist && err == nil {
-		be.CreatorPKID = creatorPKID
-	} else if err != nil {
+	be.CreatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "BalanceEntry.Decode: Problem decoding CreatorPKID")
 	}
 
@@ -4406,15 +4315,17 @@ func (pe *ProfileEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	if err != nil {
 		return errors.Wrapf(err, "ProfileEntry.Decode: Problem reading IsHidden")
 	}
-	pe.CreatorCoinEntry = CoinEntry{}
-	if exists, err := DecodeFromBytes(&pe.CreatorCoinEntry, rr); !exists || err != nil {
+	creatorCoinEntry, err := DecodeDeSoEncoder(&CoinEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "ProfileEntry.Decode: Problem reading CreatorCoinEntry")
 	}
+	pe.CreatorCoinEntry = creatorCoinEntry
 
-	pe.DAOCoinEntry = CoinEntry{}
-	if exists, err := DecodeFromBytes(&pe.DAOCoinEntry, rr); !exists || err != nil {
+	daoCoinEntry, err := DecodeDeSoEncoder(&CoinEntry{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "ProfileEntry.Decode: Problem reading DAOCoinEntry")
 	}
+	pe.DAOCoinEntry = daoCoinEntry
 
 	pe.ExtraData, err = DecodeExtraData(rr)
 	if err != nil && strings.Contains(err.Error(), "EOF") {

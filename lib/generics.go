@@ -105,7 +105,10 @@ func DecodeDeSoEncoderSlice[T DeSoEncoder](rr *bytes.Reader) ([]T, error) {
 		return nil, errors.Wrapf(err, "DecodeDeSoEncoderSlice: Problem decoding numItems")
 	}
 	// Note: is it more efficient to do a make with specific length and set at each index?
-	inputs := make([]T, numItems)
+	inputs, err := SafeMakeSliceWithLength[T](numItems)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeDeSoEncoderSlice: Problem making slice with length %d", numItems)
+	}
 	var results []T
 	for ii := uint64(0); ii < numItems; ii++ {
 		prevEntry := inputs[ii].GetEncoderType().New()
