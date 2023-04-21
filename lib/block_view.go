@@ -3381,6 +3381,29 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 				)
 			}
 		}
+		if txn.TxnMeta.GetTxnType() == TxnTypeUnlockStake {
+			if len(utxoOpsForTxn) == 0 {
+				return nil, 0, 0, 0, errors.New(
+					"ConnectTransaction: TxnTypeUnlockStake must return UtxoOpsForTxn",
+				)
+			}
+			utxoOp := utxoOpsForTxn[len(utxoOpsForTxn)-1]
+			if utxoOp == nil || utxoOp.Type != OperationTypeUnlockStake {
+				return nil, 0, 0, 0, errors.New(
+					"ConnectTransaction: TxnTypeUnlockStake must correspond to OperationTypeUnlockStake",
+				)
+			}
+			totalLockedAmountNanos := uint256.NewInt()
+			for _, prevLockedStakeEntry := range utxoOp.PrevLockedStakeEntries {
+				totalLockedAmountNanos, err = SafeUint256().Add(
+					totalLockedAmountNanos, prevLockedStakeEntry.LockedAmountNanos,
+				)
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error computing TotalLockedAmountNanos: ")
+				}
+			}
+			desoLockedDelta = big.NewInt(0).Neg(totalLockedAmountNanos.ToBig())
+		}
 		if big.NewInt(0).Add(balanceDelta, desoLockedDelta).Sign() > 0 {
 			return nil, 0, 0, 0, RuleErrorBalanceChangeGreaterThanZero
 		}

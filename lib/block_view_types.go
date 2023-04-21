@@ -35,8 +35,9 @@ const (
 	UtxoTypeNFTCreatorRoyalty        UtxoType = 8
 	UtxoTypeNFTAdditionalDESORoyalty UtxoType = 9
 	UtxoTypeDAOCoinLimitOrderPayout  UtxoType = 10
+	UtxoTypeUnlockedStake            UtxoType = 11
 
-	// NEXT_TAG = 11
+	// NEXT_TAG = 12
 )
 
 func (mm UtxoType) String() string {
@@ -61,6 +62,8 @@ func (mm UtxoType) String() string {
 		return "UtxoTypeNFTCreatorRoyalty"
 	case UtxoTypeNFTAdditionalDESORoyalty:
 		return "UtxoTypeNFTAdditionalDESORoyalty"
+	case UtxoTypeUnlockedStake:
+		return "UtxoTypeUnlockedStake"
 	default:
 		return "UtxoTypeUnknown"
 	}

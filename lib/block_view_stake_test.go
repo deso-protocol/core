@@ -374,7 +374,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(110))
 
 		// Verify LockedStakeEntry.UnstakeAmountNanos.
-		currentEpochNumber := uint64(0) // TODO: set this
+		currentEpochNumber := uint64(0) // TODO: get epoch number from db.
 		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
 		require.NoError(t, err)
 		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(40))
@@ -413,7 +413,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(80))
 
 		// Verify LockedStakeEntry.UnstakeAmountNanos.
-		currentEpochNumber := uint64(0) // TODO: set this
+		currentEpochNumber := uint64(0) // TODO: get epoch number from db.
 		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
 		require.NoError(t, err)
 		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(70))
@@ -451,7 +451,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
 
 		// Verify LockedStakeEntry.UnstakeAmountNanos.
-		currentEpochNumber := uint64(0) // TODO: set this
+		currentEpochNumber := uint64(0) // TODO: get epoch number from db.
 		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
 		require.NoError(t, err)
 		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(150))
@@ -513,12 +513,18 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m1 unlocks stake that was assigned to m0.
+		lockedStakeEntries, err := utxoView().GetLockedStakeEntriesInRange(m0PKID, m1PKID, 0, 0)
+		require.NoError(t, err)
+		require.Equal(t, len(lockedStakeEntries), 1)
+		require.Equal(t, lockedStakeEntries[0].LockedAmountNanos, uint256.NewInt().SetUint64(150))
+
+		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			StartEpochNumber:   0,
 			EndEpochNumber:     0,
 		}
-		_, err = _submitUnlockStakeTxn(
+		feeNanos, err := _submitUnlockStakeTxn(
 			testMeta, m1Pub, m1Priv, unlockStakeMetadata, nil, flushToDB,
 		)
 		require.NoError(t, err)
@@ -539,12 +545,14 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
 
 		// Verify LockedStakeEntry.isDeleted.
-		currentEpochNumber := uint64(0) // TODO: set this
+		currentEpochNumber := uint64(0) // TODO: get epoch number from db.
 		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
 		require.NoError(t, err)
 		require.Nil(t, lockedStakeEntry)
 
-		// TODO: Verify m1's DESO balance increases.
+		// Verify m1's DESO balance increases by LockedAmountNanos (net of fees).
+		m1NewDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
+		require.Equal(t, m1OldDESOBalanceNanos-feeNanos+uint64(150), m1NewDESOBalanceNanos)
 	}
 	{
 		// RuleErrorInvalidUnlockStakeNoUnlockableStakeFound
@@ -1178,7 +1186,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(50))
 
 		// LockedStakeEntry was created.
-		epochNumber := uint64(0) // TODO: Get epoch number from the db.
+		epochNumber := uint64(0) // TODO: get epoch number from db.
 		lockedStakeEntry, err := newUtxoView().GetLockedStakeEntry(m0PKID, senderPKID, epochNumber)
 		require.NoError(t, err)
 		require.NotNil(t, lockedStakeEntry)
@@ -1200,7 +1208,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// sender tries to unlock all stake from m1 using the DerivedKey. Errors.
-		epochNumber := uint64(0) // TODO: Get epoch number from the db.
+		epochNumber := uint64(0) // TODO: get epoch number from db.
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
 			StartEpochNumber:   epochNumber,
@@ -1235,12 +1243,13 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.Contains(t, err.Error(), RuleErrorUnlockStakeTransactionSpendingLimitNotFound)
 
 		// sender unlocks all stake from m0 using the DerivedKey. Succeeds.
+		senderOldDESOBalanceNanos := getDESOBalanceNanos(senderPkBytes)
 		unlockStakeMetadata = &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			StartEpochNumber:   epochNumber,
 			EndEpochNumber:     epochNumber,
 		}
-		_, err = _submitStakeTxnWithDerivedKey(
+		feeNanos, err := _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
 		)
 		require.NoError(t, err)
@@ -1250,7 +1259,9 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, lockedStakeEntry)
 
-		// TODO: verify sender's DESO balance was increased by 50 DESO nanos.
+		// Verify sender's DESO balance was increased by 50 DESO nanos (net of fees).
+		senderNewDESOBalanceNanos := getDESOBalanceNanos(senderPkBytes)
+		require.Equal(t, senderOldDESOBalanceNanos-feeNanos+uint64(50), senderNewDESOBalanceNanos)
 
 		// sender stakes + unstakes 50 $DESO nanos with m0.
 		stakeMetadata := &StakeMetadata{
@@ -1340,7 +1351,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// sender unlocks stake from m0 using the DerivedKey.
-		epochNumber := uint64(0) // TODO: get current epoch number from db.
+		epochNumber := uint64(0) // TODO: get epoch number from db.
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			StartEpochNumber:   epochNumber,
@@ -1414,7 +1425,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// sender unlocks stake from m0 using the DerivedKey.
-		epochNumber := uint64(0) // TODO: get current epoch number from db.
+		epochNumber := uint64(0) // TODO: get epoch number from db.
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			StartEpochNumber:   epochNumber,

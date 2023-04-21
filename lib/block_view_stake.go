@@ -1601,25 +1601,11 @@ func (bav *UtxoView) _connectUnlockStake(
 		)
 	}
 
-	// Connect a basic transfer to get the total input and the
-	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures,
-	)
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: ")
-	}
-	if verifySignatures {
-		// _connectBasicTransfer has already checked that the txn is signed
-		// by the top-level public key, which we take to be the sender's
-		// public key so there is no need to verify anything further.
-	}
-
 	// Grab the txn metadata.
 	txMeta := txn.TxnMeta.(*UnlockStakeMetadata)
 
 	// Validate the txn metadata.
-	if err = bav.IsValidUnlockStakeMetadata(txn.PublicKey, txMeta); err != nil {
+	if err := bav.IsValidUnlockStakeMetadata(txn.PublicKey, txMeta); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: ")
 	}
 
@@ -1646,6 +1632,20 @@ func (bav *UtxoView) _connectUnlockStake(
 		return 0, 0, nil, RuleErrorInvalidUnlockStakeNoUnlockableStakeFound
 	}
 
+	// Connect a basic transfer to get the total input and the
+	// total output without considering the txn metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: ")
+	}
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the txn is signed
+		// by the top-level public key, which we take to be the sender's
+		// public key so there is no need to verify anything further.
+	}
+
 	// Calculate the TotalUnlockedAmountNanos and delete the PrevLockedStakeEntries.
 	totalUnlockedAmountNanos := uint256.NewInt()
 	for _, prevLockedStakeEntry := range prevLockedStakeEntries {
@@ -1657,8 +1657,28 @@ func (bav *UtxoView) _connectUnlockStake(
 		}
 		bav._deleteLockedStakeEntryMappings(prevLockedStakeEntry)
 	}
+	if !totalUnlockedAmountNanos.IsUint64() {
+		return 0, 0, nil, RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64
+	}
+	totalUnlockedAmountNanosUint64 := totalUnlockedAmountNanos.Uint64()
 
-	// TODO: send TotalUnlockedAmountNanos back to the transactor
+	// Return TotalUnlockedAmountNanos back to the transactor.
+	outputKey := UtxoKey{
+		TxID:  *txn.Hash(),
+		Index: uint32(len(txn.TxOutputs)),
+	}
+	utxoEntry := UtxoEntry{
+		AmountNanos: totalUnlockedAmountNanosUint64,
+		PublicKey:   txn.PublicKey,
+		BlockHeight: blockHeight,
+		UtxoType:    UtxoTypeUnlockedStake,
+		UtxoKey:     &outputKey,
+	}
+	utxoOp, err := bav._addDESO(totalUnlockedAmountNanosUint64, txn.PublicKey, &utxoEntry, blockHeight)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: ")
+	}
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 
 	// Add a UTXO operation
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
@@ -1712,12 +1732,19 @@ func (bav *UtxoView) _disconnectUnlockStake(
 			return errors.Wrapf(err, "_disconnectUnlockStake: ")
 		}
 	}
-
-	// TODO: take TotalUnlockedAmountNanos from the transactor's DESO balance
+	if !totalUnlockedAmountNanos.IsUint64() {
+		return RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64
+	}
 
 	// Restore the PrevLockedStakeEntries.
 	for _, prevLockedStakeEntry := range operationData.PrevLockedStakeEntries {
 		bav._setLockedStakeEntryMappings(prevLockedStakeEntry)
+	}
+
+	// Unadd TotalUnlockedAmountNanos from the transactor.
+	err = bav._unAddBalance(totalUnlockedAmountNanos.Uint64(), currentTxn.PublicKey)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectUnlockStake: ")
 	}
 
 	// Disconnect the basic transfer.
@@ -2454,6 +2481,7 @@ const RuleErrorInvalidUnstakeAmountNanos RuleError = "RuleErrorInvalidUnstakeAmo
 const RuleErrorInvalidUnstakeInsufficientStakeFound RuleError = "RuleErrorInvalidUnstakeInsufficientStakeFound"
 const RuleErrorInvalidUnlockStakeEpochRange RuleError = "RuleErrorInvalidUnlockStakeEpochRange"
 const RuleErrorInvalidUnlockStakeNoUnlockableStakeFound RuleError = "RuleErrorInvalidUnlockStakeNoUnlockableStakeFound"
+const RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64 RuleError = "RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64"
 const RuleErrorStakeTransactionSpendingLimitNotFound RuleError = "RuleErrorStakeTransactionSpendingLimitNotFound"
 const RuleErrorStakeTransactionSpendingLimitExceeded RuleError = "RuleErrorStakeTransactionSpendingLimitExceeded"
 const RuleErrorUnstakeTransactionSpendingLimitNotFound RuleError = "RuleErrorUnstakeTransactionSpendingLimitNotFound"
