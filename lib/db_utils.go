@@ -482,8 +482,12 @@ type DBPrefixes struct {
 
 	// PrefixValidatorByStake: Retrieve the top N validators by stake.
 	// Prefix, TotalStakeAmountNanos, MaxUint64 - RegisteredAtBlockHeight, ValidatorPKID -> ValidatorPKID
-	// FIXME: DH, should we include the ValidatorPKID or ValidatorEntry as the value here.
-	// MF prefers ValidatorPKID. LN prefers ValidatorEntry.
+	// FIXME: @DH, should we duplicate the ValidatorPKID in the key and the value?
+	// Alternatively, we could just store and parse the ValidatorPKID from the key
+	// and store a struct{} as the value. That saves on space, but makes retrieving
+	// the ValidatorPKID from the key bytes more complex than just reading the value
+	// bytes directly since the key includes other preceding fields. Interesting
+	// trade-off. Curious your opinion.
 	PrefixValidatorByStake []byte `prefix_id:"[79]" is_state:"true"`
 
 	// PrefixGlobalStakeAmountNanos: Retrieve the cumulative stake across all validators.
