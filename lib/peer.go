@@ -812,7 +812,8 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 	// If we're sending the peer a GetBlocks message, we expect to receive the
 	// blocks at minimum within a few seconds of each other.
 	stallTimeout := time.Duration(int64(pp.stallTimeoutSeconds) * int64(time.Second))
-	if msg.GetMsgType() == MsgTypeGetBlocks {
+	switch msg.GetMsgType() {
+	case MsgTypeGetBlocks:
 		getBlocks := msg.(*MsgDeSoGetBlocks)
 		// We have one block expected for each entry in the message.
 		for ii := range getBlocks.HashList {
@@ -822,45 +823,48 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 				MessageType: MsgTypeBlock,
 			})
 		}
-	}
-
-	// If we're sending a GetHeaders message, the Peer should respond within
-	// a few seconds with a HeaderBundle.
-	if msg.GetMsgType() == MsgTypeGetHeaders {
+	case MsgTypeGetHeaders:
+		// If we're sending a GetHeaders message, the Peer should respond within
+		// a few seconds with a HeaderBundle.
 		pp._addExpectedResponse(&ExpectedResponse{
 			TimeExpected: time.Now().Add(stallTimeout),
 			MessageType:  MsgTypeHeaderBundle,
 		})
-	}
-
-	// If we're sending a GetTransactions message, the Peer should respond within
-	// a few seconds with a TransactionBundle. Every GetTransactions message should
-	// receive a TransactionBundle in response. The
-	// Server handles situations in which we request certain hashes but only get
-	// back a subset of them in the response (i.e. a case in which we received a
-	// timely reply but the reply was incomplete).
-	//
-	// NOTE: at the BalanceModelBlockHeight, MsgTypeTransactionBundle is replaced by
-	// the more capable MsgTypeTransactionBundleV2.
-	nextBlockHeight := pp.srv.blockchain.blockTip().Height + 1
-	expectedMsgType := MsgTypeTransactionBundle
-	if nextBlockHeight >= pp.srv.blockchain.params.ForkHeights.BalanceModelBlockHeight {
-		expectedMsgType = MsgTypeTransactionBundleV2
-	}
-	if msg.GetMsgType() == MsgTypeGetTransactions {
+	case MsgTypeGetSnapshot:
+		// If we're sending a GetSnapshot message, the peer should respond within a few seconds with a SnapshotData.
+		pp._addExpectedResponse(&ExpectedResponse{
+			TimeExpected: time.Now().Add(stallTimeout),
+			MessageType:  MsgTypeSnapshotData,
+		})
+	case MsgTypeGetTransactions:
+		// If we're sending a GetTransactions message, the Peer should respond within
+		// a few seconds with a TransactionBundle. Every GetTransactions message should
+		// receive a TransactionBundle in response. The
+		// Server handles situations in which we request certain hashes but only get
+		// back a subset of them in the response (i.e. a case in which we received a
+		// timely reply but the reply was incomplete).
+		//
+		// NOTE: at the BalanceModelBlockHeight, MsgTypeTransactionBundle is replaced by
+		// the more capable MsgTypeTransactionBundleV2.
+		// TODO: After fork, remove this recover block and always expect msg type MsgTypeTransactionBundleV2.
+		defer func() {
+			if r := recover(); r != nil {
+				isSrvNil := pp.srv == nil
+				isBlockchainNil := isSrvNil && pp.srv.blockchain == nil
+				isBlockTipNil := !isSrvNil && !isBlockchainNil && pp.srv.blockchain.blockTip() == nil
+				glog.Errorf(
+					"Peer._handleOutExpectedResponse: Recovered from panic: %v.\nsrv is nil: %t\nsrv.Blockchain is nil: %t\n,srv.Blockchain.BlockTip is nil: %t", r, isSrvNil, isBlockchainNil, isBlockTipNil)
+			}
+		}()
+		expectedMsgType := MsgTypeTransactionBundle
+		if pp.srv.blockchain.blockTip().Height+1 >= pp.Params.ForkHeights.BalanceModelBlockHeight {
+			expectedMsgType = MsgTypeTransactionBundleV2
+		}
 		pp._addExpectedResponse(&ExpectedResponse{
 			TimeExpected: time.Now().Add(stallTimeout),
 			MessageType:  expectedMsgType,
 			// The Server handles situations in which the Peer doesn't send us all of
 			// the hashes we were expecting using timeouts on requested hashes.
-		})
-	}
-
-	// If we're sending a GetSnapshot message, the peer should respond within a few seconds with a SnapshotData.
-	if msg.GetMsgType() == MsgTypeGetSnapshot {
-		pp._addExpectedResponse(&ExpectedResponse{
-			TimeExpected: time.Now().Add(stallTimeout),
-			MessageType:  MsgTypeSnapshotData,
 		})
 	}
 }

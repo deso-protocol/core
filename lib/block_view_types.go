@@ -110,9 +110,10 @@ const (
 	EncoderTypeDmThreadEntry                     EncoderType = 37
 	EncoderTypeDeSoNonce                         EncoderType = 38
 	EncoderTypeTransactorNonceEntry              EncoderType = 39
+	EncoderTypeValidatorEntry                    EncoderType = 40
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 40
+	EncoderTypeEndBlockView EncoderType = 41
 )
 
 // Txindex encoder types.
@@ -147,9 +148,11 @@ const (
 	EncoderTypeAccessGroupTxindexMetadata           EncoderType = 1000027
 	EncoderTypeAccessGroupMembersTxindexMetadata    EncoderType = 1000028
 	EncoderTypeNewMessageTxindexMetadata            EncoderType = 1000029
+	EncoderTypeRegisterAsValidatorTxindexMetadata   EncoderType = 1000030
+	EncoderTypeUnregisterAsValidatorTxindexMetadata EncoderType = 1000031
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndTxIndex EncoderType = 1000030
+	EncoderTypeEndTxIndex EncoderType = 1000032
 )
 
 // This function translates the EncoderType into an empty DeSoEncoder struct.
@@ -236,6 +239,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &DeSoNonce{}
 	case EncoderTypeTransactorNonceEntry:
 		return &TransactorNonceEntry{}
+	case EncoderTypeValidatorEntry:
+		return &ValidatorEntry{}
 	}
 
 	// Txindex encoder types
@@ -300,6 +305,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMembersTxindexMetadata{}
 	case EncoderTypeNewMessageTxindexMetadata:
 		return &NewMessageTxindexMetadata{}
+	case EncoderTypeRegisterAsValidatorTxindexMetadata:
+		return &RegisterAsValidatorTxindexMetadata{}
+	case EncoderTypeUnregisterAsValidatorTxindexMetadata:
+		return &UnregisterAsValidatorTxindexMetadata{}
 	default:
 		return nil
 	}
@@ -594,7 +603,10 @@ const (
 	OperationTypeAddBalance                   OperationType = 36
 	OperationTypeSpendBalance                 OperationType = 37
 	OperationTypeDeleteExpiredNonces          OperationType = 38
-	// NEXT_TAG = 39
+	OperationTypeRegisterAsValidator          OperationType = 39
+	OperationTypeUnregisterAsValidator        OperationType = 40
+
+	// NEXT_TAG = 41
 )
 
 func (op OperationType) String() string {
@@ -675,6 +687,10 @@ func (op OperationType) String() string {
 		return "OperationTypeSpendBalance"
 	case OperationTypeDeleteExpiredNonces:
 		return "OperationTypeDeleteExpiredNonces"
+	case OperationTypeRegisterAsValidator:
+		return "OperationTypeRegisterAsValidator"
+	case OperationTypeUnregisterAsValidator:
+		return "OperationTypeUnregisterAsValidator"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -859,6 +875,9 @@ type UtxoOperation struct {
 
 	// When we connect a block, we delete expired nonce entries.
 	PrevNonceEntries []*TransactorNonceEntry
+
+	// PrevValidatorEntry is the previous ValidatorEntry prior to a register or unregister txn.
+	PrevValidatorEntry *ValidatorEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1174,6 +1193,11 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		for _, entry := range op.PrevNonceEntries {
 			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
 		}
+	}
+
+	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+		// PrevValidatorEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
 	}
 
 	return data
@@ -1791,11 +1815,26 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 	}
 
+	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+		// PrevValidatorEntry
+		prevValidatorEntry := &ValidatorEntry{}
+		if exist, err := DecodeFromBytes(prevValidatorEntry, rr); exist && err == nil {
+			op.PrevValidatorEntry = prevValidatorEntry
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry")
+		}
+	}
+
 	return nil
 }
 
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration, BalanceModelMigration)
+	return GetMigrationVersion(
+		blockHeight,
+		AssociationsAndAccessGroupsMigration,
+		BalanceModelMigration,
+		ProofOfStakeNewTxnTypesMigration,
+	)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {

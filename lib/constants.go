@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -268,6 +269,11 @@ type ForkHeights struct {
 	// to an account balance model for accounting.
 	BalanceModelBlockHeight uint32
 
+	// ProofOfStakeNewTxnTypesBlockHeight defines the height at which we introduced the
+	// new txn types to support Proof of Stake. These txns include: RegisterAsValidator,
+	// UnregisterAsValidator, Stake, Unstake, and UnlockStake.
+	ProofOfStakeNewTxnTypesBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -332,6 +338,7 @@ const (
 	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
 	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
 	BalanceModelMigration                MigrationName = "BalanceModelMigration"
+	ProofOfStakeNewTxnTypesMigration     MigrationName = "ProofOfStakeNewTxnTypesMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -345,6 +352,9 @@ type EncoderMigrationHeights struct {
 
 	// This coincides with the BalanceModel block
 	BalanceModel MigrationHeight
+
+	// This coincides with the ProofOfStakeNewTxnTypesBlockHeight
+	ProofOfStakeNewTxnTypesMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -368,6 +378,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 3,
 			Height:  uint64(forkHeights.BalanceModelBlockHeight),
 			Name:    BalanceModelMigration,
+		},
+		ProofOfStakeNewTxnTypesMigration: MigrationHeight{
+			Version: 4,
+			Height:  uint64(forkHeights.ProofOfStakeNewTxnTypesBlockHeight),
+			Name:    ProofOfStakeNewTxnTypesMigration,
 		},
 	}
 }
@@ -613,7 +628,8 @@ var RegtestForkHeights = ForkHeights{
 	AssociationsDerivedKeySpendingLimitBlockHeight:       uint32(0),
 	// For convenience, we set the block height to 1 since the
 	// genesis block was created using the utxo model.
-	BalanceModelBlockHeight: uint32(1),
+	BalanceModelBlockHeight:            uint32(1),
+	ProofOfStakeNewTxnTypesBlockHeight: uint32(1),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -765,6 +781,9 @@ var MainnetForkHeights = ForkHeights{
 
 	// Mon Apr 24 2023 @ 9am PST
 	BalanceModelBlockHeight: uint32(226839),
+
+	// FIXME: set to real block height when ready
+	ProofOfStakeNewTxnTypesBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1028,6 +1047,9 @@ var TestnetForkHeights = ForkHeights{
 
 	// Tues Apr 11 2023 @ 5pm PT
 	BalanceModelBlockHeight: uint32(683058),
+
+	// FIXME: set to real block height when ready
+	ProofOfStakeNewTxnTypesBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.

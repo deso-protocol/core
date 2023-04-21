@@ -140,6 +140,12 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushNonceEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
+	if err := bav._flushValidatorEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushGlobalStakeAmountNanosToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
 	return nil
 }
 

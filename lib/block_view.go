@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/holiman/uint256"
 	"math"
 	"math/big"
 	"reflect"
@@ -113,6 +114,12 @@ type UtxoView struct {
 	// Map of DeSoNonce and PKID to TransactorNonceEntry
 	TransactorNonceMapKeyToTransactorNonceEntry map[TransactorNonceMapKey]*TransactorNonceEntry
 
+	// Validator mappings
+	ValidatorMapKeyToValidatorEntry map[ValidatorMapKey]*ValidatorEntry
+
+	// Global stake across validators
+	GlobalStakeAmountNanos *uint256.Int
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -201,6 +208,12 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Transaction nonce map
 	bav.TransactorNonceMapKeyToTransactorNonceEntry = make(map[TransactorNonceMapKey]*TransactorNonceEntry)
+
+	// ValidatorEntries
+	bav.ValidatorMapKeyToValidatorEntry = make(map[ValidatorMapKey]*ValidatorEntry)
+
+	// Global stake across validators
+	bav.GlobalStakeAmountNanos = uint256.NewInt()
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -452,6 +465,15 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newEntry := *entry
 		newView.TransactorNonceMapKeyToTransactorNonceEntry[entryKey] = &newEntry
 	}
+
+	// Copy the ValidatorEntries
+	newView.ValidatorMapKeyToValidatorEntry = make(map[ValidatorMapKey]*ValidatorEntry, len(bav.ValidatorMapKeyToValidatorEntry))
+	for entryKey, entry := range bav.ValidatorMapKeyToValidatorEntry {
+		newView.ValidatorMapKeyToValidatorEntry[entryKey] = entry.Copy()
+	}
+
+	// Copy the GlobalStakeAmountNanos.
+	newView.GlobalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
 
 	return newView, nil
 }
@@ -1290,6 +1312,14 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	case TxnTypeNewMessage:
 		return bav._disconnectNewMessage(
 			OperationTypeNewMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeRegisterAsValidator:
+		return bav._disconnectRegisterAsValidator(
+			OperationTypeRegisterAsValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeUnregisterAsValidator:
+		return bav._disconnectUnregisterAsValidator(
+			OperationTypeUnregisterAsValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -3192,6 +3222,13 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNewMessage(
 				txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeRegisterAsValidator:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectRegisterAsValidator(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeUnregisterAsValidator:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnregisterAsValidator(txn, txHash, blockHeight, verifySignatures)
+
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}
@@ -3955,12 +3992,16 @@ func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[stri
 
 	// Add the values from the oldMap
 	for kk, vv := range oldMap {
-		retMap[kk] = vv
+		vvCopy := make([]byte, len(vv))
+		copy(vvCopy, vv)
+		retMap[kk] = vvCopy
 	}
 	// Add the values from the newMap. Allow the newMap values to overwrite the
 	// oldMap values during the merge.
 	for kk, vv := range newMap {
-		retMap[kk] = vv
+		vvCopy := make([]byte, len(vv))
+		copy(vvCopy, vv)
+		retMap[kk] = vvCopy
 	}
 
 	return retMap

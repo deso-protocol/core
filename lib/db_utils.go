@@ -476,8 +476,25 @@ type DBPrefixes struct {
 	// 	<prefix, expirationBlockHeight, PKID, partialID> -> <>
 	PrefixNoncePKIDIndex []byte `prefix_id:"[77]" is_state:"true"`
 
-	// NEXT_TAG: 78
+	// PrefixValidatorByPKID: Retrieve a validator by PKID.
+	// Prefix, ValidatorPKID -> ValidatorEntry
+	PrefixValidatorByPKID []byte `prefix_id:"[78]" is_state:"true"`
 
+	// PrefixValidatorByStake: Retrieve the top N validators by stake.
+	// Prefix, TotalStakeAmountNanos, MaxUint64 - RegisteredAtBlockHeight, ValidatorPKID -> ValidatorPKID
+	// FIXME: @DH, should we duplicate the ValidatorPKID in the key and the value?
+	// Alternatively, we could just store and parse the ValidatorPKID from the key
+	// and store a struct{} as the value. That saves on space, but makes retrieving
+	// the ValidatorPKID from the key bytes more complex than just reading the value
+	// bytes directly since the key includes other preceding fields. Interesting
+	// trade-off. Curious your opinion.
+	PrefixValidatorByStake []byte `prefix_id:"[79]" is_state:"true"`
+
+	// PrefixGlobalStakeAmountNanos: Retrieve the cumulative stake across all validators.
+	// Prefix -> *uint256.Int
+	PrefixGlobalStakeAmountNanos []byte `prefix_id:"[80]" is_state:"true"`
+
+	// NEXT_TAG: 81
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -678,6 +695,15 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 		return true, &DmThreadEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixNoncePKIDIndex) {
 		// prefix_id:"[77]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByPKID) {
+		// prefix_id:"[78]"
+		return true, &ValidatorEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStake) {
+		// prefix_id:"[79]"
+		return true, &PKID{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixGlobalStakeAmountNanos) {
+		// prefix_id:"[80]"
 		return false, nil
 	}
 
@@ -6735,6 +6761,8 @@ type TransactionMetadata struct {
 	AccessGroupTxindexMetadata           *AccessGroupTxindexMetadata           `json:",omitempty"`
 	AccessGroupMembersTxindexMetadata    *AccessGroupMembersTxindexMetadata    `json:",omitempty"`
 	NewMessageTxindexMetadata            *NewMessageTxindexMetadata            `json:",omitempty"`
+	RegisterAsValidatorTxindexMetadata   *RegisterAsValidatorTxindexMetadata   `json:",omitempty"`
+	UnregisterAsValidatorTxindexMetadata *UnregisterAsValidatorTxindexMetadata `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -6814,6 +6842,13 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.AccessGroupMembersTxindexMetadata, skipMetadata...)...)
 		// encoding NewMessageTxindexMetadata
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.NewMessageTxindexMetadata, skipMetadata...)...)
+	}
+
+	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+		// encoding RegisterAsValidatorTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.RegisterAsValidatorTxindexMetadata, skipMetadata...)...)
+		// encoding UnregisterAsValidatorTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnregisterAsValidatorTxindexMetadata, skipMetadata...)...)
 	}
 
 	return data
@@ -7064,11 +7099,29 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading NewMessageTxindexMetadata")
 		}
 	}
+
+	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+		// decoding RegisterAsValidatorTxindexMetadata
+		CopyRegisterAsValidatorTxindexMetadata := &RegisterAsValidatorTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyRegisterAsValidatorTxindexMetadata, rr); exist && err == nil {
+			txnMeta.RegisterAsValidatorTxindexMetadata = CopyRegisterAsValidatorTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading RegisterAsValidatorTxindexMetadata")
+		}
+		// decoding UnregisterAsValidatorTxindexMetadata
+		CopyUnregisterAsValidatorTxindexMetadata := &UnregisterAsValidatorTxindexMetadata{}
+		if exist, err := DecodeFromBytes(CopyUnregisterAsValidatorTxindexMetadata, rr); exist && err == nil {
+			txnMeta.UnregisterAsValidatorTxindexMetadata = CopyUnregisterAsValidatorTxindexMetadata
+		} else {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnregisterAsValidatorTxindexMetadata")
+		}
+	}
+
 	return nil
 }
 
 func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration)
+	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration, ProofOfStakeNewTxnTypesMigration)
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {
