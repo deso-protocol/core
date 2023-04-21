@@ -1240,7 +1240,7 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
 
 		// PrevGlobalStakeAmountNanos
-		data = append(data, EncodeOptionalUint256(op.PrevGlobalStakeAmountNanos)...)
+		data = append(data, EncodeUint256(op.PrevGlobalStakeAmountNanos)...)
 
 		// PrevStakeEntries
 		numPrevStakeEntries := uint64(len(op.PrevStakeEntries))
@@ -1882,7 +1882,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 
 		// PrevGlobalStakeAmountNanos
-		if prevGlobalStakeAmountNanos, err := ReadOptionalUint256(rr); err == nil {
+		if prevGlobalStakeAmountNanos, err := DecodeUint256(rr); err == nil {
 			op.PrevGlobalStakeAmountNanos = prevGlobalStakeAmountNanos
 		} else {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalStakeAmountNanos: ")
