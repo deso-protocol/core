@@ -1074,7 +1074,8 @@ func (bav *UtxoView) _connectStake(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
+		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
 	}
 
@@ -1085,25 +1086,11 @@ func (bav *UtxoView) _connectStake(
 		)
 	}
 
-	// Connect a basic transfer to get the total input and the
-	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures,
-	)
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectStake: ")
-	}
-	if verifySignatures {
-		// _connectBasicTransfer has already checked that the txn is signed
-		// by the top-level public key, which we take to be the sender's
-		// public key so there is no need to verify anything further.
-	}
-
 	// Grab the txn metadata.
 	txMeta := txn.TxnMeta.(*StakeMetadata)
 
 	// Validate the txn metadata.
-	if err = bav.IsValidStakeMetadata(txn.PublicKey, txMeta, blockHeight); err != nil {
+	if err := bav.IsValidStakeMetadata(txn.PublicKey, txMeta, blockHeight); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectStake: ")
 	}
 
@@ -1128,7 +1115,27 @@ func (bav *UtxoView) _connectStake(
 		return 0, 0, nil, RuleErrorInvalidValidatorPKID
 	}
 
-	// TODO: decrease staker's DESO balance.
+	// Convert StakeAmountNanos *uint256.Int to StakeAmountNanosUint64 uint64.
+	if txMeta.StakeAmountNanos == nil || !txMeta.StakeAmountNanos.IsUint64() {
+		return 0, 0, nil, RuleErrorInvalidStakeAmountNanos
+	}
+	stakeAmountNanosUint64 := txMeta.StakeAmountNanos.Uint64()
+
+	// Connect a BasicTransfer to get the total input and the
+	// total output without considering the txn metadata. This
+	// BasicTransfer also includes the extra spend associated
+	// with the amount the transactor is staking.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransferWithExtraSpend(
+		txn, txHash, blockHeight, stakeAmountNanosUint64, verifySignatures,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectStake: ")
+	}
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the txn is signed
+		// by the top-level public key, which we take to be the sender's
+		// public key so there is no need to verify anything further.
+	}
 
 	// Check if there is an existing StakeEntry that will be updated.
 	// The existing StakeEntry will be restored if we disconnect this transaction.
@@ -1218,6 +1225,12 @@ func (bav *UtxoView) _disconnectStake(
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
+		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
+		return errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_disconnectStake: ")
+	}
+
 	// Validate the last operation is a Stake operation.
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectStake: utxoOperations are missing")
@@ -1282,9 +1295,8 @@ func (bav *UtxoView) _disconnectStake(
 	// Restore the PrevGlobalStakeAmountNanos.
 	bav._setGlobalStakeAmountNanos(operationData.PrevGlobalStakeAmountNanos)
 
-	// TODO: Increase DESO balance of transactor.
-
-	// Disconnect the basic transfer.
+	// Disconnect the BasicTransfer. Disconnecting the BasicTransfer also returns
+	// the extra spend associated with the amount the transactor staked.
 	return bav._disconnectBasicTransfer(
 		currentTxn, txHash, utxoOpsForTxn[:operationIndex], blockHeight,
 	)
@@ -1302,7 +1314,8 @@ func (bav *UtxoView) _connectUnstake(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
+		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
 	}
 
@@ -1466,6 +1479,12 @@ func (bav *UtxoView) _disconnectUnstake(
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
+		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
+		return errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_disconnectUnstake: ")
+	}
+
 	// Validate the last operation is an Unstake operation.
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectUnstake: utxoOperations are missing")
@@ -1570,7 +1589,8 @@ func (bav *UtxoView) _connectUnlockStake(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
+		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
 	}
 
@@ -1655,6 +1675,12 @@ func (bav *UtxoView) _disconnectUnlockStake(
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32,
 ) error {
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
+		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
+		return errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_disconnectUnlockStake: ")
+	}
+
 	// Validate the last operation is an UnlockStake operation.
 	if len(utxoOpsForTxn) == 0 {
 		return fmt.Errorf("_disconnectUnlockStake: utxoOperations are missing")
@@ -1720,11 +1746,15 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 		return RuleErrorInvalidValidatorPKID
 	}
 
-	// Validate 0 < StakeAmountNanos <= transactor's DESO Balance - txn fees.
-	if metadata.StakeAmountNanos == nil || metadata.StakeAmountNanos.IsZero() {
+	// Validate 0 < StakeAmountNanos <= transactor's DESO Balance. We ignore
+	// the txn fees in this check. The StakeAmountNanos will be validated to
+	// be less than the transactor's DESO balance net of txn fees in the call
+	// to connectBasicTransferWithExtraSpend.
+	if metadata.StakeAmountNanos == nil ||
+		metadata.StakeAmountNanos.IsZero() ||
+		!metadata.StakeAmountNanos.IsUint64() {
 		return RuleErrorInvalidStakeAmountNanos
 	}
-	// TODO: should we include fees in this check?
 	transactorDeSoBalanceNanos, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(transactorPkBytes, blockHeight-1)
 	if err != nil {
 		return errors.Wrapf(err, "IsValidStakeMetadata: ")
