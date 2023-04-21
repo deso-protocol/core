@@ -4319,13 +4319,13 @@ func (pe *ProfileEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 	if err != nil {
 		return errors.Wrapf(err, "ProfileEntry.Decode: Problem reading CreatorCoinEntry")
 	}
-	pe.CreatorCoinEntry = creatorCoinEntry
+	pe.CreatorCoinEntry = *creatorCoinEntry
 
 	daoCoinEntry, err := DecodeDeSoEncoder(&CoinEntry{}, rr)
 	if err != nil {
 		return errors.Wrapf(err, "ProfileEntry.Decode: Problem reading DAOCoinEntry")
 	}
-	pe.DAOCoinEntry = daoCoinEntry
+	pe.DAOCoinEntry = *daoCoinEntry
 
 	pe.ExtraData, err = DecodeExtraData(rr)
 	if err != nil && strings.Contains(err.Error(), "EOF") {
