@@ -121,7 +121,9 @@ type UtxoView struct {
 	GlobalStakeAmountNanos *uint256.Int
 
 	// Stake mappings
-	StakeMapKeyToStakeEntry             map[StakeMapKey]*StakeEntry
+	StakeMapKeyToStakeEntry map[StakeMapKey]*StakeEntry
+
+	// Locked stake mappings
 	LockedStakeMapKeyToLockedStakeEntry map[LockedStakeMapKey]*LockedStakeEntry
 
 	// The hash of the tip the view is currently referencing. Mainly used
@@ -481,8 +483,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the ValidatorEntries
 	newView.ValidatorMapKeyToValidatorEntry = make(map[ValidatorMapKey]*ValidatorEntry, len(bav.ValidatorMapKeyToValidatorEntry))
 	for entryKey, entry := range bav.ValidatorMapKeyToValidatorEntry {
-		newEntry := *entry
-		newView.ValidatorMapKeyToValidatorEntry[entryKey] = &newEntry
+		newView.ValidatorMapKeyToValidatorEntry[entryKey] = entry.Copy()
 	}
 
 	// Copy the GlobalStakeAmountNanos.
@@ -493,8 +494,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the StakeEntries
 	newView.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry, len(bav.StakeMapKeyToStakeEntry))
 	for entryKey, entry := range bav.StakeMapKeyToStakeEntry {
-		newEntry := *entry
-		newView.StakeMapKeyToStakeEntry[entryKey] = &newEntry
+		newView.StakeMapKeyToStakeEntry[entryKey] = entry.Copy()
 	}
 
 	// Copy the LockedStakeEntries
@@ -502,8 +502,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		map[LockedStakeMapKey]*LockedStakeEntry, len(bav.LockedStakeMapKeyToLockedStakeEntry),
 	)
 	for entryKey, entry := range bav.LockedStakeMapKeyToLockedStakeEntry {
-		newEntry := *entry
-		newView.LockedStakeMapKeyToLockedStakeEntry[entryKey] = &newEntry
+		newView.LockedStakeMapKeyToLockedStakeEntry[entryKey] = entry.Copy()
 	}
 
 	return newView, nil
@@ -4085,12 +4084,16 @@ func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[stri
 
 	// Add the values from the oldMap
 	for kk, vv := range oldMap {
-		retMap[kk] = vv
+		vvCopy := make([]byte, len(vv))
+		copy(vvCopy, vv)
+		retMap[kk] = vvCopy
 	}
 	// Add the values from the newMap. Allow the newMap values to overwrite the
 	// oldMap values during the merge.
 	for kk, vv := range newMap {
-		retMap[kk] = vv
+		vvCopy := make([]byte, len(vv))
+		copy(vvCopy, vv)
+		retMap[kk] = vvCopy
 	}
 
 	return retMap
