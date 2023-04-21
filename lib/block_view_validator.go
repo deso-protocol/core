@@ -35,7 +35,12 @@ type ValidatorEntry struct {
 }
 
 type ValidatorMapKey struct {
-	ValidatorPKID PKID
+	// The MapKey has to contain all fields that are used in Badger keys.
+	// Otherwise, an update to the UtxoView will not be able to update or
+	// delete all relevant Badger rows.
+	ValidatorPKID           PKID
+	TotalStakeAmountNanos   uint256.Int
+	RegisteredAtBlockHeight uint64
 }
 
 func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
@@ -70,7 +75,11 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 }
 
 func (validatorEntry *ValidatorEntry) ToMapKey() ValidatorMapKey {
-	return ValidatorMapKey{ValidatorPKID: *validatorEntry.ValidatorPKID}
+	return ValidatorMapKey{
+		ValidatorPKID:           *validatorEntry.ValidatorPKID,
+		TotalStakeAmountNanos:   *validatorEntry.TotalStakeAmountNanos,
+		RegisteredAtBlockHeight: validatorEntry.RegisteredAtBlockHeight,
+	}
 }
 
 func (validatorEntry *ValidatorEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -553,8 +562,7 @@ func DBGetTopValidatorsByStake(
 	}
 
 	// Retrieve top N ValidatorEntry PKIDs by stake.
-	var key []byte
-	key = append(key, Prefixes.PrefixValidatorByStake...)
+	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
 	_, validatorPKIDsBytes, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, limit, nil, true, validatorKeysToSkip,
 	)
@@ -1201,16 +1209,42 @@ func (bav *UtxoView) IsValidUnregisterAsValidatorMetadata(transactorPublicKey []
 }
 
 func (bav *UtxoView) GetValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
-	// First check UtxoView.
-	validatorEntry, exists := bav.ValidatorMapKeyToValidatorEntry[ValidatorMapKey{ValidatorPKID: *pkid}]
-	if exists && validatorEntry != nil {
-		// Return not found if ValidatorEntry isDeleted.
-		if validatorEntry.isDeleted {
-			return nil, nil
+	// First check the UtxoView.
+
+	// There can be multiple ValidatorEntries for a given PKID in the UtxoView since the ValidatorMapKey
+	// contains ValidatorPKID, TotalStakeAmountNanos, and RegisteredAtBlockHeight. We need to loop through
+	// all the ValidatorEntries and find the one matching the given PKID that is !isDeleted. There should
+	// ever only be zero or one such matching ValidatorEntries. If the only matching ValidatorEntries are
+	// all isDeleted then we shouldn't check the database as the corresponding rows in the database will
+	// be deleted once the UtxoView is flushed.
+	isDeleted := false
+
+	for _, validatorEntry := range bav.ValidatorMapKeyToValidatorEntry {
+		if validatorEntry == nil {
+			// This should never happen but is a sanity check.
+			continue
 		}
+		if !validatorEntry.ValidatorPKID.Eq(pkid) {
+			continue
+		}
+		if validatorEntry.isDeleted {
+			isDeleted = true
+			continue
+		}
+		// If we get to this point, we found a matching
+		// !isDeleted ValidatorEntry for the given PKID.
 		return validatorEntry, nil
 	}
-	// If not found, check database.
+
+	if isDeleted {
+		// If we get to this point, we found one or more matching ValidatorEntries
+		// for the given PKID, but they were all isDeleted. We do not want to check
+		// the database but instead just return nil, no ValidatorEntry found.
+		return nil, nil
+	}
+
+	// If no ValidatorEntry (either isDeleted or !isDeleted) was found
+	// in the UtxoView for the given PKID, check the database.
 	dbValidatorEntry, err := DBGetValidatorByPKID(bav.Handle, bav.Snapshot, pkid)
 	if err != nil {
 		return nil, err
