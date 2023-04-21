@@ -1,5 +1,10 @@
 package lib
 
+import (
+	"bytes"
+	"github.com/pkg/errors"
+)
+
 // Generic Set object. Retains the order elements are addd to the set.
 type Set[T comparable] struct {
 	_innerMap map[T]struct{}
@@ -68,6 +73,35 @@ func MapSet[T comparable, K any](set *Set[T], mapFunc func(elem T) (K, error)) (
 	})
 	if err != nil {
 		return nil, err
+	}
+	return results, nil
+}
+
+func EncodeDeSoEncoderSlice[T DeSoEncoder](inputSlice []T, blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	numItems := uint64(len(inputSlice))
+	data = append(data, UintToBuf(numItems)...)
+	for _, item := range inputSlice {
+		data = append(data, EncodeToBytes(blockHeight, item, skipMetadata...)...)
+	}
+	return data
+}
+
+func DecodeDeSoEncoderSlice[T DeSoEncoder](rr *bytes.Reader) ([]T, error) {
+	numItems, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeSlice: Problem decoding numItems")
+	}
+	// Note: is it more efficient to do a make with specific length and set at each index?
+	inputs := make([]T, numItems)
+	var results []T
+	for ii := uint64(0); ii < numItems; ii++ {
+		prevEntry := inputs[ii].GetEncoderType().New()
+		if exist, err := DecodeFromBytes(prevEntry, rr); exist && err == nil {
+			results = append(results, prevEntry.(T))
+		} else if err != nil {
+			return nil, errors.Wrapf(err, "DecodeSlice: Problem decoding item %d of %d", ii, numItems)
+		}
 	}
 	return results, nil
 }

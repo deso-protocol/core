@@ -1385,7 +1385,7 @@ func (bav *UtxoView) _connectUnstake(
 	var currentStakeEntry *StakeEntry
 	if stakeAmountNanos.Cmp(uint256.NewInt()) > 0 {
 		currentStakeEntry = prevStakeEntry.Copy()
-		currentStakeEntry.StakeAmountNanos = stakeAmountNanos
+		currentStakeEntry.StakeAmountNanos = stakeAmountNanos.Clone()
 	}
 	// 3. Delete the PrevStakeEntry.
 	bav._deleteStakeEntryMappings(prevStakeEntry)
