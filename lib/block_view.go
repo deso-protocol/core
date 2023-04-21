@@ -469,8 +469,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the ValidatorEntries
 	newView.ValidatorMapKeyToValidatorEntry = make(map[ValidatorMapKey]*ValidatorEntry, len(bav.ValidatorMapKeyToValidatorEntry))
 	for entryKey, entry := range bav.ValidatorMapKeyToValidatorEntry {
-		newEntry := *entry
-		newView.ValidatorMapKeyToValidatorEntry[entryKey] = &newEntry
+		newView.ValidatorMapKeyToValidatorEntry[entryKey] = entry.Copy()
 	}
 
 	// Copy the GlobalStakeAmountNanos.
