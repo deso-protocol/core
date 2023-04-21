@@ -1877,21 +1877,6 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	return nil
 }
 
-func (bav *UtxoView) GetValidatorByPublicKey(validatorPublicKey *PublicKey) (*ValidatorEntry, error) {
-	validatorPKIDEntry := bav.GetPKIDForPublicKey(validatorPublicKey.ToBytes())
-	if validatorPKIDEntry == nil || validatorPKIDEntry.isDeleted {
-		return nil, RuleErrorInvalidValidatorPKID
-	}
-	validatorEntry, err := bav.GetValidatorByPKID(validatorPKIDEntry.PKID)
-	if err != nil {
-		return nil, err
-	}
-	if validatorEntry == nil || validatorEntry.isDeleted {
-		return nil, RuleErrorInvalidValidatorPKID
-	}
-	return validatorEntry, nil
-}
-
 func (bav *UtxoView) GetStakeEntry(validatorPKID *PKID, stakerPKID *PKID) (*StakeEntry, error) {
 	// First, check the UtxoView.
 	stakeMapKey := StakeMapKey{ValidatorPKID: *validatorPKID, StakerPKID: *stakerPKID}

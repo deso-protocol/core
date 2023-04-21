@@ -1256,6 +1256,21 @@ func (bav *UtxoView) GetValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
 	return dbValidatorEntry, nil
 }
 
+func (bav *UtxoView) GetValidatorByPublicKey(validatorPublicKey *PublicKey) (*ValidatorEntry, error) {
+	validatorPKIDEntry := bav.GetPKIDForPublicKey(validatorPublicKey.ToBytes())
+	if validatorPKIDEntry == nil || validatorPKIDEntry.isDeleted {
+		return nil, RuleErrorInvalidValidatorPKID
+	}
+	validatorEntry, err := bav.GetValidatorByPKID(validatorPKIDEntry.PKID)
+	if err != nil {
+		return nil, err
+	}
+	if validatorEntry == nil || validatorEntry.isDeleted {
+		return nil, RuleErrorInvalidValidatorPKID
+	}
+	return validatorEntry, nil
+}
+
 func (bav *UtxoView) GetTopValidatorsByStake(limit int) ([]*ValidatorEntry, error) {
 	// Validate limit param.
 	if limit <= 0 {
