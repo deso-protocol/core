@@ -5293,7 +5293,7 @@ func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	}
 
 	// AppPKID
-	associationEntry.AppPKID, err  = DecodeDeSoEncoder(&PKID{}, rr)
+	associationEntry.AppPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
 	if err != nil {
 		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AppPKID: ")
 	}
@@ -5352,7 +5352,7 @@ func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	}
 
 	// AppPKID
-	associationEntry.AppPKID, err  = DecodeDeSoEncoder(&PKID{}, rr)
+	associationEntry.AppPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
 	if err != nil {
 		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AppPKID: ")
 	}
