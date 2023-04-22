@@ -4829,35 +4829,27 @@ func (order *DAOCoinLimitOrderEntry) RawEncodeWithoutMetadata(blockHeight uint64
 func (order *DAOCoinLimitOrderEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
-	orderID := &BlockHash{}
-	if exist, err := DecodeFromBytes(orderID, rr); exist && err == nil {
-		order.OrderID = orderID
-	} else if err != nil {
+	order.OrderID, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem decoding OrderID")
 	}
 
 	// TransactorPKID
-	transactorPKID := &PKID{}
-	if exist, err := DecodeFromBytes(transactorPKID, rr); exist && err == nil {
-		order.TransactorPKID = transactorPKID
-	} else if err != nil {
-		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem reading TransactorPKID")
+	order.TransactorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem decoding TransactorPKID")
 	}
 
 	// BuyingDAOCoinCreatorPKID
-	buyingDAOCoinCreatorPKID := &PKID{}
-	if exist, err := DecodeFromBytes(buyingDAOCoinCreatorPKID, rr); exist && err == nil {
-		order.BuyingDAOCoinCreatorPKID = buyingDAOCoinCreatorPKID
-	} else if err != nil {
-		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem reading BuyingDAOCoinCreatorPKID")
+	order.BuyingDAOCoinCreatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem decoding BuyingDAOCoinCreatorPKID")
 	}
 
 	// SellingDAOCoinCreatorPKID
-	sellingDAOCoinCreatorPKID := &PKID{}
-	if exist, err := DecodeFromBytes(sellingDAOCoinCreatorPKID, rr); exist && err == nil {
-		order.SellingDAOCoinCreatorPKID = sellingDAOCoinCreatorPKID
-	} else if err != nil {
-		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem reading SellingDAOCoinCreatorPKID")
+	order.SellingDAOCoinCreatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem decoding SellingDAOCoinCreatorPKID")
 	}
 
 	// ScaledExchangeRateCoinsToSellPerCoinToBuy
@@ -5122,35 +5114,27 @@ func (order *FilledDAOCoinLimitOrder) RawDecodeWithoutMetadata(blockHeight uint6
 	var err error
 
 	// OrderID
-	orderID := &BlockHash{}
-	if exist, err := DecodeFromBytes(orderID, rr); exist && err == nil {
-		order.OrderID = orderID
-	} else if err != nil {
+	order.OrderID, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "FilledDAOCoinLimitOrder.Decode: Problem reading OrderID")
-	}
 
+	}
 	// TransactorPKID
-	transactorPKID := &PKID{}
-	if exist, err := DecodeFromBytes(transactorPKID, rr); exist && err == nil {
-		order.TransactorPKID = transactorPKID
-	} else if err != nil {
-		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading TransactorPKID")
+	order.TransactorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimitOrder.Decode: Problem reading TransactorPKID")
 	}
 
 	// BuyingDAOCoinCreatorPKID
-	buyingDAOCoinCreatorPKID := &PKID{}
-	if exist, err := DecodeFromBytes(buyingDAOCoinCreatorPKID, rr); exist && err == nil {
-		order.BuyingDAOCoinCreatorPKID = buyingDAOCoinCreatorPKID
-	} else if err != nil {
-		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading BuyingDAOCoinCreatorPKID")
+	order.BuyingDAOCoinCreatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimitOrder.Decode: Problem reading BuyingDAOCoinCreatorPKID")
 	}
 
 	// SellingDAOCoinCreatorPKID
-	sellingDAOCoinCreatorPKID := &PKID{}
-	if exist, err := DecodeFromBytes(sellingDAOCoinCreatorPKID, rr); exist && err == nil {
-		order.SellingDAOCoinCreatorPKID = sellingDAOCoinCreatorPKID
-	} else if err != nil {
-		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading SellingDAOCoinCreatorPKID")
+	order.SellingDAOCoinCreatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "FilledDAOCoinLimitOrder.Decode: Problem reading SellingDAOCoinCreatorPKID")
 	}
 
 	// CoinQuantityInBaseUnitsBought
@@ -5291,34 +5275,26 @@ func (associationEntry *UserAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	var err error
 
 	// AssociationID
-	associationID := &BlockHash{}
-	if exist, err := DecodeFromBytes(associationID, rr); exist && err == nil {
-		associationEntry.AssociationID = associationID
-	} else if err != nil {
+	associationEntry.AssociationID, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AssociationID: ")
 	}
 
 	// TransactorPKID
-	transactorPKID := &PKID{}
-	if exist, err := DecodeFromBytes(transactorPKID, rr); exist && err == nil {
-		associationEntry.TransactorPKID = transactorPKID
-	} else if err != nil {
+	associationEntry.TransactorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading TransactorPKID: ")
 	}
 
 	// TargetUserPKID
-	targetUserPKID := &PKID{}
-	if exist, err := DecodeFromBytes(targetUserPKID, rr); exist && err == nil {
-		associationEntry.TargetUserPKID = targetUserPKID
-	} else if err != nil {
+	associationEntry.TargetUserPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading TargetUserPKID: ")
 	}
 
 	// AppPKID
-	appPKID := &PKID{}
-	if exist, err := DecodeFromBytes(appPKID, rr); exist && err == nil {
-		associationEntry.AppPKID = appPKID
-	} else if err != nil {
+	associationEntry.AppPKID, err  = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "UserAssociationEntry.Decode: Problem reading AppPKID: ")
 	}
 
@@ -5358,34 +5334,26 @@ func (associationEntry *PostAssociationEntry) RawDecodeWithoutMetadata(blockHeig
 	var err error
 
 	// AssociationID
-	associationID := &BlockHash{}
-	if exist, err := DecodeFromBytes(associationID, rr); exist && err == nil {
-		associationEntry.AssociationID = associationID
-	} else if err != nil {
+	associationEntry.AssociationID, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AssociationID: ")
 	}
 
 	// TransactorPKID
-	transactorPKID := &PKID{}
-	if exist, err := DecodeFromBytes(transactorPKID, rr); exist && err == nil {
-		associationEntry.TransactorPKID = transactorPKID
-	} else if err != nil {
+	associationEntry.TransactorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading TransactorPKID: ")
 	}
 
 	// PostHash
-	postHash := &BlockHash{}
-	if exist, err := DecodeFromBytes(postHash, rr); exist && err == nil {
-		associationEntry.PostHash = postHash
-	} else if err != nil {
+	associationEntry.PostHash, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading PostHash: ")
 	}
 
 	// AppPKID
-	appPKID := &PKID{}
-	if exist, err := DecodeFromBytes(appPKID, rr); exist && err == nil {
-		associationEntry.AppPKID = appPKID
-	} else if err != nil {
+	associationEntry.AppPKID, err  = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "PostAssociationEntry.Decode: Problem reading AppPKID: ")
 	}
 
