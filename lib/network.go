@@ -5385,12 +5385,12 @@ type TransactionSpendingLimit struct {
 	// Note that this is not a limit on the number of Stake txns that
 	// this derived key can perform but instead a limit on the amount
 	// of $DESO this derived key can stake.
-	StakeLimitMap map[StakeLimitKey]uint64 // TODO: *uint256.Int
+	StakeLimitMap map[StakeLimitKey]*uint256.Int
 	// ValidatorPKID || StakerPKID to amount of unstake-able DESO.
 	// Note that this is not a limit on the number of Unstake txns that
 	// this derived key can perform but instead a limit on the amount
 	// of $DESO this derived key can unstake.
-	UnstakeLimitMap map[StakeLimitKey]uint64 // TODO: *uint256.Int
+	UnstakeLimitMap map[StakeLimitKey]*uint256.Int
 	// ValidatorPKID || StakerPKID to number of UnlockStake transactions.
 	UnlockStakeLimitMap map[StakeLimitKey]uint64
 }
@@ -5656,9 +5656,10 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			stakerPublicKeyBase58Check := Base58CheckEncode(limitKey.StakerPKID.ToBytes(), false, params)
 			opString += _indt(indentationCounter) + "Staker PKID: " + stakerPublicKeyBase58Check + "\n"
 			// StakeLimit
-			stakeLimitDESO := float64(limit) / float64(NanosPerUnit)
-			opString += _indt(indentationCounter) + "Staking Limit: " +
-				strconv.FormatFloat(stakeLimitDESO, 'f', 2, 64) + " $DESO\n"
+			stakeLimitDESO := NewFloat().Quo(
+				NewFloat().SetInt(limit.ToBig()), NewFloat().SetUint64(NanosPerUnit),
+			)
+			opString += _indt(indentationCounter) + fmt.Sprintf("Staking Limit: %.2f $DESO\n", stakeLimitDESO)
 
 			indentationCounter--
 			opString += _indt(indentationCounter) + "]\n"
@@ -5688,9 +5689,10 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 			stakerPublicKeyBase58Check := Base58CheckEncode(limitKey.StakerPKID.ToBytes(), false, params)
 			opString += _indt(indentationCounter) + "Staker PKID: " + stakerPublicKeyBase58Check + "\n"
 			// UnstakeLimit
-			unstakeLimitDESO := float64(limit) / float64(NanosPerUnit)
-			opString += _indt(indentationCounter) + "Unstaking Limit: " +
-				strconv.FormatFloat(unstakeLimitDESO, 'f', 2, 64) + " $DESO\n"
+			unstakeLimitDESO := NewFloat().Quo(
+				NewFloat().SetInt(limit.ToBig()), NewFloat().SetUint64(NanosPerUnit),
+			)
+			opString += _indt(indentationCounter) + fmt.Sprintf("Unstaking Limit: %.2f $DESO\n", unstakeLimitDESO)
 
 			indentationCounter--
 			opString += _indt(indentationCounter) + "]\n"
@@ -5962,7 +5964,7 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 			})
 			for _, key := range keys {
 				data = append(data, key.Encode()...)
-				data = append(data, UintToBuf(tsl.StakeLimitMap[key])...)
+				data = append(data, EncodeUint256(tsl.StakeLimitMap[key])...)
 			}
 		}
 
@@ -5982,7 +5984,7 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 			})
 			for _, key := range keys {
 				data = append(data, key.Encode()...)
-				data = append(data, UintToBuf(tsl.UnstakeLimitMap[key])...)
+				data = append(data, EncodeUint256(tsl.UnstakeLimitMap[key])...)
 			}
 		}
 
@@ -6223,15 +6225,15 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		if err != nil {
 			return err
 		}
-		tsl.StakeLimitMap = make(map[StakeLimitKey]uint64)
+		tsl.StakeLimitMap = make(map[StakeLimitKey]*uint256.Int)
 		if stakeLimitMapLen > 0 {
 			for ii := uint64(0); ii < stakeLimitMapLen; ii++ {
 				stakeLimitKey := &StakeLimitKey{}
 				if err = stakeLimitKey.Decode(rr); err != nil {
 					return errors.Wrap(err, "Error decoding StakeLimitKey: ")
 				}
-				var stakeLimitDESONanos uint64
-				stakeLimitDESONanos, err = ReadUvarint(rr)
+				var stakeLimitDESONanos *uint256.Int
+				stakeLimitDESONanos, err = DecodeUint256(rr)
 				if err != nil {
 					return err
 				}
@@ -6247,15 +6249,15 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		if err != nil {
 			return err
 		}
-		tsl.UnstakeLimitMap = make(map[StakeLimitKey]uint64)
+		tsl.UnstakeLimitMap = make(map[StakeLimitKey]*uint256.Int)
 		if unstakeLimitMapLen > 0 {
 			for ii := uint64(0); ii < unstakeLimitMapLen; ii++ {
 				stakeLimitKey := &StakeLimitKey{}
 				if err = stakeLimitKey.Decode(rr); err != nil {
 					return errors.Wrap(err, "Error decoding StakeLimitKey: ")
 				}
-				var unstakeLimitDESONanos uint64
-				unstakeLimitDESONanos, err = ReadUvarint(rr)
+				var unstakeLimitDESONanos *uint256.Int
+				unstakeLimitDESONanos, err = DecodeUint256(rr)
 				if err != nil {
 					return err
 				}
@@ -6347,8 +6349,8 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
 		AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
 		AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
-		StakeLimitMap:                make(map[StakeLimitKey]uint64),
-		UnstakeLimitMap:              make(map[StakeLimitKey]uint64),
+		StakeLimitMap:                make(map[StakeLimitKey]*uint256.Int),
+		UnstakeLimitMap:              make(map[StakeLimitKey]*uint256.Int),
 		UnlockStakeLimitMap:          make(map[StakeLimitKey]uint64),
 		IsUnlimited:                  tsl.IsUnlimited,
 	}

@@ -2277,8 +2277,7 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 		if !exists {
 			continue
 		}
-		spendingLimitUint256 := uint256.NewInt().SetUint64(spendingLimit)
-		spendingLimitCmp := spendingLimitUint256.Cmp(txMeta.StakeAmountNanos)
+		spendingLimitCmp := spendingLimit.Cmp(txMeta.StakeAmountNanos)
 
 		// If the amount being staked exceeds the spending limit, note it, and skip this spending limit.
 		// This solves for the case where the amount being staked is greater than the spending limit
@@ -2290,7 +2289,7 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 
 		// If the spending limit exceeds the amount being staked, update the spending limit.
 		if spendingLimitCmp > 0 {
-			updatedSpendingLimit, err := SafeUint256().Sub(spendingLimitUint256, txMeta.StakeAmountNanos)
+			updatedSpendingLimit, err := SafeUint256().Sub(spendingLimit, txMeta.StakeAmountNanos)
 			if err != nil {
 				return derivedKeyEntry, errors.Wrapf(err, "_checkStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 			}
@@ -2300,7 +2299,7 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 					"_checkStakeTxnSpendingLimitAndUpdateDerivedKey: updated spending limit exceeds uint64",
 				)
 			}
-			derivedKeyEntry.TransactionSpendingLimitTracker.StakeLimitMap[stakeLimitKey] = updatedSpendingLimit.Uint64()
+			derivedKeyEntry.TransactionSpendingLimitTracker.StakeLimitMap[stakeLimitKey] = updatedSpendingLimit
 			return derivedKeyEntry, nil
 		}
 
@@ -2354,8 +2353,7 @@ func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
 		if !exists {
 			continue
 		}
-		spendingLimitUint256 := uint256.NewInt().SetUint64(spendingLimit)
-		spendingLimitCmp := spendingLimitUint256.Cmp(txMeta.UnstakeAmountNanos)
+		spendingLimitCmp := spendingLimit.Cmp(txMeta.UnstakeAmountNanos)
 
 		// If the amount being unstaked exceeds the spending limit, note it, and skip this spending limit.
 		// This solves for the case where the amount being unstaked is greater than the spending limit
@@ -2367,7 +2365,7 @@ func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
 
 		// If the spending limit exceeds the amount being unstaked, update the spending limit.
 		if spendingLimitCmp > 0 {
-			updatedSpendingLimit, err := SafeUint256().Sub(spendingLimitUint256, txMeta.UnstakeAmountNanos)
+			updatedSpendingLimit, err := SafeUint256().Sub(spendingLimit, txMeta.UnstakeAmountNanos)
 			if err != nil {
 				return derivedKeyEntry, errors.Wrapf(err, "_checkUnstakeTxnSpendingLimitAndUpdateDerivedKey: ")
 			}
@@ -2377,7 +2375,7 @@ func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
 					"_checkUnstakeTxnSpendingLimitAndUpdateDerivedKey: updated spending limit exceeds uint64",
 				)
 			}
-			derivedKeyEntry.TransactionSpendingLimitTracker.UnstakeLimitMap[stakeLimitKey] = updatedSpendingLimit.Uint64()
+			derivedKeyEntry.TransactionSpendingLimitTracker.UnstakeLimitMap[stakeLimitKey] = updatedSpendingLimit
 			return derivedKeyEntry, nil
 		}
 

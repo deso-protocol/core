@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"reflect"
 	"strconv"
@@ -188,8 +189,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			AssociationLimitMap:          make(map[AssociationLimitKey]uint64),
 			AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
 			AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
-			StakeLimitMap:                make(map[StakeLimitKey]uint64),
-			UnstakeLimitMap:              make(map[StakeLimitKey]uint64),
+			StakeLimitMap:                make(map[StakeLimitKey]*uint256.Int),
+			UnstakeLimitMap:              make(map[StakeLimitKey]*uint256.Int),
 			UnlockStakeLimitMap:          make(map[StakeLimitKey]uint64),
 		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
@@ -316,7 +317,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 							if err = bav.IsValidStakeLimitKey(txn.PublicKey, stakeLimitKey); err != nil {
 								return 0, 0, nil, err
 							}
-							if stakingLimit == 0 {
+							if stakingLimit.IsZero() {
 								delete(newTransactionSpendingLimit.StakeLimitMap, stakeLimitKey)
 							} else {
 								newTransactionSpendingLimit.StakeLimitMap[stakeLimitKey] = stakingLimit
@@ -327,7 +328,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 							if err = bav.IsValidStakeLimitKey(txn.PublicKey, unstakeLimitKey); err != nil {
 								return 0, 0, nil, err
 							}
-							if unstakingLimit == 0 {
+							if unstakingLimit.IsZero() {
 								delete(newTransactionSpendingLimit.UnstakeLimitMap, unstakeLimitKey)
 							} else {
 								newTransactionSpendingLimit.UnstakeLimitMap[unstakeLimitKey] = unstakingLimit

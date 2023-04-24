@@ -966,7 +966,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			StakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 100},
+			StakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(100)},
 		}
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
 		require.Error(t, err)
@@ -980,7 +980,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			StakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 100},
+			StakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(100)},
 		}
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
 		require.Error(t, err)
@@ -995,7 +995,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			UnstakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 100},
+			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(100)},
 		}
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
 		require.Error(t, err)
@@ -1009,7 +1009,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			UnstakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 100},
+			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(100)},
 		}
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
 		require.Error(t, err)
@@ -1053,7 +1053,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			StakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 100},
+			StakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(100)},
 		}
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
 		require.NoError(t, err)
@@ -1111,7 +1111,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			UnstakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 50},
+			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(50)},
 		}
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
 		require.NoError(t, err)
@@ -1304,8 +1304,8 @@ func _testStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			StakeLimitMap:       map[StakeLimitKey]uint64{stakeLimitKey: 50},
-			UnstakeLimitMap:     map[StakeLimitKey]uint64{stakeLimitKey: 50},
+			StakeLimitMap:       map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(50)},
+			UnstakeLimitMap:     map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(50)},
 			UnlockStakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 2},
 		}
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
@@ -1461,8 +1461,14 @@ func _testStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			StakeLimitMap:       map[StakeLimitKey]uint64{scopedStakeLimitKey: 100, globalStakeLimitKey: 200},
-			UnstakeLimitMap:     map[StakeLimitKey]uint64{scopedStakeLimitKey: 100, globalStakeLimitKey: 200},
+			StakeLimitMap: map[StakeLimitKey]*uint256.Int{
+				scopedStakeLimitKey: uint256.NewInt().SetUint64(100),
+				globalStakeLimitKey: uint256.NewInt().SetUint64(200),
+			},
+			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{
+				scopedStakeLimitKey: uint256.NewInt().SetUint64(100),
+				globalStakeLimitKey: uint256.NewInt().SetUint64(200),
+			},
 			UnlockStakeLimitMap: map[StakeLimitKey]uint64{scopedStakeLimitKey: 1, globalStakeLimitKey: 1},
 		}
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
@@ -1541,12 +1547,12 @@ func _testStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			StakeLimitMap: map[StakeLimitKey]uint64{
-				stakeLimitKey1: uint64(1.5 * float64(NanosPerUnit)),
-				stakeLimitKey2: uint64(2.0 * float64(NanosPerUnit)),
+			StakeLimitMap: map[StakeLimitKey]*uint256.Int{
+				stakeLimitKey1: uint256.NewInt().SetUint64(uint64(1.5 * float64(NanosPerUnit))),
+				stakeLimitKey2: uint256.NewInt().SetUint64(uint64(2.0 * float64(NanosPerUnit))),
 			},
-			UnstakeLimitMap: map[StakeLimitKey]uint64{
-				stakeLimitKey1: uint64(3.25 * float64(NanosPerUnit)),
+			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{
+				stakeLimitKey1: uint256.NewInt().SetUint64(uint64(3.25 * float64(NanosPerUnit))),
 			},
 			UnlockStakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey1: 2, stakeLimitKey2: 3},
 		}
@@ -1594,8 +1600,12 @@ func _testStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			StakeLimitMap:       map[StakeLimitKey]uint64{stakeLimitKey: uint64(0.65 * float64(NanosPerUnit))},
-			UnstakeLimitMap:     map[StakeLimitKey]uint64{stakeLimitKey: uint64(2.1 * float64(NanosPerUnit))},
+			StakeLimitMap: map[StakeLimitKey]*uint256.Int{
+				stakeLimitKey: uint256.NewInt().SetUint64(uint64(0.65 * float64(NanosPerUnit))),
+			},
+			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{
+				stakeLimitKey: uint256.NewInt().SetUint64(uint64(2.1 * float64(NanosPerUnit))),
+			},
 			UnlockStakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 1},
 		}
 		metamaskStr := txnSpendingLimit.ToMetamaskString(params)
