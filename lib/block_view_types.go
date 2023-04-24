@@ -5908,17 +5908,14 @@ func (tne *TransactorNonceEntry) RawEncodeWithoutMetadata(blockHeight uint64, sk
 }
 
 func (tne *TransactorNonceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	nonce := &DeSoNonce{}
-	if exists, err := DecodeFromBytes(nonce, rr); exists && err == nil {
-		tne.Nonce = nonce
-	} else if err != nil {
+	var err error
+	tne.Nonce, err = DecodeDeSoEncoder(&DeSoNonce{}, rr)
+	if err != nil {
 		return err
 	}
 
-	transactorPKID := &PKID{}
-	if exists, err := DecodeFromBytes(transactorPKID, rr); exists && err == nil {
-		tne.TransactorPKID = transactorPKID
-	} else if err != nil {
+	tne.TransactorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return err
 	}
 	return nil
