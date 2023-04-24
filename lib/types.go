@@ -273,6 +273,10 @@ func ReadOptionalBlockHash(rr *bytes.Reader) (*BlockHash, error) {
 	return nil, nil
 }
 
+// EncodeOptionalUint256 guarantees fixed-width encoding which is useful
+// in BadgerDB keys. It is less space-efficient than EncodeUint256,
+// which should be used elsewhere. Both EncodeUint256 and
+// EncodeOptionalUint256 can handle nil inputs.
 func EncodeOptionalUint256(val *uint256.Int) []byte {
 	if val == nil {
 		return UintToBuf(uint64(0))

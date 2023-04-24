@@ -4935,6 +4935,11 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 	return nil, nil
 }
 
+// EncodeUint256 is useful for space-efficient encoding of uint256s.
+// It does not guarantee fixed-width encoding, so should not be used
+// in BadgerDB keys. Use EncodeOptionalUint256 instead, which does
+// guarantee fixed-width encoding. Both EncodeUint256 and
+// EncodeOptionalUint256 can handle nil inputs.
 func EncodeUint256(number *uint256.Int) []byte {
 	var data []byte
 	if number != nil {
