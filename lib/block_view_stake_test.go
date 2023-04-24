@@ -1448,6 +1448,90 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 	}
 	{
+		// sender exhausts a TransactionSpendingLimit scoped to a single validator.
+		// We fall back to check if there is a TransactionSpendingLimit scoped to
+		// any validator to cover their staking + unstaking + unlocking stake txns.
+
+		// sender creates a DerivedKey to stake, unstake, and unlock stake with m1 or any validator.
+		scopedStakeLimitKey := MakeStakeLimitKey(m1PKID, senderPKID)
+		globalStakeLimitKey := MakeStakeLimitKey(&ZeroPKID, senderPKID)
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+			StakeLimitMap:       map[StakeLimitKey]uint64{scopedStakeLimitKey: 100, globalStakeLimitKey: 200},
+			UnstakeLimitMap:     map[StakeLimitKey]uint64{scopedStakeLimitKey: 100, globalStakeLimitKey: 200},
+			UnlockStakeLimitMap: map[StakeLimitKey]uint64{scopedStakeLimitKey: 1, globalStakeLimitKey: 1},
+		}
+		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
+		require.NoError(t, err)
+
+		// sender stakes with m1 using the global TransactionSpendingLimit.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(200),
+		}
+		_, err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: stakeMetadata},
+		)
+		require.NoError(t, err)
+
+		// sender unstakes from m1 using the global TransactionSpendingLimit.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(200),
+		}
+		_, err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
+		)
+		require.NoError(t, err)
+
+		// sender unlocks stake from m1 using the scoped TransactionSpendingLimit.
+		epochNumber := uint64(0) // TODO: get epoch number from db.
+		unlockStakeMetadata := &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StartEpochNumber:   epochNumber,
+			EndEpochNumber:     epochNumber,
+		}
+		_, err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
+		)
+		require.NoError(t, err)
+
+		// sender stakes with m1 using the scoped TransactionSpendingLimit.
+		stakeMetadata = &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
+		}
+		_, err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: stakeMetadata},
+		)
+		require.NoError(t, err)
+
+		// sender unstakes from m1 using the scoped TransactionSpendingLimit.
+		unstakeMetadata = &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(100),
+		}
+		_, err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
+		)
+		require.NoError(t, err)
+
+		// sender unlocks stake from m1 using the global TransactionSpendingLimit.
+		epochNumber = uint64(0) // TODO: get epoch number from db.
+		unlockStakeMetadata = &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StartEpochNumber:   epochNumber,
+			EndEpochNumber:     epochNumber,
+		}
+		_, err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
+		)
+		require.NoError(t, err)
+	}
+	{
 		// Test TransactionSpendingLimit.ToMetamaskString() scoped to one validator.
 		stakeLimitKey1 := MakeStakeLimitKey(m0PKID, senderPKID)
 		stakeLimitKey2 := MakeStakeLimitKey(m1PKID, senderPKID)
