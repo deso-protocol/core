@@ -1190,6 +1190,14 @@ func (bav *UtxoView) _connectStake(
 	// Set the new GlobalStakeAmountNanos.
 	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
 
+	// Add the StakeAmountNanos to TotalOutput. The coins being staked are already
+	// part of the TotalInput. But they are not burned, so they are an implicit
+	// output even though they do not go to a specific public key's balance.
+	totalOutput, err = SafeUint64().Add(totalOutput, stakeAmountNanosUint64)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectStake: error adding StakeAmountNanos to TotalOutput: ")
+	}
+
 	// Add a UTXO operation
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                       OperationTypeStake,
@@ -1653,6 +1661,20 @@ func (bav *UtxoView) _connectUnlockStake(
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: ")
 	}
 	utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
+
+	// Add TotalUnlockedAmountNanos to TotalInput. The unlocked coins are an
+	// implicit input even though they do not come from a specific public key.
+	totalInput, err = SafeUint64().Add(totalInput, totalUnlockedAmountNanosUint64)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: error adding TotalUnlockedAmountNanos to TotalInput: ")
+	}
+
+	// Add TotalUnlockedAmountNanos to TotalOutput. The unlocked
+	// coins being sent to the transactor are an implicit output.
+	totalOutput, err = SafeUint64().Add(totalOutput, totalUnlockedAmountNanosUint64)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: error adding TotalUnlockedAmountNanos to TotalOutput: ")
+	}
 
 	// Add a UTXO operation
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{

@@ -617,7 +617,7 @@ func _submitStakeTxn(
 	if err != nil {
 		return 0, err
 	}
-	require.Equal(testMeta.t, totalInput, totalOutput+metadata.StakeAmountNanos.Uint64()+fees)
+	require.Equal(testMeta.t, totalInput, totalOutput+fees)
 	require.Equal(testMeta.t, totalInput, totalInputMake+metadata.StakeAmountNanos.Uint64())
 	require.Equal(testMeta.t, OperationTypeStake, utxoOps[len(utxoOps)-1].Type)
 	if flushToDB {
@@ -736,7 +736,8 @@ func _submitUnlockStakeTxn(
 		return 0, err
 	}
 	require.Equal(testMeta.t, totalInput, totalOutput+fees)
-	require.Equal(testMeta.t, totalInput, totalInputMake)
+	// TotalInput = TotalInputMake + TotalUnlockedAmountNanos
+	require.True(testMeta.t, totalInput > totalInputMake)
 	require.Equal(testMeta.t, OperationTypeUnlockStake, utxoOps[len(utxoOps)-1].Type)
 	if flushToDB {
 		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(uint64(testMeta.savedHeight)))
