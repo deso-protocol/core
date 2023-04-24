@@ -64,26 +64,20 @@ func (stakeEntry *StakeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 	var err error
 
 	// StakeID
-	stakeID := &BlockHash{}
-	if exist, err := DecodeFromBytes(stakeID, rr); exist && err == nil {
-		stakeEntry.StakeID = stakeID
-	} else if err != nil {
+	stakeEntry.StakeID, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "StakeEntry.Decode: Problem reading StakeID: ")
 	}
 
 	// StakerPKID
-	stakerPKID := &PKID{}
-	if exist, err := DecodeFromBytes(stakerPKID, rr); exist && err == nil {
-		stakeEntry.StakerPKID = stakerPKID
-	} else if err != nil {
+	stakeEntry.StakerPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "StakeEntry.Decode: Problem reading StakerPKID: ")
 	}
 
 	// ValidatorPKID
-	validatorPKID := &PKID{}
-	if exist, err := DecodeFromBytes(validatorPKID, rr); exist && err == nil {
-		stakeEntry.ValidatorPKID = validatorPKID
-	} else if err != nil {
+	stakeEntry.ValidatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "StakeEntry.Decode: Problem reading ValidatorPKID: ")
 	}
 
@@ -169,26 +163,20 @@ func (lockedStakeEntry *LockedStakeEntry) RawDecodeWithoutMetadata(blockHeight u
 	var err error
 
 	// LockedStakeID
-	lockedStakeID := &BlockHash{}
-	if exist, err := DecodeFromBytes(lockedStakeID, rr); exist && err == nil {
-		lockedStakeEntry.LockedStakeID = lockedStakeID
-	} else if err != nil {
+	lockedStakeEntry.LockedStakeID, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "LockedStakeEntry.Decode: Problem reading LockedStakeID: ")
 	}
 
 	// StakerPKID
-	stakerPKID := &PKID{}
-	if exist, err := DecodeFromBytes(stakerPKID, rr); exist && err == nil {
-		lockedStakeEntry.StakerPKID = stakerPKID
-	} else if err != nil {
+	lockedStakeEntry.StakerPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "LockedStakeEntry.Decode: Problem reading StakerPKID: ")
 	}
 
 	// ValidatorPKID
-	validatorPKID := &PKID{}
-	if exist, err := DecodeFromBytes(validatorPKID, rr); exist && err == nil {
-		lockedStakeEntry.ValidatorPKID = validatorPKID
-	} else if err != nil {
+	lockedStakeEntry.ValidatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "LockedStakeEntry.Decode: Problem reading ValidatorPKID: ")
 	}
 
@@ -242,14 +230,14 @@ func (txnData *StakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
 }
 
 func (txnData *StakeMetadata) FromBytes(data []byte) error {
+	var err error
 	rr := bytes.NewReader(data)
 
 	// ValidatorPublicKey
-	validatorPublicKeyBytes, err := DecodeByteArray(rr)
+	txnData.ValidatorPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
 	if err != nil {
 		return errors.Wrapf(err, "StakeMetadata.FromBytes: Problem reading ValidatorPublicKey: ")
 	}
-	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
 
 	// StakeAmountNanos
 	txnData.StakeAmountNanos, err = DecodeUint256(rr)
@@ -285,14 +273,14 @@ func (txnData *UnstakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
 }
 
 func (txnData *UnstakeMetadata) FromBytes(data []byte) error {
+	var err error
 	rr := bytes.NewReader(data)
 
 	// ValidatorPublicKey
-	validatorPublicKeyBytes, err := DecodeByteArray(rr)
+	txnData.ValidatorPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
 	if err != nil {
 		return errors.Wrapf(err, "UnstakeMetadata.FromBytes: Problem reading ValidatorPublicKey: ")
 	}
-	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
 
 	// UnstakeAmountNanos
 	txnData.UnstakeAmountNanos, err = DecodeUint256(rr)
@@ -330,14 +318,14 @@ func (txnData *UnlockStakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
 }
 
 func (txnData *UnlockStakeMetadata) FromBytes(data []byte) error {
+	var err error
 	rr := bytes.NewReader(data)
 
 	// ValidatorPublicKey
-	validatorPublicKeyBytes, err := DecodeByteArray(rr)
+	txnData.ValidatorPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
 	if err != nil {
 		return errors.Wrapf(err, "UnlockStakeMetadata.FromBytes: Problem reading ValidatorPublicKey: ")
 	}
-	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
 
 	// StartEpochNumber
 	txnData.StartEpochNumber, err = ReadUvarint(rr)
