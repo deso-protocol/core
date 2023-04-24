@@ -497,8 +497,9 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
-	// FIXME: ensure that this left-pads the uint256 to be equal width
-	key = append(key, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)                 // Highest stake first
+	// TotalStakeAmountNanos will never be nil here, but EncodeOptionalUint256
+	// is used because it provides a fixed-width encoding of uint256.Ints.
+	key = append(key, EncodeOptionalUint256(validatorEntry.TotalStakeAmountNanos)...)         // Highest stake first
 	key = append(key, EncodeUint64(math.MaxUint64-validatorEntry.RegisteredAtBlockHeight)...) // Oldest first
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
 	return key

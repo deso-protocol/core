@@ -1237,7 +1237,7 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
 
 		// PrevGlobalStakeAmountNanos
-		data = append(data, EncodeOptionalUint256(op.PrevGlobalStakeAmountNanos)...)
+		data = append(data, EncodeUint256(op.PrevGlobalStakeAmountNanos)...)
 
 		// PrevStakeEntries
 		data = append(data, EncodeDeSoEncoderSlice(op.PrevStakeEntries, blockHeight, skipMetadata...)...)
@@ -1868,7 +1868,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 
 		// PrevGlobalStakeAmountNanos
-		if prevGlobalStakeAmountNanos, err := ReadOptionalUint256(rr); err == nil {
+		if prevGlobalStakeAmountNanos, err := DecodeUint256(rr); err == nil {
 			op.PrevGlobalStakeAmountNanos = prevGlobalStakeAmountNanos
 		} else {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalStakeAmountNanos: ")
@@ -4903,6 +4903,11 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 	return nil, nil
 }
 
+// EncodeUint256 is useful for space-efficient encoding of uint256s.
+// It does not guarantee fixed-width encoding, so should not be used
+// in BadgerDB keys. Use EncodeOptionalUint256 instead, which does
+// guarantee fixed-width encoding. Both EncodeUint256 and
+// EncodeOptionalUint256 can handle nil inputs.
 func EncodeUint256(number *uint256.Int) []byte {
 	var data []byte
 	if number != nil {
