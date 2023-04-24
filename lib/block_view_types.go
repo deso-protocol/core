@@ -1243,18 +1243,10 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeOptionalUint256(op.PrevGlobalStakeAmountNanos)...)
 
 		// PrevStakeEntries
-		numPrevStakeEntries := uint64(len(op.PrevStakeEntries))
-		data = append(data, UintToBuf(numPrevStakeEntries)...)
-		for _, stakeEntry := range op.PrevStakeEntries {
-			data = append(data, EncodeToBytes(blockHeight, stakeEntry, skipMetadata...)...)
-		}
+		data = append(data, EncodeDeSoEncoderSlice(op.PrevStakeEntries, blockHeight, skipMetadata...)...)
 
 		// PrevLockedStakeEntries
-		numPrevLockedStakeEntries := uint64(len(op.PrevLockedStakeEntries))
-		data = append(data, UintToBuf(numPrevLockedStakeEntries)...)
-		for _, lockedStakeEntry := range op.PrevLockedStakeEntries {
-			data = append(data, EncodeToBytes(blockHeight, lockedStakeEntry, skipMetadata...)...)
-		}
+		data = append(data, EncodeDeSoEncoderSlice(op.PrevLockedStakeEntries, blockHeight, skipMetadata...)...)
 	}
 
 	return data
@@ -1874,10 +1866,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 
 	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
 		// PrevValidatorEntry
-		prevValidatorEntry := &ValidatorEntry{}
-		if exist, err := DecodeFromBytes(prevValidatorEntry, rr); exist && err == nil {
-			op.PrevValidatorEntry = prevValidatorEntry
-		} else if err != nil {
+		if op.PrevValidatorEntry, err = DecodeDeSoEncoder(&ValidatorEntry{}, rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry: ")
 		}
 
@@ -1889,31 +1878,13 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 
 		// PrevStakeEntries
-		numPrevStakeEntries, err := ReadUvarint(rr)
-		if err != nil {
+		if op.PrevStakeEntries, err = DecodeDeSoEncoderSlice[*StakeEntry](rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevStakeEntries: ")
-		}
-		for ii := 0; ii < int(numPrevStakeEntries); ii++ {
-			prevStakeEntry := &StakeEntry{}
-			if exist, err := DecodeFromBytes(prevStakeEntry, rr); exist && err == nil {
-				op.PrevStakeEntries = append(op.PrevStakeEntries, prevStakeEntry)
-			} else if err != nil {
-				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevStakeEntries: ")
-			}
 		}
 
 		// PrevLockedStakeEntries
-		numPrevLockedStakeEntries, err := ReadUvarint(rr)
-		if err != nil {
+		if op.PrevLockedStakeEntries, err = DecodeDeSoEncoderSlice[*LockedStakeEntry](rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedStakeEntries: ")
-		}
-		for ii := 0; ii < int(numPrevLockedStakeEntries); ii++ {
-			prevLockedStakeEntry := &LockedStakeEntry{}
-			if exist, err := DecodeFromBytes(prevLockedStakeEntry, rr); exist && err == nil {
-				op.PrevLockedStakeEntries = append(op.PrevLockedStakeEntries, prevLockedStakeEntry)
-			} else if err != nil {
-				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedStakeEntries: ")
-			}
 		}
 	}
 
