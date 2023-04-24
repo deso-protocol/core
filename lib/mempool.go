@@ -2230,6 +2230,9 @@ func (mp *DeSoMempool) processTransaction(
 	if txHash == nil {
 		return nil, fmt.Errorf("ProcessTransaction: Problem hashing tx")
 	}
+	if tx.TxnNonce == nil {
+		return nil, fmt.Errorf("ProcessTransaction: Transaction is missing nonce")
+	}
 	glog.V(2).Infof("Processing transaction %v", txHash)
 
 	// Run validation and try to add this txn to the pool.
