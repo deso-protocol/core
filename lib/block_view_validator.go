@@ -50,14 +50,6 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 		domainsCopy = append(domainsCopy, append([]byte{}, domain...)) // Makes a copy.
 	}
 
-	// Copy ExtraData.
-	extraDataCopy := make(map[string][]byte)
-	for key, value := range validatorEntry.ExtraData {
-		valueCopy := make([]byte, len(value))
-		copy(valueCopy, value)
-		extraDataCopy[key] = valueCopy
-	}
-
 	// Return new ValidatorEntry.
 	return &ValidatorEntry{
 		ValidatorID:                validatorEntry.ValidatorID.NewBlockHash(),
@@ -69,7 +61,7 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 		VotingSignatureBlockHeight: validatorEntry.VotingSignatureBlockHeight,
 		TotalStakeAmountNanos:      validatorEntry.TotalStakeAmountNanos.Clone(),
 		RegisteredAtBlockHeight:    validatorEntry.RegisteredAtBlockHeight,
-		ExtraData:                  extraDataCopy,
+		ExtraData:                  copyExtraData(validatorEntry.ExtraData),
 		isDeleted:                  validatorEntry.isDeleted,
 	}
 }

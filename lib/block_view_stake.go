@@ -29,18 +29,12 @@ type StakeMapKey struct {
 }
 
 func (stakeEntry *StakeEntry) Copy() *StakeEntry {
-	// Copy ExtraData.
-	extraDataCopy := make(map[string][]byte)
-	for key, value := range stakeEntry.ExtraData {
-		extraDataCopy[key] = value
-	}
-
 	return &StakeEntry{
 		StakeID:          stakeEntry.StakeID.NewBlockHash(),
 		StakerPKID:       stakeEntry.StakerPKID.NewPKID(),
 		ValidatorPKID:    stakeEntry.ValidatorPKID.NewPKID(),
 		StakeAmountNanos: stakeEntry.StakeAmountNanos.Clone(),
-		ExtraData:        extraDataCopy,
+		ExtraData:        copyExtraData(stakeEntry.ExtraData),
 		isDeleted:        stakeEntry.isDeleted,
 	}
 }
@@ -137,19 +131,13 @@ type LockedStakeMapKey struct {
 }
 
 func (lockedStakeEntry *LockedStakeEntry) Copy() *LockedStakeEntry {
-	// Copy ExtraData.
-	extraDataCopy := make(map[string][]byte)
-	for key, value := range lockedStakeEntry.ExtraData {
-		extraDataCopy[key] = value
-	}
-
 	return &LockedStakeEntry{
 		LockedStakeID:       lockedStakeEntry.LockedStakeID.NewBlockHash(),
 		StakerPKID:          lockedStakeEntry.StakerPKID.NewPKID(),
 		ValidatorPKID:       lockedStakeEntry.ValidatorPKID.NewPKID(),
 		LockedAmountNanos:   lockedStakeEntry.LockedAmountNanos.Clone(),
 		LockedAtEpochNumber: lockedStakeEntry.LockedAtEpochNumber,
-		ExtraData:           extraDataCopy,
+		ExtraData:           copyExtraData(lockedStakeEntry.ExtraData),
 		isDeleted:           lockedStakeEntry.isDeleted,
 	}
 }
@@ -841,7 +829,6 @@ func (bc *Blockchain) CreateStakeTxn(
 	_fees uint64,
 	_err error,
 ) {
-	// TODO: incorporate DESO being spent by transactor + balance model
 	// Create a txn containing the metadata fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: transactorPublicKey,
@@ -995,7 +982,6 @@ func (bc *Blockchain) CreateUnlockStakeTxn(
 	_fees uint64,
 	_err error,
 ) {
-	// TODO: incorporate DESO being returned to transactor + balance model
 	// Create a txn containing the metadata fields.
 	txn := &MsgDeSoTxn{
 		PublicKey: transactorPublicKey,
@@ -1159,7 +1145,7 @@ func (bav *UtxoView) _connectStake(
 	if prevStakeEntry != nil {
 		stakeAmountNanos, err = SafeUint256().Add(stakeAmountNanos, prevStakeEntry.StakeAmountNanos)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectStake: invalid StakeAmountNanos: ")
+			return 0, 0, nil, errors.Wrapf(err, "_connectStake: error adding StakeAmountNanos to existing StakeAmountNanos: ")
 		}
 	}
 
@@ -1181,17 +1167,18 @@ func (bav *UtxoView) _connectStake(
 	bav._setStakeEntryMappings(currentStakeEntry)
 
 	// Update the ValidatorEntry.TotalStakeAmountNanos.
-	// 1. Delete the existing ValidatorEntry.
-	bav._deleteValidatorEntryMappings(prevValidatorEntry)
-	// 2. Create a new ValidatorEntry with the updated TotalStakeAmountNanos.
+	// 1. Copy the existing ValidatorEntry.
 	currentValidatorEntry := prevValidatorEntry.Copy()
+	// 2. Delete the existing ValidatorEntry.
+	bav._deleteValidatorEntryMappings(prevValidatorEntry)
+	// 3. Update the new ValidatorEntry's TotalStakeAmountNanos.
 	currentValidatorEntry.TotalStakeAmountNanos, err = SafeUint256().Add(
 		currentValidatorEntry.TotalStakeAmountNanos, txMeta.StakeAmountNanos,
 	)
 	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: invalid StakeAmountNanos: ")
+		return 0, 0, nil, errors.Wrapf(err, "_connectStake: error adding StakeAmountNanos to TotalStakeAmountNanos: ")
 	}
-	// 3. Set the new ValidatorEntry.
+	// 4. Set the new ValidatorEntry.
 	bav._setValidatorEntryMappings(currentValidatorEntry)
 
 	// Increase the GlobalStakeAmountNanos.
@@ -1203,7 +1190,7 @@ func (bav *UtxoView) _connectStake(
 	}
 	globalStakeAmountNanos, err := SafeUint256().Add(prevGlobalStakeAmountNanos, txMeta.StakeAmountNanos)
 	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectStake: error calculating updated GlobalStakeAmountNanos: ")
+		return 0, 0, nil, errors.Wrapf(err, "_connectStake: error adding StakeAmountNanos to GlobalStakeAmountNanos: ")
 	}
 	// Set the new GlobalStakeAmountNanos.
 	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
@@ -1379,7 +1366,7 @@ func (bav *UtxoView) _connectUnstake(
 	// 1. Calculate the updated StakeAmountNanos.
 	stakeAmountNanos, err := SafeUint256().Sub(prevStakeEntry.StakeAmountNanos, txMeta.UnstakeAmountNanos)
 	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: invalid UnstakeAmountNanos: ")
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error subtracting UnstakeAmountNanos from StakeAmountNanos: ")
 	}
 	// 2. Create a CurrentStakeEntry, if updated StakeAmountNanos > 0.
 	var currentStakeEntry *StakeEntry
@@ -1396,17 +1383,18 @@ func (bav *UtxoView) _connectUnstake(
 	}
 
 	// Update the ValidatorEntry.TotalStakeAmountNanos.
-	// 1. Delete the existing ValidatorEntry.
-	bav._deleteValidatorEntryMappings(prevValidatorEntry)
-	// 2. Create a new ValidatorEntry with the updated TotalStakeAmountNanos.
+	// 1. Copy the existing ValidatorEntry.
 	currentValidatorEntry := prevValidatorEntry.Copy()
+	// 2. Delete the existing ValidatorEntry.
+	bav._deleteValidatorEntryMappings(prevValidatorEntry)
+	// 3. Update the new ValidatorEntry's TotalStakeAmountNanos.
 	currentValidatorEntry.TotalStakeAmountNanos, err = SafeUint256().Sub(
 		currentValidatorEntry.TotalStakeAmountNanos, txMeta.UnstakeAmountNanos,
 	)
 	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: invalid UnstakeAmountNanos: ")
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error subtracting UnstakeAmountNanos from TotalStakeAmountNanos: ")
 	}
-	// 3. Set the new ValidatorEntry.
+	// 4. Set the new ValidatorEntry.
 	bav._setValidatorEntryMappings(currentValidatorEntry)
 
 	// Decrease the GlobalStakeAmountNanos.
@@ -1417,7 +1405,7 @@ func (bav *UtxoView) _connectUnstake(
 	}
 	globalStakeAmountNanos, err := SafeUint256().Sub(prevGlobalStakeAmountNanos, txMeta.UnstakeAmountNanos)
 	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error calculating updated GlobalStakeAmountNanos: ")
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error subtracting UnstakeAmountNanos from GlobalStakeAmountNanos: ")
 	}
 	// 2. Set the new GlobalStakeAmountNanos.
 	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
@@ -1440,7 +1428,7 @@ func (bav *UtxoView) _connectUnstake(
 			prevLockedStakeEntry.LockedAmountNanos, txMeta.UnstakeAmountNanos,
 		)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: invalid LockedAmountNanos")
+			return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error adding UnstakeAmountNanos to LockedAmountNanos")
 		}
 		currentLockedStakeEntry.ExtraData = mergeExtraData(prevLockedStakeEntry.ExtraData, txn.ExtraData)
 	} else {
@@ -1662,19 +1650,10 @@ func (bav *UtxoView) _connectUnlockStake(
 	}
 	totalUnlockedAmountNanosUint64 := totalUnlockedAmountNanos.Uint64()
 
-	// Return TotalUnlockedAmountNanos back to the transactor.
-	outputKey := UtxoKey{
-		TxID:  *txn.Hash(),
-		Index: uint32(len(txn.TxOutputs)),
-	}
-	utxoEntry := UtxoEntry{
-		AmountNanos: totalUnlockedAmountNanosUint64,
-		PublicKey:   txn.PublicKey,
-		BlockHeight: blockHeight,
-		UtxoType:    UtxoTypeUnlockedStake,
-		UtxoKey:     &outputKey,
-	}
-	utxoOp, err := bav._addDESO(totalUnlockedAmountNanosUint64, txn.PublicKey, &utxoEntry, blockHeight)
+	// Return TotalUnlockedAmountNanos back to the transactor. We can use
+	// _addBalance here since we validate that connectUnlockStake can only
+	// occur after the BalanceModelBlockHeight.
+	utxoOp, err := bav._addBalance(totalUnlockedAmountNanosUint64, txn.PublicKey)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: ")
 	}
@@ -1888,7 +1867,15 @@ func (bav *UtxoView) GetStakeEntry(validatorPKID *PKID, stakerPKID *PKID) (*Stak
 		return stakeEntry, nil
 	}
 	// Then, check the database.
-	return DBGetStakeEntry(bav.Handle, bav.Snapshot, validatorPKID, stakerPKID)
+	stakeEntry, err := DBGetStakeEntry(bav.Handle, bav.Snapshot, validatorPKID, stakerPKID)
+	if err != nil {
+		return nil, err
+	}
+	if stakeEntry != nil {
+		// Cache the StakeEntry in the UtxoView if exists.
+		bav._setStakeEntryMappings(stakeEntry)
+	}
+	return stakeEntry, nil
 }
 
 func (bav *UtxoView) GetLockedStakeEntry(
@@ -1910,7 +1897,15 @@ func (bav *UtxoView) GetLockedStakeEntry(
 		return lockedStakeEntry, nil
 	}
 	// Then, check the database.
-	return DBGetLockedStakeEntry(bav.Handle, bav.Snapshot, validatorPKID, stakerPKID, lockedAtEpochNumber)
+	lockedStakeEntry, err := DBGetLockedStakeEntry(bav.Handle, bav.Snapshot, validatorPKID, stakerPKID, lockedAtEpochNumber)
+	if err != nil {
+		return nil, err
+	}
+	if lockedStakeEntry != nil {
+		// Cache the LockedStakeEntry in the UtxoView if exists.
+		bav._setLockedStakeEntryMappings(lockedStakeEntry)
+	}
+	return lockedStakeEntry, nil
 }
 
 func (bav *UtxoView) GetLockedStakeEntriesInRange(
@@ -2276,14 +2271,15 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 			continue
 		}
 		spendingLimitUint256 := uint256.NewInt().SetUint64(spendingLimit)
+		spendingLimitCmp := spendingLimitUint256.Cmp(txMeta.StakeAmountNanos)
 
 		// If the amount being staked exceeds the spending limit, error.
-		if spendingLimitUint256.Cmp(txMeta.StakeAmountNanos) < 0 {
+		if spendingLimitCmp < 0 {
 			return derivedKeyEntry, RuleErrorStakeTransactionSpendingLimitExceeded
 		}
 
 		// If the spending limit exceeds the amount being staked, update the spending limit.
-		if spendingLimitUint256.Cmp(txMeta.StakeAmountNanos) > 0 {
+		if spendingLimitCmp > 0 {
 			updatedSpendingLimit, err := SafeUint256().Sub(spendingLimitUint256, txMeta.StakeAmountNanos)
 			if err != nil {
 				return derivedKeyEntry, errors.Wrapf(err, "_checkStakeTxnSpendingLimitAndUpdateDerivedKey: ")
@@ -2342,14 +2338,15 @@ func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
 			continue
 		}
 		spendingLimitUint256 := uint256.NewInt().SetUint64(spendingLimit)
+		spendingLimitCmp := spendingLimitUint256.Cmp(txMeta.UnstakeAmountNanos)
 
 		// If the amount being unstaked exceeds the spending limit, error.
-		if spendingLimitUint256.Cmp(txMeta.UnstakeAmountNanos) < 0 {
+		if spendingLimitCmp < 0 {
 			return derivedKeyEntry, RuleErrorUnstakeTransactionSpendingLimitExceeded
 		}
 
 		// If the spending limit exceeds the amount being unstaked, update the spending limit.
-		if spendingLimitUint256.Cmp(txMeta.UnstakeAmountNanos) > 0 {
+		if spendingLimitCmp > 0 {
 			updatedSpendingLimit, err := SafeUint256().Sub(spendingLimitUint256, txMeta.UnstakeAmountNanos)
 			if err != nil {
 				return derivedKeyEntry, errors.Wrapf(err, "_checkUnstakeTxnSpendingLimitAndUpdateDerivedKey: ")
@@ -2437,7 +2434,7 @@ func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stake
 	}
 
 	// Verify ValidatorEntry.
-	if stakeLimitKey.ValidatorPKID.Eq(&ZeroPKID) {
+	if stakeLimitKey.ValidatorPKID.IsZeroPKID() {
 		// The ZeroPKID is a special case that indicates that the spending limit
 		// applies to any validator. In this case, we don't need to check that the
 		// validator exists, as there is no validator registered for the ZeroPKID.

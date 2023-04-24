@@ -4077,6 +4077,16 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	return spendableBalanceNanos, nil
 }
 
+func copyExtraData(extraData map[string][]byte) map[string][]byte {
+	extraDataCopy := make(map[string][]byte)
+	for key, value := range extraData {
+		valueCopy := make([]byte, len(value))
+		copy(valueCopy, value)
+		extraDataCopy[key] = valueCopy
+	}
+	return extraDataCopy
+}
+
 func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[string][]byte {
 	// Always create the map from scratch, since modifying the map on
 	// newMap could modify the map on the oldMap otherwise.

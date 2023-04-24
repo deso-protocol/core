@@ -5381,10 +5381,16 @@ type TransactionSpendingLimit struct {
 	AssociationLimitMap map[AssociationLimitKey]uint64
 
 	// ===== ENCODER MIGRATION ProofOfStakeNewTxnTypesMigration =====
-	// ValidatorPKID || StakerPKID to amount of stake-able DESO.
-	StakeLimitMap map[StakeLimitKey]uint64
+	// ValidatorPKID || StakerPKID to amount of stake-able $DESO.
+	// Note that this is not a limit on the number of Stake txns that
+	// this derived key can perform but instead a limit on the amount
+	// of $DESO this derived key can stake.
+	StakeLimitMap map[StakeLimitKey]uint64 // TODO: *uint256.Int
 	// ValidatorPKID || StakerPKID to amount of unstake-able DESO.
-	UnstakeLimitMap map[StakeLimitKey]uint64
+	// Note that this is not a limit on the number of Unstake txns that
+	// this derived key can perform but instead a limit on the amount
+	// of $DESO this derived key can unstake.
+	UnstakeLimitMap map[StakeLimitKey]uint64 // TODO: *uint256.Int
 	// ValidatorPKID || StakerPKID to number of UnlockStake transactions.
 	UnlockStakeLimitMap map[StakeLimitKey]uint64
 }
