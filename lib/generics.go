@@ -80,11 +80,11 @@ func MapSet[T comparable, K any](set *Set[T], mapFunc func(elem T) (K, error)) (
 func DecodeDeSoEncoder[T DeSoEncoder](entry T, rr *bytes.Reader) (T, error) {
 	var emptyEntry T
 	exist, err := DecodeFromBytes(entry, rr)
-	if !exist {
-		return emptyEntry, nil
-	}
 	if err != nil {
 		return emptyEntry, errors.Wrapf(err, "DecodeDeSoEncoder: Problem decoding from bytes")
+	}
+	if !exist {
+		return emptyEntry, nil
 	}
 	return entry, nil
 }
