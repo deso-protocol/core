@@ -230,14 +230,14 @@ func (txnData *StakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
 }
 
 func (txnData *StakeMetadata) FromBytes(data []byte) error {
-	var err error
 	rr := bytes.NewReader(data)
 
 	// ValidatorPublicKey
-	txnData.ValidatorPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	validatorPublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "StakeMetadata.FromBytes: Problem reading ValidatorPublicKey: ")
 	}
+	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
 
 	// StakeAmountNanos
 	txnData.StakeAmountNanos, err = DecodeUint256(rr)
@@ -273,14 +273,14 @@ func (txnData *UnstakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
 }
 
 func (txnData *UnstakeMetadata) FromBytes(data []byte) error {
-	var err error
 	rr := bytes.NewReader(data)
 
 	// ValidatorPublicKey
-	txnData.ValidatorPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	validatorPublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UnstakeMetadata.FromBytes: Problem reading ValidatorPublicKey: ")
 	}
+	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
 
 	// UnstakeAmountNanos
 	txnData.UnstakeAmountNanos, err = DecodeUint256(rr)
@@ -318,14 +318,14 @@ func (txnData *UnlockStakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
 }
 
 func (txnData *UnlockStakeMetadata) FromBytes(data []byte) error {
-	var err error
 	rr := bytes.NewReader(data)
 
 	// ValidatorPublicKey
-	txnData.ValidatorPublicKey, err = DecodeDeSoEncoder(&PublicKey{}, rr)
+	validatorPublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UnlockStakeMetadata.FromBytes: Problem reading ValidatorPublicKey: ")
 	}
+	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
 
 	// StartEpochNumber
 	txnData.StartEpochNumber, err = ReadUvarint(rr)
