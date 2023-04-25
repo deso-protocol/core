@@ -118,20 +118,19 @@ type PGBlock struct {
 type PGTransaction struct {
 	tableName struct{} `pg:"pg_transactions"`
 
-	Hash          *BlockHash `pg:",pk,type:bytea"`
-	BlockHash     *BlockHash `pg:",type:bytea"`
-	Type          TxnType    `pg:",use_zero"`
-	PublicKey     []byte     `pg:",type:bytea"`
-	ExtraData     map[string][]byte
-	R             *BlockHash `pg:",type:bytea"`
-	S             *BlockHash `pg:",type:bytea"`
-	RecoveryId    uint32     `pg:",use_zero"`
-	IsRecoverable bool       `pg:",use_zero"`
-	TxnVersion    DeSoTxnVersion `pg:",use_zero"`
-	TxnFeeNanos   uint64         `pg:",use_zero"`
+	Hash                          *BlockHash `pg:",pk,type:bytea"`
+	BlockHash                     *BlockHash `pg:",type:bytea"`
+	Type                          TxnType    `pg:",use_zero"`
+	PublicKey                     []byte     `pg:",type:bytea"`
+	ExtraData                     map[string][]byte
+	R                             *BlockHash     `pg:",type:bytea"`
+	S                             *BlockHash     `pg:",type:bytea"`
+	RecoveryId                    uint32         `pg:",use_zero"`
+	IsRecoverable                 bool           `pg:",use_zero"`
+	TxnVersion                    DeSoTxnVersion `pg:",use_zero"`
+	TxnFeeNanos                   uint64         `pg:",use_zero"`
 	TxnNonceExpirationBlockHeight uint64
-	TxnNoncePartialId uint64
-
+	TxnNoncePartialId             uint64
 
 	// Relationships
 	Outputs                       []*PGTransactionOutput           `pg:"rel:has-many,join_fk:output_hash"`
@@ -1424,12 +1423,12 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 	for _, txn := range desoTxns {
 		txnHash := txn.Hash()
 		transaction := &PGTransaction{
-			Hash:      txnHash,
-			BlockHash: blockHash,
-			Type:      txn.TxnMeta.GetTxnType(),
-			PublicKey: txn.PublicKey,
-			ExtraData: txn.ExtraData,
-			TxnVersion: txn.TxnVersion,
+			Hash:        txnHash,
+			BlockHash:   blockHash,
+			Type:        txn.TxnMeta.GetTxnType(),
+			PublicKey:   txn.PublicKey,
+			ExtraData:   txn.ExtraData,
+			TxnVersion:  txn.TxnVersion,
 			TxnFeeNanos: txn.TxnFeeNanos,
 		}
 
