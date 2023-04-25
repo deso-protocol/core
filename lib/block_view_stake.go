@@ -523,10 +523,14 @@ func (txindexMetadata *UnlockStakeTxindexMetadata) GetEncoderType() EncoderType 
 //
 
 func DBKeyForStakeByValidatorByStaker(stakeEntry *StakeEntry) []byte {
-	var data []byte
-	data = append(data, Prefixes.PrefixStakeByValidatorByStaker...)
-	data = append(data, stakeEntry.ValidatorPKID.ToBytes()...)
+	data := DBKeyForStakeByValidator(stakeEntry)
 	data = append(data, stakeEntry.StakerPKID.ToBytes()...)
+	return data
+}
+
+func DBKeyForStakeByValidator(stakeEntry *StakeEntry) []byte {
+	data := append([]byte{}, Prefixes.PrefixStakeByValidatorByStaker...)
+	data = append(data, stakeEntry.ValidatorPKID.ToBytes()...)
 	return data
 }
 
@@ -537,8 +541,7 @@ func DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry *LockedSt
 }
 
 func DBPrefixKeyForLockedStakeByValidatorByStaker(lockedStakeEntry *LockedStakeEntry) []byte {
-	var data []byte
-	data = append(data, Prefixes.PrefixLockedStakeByValidatorByStakerByLockedAt...)
+	data := append([]byte{}, Prefixes.PrefixLockedStakeByValidatorByStakerByLockedAt...)
 	data = append(data, lockedStakeEntry.ValidatorPKID.ToBytes()...)
 	data = append(data, lockedStakeEntry.StakerPKID.ToBytes()...)
 	return data
@@ -583,6 +586,29 @@ func DBGetStakeEntryWithTxn(
 		return nil, errors.Wrapf(err, "DBGetStakeByValidatorByStaker: problem decoding StakeEntry: ")
 	}
 	return stakeEntry, nil
+}
+
+func DBGetStakeEntriesForValidatorPKID(handle *badger.DB, snap *Snapshot, validatorPKID *PKID) ([]*StakeEntry, error) {
+	// Retrieve StakeEntries from db.
+	prefix := DBKeyForStakeByValidator(&StakeEntry{ValidatorPKID: validatorPKID})
+	_, valsFound, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+		handle, prefix, 0, nil, false, nil,
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetStakeEntriesForValidatorPKID: problem retrieving StakeEntries: ")
+	}
+
+	// Decode StakeEntries from bytes.
+	var stakeEntries []*StakeEntry
+	for _, stakeEntryBytes := range valsFound {
+		rr := bytes.NewReader(stakeEntryBytes)
+		stakeEntry, err := DecodeDeSoEncoder(&StakeEntry{}, rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetStakeEntriesForValidatorPKID: problem decoding StakeEntry: ")
+		}
+		stakeEntries = append(stakeEntries, stakeEntry)
+	}
+	return stakeEntries, nil
 }
 
 func DBGetLockedStakeEntry(
@@ -1878,6 +1904,53 @@ func (bav *UtxoView) GetStakeEntry(validatorPKID *PKID, stakerPKID *PKID) (*Stak
 		bav._setStakeEntryMappings(stakeEntry)
 	}
 	return stakeEntry, nil
+}
+
+func (bav *UtxoView) GetStakeEntriesForValidatorPKID(validatorPKID *PKID) ([]*StakeEntry, error) {
+	// Validate inputs.
+	if validatorPKID == nil {
+		return nil, errors.New("UtxoView.GetStakeEntriesForValidatorPKID: nil ValidatorPKID provided as input")
+	}
+
+	// Store matching StakeEntries in a map to deduplicate across the database and UtxoView.
+	stakeEntriesMap := make(map[StakeMapKey]*StakeEntry)
+
+	// First, pull matching entries from the database.
+	dbStakeEntries, err := DBGetStakeEntriesForValidatorPKID(bav.Handle, bav.Snapshot, validatorPKID)
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GetStakeEntriesForValidatorPKID: error retrieving StakeEntries from the db: ")
+	}
+	for _, stakeEntry := range dbStakeEntries {
+		stakeEntriesMap[stakeEntry.ToMapKey()] = stakeEntry
+	}
+
+	// Then, pull matching entries from the UtxoView.
+	// Deleting any that are isDeleted.
+	// Adding any that were not found in the db.
+	for stakeMapKey, stakeEntry := range bav.StakeMapKeyToStakeEntry {
+		if !stakeEntry.ValidatorPKID.Eq(validatorPKID) {
+			continue
+		}
+		if stakeEntry.isDeleted {
+			delete(stakeEntriesMap, stakeMapKey)
+			continue
+		}
+		stakeEntriesMap[stakeMapKey] = stakeEntry
+	}
+
+	// Convert the map to a slice and sort by StakerPKID
+	// (so that the ordering is deterministic).
+	var stakeEntries []*StakeEntry
+	for _, stakeEntry := range stakeEntriesMap {
+		stakeEntries = append(stakeEntries, stakeEntry)
+	}
+	sort.Slice(stakeEntries, func(ii, jj int) bool {
+		return bytes.Compare(
+			stakeEntries[ii].StakerPKID.ToBytes(),
+			stakeEntries[jj].StakerPKID.ToBytes(),
+		) < 0
+	})
+	return stakeEntries, nil
 }
 
 func (bav *UtxoView) GetLockedStakeEntry(
