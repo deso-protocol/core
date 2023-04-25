@@ -11,7 +11,7 @@ func init() {
 			ALTER TABLE pg_transactions 
 			    ADD COLUMN txn_version BIGINT DEFAULT 0,
 			    ADD COLUMN txn_fee_nanos BIGINT DEFAULT 0,
-			    ADD COLUMN txn_nonce_expiration_block_height BIGINT
+			    ADD COLUMN txn_nonce_expiration_block_height BIGINT,
 			    ADD COLUMN txn_nonce_partial_id BIGINT;`)
 		return err
 	}
