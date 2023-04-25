@@ -2346,6 +2346,9 @@ func (postgres *Postgres) flushUtxos(tx *pg.Tx, view *UtxoView) error {
 		})
 	}
 
+	if len(outputs) == 0 {
+		return nil
+	}
 	_, err := tx.Model(&outputs).WherePK().OnConflict("(output_hash, output_index) DO UPDATE").Insert()
 	if err != nil {
 		return fmt.Errorf("flushUtxos: insert: %v", err)
