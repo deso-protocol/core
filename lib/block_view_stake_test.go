@@ -26,6 +26,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
+	chain.snapshot = nil
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {

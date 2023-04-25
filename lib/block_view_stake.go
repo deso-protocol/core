@@ -1050,7 +1050,7 @@ func (bav *UtxoView) _connectStake(
 	// Validate the starting block height.
 	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
-		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
+		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectStake: ")
 	}
 
 	// Validate the txn TxnType.
@@ -1071,7 +1071,7 @@ func (bav *UtxoView) _connectStake(
 	// Convert TransactorPublicKey to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return 0, 0, nil, RuleErrorInvalidStakerPKID
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidStakerPKID, "_connectStake: ")
 	}
 
 	// Retrieve the existing ValidatorEntry. It must exist. The PrevValidatorEntry
@@ -1081,12 +1081,12 @@ func (bav *UtxoView) _connectStake(
 		return 0, 0, nil, errors.Wrapf(err, "_connectStake: ")
 	}
 	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted || prevValidatorEntry.DisableDelegatedStake {
-		return 0, 0, nil, RuleErrorInvalidValidatorPKID
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "_connectStake: ")
 	}
 
 	// Convert StakeAmountNanos *uint256.Int to StakeAmountNanosUint64 uint64.
 	if txMeta.StakeAmountNanos == nil || !txMeta.StakeAmountNanos.IsUint64() {
-		return 0, 0, nil, RuleErrorInvalidStakeAmountNanos
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidStakeAmountNanos, "_connectStake: ")
 	}
 	stakeAmountNanosUint64 := txMeta.StakeAmountNanos.Uint64()
 
@@ -1227,7 +1227,7 @@ func (bav *UtxoView) _disconnectStake(
 	// Convert TransactorPublicKey to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return RuleErrorInvalidStakerPKID
+		return errors.Wrapf(RuleErrorInvalidStakerPKID, "_disconnectStake: ")
 	}
 
 	// Restore the PrevValidatorEntry.
@@ -1294,7 +1294,7 @@ func (bav *UtxoView) _connectUnstake(
 	// Validate the starting block height.
 	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
-		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
+		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectUnstake: ")
 	}
 
 	// Validate the txn TxnType.
@@ -1329,7 +1329,7 @@ func (bav *UtxoView) _connectUnstake(
 	// Convert TransactorPublicKey to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return 0, 0, nil, RuleErrorInvalidStakerPKID
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidStakerPKID, "_connectUnstake: ")
 	}
 
 	// Retrieve PrevValidatorEntry. This will be restored if we disconnect the txn.
@@ -1337,8 +1337,8 @@ func (bav *UtxoView) _connectUnstake(
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
 	}
-	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted || prevValidatorEntry.DisableDelegatedStake {
-		return 0, 0, nil, RuleErrorInvalidValidatorPKID
+	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted {
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "_connectUnstake: ")
 	}
 
 	// Retrieve PrevStakeEntry. This will be restored if we disconnect the txn.
@@ -1347,10 +1347,10 @@ func (bav *UtxoView) _connectUnstake(
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
 	}
 	if prevStakeEntry == nil || prevStakeEntry.isDeleted {
-		return 0, 0, nil, RuleErrorInvalidUnstakeNoStakeFound
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidUnstakeNoStakeFound, "_connectUnstake: ")
 	}
 	if prevStakeEntry.StakeAmountNanos.Cmp(txMeta.UnstakeAmountNanos) < 0 {
-		return 0, 0, nil, RuleErrorInvalidUnstakeInsufficientStakeFound
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidUnstakeInsufficientStakeFound, "_connectUnstake: ")
 	}
 
 	// Update the StakeEntry, decreasing the StakeAmountNanos.
@@ -1482,7 +1482,7 @@ func (bav *UtxoView) _disconnectUnstake(
 	// Convert TransactorPublicKey to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return RuleErrorInvalidStakerPKID
+		return errors.Wrapf(RuleErrorInvalidStakerPKID, "_disconnectUnstake: ")
 	}
 
 	// Restore the PrevValidatorEntry.
@@ -1570,7 +1570,7 @@ func (bav *UtxoView) _connectUnlockStake(
 	// Validate the starting block height.
 	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
-		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
+		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectUnlockStake: ")
 	}
 
 	// Validate the txn TxnType.
@@ -1591,13 +1591,13 @@ func (bav *UtxoView) _connectUnlockStake(
 	// Convert TransactorPublicKey to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return 0, 0, nil, RuleErrorInvalidStakerPKID
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidStakerPKID, "_connectUnlockStake: ")
 	}
 
 	// Convert ValidatorPublicKey to ValidatorPKID.
 	validatorPKIDEntry := bav.GetPKIDForPublicKey(txMeta.ValidatorPublicKey.ToBytes())
 	if validatorPKIDEntry == nil || validatorPKIDEntry.isDeleted {
-		return 0, 0, nil, RuleErrorInvalidValidatorPKID
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "_connectUnlockStake: ")
 	}
 
 	// Retrieve the PrevLockedStakeEntries. These will be restored if we disconnect this txn.
@@ -1608,7 +1608,7 @@ func (bav *UtxoView) _connectUnlockStake(
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: ")
 	}
 	if len(prevLockedStakeEntries) == 0 {
-		return 0, 0, nil, RuleErrorInvalidUnlockStakeNoUnlockableStakeFound
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidUnlockStakeNoUnlockableStakeFound, "_connectUnlockStake: ")
 	}
 
 	// Connect a basic transfer to get the total input and the
@@ -1637,7 +1637,7 @@ func (bav *UtxoView) _connectUnlockStake(
 		bav._deleteLockedStakeEntryMappings(prevLockedStakeEntry)
 	}
 	if !totalUnlockedAmountNanos.IsUint64() {
-		return 0, 0, nil, RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64, "_connectUnlockStake: ")
 	}
 	totalUnlockedAmountNanosUint64 := totalUnlockedAmountNanos.Uint64()
 
@@ -1702,7 +1702,7 @@ func (bav *UtxoView) _disconnectUnlockStake(
 	// Convert TransactorPublicKey to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return RuleErrorInvalidStakerPKID
+		return errors.Wrapf(RuleErrorInvalidStakerPKID, "_disconnectUnlockStake: ")
 	}
 
 	// Calculate the TotalUnlockedAmountNanos.
@@ -1717,7 +1717,7 @@ func (bav *UtxoView) _disconnectUnlockStake(
 		}
 	}
 	if !totalUnlockedAmountNanos.IsUint64() {
-		return RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64
+		return errors.Wrapf(RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64, "_disconnectUnlockStake: ")
 	}
 
 	// Restore the PrevLockedStakeEntries.
@@ -1741,16 +1741,16 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 	// Validate TransactorPublicKey.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPkBytes)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return RuleErrorInvalidStakerPKID
+		return errors.Wrapf(RuleErrorInvalidStakerPKID, "UtxoView.IsValidStakeMetadata: ")
 	}
 
 	// Validate ValidatorPublicKey.
 	validatorEntry, err := bav.GetValidatorByPublicKey(metadata.ValidatorPublicKey)
 	if err != nil {
-		return errors.Wrapf(err, "IsValidStakeMetadata: ")
+		return errors.Wrapf(err, "UtxoView.IsValidStakeMetadata: ")
 	}
 	if validatorEntry == nil || validatorEntry.isDeleted || validatorEntry.DisableDelegatedStake {
-		return RuleErrorInvalidValidatorPKID
+		return errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.IsValidStakeMetadata: ")
 	}
 
 	// Validate 0 < StakeAmountNanos <= transactor's DESO Balance. We ignore
@@ -1760,14 +1760,14 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 	if metadata.StakeAmountNanos == nil ||
 		metadata.StakeAmountNanos.IsZero() ||
 		!metadata.StakeAmountNanos.IsUint64() {
-		return RuleErrorInvalidStakeAmountNanos
+		return errors.Wrapf(RuleErrorInvalidStakeAmountNanos, "UtxoView.IsValidStakeMetadata: ")
 	}
 	transactorDeSoBalanceNanos, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(transactorPkBytes, blockHeight-1)
 	if err != nil {
-		return errors.Wrapf(err, "IsValidStakeMetadata: ")
+		return errors.Wrapf(err, "UtxoView.IsValidStakeMetadata: ")
 	}
 	if uint256.NewInt().SetUint64(transactorDeSoBalanceNanos).Cmp(metadata.StakeAmountNanos) < 0 {
-		return RuleErrorInvalidStakeInsufficientBalance
+		return errors.Wrapf(RuleErrorInvalidStakeInsufficientBalance, "UtxoView.IsValidStakeMetadata: ")
 	}
 
 	return nil
@@ -1777,7 +1777,7 @@ func (bav *UtxoView) IsValidUnstakeMetadata(transactorPkBytes []byte, metadata *
 	// Validate TransactorPublicKey.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPkBytes)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return RuleErrorInvalidStakerPKID
+		return errors.Wrapf(RuleErrorInvalidStakerPKID, "UtxoView.IsValidUnstakeMetadata: ")
 	}
 
 	// Validate ValidatorPublicKey.
@@ -1786,24 +1786,24 @@ func (bav *UtxoView) IsValidUnstakeMetadata(transactorPkBytes []byte, metadata *
 		return errors.Wrapf(err, "IsValidUnstakeMetadata: ")
 	}
 	if validatorEntry == nil || validatorEntry.isDeleted {
-		return RuleErrorInvalidValidatorPKID
+		return errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.IsValidUnstakeMetadata: ")
 	}
 
 	// Validate StakeEntry exists.
 	stakeEntry, err := bav.GetStakeEntry(validatorEntry.ValidatorPKID, transactorPKIDEntry.PKID)
 	if err != nil {
-		return errors.Wrapf(err, "IsValidUnstakeMetadata: ")
+		return errors.Wrapf(err, "UtxoView.IsValidUnstakeMetadata: ")
 	}
 	if stakeEntry == nil || stakeEntry.isDeleted {
-		return RuleErrorInvalidUnstakeNoStakeFound
+		return errors.Wrapf(RuleErrorInvalidUnstakeNoStakeFound, "UtxoView.IsValidUnstakeMetadata: ")
 	}
 
 	// Validate 0 < UnstakeAmountNanos <= StakeEntry.StakeAmountNanos.
 	if metadata.UnstakeAmountNanos == nil || metadata.UnstakeAmountNanos.IsZero() {
-		return RuleErrorInvalidUnstakeAmountNanos
+		return errors.Wrapf(RuleErrorInvalidUnstakeAmountNanos, "UtxoView.IsValidUnstakeMetadata: ")
 	}
 	if stakeEntry.StakeAmountNanos.Cmp(metadata.UnstakeAmountNanos) < 0 {
-		return RuleErrorInvalidUnstakeInsufficientStakeFound
+		return errors.Wrapf(RuleErrorInvalidUnstakeInsufficientStakeFound, "UtxoView.IsValidUnstakeMetadata: ")
 	}
 
 	return nil
@@ -1813,21 +1813,21 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	// Validate TransactorPublicKey.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPkBytes)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return RuleErrorInvalidStakerPKID
+		return errors.Wrapf(RuleErrorInvalidStakerPKID, "UtxoView.IsValidUnlockStakeMetadata: ")
 	}
 
 	// Validate ValidatorPublicKey.
 	validatorEntry, err := bav.GetValidatorByPublicKey(metadata.ValidatorPublicKey)
 	if err != nil {
-		return errors.Wrapf(err, "IsValidUnlockStakeMetadata: ")
+		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: ")
 	}
 	if validatorEntry == nil || validatorEntry.isDeleted {
-		return RuleErrorInvalidValidatorPKID
+		return errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.IsValidUnlockStakeMetadata: ")
 	}
 
 	// Validate StartEpochNumber and EndEpochNumber.
 	if metadata.StartEpochNumber > metadata.EndEpochNumber {
-		return RuleErrorInvalidUnlockStakeEpochRange
+		return errors.Wrapf(RuleErrorInvalidUnlockStakeEpochRange, "UtxoView.IsValidUnlockStakeMetadata: ")
 	}
 	// TODO: validate EndEpochNumber is <= CurrentEpochNumber - 2
 
@@ -1843,7 +1843,7 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 		}
 	}
 	if !existsLockedStakeEntries {
-		return RuleErrorInvalidUnlockStakeNoUnlockableStakeFound
+		return errors.Wrapf(RuleErrorInvalidUnlockStakeNoUnlockableStakeFound, "UtxoView.IsValidUnlockStakeMetadata: ")
 	}
 
 	return nil
@@ -1862,7 +1862,7 @@ func (bav *UtxoView) GetStakeEntry(validatorPKID *PKID, stakerPKID *PKID) (*Stak
 	// Then, check the database.
 	stakeEntry, err := DBGetStakeEntry(bav.Handle, bav.Snapshot, validatorPKID, stakerPKID)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "UtxoView.GetStakeEntry: ")
 	}
 	if stakeEntry != nil {
 		// Cache the StakeEntry in the UtxoView if exists.
@@ -1892,7 +1892,7 @@ func (bav *UtxoView) GetLockedStakeEntry(
 	// Then, check the database.
 	lockedStakeEntry, err := DBGetLockedStakeEntry(bav.Handle, bav.Snapshot, validatorPKID, stakerPKID, lockedAtEpochNumber)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "UtxoView.GetLockedStakeEntry: ")
 	}
 	if lockedStakeEntry != nil {
 		// Cache the LockedStakeEntry in the UtxoView if exists.
@@ -2242,7 +2242,7 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 	// Convert TransactorPublicKeyBytes to StakerPKID.
 	stakerPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
 	if stakerPKIDEntry == nil || stakerPKIDEntry.isDeleted {
-		return derivedKeyEntry, RuleErrorInvalidStakerPKID
+		return derivedKeyEntry, errors.Wrapf(RuleErrorInvalidStakerPKID, "UtxoView._checkStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 	}
 
 	// Convert ValidatorPublicKey to ValidatorPKID.
@@ -2251,7 +2251,7 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 		return derivedKeyEntry, errors.Wrapf(err, "_checkStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 	}
 	if validatorEntry == nil || validatorEntry.isDeleted {
-		return derivedKeyEntry, RuleErrorInvalidValidatorPKID
+		return derivedKeyEntry, errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView._checkStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 	}
 
 	// Check spending limit for this validator.
@@ -2299,11 +2299,11 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 
 	// Error if the spending limit was found but the staking limit was exceeded.
 	if isSpendingLimitExceeded {
-		return derivedKeyEntry, RuleErrorStakeTransactionSpendingLimitExceeded
+		return derivedKeyEntry, errors.Wrapf(RuleErrorStakeTransactionSpendingLimitExceeded, "UtxoView._checkStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 	}
 
 	// If we get to this point, we didn't find a matching spending limit.
-	return derivedKeyEntry, RuleErrorStakeTransactionSpendingLimitNotFound
+	return derivedKeyEntry, errors.Wrapf(RuleErrorStakeTransactionSpendingLimitNotFound, "UtxoView._checkStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 }
 
 func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
@@ -2318,7 +2318,7 @@ func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
 	// Convert TransactorPublicKeyBytes to StakerPKID.
 	stakerPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
 	if stakerPKIDEntry == nil || stakerPKIDEntry.isDeleted {
-		return derivedKeyEntry, RuleErrorInvalidStakerPKID
+		return derivedKeyEntry, errors.Wrapf(RuleErrorInvalidStakerPKID, "UtxoView._checkUnstakeTxnSpendingLimitAndUpdateDerivedKey: ")
 	}
 
 	// Convert ValidatorPublicKey to ValidatorPKID.
@@ -2327,7 +2327,7 @@ func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
 		return derivedKeyEntry, errors.Wrapf(err, "_checkUnstakeTxnSpendingLimitAndUpdateDerivedKey: ")
 	}
 	if validatorEntry == nil || validatorEntry.isDeleted {
-		return derivedKeyEntry, RuleErrorInvalidValidatorPKID
+		return derivedKeyEntry, errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView._checkUnstakeTxnSpendingLimitAndUpdateDerivedKey: ")
 	}
 
 	// Check spending limit for this validator.
@@ -2375,11 +2375,11 @@ func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
 
 	// Error if the spending limit was found but the unstaking limit was exceeded.
 	if isSpendingLimitExceeded {
-		return derivedKeyEntry, RuleErrorUnstakeTransactionSpendingLimitExceeded
+		return derivedKeyEntry, errors.Wrapf(RuleErrorUnstakeTransactionSpendingLimitExceeded, "UtxoView._checkUnstakeTxnSpendingLimitAndUpdateDerivedKey: ")
 	}
 
 	// If we get to this point, we didn't find a matching spending limit.
-	return derivedKeyEntry, RuleErrorUnstakeTransactionSpendingLimitNotFound
+	return derivedKeyEntry, errors.Wrapf(RuleErrorUnstakeTransactionSpendingLimitNotFound, "UtxoView._checkUnstakeTxnSpendingLimitAndUpdateDerivedKey: ")
 }
 
 func (bav *UtxoView) _checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
@@ -2394,7 +2394,7 @@ func (bav *UtxoView) _checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
 	// Convert TransactorPublicKeyBytes to StakerPKID.
 	stakerPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
 	if stakerPKIDEntry == nil || stakerPKIDEntry.isDeleted {
-		return derivedKeyEntry, RuleErrorInvalidStakerPKID
+		return derivedKeyEntry, errors.Wrapf(RuleErrorInvalidStakerPKID, "UtxoView._checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 	}
 
 	// Convert ValidatorPublicKey to ValidatorPKID.
@@ -2403,7 +2403,7 @@ func (bav *UtxoView) _checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
 		return derivedKeyEntry, errors.Wrapf(err, "_checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 	}
 	if validatorEntry == nil || validatorEntry.isDeleted {
-		return derivedKeyEntry, RuleErrorInvalidValidatorPKID
+		return derivedKeyEntry, errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView._checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 	}
 
 	// Check spending limit for this validator.
@@ -2429,19 +2429,19 @@ func (bav *UtxoView) _checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
 	}
 
 	// If we get to this point, we didn't find a matching spending limit.
-	return derivedKeyEntry, RuleErrorUnlockStakeTransactionSpendingLimitNotFound
+	return derivedKeyEntry, errors.Wrapf(RuleErrorUnlockStakeTransactionSpendingLimitNotFound, "UtxoView._checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 }
 
 func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stakeLimitKey StakeLimitKey) error {
 	// Convert TransactorPublicKeyBytes to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return RuleErrorTransactionSpendingLimitInvalidStaker
+		return errors.Wrapf(RuleErrorTransactionSpendingLimitInvalidStaker, "UtxoView.IsValidStakeLimitKey: ")
 	}
 
 	// Verify TransactorPKID == StakerPKID.
 	if !transactorPKIDEntry.PKID.Eq(&stakeLimitKey.StakerPKID) {
-		return RuleErrorTransactionSpendingLimitInvalidStaker
+		return errors.Wrapf(RuleErrorTransactionSpendingLimitInvalidStaker, "UtxoView.IsValidStakeLimitKey: ")
 	}
 
 	// Verify ValidatorEntry.
@@ -2456,7 +2456,7 @@ func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stake
 		return errors.Wrapf(err, "IsValidStakeLimitKey: ")
 	}
 	if validatorEntry == nil || validatorEntry.isDeleted || validatorEntry.DisableDelegatedStake {
-		return RuleErrorTransactionSpendingLimitInvalidValidator
+		return errors.Wrapf(RuleErrorTransactionSpendingLimitInvalidValidator, "UtxoView.IsValidStakeLimitKey: ")
 	}
 
 	return nil
