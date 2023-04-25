@@ -14,6 +14,9 @@ func TestValidatorRegistration(t *testing.T) {
 	_testValidatorRegistration(t, false)
 	_testValidatorRegistration(t, true)
 	_testValidatorRegistrationWithDerivedKey(t)
+}
+
+func TestGetTopValidatorsByStake(t *testing.T) {
 	_testGetTopValidatorsByStake(t, false)
 	_testGetTopValidatorsByStake(t, true)
 }
@@ -648,7 +651,6 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
-	chain.snapshot = nil
 
 	utxoView := func() *UtxoView {
 		newUtxoView, err := mempool.GetAugmentedUniversalView()
