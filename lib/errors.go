@@ -499,6 +499,7 @@ const (
 	TxErrorUnconnectedTxnNotAllowed                 RuleError = "TxErrorUnconnectedTxnNotAllowed"
 	TxErrorNonceExpired                             RuleError = "TxErrorNonceExpired"
 	TxErrorNonceExpirationBlockHeightOffsetExceeded RuleError = "TxErrorNonceExpirationBlockHeightOffsetExceeded"
+	TxErrorNoNonceAfterBalanceModelBlockHeight      RuleError = "TxErrorNoNonceAfterBalanceModelBlockHeight"
 )
 
 func (e RuleError) Error() string {

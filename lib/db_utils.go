@@ -10587,20 +10587,20 @@ func DbGetTransactorNonceEntry(db *badger.DB, nonce *DeSoNonce, pkid *PKID) (*Tr
 	return ret, nil
 }
 
-func DbPutTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) error {
-	return errors.Wrap(txn.Set(_dbKeyForTransactorNonceEntry(nonce, pkid), []byte{}),
+func DbPutTransactorNonceEntryWithTxn(txn *badger.Txn, snap *Snapshot, nonce *DeSoNonce, pkid *PKID) error {
+	return errors.Wrap(DBSetWithTxn(txn, snap, _dbKeyForTransactorNonceEntry(nonce, pkid), []byte{}),
 		"DbPutTransactorNonceEntryWithTxn: Problem setting nonce")
 }
 
-func DbPutTransactorNonceEntry(handle *badger.DB, nonce *DeSoNonce, pkid *PKID) error {
+func DbPutTransactorNonceEntry(handle *badger.DB, snap *Snapshot, nonce *DeSoNonce, pkid *PKID) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutTransactorNonceEntryWithTxn(txn, nonce, pkid)
+		return DbPutTransactorNonceEntryWithTxn(txn, snap, nonce, pkid)
 	})
 }
 
-func DbDeleteTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) error {
+func DbDeleteTransactorNonceEntryWithTxn(txn *badger.Txn, snap *Snapshot, nonce *DeSoNonce, pkid *PKID) error {
 	return errors.Wrap(
-		txn.Delete(_dbKeyForTransactorNonceEntry(nonce, pkid)),
+		DBDeleteWithTxn(txn, snap, _dbKeyForTransactorNonceEntry(nonce, pkid)),
 		"DbDeleteTransactorNonceEntryWithTxn: Problem deleting nonce")
 }
 
