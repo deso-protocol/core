@@ -832,7 +832,7 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(testMeta *TestMeta, utxoView 
 	// Sign the transaction now that its inputs are set up.
 	// We have to set the solution byte because we're signing
 	// the transaction with derived key on behalf of the owner.
-	_signTxnWithDerivedKey(t, txn, derivedPrivBase58Check)
+	_signTxnWithDerivedKeyAndType(t, txn, derivedPrivBase58Check, 1)
 
 	txHash := txn.Hash()
 	utxoOps, totalInput, totalOutput, fees, err :=

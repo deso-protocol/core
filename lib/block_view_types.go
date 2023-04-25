@@ -111,9 +111,11 @@ const (
 	EncoderTypeDeSoNonce                         EncoderType = 38
 	EncoderTypeTransactorNonceEntry              EncoderType = 39
 	EncoderTypeValidatorEntry                    EncoderType = 40
+	EncoderTypeStakeEntry                        EncoderType = 41
+	EncoderTypeLockedStakeEntry                  EncoderType = 42
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 41
+	EncoderTypeEndBlockView EncoderType = 43
 )
 
 // Txindex encoder types.
@@ -150,9 +152,12 @@ const (
 	EncoderTypeNewMessageTxindexMetadata            EncoderType = 1000029
 	EncoderTypeRegisterAsValidatorTxindexMetadata   EncoderType = 1000030
 	EncoderTypeUnregisterAsValidatorTxindexMetadata EncoderType = 1000031
+	EncoderTypeStakeTxindexMetadata                 EncoderType = 1000032
+	EncoderTypeUnstakeTxindexMetadata               EncoderType = 1000033
+	EncoderTypeUnlockStakeTxindexMetadata           EncoderType = 1000034
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndTxIndex EncoderType = 1000032
+	EncoderTypeEndTxIndex EncoderType = 1000035
 )
 
 // This function translates the EncoderType into an empty DeSoEncoder struct.
@@ -241,6 +246,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &TransactorNonceEntry{}
 	case EncoderTypeValidatorEntry:
 		return &ValidatorEntry{}
+	case EncoderTypeStakeEntry:
+		return &StakeEntry{}
+	case EncoderTypeLockedStakeEntry:
+		return &LockedStakeEntry{}
 	}
 
 	// Txindex encoder types
@@ -309,6 +318,12 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &RegisterAsValidatorTxindexMetadata{}
 	case EncoderTypeUnregisterAsValidatorTxindexMetadata:
 		return &UnregisterAsValidatorTxindexMetadata{}
+	case EncoderTypeStakeTxindexMetadata:
+		return &StakeTxindexMetadata{}
+	case EncoderTypeUnstakeTxindexMetadata:
+		return &UnstakeTxindexMetadata{}
+	case EncoderTypeUnlockStakeTxindexMetadata:
+		return &UnlockStakeTxindexMetadata{}
 	default:
 		return nil
 	}
@@ -605,8 +620,11 @@ const (
 	OperationTypeDeleteExpiredNonces          OperationType = 38
 	OperationTypeRegisterAsValidator          OperationType = 39
 	OperationTypeUnregisterAsValidator        OperationType = 40
+	OperationTypeStake                        OperationType = 41
+	OperationTypeUnstake                      OperationType = 42
+	OperationTypeUnlockStake                  OperationType = 43
 
-	// NEXT_TAG = 41
+	// NEXT_TAG = 44
 )
 
 func (op OperationType) String() string {
@@ -691,6 +709,12 @@ func (op OperationType) String() string {
 		return "OperationTypeRegisterAsValidator"
 	case OperationTypeUnregisterAsValidator:
 		return "OperationTypeUnregisterAsValidator"
+	case OperationTypeStake:
+		return "OperationTypeStake"
+	case OperationTypeUnstake:
+		return "OperationTypeUnstake"
+	case OperationTypeUnlockStake:
+		return "OperationTypeUnlockStake"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -876,8 +900,21 @@ type UtxoOperation struct {
 	// When we connect a block, we delete expired nonce entries.
 	PrevNonceEntries []*TransactorNonceEntry
 
-	// PrevValidatorEntry is the previous ValidatorEntry prior to a register or unregister txn.
+	// PrevValidatorEntry is the previous ValidatorEntry prior to a
+	// register, unregister, stake, or unstake txn.
 	PrevValidatorEntry *ValidatorEntry
+
+	// PrevGlobalStakeAmountNanos is the previous GlobalStakeAmountNanos
+	// prior to a stake or unstake operation txn.
+	PrevGlobalStakeAmountNanos *uint256.Int
+
+	// PrevStakeEntries is a slice of StakeEntries prior to
+	// a register, unregister, stake, or unstake txn.
+	PrevStakeEntries []*StakeEntry
+
+	// PrevLockedStakeEntries is a slice of LockedStakeEntries
+	// prior to a unstake or unlock stake txn.
+	PrevLockedStakeEntries []*LockedStakeEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1198,6 +1235,15 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
 		// PrevValidatorEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
+
+		// PrevGlobalStakeAmountNanos
+		data = append(data, EncodeUint256(op.PrevGlobalStakeAmountNanos)...)
+
+		// PrevStakeEntries
+		data = append(data, EncodeDeSoEncoderSlice(op.PrevStakeEntries, blockHeight, skipMetadata...)...)
+
+		// PrevLockedStakeEntries
+		data = append(data, EncodeDeSoEncoderSlice(op.PrevLockedStakeEntries, blockHeight, skipMetadata...)...)
 	}
 
 	return data
@@ -1817,11 +1863,25 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 
 	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
 		// PrevValidatorEntry
-		prevValidatorEntry := &ValidatorEntry{}
-		if exist, err := DecodeFromBytes(prevValidatorEntry, rr); exist && err == nil {
-			op.PrevValidatorEntry = prevValidatorEntry
-		} else if err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry")
+		if op.PrevValidatorEntry, err = DecodeDeSoEncoder(&ValidatorEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry: ")
+		}
+
+		// PrevGlobalStakeAmountNanos
+		if prevGlobalStakeAmountNanos, err := DecodeUint256(rr); err == nil {
+			op.PrevGlobalStakeAmountNanos = prevGlobalStakeAmountNanos
+		} else {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalStakeAmountNanos: ")
+		}
+
+		// PrevStakeEntries
+		if op.PrevStakeEntries, err = DecodeDeSoEncoderSlice[*StakeEntry](rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevStakeEntries: ")
+		}
+
+		// PrevLockedStakeEntries
+		if op.PrevLockedStakeEntries, err = DecodeDeSoEncoderSlice[*LockedStakeEntry](rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedStakeEntries: ")
 		}
 	}
 
@@ -4843,6 +4903,11 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 	return nil, nil
 }
 
+// EncodeUint256 is useful for space-efficient encoding of uint256s.
+// It does not guarantee fixed-width encoding, so should not be used
+// in BadgerDB keys. Use EncodeOptionalUint256 instead, which does
+// guarantee fixed-width encoding. Both EncodeUint256 and
+// EncodeOptionalUint256 can handle nil inputs.
 func EncodeUint256(number *uint256.Int) []byte {
 	var data []byte
 	if number != nil {

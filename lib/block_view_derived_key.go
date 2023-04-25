@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"reflect"
 	"strconv"
@@ -188,6 +189,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			AssociationLimitMap:          make(map[AssociationLimitKey]uint64),
 			AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
 			AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
+			StakeLimitMap:                make(map[StakeLimitKey]*uint256.Int),
+			UnstakeLimitMap:              make(map[StakeLimitKey]*uint256.Int),
+			UnlockStakeLimitMap:          make(map[StakeLimitKey]uint64),
 		}
 		if prevDerivedKeyEntry != nil && !prevDerivedKeyEntry.isDeleted {
 			// Copy the existing transaction spending limit.
@@ -302,6 +306,43 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 								delete(newTransactionSpendingLimit.AccessGroupMemberMap, accessGroupMemberLimitKey)
 							} else {
 								newTransactionSpendingLimit.AccessGroupMemberMap[accessGroupMemberLimitKey] = transactionCount
+							}
+						}
+					}
+
+					// ====== Proof of Stake New Txn Types Fork ======
+					if blockHeight >= bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+						// StakeLimitMap
+						for stakeLimitKey, stakingLimit := range transactionSpendingLimit.StakeLimitMap {
+							if err = bav.IsValidStakeLimitKey(txn.PublicKey, stakeLimitKey); err != nil {
+								return 0, 0, nil, err
+							}
+							if stakingLimit.IsZero() {
+								delete(newTransactionSpendingLimit.StakeLimitMap, stakeLimitKey)
+							} else {
+								newTransactionSpendingLimit.StakeLimitMap[stakeLimitKey] = stakingLimit
+							}
+						}
+						// UnstakeLimitMap
+						for unstakeLimitKey, unstakingLimit := range transactionSpendingLimit.UnstakeLimitMap {
+							if err = bav.IsValidStakeLimitKey(txn.PublicKey, unstakeLimitKey); err != nil {
+								return 0, 0, nil, err
+							}
+							if unstakingLimit.IsZero() {
+								delete(newTransactionSpendingLimit.UnstakeLimitMap, unstakeLimitKey)
+							} else {
+								newTransactionSpendingLimit.UnstakeLimitMap[unstakeLimitKey] = unstakingLimit
+							}
+						}
+						// UnlockStakeLimitMap
+						for unlockStakeLimitKey, transactionCount := range transactionSpendingLimit.UnlockStakeLimitMap {
+							if err = bav.IsValidStakeLimitKey(txn.PublicKey, unlockStakeLimitKey); err != nil {
+								return 0, 0, nil, err
+							}
+							if transactionCount == 0 {
+								delete(newTransactionSpendingLimit.UnlockStakeLimitMap, unlockStakeLimitKey)
+							} else {
+								newTransactionSpendingLimit.UnlockStakeLimitMap[unlockStakeLimitKey] = transactionCount
 							}
 						}
 					}

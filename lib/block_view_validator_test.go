@@ -16,6 +16,11 @@ func TestValidatorRegistration(t *testing.T) {
 	_testValidatorRegistrationWithDerivedKey(t)
 }
 
+func TestGetTopValidatorsByStake(t *testing.T) {
+	_testGetTopValidatorsByStake(t, false)
+	_testGetTopValidatorsByStake(t, true)
+}
+
 func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	// Local variables
 	var registerMetadata *RegisterAsValidatorMetadata
@@ -24,14 +29,13 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	var globalStakeAmountNanos *uint256.Int
 	var err error
 
+	// Initialize fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
-
-	// Initialize fork heights.
-	params.ForkHeights.BalanceModelBlockHeight = uint32(1)
-	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
 	utxoView := func() *UtxoView {
 		newUtxoView, err := mempool.GetAugmentedUniversalView()
@@ -74,7 +78,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	_, _, _, _, _ = m0PKID, m1PKID, m2PKID, m3PKID, m4PKID
 
 	{
-		// Param Updater set min fee rate to 101 nanos per KB
+		// ParamUpdater set min fee rate
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 		_updateGlobalParamsEntryWithTestMeta(
 			testMeta,
@@ -382,18 +386,15 @@ func _submitUnregisterAsValidatorTxn(
 func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 	var err error
 
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Initialize fork heights.
-	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
-	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
-	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
-	params.ForkHeights.BalanceModelBlockHeight = uint32(1)
 	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
@@ -508,7 +509,7 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 			return err
 		}
 		// Sign txn.
-		_signTxnWithDerivedKey(t, txn, derivedKeyPrivBase58Check)
+		_signTxnWithDerivedKeyAndType(t, txn, derivedKeyPrivBase58Check, 1)
 		// Store the original transactor balance.
 		transactorPublicKeyBase58Check := Base58CheckEncode(transactorPkBytes, false, params)
 		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
@@ -533,6 +534,21 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 		return nil
 	}
 
+	{
+		// ParamUpdater set min fee rate
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1,
+			int64(testMeta.feeRateNanosPerKb),
+			-1,
+			-1,
+			-1,
+		)
+	}
 	{
 		// Submit a RegisterAsValidator txn using a DerivedKey.
 
@@ -616,4 +632,353 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 	// Flush mempool to the db and test rollbacks.
 	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
 	_executeAllTestRollbackAndFlush(testMeta)
+}
+
+func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
+	var validatorEntries []*ValidatorEntry
+	var err error
+
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	// Initialize test chain and miner.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Initialize PoS fork height.
+	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+	utxoView := func() *UtxoView {
+		newUtxoView, err := mempool.GetAugmentedUniversalView()
+		require.NoError(t, err)
+		return newUtxoView
+	}
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err = miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height) + 1
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       uint32(blockHeight),
+		feeRateNanosPerKb: uint64(101),
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m2", senderPkString, m2Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m3", senderPkString, m3Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
+	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
+	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes).PKID
+	m3PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m3PkBytes).PKID
+	m4PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m4PkBytes).PKID
+	_, _, _, _, _ = m0PKID, m1PKID, m2PKID, m3PKID, m4PKID
+
+	{
+		// ParamUpdater set min fee rate
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1,
+			int64(testMeta.feeRateNanosPerKb),
+			-1,
+			-1,
+			-1,
+		)
+	}
+	{
+		// m0 registers as a validator.
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains: [][]byte{[]byte("https://m0.com")},
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		// Verify top validators.
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		require.NoError(t, err)
+		require.Len(t, validatorEntries, 1)
+		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt())
+	}
+	{
+		// m1 registers as a validator.
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains: [][]byte{[]byte("https://m1.com")},
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m1Pub, m1Priv, registerMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		// Verify top validators.
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		require.NoError(t, err)
+		require.Len(t, validatorEntries, 2)
+	}
+	{
+		// m2 registers as a validator.
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains: [][]byte{[]byte("https://m2.com")},
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m2Pub, m2Priv, registerMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		// Verify top validators.
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		require.NoError(t, err)
+		require.Len(t, validatorEntries, 3)
+	}
+	{
+		// m3 stakes 100 DESO nanos with m0.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
+		}
+		_, err = _submitStakeTxn(testMeta, m3Pub, m3Priv, stakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		// m3 stakes 200 DESO nanos with m1.
+		stakeMetadata = &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(200),
+		}
+		_, err = _submitStakeTxn(testMeta, m3Pub, m3Priv, stakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		// m3 stakes 300 DESO nanos with m2.
+		stakeMetadata = &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m2PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(300),
+		}
+		_, err = _submitStakeTxn(testMeta, m3Pub, m3Priv, stakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		// Verify top validators.
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		require.NoError(t, err)
+		require.Len(t, validatorEntries, 3)
+		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(300))
+		require.Equal(t, validatorEntries[1].ValidatorPKID, m1PKID)
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(200))
+		require.Equal(t, validatorEntries[2].ValidatorPKID, m0PKID)
+		require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+	}
+	{
+		// m3 unstakes from m1.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(150),
+		}
+		_, err = _submitUnstakeTxn(testMeta, m3Pub, m3Priv, unstakeMetadata, nil, flushToDB)
+
+		// Verify top validators.
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		require.NoError(t, err)
+		require.Len(t, validatorEntries, 3)
+		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(300))
+		require.Equal(t, validatorEntries[1].ValidatorPKID, m0PKID)
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, validatorEntries[2].ValidatorPKID, m1PKID)
+		require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt().SetUint64(50))
+	}
+	{
+		// m3 unstakes more from m1.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
+		}
+		_, err = _submitUnstakeTxn(testMeta, m3Pub, m3Priv, unstakeMetadata, nil, flushToDB)
+
+		// Verify top validators.
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		require.NoError(t, err)
+		require.Len(t, validatorEntries, 3)
+		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(300))
+		require.Equal(t, validatorEntries[1].ValidatorPKID, m0PKID)
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, validatorEntries[2].ValidatorPKID, m1PKID)
+		require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt().SetUint64(0))
+	}
+	{
+		// m2 unregisters as validator.
+		_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m2Pub, m2Priv, flushToDB)
+		require.NoError(t, err)
+
+		// Verify top validators.
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		require.NoError(t, err)
+		require.Len(t, validatorEntries, 2)
+		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, validatorEntries[1].ValidatorPKID, m1PKID)
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(0))
+	}
+	{
+		// m4 stakes with m1.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(150),
+		}
+		_, err = _submitStakeTxn(testMeta, m4Pub, m4Priv, stakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		// Verify top validators.
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		require.NoError(t, err)
+		require.Len(t, validatorEntries, 2)
+		require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(150))
+		require.Equal(t, validatorEntries[1].ValidatorPKID, m0PKID)
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+	}
+	{
+		// m4 stakes more with m1.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
+		}
+		_, err = _submitStakeTxn(testMeta, m4Pub, m4Priv, stakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		// Verify top validators.
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		require.NoError(t, err)
+		require.Len(t, validatorEntries, 2)
+		require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(250))
+		require.Equal(t, validatorEntries[1].ValidatorPKID, m0PKID)
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+	}
+	{
+		// Verify top validators with LIMIT.
+		validatorEntries, err = utxoView().GetTopValidatorsByStake(1)
+		require.NoError(t, err)
+		require.Len(t, validatorEntries, 1)
+		require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(250))
+	}
+
+	// Flush mempool to the db and test rollbacks.
+	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
+	_executeAllTestRollbackAndFlush(testMeta)
+}
+
+func TestGetTopValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
+	// For this test, we manually place ValidatorEntries in the database and
+	// UtxoView to test merging the two to determine the TopValidatorsByStake.
+
+	// Initialize test chain and UtxoView.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	require.NoError(t, err)
+	blockHeight := uint64(chain.blockTip().Height + 1)
+
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
+	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
+	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes).PKID
+
+	// Store m0's ValidatorEntry in the db with TotalStake = 100 nanos.
+	validatorEntry := &ValidatorEntry{
+		ValidatorPKID:         m0PKID,
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(100),
+	}
+	utxoView._setValidatorEntryMappings(validatorEntry)
+	require.NoError(t, utxoView.FlushToDb(blockHeight))
+
+	// Verify m0 is stored in the db.
+	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m0PKID)
+	require.NoError(t, err)
+	require.NotNil(t, validatorEntry)
+	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+
+	// Verify m0 is not stored in the UtxoView.
+	require.Empty(t, utxoView.ValidatorMapKeyToValidatorEntry)
+
+	// Store m1's ValidatorEntry in the database with TotalStake = 200 nanos.
+	validatorEntry = &ValidatorEntry{
+		ValidatorPKID:         m1PKID,
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(200),
+	}
+	utxoView._setValidatorEntryMappings(validatorEntry)
+	require.NoError(t, utxoView.FlushToDb(blockHeight))
+
+	// Fetch m1 so it is also cached in the UtxoView.
+	validatorEntry, err = utxoView.GetValidatorByPKID(m1PKID)
+	require.NoError(t, err)
+	require.NotNil(t, validatorEntry)
+
+	// Verify m1 is stored in the db.
+	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m1PKID)
+	require.NoError(t, err)
+	require.NotNil(t, validatorEntry)
+	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(200))
+
+	// Verify m1 is also stored in the UtxoView.
+	require.Len(t, utxoView.ValidatorMapKeyToValidatorEntry, 1)
+	require.Equal(t, utxoView.ValidatorMapKeyToValidatorEntry[validatorEntry.ToMapKey()].ValidatorPKID, m1PKID)
+	require.Equal(
+		t,
+		utxoView.ValidatorMapKeyToValidatorEntry[validatorEntry.ToMapKey()].TotalStakeAmountNanos,
+		uint256.NewInt().SetUint64(200),
+	)
+
+	// Store m2's ValidatorEntry in the UtxoView.
+	m2ValidatorEntry := &ValidatorEntry{
+		ValidatorPKID:         m2PKID,
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(50),
+	}
+	utxoView._setValidatorEntryMappings(m2ValidatorEntry)
+
+	// Verify m2 is not stored in the db.
+	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m2PKID)
+	require.NoError(t, err)
+	require.Nil(t, validatorEntry)
+
+	// Verify m2 is stored in the UtxoView.
+	require.Len(t, utxoView.ValidatorMapKeyToValidatorEntry, 2)
+
+	require.Equal(t, utxoView.ValidatorMapKeyToValidatorEntry[m2ValidatorEntry.ToMapKey()].ValidatorPKID, m2PKID)
+	require.Equal(
+		t,
+		utxoView.ValidatorMapKeyToValidatorEntry[m2ValidatorEntry.ToMapKey()].TotalStakeAmountNanos,
+		uint256.NewInt().SetUint64(50),
+	)
+
+	// Fetch TopValidatorsByStake merging ValidatorEntries from the db and UtxoView.
+	validatorEntries, err := utxoView.GetTopValidatorsByStake(3)
+	require.NoError(t, err)
+	require.Len(t, validatorEntries, 3)
+	require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
+	require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(200))
+	require.Equal(t, validatorEntries[1].ValidatorPKID, m0PKID)
+	require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+	require.Equal(t, validatorEntries[2].ValidatorPKID, m2PKID)
+	require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt().SetUint64(50))
 }

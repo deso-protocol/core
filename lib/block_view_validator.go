@@ -50,14 +50,6 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 		domainsCopy = append(domainsCopy, append([]byte{}, domain...)) // Makes a copy.
 	}
 
-	// Copy ExtraData.
-	extraDataCopy := make(map[string][]byte)
-	for key, value := range validatorEntry.ExtraData {
-		valueCopy := make([]byte, len(value))
-		copy(valueCopy, value)
-		extraDataCopy[key] = valueCopy
-	}
-
 	// Return new ValidatorEntry.
 	return &ValidatorEntry{
 		ValidatorID:                validatorEntry.ValidatorID.NewBlockHash(),
@@ -69,7 +61,7 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 		VotingSignatureBlockHeight: validatorEntry.VotingSignatureBlockHeight,
 		TotalStakeAmountNanos:      validatorEntry.TotalStakeAmountNanos.Clone(),
 		RegisteredAtBlockHeight:    validatorEntry.RegisteredAtBlockHeight,
-		ExtraData:                  extraDataCopy,
+		ExtraData:                  copyExtraData(validatorEntry.ExtraData),
 		isDeleted:                  validatorEntry.isDeleted,
 	}
 }
@@ -505,8 +497,9 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
-	// FIXME: ensure that this left-pads the uint256 to be equal width
-	key = append(key, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)                 // Highest stake first
+	// TotalStakeAmountNanos will never be nil here, but EncodeOptionalUint256
+	// is used because it provides a fixed-width encoding of uint256.Ints.
+	key = append(key, EncodeOptionalUint256(validatorEntry.TotalStakeAmountNanos)...)         // Highest stake first
 	key = append(key, EncodeUint64(math.MaxUint64-validatorEntry.RegisteredAtBlockHeight)...) // Oldest first
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
 	return key
@@ -867,7 +860,7 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 ) {
 	// Validate the starting block height.
 	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
-		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
+		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectRegisterAsValidator: ")
 	}
 
 	// Validate the txn TxnType.
@@ -902,7 +895,7 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	// Convert TransactorPublicKey to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return 0, 0, nil, RuleErrorInvalidValidatorPKID
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "_connectRegisterAsValidator: ")
 	}
 
 	// Check if there is an existing ValidatorEntry that will be overwritten.
@@ -1006,7 +999,7 @@ func (bav *UtxoView) _disconnectRegisterAsValidator(
 	// Convert TransactorPublicKey to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return RuleErrorInvalidValidatorPKID
+		return errors.Wrapf(RuleErrorInvalidValidatorPKID, "_disconnectRegisterAsValidator: ")
 	}
 
 	// Delete the current ValidatorEntry.
@@ -1053,7 +1046,7 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 ) {
 	// Validate the starting block height.
 	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
-		return 0, 0, nil, RuleErrorProofofStakeTxnBeforeBlockHeight
+		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectUnregisterAsValidator: ")
 	}
 
 	// Validate the txn TxnType.
@@ -1088,7 +1081,7 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 	// Convert TransactorPublicKey to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return 0, 0, nil, RuleErrorInvalidValidatorPKID
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "_connectUnregisterAsValidator: ")
 	}
 
 	// TODO: In subsequent PR, unstake all StakeEntries for this validator.
@@ -1101,7 +1094,7 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 	}
 	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
 	if prevValidatorEntry == nil {
-		return 0, 0, nil, RuleErrorValidatorNotFound
+		return 0, 0, nil, errors.Wrapf(RuleErrorValidatorNotFound, "_connectUnregisterAsValidator: ")
 	}
 	bav._deleteValidatorEntryMappings(prevValidatorEntry)
 
@@ -1163,26 +1156,26 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 	// Validate ValidatorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return RuleErrorInvalidValidatorPKID
+		return errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
 
 	// Validate Domains.
 	if len(metadata.Domains) < 1 {
-		return RuleErrorValidatorNoDomains
+		return errors.Wrapf(RuleErrorValidatorNoDomains, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
 	if len(metadata.Domains) > MaxValidatorNumDomains {
-		return RuleErrorValidatorTooManyDomains
+		return errors.Wrapf(RuleErrorValidatorTooManyDomains, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
 	var domainStrings []string
 	for _, domain := range metadata.Domains {
 		_, err := url.ParseRequestURI(string(domain))
 		if err != nil {
-			return fmt.Errorf("%s: %v", RuleErrorValidatorInvalidDomain, domain)
+			return fmt.Errorf("UtxoView.IsValidRegisterAsValidatorMetadata: %s: %v", RuleErrorValidatorInvalidDomain, domain)
 		}
 		domainStrings = append(domainStrings, string(domain))
 	}
 	if len(NewSet(domainStrings).ToSlice()) != len(domainStrings) {
-		return RuleErrorValidatorDuplicateDomains
+		return errors.Wrapf(RuleErrorValidatorDuplicateDomains, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
 
 	// TODO: In subsequent PR, validate VotingPublicKey, VotingPublicKeySignature, and VotingSignatureBlockHeight.
@@ -1193,16 +1186,16 @@ func (bav *UtxoView) IsValidUnregisterAsValidatorMetadata(transactorPublicKey []
 	// Validate ValidatorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return RuleErrorInvalidValidatorPKID
+		return errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.IsValidUnregisterAsValidatorMetadata: ")
 	}
 
 	// Validate ValidatorEntry exists.
 	validatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
 	if err != nil {
-		return errors.Wrapf(err, "IsValidUnregisterAsValidatorMetadata: ")
+		return errors.Wrapf(err, "UtxoView.IsValidUnregisterAsValidatorMetadata: ")
 	}
 	if validatorEntry == nil {
-		return RuleErrorValidatorNotFound
+		return errors.Wrapf(RuleErrorValidatorNotFound, "UtxoView.IsValidUnregisterAsValidatorMetadata: ")
 	}
 
 	return nil
@@ -1247,11 +1240,28 @@ func (bav *UtxoView) GetValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
 	// in the UtxoView for the given PKID, check the database.
 	dbValidatorEntry, err := DBGetValidatorByPKID(bav.Handle, bav.Snapshot, pkid)
 	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GetValidatorByPKID: ")
+	}
+	if dbValidatorEntry != nil {
+		// Cache the ValidatorEntry from the db in the UtxoView.
+		bav._setValidatorEntryMappings(dbValidatorEntry)
+	}
+	return dbValidatorEntry, nil
+}
+
+func (bav *UtxoView) GetValidatorByPublicKey(validatorPublicKey *PublicKey) (*ValidatorEntry, error) {
+	validatorPKIDEntry := bav.GetPKIDForPublicKey(validatorPublicKey.ToBytes())
+	if validatorPKIDEntry == nil || validatorPKIDEntry.isDeleted {
+		return nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.GetValidatorByPublicKey: ")
+	}
+	validatorEntry, err := bav.GetValidatorByPKID(validatorPKIDEntry.PKID)
+	if err != nil {
 		return nil, err
 	}
-	// Cache the ValidatorEntry from the db in the UtxoView.
-	bav._setValidatorEntryMappings(dbValidatorEntry)
-	return dbValidatorEntry, nil
+	if validatorEntry == nil || validatorEntry.isDeleted {
+		return nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.GetValidatorByPublicKey: ")
+	}
+	return validatorEntry, nil
 }
 
 func (bav *UtxoView) GetTopValidatorsByStake(limit int) ([]*ValidatorEntry, error) {
@@ -1272,7 +1282,7 @@ func (bav *UtxoView) GetTopValidatorsByStake(limit int) ([]*ValidatorEntry, erro
 	// Pull top N ValidatorEntries from the database (not present in the UtxoView).
 	validatorEntries, err := DBGetTopValidatorsByStake(bav.Handle, bav.Snapshot, limit, utxoViewValidatorEntries)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetTopValidatorsByStake: error retrieving entries from db: ")
+		return nil, errors.Wrapf(err, "UtxoView.GetTopValidatorsByStake: error retrieving entries from db: ")
 	}
 	// Add !isDeleted ValidatorEntries from the UtxoView to the ValidatorEntries from the db.
 	for _, validatorEntry := range utxoViewValidatorEntries {
@@ -1297,10 +1307,11 @@ func (bav *UtxoView) GetGlobalStakeAmountNanos() (*uint256.Int, error) {
 		globalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
 	}
 	// If not set, read the GlobalStakeAmountNanos from the db.
+	// TODO: Confirm if the GlobalStakeAmountNanos.IsZero() that we should look in the db.
 	if globalStakeAmountNanos == nil || globalStakeAmountNanos.IsZero() {
 		globalStakeAmountNanos, err = DBGetGlobalStakeAmountNanos(bav.Handle, bav.Snapshot)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrapf(err, "UtxoView.GetGlobalStakeAmountNanos: ")
 		}
 		if globalStakeAmountNanos == nil {
 			globalStakeAmountNanos = uint256.NewInt()
@@ -1385,6 +1396,12 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 }
 
 func (bav *UtxoView) _flushGlobalStakeAmountNanosToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// If GlobalStakeAmountNanos is nil, then it was never
+	// set and shouldn't overwrite the value in the db.
+	if bav.GlobalStakeAmountNanos == nil {
+		return nil
+	}
+
 	return DBPutGlobalStakeAmountNanosWithTxn(txn, bav.Snapshot, bav.GlobalStakeAmountNanos, blockHeight)
 }
 

@@ -120,6 +120,12 @@ type UtxoView struct {
 	// Global stake across validators
 	GlobalStakeAmountNanos *uint256.Int
 
+	// Stake mappings
+	StakeMapKeyToStakeEntry map[StakeMapKey]*StakeEntry
+
+	// Locked stake mappings
+	LockedStakeMapKeyToLockedStakeEntry map[LockedStakeMapKey]*LockedStakeEntry
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -212,8 +218,16 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// ValidatorEntries
 	bav.ValidatorMapKeyToValidatorEntry = make(map[ValidatorMapKey]*ValidatorEntry)
 
-	// Global stake across validators
-	bav.GlobalStakeAmountNanos = uint256.NewInt()
+	// Global stake across validators. We deliberately want this to initialize to nil and not zero
+	// since a zero value will overwrite an existing GlobalStakeAmountNanos value in the db, whereas
+	// a nil GlobalStakeAmountNanos value signifies that this value was never set.
+	bav.GlobalStakeAmountNanos = nil
+
+	// StakeEntries
+	bav.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry)
+
+	// LockedStakeEntries
+	bav.LockedStakeMapKeyToLockedStakeEntry = make(map[LockedStakeMapKey]*LockedStakeEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -473,7 +487,23 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	}
 
 	// Copy the GlobalStakeAmountNanos.
-	newView.GlobalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
+	if bav.GlobalStakeAmountNanos != nil {
+		newView.GlobalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
+	}
+
+	// Copy the StakeEntries
+	newView.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry, len(bav.StakeMapKeyToStakeEntry))
+	for entryKey, entry := range bav.StakeMapKeyToStakeEntry {
+		newView.StakeMapKeyToStakeEntry[entryKey] = entry.Copy()
+	}
+
+	// Copy the LockedStakeEntries
+	newView.LockedStakeMapKeyToLockedStakeEntry = make(
+		map[LockedStakeMapKey]*LockedStakeEntry, len(bav.LockedStakeMapKeyToLockedStakeEntry),
+	)
+	for entryKey, entry := range bav.LockedStakeMapKeyToLockedStakeEntry {
+		newView.LockedStakeMapKeyToLockedStakeEntry[entryKey] = entry.Copy()
+	}
 
 	return newView, nil
 }
@@ -1320,6 +1350,18 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	case TxnTypeUnregisterAsValidator:
 		return bav._disconnectUnregisterAsValidator(
 			OperationTypeUnregisterAsValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeStake:
+		return bav._disconnectStake(
+			OperationTypeStake, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeUnstake:
+		return bav._disconnectUnstake(
+			OperationTypeUnstake, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeUnlockStake:
+		return bav._disconnectUnlockStake(
+			OperationTypeUnlockStake, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -2265,6 +2307,24 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 		txnMeta := txn.TxnMeta.(*AccessGroupMembersMetadata)
 		if derivedKeyEntry, err = bav._checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry(
 			derivedKeyEntry, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeStake:
+		txnMeta := txn.TxnMeta.(*StakeMetadata)
+		if derivedKeyEntry, err = bav._checkStakeTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txn.PublicKey, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeUnstake:
+		txnMeta := txn.TxnMeta.(*UnstakeMetadata)
+		if derivedKeyEntry, err = bav._checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txn.PublicKey, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeUnlockStake:
+		txnMeta := txn.TxnMeta.(*UnlockStakeMetadata)
+		if derivedKeyEntry, err = bav._checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txn.PublicKey, txnMeta); err != nil {
 			return utxoOpsForTxn, err
 		}
 	default:
@@ -3229,6 +3289,15 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	case TxnTypeUnregisterAsValidator:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnregisterAsValidator(txn, txHash, blockHeight, verifySignatures)
 
+	case TxnTypeStake:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectStake(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeUnstake:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnstake(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeUnlockStake:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnlockStake(txn, txHash, blockHeight, verifySignatures)
+
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}
@@ -3310,6 +3379,29 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 						big.NewInt(0).SetUint64(coinEntry.DeSoLockedNanos)),
 				)
 			}
+		}
+		if txn.TxnMeta.GetTxnType() == TxnTypeUnlockStake {
+			if len(utxoOpsForTxn) == 0 {
+				return nil, 0, 0, 0, errors.New(
+					"ConnectTransaction: TxnTypeUnlockStake must return UtxoOpsForTxn",
+				)
+			}
+			utxoOp := utxoOpsForTxn[len(utxoOpsForTxn)-1]
+			if utxoOp == nil || utxoOp.Type != OperationTypeUnlockStake {
+				return nil, 0, 0, 0, errors.New(
+					"ConnectTransaction: TxnTypeUnlockStake must correspond to OperationTypeUnlockStake",
+				)
+			}
+			totalLockedAmountNanos := uint256.NewInt()
+			for _, prevLockedStakeEntry := range utxoOp.PrevLockedStakeEntries {
+				totalLockedAmountNanos, err = SafeUint256().Add(
+					totalLockedAmountNanos, prevLockedStakeEntry.LockedAmountNanos,
+				)
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error computing TotalLockedAmountNanos: ")
+				}
+			}
+			desoLockedDelta = big.NewInt(0).Neg(totalLockedAmountNanos.ToBig())
 		}
 		if big.NewInt(0).Add(balanceDelta, desoLockedDelta).Sign() > 0 {
 			return nil, 0, 0, 0, RuleErrorBalanceChangeGreaterThanZero
@@ -3983,6 +4075,16 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 				"balance nanos (%d)", immatureBlockRewards, balanceNanos)
 	}
 	return spendableBalanceNanos, nil
+}
+
+func copyExtraData(extraData map[string][]byte) map[string][]byte {
+	extraDataCopy := make(map[string][]byte)
+	for key, value := range extraData {
+		valueCopy := make([]byte, len(value))
+		copy(valueCopy, value)
+		extraDataCopy[key] = valueCopy
+	}
+	return extraDataCopy
 }
 
 func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[string][]byte {
