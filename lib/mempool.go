@@ -991,6 +991,9 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	}
 
 	if blockHeight >= uint64(mp.bc.params.ForkHeights.BalanceModelBlockHeight) {
+		if tx.TxnNonce == nil {
+			return nil, nil, TxErrorNoNonceAfterBalanceModelBlockHeight
+		}
 		if tx.TxnNonce.ExpirationBlockHeight < blockHeight {
 			return nil, nil, TxErrorNonceExpired
 		}
