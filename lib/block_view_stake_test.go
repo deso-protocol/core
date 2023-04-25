@@ -1640,3 +1640,117 @@ func _testStakingWithDerivedKey(t *testing.T) {
 	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
 	_executeAllTestRollbackAndFlush(testMeta)
 }
+
+func TestGetLockedStakeEntriesInRange(t *testing.T) {
+	// For this test, we manually place LockedStakeEntries in the database and
+	// UtxoView to test merging the two to GetLockedStakeEntriesInRange.
+
+	// Initialize test chain and UtxoView.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	require.NoError(t, err)
+	blockHeight := uint64(chain.blockTip().Height + 1)
+
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
+	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
+
+	// Set a LockedStakeEntry in the db.
+	lockedStakeEntry := &LockedStakeEntry{
+		ValidatorPKID:       m0PKID,
+		StakerPKID:          m0PKID,
+		LockedAtEpochNumber: 1,
+	}
+	utxoView._setLockedStakeEntryMappings(lockedStakeEntry)
+	require.NoError(t, utxoView.FlushToDb(blockHeight))
+
+	// Verify LockedStakeEntry is in the db.
+	lockedStakeEntry, err = DBGetLockedStakeEntry(db, chain.snapshot, m0PKID, m0PKID, 1)
+	require.NoError(t, err)
+	require.NotNil(t, lockedStakeEntry)
+
+	// Verify LockedStakeEntry is not in the UtxoView.
+	require.Empty(t, utxoView.LockedStakeMapKeyToLockedStakeEntry)
+
+	// Set another LockedStakeEntry in the db.
+	lockedStakeEntry = &LockedStakeEntry{
+		ValidatorPKID:       m0PKID,
+		StakerPKID:          m0PKID,
+		LockedAtEpochNumber: 2,
+	}
+	utxoView._setLockedStakeEntryMappings(lockedStakeEntry)
+	require.NoError(t, utxoView.FlushToDb(blockHeight))
+
+	// Fetch the LockedStakeEntry so it is also cached in the UtxoView.
+	lockedStakeEntry, err = utxoView.GetLockedStakeEntry(m0PKID, m0PKID, 2)
+	require.NoError(t, err)
+	require.NotNil(t, lockedStakeEntry)
+
+	// Verify the LockedStakeEntry is in the db.
+	lockedStakeEntry, err = DBGetLockedStakeEntry(db, chain.snapshot, m0PKID, m0PKID, 2)
+	require.NoError(t, err)
+	require.NotNil(t, lockedStakeEntry)
+
+	// Verify the LockedStakeEntry is also in the UtxoView.
+	require.Len(t, utxoView.LockedStakeMapKeyToLockedStakeEntry, 1)
+	require.NotNil(t, utxoView.LockedStakeMapKeyToLockedStakeEntry[lockedStakeEntry.ToMapKey()])
+
+	// Set another LockedStakeEntry in the UtxoView.
+	utxoViewLockedStakeEntry := &LockedStakeEntry{
+		ValidatorPKID:       m0PKID,
+		StakerPKID:          m0PKID,
+		LockedAtEpochNumber: 3,
+	}
+	utxoView._setLockedStakeEntryMappings(utxoViewLockedStakeEntry)
+
+	// Verify the LockedStakeEntry is not in the db.
+	lockedStakeEntry, err = DBGetLockedStakeEntry(db, chain.snapshot, m0PKID, m0PKID, 3)
+	require.NoError(t, err)
+	require.Nil(t, lockedStakeEntry)
+
+	// Verify the LockedStakeEntry is in the UtxoView.
+	require.Len(t, utxoView.LockedStakeMapKeyToLockedStakeEntry, 2)
+	require.NotNil(t, utxoView.LockedStakeMapKeyToLockedStakeEntry[utxoViewLockedStakeEntry.ToMapKey()])
+
+	// Verify GetLockedStakeEntriesInRange.
+	lockedStakeEntries, err := utxoView.GetLockedStakeEntriesInRange(m0PKID, m0PKID, 1, 3)
+	require.NoError(t, err)
+	require.Len(t, lockedStakeEntries, 3)
+	require.Equal(t, lockedStakeEntries[0].LockedAtEpochNumber, uint64(1))
+	require.Equal(t, lockedStakeEntries[1].LockedAtEpochNumber, uint64(2))
+	require.Equal(t, lockedStakeEntries[2].LockedAtEpochNumber, uint64(3))
+
+	// A few more edge case tests for GetLockedStakeEntriesInRange.
+	lockedStakeEntries, err = utxoView.GetLockedStakeEntriesInRange(m0PKID, m0PKID, 0, 4)
+	require.NoError(t, err)
+	require.Len(t, lockedStakeEntries, 3)
+
+	// Nil ValidatorPKID.
+	lockedStakeEntries, err = utxoView.GetLockedStakeEntriesInRange(nil, m0PKID, 1, 3)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nil ValidatorPKID provided as input")
+
+	// Nil StakerPKID.
+	lockedStakeEntries, err = utxoView.GetLockedStakeEntriesInRange(m0PKID, nil, 1, 3)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nil StakerPKID provided as input")
+
+	// StartEpochNumber > EndEpochNumber.
+	lockedStakeEntries, err = utxoView.GetLockedStakeEntriesInRange(m0PKID, m0PKID, 3, 1)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid LockedAtEpochNumber range provided as input")
+
+	// None found for this ValidatorPKID.
+	lockedStakeEntries, err = utxoView.GetLockedStakeEntriesInRange(m1PKID, m0PKID, 1, 3)
+	require.NoError(t, err)
+	require.Empty(t, lockedStakeEntries)
+
+	// None found for this StakerPKID.
+	lockedStakeEntries, err = utxoView.GetLockedStakeEntriesInRange(m0PKID, m1PKID, 1, 3)
+	require.NoError(t, err)
+	require.Empty(t, lockedStakeEntries)
+
+	// None found for this LockedAtEpochNumber range.
+	lockedStakeEntries, err = utxoView.GetLockedStakeEntriesInRange(m0PKID, m0PKID, 5, 6)
+	require.NoError(t, err)
+	require.Empty(t, lockedStakeEntries)
+}

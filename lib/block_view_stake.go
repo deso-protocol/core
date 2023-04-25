@@ -1923,9 +1923,20 @@ func (bav *UtxoView) GetLockedStakeEntriesInRange(
 	startEpochNumber uint64,
 	endEpochNumber uint64,
 ) ([]*LockedStakeEntry, error) {
-	// Store matching LockedStakeEntries in a set to prevent
+	// Validate inputs.
+	if validatorPKID == nil {
+		return nil, errors.New("UtxoView.GetLockedStakeEntriesInRange: nil ValidatorPKID provided as input")
+	}
+	if stakerPKID == nil {
+		return nil, errors.New("UtxoView.GetLockedStakeEntriesInRange: nil StakerPKID provided as input")
+	}
+	if startEpochNumber > endEpochNumber {
+		return nil, errors.New("UtxoView.GetLockedStakeEntriesInRange: invalid LockedAtEpochNumber range provided as input")
+	}
+
+	// Store matching LockedStakeEntries in a map to prevent
 	// returning duplicates between the db and UtxoView.
-	lockedStakeEntriesSet := NewSet([]*LockedStakeEntry{})
+	lockedStakeEntriesMap := make(map[LockedStakeMapKey]*LockedStakeEntry)
 
 	// First, pull matching LockedStakeEntries from the db.
 	dbLockedStakeEntries, err := DBGetLockedStakeEntriesInRange(
@@ -1935,7 +1946,7 @@ func (bav *UtxoView) GetLockedStakeEntriesInRange(
 		return nil, errors.Wrapf(err, "UtxoView.GetLockedStakeEntriesInRange: ")
 	}
 	for _, lockedStakeEntry := range dbLockedStakeEntries {
-		lockedStakeEntriesSet.Add(lockedStakeEntry)
+		lockedStakeEntriesMap[lockedStakeEntry.ToMapKey()] = lockedStakeEntry
 	}
 
 	// Then, pull matching LockedStakeEntries from the UtxoView.
@@ -1950,16 +1961,19 @@ func (bav *UtxoView) GetLockedStakeEntriesInRange(
 		}
 
 		if lockedStakeEntry.isDeleted {
-			// Remove from set if isDeleted.
-			lockedStakeEntriesSet.Remove(lockedStakeEntry)
+			// Remove from map if isDeleted.
+			delete(lockedStakeEntriesMap, lockedStakeEntry.ToMapKey())
 		} else {
-			// Otherwise, add to set.
-			lockedStakeEntriesSet.Add(lockedStakeEntry)
+			// Otherwise, add to map.
+			lockedStakeEntriesMap[lockedStakeEntry.ToMapKey()] = lockedStakeEntry
 		}
 	}
 
-	// Convert LockedStakeEntries set to slice, sorted by LockedAtEpochNumber ASC.
-	lockedStakeEntries := lockedStakeEntriesSet.ToSlice()
+	// Convert LockedStakeEntries map to slice, sorted by LockedAtEpochNumber ASC.
+	var lockedStakeEntries []*LockedStakeEntry
+	for _, lockedStakeEntry := range lockedStakeEntriesMap {
+		lockedStakeEntries = append(lockedStakeEntries, lockedStakeEntry)
+	}
 	sort.Slice(lockedStakeEntries, func(ii, jj int) bool {
 		return lockedStakeEntries[ii].LockedAtEpochNumber < lockedStakeEntries[jj].LockedAtEpochNumber
 	})
