@@ -127,6 +127,11 @@ type PGTransaction struct {
 	S             *BlockHash `pg:",type:bytea"`
 	RecoveryId    uint32     `pg:",use_zero"`
 	IsRecoverable bool       `pg:",use_zero"`
+	TxnVersion    DeSoTxnVersion `pg:",use_zero"`
+	TxnFeeNanos   uint64         `pg:",use_zero"`
+	TxnNonceExpirationBlockHeight uint64
+	TxnNoncePartialId uint64
+
 
 	// Relationships
 	Outputs                       []*PGTransactionOutput           `pg:"rel:has-many,join_fk:output_hash"`
@@ -1424,6 +1429,13 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 			Type:      txn.TxnMeta.GetTxnType(),
 			PublicKey: txn.PublicKey,
 			ExtraData: txn.ExtraData,
+			TxnVersion: txn.TxnVersion,
+			TxnFeeNanos: txn.TxnFeeNanos,
+		}
+
+		if txn.TxnNonce != nil {
+			transaction.TxnNonceExpirationBlockHeight = txn.TxnNonce.ExpirationBlockHeight
+			transaction.TxnNoncePartialId = txn.TxnNonce.PartialID
 		}
 
 		if txn.Signature.Sign != nil {
