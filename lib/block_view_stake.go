@@ -573,14 +573,14 @@ func DBGetStakeEntryWithTxn(
 		if err == badger.ErrKeyNotFound {
 			return nil, nil
 		}
-		return nil, errors.Wrapf(err, "DBGetStakeByValidatorByStaker: problem retrieving StakeEntry")
+		return nil, errors.Wrapf(err, "DBGetStakeByValidatorByStaker: problem retrieving StakeEntry: ")
 	}
 
 	// Decode StakeEntry from bytes.
-	stakeEntry := &StakeEntry{}
 	rr := bytes.NewReader(stakeEntryBytes)
-	if exist, err := DecodeFromBytes(stakeEntry, rr); !exist || err != nil {
-		return nil, errors.Wrapf(err, "DBGetStakeByValidatorByStaker: problem decoding StakeEntry")
+	stakeEntry, err := DecodeDeSoEncoder(&StakeEntry{}, rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetStakeByValidatorByStaker: problem decoding StakeEntry: ")
 	}
 	return stakeEntry, nil
 }
@@ -623,16 +623,16 @@ func DBGetLockedStakeEntryWithTxn(
 			return nil, nil
 		}
 		return nil, errors.Wrapf(
-			err, "DBGetLockedStakeByValidatorByStakerByLockedAt: problem retrieving LockedStakeEntry",
+			err, "DBGetLockedStakeByValidatorByStakerByLockedAt: problem retrieving LockedStakeEntry: ",
 		)
 	}
 
 	// Decode LockedStakeEntry from bytes.
-	lockedStakeEntry := &LockedStakeEntry{}
 	rr := bytes.NewReader(lockedStakeEntryBytes)
-	if exist, err := DecodeFromBytes(lockedStakeEntry, rr); !exist || err != nil {
+	lockedStakeEntry, err := DecodeDeSoEncoder(&LockedStakeEntry{}, rr)
+	if err != nil {
 		return nil, errors.Wrapf(
-			err, "DBGetLockedStakeByValidatorByStakerByLockedAt: problem retrieving LockedStakeEntry",
+			err, "DBGetLockedStakeByValidatorByStakerByLockedAt: problem decoding LockedStakeEntry: ",
 		)
 	}
 	return lockedStakeEntry, nil
@@ -697,9 +697,9 @@ func DBGetLockedStakeEntriesInRangeWithTxn(
 		}
 
 		// Convert LockedStakeEntryBytes to LockedStakeEntry.
-		lockedStakeEntry := &LockedStakeEntry{}
 		rr := bytes.NewReader(lockedStakeEntryBytes)
-		if exist, err := DecodeFromBytes(lockedStakeEntry, rr); !exist || err != nil {
+		lockedStakeEntry, err := DecodeDeSoEncoder(&LockedStakeEntry{}, rr)
+		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetLockedStakeEntriesInRange: error decoding LockedStakeEntry: ")
 		}
 
@@ -1124,7 +1124,7 @@ func (bav *UtxoView) _connectStake(
 	}
 
 	// Calculate StakeAmountNanos.
-	stakeAmountNanos := txMeta.StakeAmountNanos
+	stakeAmountNanos := txMeta.StakeAmountNanos.Clone()
 	if prevStakeEntry != nil {
 		stakeAmountNanos, err = SafeUint256().Add(stakeAmountNanos, prevStakeEntry.StakeAmountNanos)
 		if err != nil {
@@ -1641,17 +1641,6 @@ func (bav *UtxoView) _connectUnlockStake(
 	}
 	totalUnlockedAmountNanosUint64 := totalUnlockedAmountNanos.Uint64()
 
-	// Return TotalUnlockedAmountNanos back to the transactor. We can use
-	// _addBalance here since we validate that connectUnlockStake can only
-	// occur after the BalanceModelBlockHeight.
-	utxoOp, err := bav._addBalance(totalUnlockedAmountNanosUint64, txn.PublicKey)
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(
-			err, "_connectUnlockStake: error adding TotalUnlockedAmountNanos to the transactor balance: ",
-		)
-	}
-	utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
-
 	// Add TotalUnlockedAmountNanos to TotalInput. The unlocked coins are an
 	// implicit input even though they do not come from a specific public key.
 	totalInput, err = SafeUint64().Add(totalInput, totalUnlockedAmountNanosUint64)
@@ -1665,6 +1654,17 @@ func (bav *UtxoView) _connectUnlockStake(
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: error adding TotalUnlockedAmountNanos to TotalOutput: ")
 	}
+
+	// Return TotalUnlockedAmountNanos back to the transactor. We can use
+	// _addBalance here since we validate that connectUnlockStake can only
+	// occur after the BalanceModelBlockHeight.
+	utxoOp, err := bav._addBalance(totalUnlockedAmountNanosUint64, txn.PublicKey)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(
+			err, "_connectUnlockStake: error adding TotalUnlockedAmountNanos to the transactor balance: ",
+		)
+	}
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 
 	// Add a UTXO operation
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
