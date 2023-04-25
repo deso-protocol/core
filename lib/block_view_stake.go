@@ -1646,7 +1646,9 @@ func (bav *UtxoView) _connectUnlockStake(
 	// occur after the BalanceModelBlockHeight.
 	utxoOp, err := bav._addBalance(totalUnlockedAmountNanosUint64, txn.PublicKey)
 	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectUnlockStake: ")
+		return 0, 0, nil, errors.Wrapf(
+			err, "_connectUnlockStake: error adding TotalUnlockedAmountNanos to the transactor balance: ",
+		)
 	}
 	utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 
@@ -1720,15 +1722,15 @@ func (bav *UtxoView) _disconnectUnlockStake(
 		return errors.Wrapf(RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64, "_disconnectUnlockStake: ")
 	}
 
-	// Restore the PrevLockedStakeEntries.
-	for _, prevLockedStakeEntry := range operationData.PrevLockedStakeEntries {
-		bav._setLockedStakeEntryMappings(prevLockedStakeEntry)
-	}
-
 	// Unadd TotalUnlockedAmountNanos from the transactor.
 	err = bav._unAddBalance(totalUnlockedAmountNanos.Uint64(), currentTxn.PublicKey)
 	if err != nil {
-		return errors.Wrapf(err, "_disconnectUnlockStake: ")
+		return errors.Wrapf(err, "_disconnectUnlockStake: error unadding TotalUnlockedAmountNanos from the transactor balance: ")
+	}
+
+	// Restore the PrevLockedStakeEntries.
+	for _, prevLockedStakeEntry := range operationData.PrevLockedStakeEntries {
+		bav._setLockedStakeEntryMappings(prevLockedStakeEntry)
 	}
 
 	// Disconnect the basic transfer.
@@ -1850,6 +1852,13 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 }
 
 func (bav *UtxoView) GetStakeEntry(validatorPKID *PKID, stakerPKID *PKID) (*StakeEntry, error) {
+	// Error if either input is nil.
+	if validatorPKID == nil {
+		return nil, errors.New("UtxoView.GetStakeEntry: nil ValidatorPKID provided as input")
+	}
+	if stakerPKID == nil {
+		return nil, errors.New("UtxoView.GetStakeEntry: nil StakerPKID provided as input")
+	}
 	// First, check the UtxoView.
 	stakeMapKey := StakeMapKey{ValidatorPKID: *validatorPKID, StakerPKID: *stakerPKID}
 	if stakeEntry, exists := bav.StakeMapKeyToStakeEntry[stakeMapKey]; exists {
@@ -1876,6 +1885,13 @@ func (bav *UtxoView) GetLockedStakeEntry(
 	stakerPKID *PKID,
 	lockedAtEpochNumber uint64,
 ) (*LockedStakeEntry, error) {
+	// Error if either input is nil.
+	if validatorPKID == nil {
+		return nil, errors.New("UtxoView.GetLockedStakeEntry: nil ValidatorPKID provided as input")
+	}
+	if stakerPKID == nil {
+		return nil, errors.New("UtxoView.GetLockedStakeEntry: nil StakerPKID provided as input")
+	}
 	// First, check the UtxoView.
 	lockedStakeMapKey := LockedStakeMapKey{
 		ValidatorPKID:       *validatorPKID,
