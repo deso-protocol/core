@@ -890,25 +890,6 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		bav._deleteValidatorEntryMappings(prevValidatorEntry)
 	}
 
-	// Error if updating ValidatorEntry.DisableDelegatedStake from false to true
-	// and there are existing delegated StakeEntries, meaning any StakeEntries
-	// that belong to someone who is not the validator staking with himself.
-	if prevValidatorEntry != nil && // ValidatorEntry exists
-		!prevValidatorEntry.DisableDelegatedStake && // Existing ValidatorEntry.DisableDelegatedStake = false
-		txMeta.DisableDelegatedStake { // Updating DisableDelegatedStake = true
-		prevStakeEntries, err := bav.GetStakeEntriesForValidatorPKID(transactorPKIDEntry.PKID)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectRegisterAsValidator: error retrieving existing StakeEntries: ")
-		}
-		for _, stakeEntry := range prevStakeEntries {
-			if !stakeEntry.StakerPKID.Eq(transactorPKIDEntry.PKID) {
-				return 0, 0, nil, errors.Wrapf(
-					RuleErrorValidatorDisablingExistingDelegatedStakers, "_connectRegisterAsValidator: ",
-				)
-			}
-		}
-	}
-
 	// Set ValidatorID only if this is a new ValidatorEntry.
 	validatorID := txHash.NewBlockHash()
 	if prevValidatorEntry != nil {
@@ -1290,6 +1271,33 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 	}
 
 	// TODO: In subsequent PR, validate VotingPublicKey, VotingPublicKeySignature, and VotingSignatureBlockHeight.
+
+	// Error if updating DisableDelegatedStake from false to
+	// true and there are existing delegated StakeEntries.
+	prevValidatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error retrieving existing ValidatorEntry: ")
+	}
+	if prevValidatorEntry != nil && // ValidatorEntry exists
+		!prevValidatorEntry.DisableDelegatedStake && // Existing ValidatorEntry.DisableDelegatedStake = false
+		metadata.DisableDelegatedStake { // Updating DisableDelegatedStake = true
+
+		// Retrieve existing StakeEntries.
+		prevStakeEntries, err := bav.GetStakeEntriesForValidatorPKID(transactorPKIDEntry.PKID)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error retrieving existing StakeEntries: ")
+		}
+
+		// Error if any belong to someone other than the validator.
+		for _, stakeEntry := range prevStakeEntries {
+			if !stakeEntry.StakerPKID.Eq(transactorPKIDEntry.PKID) {
+				return errors.Wrapf(
+					RuleErrorValidatorDisablingExistingDelegatedStakers, "UtxoView.IsValidRegisterAsValidatorMetadata: ",
+				)
+			}
+		}
+	}
+
 	return nil
 }
 
