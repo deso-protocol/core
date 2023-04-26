@@ -592,7 +592,7 @@ func DBGetStakeEntriesForValidatorPKID(handle *badger.DB, snap *Snapshot, valida
 	// Retrieve StakeEntries from db.
 	prefix := DBKeyForStakeByValidator(&StakeEntry{ValidatorPKID: validatorPKID})
 	_, valsFound, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
-		handle, prefix, 0, nil, false, nil,
+		handle, prefix, 0, nil, false, NewSet([]string{}),
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetStakeEntriesForValidatorPKID: problem retrieving StakeEntries: ")
@@ -1106,7 +1106,7 @@ func (bav *UtxoView) _connectStake(
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectStake: ")
 	}
-	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted || prevValidatorEntry.DisableDelegatedStake {
+	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted {
 		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "_connectStake: ")
 	}
 
@@ -1777,8 +1777,11 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.IsValidStakeMetadata: ")
 	}
-	if validatorEntry == nil || validatorEntry.isDeleted || validatorEntry.DisableDelegatedStake {
+	if validatorEntry == nil || validatorEntry.isDeleted {
 		return errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.IsValidStakeMetadata: ")
+	}
+	if !transactorPKIDEntry.PKID.Eq(validatorEntry.ValidatorPKID) && validatorEntry.DisableDelegatedStake {
+		return errors.Wrapf(RuleErrorInvalidStakeValidatorDisabledDelegatedStake, "UtxoView.IsValidStakeMetadata: ")
 	}
 
 	// Validate 0 < StakeAmountNanos <= transactor's DESO Balance. We ignore
@@ -2558,8 +2561,11 @@ func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stake
 	if err != nil {
 		return errors.Wrapf(err, "IsValidStakeLimitKey: ")
 	}
-	if validatorEntry == nil || validatorEntry.isDeleted || validatorEntry.DisableDelegatedStake {
+	if validatorEntry == nil || validatorEntry.isDeleted {
 		return errors.Wrapf(RuleErrorTransactionSpendingLimitInvalidValidator, "UtxoView.IsValidStakeLimitKey: ")
+	}
+	if !transactorPKIDEntry.PKID.Eq(&stakeLimitKey.ValidatorPKID) && validatorEntry.DisableDelegatedStake {
+		return errors.Wrapf(RuleErrorTransactionSpendingLimitValidatorDisabledDelegatedStake, "UtxoView.IsValidStakeLimitKey: ")
 	}
 
 	return nil
@@ -2572,6 +2578,7 @@ func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stake
 const RuleErrorInvalidStakerPKID RuleError = "RuleErrorInvalidStakerPKID"
 const RuleErrorInvalidStakeAmountNanos RuleError = "RuleErrorInvalidStakeAmountNanos"
 const RuleErrorInvalidStakeInsufficientBalance RuleError = "RuleErrorInvalidStakeInsufficientBalance"
+const RuleErrorInvalidStakeValidatorDisabledDelegatedStake RuleError = "RuleErrorInvalidStakeValidatorDisabledDelegatedStake"
 const RuleErrorInvalidUnstakeNoStakeFound RuleError = "RuleErrorInvalidUnstakeNoStakeFound"
 const RuleErrorInvalidUnstakeAmountNanos RuleError = "RuleErrorInvalidUnstakeAmountNanos"
 const RuleErrorInvalidUnstakeInsufficientStakeFound RuleError = "RuleErrorInvalidUnstakeInsufficientStakeFound"
@@ -2585,3 +2592,4 @@ const RuleErrorUnstakeTransactionSpendingLimitExceeded RuleError = "RuleErrorUns
 const RuleErrorUnlockStakeTransactionSpendingLimitNotFound RuleError = "RuleErrorUnlockStakeTransactionSpendingLimitNotFound"
 const RuleErrorTransactionSpendingLimitInvalidStaker RuleError = "RuleErrorTransactionSpendingLimitInvalidStaker"
 const RuleErrorTransactionSpendingLimitInvalidValidator RuleError = "RuleErrorTransactionSpendingLimitInvalidValidator"
+const RuleErrorTransactionSpendingLimitValidatorDisabledDelegatedStake RuleError = "RuleErrorTransactionSpendingLimitValidatorDisabledDelegatedStake"
