@@ -1101,10 +1101,15 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 			}
 		} else {
 			lockedStakeEntry = &LockedStakeEntry{
-				LockedStakeID:       prevStakeEntry.StakeID, // TODO: is this what we should put here?
-				StakerPKID:          prevStakeEntry.StakerPKID,
-				ValidatorPKID:       prevStakeEntry.ValidatorPKID,
-				LockedAmountNanos:   prevStakeEntry.StakeAmountNanos,
+				// What to set as the LockedStakeID here is not obvious. Typically, we use the
+				// TxHash, but since there may be multiple LockedStakeEntries created here, one
+				// for each unstaked staker, that would result in multiple LockedStakeEntries
+				// with the same LockedStakeID. For that reason, we opted to use the
+				// PrevStakeEntry's StakeID instead.
+				LockedStakeID:       prevStakeEntry.StakeID.NewBlockHash(),
+				StakerPKID:          prevStakeEntry.StakerPKID.NewPKID(),
+				ValidatorPKID:       prevStakeEntry.ValidatorPKID.NewPKID(),
+				LockedAmountNanos:   prevStakeEntry.StakeAmountNanos.Clone(),
 				LockedAtEpochNumber: currentEpochNumber,
 			}
 		}
@@ -1274,12 +1279,12 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 
 	// Error if updating DisableDelegatedStake from false to
 	// true and there are existing delegated StakeEntries.
-	prevValidatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
+	validatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error retrieving existing ValidatorEntry: ")
 	}
-	if prevValidatorEntry != nil && // ValidatorEntry exists
-		!prevValidatorEntry.DisableDelegatedStake && // Existing ValidatorEntry.DisableDelegatedStake = false
+	if validatorEntry != nil && // ValidatorEntry exists
+		!validatorEntry.DisableDelegatedStake && // Existing ValidatorEntry.DisableDelegatedStake = false
 		metadata.DisableDelegatedStake { // Updating DisableDelegatedStake = true
 
 		// Retrieve existing StakeEntries.
