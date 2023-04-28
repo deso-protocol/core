@@ -59,7 +59,7 @@ func (epochEntry *EpochEntry) GetEncoderType() EncoderType {
 // UTXO VIEW UTILS
 //
 
-func (bav *UtxoView) GetCurrentEpoch() (*EpochEntry, error) {
+func (bav *UtxoView) GetCurrentEpochEntry() (*EpochEntry, error) {
 	var epochEntry *EpochEntry
 	var err error
 
@@ -70,7 +70,7 @@ func (bav *UtxoView) GetCurrentEpoch() (*EpochEntry, error) {
 	}
 
 	// If not found, check the database.
-	epochEntry, err = DBGetCurrentEpoch(bav.Handle, bav.Snapshot)
+	epochEntry, err = DBGetCurrentEpochEntry(bav.Handle, bav.Snapshot)
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GetCurrentEpoch: problem retrieving EpochEntry from db: ")
 	}
@@ -81,15 +81,26 @@ func (bav *UtxoView) GetCurrentEpoch() (*EpochEntry, error) {
 	return epochEntry, nil
 }
 
-func (bav *UtxoView) SetCurrentEpoch(epochEntry *EpochEntry, blockHeight uint64) error {
+func (bav *UtxoView) GetCurrentEpochNumber() (uint64, error) {
+	epochEntry, err := bav.GetCurrentEpochEntry()
+	if err != nil {
+		return 0, errors.Wrapf(err, "UtxoView.GetCurrentEpochNumber: ")
+	}
+	if epochEntry == nil {
+		return 0, errors.New("UtxoView.GetCurrentEpochNumber: no CurrentEpochEntry found")
+	}
+	return epochEntry.EpochNumber, nil
+}
+
+func (bav *UtxoView) SetCurrentEpochEntry(epochEntry *EpochEntry, blockHeight uint64) error {
 	// This function should only ever be called from the OnEpochEnd hook.
 	if epochEntry == nil {
-		return errors.New("UtxoView.SetCurrentEpoch: called with nil EpochEntry")
+		return errors.New("UtxoView.SetCurrentEpochEntry: called with nil EpochEntry")
 	}
 
 	// Set the current EpochEntry in the db.
-	if err := DBPutCurrentEpoch(bav.Handle, bav.Snapshot, epochEntry, blockHeight); err != nil {
-		return errors.Wrapf(err, "UtxoView.SetCurrentEpoch: problem setting EpochEntry in db: ")
+	if err := DBPutCurrentEpochEntry(bav.Handle, bav.Snapshot, epochEntry, blockHeight); err != nil {
+		return errors.Wrapf(err, "UtxoView.SetCurrentEpochEntry: problem setting EpochEntry in db: ")
 	}
 
 	// Set the current EpochEntry in the UtxoView.
@@ -97,7 +108,7 @@ func (bav *UtxoView) SetCurrentEpoch(epochEntry *EpochEntry, blockHeight uint64)
 	return nil
 }
 
-func (bav *UtxoView) DeleteCurrentEpoch() {
+func (bav *UtxoView) DeleteCurrentEpochEntry() {
 	// This function should only ever be called from the OnEpochEnd hook.
 	bav.CurrentEpochEntry = nil
 }
@@ -110,17 +121,17 @@ func DBKeyForCurrentEpoch() []byte {
 	return append([]byte{}, Prefixes.PrefixCurrentEpoch...)
 }
 
-func DBGetCurrentEpoch(handle *badger.DB, snap *Snapshot) (*EpochEntry, error) {
+func DBGetCurrentEpochEntry(handle *badger.DB, snap *Snapshot) (*EpochEntry, error) {
 	var ret *EpochEntry
 	err := handle.View(func(txn *badger.Txn) error {
 		var innerErr error
-		ret, innerErr = DBGetCurrentEpochWithTxn(txn, snap)
+		ret, innerErr = DBGetCurrentEpochEntryWithTxn(txn, snap)
 		return innerErr
 	})
 	return ret, err
 }
 
-func DBGetCurrentEpochWithTxn(txn *badger.Txn, snap *Snapshot) (*EpochEntry, error) {
+func DBGetCurrentEpochEntryWithTxn(txn *badger.Txn, snap *Snapshot) (*EpochEntry, error) {
 	// Retrieve StakeEntry from db.
 	key := DBKeyForCurrentEpoch()
 	epochEntryBytes, err := DBGetWithTxn(txn, snap, key)
@@ -129,30 +140,30 @@ func DBGetCurrentEpochWithTxn(txn *badger.Txn, snap *Snapshot) (*EpochEntry, err
 		if err == badger.ErrKeyNotFound {
 			return nil, nil
 		}
-		return nil, errors.Wrapf(err, "DBGetCurrentEpoch: problem retrieving EpochEntry: ")
+		return nil, errors.Wrapf(err, "DBGetCurrentEpochEntry: problem retrieving EpochEntry: ")
 	}
 
 	// Decode EpochEntry from bytes.
 	rr := bytes.NewReader(epochEntryBytes)
 	epochEntry, err := DecodeDeSoEncoder(&EpochEntry{}, rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetCurrentEpoch: problem decoding EpochEntry: ")
+		return nil, errors.Wrapf(err, "DBGetCurrentEpochEntry: problem decoding EpochEntry: ")
 	}
 	return epochEntry, nil
 }
 
-func DBPutCurrentEpoch(handle *badger.DB, snap *Snapshot, epochEntry *EpochEntry, blockHeight uint64) error {
+func DBPutCurrentEpochEntry(handle *badger.DB, snap *Snapshot, epochEntry *EpochEntry, blockHeight uint64) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutCurrentEpochWithTxn(txn, snap, epochEntry, blockHeight)
+		return DBPutCurrentEpochEntryWithTxn(txn, snap, epochEntry, blockHeight)
 	})
 }
 
-func DBPutCurrentEpochWithTxn(txn *badger.Txn, snap *Snapshot, epochEntry *EpochEntry, blockHeight uint64) error {
+func DBPutCurrentEpochEntryWithTxn(txn *badger.Txn, snap *Snapshot, epochEntry *EpochEntry, blockHeight uint64) error {
 	// Set EpochEntry in PrefixCurrentEpoch.
 	key := DBKeyForCurrentEpoch()
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, epochEntry)); err != nil {
 		return errors.Wrapf(
-			err, "DBPutCurrentEpoch: problem storing EpochEntry in index PrefixCurrentEpoch: ",
+			err, "DBPutCurrentEpochEntry: problem storing EpochEntry in index PrefixCurrentEpoch: ",
 		)
 	}
 	return nil

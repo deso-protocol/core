@@ -16,7 +16,7 @@ func TestCurrentEpoch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test that the CurrentEpoch is nil in the db.
-	epochEntry, err = DBGetCurrentEpoch(db, utxoView.Snapshot)
+	epochEntry, err = DBGetCurrentEpochEntry(db, utxoView.Snapshot)
 	require.NoError(t, err)
 	require.Nil(t, epochEntry)
 
@@ -24,7 +24,7 @@ func TestCurrentEpoch(t *testing.T) {
 	require.Nil(t, utxoView.CurrentEpochEntry)
 
 	// Test GetCurrentEpoch().
-	epochEntry, err = utxoView.GetCurrentEpoch()
+	epochEntry, err = utxoView.GetCurrentEpochEntry()
 	require.NoError(t, err)
 	require.Nil(t, epochEntry)
 
@@ -33,11 +33,11 @@ func TestCurrentEpoch(t *testing.T) {
 		EpochNumber:            1,
 		LastBlockHeightInEpoch: blockHeight + 5,
 	}
-	err = utxoView.SetCurrentEpoch(epochEntry, blockHeight)
+	err = utxoView.SetCurrentEpochEntry(epochEntry, blockHeight)
 	require.NoError(t, err)
 
 	// Test that the CurrentEpoch is set in the db.
-	epochEntry, err = DBGetCurrentEpoch(db, utxoView.Snapshot)
+	epochEntry, err = DBGetCurrentEpochEntry(db, utxoView.Snapshot)
 	require.NoError(t, err)
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
@@ -50,26 +50,29 @@ func TestCurrentEpoch(t *testing.T) {
 	require.Equal(t, epochEntry.LastBlockHeightInEpoch, blockHeight+5)
 
 	// Test GetCurrentEpoch().
-	epochEntry, err = utxoView.GetCurrentEpoch()
+	epochEntry, err = utxoView.GetCurrentEpochEntry()
 	require.NoError(t, err)
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
 	require.Equal(t, epochEntry.LastBlockHeightInEpoch, blockHeight+5)
 
 	// Delete CurrentEpoch from the UtxoView.
-	utxoView.DeleteCurrentEpoch()
+	utxoView.DeleteCurrentEpochEntry()
 	require.Nil(t, utxoView.CurrentEpochEntry)
 
 	// CurrentEpoch still exists in the db.
-	epochEntry, err = DBGetCurrentEpoch(db, utxoView.Snapshot)
+	epochEntry, err = DBGetCurrentEpochEntry(db, utxoView.Snapshot)
 	require.NoError(t, err)
 	require.NotNil(t, epochEntry)
 
 	// GetCurrentEpoch() should return the CurrentEpoch from the db.
-	epochEntry, err = utxoView.GetCurrentEpoch()
+	epochEntry, err = utxoView.GetCurrentEpochEntry()
 	require.NoError(t, err)
 	require.NotNil(t, epochEntry)
 
 	// CurrentEpoch gets cached in the UtxoView.
 	require.NotNil(t, utxoView.CurrentEpochEntry)
+
+	// Test GetCurrentEpochNumber().
+	require.Equal(t, utxoView.CurrentEpochEntry.EpochNumber, uint64(1))
 }
