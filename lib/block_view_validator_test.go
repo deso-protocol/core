@@ -16,11 +16,6 @@ func TestValidatorRegistration(t *testing.T) {
 	_testValidatorRegistrationWithDerivedKey(t)
 }
 
-func TestGetTopValidatorsByStake(t *testing.T) {
-	_testGetTopValidatorsByStake(t, false)
-	_testGetTopValidatorsByStake(t, true)
-}
-
 func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	// Local variables
 	var registerMetadata *RegisterAsValidatorMetadata
@@ -42,7 +37,6 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		return newUtxoView
 	}
-	_ = utxoView
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -64,18 +58,9 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 
 	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e3)
-	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 1e3)
-	_registerOrTransferWithTestMeta(testMeta, "m2", senderPkString, m2Pub, senderPrivString, 1e3)
-	_registerOrTransferWithTestMeta(testMeta, "m3", senderPkString, m3Pub, senderPrivString, 1e3)
-	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 1e3)
 	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
 
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
-	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
-	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes).PKID
-	m3PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m3PkBytes).PKID
-	m4PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m4PkBytes).PKID
-	_, _, _, _, _ = m0PKID, m1PKID, m2PKID, m3PKID, m4PKID
 
 	{
 		// ParamUpdater set min fee rate
@@ -634,6 +619,11 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 	_executeAllTestRollbackAndFlush(testMeta)
 }
 
+func TestGetTopValidatorsByStake(t *testing.T) {
+	_testGetTopValidatorsByStake(t, false)
+	_testGetTopValidatorsByStake(t, true)
+}
+
 func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 	var validatorEntries []*ValidatorEntry
 	var err error
@@ -686,9 +676,6 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
 	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes).PKID
-	m3PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m3PkBytes).PKID
-	m4PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m4PkBytes).PKID
-	_, _, _, _, _ = m0PKID, m1PKID, m2PKID, m3PKID, m4PKID
 
 	{
 		// ParamUpdater set min fee rate
@@ -981,4 +968,386 @@ func TestGetTopValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
 	require.Equal(t, validatorEntries[2].ValidatorPKID, m2PKID)
 	require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt().SetUint64(50))
+}
+
+func TestUpdatingValidatorDisableDelegatedStake(t *testing.T) {
+	_testUpdatingValidatorDisableDelegatedStake(t, false)
+	_testUpdatingValidatorDisableDelegatedStake(t, true)
+}
+
+func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
+	var validatorEntry *ValidatorEntry
+	var stakeEntries []*StakeEntry
+	var err error
+
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	// Initialize test chain and miner.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Initialize PoS fork height.
+	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+	utxoView := func() *UtxoView {
+		newUtxoView, err := mempool.GetAugmentedUniversalView()
+		require.NoError(t, err)
+		return newUtxoView
+	}
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err = miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height) + 1
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       uint32(blockHeight),
+		feeRateNanosPerKb: uint64(101),
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
+
+	{
+		// ParamUpdater set min fee rate
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1,
+			int64(testMeta.feeRateNanosPerKb),
+			-1,
+			-1,
+			-1,
+		)
+	}
+	{
+		// m0 registers as a validator with DisableDelegatedStake = FALSE.
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains:               [][]byte{[]byte("https://m0.com")},
+			DisableDelegatedStake: false,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.False(t, validatorEntry.DisableDelegatedStake)
+
+		stakeEntries, err = utxoView().GetStakeEntriesForValidatorPKID(m0PKID)
+		require.NoError(t, err)
+		require.Empty(t, stakeEntries)
+	}
+	{
+		// m0 updates DisableDelegatedStake = TRUE.
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains:               [][]byte{[]byte("https://m0.com")},
+			DisableDelegatedStake: true,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.True(t, validatorEntry.DisableDelegatedStake)
+	}
+	{
+		// m0 stakes with himself. This is allowed even though DisableDelegatedStake = TRUE.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
+		}
+		_, err = _submitStakeTxn(
+			testMeta, m0Pub, m0Priv, stakeMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		stakeEntries, err = utxoView().GetStakeEntriesForValidatorPKID(m0PKID)
+		require.NoError(t, err)
+		require.Len(t, stakeEntries, 1)
+		require.Equal(t, stakeEntries[0].StakerPKID, m0PKID)
+	}
+	{
+		// m1 tries to stake with m0. Errors.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
+		}
+		_, err = _submitStakeTxn(
+			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidStakeValidatorDisabledDelegatedStake)
+	}
+	{
+		// m0 updates DisableDelegatedStake = FALSE.
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains:               [][]byte{[]byte("https://m0.com")},
+			DisableDelegatedStake: false,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.False(t, validatorEntry.DisableDelegatedStake)
+	}
+	{
+		// m1 stakes with m0. Succeeds.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
+		}
+		_, err = _submitStakeTxn(
+			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		stakeEntries, err = utxoView().GetStakeEntriesForValidatorPKID(m0PKID)
+		require.NoError(t, err)
+		require.Len(t, stakeEntries, 2)
+	}
+	{
+		// m0 tries to update DisableDelegateStake = TRUE. Errors.
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains:               [][]byte{[]byte("https://m0.com")},
+			DisableDelegatedStake: true,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorDisablingExistingDelegatedStakers)
+	}
+
+	// Flush mempool to the db and test rollbacks.
+	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
+	_executeAllTestRollbackAndFlush(testMeta)
+}
+
+func TestUnregisterAsValidator(t *testing.T) {
+	_testUnregisterAsValidator(t, false)
+	_testUnregisterAsValidator(t, true)
+}
+
+func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
+	var validatorEntry *ValidatorEntry
+	var stakeEntry *StakeEntry
+	var lockedStakeEntry *LockedStakeEntry
+	_ = lockedStakeEntry
+	var globalStakeAmountNanos *uint256.Int
+	var err error
+
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	// Initialize test chain and miner.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Initialize PoS fork height.
+	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+	utxoView := func() *UtxoView {
+		newUtxoView, err := mempool.GetAugmentedUniversalView()
+		require.NoError(t, err)
+		return newUtxoView
+	}
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err = miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height) + 1
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       uint32(blockHeight),
+		feeRateNanosPerKb: uint64(101),
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
+	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
+
+	currentEpochNumber := uint64(0) // TODO: Retrieve this from the db.
+	_ = currentEpochNumber
+
+	{
+		// ParamUpdater set min fee rate
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1,
+			int64(testMeta.feeRateNanosPerKb),
+			-1,
+			-1,
+			-1,
+		)
+	}
+	{
+		// m0 registers as a validator.
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains: [][]byte{[]byte("https://m0.com")},
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+	}
+	{
+		// m0 stakes with himself.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(600),
+		}
+		_, err = _submitStakeTxn(
+			testMeta, m0Pub, m0Priv, stakeMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		stakeEntry, err = utxoView().GetStakeEntry(m0PKID, m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, stakeEntry)
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(600))
+
+		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(600))
+	}
+	{
+		// m1 stakes with m0.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(400),
+		}
+		_, err = _submitStakeTxn(
+			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
+		)
+		require.NoError(t, err)
+
+		stakeEntry, err = utxoView().GetStakeEntry(m0PKID, m1PKID)
+		require.NoError(t, err)
+		require.NotNil(t, stakeEntry)
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(400))
+
+		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(1000))
+	}
+	{
+		// m1 partially unstakes with m0.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(100),
+		}
+		_, err = _submitUnstakeTxn(
+			testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB,
+		)
+
+		// m1's StakeEntry is updated.
+		stakeEntry, err = utxoView().GetStakeEntry(m0PKID, m1PKID)
+		require.NoError(t, err)
+		require.NotNil(t, stakeEntry)
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(300))
+
+		// m1 has a LockedStakeEntry created.
+		lockedStakeEntry, err = utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
+		require.NoError(t, err)
+		require.NotNil(t, lockedStakeEntry)
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(100))
+
+		// GlobalStakeAmountNanos is updated.
+		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(900))
+	}
+	{
+		// m0 unregisters as a validator.
+		_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
+		require.NoError(t, err)
+
+		// m0's ValidatorEntry is deleted.
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Nil(t, validatorEntry)
+
+		// m0 is unstaked.
+		// m0's StakeEntry is deleted.
+		stakeEntry, err = utxoView().GetStakeEntry(m0PKID, m0PKID)
+		require.NoError(t, err)
+		require.Nil(t, stakeEntry)
+		// m0's has a LockedStakeEntry created.
+		lockedStakeEntry, err = utxoView().GetLockedStakeEntry(m0PKID, m0PKID, currentEpochNumber)
+		require.NoError(t, err)
+		require.NotNil(t, lockedStakeEntry)
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(600))
+
+		// m1 is unstaked.
+		// m1's StakeEntry is deleted.
+		stakeEntry, err = utxoView().GetStakeEntry(m0PKID, m1PKID)
+		require.NoError(t, err)
+		require.Nil(t, stakeEntry)
+		// m1's LockedStakeEntry is updated.
+		lockedStakeEntry, err = utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
+		require.NoError(t, err)
+		require.NotNil(t, lockedStakeEntry)
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(400))
+
+		// GlobalStakeAmountNanos is updated.
+		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
+	}
+
+	// Flush mempool to the db and test rollbacks.
+	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
+	_executeAllTestRollbackAndFlush(testMeta)
 }

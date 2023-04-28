@@ -523,10 +523,14 @@ func (txindexMetadata *UnlockStakeTxindexMetadata) GetEncoderType() EncoderType 
 //
 
 func DBKeyForStakeByValidatorByStaker(stakeEntry *StakeEntry) []byte {
-	var data []byte
-	data = append(data, Prefixes.PrefixStakeByValidatorByStaker...)
-	data = append(data, stakeEntry.ValidatorPKID.ToBytes()...)
+	data := DBKeyForStakeByValidator(stakeEntry)
 	data = append(data, stakeEntry.StakerPKID.ToBytes()...)
+	return data
+}
+
+func DBKeyForStakeByValidator(stakeEntry *StakeEntry) []byte {
+	data := append([]byte{}, Prefixes.PrefixStakeByValidatorByStaker...)
+	data = append(data, stakeEntry.ValidatorPKID.ToBytes()...)
 	return data
 }
 
@@ -537,8 +541,7 @@ func DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry *LockedSt
 }
 
 func DBPrefixKeyForLockedStakeByValidatorByStaker(lockedStakeEntry *LockedStakeEntry) []byte {
-	var data []byte
-	data = append(data, Prefixes.PrefixLockedStakeByValidatorByStakerByLockedAt...)
+	data := append([]byte{}, Prefixes.PrefixLockedStakeByValidatorByStakerByLockedAt...)
 	data = append(data, lockedStakeEntry.ValidatorPKID.ToBytes()...)
 	data = append(data, lockedStakeEntry.StakerPKID.ToBytes()...)
 	return data
@@ -583,6 +586,29 @@ func DBGetStakeEntryWithTxn(
 		return nil, errors.Wrapf(err, "DBGetStakeByValidatorByStaker: problem decoding StakeEntry: ")
 	}
 	return stakeEntry, nil
+}
+
+func DBGetStakeEntriesForValidatorPKID(handle *badger.DB, snap *Snapshot, validatorPKID *PKID) ([]*StakeEntry, error) {
+	// Retrieve StakeEntries from db.
+	prefix := DBKeyForStakeByValidator(&StakeEntry{ValidatorPKID: validatorPKID})
+	_, valsFound, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+		handle, prefix, 0, nil, false, NewSet([]string{}),
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DBGetStakeEntriesForValidatorPKID: problem retrieving StakeEntries: ")
+	}
+
+	// Decode StakeEntries from bytes.
+	var stakeEntries []*StakeEntry
+	for _, stakeEntryBytes := range valsFound {
+		rr := bytes.NewReader(stakeEntryBytes)
+		stakeEntry, err := DecodeDeSoEncoder(&StakeEntry{}, rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetStakeEntriesForValidatorPKID: problem decoding StakeEntry: ")
+		}
+		stakeEntries = append(stakeEntries, stakeEntry)
+	}
+	return stakeEntries, nil
 }
 
 func DBGetLockedStakeEntry(
@@ -1080,7 +1106,7 @@ func (bav *UtxoView) _connectStake(
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectStake: ")
 	}
-	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted || prevValidatorEntry.DisableDelegatedStake {
+	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted {
 		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "_connectStake: ")
 	}
 
@@ -1751,8 +1777,11 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.IsValidStakeMetadata: ")
 	}
-	if validatorEntry == nil || validatorEntry.isDeleted || validatorEntry.DisableDelegatedStake {
+	if validatorEntry == nil || validatorEntry.isDeleted {
 		return errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.IsValidStakeMetadata: ")
+	}
+	if !transactorPKIDEntry.PKID.Eq(validatorEntry.ValidatorPKID) && validatorEntry.DisableDelegatedStake {
+		return errors.Wrapf(RuleErrorInvalidStakeValidatorDisabledDelegatedStake, "UtxoView.IsValidStakeMetadata: ")
 	}
 
 	// Validate 0 < StakeAmountNanos <= transactor's DESO Balance. We ignore
@@ -1880,6 +1909,43 @@ func (bav *UtxoView) GetStakeEntry(validatorPKID *PKID, stakerPKID *PKID) (*Stak
 	return stakeEntry, nil
 }
 
+func (bav *UtxoView) GetStakeEntriesForValidatorPKID(validatorPKID *PKID) ([]*StakeEntry, error) {
+	// Validate inputs.
+	if validatorPKID == nil {
+		return nil, errors.New("UtxoView.GetStakeEntriesForValidatorPKID: nil ValidatorPKID provided as input")
+	}
+
+	// First, pull matching StakeEntries from the database and cache them in the UtxoView.
+	dbStakeEntries, err := DBGetStakeEntriesForValidatorPKID(bav.Handle, bav.Snapshot, validatorPKID)
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GetStakeEntriesForValidatorPKID: error retrieving StakeEntries from the db: ")
+	}
+	for _, stakeEntry := range dbStakeEntries {
+		// Cache results in the UtxoView.
+		if _, exists := bav.StakeMapKeyToStakeEntry[stakeEntry.ToMapKey()]; !exists {
+			bav._setStakeEntryMappings(stakeEntry)
+		}
+	}
+
+	// Then, pull matching StakeEntries from the UtxoView.
+	var stakeEntries []*StakeEntry
+	for _, stakeEntry := range bav.StakeMapKeyToStakeEntry {
+		if !stakeEntry.ValidatorPKID.Eq(validatorPKID) || stakeEntry.isDeleted {
+			continue
+		}
+		stakeEntries = append(stakeEntries, stakeEntry)
+	}
+
+	// Sort by StakerPKID so that the ordering is deterministic.
+	sort.Slice(stakeEntries, func(ii, jj int) bool {
+		return bytes.Compare(
+			stakeEntries[ii].StakerPKID.ToBytes(),
+			stakeEntries[jj].StakerPKID.ToBytes(),
+		) < 0
+	})
+	return stakeEntries, nil
+}
+
 func (bav *UtxoView) GetLockedStakeEntry(
 	validatorPKID *PKID,
 	stakerPKID *PKID,
@@ -1934,11 +2000,7 @@ func (bav *UtxoView) GetLockedStakeEntriesInRange(
 		return nil, errors.New("UtxoView.GetLockedStakeEntriesInRange: invalid LockedAtEpochNumber range provided as input")
 	}
 
-	// Store matching LockedStakeEntries in a map to prevent
-	// returning duplicates between the db and UtxoView.
-	lockedStakeEntriesMap := make(map[LockedStakeMapKey]*LockedStakeEntry)
-
-	// First, pull matching LockedStakeEntries from the db.
+	// First, pull matching LockedStakeEntries from the db and cache them in the UtxoView.
 	dbLockedStakeEntries, err := DBGetLockedStakeEntriesInRange(
 		bav.Handle, bav.Snapshot, validatorPKID, stakerPKID, startEpochNumber, endEpochNumber,
 	)
@@ -1946,34 +2008,27 @@ func (bav *UtxoView) GetLockedStakeEntriesInRange(
 		return nil, errors.Wrapf(err, "UtxoView.GetLockedStakeEntriesInRange: ")
 	}
 	for _, lockedStakeEntry := range dbLockedStakeEntries {
-		lockedStakeEntriesMap[lockedStakeEntry.ToMapKey()] = lockedStakeEntry
+		// Cache results in the UtxoView.
+		if _, exists := bav.LockedStakeMapKeyToLockedStakeEntry[lockedStakeEntry.ToMapKey()]; !exists {
+			bav._setLockedStakeEntryMappings(lockedStakeEntry)
+		}
 	}
 
 	// Then, pull matching LockedStakeEntries from the UtxoView.
-	// Loop through all LockedStakeEntries in the UtxoView.
+	var lockedStakeEntries []*LockedStakeEntry
 	for _, lockedStakeEntry := range bav.LockedStakeMapKeyToLockedStakeEntry {
 		// Filter to matching LockedStakeEntries.
 		if !lockedStakeEntry.ValidatorPKID.Eq(validatorPKID) ||
 			!lockedStakeEntry.StakerPKID.Eq(stakerPKID) ||
 			lockedStakeEntry.LockedAtEpochNumber < startEpochNumber ||
-			lockedStakeEntry.LockedAtEpochNumber > endEpochNumber {
+			lockedStakeEntry.LockedAtEpochNumber > endEpochNumber ||
+			lockedStakeEntry.isDeleted {
 			continue
 		}
-
-		if lockedStakeEntry.isDeleted {
-			// Remove from map if isDeleted.
-			delete(lockedStakeEntriesMap, lockedStakeEntry.ToMapKey())
-		} else {
-			// Otherwise, add to map.
-			lockedStakeEntriesMap[lockedStakeEntry.ToMapKey()] = lockedStakeEntry
-		}
-	}
-
-	// Convert LockedStakeEntries map to slice, sorted by LockedAtEpochNumber ASC.
-	var lockedStakeEntries []*LockedStakeEntry
-	for _, lockedStakeEntry := range lockedStakeEntriesMap {
 		lockedStakeEntries = append(lockedStakeEntries, lockedStakeEntry)
 	}
+
+	// Sort LockedStakeEntries by LockedAtEpochNumber ASC.
 	sort.Slice(lockedStakeEntries, func(ii, jj int) bool {
 		return lockedStakeEntries[ii].LockedAtEpochNumber < lockedStakeEntries[jj].LockedAtEpochNumber
 	})
@@ -2485,8 +2540,11 @@ func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stake
 	if err != nil {
 		return errors.Wrapf(err, "IsValidStakeLimitKey: ")
 	}
-	if validatorEntry == nil || validatorEntry.isDeleted || validatorEntry.DisableDelegatedStake {
+	if validatorEntry == nil || validatorEntry.isDeleted {
 		return errors.Wrapf(RuleErrorTransactionSpendingLimitInvalidValidator, "UtxoView.IsValidStakeLimitKey: ")
+	}
+	if !transactorPKIDEntry.PKID.Eq(&stakeLimitKey.ValidatorPKID) && validatorEntry.DisableDelegatedStake {
+		return errors.Wrapf(RuleErrorTransactionSpendingLimitValidatorDisabledDelegatedStake, "UtxoView.IsValidStakeLimitKey: ")
 	}
 
 	return nil
@@ -2499,6 +2557,7 @@ func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stake
 const RuleErrorInvalidStakerPKID RuleError = "RuleErrorInvalidStakerPKID"
 const RuleErrorInvalidStakeAmountNanos RuleError = "RuleErrorInvalidStakeAmountNanos"
 const RuleErrorInvalidStakeInsufficientBalance RuleError = "RuleErrorInvalidStakeInsufficientBalance"
+const RuleErrorInvalidStakeValidatorDisabledDelegatedStake RuleError = "RuleErrorInvalidStakeValidatorDisabledDelegatedStake"
 const RuleErrorInvalidUnstakeNoStakeFound RuleError = "RuleErrorInvalidUnstakeNoStakeFound"
 const RuleErrorInvalidUnstakeAmountNanos RuleError = "RuleErrorInvalidUnstakeAmountNanos"
 const RuleErrorInvalidUnstakeInsufficientStakeFound RuleError = "RuleErrorInvalidUnstakeInsufficientStakeFound"
@@ -2512,3 +2571,4 @@ const RuleErrorUnstakeTransactionSpendingLimitExceeded RuleError = "RuleErrorUns
 const RuleErrorUnlockStakeTransactionSpendingLimitNotFound RuleError = "RuleErrorUnlockStakeTransactionSpendingLimitNotFound"
 const RuleErrorTransactionSpendingLimitInvalidStaker RuleError = "RuleErrorTransactionSpendingLimitInvalidStaker"
 const RuleErrorTransactionSpendingLimitInvalidValidator RuleError = "RuleErrorTransactionSpendingLimitInvalidValidator"
+const RuleErrorTransactionSpendingLimitValidatorDisabledDelegatedStake RuleError = "RuleErrorTransactionSpendingLimitValidatorDisabledDelegatedStake"

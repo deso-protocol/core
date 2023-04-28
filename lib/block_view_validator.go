@@ -292,7 +292,6 @@ type RegisterAsValidatorTxindexMetadata struct {
 	VotingPublicKey               string
 	VotingPublicKeySignature      string
 	VotingSignatureBlockHeight    uint64
-	UnstakedStakers               []*UnstakedStakerTxindexMetadata
 }
 
 func (txindexMetadata *RegisterAsValidatorTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -309,13 +308,6 @@ func (txindexMetadata *RegisterAsValidatorTxindexMetadata) RawEncodeWithoutMetad
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.VotingPublicKey))...)
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.VotingPublicKeySignature))...)
 	data = append(data, UintToBuf(txindexMetadata.VotingSignatureBlockHeight)...)
-
-	// UnstakedStakers
-	data = append(data, UintToBuf(uint64(len(txindexMetadata.UnstakedStakers)))...)
-	for _, unstakedStaker := range txindexMetadata.UnstakedStakers {
-		data = append(data, unstakedStaker.RawEncodeWithoutMetadata(blockHeight, skipMetadata...)...)
-	}
-
 	return data
 }
 
@@ -366,20 +358,6 @@ func (txindexMetadata *RegisterAsValidatorTxindexMetadata) RawDecodeWithoutMetad
 	txindexMetadata.VotingSignatureBlockHeight, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "RegisterAsValidatorTxindexMetadata.Decode: Problem reading VotingSignatureBlockHeight: ")
-	}
-
-	// UnstakedStakers
-	numUnstakedStakers, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "RegisterAsValidatorTxindexMetadata.Decode: Problem reading UnstakedStakers: ")
-	}
-	for ii := 0; ii < int(numUnstakedStakers); ii++ {
-		unstakedStaker := &UnstakedStakerTxindexMetadata{}
-		err = unstakedStaker.RawDecodeWithoutMetadata(blockHeight, rr)
-		if err != nil {
-			return errors.Wrapf(err, "RegisterAsValidatorTxindexMetadata.Decode: Problem reading UnstakedStakers: ")
-		}
-		txindexMetadata.UnstakedStakers = append(txindexMetadata.UnstakedStakers, unstakedStaker)
 	}
 
 	return nil
@@ -924,13 +902,6 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		totalStakeAmountNanos = prevValidatorEntry.TotalStakeAmountNanos.Clone()
 	}
 
-	// TODO: In subsequent PR, unstake delegated stakers if updating DisableDelegatedStake=true.
-	// We will also need to update the TotalStakeAmountNanos and the GlobalStakeAmountNanos.
-	if prevValidatorEntry != nil &&
-		!prevValidatorEntry.DisableDelegatedStake && // Validator previously allowed delegated stake.
-		txMeta.DisableDelegatedStake { // Validator no longer allows delegated stake.
-	}
-
 	// Set RegisteredAtBlockHeight only if this is a new ValidatorEntry.
 	registeredAtBlockHeight := uint64(blockHeight)
 	if prevValidatorEntry != nil {
@@ -965,7 +936,6 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:               OperationTypeRegisterAsValidator,
 		PrevValidatorEntry: prevValidatorEntry,
-		// PrevStakeEntries: prevStakeEntries, // TODO: in subsequent PR
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -1022,10 +992,6 @@ func (bav *UtxoView) _disconnectRegisterAsValidator(
 	if prevValidatorEntry != nil {
 		bav._setValidatorEntryMappings(prevValidatorEntry)
 	}
-
-	// TODO: In subsequent PR, if PrevStakeEntries, delete the
-	// current StakeEntries and restore the prev StakeEntries.
-	// This should also update GlobalStakeAmountNanos.
 
 	// Disconnect the BasicTransfer.
 	return bav._disconnectBasicTransfer(
@@ -1084,8 +1050,81 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "_connectUnregisterAsValidator: ")
 	}
 
-	// TODO: In subsequent PR, unstake all StakeEntries for this validator.
-	// This should also update GlobalStakeAmountNanos.
+	// Retrieve PrevStakeEntries for this ValidatorPKID.
+	prevStakeEntries, err := bav.GetStakeEntriesForValidatorPKID(transactorPKIDEntry.PKID)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: error retrieving StakeEntries: ")
+	}
+
+	// Delete each StakeEntry and create or update the corresponding LockedStakeEntry.
+	// Track TotalUnstakedAmountNanos and PrevLockedStakeEntries.
+	totalUnstakedAmountNanos := uint256.NewInt()
+	var prevLockedStakeEntries []*LockedStakeEntry
+
+	currentEpochNumber := uint64(0) // TODO: Retrieve this from the db.
+
+	for _, prevStakeEntry := range prevStakeEntries {
+		// Add the UnstakedAmountNanos to the TotalUnstakedAmountNanos.
+		totalUnstakedAmountNanos, err = SafeUint256().Add(
+			totalUnstakedAmountNanos, prevStakeEntry.StakeAmountNanos,
+		)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(
+				err, "_connectUnregisterAsValidator: error adding UnstakedAmountNanos to TotalUnstakedAmountNanos: ",
+			)
+		}
+
+		// Retrieve the existing LockedStakeEntry, if exists.
+		prevLockedStakeEntry, err := bav.GetLockedStakeEntry(
+			prevStakeEntry.ValidatorPKID, prevStakeEntry.StakerPKID, currentEpochNumber,
+		)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(
+				err, "_connectUnregisterAsValidator: error retrieving LockedStakeEntry: ",
+			)
+		}
+
+		// Copy the existing LockedStakeEntry and update the LockedAmountNanos, if exists.
+		// Create a new LockedStakeEntry with the unstaked LockedAmountNanos, otherwise.
+		var lockedStakeEntry *LockedStakeEntry
+
+		if prevLockedStakeEntry != nil {
+			prevLockedStakeEntries = append(prevLockedStakeEntries, prevLockedStakeEntry)
+			lockedStakeEntry = prevLockedStakeEntry.Copy()
+			lockedStakeEntry.LockedAmountNanos, err = SafeUint256().Add(
+				lockedStakeEntry.LockedAmountNanos, prevStakeEntry.StakeAmountNanos,
+			)
+			if err != nil {
+				return 0, 0, nil, errors.Wrapf(
+					err, "_connectUnregisterAsValidator: error adding LockedStakeEntry.LockedAmountNanos: ",
+				)
+			}
+		} else {
+			lockedStakeEntry = &LockedStakeEntry{
+				// What to set as the LockedStakeID here is not obvious. Typically, we use the
+				// TxHash, but since there may be multiple LockedStakeEntries created here, one
+				// for each unstaked staker, that would result in multiple LockedStakeEntries
+				// with the same LockedStakeID. For that reason, we opted to use the
+				// PrevStakeEntry's StakeID instead.
+				LockedStakeID:       prevStakeEntry.StakeID.NewBlockHash(),
+				StakerPKID:          prevStakeEntry.StakerPKID.NewPKID(),
+				ValidatorPKID:       prevStakeEntry.ValidatorPKID.NewPKID(),
+				LockedAmountNanos:   prevStakeEntry.StakeAmountNanos.Clone(),
+				LockedAtEpochNumber: currentEpochNumber,
+			}
+		}
+
+		// Delete the PrevStakeEntry.
+		bav._deleteStakeEntryMappings(prevStakeEntry)
+
+		// Delete the PrevLockedStakeEntry, if exists.
+		if prevLockedStakeEntry != nil {
+			bav._deleteLockedStakeEntryMappings(prevLockedStakeEntry)
+		}
+
+		// Set the new LockedStakeEntry.
+		bav._setLockedStakeEntryMappings(lockedStakeEntry)
+	}
 
 	// Delete the existing ValidatorEntry.
 	prevValidatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
@@ -1098,11 +1137,38 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 	}
 	bav._deleteValidatorEntryMappings(prevValidatorEntry)
 
+	// Sanity check that TotalUnstakedAmountNanos == PrevValidatorEntry.TotalStakedAmountNanos.
+	if !totalUnstakedAmountNanos.Eq(prevValidatorEntry.TotalStakeAmountNanos) {
+		return 0, 0, nil, errors.New(
+			"_connectUnregisterAsValidator: TotalUnstakedAmountNanos does not match ValidatorEntry.TotalStakedAmountNanos: ",
+		)
+	}
+
+	// Decrease the GlobalStakeAmountNanos by the amount that was unstaked.
+	// Fetch the existing GlobalStakeAmountNanos.
+	prevGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: error fetching GlobalStakeAmountNanos: ")
+	}
+	// Subtract the amount that was unstaked.
+	globalStakeAmountNanos, err := SafeUint256().Sub(
+		prevGlobalStakeAmountNanos, totalUnstakedAmountNanos,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(
+			err, "_connectUnregisterAsValidator: error subtracting TotalUnstakedAmountNanos from GlobalStakeAmountNanos: ",
+		)
+	}
+	// Set the new GlobalStakeAmountNanos.
+	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
+
 	// Add a UTXO operation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:               OperationTypeUnregisterAsValidator,
-		PrevValidatorEntry: prevValidatorEntry,
-		// PrevStakeEntries: prevStakeEntries, // TODO: in subsequent PR
+		Type:                       OperationTypeUnregisterAsValidator,
+		PrevValidatorEntry:         prevValidatorEntry,
+		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
+		PrevStakeEntries:           prevStakeEntries,
+		PrevLockedStakeEntries:     prevLockedStakeEntries,
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -1133,7 +1199,7 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 		)
 	}
 
-	// Restore the PrevValidatorEntry.
+	// Restore the PrevValidatorEntry. This must always exist.
 	prevValidatorEntry := operationData.PrevValidatorEntry
 	if prevValidatorEntry == nil {
 		// This should never happen as you can only unregister an existing ValidatorEntry
@@ -1144,7 +1210,38 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	}
 	bav._setValidatorEntryMappings(prevValidatorEntry)
 
-	// TODO: In subsequent PR, restore the prev StakeEntries, if any.
+	// Restore the PrevStakeEntries, if any.
+	for _, prevStakeEntry := range operationData.PrevStakeEntries {
+		// Delete the CurrentStakeEntry.
+		currentStakeEntry, err := bav.GetStakeEntry(prevStakeEntry.ValidatorPKID, prevStakeEntry.StakerPKID)
+		if err != nil {
+			return errors.Wrapf(err, "_disconnectUnregisterAsValidator: error retrieving CurrentStakeEntry: ")
+		}
+		bav._deleteStakeEntryMappings(currentStakeEntry)
+
+		// Set the PrevStakeEntry.
+		bav._setStakeEntryMappings(prevStakeEntry)
+	}
+
+	// Restore the PrevLockedStakeEntries, if any.
+	currentEpochNumber := uint64(0) // TODO: Retrieve this from the db.
+
+	for _, prevLockedStakeEntry := range operationData.PrevLockedStakeEntries {
+		// Delete the CurrentLockedStakeEntry.
+		currentLockedStakeEntry, err := bav.GetLockedStakeEntry(
+			prevLockedStakeEntry.ValidatorPKID, prevLockedStakeEntry.StakerPKID, currentEpochNumber,
+		)
+		if err != nil {
+			return errors.Wrapf(err, "_disconnectUnregisterAsValidator: error retrieving CurrentLockedStakeEntry: ")
+		}
+		bav._deleteLockedStakeEntryMappings(currentLockedStakeEntry)
+
+		// Set the PrevLockedStakeEntry.
+		bav._setLockedStakeEntryMappings(prevLockedStakeEntry)
+	}
+
+	// Restore the PrevGlobalStakeAmountNanos.
+	bav._setGlobalStakeAmountNanos(operationData.PrevGlobalStakeAmountNanos)
 
 	// Disconnect the BasicTransfer.
 	return bav._disconnectBasicTransfer(
@@ -1179,6 +1276,33 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 	}
 
 	// TODO: In subsequent PR, validate VotingPublicKey, VotingPublicKeySignature, and VotingSignatureBlockHeight.
+
+	// Error if updating DisableDelegatedStake from false to
+	// true and there are existing delegated StakeEntries.
+	validatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error retrieving existing ValidatorEntry: ")
+	}
+	if validatorEntry != nil && // ValidatorEntry exists
+		!validatorEntry.DisableDelegatedStake && // Existing ValidatorEntry.DisableDelegatedStake = false
+		metadata.DisableDelegatedStake { // Updating DisableDelegatedStake = true
+
+		// Retrieve existing StakeEntries.
+		prevStakeEntries, err := bav.GetStakeEntriesForValidatorPKID(transactorPKIDEntry.PKID)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error retrieving existing StakeEntries: ")
+		}
+
+		// Error if any belong to someone other than the validator.
+		for _, stakeEntry := range prevStakeEntries {
+			if !stakeEntry.StakerPKID.Eq(transactorPKIDEntry.PKID) {
+				return errors.Wrapf(
+					RuleErrorValidatorDisablingExistingDelegatedStakers, "UtxoView.IsValidRegisterAsValidatorMetadata: ",
+				)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -1427,9 +1551,6 @@ func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
 		domains = append(domains, string(domain))
 	}
 
-	// TODO: In subsequent PR, pull UnstakedStakers from PrevStakeEntries on UtxoOperation.
-	var unstakedStakers []*UnstakedStakerTxindexMetadata
-
 	// Construct TxindexMetadata.
 	txindexMetadata := &RegisterAsValidatorTxindexMetadata{
 		ValidatorPublicKeyBase58Check: validatorPublicKeyBase58Check,
@@ -1439,7 +1560,6 @@ func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
 		VotingPublicKey:            string(metadata.VotingPublicKey),
 		VotingPublicKeySignature:   string(metadata.VotingPublicKeySignature),
 		VotingSignatureBlockHeight: metadata.VotingSignatureBlockHeight,
-		UnstakedStakers:            unstakedStakers,
 	}
 
 	// Construct AffectedPublicKeys.
@@ -1448,12 +1568,6 @@ func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
 			PublicKeyBase58Check: validatorPublicKeyBase58Check,
 			Metadata:             "RegisteredValidatorPublicKeyBase58Check",
 		},
-	}
-	for _, unstakedStaker := range unstakedStakers {
-		affectedPublicKeys = append(affectedPublicKeys, &AffectedPublicKey{
-			PublicKeyBase58Check: unstakedStaker.StakerPublicKeyBase58Check,
-			Metadata:             "UnstakedStakerPublicKeyBase58Check",
-		})
 	}
 
 	return txindexMetadata, affectedPublicKeys
@@ -1469,8 +1583,18 @@ func (bav *UtxoView) CreateUnregisterAsValidatorTxindexMetadata(
 	// Cast ValidatorPublicKey to ValidatorPublicKeyBase58Check.
 	validatorPublicKeyBase58Check := PkToString(txn.PublicKey, bav.Params)
 
-	// TODO: In subsequent PR, pull UnstakedStakers from PrevStakeEntries on UtxoOperation.
+	// Pull UnstakedStakers from PrevStakeEntries on UtxoOperation.
 	var unstakedStakers []*UnstakedStakerTxindexMetadata
+
+	for _, stakeEntry := range utxoOp.PrevStakeEntries {
+		stakerPublicKeyBytes := bav.GetPublicKeyForPKID(stakeEntry.StakerPKID)
+		stakerPublicKeyBase58Check := PkToString(stakerPublicKeyBytes, bav.Params)
+
+		unstakedStakers = append(unstakedStakers, &UnstakedStakerTxindexMetadata{
+			StakerPublicKeyBase58Check: stakerPublicKeyBase58Check,
+			UnstakeAmountNanos:         stakeEntry.StakeAmountNanos,
+		})
+	}
 
 	// Construct TxindexMetadata.
 	txindexMetadata := &UnregisterAsValidatorTxindexMetadata{
@@ -1506,5 +1630,6 @@ const RuleErrorValidatorTooManyDomains RuleError = "RuleErrorValidatorTooManyDom
 const RuleErrorValidatorInvalidDomain RuleError = "RuleErrorValidatorInvalidDomain"
 const RuleErrorValidatorDuplicateDomains RuleError = "RuleErrorValidatorDuplicateDomains"
 const RuleErrorValidatorNotFound RuleError = "RuleErrorValidatorNotFound"
+const RuleErrorValidatorDisablingExistingDelegatedStakers RuleError = "RuleErrorValidatorDisablingExistingDelegatedStakers"
 
 const MaxValidatorNumDomains int = 12
