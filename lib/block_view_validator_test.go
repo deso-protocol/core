@@ -62,6 +62,10 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 
+	// Seed a CurrentEpochEntry.
+	err = utxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	require.NoError(t, err)
+
 	{
 		// ParamUpdater set min fee rate
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
@@ -412,9 +416,14 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
 	senderPKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, senderPkBytes).PKID
 
-	_submitAuthorizeDerivedKeyTxn := func(txnType TxnType, count uint64) (string, error) {
+	newUtxoView := func() *UtxoView {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
+		return utxoView
+	}
+
+	_submitAuthorizeDerivedKeyTxn := func(txnType TxnType, count uint64) (string, error) {
+		utxoView := newUtxoView()
 
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
@@ -463,8 +472,7 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 	_submitValidatorTxnWithDerivedKey := func(
 		transactorPkBytes []byte, derivedKeyPrivBase58Check string, inputTxn MsgDeSoTxn,
 	) error {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-		require.NoError(t, err)
+		utxoView := newUtxoView()
 		var txn *MsgDeSoTxn
 
 		switch inputTxn.TxnMeta.GetTxnType() {
@@ -518,6 +526,10 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 		testMeta.txns = append(testMeta.txns, txn)
 		return nil
 	}
+
+	// Seed a CurrentEpochEntry.
+	err = newUtxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	require.NoError(t, err)
 
 	{
 		// ParamUpdater set min fee rate
@@ -676,6 +688,10 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
 	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes).PKID
+
+	// Seed a CurrentEpochEntry.
+	err = utxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	require.NoError(t, err)
 
 	{
 		// ParamUpdater set min fee rate
@@ -1210,8 +1226,11 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
 
-	currentEpochNumber := uint64(0) // TODO: Retrieve this from the db.
-	_ = currentEpochNumber
+	// Seed a CurrentEpochEntry.
+	err = utxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	require.NoError(t, err)
+	currentEpochNumber, err := utxoView().GetCurrentEpochNumber()
+	require.NoError(t, err)
 
 	{
 		// ParamUpdater set min fee rate

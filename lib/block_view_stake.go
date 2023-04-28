@@ -1427,8 +1427,13 @@ func (bav *UtxoView) _connectUnstake(
 	// 2. Set the new GlobalStakeAmountNanos.
 	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
 
+	// Retrieve the CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error retrieving CurrentEpochNumber: ")
+	}
+
 	// Update the LockedStakeEntry, if exists. Create if not.
-	currentEpochNumber := uint64(0) // TODO: set this
 	// 1. Retrieve the PrevLockedStakeEntry. This will be restored if we disconnect this txn.
 	prevLockedStakeEntry, err := bav.GetLockedStakeEntry(
 		prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID, currentEpochNumber,
@@ -1555,10 +1560,15 @@ func (bav *UtxoView) _disconnectUnstake(
 	// Restore the PrevGlobalStakeAmountNanos.
 	bav._setGlobalStakeAmountNanos(operationData.PrevGlobalStakeAmountNanos)
 
+	// Retrieve the CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectUnstake: error retrieving CurrentEpochNumber: ")
+	}
+
 	// Restore the PrevLockedStakeEntry, if exists. The PrevLockedStakeEntry will exist if the
 	// transactor has previously unstaked stake assigned to this validator within the same epoch.
 	// The PrevLockedStakeEntry will not exist otherwise.
-	currentEpochNumber := uint64(0) // TODO: set this
 	// 1. Retrieve the CurrentLockedStakeEntry.
 	currentLockedStakeEntry, err := bav.GetLockedStakeEntry(
 		prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID, currentEpochNumber,
