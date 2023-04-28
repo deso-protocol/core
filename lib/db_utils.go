@@ -723,6 +723,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixLockedStakeByValidatorByStakerByLockedAt) {
 		// prefix_id:"[82]"
 		return true, &LockedStakeEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentEpoch) {
+		// prefix_id:"[83]"
+		return true, &EpochEntry{}
 	}
 
 	return true, nil
