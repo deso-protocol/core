@@ -14,6 +14,7 @@ func TestCurrentEpoch(t *testing.T) {
 	blockHeight := uint64(chain.blockTip().Height) + 1
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(t, err)
+	chain.snapshot = nil
 
 	// Test that the CurrentEpoch is nil in the db.
 	epochEntry, err = DBGetCurrentEpochEntry(db, utxoView.Snapshot)
