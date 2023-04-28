@@ -512,7 +512,9 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	}
 
 	// Copy the CurrentEpochEntry
-	newView.CurrentEpochEntry = bav.CurrentEpochEntry.Copy()
+	if bav.CurrentEpochEntry != nil {
+		newView.CurrentEpochEntry = bav.CurrentEpochEntry.Copy()
+	}
 
 	return newView, nil
 }
