@@ -126,6 +126,9 @@ type UtxoView struct {
 	// Locked stake mappings
 	LockedStakeMapKeyToLockedStakeEntry map[LockedStakeMapKey]*LockedStakeEntry
 
+	// Current EpochEntry
+	CurrentEpochEntry *EpochEntry
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -228,6 +231,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// LockedStakeEntries
 	bav.LockedStakeMapKeyToLockedStakeEntry = make(map[LockedStakeMapKey]*LockedStakeEntry)
+
+	// CurrentEpochEntry
+	bav.CurrentEpochEntry = nil
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -504,6 +510,9 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for entryKey, entry := range bav.LockedStakeMapKeyToLockedStakeEntry {
 		newView.LockedStakeMapKeyToLockedStakeEntry[entryKey] = entry.Copy()
 	}
+
+	// Copy the CurrentEpochEntry
+	newView.CurrentEpochEntry = bav.CurrentEpochEntry.Copy()
 
 	return newView, nil
 }

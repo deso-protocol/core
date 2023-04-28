@@ -576,14 +576,14 @@ func DBGetStakeEntryWithTxn(
 		if err == badger.ErrKeyNotFound {
 			return nil, nil
 		}
-		return nil, errors.Wrapf(err, "DBGetStakeByValidatorByStaker: problem retrieving StakeEntry: ")
+		return nil, errors.Wrapf(err, "DBGetStakeEntry: problem retrieving StakeEntry: ")
 	}
 
 	// Decode StakeEntry from bytes.
 	rr := bytes.NewReader(stakeEntryBytes)
 	stakeEntry, err := DecodeDeSoEncoder(&StakeEntry{}, rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetStakeByValidatorByStaker: problem decoding StakeEntry: ")
+		return nil, errors.Wrapf(err, "DBGetStakeEntry: problem decoding StakeEntry: ")
 	}
 	return stakeEntry, nil
 }
@@ -649,7 +649,7 @@ func DBGetLockedStakeEntryWithTxn(
 			return nil, nil
 		}
 		return nil, errors.Wrapf(
-			err, "DBGetLockedStakeByValidatorByStakerByLockedAt: problem retrieving LockedStakeEntry: ",
+			err, "DBGetLockedStakeEntry: problem retrieving LockedStakeEntry: ",
 		)
 	}
 
@@ -658,7 +658,7 @@ func DBGetLockedStakeEntryWithTxn(
 	lockedStakeEntry, err := DecodeDeSoEncoder(&LockedStakeEntry{}, rr)
 	if err != nil {
 		return nil, errors.Wrapf(
-			err, "DBGetLockedStakeByValidatorByStakerByLockedAt: problem decoding LockedStakeEntry: ",
+			err, "DBGetLockedStakeEntry: problem decoding LockedStakeEntry: ",
 		)
 	}
 	return lockedStakeEntry, nil
@@ -755,7 +755,7 @@ func DBPutStakeEntryWithTxn(
 	key := DBKeyForStakeByValidatorByStaker(stakeEntry)
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, stakeEntry)); err != nil {
 		return errors.Wrapf(
-			err, "DBPutStakeWithTxn: problem storing StakeEntry in index PrefixStakeByValidatorByStaker",
+			err, "DBPutStakeEntryWithTxn: problem storing StakeEntry in index PrefixStakeByValidatorByStaker: ",
 		)
 	}
 
@@ -776,7 +776,7 @@ func DBPutLockedStakeEntryWithTxn(
 	key := DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry)
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, lockedStakeEntry)); err != nil {
 		return errors.Wrapf(
-			err, "DBPutLockedStakeWithTxn: problem storing LockedStakeEntry in index PrefixLockedStakeByValidatorByStakerByLockedAt",
+			err, "DBPutLockedStakeEntryWithTxn: problem storing LockedStakeEntry in index PrefixLockedStakeByValidatorByStakerByLockedAt: ",
 		)
 	}
 
@@ -797,7 +797,7 @@ func DBDeleteStakeEntryWithTxn(
 	key := DBKeyForStakeByValidatorByStaker(stakeEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteStakeWithTxn: problem deleting StakeEntry from index PrefixStakeByValidatorByStaker",
+			err, "DBDeleteStakeEntryWithTxn: problem deleting StakeEntry from index PrefixStakeByValidatorByStaker: ",
 		)
 	}
 
@@ -818,7 +818,7 @@ func DBDeleteLockedStakeEntryWithTxn(
 	key := DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteLockedStakeWithTxn: problem deleting StakeEntry from index PrefixLockedStakeByValidatorByStakerByLockedAt",
+			err, "DBDeleteLockedStakeEntryWithTxn: problem deleting StakeEntry from index PrefixLockedStakeByValidatorByStakerByLockedAt: ",
 		)
 	}
 

@@ -113,9 +113,10 @@ const (
 	EncoderTypeValidatorEntry                    EncoderType = 40
 	EncoderTypeStakeEntry                        EncoderType = 41
 	EncoderTypeLockedStakeEntry                  EncoderType = 42
+	EncoderTypeEpochEntry                        EncoderType = 43
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 43
+	EncoderTypeEndBlockView EncoderType = 44
 )
 
 // Txindex encoder types.
@@ -250,6 +251,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &StakeEntry{}
 	case EncoderTypeLockedStakeEntry:
 		return &LockedStakeEntry{}
+	case EncoderTypeEpochEntry:
+		return &EpochEntry{}
 	}
 
 	// Txindex encoder types
