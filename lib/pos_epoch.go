@@ -98,6 +98,18 @@ func (bav *UtxoView) SetCurrentEpochEntry(epochEntry *EpochEntry, blockHeight ui
 		return errors.New("UtxoView.SetCurrentEpochEntry: called with nil EpochEntry")
 	}
 
+	// TODO: is this what we should do here?
+	if bav.Snapshot != nil {
+		// We're about to set a record to the db, so we initiate a snapshot update.
+		// This function prepares the data structures in the snapshot.
+		bav.Snapshot.PrepareAncestralRecordsFlush()
+
+		// When we finish setting to the db, we'll also flush to ancestral records.
+		// This happens concurrently, which is why we have the 2-phase prepare-flush
+		// happening for snapshot.
+		defer bav.Snapshot.StartAncestralRecordsFlush(true)
+	}
+
 	// Set the current EpochEntry in the db.
 	if err := DBPutCurrentEpochEntry(bav.Handle, bav.Snapshot, epochEntry, blockHeight); err != nil {
 		return errors.Wrapf(err, "UtxoView.SetCurrentEpochEntry: problem setting EpochEntry in db: ")
