@@ -30,8 +30,8 @@ func TestCurrentEpoch(t *testing.T) {
 
 	// Set the CurrentEpoch.
 	epochEntry = &EpochEntry{
-		EpochNumber:            1,
-		LastBlockHeightInEpoch: blockHeight + 5,
+		EpochNumber:      1,
+		FinalBlockHeight: blockHeight + 5,
 	}
 	err = utxoView.SetCurrentEpochEntry(epochEntry, blockHeight)
 	require.NoError(t, err)
@@ -41,20 +41,20 @@ func TestCurrentEpoch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
-	require.Equal(t, epochEntry.LastBlockHeightInEpoch, blockHeight+5)
+	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
 
 	// Test that the CurrentEpoch is set in the UtxoView.
 	epochEntry = utxoView.CurrentEpochEntry
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
-	require.Equal(t, epochEntry.LastBlockHeightInEpoch, blockHeight+5)
+	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
 
 	// Test GetCurrentEpoch().
 	epochEntry, err = utxoView.GetCurrentEpochEntry()
 	require.NoError(t, err)
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
-	require.Equal(t, epochEntry.LastBlockHeightInEpoch, blockHeight+5)
+	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
 
 	// Delete CurrentEpoch from the UtxoView.
 	utxoView.DeleteCurrentEpochEntry()

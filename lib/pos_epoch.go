@@ -11,21 +11,21 @@ import (
 //
 
 type EpochEntry struct {
-	EpochNumber            uint64
-	LastBlockHeightInEpoch uint64
+	EpochNumber      uint64
+	FinalBlockHeight uint64
 }
 
 func (epochEntry *EpochEntry) Copy() *EpochEntry {
 	return &EpochEntry{
-		EpochNumber:            epochEntry.EpochNumber,
-		LastBlockHeightInEpoch: epochEntry.LastBlockHeightInEpoch,
+		EpochNumber:      epochEntry.EpochNumber,
+		FinalBlockHeight: epochEntry.FinalBlockHeight,
 	}
 }
 
 func (epochEntry *EpochEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, UintToBuf(epochEntry.EpochNumber)...)
-	data = append(data, UintToBuf(epochEntry.LastBlockHeightInEpoch)...)
+	data = append(data, UintToBuf(epochEntry.FinalBlockHeight)...)
 	return data
 }
 
@@ -38,10 +38,10 @@ func (epochEntry *EpochEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading EpochNumber: ")
 	}
 
-	// LastBlockHeightInEpoch
-	epochEntry.LastBlockHeightInEpoch, err = ReadUvarint(rr)
+	// FinalBlockHeight
+	epochEntry.FinalBlockHeight, err = ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading LastBlockHeightInEpoch: ")
+		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading FinalBlockHeight: ")
 	}
 
 	return err
