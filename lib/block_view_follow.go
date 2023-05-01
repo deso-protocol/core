@@ -188,7 +188,7 @@ func (bav *UtxoView) _deleteFollowEntryMappings(followEntry *FollowEntry) {
 }
 
 func (bav *UtxoView) _connectFollow(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -224,7 +224,7 @@ func (bav *UtxoView) _connectFollow(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectFollow: ")
 	}
@@ -282,33 +282,6 @@ func (bav *UtxoView) _connectFollow(
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type: OperationTypeFollow,
 	})
-
-	if bav.EventManager != nil && emitMempoolTxn {
-		var operationType StateSyncerOperationType
-		var newFollowEntry *FollowEntry
-		if txMeta.IsUnfollow {
-			operationType = DbOperationTypeDelete
-			newFollowEntry = nil
-		} else {
-			operationType = DbOperationTypeUpsert
-			newFollowEntry = &FollowEntry{
-				FollowerPKID: followerPKID.PKID,
-				FollowedPKID: followedPKID.PKID,
-			}
-		}
-
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: operationType,
-				Encoder:       newFollowEntry,
-				KeyBytes:      _dbKeyForFollowerToFollowedMapping(followerPKID.PKID, followedPKID.PKID),
-			},
-			PrevEncoder: existingFollowEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

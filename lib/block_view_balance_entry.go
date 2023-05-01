@@ -256,7 +256,7 @@ func (bav *UtxoView) GetBalanceEntryHolders(pkid *PKID, isDAOCoin bool) []*Balan
 // This function is the workhorse for both _connectCreatorCoinTransfer and
 // _connectDAOCoinTransfer. We consolidated the code because they're very similar.
 func (bav *UtxoView) HelpConnectCoinTransfer(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, isDAOCoin bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, isDAOCoin bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// This code block is a bit ugly because Go doesn't support generics. In an ideal world,
@@ -280,7 +280,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_helpConnectCoinTransfer: ")
 	}
@@ -579,37 +579,6 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		PrevPostEntry:    previousDiamondPostEntry,
 		PrevDiamondEntry: previousDiamondEntry,
 	})
-
-	// Capture changes to the balance entries and coin entry to state syncer.
-	// Diamond entries are skipped here, as they are deprecated for CCs and thus will never be connected via a mempool txn.
-	if bav.EventManager != nil && emitMempoolTxn {
-
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       senderBalanceEntry,
-				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
-					senderBalanceEntry.HODLerPKID, senderBalanceEntry.CreatorPKID, isDAOCoin),
-			},
-			PrevEncoder: &prevSenderBalanceEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       receiverBalanceEntry,
-				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
-					receiverBalanceEntry.HODLerPKID, receiverBalanceEntry.CreatorPKID, isDAOCoin),
-			},
-			PrevEncoder: prevReceiverBalanceEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

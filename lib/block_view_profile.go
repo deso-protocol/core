@@ -527,7 +527,7 @@ func (bav *UtxoView) GetProfilesForUsernamePrefixByCoinValue(usernamePrefix stri
 
 func (bav *UtxoView) _connectUpdateProfile(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool,
-	ignoreUtxos bool, emitMempoolTxn bool) (
+	ignoreUtxos bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -620,7 +620,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 	var utxoOpsForTxn = []*UtxoOperation{}
 	var err error
 	if !ignoreUtxos {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectUpdateProfile: ")
 		}
@@ -782,28 +782,6 @@ func (bav *UtxoView) _connectUpdateProfile(
 		ClobberedProfileBugDESOLockedNanos: clobberedProfileBugDeSoAdjustment,
 	})
 
-	if bav.EventManager != nil && emitMempoolTxn {
-		// Get the PKID according to another map in the view and
-		// sanity-check that it lines up.
-		viewPKIDEntry := bav.GetPKIDForPublicKey(newProfileEntry.PublicKey)
-		if viewPKIDEntry == nil || viewPKIDEntry.isDeleted {
-			return 0, 0, nil, fmt.Errorf("_connectUpdateProfile: No pkid found for public key %v",
-				newProfileEntry.PublicKey)
-		}
-
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       &newProfileEntry,
-				KeyBytes:      _dbKeyForPKIDToProfileEntry(viewPKIDEntry.PKID),
-			},
-			PrevEncoder: prevProfileEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -826,7 +804,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 	}
 
 	// call _connectBasicTransfer to verify signatures
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectSwapIdentity: ")
 	}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"math"
 	"reflect"
@@ -273,12 +272,7 @@ func (bav *UtxoView) GetLimitedMessagesForUser(ownerPublicKey []byte, limit uint
 
 	// We fetched all UtxoView entries, so now look for messages in the DB.
 	dbMessageEntries, err := DBGetLimitedMessageForMessagingKeys(bav.Handle, messagingGroupEntries, limit)
-	if bav.EventManager != nil {
-		bav.EventManager.dbFlushed(&DBFlushedEvent{
-			FlushId:   uuid.Nil,
-			Succeeded: err == nil,
-		})
-	}
+
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "GetMessagesForUser: Problem fetching MessageEntries from db: ")
 	}
@@ -384,7 +378,7 @@ func (bav *UtxoView) ValidateKeyAndNameWithUtxo(ownerPublicKey, messagingPublicK
 }
 
 func (bav *UtxoView) _connectPrivateMessage(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -417,7 +411,7 @@ func (bav *UtxoView) _connectPrivateMessage(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectPrivateMessage: ")
 	}
@@ -571,20 +565,6 @@ func (bav *UtxoView) _connectPrivateMessage(
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type: OperationTypePrivateMessage,
 	})
-
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       messageEntry,
-				KeyBytes:      _dbKeyForMessageEntry(messageEntry.SenderMessagingPublicKey[:], messageEntry.TstampNanos),
-			},
-			PrevEncoder: nil,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -815,7 +795,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectMessagingGroup: ")
 	}

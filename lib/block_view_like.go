@@ -110,7 +110,7 @@ func (bav *UtxoView) GetLikesForPostHash(postHash *BlockHash) (_likerPubKeys [][
 }
 
 func (bav *UtxoView) _connectLike(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -122,7 +122,7 @@ func (bav *UtxoView) _connectLike(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectLike: ")
 	}
@@ -195,34 +195,6 @@ func (bav *UtxoView) _connectLike(
 		PrevLikeEntry: existingLikeEntry,
 		PrevLikeCount: existingPostEntry.LikeCount,
 	})
-
-	var operationType StateSyncerOperationType
-	var newLikeEntry *LikeEntry
-	if txMeta.IsUnlike {
-		operationType = DbOperationTypeDelete
-		newLikeEntry = nil
-	} else {
-		operationType = DbOperationTypeUpsert
-		newLikeEntry = &LikeEntry{
-			LikerPubKey:   txn.PublicKey,
-			LikedPostHash: txMeta.LikedPostHash,
-		}
-	}
-
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: operationType,
-				Encoder:       newLikeEntry,
-				KeyBytes: _dbKeyForLikerPubKeyToLikedPostHashMapping(
-					txn.PublicKey, *txMeta.LikedPostHash),
-			},
-			PrevEncoder: existingLikeEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

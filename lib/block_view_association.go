@@ -12,7 +12,6 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 	txHash *BlockHash,
 	blockHeight uint32,
 	verifySignatures bool,
-	emitMempoolTxn bool,
 ) (
 	_totalInput uint64,
 	_totalOutput uint64,
@@ -33,7 +32,7 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 
 	// Connect a basic transfer to get the total input and the
 	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreateUserAssociation: ")
 	}
@@ -96,21 +95,6 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 		PrevUserAssociationEntry: prevAssociationEntry,
 	})
 
-	// Emit association creation state change event.
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       currentAssociationEntry,
-				KeyBytes:      DBKeyForUserAssociationByID(currentAssociationEntry),
-			},
-			PrevEncoder: prevAssociationEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -119,7 +103,6 @@ func (bav *UtxoView) _connectDeleteUserAssociation(
 	txHash *BlockHash,
 	blockHeight uint32,
 	verifySignatures bool,
-	emitMempoolTxn bool,
 ) (
 	_totalInput uint64,
 	_totalOutput uint64,
@@ -140,7 +123,7 @@ func (bav *UtxoView) _connectDeleteUserAssociation(
 
 	// Connect a basic transfer to get the total input and the
 	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectDeleteUserAssociation: ")
 	}
@@ -183,21 +166,6 @@ func (bav *UtxoView) _connectDeleteUserAssociation(
 		PrevUserAssociationEntry: prevAssociationEntry,
 	})
 
-	// Emit association entry state change event.
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeDelete,
-				Encoder:       nil,
-				KeyBytes:      DBKeyForUserAssociationByID(prevAssociationEntry),
-			},
-			PrevEncoder: prevAssociationEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -206,7 +174,6 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 	txHash *BlockHash,
 	blockHeight uint32,
 	verifySignatures bool,
-	emitMempoolTxn bool,
 ) (
 	_totalInput uint64,
 	_totalOutput uint64,
@@ -227,7 +194,7 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 
 	// Connect a basic transfer to get the total input and the
 	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreatePostAssociation: ")
 	}
@@ -290,21 +257,6 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 		PrevPostAssociationEntry: prevAssociationEntry,
 	})
 
-	// Emit association entry state change event.
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeDelete,
-				Encoder:       currentAssociationEntry,
-				KeyBytes:      DBKeyForPostAssociationByID(currentAssociationEntry),
-			},
-			PrevEncoder: prevAssociationEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -313,7 +265,6 @@ func (bav *UtxoView) _connectDeletePostAssociation(
 	txHash *BlockHash,
 	blockHeight uint32,
 	verifySignatures bool,
-	emitMempoolTxn bool,
 ) (
 	_totalInput uint64,
 	_totalOutput uint64,
@@ -334,7 +285,7 @@ func (bav *UtxoView) _connectDeletePostAssociation(
 
 	// Connect a basic transfer to get the total input and the
 	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectDeleteUserAssociation: ")
 	}
@@ -375,21 +326,6 @@ func (bav *UtxoView) _connectDeletePostAssociation(
 		Type:                     OperationTypeDeletePostAssociation,
 		PrevPostAssociationEntry: prevAssociationEntry,
 	})
-
-	// Emit association deletion state change event.
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeDelete,
-				Encoder:       nil,
-				KeyBytes:      DBKeyForPostAssociationByID(prevAssociationEntry),
-			},
-			PrevEncoder: prevAssociationEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

@@ -591,13 +591,13 @@ func (bav *UtxoView) _disconnectCreatorCoinTransfer(
 // TODO: A lot of duplicate code between buy and sell. Consider factoring
 // out the common code.
 func (bav *UtxoView) HelpConnectCreatorCoinBuy(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _creatorCoinReturnedNanos uint64, _founderRewardNanos uint64,
 	_utxoOps []*UtxoOperation, _err error) {
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, 0, 0, nil, errors.Wrapf(err, "_connectCreatorCoin: ")
 	}
@@ -1036,48 +1036,19 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
-	// Capture updates to the balance entry for the buyer and the creator for the state syncer.
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       buyerBalanceEntry,
-				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
-					buyerBalanceEntry.HODLerPKID, buyerBalanceEntry.CreatorPKID, false),
-			},
-			PrevEncoder: &prevBuyerBalanceEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       creatorBalanceEntry,
-				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
-					creatorBalanceEntry.HODLerPKID, creatorBalanceEntry.CreatorPKID, false),
-			},
-			PrevEncoder: &prevCreatorBalanceEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	return totalInput, totalOutput, coinsBuyerGetsNanos, creatorCoinFounderRewardNanos, utxoOpsForTxn, nil
 }
 
 // TODO: A lot of duplicate code between buy and sell. Consider factoring
 // out the common code.
 func (bav *UtxoView) HelpConnectCreatorCoinSell(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _desoReturnedNanos uint64,
 	_utxoOps []*UtxoOperation, _err error) {
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, 0, nil, errors.Wrapf(err, "_connectCreatorCoin: ")
 	}
@@ -1369,22 +1340,6 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
 	})
 
-	// Capture changes to the balance entry for the seller.
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       sellerBalanceEntry,
-				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
-					sellerBalanceEntry.HODLerPKID, sellerBalanceEntry.CreatorPKID, false),
-			},
-			PrevEncoder: &prevTransactorBalanceEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	// The DeSo that the user gets from selling their creator coin counts
 	// as both input and output in the transaction.
 	return totalInput + desoAfterFeesNanos,
@@ -1393,7 +1348,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 }
 
 func (bav *UtxoView) _connectCreatorCoin(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -1410,13 +1365,13 @@ func (bav *UtxoView) _connectCreatorCoin(
 	case CreatorCoinOperationTypeBuy:
 		// We don't need the creatorCoinsReturned return value
 		totalInput, totalOutput, _, _, utxoOps, err :=
-			bav.HelpConnectCreatorCoinBuy(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
+			bav.HelpConnectCreatorCoinBuy(txn, txHash, blockHeight, verifySignatures)
 		return totalInput, totalOutput, utxoOps, err
 
 	case CreatorCoinOperationTypeSell:
 		// We don't need the desoReturned return value
 		totalInput, totalOutput, _, utxoOps, err :=
-			bav.HelpConnectCreatorCoinSell(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
+			bav.HelpConnectCreatorCoinSell(txn, txHash, blockHeight, verifySignatures)
 		return totalInput, totalOutput, utxoOps, err
 
 	case CreatorCoinOperationTypeAddDeSo:
@@ -1428,7 +1383,7 @@ func (bav *UtxoView) _connectCreatorCoin(
 }
 
 func (bav *UtxoView) _connectCreatorCoinTransfer(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -1437,5 +1392,5 @@ func (bav *UtxoView) _connectCreatorCoinTransfer(
 			txn.TxnMeta.GetTxnType().String())
 	}
 
-	return bav.HelpConnectCoinTransfer(txn, txHash, blockHeight, verifySignatures, false, emitMempoolTxn)
+	return bav.HelpConnectCoinTransfer(txn, txHash, blockHeight, verifySignatures, false)
 }

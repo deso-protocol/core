@@ -311,7 +311,7 @@ func (bav *UtxoView) HelpConnectDAOCoinInitialization(txn *MsgDeSoTxn, txHash *B
 	}
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, nil, errors.Wrapf(err, "_connectDAOCoin: ")
 	}
@@ -348,7 +348,7 @@ func (bav *UtxoView) HelpConnectDAOCoinInitialization(txn *MsgDeSoTxn, txHash *B
 }
 
 func (bav *UtxoView) HelpConnectDAOCoinMint(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	totalInput, totalOutput, utxoOpsForTxn, creatorProfileEntry, err := bav.HelpConnectDAOCoinInitialization(
@@ -435,29 +435,11 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 		PrevCreatorBalanceEntry: &prevProfileOwnerBalanceEntry,
 	})
 
-	// Capture the dao coin entry state change.
-	// Note that the coin entry state change is not captured, as the change to the entry (coins in circulation),
-	// is effectively captured by the balance entry state change.
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       profileOwnerBalanceEntry,
-				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
-					profileOwnerBalanceEntry.HODLerPKID, profileOwnerBalanceEntry.CreatorPKID, true),
-			},
-			PrevEncoder: &prevProfileOwnerBalanceEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) HelpConnectDAOCoinBurn(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	totalInput, totalOutput, utxoOpsForTxn, creatorProfileEntry, err := bav.HelpConnectDAOCoinInitialization(
 		txn, txHash, blockHeight, verifySignatures)
@@ -540,28 +522,11 @@ func (bav *UtxoView) HelpConnectDAOCoinBurn(
 		PrevTransactorBalanceEntry: &prevTransactorBalanceEntry,
 	})
 
-	// Capture the dao coin state change event.
-	// The coin entry change is ignored as the balance entry change captures the coins in circulation change.
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       burnerBalanceEntry,
-				KeyBytes: _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
-					burnerBalanceEntry.HODLerPKID, burnerBalanceEntry.CreatorPKID, true),
-			},
-			PrevEncoder: &prevTransactorBalanceEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) HelpConnectDAOCoinDisableMinting(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	totalInput, totalOutput, utxoOpsForTxn, creatorProfileEntry, err := bav.HelpConnectDAOCoinInitialization(
@@ -584,7 +549,6 @@ func (bav *UtxoView) HelpConnectDAOCoinDisableMinting(
 
 	// Save the previous coin entry and creatorProfileEntry and then set minting disabled on the existing profile
 	prevCoinEntry := creatorProfileEntry.DAOCoinEntry
-	prevCreatorProfileEntry := *creatorProfileEntry
 	creatorProfileEntry.DAOCoinEntry.MintingDisabled = true
 
 	bav._setProfileEntryMappings(creatorProfileEntry)
@@ -594,34 +558,11 @@ func (bav *UtxoView) HelpConnectDAOCoinDisableMinting(
 		PrevCoinEntry: &prevCoinEntry,
 	})
 
-	if bav.EventManager != nil && emitMempoolTxn {
-		// Get the PKID according to another map in the view and
-		// sanity-check that it lines up.
-		viewPKIDEntry := bav.GetPKIDForPublicKey(creatorProfileEntry.PublicKey)
-		if viewPKIDEntry == nil || viewPKIDEntry.isDeleted {
-			return 0, 0, nil, fmt.Errorf("HelpConnectDAOCoinDisableMinting: No pkid found for public key %v",
-				creatorProfileEntry.PublicKey)
-		}
-
-		// Capture change to the coin entry via the profile entry.
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       creatorProfileEntry,
-				KeyBytes:      _dbKeyForPKIDToProfileEntry(viewPKIDEntry.PKID),
-			},
-			PrevEncoder: &prevCreatorProfileEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) HelpConnectUpdateTransferRestrictionStatus(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	totalInput, totalOutput, utxoOpsForTxn, creatorProfileEntry, err := bav.HelpConnectDAOCoinInitialization(
@@ -650,7 +591,6 @@ func (bav *UtxoView) HelpConnectUpdateTransferRestrictionStatus(
 	}
 
 	prevCoinEntry := creatorProfileEntry.DAOCoinEntry
-	prevCreatorProfileEntry := *creatorProfileEntry
 	creatorProfileEntry.DAOCoinEntry.TransferRestrictionStatus = txMeta.TransferRestrictionStatus
 
 	bav._setProfileEntryMappings(creatorProfileEntry)
@@ -660,34 +600,11 @@ func (bav *UtxoView) HelpConnectUpdateTransferRestrictionStatus(
 		PrevCoinEntry: &prevCoinEntry,
 	})
 
-	if bav.EventManager != nil && emitMempoolTxn {
-		// Get the PKID according to another map in the view and
-		// sanity-check that it lines up.
-		viewPKIDEntry := bav.GetPKIDForPublicKey(creatorProfileEntry.PublicKey)
-		if viewPKIDEntry == nil || viewPKIDEntry.isDeleted {
-			return 0, 0, nil, fmt.Errorf("HelpConnectDAOCoinDisableMinting: No pkid found for public key %v",
-				creatorProfileEntry.PublicKey)
-		}
-
-		// Capture the state change to the coin entry via the profile entry.
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       creatorProfileEntry,
-				KeyBytes:      _dbKeyForPKIDToProfileEntry(viewPKIDEntry.PKID),
-			},
-			PrevEncoder: &prevCreatorProfileEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	return totalInput, totalOutput, utxoOpsForTxn, err
 }
 
 func (bav *UtxoView) _connectDAOCoin(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
@@ -699,16 +616,16 @@ func (bav *UtxoView) _connectDAOCoin(
 
 	switch txMeta.OperationType {
 	case DAOCoinOperationTypeMint:
-		return bav.HelpConnectDAOCoinMint(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
+		return bav.HelpConnectDAOCoinMint(txn, txHash, blockHeight, verifySignatures)
 
 	case DAOCoinOperationTypeBurn:
-		return bav.HelpConnectDAOCoinBurn(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
+		return bav.HelpConnectDAOCoinBurn(txn, txHash, blockHeight, verifySignatures)
 
 	case DAOCoinOperationTypeDisableMinting:
-		return bav.HelpConnectDAOCoinDisableMinting(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
+		return bav.HelpConnectDAOCoinDisableMinting(txn, txHash, blockHeight, verifySignatures)
 
 	case DAOCoinOperationTypeUpdateTransferRestrictionStatus:
-		return bav.HelpConnectUpdateTransferRestrictionStatus(txn, txHash, blockHeight, verifySignatures, emitMempoolTxn)
+		return bav.HelpConnectUpdateTransferRestrictionStatus(txn, txHash, blockHeight, verifySignatures)
 	}
 
 	return 0, 0, nil, fmt.Errorf("_connectDAOCoin: Unrecognized DAOCoin "+
@@ -716,7 +633,7 @@ func (bav *UtxoView) _connectDAOCoin(
 }
 
 func (bav *UtxoView) _connectDAOCoinTransfer(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < bav.Params.ForkHeights.DAOCoinBlockHeight {
@@ -729,7 +646,7 @@ func (bav *UtxoView) _connectDAOCoinTransfer(
 			txn.TxnMeta.GetTxnType().String())
 	}
 
-	return bav.HelpConnectCoinTransfer(txn, txHash, blockHeight, verifySignatures, true, emitMempoolTxn)
+	return bav.HelpConnectCoinTransfer(txn, txHash, blockHeight, verifySignatures, true)
 }
 
 func (bav *UtxoView) IsValidDAOCoinTransfer(

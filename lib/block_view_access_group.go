@@ -323,7 +323,7 @@ func (bav *UtxoView) ValidateAccessGroupPublicKeyAndNameWithUtxoView(
 // that are is to store additional information about the access group. Access group extraData is the main venue for
 // utilizing the generality of access groups, ranging from on-chain private group chats, to private content.
 func (bav *UtxoView) _connectAccessGroup(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Make sure access groups are live.
@@ -420,7 +420,7 @@ func (bav *UtxoView) _connectAccessGroup(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroup: ")
 	}
@@ -448,21 +448,6 @@ func (bav *UtxoView) _connectAccessGroup(
 		Type:                 OperationTypeAccessGroup,
 		PrevAccessGroupEntry: &prevAccessGroupEntry,
 	})
-
-	// Track the access group entry state event via the event manager.
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       accessGroupEntry,
-				KeyBytes:      _dbKeyForAccessGroupEntry(*accessGroupEntry.AccessGroupOwnerPublicKey, *accessGroupEntry.AccessGroupKeyName),
-			},
-			PrevEncoder: &prevAccessGroupEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

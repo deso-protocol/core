@@ -4,7 +4,6 @@ import "github.com/google/uuid"
 
 type TransactionEventFunc func(event *TransactionEvent)
 type DBTransactionEventFunc func(event *DBTransactionEvent)
-type MempoolTransactionConnectedEventFunc func(event *MempoolTransactionEvent)
 type DBFlushedEventFunc func(event *DBFlushedEvent)
 type BlockEventFunc func(event *BlockEvent)
 type SnapshotCompletedEventFunc func()
@@ -15,24 +14,8 @@ type DBTransactionEvent struct {
 	StateChangeEntry *StateChangeEntry
 	// An ID to map the event to the db flush that it is included in.
 	FlushId uuid.UUID
-}
-
-// MemPoolTransactionEvent is an event that is fired when a transaction is connected or disconnected from the mempool.
-type MempoolTransactionEvent struct {
-	// The details needed to represent this state change to a data consumer.
-	StateChangeEntry *StateChangeEntry
-	// Whether the transaction is being connected or disconnected.
-	IsConnected bool
-	// The blockheight of the transaction
-	BlockHeight uint64
-	// The transaction hash is used to store the transaction in a map so that we can
-	// later look up the entry and UTXO Ops for the transaction upon disconnect.
-	TxHash *BlockHash
-	// The previous encoder value. This is used disconnecting mempool transactions that have been included in a block.
-	// This is similar to how UTXO operations are used to disconnect transactions, but unlike UTXO operations, only
-	// one encoder is needed to represent a StateChangeEntry disconnect.
-	// This encoder will always be the same type as the EncoderType for the StateChangeEntry.
-	PrevEncoder DeSoEncoder
+	// Whether the transaction is from the mempool or a confirmed transaction.
+	IsMempoolTxn bool
 }
 
 // DBFlushedEvent is an event that is fired when the badger db is flushed.
@@ -43,6 +26,11 @@ type DBFlushedEvent struct {
 	FlushId uuid.UUID
 	// Whether the flush succeeded or not.
 	Succeeded bool
+	// Whether the flush is from the mempool or a confirmed transaction.
+	IsMempoolFlush bool
+	// For mempool flushes, the flush id of the last confirmed flush when the mempool connect was initialized.
+	// If this has since changed, throw out the mempool flush.
+	CommittedFlushId uuid.UUID
 }
 
 type TransactionEvent struct {
@@ -63,15 +51,13 @@ type BlockEvent struct {
 }
 
 type EventManager struct {
-	transactionConnectedHandlers        []TransactionEventFunc
-	dbTransactionConnectedHandlers      []DBTransactionEventFunc
-	mempoolTransactionConnectedHandlers []MempoolTransactionConnectedEventFunc
-	dbFlushedHandlers                   []DBFlushedEventFunc
-	blockValidatedHandlers              []BlockEventFunc
-	blockConnectedHandlers              []BlockEventFunc
-	blockDisconnectedHandlers           []BlockEventFunc
-	blockAcceptedHandlers               []BlockEventFunc
-	snapshotCompletedHandlers           []SnapshotCompletedEventFunc
+	transactionConnectedHandlers   []TransactionEventFunc
+	dbTransactionConnectedHandlers []DBTransactionEventFunc
+	dbFlushedHandlers              []DBFlushedEventFunc
+	blockConnectedHandlers         []BlockEventFunc
+	blockDisconnectedHandlers      []BlockEventFunc
+	blockAcceptedHandlers          []BlockEventFunc
+	snapshotCompletedHandlers      []SnapshotCompletedEventFunc
 }
 
 func NewEventManager() *EventManager {
@@ -92,16 +78,6 @@ func (em *EventManager) dbTransactionConnected(event *DBTransactionEvent) {
 	}
 }
 
-func (em *EventManager) OnMempoolTransactionConnected(handler MempoolTransactionConnectedEventFunc) {
-	em.mempoolTransactionConnectedHandlers = append(em.mempoolTransactionConnectedHandlers, handler)
-}
-
-func (em *EventManager) mempoolTransactionConnected(event *MempoolTransactionEvent) {
-	for _, handler := range em.mempoolTransactionConnectedHandlers {
-		handler(event)
-	}
-}
-
 func (em *EventManager) dbFlushed(event *DBFlushedEvent) {
 	for _, handler := range em.dbFlushedHandlers {
 		handler(event)
@@ -114,16 +90,6 @@ func (em *EventManager) OnTransactionConnected(handler TransactionEventFunc) {
 
 func (em *EventManager) transactionConnected(event *TransactionEvent) {
 	for _, handler := range em.transactionConnectedHandlers {
-		handler(event)
-	}
-}
-
-func (em *EventManager) OnBlockValidated(handler BlockEventFunc) {
-	em.blockValidatedHandlers = append(em.blockValidatedHandlers, handler)
-}
-
-func (em *EventManager) blockValidated(event *BlockEvent) {
-	for _, handler := range em.blockValidatedHandlers {
 		handler(event)
 	}
 }

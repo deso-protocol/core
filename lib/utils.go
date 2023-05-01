@@ -9,6 +9,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/unrolled/secure"
 	"math/big"
+	"reflect"
 	"strings"
 )
 
@@ -225,4 +226,15 @@ func MapKeysToNonDeterministicPointerSlice[K comparable, V any](inputMap map[K]V
 		outputSlice = append(outputSlice, &kCopy)
 	}
 	return outputSlice
+}
+
+// IsInterfaceValueNil returns true if the interface is nil or if the interface is a pointer and the pointer is nil.
+// This is useful for checking if an interface value's (e.g. DeSoEncoder) underlying struct is nil.
+func isInterfaceValueNil(i interface{}) bool {
+	if i == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(i)
+	return value.Kind() == reflect.Ptr && value.IsNil()
 }

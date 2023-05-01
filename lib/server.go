@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/google/uuid"
 	"net"
 	"reflect"
 	"runtime"
@@ -380,7 +379,6 @@ func NewServer(
 		stateChangeSyncer = NewStateChangeSyncer(_params, _stateChangeFilePath)
 		eventManager.OnDbTransactionConnected(stateChangeSyncer._handleDbTransaction)
 		eventManager.OnDbFlushed(stateChangeSyncer._handleDbFlush)
-		eventManager.OnMempoolTransactionConnected(stateChangeSyncer._handleMempoolTransaction)
 	}
 
 	// Setup snapshot
@@ -436,11 +434,6 @@ func NewServer(
 	// TODO: Would be nice if this heavier-weight operation were moved to Start() to
 	// keep this constructor fast.
 	srv.eventManager = eventManager
-	// Only fire off block validation events if we're syncing state changes.
-	// This event handler is responsible for syncing mempool disconnects once a block is validated.
-	if _stateChangeFilePath != "" {
-		eventManager.OnBlockValidated(srv._handleBlockValidated)
-	}
 	eventManager.OnBlockConnected(srv._handleBlockMainChainConnectedd)
 	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
 	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
@@ -503,6 +496,11 @@ func NewServer(
 		go func() {
 			_blockProducer.Start()
 		}()
+	}
+
+	if _stateChangeFilePath != "" {
+		stateChangeSyncer.Server = srv
+		//eventManager.OnSnapshotCompleted(stateChangeSyncer.StartMempoolSyncRoutine)
 	}
 
 	// TODO(miner): Make the miner its own binary and pull it out of here.
@@ -1370,13 +1368,6 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		return err
 	})
 
-	if srv.eventManager != nil {
-		srv.eventManager.dbFlushed(&DBFlushedEvent{
-			FlushId:   uuid.Nil,
-			Succeeded: err == nil,
-		})
-	}
-
 	if err != nil {
 		glog.Errorf("Server._handleSnapshot: Problem updating snapshot blocknodes, error: (%v)", err)
 	}
@@ -1665,17 +1656,6 @@ func (srv *Server) _addNewTxn(
 	glog.V(1).Infof("Server._addNewTxnAndRelay: newlyAcceptedTxns: %v, Peer: %v", newlyAcceptedTxns, pp)
 
 	return newlyAcceptedTxns, nil
-}
-
-// _handleBlockValidated is called when a block has been validated, but before the changes in that block have been
-// flushed to the utxoView.
-func (srv *Server) _handleBlockValidated(event *BlockEvent) {
-	blk := event.Block
-	// Once a block has been validated, emit a mempool disconnect state change for every mempool transaction that
-	// is about to be mined and flushed to db. We want to make sure that the state syncer emits the appropriate
-	// disconnect events for these soon-to-be-mined mempool transactions before it emits the connect events for the
-	// mined transactions.
-	srv.mempool.EmitDisconnectsAfterBlockValidated(blk)
 }
 
 // It's assumed that the caller will hold the ChainLock for reading so

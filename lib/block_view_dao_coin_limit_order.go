@@ -282,7 +282,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	if txMeta.CancelOrderID != nil {
 		// Connect basic txn to get the total input and the total output without
 		// considering the transaction metadata.
-		totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+		totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
 		}
@@ -598,7 +598,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
 	}

@@ -539,7 +539,7 @@ func (bav *UtxoView) extractAdditionalRoyaltyMap(
 }
 
 func (bav *UtxoView) _connectCreateNFT(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
 		return 0, 0, nil, fmt.Errorf("_connectCreateNFT: called with zero MaxCopiesPerNFT")
@@ -657,7 +657,7 @@ func (bav *UtxoView) _connectCreateNFT(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreateNFT: ")
 	}
@@ -724,20 +724,6 @@ func (bav *UtxoView) _connectCreateNFT(
 			ExtraData:         extraData,
 		}
 		bav._setNFTEntryMappings(nftEntry)
-		if bav.EventManager != nil && emitMempoolTxn {
-			bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-				StateChangeEntry: &StateChangeEntry{
-					OperationType: DbOperationTypeUpsert,
-					Encoder:       nftEntry,
-					KeyBytes: _dbKeyForNFTPostHashSerialNumber(
-						nftEntry.NFTPostHash, nftEntry.SerialNumber),
-				},
-				PrevEncoder: nil,
-				BlockHeight: uint64(blockHeight),
-				TxHash:      txHash,
-				IsConnected: true,
-			})
-		}
 	}
 
 	// Add an operation to the utxoOps list indicating we've created an NFT.
@@ -746,24 +732,11 @@ func (bav *UtxoView) _connectCreateNFT(
 		PrevPostEntry: prevPostEntry,
 	})
 
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       postEntry,
-				KeyBytes:      _dbKeyForPostEntryHash(postEntry.PostHash),
-			},
-			PrevEncoder: prevPostEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _connectUpdateNFT(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
 		return 0, 0, nil, fmt.Errorf("_connectUpdateNFT: called with zero MaxCopiesPerNFT")
@@ -835,7 +808,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateNFT: ")
 	}
@@ -885,20 +858,6 @@ func (bav *UtxoView) _connectUpdateNFT(
 		for _, bidEntry := range bidEntries {
 			deletedBidEntries = append(deletedBidEntries, bidEntry)
 
-			// Emit all closed bid events to the event manager.
-			if bav.EventManager != nil && emitMempoolTxn {
-				bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-					StateChangeEntry: &StateChangeEntry{
-						OperationType: DbOperationTypeDelete,
-						Encoder:       nil,
-						KeyBytes:      _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry),
-					},
-					PrevEncoder: bidEntry,
-					BlockHeight: uint64(blockHeight),
-					TxHash:      txHash,
-					IsConnected: true,
-				})
-			}
 			bav._deleteNFTBidEntryMappings(bidEntry)
 		}
 	}
@@ -919,34 +878,6 @@ func (bav *UtxoView) _connectUpdateNFT(
 	// Set the new postEntry.
 	bav._setPostEntryMappings(postEntry)
 
-	// Emit updates to post entry and NFT entry to the event manager.
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       postEntry,
-				KeyBytes:      _dbKeyForPostEntryHash(postEntry.PostHash),
-			},
-			PrevEncoder: prevPostEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       newNFTEntry,
-				KeyBytes: _dbKeyForNFTPostHashSerialNumber(
-					newNFTEntry.NFTPostHash, newNFTEntry.SerialNumber),
-			},
-			PrevEncoder: prevNFTEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	// Add an operation to the list at the end indicating we've connected an NFT update.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                 OperationTypeUpdateNFT,
@@ -959,7 +890,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 }
 
 func (bav *UtxoView) _connectAcceptNFTBid(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
 		return 0, 0, nil, fmt.Errorf("_connectAcceptNFTBid: called with zero MaxCopiesPerNFT")
@@ -1029,7 +960,7 @@ func (bav *UtxoView) _connectAcceptNFTBid(
 		Txn:              txn,
 		TxHash:           txHash,
 		VerifySignatures: verifySignatures,
-	}, emitMempoolTxn)
+	})
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTBid")
 	}
@@ -1055,7 +986,7 @@ type HelpConnectNFTSoldStruct struct {
 	VerifySignatures bool
 }
 
-func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct, emitMempoolTxn bool) (
+func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	if args.Txn.TxnMeta.GetTxnType() != TxnTypeAcceptNFTBid && args.Txn.TxnMeta.GetTxnType() != TxnTypeNFTBid {
 		return 0, 0, nil, fmt.Errorf("_helpConnectNFTSold: This transaction must be either an AcceptNFTBid txn or a NFTBid txn")
@@ -1165,7 +1096,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct, emitMemp
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
 	utxoOpsForTxn := []*UtxoOperation{}
-	totalInput, totalOutput, utxoOpsFromBasicTransfer, err := bav._connectBasicTransfer(args.Txn, args.TxHash, blockHeight, args.VerifySignatures, false)
+	totalInput, totalOutput, utxoOpsFromBasicTransfer, err := bav._connectBasicTransfer(args.Txn, args.TxHash, blockHeight, args.VerifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_helpConnectNFTSold: ")
 	}
@@ -1391,21 +1322,6 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct, emitMemp
 	acceptedNFTBidEntry.AcceptedBlockHeight = &blockHeight
 	newAcceptedBidHistory := append(*prevAcceptedBidHistory, acceptedNFTBidEntry)
 
-	// Emit the updated accepted bid to the state change event manager.
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       acceptedNFTBidEntry,
-				KeyBytes:      _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(acceptedNFTBidEntry),
-			},
-			PrevEncoder: nftBidEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      args.TxHash,
-			IsConnected: true,
-		})
-	}
-
 	bav._setAcceptNFTBidHistoryMappings(nftKey, &newAcceptedBidHistory)
 
 	// (2) Iterate over all the NFTBidEntries for this NFT and delete them.
@@ -1418,39 +1334,11 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct, emitMemp
 	deletedBidEntries := []*NFTBidEntry{}
 	for _, bidEntry := range bidEntries {
 		deletedBidEntries = append(deletedBidEntries, bidEntry)
-		// For every deleted bidEntry, emit an associated mempool state change event.
-		if bav.EventManager != nil && emitMempoolTxn {
-			bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-				StateChangeEntry: &StateChangeEntry{
-					OperationType: DbOperationTypeDelete,
-					Encoder:       nil,
-					KeyBytes:      _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry),
-				},
-				PrevEncoder: bidEntry,
-				BlockHeight: uint64(blockHeight),
-				TxHash:      args.TxHash,
-				IsConnected: true,
-			})
-		}
 		bav._deleteNFTBidEntryMappings(bidEntry)
 	}
 	// If this is a SerialNumber zero BidEntry, we must delete it specifically.
 	if nftBidEntry.SerialNumber == uint64(0) {
 		deletedBidEntries = append(deletedBidEntries, nftBidEntry)
-		// Emit bid entry deletion event to state syncer.
-		if bav.EventManager != nil && emitMempoolTxn {
-			bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-				StateChangeEntry: &StateChangeEntry{
-					OperationType: DbOperationTypeDelete,
-					Encoder:       nil,
-					KeyBytes:      _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry),
-				},
-				PrevEncoder: nftBidEntry,
-				BlockHeight: uint64(blockHeight),
-				TxHash:      args.TxHash,
-				IsConnected: true,
-			})
-		}
 		bav._deleteNFTBidEntryMappings(nftBidEntry)
 	}
 
@@ -1709,41 +1597,11 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct, emitMemp
 			additionalCoinRoyaltiesDiff.Int64())
 	}
 
-	// Emit NFTEntry and PostEntry updates.
-	if bav.EventManager != nil && emitMempoolTxn {
-		// Emit NFTEntry updates.
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       newNFTEntry,
-				KeyBytes: _dbKeyForNFTPostHashSerialNumber(
-					newNFTEntry.NFTPostHash, newNFTEntry.SerialNumber),
-			},
-			PrevEncoder: prevNFTEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      args.TxHash,
-			IsConnected: true,
-		})
-
-		// Emit PostEntry updates.
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       nftPostEntry,
-				KeyBytes:      _dbKeyForPostEntryHash(nftPostEntry.PostHash),
-			},
-			PrevEncoder: prevPostEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      args.TxHash,
-			IsConnected: true,
-		})
-	}
-
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _connectNFTBid(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
 		return 0, 0, nil, fmt.Errorf("_connectNFTBid: called with zero MaxCopiesPerNFT")
@@ -1844,7 +1702,7 @@ func (bav *UtxoView) _connectNFTBid(
 	if !isBuyNowBid {
 		// Connect basic txn to get the total input and the total output without
 		// considering the transaction metadata.
-		totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+		totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: ")
 		}
@@ -1881,47 +1739,6 @@ func (bav *UtxoView) _connectNFTBid(
 			PrevNFTBidEntry: prevNFTBidEntry,
 		})
 
-		// Emit the bid deletion event to state syncer.
-		if bav.EventManager != nil && emitMempoolTxn {
-
-			// If there was a previous bid, emit its deletion to state syncer.
-			if prevNFTBidEntry != nil {
-				bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-					StateChangeEntry: &StateChangeEntry{
-						OperationType: DbOperationTypeDelete,
-						Encoder:       nil,
-						KeyBytes:      _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(prevNFTBidEntry),
-					},
-					PrevEncoder: prevNFTBidEntry,
-					BlockHeight: uint64(blockHeight),
-					TxHash:      txHash,
-					IsConnected: true,
-				})
-			}
-
-			// If there is a new bid, emit its creation to state syncer.
-			if txMeta.BidAmountNanos != 0 {
-				newBidEntry := &NFTBidEntry{
-					BidderPKID:     bidderPKID.PKID,
-					NFTPostHash:    txMeta.NFTPostHash,
-					SerialNumber:   txMeta.SerialNumber,
-					BidAmountNanos: txMeta.BidAmountNanos,
-				}
-
-				bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-					StateChangeEntry: &StateChangeEntry{
-						OperationType: DbOperationTypeUpsert,
-						Encoder:       newBidEntry,
-						KeyBytes:      _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(newBidEntry),
-					},
-					PrevEncoder: nil,
-					BlockHeight: uint64(blockHeight),
-					TxHash:      txHash,
-					IsConnected: true,
-				})
-			}
-		}
-
 		return totalInput, totalOutput, utxoOpsForTxn, nil
 	} else {
 		// For bids above the Buy Now Price on Buy Now NFTs, we delete the prev bid if it exists and create a bid that
@@ -1948,7 +1765,7 @@ func (bav *UtxoView) _connectNFTBid(
 			Txn:              txn,
 			TxHash:           txHash,
 			VerifySignatures: verifySignatures,
-		}, emitMempoolTxn)
+		})
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectNFTBid: ")
 		}
@@ -1957,7 +1774,7 @@ func (bav *UtxoView) _connectNFTBid(
 }
 
 func (bav *UtxoView) _connectNFTTransfer(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < bav.Params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight {
@@ -2041,7 +1858,7 @@ func (bav *UtxoView) _connectNFTTransfer(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectNFTTransfer: ")
 	}
@@ -2077,26 +1894,11 @@ func (bav *UtxoView) _connectNFTTransfer(
 		PrevNFTEntry: prevNFTEntry,
 	})
 
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       &newNFTEntry,
-				KeyBytes: _dbKeyForNFTPostHashSerialNumber(
-					newNFTEntry.NFTPostHash, newNFTEntry.SerialNumber),
-			},
-			PrevEncoder: prevNFTEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _connectAcceptNFTTransfer(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < bav.Params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight {
@@ -2148,7 +1950,7 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAcceptNFTTransfer: ")
 	}
@@ -2178,26 +1980,11 @@ func (bav *UtxoView) _connectAcceptNFTTransfer(
 		PrevNFTEntry: prevNFTEntry,
 	})
 
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       &newNFTEntry,
-				KeyBytes: _dbKeyForNFTPostHashSerialNumber(
-					newNFTEntry.NFTPostHash, newNFTEntry.SerialNumber),
-			},
-			PrevEncoder: prevNFTEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
-
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _connectBurnNFT(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	if blockHeight < bav.Params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight {
@@ -2250,7 +2037,7 @@ func (bav *UtxoView) _connectBurnNFT(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectBurnNFT: ")
 	}
@@ -2284,35 +2071,6 @@ func (bav *UtxoView) _connectBurnNFT(
 		PrevNFTEntry:  &prevNFTEntry,
 		PrevPostEntry: &prevPostEntry,
 	})
-
-	if bav.EventManager != nil && emitMempoolTxn {
-		// Emit NFT Entry deletion to state syncer.
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeDelete,
-				Encoder:       nil,
-				KeyBytes: _dbKeyForNFTPostHashSerialNumber(
-					nftEntry.NFTPostHash, nftEntry.SerialNumber),
-			},
-			PrevEncoder: &prevNFTEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-
-		// Emit Post Entry update to state syncer.
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       nftPostEntry,
-				KeyBytes:      _dbKeyForPostEntryHash(nftPostEntry.PostHash),
-			},
-			PrevEncoder: &prevPostEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

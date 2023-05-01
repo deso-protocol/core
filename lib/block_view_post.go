@@ -8,7 +8,6 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"math"
 	"reflect"
@@ -548,10 +547,7 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 			}
 			return nil
 		})
-		bav.EventManager.dbFlushed(&DBFlushedEvent{
-			FlushId:   uuid.Nil,
-			Succeeded: err == nil,
-		})
+
 		if err != nil {
 			return nil, err
 		}
@@ -704,7 +700,7 @@ func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *BlockHash,
 	return quoteReposterPubKeys, quoteReposterPubKeyToPosts, nil
 }
 
-func (bav *UtxoView) _connectSubmitPost(txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, ignoreUtxos bool, emitMempoolTxn bool) (_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+func (bav *UtxoView) _connectSubmitPost(txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeSubmitPost {
@@ -724,7 +720,7 @@ func (bav *UtxoView) _connectSubmitPost(txn *MsgDeSoTxn, txHash *BlockHash, bloc
 	var utxoOpsForTxn = []*UtxoOperation{}
 	var err error
 	if !ignoreUtxos {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectSubmitPost: ")
 		}
@@ -1106,20 +1102,6 @@ func (bav *UtxoView) _connectSubmitPost(txn *MsgDeSoTxn, txHash *BlockHash, bloc
 		PrevRepostEntry:          prevRepostEntry,
 		Type:                     OperationTypeSubmitPost,
 	})
-
-	if bav.EventManager != nil && emitMempoolTxn {
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       newPostEntry,
-				KeyBytes:      _dbKeyForPostEntryHash(newPostEntry.PostHash),
-			},
-			PrevEncoder: prevPostEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

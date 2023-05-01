@@ -636,7 +636,7 @@ func (bav *UtxoView) deleteDmThreadIndex(dmThreadKey DmThreadKey) {
 // dm and group chat threads allows for an efficient enumeration of messages up until the current unix timestamp,
 // and the future messages can be discarded.
 func (bav *UtxoView) _connectNewMessage(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, emitMempoolTxn bool) (
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Make sure access groups are live.
@@ -686,7 +686,7 @@ func (bav *UtxoView) _connectNewMessage(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures, false)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectNewMessage: ")
 	}
@@ -781,22 +781,6 @@ func (bav *UtxoView) _connectNewMessage(
 		PrevDmThreadEntry:    prevDmThreadEntry,
 		PrevAccessGroupEntry: prevAccessGroupEntry,
 	})
-
-	if bav.EventManager != nil && emitMempoolTxn {
-		// Emit a state change event for the new message.
-		bav.EventManager.mempoolTransactionConnected(&MempoolTransactionEvent{
-			StateChangeEntry: &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				Encoder:       messageEntry,
-				KeyBytes: _dbKeyForGroupChatMessagesIndex(MakeGroupChatMessageKey(
-					*messageEntry.RecipientAccessGroupOwnerPublicKey, *messageEntry.RecipientAccessGroupKeyName, messageEntry.TimestampNanos)),
-			},
-			PrevEncoder: prevNewMessageEntry,
-			BlockHeight: uint64(blockHeight),
-			TxHash:      txHash,
-			IsConnected: true,
-		})
-	}
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
