@@ -28,6 +28,10 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	mempool, miner := NewTestMiner(t, chain, params, true)
 	chain.snapshot = nil
 
+	// For these tests, we set StakeLockupEpochDuration to zero.
+	// We test the lockup logic in a separate test.
+	params.StakeLockupEpochDuration = 0
+
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
 		_, err = miner.MineAndProcessSingleBlock(0, mempool)
@@ -462,35 +466,6 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	// UNLOCK STAKE
 	//
 	{
-		// RuleErrorInvalidUnlockStakeMustWaitLockupDuration
-		unlockStakeMetadata := &UnlockStakeMetadata{
-			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StartEpochNumber:   currentEpochNumber,
-			EndEpochNumber:     currentEpochNumber,
-		}
-		_, err = _submitUnlockStakeTxn(
-			testMeta, m1Pub, m1Priv, unlockStakeMetadata, nil, flushToDB,
-		)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), RuleErrorInvalidUnlockStakeMustWaitLockupDuration)
-	}
-	{
-		// Simulate two epochs passing by seeding a new CurrentEpochEntry.
-
-		// We have to manually delete the CurrentEpochEntry from the UniversalUtxoView
-		// and ReadOnlyUtxoView just for these tests since utxoView() returns a copy
-		// and these UtxoViews will return the old cached CurrentEpochEntry otherwise.
-		mempool.universalUtxoView.DeleteCurrentEpochEntry()
-		mempool.readOnlyUtxoView.DeleteCurrentEpochEntry()
-
-		err = utxoView().SetCurrentEpochEntry(
-			&EpochEntry{EpochNumber: currentEpochNumber + 2, FinalBlockHeight: blockHeight + 10},
-			blockHeight,
-		)
-		currentEpochNumber, err = utxoView().GetCurrentEpochNumber()
-		require.NoError(t, err)
-	}
-	{
 		// RuleErrorProofOfStakeTxnBeforeBlockHeight
 		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = math.MaxUint32
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
@@ -498,8 +473,8 @@ func _testStaking(t *testing.T, flushToDB bool) {
 
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
 		}
 		_, err = _submitUnlockStakeTxn(
 			testMeta, m1Pub, m1Priv, unlockStakeMetadata, nil, flushToDB,
@@ -515,8 +490,8 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidValidatorPKID
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m2PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
 		}
 		_, err = _submitUnlockStakeTxn(
 			testMeta, m1Pub, m1Priv, unlockStakeMetadata, nil, flushToDB,
@@ -553,7 +528,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	{
 		// m1 unlocks stake that was assigned to m0.
 		lockedStakeEntries, err := utxoView().GetLockedStakeEntriesInRange(
-			m0PKID, m1PKID, currentEpochNumber-2, currentEpochNumber-2,
+			m0PKID, m1PKID, currentEpochNumber, currentEpochNumber,
 		)
 		require.NoError(t, err)
 		require.Equal(t, len(lockedStakeEntries), 1)
@@ -562,8 +537,8 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
 		}
 		feeNanos, err := _submitUnlockStakeTxn(
 			testMeta, m1Pub, m1Priv, unlockStakeMetadata, nil, flushToDB,
@@ -797,6 +772,10 @@ func _testStakingWithDerivedKey(t *testing.T) {
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	chain.snapshot = nil
 
+	// For these tests, we set StakeLockupEpochDuration to zero.
+	// We test the lockup logic in a separate test.
+	params.StakeLockupEpochDuration = 0
+
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
 		_, err = miner.MineAndProcessSingleBlock(0, mempool)
@@ -950,20 +929,10 @@ func _testStakingWithDerivedKey(t *testing.T) {
 	}
 
 	// Seed a CurrentEpochEntry.
-	currentEpochNumber := uint64(5)
-
-	_simulateEpochsPassing := func(numEpochs uint64) {
-		// Simulate epochs passing by seeding a new CurrentEpochEntry.
-		err = newUtxoView().SetCurrentEpochEntry(
-			&EpochEntry{EpochNumber: currentEpochNumber + numEpochs, FinalBlockHeight: blockHeight + 10},
-			blockHeight,
-		)
-		require.NoError(t, err)
-		currentEpochNumber, err = newUtxoView().GetCurrentEpochNumber()
-		require.NoError(t, err)
-	}
-
-	_simulateEpochsPassing(0)
+	err = newUtxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 5, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	require.NoError(t, err)
+	currentEpochNumber, err := newUtxoView().GetCurrentEpochNumber()
+	require.NoError(t, err)
 
 	{
 		// ParamUpdater set min fee rate
@@ -1238,8 +1207,6 @@ func _testStakingWithDerivedKey(t *testing.T) {
 	}
 	{
 		// sender unlocks stake using a DerivedKey.
-		_simulateEpochsPassing(2)
-
 		// sender creates a DerivedKey to perform 1 unlock stake operation with m0.
 		stakeLimitKey := MakeStakeLimitKey(m0PKID, senderPKID)
 		txnSpendingLimit := &TransactionSpendingLimit{
@@ -1255,8 +1222,8 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		// sender tries to unlock all stake from m1 using the DerivedKey. Errors.
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
@@ -1275,11 +1242,10 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// sender tries to unlock all stake from m1 using the DerivedKey. Errors.
-		_simulateEpochsPassing(2)
 		unlockStakeMetadata = &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
@@ -1291,8 +1257,8 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		senderOldDESOBalanceNanos := getDESOBalanceNanos(senderPkBytes)
 		unlockStakeMetadata = &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StartEpochNumber:   currentEpochNumber - 4,
-			EndEpochNumber:     currentEpochNumber - 4,
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
 		}
 		feeNanos, err := _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
@@ -1327,11 +1293,10 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// sender tries to unlock all stake from m0 using the DerivedKey. Errors.
-		_simulateEpochsPassing(2)
 		unlockStakeMetadata = &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
@@ -1397,11 +1362,10 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// sender unlocks stake from m0 using the DerivedKey.
-		_simulateEpochsPassing(2)
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
@@ -1411,8 +1375,8 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		// sender unlocks stake from m1 using the DerivedKey.
 		unlockStakeMetadata = &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
@@ -1460,6 +1424,17 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		)
 		require.NoError(t, err)
 
+		// sender unlocks stake from m0 using the DerivedKey.
+		unlockStakeMetadata := &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
+		}
+		_, err = _submitStakeTxnWithDerivedKey(
+			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
+		)
+		require.NoError(t, err)
+
 		// sender unstakes from m1 using the DerivedKey.
 		unstakeMetadata = &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
@@ -1470,23 +1445,11 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		// sender unlocks stake from m0 using the DerivedKey.
-		_simulateEpochsPassing(2)
-		unlockStakeMetadata := &UnlockStakeMetadata{
-			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
-		}
-		_, err = _submitStakeTxnWithDerivedKey(
-			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
-		)
-		require.NoError(t, err)
-
 		// sender unlocks stake from m1 using the DerivedKey.
 		unlockStakeMetadata = &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
@@ -1540,11 +1503,10 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// sender unlocks stake from m1 using the scoped TransactionSpendingLimit.
-		_simulateEpochsPassing(2)
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
@@ -1572,11 +1534,10 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// sender unlocks stake from m1 using the global TransactionSpendingLimit.
-		_simulateEpochsPassing(2)
 		unlockStakeMetadata = &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
@@ -1797,4 +1758,165 @@ func TestGetLockedStakeEntriesInRange(t *testing.T) {
 	lockedStakeEntries, err = utxoView.GetLockedStakeEntriesInRange(m0PKID, m0PKID, 5, 6)
 	require.NoError(t, err)
 	require.Empty(t, lockedStakeEntries)
+}
+
+func TestStakeLockupEpochDuration(t *testing.T) {
+	var err error
+
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	// Initialize test chain and miner.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Initialize fork heights.
+	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(0)
+	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	chain.snapshot = nil
+
+	// For these tests, we set StakeLockupEpochDuration to 2.
+	// We test the lockup logic in a separate test.
+	params.StakeLockupEpochDuration = 2
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err = miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height) + 1
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       uint32(blockHeight),
+		feeRateNanosPerKb: uint64(101),
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
+
+	newUtxoView := func() *UtxoView {
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		return utxoView
+	}
+
+	// Seed a CurrentEpochEntry.
+	err = newUtxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 5, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	require.NoError(t, err)
+	currentEpochNumber, err := newUtxoView().GetCurrentEpochNumber()
+	require.NoError(t, err)
+
+	{
+		// ParamUpdater set min fee rate
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1,
+			int64(testMeta.feeRateNanosPerKb),
+			-1,
+			-1,
+			-1,
+		)
+	}
+	{
+		// m0 registers as a validator.
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains: [][]byte{[]byte("https://m1.com")},
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, true)
+		require.NoError(t, err)
+
+		validatorEntry, err := newUtxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+	}
+	{
+		// m0 stakes with himself.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
+		}
+		_, err = _submitStakeTxn(testMeta, m0Pub, m0Priv, stakeMetadata, nil, true)
+		require.NoError(t, err)
+
+		stakeEntry, err := newUtxoView().GetStakeEntry(m0PKID, m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, stakeEntry)
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(100))
+	}
+	{
+		// m0 unstakes from himself.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(100),
+		}
+		_, err = _submitUnstakeTxn(testMeta, m0Pub, m0Priv, unstakeMetadata, nil, true)
+		require.NoError(t, err)
+
+		stakeEntry, err := newUtxoView().GetStakeEntry(m0PKID, m0PKID)
+		require.NoError(t, err)
+		require.Nil(t, stakeEntry)
+
+		lockedStakeEntry, err := newUtxoView().GetLockedStakeEntry(m0PKID, m0PKID, currentEpochNumber)
+		require.NoError(t, err)
+		require.NotNil(t, lockedStakeEntry)
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(100))
+	}
+	{
+		// RuleErrorInvalidUnlockStakeMustWaitLockupDuration
+		unlockStakeMetadata := &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StartEpochNumber:   currentEpochNumber,
+			EndEpochNumber:     currentEpochNumber,
+		}
+		_, err = _submitUnlockStakeTxn(testMeta, m0Pub, m0Priv, unlockStakeMetadata, nil, true)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidUnlockStakeMustWaitLockupDuration)
+	}
+	{
+		// Simulate two epochs passing by seeding a new CurrentEpochEntry.
+		err = newUtxoView().SetCurrentEpochEntry(
+			&EpochEntry{EpochNumber: currentEpochNumber + 2, FinalBlockHeight: blockHeight + 10},
+			blockHeight,
+		)
+		require.NoError(t, err)
+		currentEpochNumber, err = newUtxoView().GetCurrentEpochNumber()
+		require.NoError(t, err)
+	}
+	{
+		// m0 unlocks his stake.
+		oldDesoBalanceNanos, err := newUtxoView().GetDeSoBalanceNanosForPublicKey(m0PkBytes)
+		require.NoError(t, err)
+
+		unlockStakeMetadata := &UnlockStakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StartEpochNumber:   currentEpochNumber - 2,
+			EndEpochNumber:     currentEpochNumber - 2,
+		}
+		feeNanos, err := _submitUnlockStakeTxn(testMeta, m0Pub, m0Priv, unlockStakeMetadata, nil, true)
+		require.NoError(t, err)
+
+		lockedStakeEntry, err := newUtxoView().GetLockedStakeEntry(m0PKID, m0PKID, currentEpochNumber-2)
+		require.NoError(t, err)
+		require.Nil(t, lockedStakeEntry)
+
+		newDesoBalanceNanos, err := newUtxoView().GetDeSoBalanceNanosForPublicKey(m0PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, oldDesoBalanceNanos-feeNanos+uint64(100), newDesoBalanceNanos)
+	}
 }
