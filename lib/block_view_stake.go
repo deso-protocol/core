@@ -1870,7 +1870,17 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	if metadata.StartEpochNumber > metadata.EndEpochNumber {
 		return errors.Wrapf(RuleErrorInvalidUnlockStakeEpochRange, "UtxoView.IsValidUnlockStakeMetadata: ")
 	}
-	// TODO: validate EndEpochNumber is <= CurrentEpochNumber - 2
+
+	// Retrieve CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: error retrieving CurrentEpochNumber: ")
+	}
+
+	// Validate EndEpochNumber + StakeLockupEpochDuration <= CurrentEpochNumber.
+	if metadata.EndEpochNumber+StakeLockupEpochDuration > currentEpochNumber {
+		return errors.Wrapf(RuleErrorInvalidUnlockStakeMustWaitLockupDuration, "UtxoView.IsValidUnlockStakeMetadata: ")
+	}
 
 	// Validate LockedStakeEntries exist.
 	lockedStakeEntries, err := bav.GetLockedStakeEntriesInRange(
@@ -2572,6 +2582,7 @@ const RuleErrorInvalidUnstakeNoStakeFound RuleError = "RuleErrorInvalidUnstakeNo
 const RuleErrorInvalidUnstakeAmountNanos RuleError = "RuleErrorInvalidUnstakeAmountNanos"
 const RuleErrorInvalidUnstakeInsufficientStakeFound RuleError = "RuleErrorInvalidUnstakeInsufficientStakeFound"
 const RuleErrorInvalidUnlockStakeEpochRange RuleError = "RuleErrorInvalidUnlockStakeEpochRange"
+const RuleErrorInvalidUnlockStakeMustWaitLockupDuration RuleError = "RuleErrorInvalidUnlockStakeMustWaitLockupDuration"
 const RuleErrorInvalidUnlockStakeNoUnlockableStakeFound RuleError = "RuleErrorInvalidUnlockStakeNoUnlockableStakeFound"
 const RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64 RuleError = "RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64"
 const RuleErrorStakeTransactionSpendingLimitNotFound RuleError = "RuleErrorStakeTransactionSpendingLimitNotFound"
@@ -2582,3 +2593,6 @@ const RuleErrorUnlockStakeTransactionSpendingLimitNotFound RuleError = "RuleErro
 const RuleErrorTransactionSpendingLimitInvalidStaker RuleError = "RuleErrorTransactionSpendingLimitInvalidStaker"
 const RuleErrorTransactionSpendingLimitInvalidValidator RuleError = "RuleErrorTransactionSpendingLimitInvalidValidator"
 const RuleErrorTransactionSpendingLimitValidatorDisabledDelegatedStake RuleError = "RuleErrorTransactionSpendingLimitValidatorDisabledDelegatedStake"
+
+// TODO: move this to a field that can be updated by ParamUpdater.
+const StakeLockupEpochDuration = uint64(2)
