@@ -72,7 +72,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	}
 
 	// Seed a CurrentEpochEntry.
-	err = utxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 5, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	err = utxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
 	require.NoError(t, err)
 	currentEpochNumber, err := utxoView().GetCurrentEpochNumber()
 	require.NoError(t, err)
@@ -929,7 +929,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 	}
 
 	// Seed a CurrentEpochEntry.
-	err = newUtxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 5, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	err = newUtxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
 	require.NoError(t, err)
 	currentEpochNumber, err := newUtxoView().GetCurrentEpochNumber()
 	require.NoError(t, err)
@@ -1207,6 +1207,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 	}
 	{
 		// sender unlocks stake using a DerivedKey.
+
 		// sender creates a DerivedKey to perform 1 unlock stake operation with m0.
 		stakeLimitKey := MakeStakeLimitKey(m0PKID, senderPKID)
 		txnSpendingLimit := &TransactionSpendingLimit{
@@ -1424,6 +1425,16 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		)
 		require.NoError(t, err)
 
+		// sender unstakes from m1 using the DerivedKey.
+		unstakeMetadata = &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m1PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(25),
+		}
+		_, err = _submitUnstakeTxn(
+			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
+		)
+		require.NoError(t, err)
+
 		// sender unlocks stake from m0 using the DerivedKey.
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
@@ -1432,16 +1443,6 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unlockStakeMetadata},
-		)
-		require.NoError(t, err)
-
-		// sender unstakes from m1 using the DerivedKey.
-		unstakeMetadata = &UnstakeMetadata{
-			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			UnstakeAmountNanos: uint256.NewInt().SetUint64(25),
-		}
-		_, err = _submitUnstakeTxn(
-			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
 		)
 		require.NoError(t, err)
 
@@ -1890,6 +1891,8 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 	}
 	{
 		// Simulate two epochs passing by seeding a new CurrentEpochEntry.
+		// Note that we can't test the disconnect logic after these tests
+		// since we have updated the CurrentEpochNumber.
 		err = newUtxoView().SetCurrentEpochEntry(
 			&EpochEntry{EpochNumber: currentEpochNumber + 2, FinalBlockHeight: blockHeight + 10},
 			blockHeight,
