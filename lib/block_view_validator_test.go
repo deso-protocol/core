@@ -920,7 +920,6 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	validatorEntry := &ValidatorEntry{
 		ValidatorPKID:         m0PKID,
 		TotalStakeAmountNanos: uint256.NewInt().SetUint64(100),
-		Status:                ValidatorStatusActive,
 	}
 	utxoView._setValidatorEntryMappings(validatorEntry)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
@@ -938,7 +937,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	validatorEntry = &ValidatorEntry{
 		ValidatorPKID:         m1PKID,
 		TotalStakeAmountNanos: uint256.NewInt().SetUint64(400),
-		Status:                ValidatorStatusJailed,
+		JailedAtEpochNumber:   1,
 	}
 	utxoView._setValidatorEntryMappings(validatorEntry)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
@@ -948,13 +947,12 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, validatorEntry)
 	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(400))
-	require.Equal(t, validatorEntry.Status, ValidatorStatusJailed)
+	require.Equal(t, validatorEntry.Status(), ValidatorStatusJailed)
 
 	// Store m2's ValidatorEntry in the db with TotalStake = 300 nanos.
 	m2ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:         m2PKID,
 		TotalStakeAmountNanos: uint256.NewInt().SetUint64(300),
-		Status:                ValidatorStatusActive,
 	}
 	utxoView._setValidatorEntryMappings(m2ValidatorEntry)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
@@ -969,7 +967,6 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	m3ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:         m3PKID,
 		TotalStakeAmountNanos: uint256.NewInt().SetUint64(600),
-		Status:                ValidatorStatusActive,
 	}
 	utxoView._setValidatorEntryMappings(m3ValidatorEntry)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
@@ -1006,7 +1003,6 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	m4ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:         m4PKID,
 		TotalStakeAmountNanos: uint256.NewInt().SetUint64(50),
-		Status:                ValidatorStatusActive,
 	}
 	utxoView._setValidatorEntryMappings(m4ValidatorEntry)
 
@@ -1028,7 +1024,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	m5ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:         m5PKID,
 		TotalStakeAmountNanos: uint256.NewInt().SetUint64(500),
-		Status:                ValidatorStatusJailed,
+		JailedAtEpochNumber:   1,
 	}
 	utxoView._setValidatorEntryMappings(m5ValidatorEntry)
 
@@ -1046,7 +1042,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 		uint256.NewInt().SetUint64(500),
 	)
 	require.Equal(
-		t, utxoView.ValidatorMapKeyToValidatorEntry[m5ValidatorEntry.ToMapKey()].Status, ValidatorStatusJailed,
+		t, utxoView.ValidatorMapKeyToValidatorEntry[m5ValidatorEntry.ToMapKey()].Status(), ValidatorStatusJailed,
 	)
 
 	// Fetch TopActiveValidatorsByStake merging ValidatorEntries from the db and UtxoView.
