@@ -30,9 +30,19 @@ type ValidatorEntry struct {
 	VotingSignatureBlockHeight uint64
 	TotalStakeAmountNanos      *uint256.Int
 	RegisteredAtBlockHeight    uint64
+	Status                     ValidatorStatus
+	LastActiveEpochNumber      uint64
 	ExtraData                  map[string][]byte
 	isDeleted                  bool
 }
+
+type ValidatorStatus uint8
+
+const (
+	ValidatorStatusInvalid ValidatorStatus = 0
+	ValidatorStatusActive  ValidatorStatus = 1
+	ValidatorStatusJailed  ValidatorStatus = 2
+)
 
 type ValidatorMapKey struct {
 	// The MapKey has to contain all fields that are used in Badger keys.
@@ -41,6 +51,7 @@ type ValidatorMapKey struct {
 	ValidatorPKID           PKID
 	TotalStakeAmountNanos   uint256.Int
 	RegisteredAtBlockHeight uint64
+	Status                  ValidatorStatus
 }
 
 func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
@@ -61,6 +72,8 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 		VotingSignatureBlockHeight: validatorEntry.VotingSignatureBlockHeight,
 		TotalStakeAmountNanos:      validatorEntry.TotalStakeAmountNanos.Clone(),
 		RegisteredAtBlockHeight:    validatorEntry.RegisteredAtBlockHeight,
+		Status:                     validatorEntry.Status,
+		LastActiveEpochNumber:      validatorEntry.LastActiveEpochNumber,
 		ExtraData:                  copyExtraData(validatorEntry.ExtraData),
 		isDeleted:                  validatorEntry.isDeleted,
 	}
@@ -71,6 +84,7 @@ func (validatorEntry *ValidatorEntry) ToMapKey() ValidatorMapKey {
 		ValidatorPKID:           *validatorEntry.ValidatorPKID,
 		TotalStakeAmountNanos:   *validatorEntry.TotalStakeAmountNanos,
 		RegisteredAtBlockHeight: validatorEntry.RegisteredAtBlockHeight,
+		Status:                  validatorEntry.Status,
 	}
 }
 
@@ -91,6 +105,8 @@ func (validatorEntry *ValidatorEntry) RawEncodeWithoutMetadata(blockHeight uint6
 	data = append(data, UintToBuf(validatorEntry.VotingSignatureBlockHeight)...)
 	data = append(data, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	data = append(data, UintToBuf(validatorEntry.RegisteredAtBlockHeight)...)
+	data = append(data, EncodeUint16(uint16(validatorEntry.Status))...)
+	data = append(data, UintToBuf(validatorEntry.LastActiveEpochNumber)...)
 	data = append(data, EncodeExtraData(validatorEntry.ExtraData)...)
 	return data
 }
@@ -161,6 +177,22 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 	validatorEntry.RegisteredAtBlockHeight, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading RegisteredAtBlockHeight: ")
+	}
+
+	// Status
+	status, err := ReadUint16(rr)
+	if err != nil {
+		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading Status: ")
+	}
+	if status > math.MaxUint8 {
+		return fmt.Errorf("ValidatorEntry.Decode: ValidatorEntry.Status overflows uint8: %d", status)
+	}
+	validatorEntry.Status = ValidatorStatus(uint8(status))
+
+	// LastActiveEpochNumber
+	validatorEntry.LastActiveEpochNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading LastActiveEpochNumber: ")
 	}
 
 	// ExtraData
@@ -475,6 +507,7 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
+	key = append(key, EncodeUint16(uint16(validatorEntry.Status))...)
 	// TotalStakeAmountNanos will never be nil here, but EncodeOptionalUint256
 	// is used because it provides a fixed-width encoding of uint256.Ints.
 	key = append(key, EncodeOptionalUint256(validatorEntry.TotalStakeAmountNanos)...)         // Highest stake first
@@ -518,7 +551,7 @@ func DBGetValidatorByPKIDWithTxn(txn *badger.Txn, snap *Snapshot, pkid *PKID) (*
 	return validatorEntry, nil
 }
 
-func DBGetTopValidatorsByStake(
+func DBGetTopActiveValidatorsByStake(
 	handle *badger.DB,
 	snap *Snapshot,
 	limit int,
@@ -532,13 +565,14 @@ func DBGetTopValidatorsByStake(
 		validatorKeysToSkip.Add(string(DBKeyForValidatorByStake(validatorEntryToSkip)))
 	}
 
-	// Retrieve top N ValidatorEntry PKIDs by stake.
+	// Retrieve top N active ValidatorEntry PKIDs by stake.
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
+	key = append(key, EncodeUint16(uint16(ValidatorStatusActive))...)
 	_, validatorPKIDsBytes, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, limit, nil, true, validatorKeysToSkip,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetTopValidatorsByStake: problem retrieving top validators: ")
+		return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem retrieving top validators: ")
 	}
 
 	// For each PKID, retrieve the ValidatorEntry by PKID.
@@ -547,12 +581,12 @@ func DBGetTopValidatorsByStake(
 		validatorPKID := &PKID{}
 		exists, err := DecodeFromBytes(validatorPKID, bytes.NewReader(validatorPKIDBytes))
 		if !exists || err != nil {
-			return nil, errors.Wrapf(err, "DBGetTopValidatorsByStake: problem reading ValidatorPKID: ")
+			return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem reading ValidatorPKID: ")
 		}
 		// Retrieve ValidatorEntry by PKID.
 		validatorEntry, err := DBGetValidatorByPKID(handle, snap, validatorPKID)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetTopValidatorsByStake: problem retrieving validator by PKID: ")
+			return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem retrieving validator by PKID: ")
 		}
 		validatorEntries = append(validatorEntries, validatorEntry)
 	}
@@ -902,10 +936,29 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		totalStakeAmountNanos = prevValidatorEntry.TotalStakeAmountNanos.Clone()
 	}
 
-	// Set RegisteredAtBlockHeight only if this is a new ValidatorEntry.
+	// Set RegisteredAtBlockHeight to CurrentBlockHeight if this is a new ValidatorEntry.
+	// Otherwise, retain the existing RegisteredAtBlockHeight.
 	registeredAtBlockHeight := uint64(blockHeight)
 	if prevValidatorEntry != nil {
 		registeredAtBlockHeight = prevValidatorEntry.RegisteredAtBlockHeight
+	}
+
+	// Set Status to Active if this is a new ValidatorEntry.
+	// Otherwise, retain the existing Status.
+	status := ValidatorStatusActive
+	if prevValidatorEntry != nil {
+		status = prevValidatorEntry.Status
+	}
+
+	// Set LastActiveEpochNumber to CurrentEpochNumber if this is a new ValidatorEntry.
+	// Otherwise, retain the existing LastActiveEpochNumber.
+	var lastActiveEpochNumber uint64
+	if prevValidatorEntry != nil {
+		lastActiveEpochNumber = prevValidatorEntry.LastActiveEpochNumber
+	} else {
+		// Retrieve the CurrentEpochNumber.
+		currentEpochNumber := uint64(0) // TODO: update
+		lastActiveEpochNumber = currentEpochNumber
 	}
 
 	// Retrieve existing ExtraData to merge with any new ExtraData.
@@ -927,6 +980,8 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		VotingSignatureBlockHeight: txMeta.VotingSignatureBlockHeight,
 		TotalStakeAmountNanos:      totalStakeAmountNanos,
 		RegisteredAtBlockHeight:    registeredAtBlockHeight,
+		Status:                     status,
+		LastActiveEpochNumber:      lastActiveEpochNumber,
 		ExtraData:                  mergeExtraData(prevExtraData, txn.ExtraData),
 	}
 	// Set the ValidatorEntry.
@@ -1131,8 +1186,7 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: ")
 	}
-	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
-	if prevValidatorEntry == nil {
+	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted {
 		return 0, 0, nil, errors.Wrapf(RuleErrorValidatorNotFound, "_connectUnregisterAsValidator: ")
 	}
 	bav._deleteValidatorEntryMappings(prevValidatorEntry)
@@ -1388,7 +1442,7 @@ func (bav *UtxoView) GetValidatorByPublicKey(validatorPublicKey *PublicKey) (*Va
 	return validatorEntry, nil
 }
 
-func (bav *UtxoView) GetTopValidatorsByStake(limit int) ([]*ValidatorEntry, error) {
+func (bav *UtxoView) GetTopActiveValidatorsByStake(limit int) ([]*ValidatorEntry, error) {
 	// Validate limit param.
 	if limit <= 0 {
 		return []*ValidatorEntry{}, nil
@@ -1404,13 +1458,13 @@ func (bav *UtxoView) GetTopValidatorsByStake(limit int) ([]*ValidatorEntry, erro
 		utxoViewValidatorEntries = append(utxoViewValidatorEntries, validatorEntry)
 	}
 	// Pull top N ValidatorEntries from the database (not present in the UtxoView).
-	validatorEntries, err := DBGetTopValidatorsByStake(bav.Handle, bav.Snapshot, limit, utxoViewValidatorEntries)
+	validatorEntries, err := DBGetTopActiveValidatorsByStake(bav.Handle, bav.Snapshot, limit, utxoViewValidatorEntries)
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GetTopValidatorsByStake: error retrieving entries from db: ")
+		return nil, errors.Wrapf(err, "UtxoView.GetTopActiveValidatorsByStake: error retrieving entries from db: ")
 	}
-	// Add !isDeleted ValidatorEntries from the UtxoView to the ValidatorEntries from the db.
+	// Add !isDeleted, active ValidatorEntries from the UtxoView to the ValidatorEntries from the db.
 	for _, validatorEntry := range utxoViewValidatorEntries {
-		if !validatorEntry.isDeleted {
+		if !validatorEntry.isDeleted && validatorEntry.Status == ValidatorStatusActive {
 			validatorEntries = append(validatorEntries, validatorEntry)
 		}
 	}

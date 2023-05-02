@@ -4216,6 +4216,25 @@ func DecodeUint64(scoreBytes []byte) uint64 {
 	return binary.BigEndian.Uint64(scoreBytes)
 }
 
+func EncodeUint16(num uint16) []byte {
+	numBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(numBytes, num)
+	return numBytes
+}
+
+func DecodeUint16(numBytes []byte) uint16 {
+	return binary.BigEndian.Uint16(numBytes)
+}
+
+func ReadUint16(rr *bytes.Reader) (uint16, error) {
+	var numBytes [2]byte
+	_, err := io.ReadFull(rr, numBytes[:])
+	if err != nil {
+		return 0, err
+	}
+	return DecodeUint16(numBytes[:]), nil
+}
+
 func DbPutNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot, nanosPurchased uint64) error {
 	return DBSetWithTxn(txn, snap, Prefixes.PrefixNanosPurchased, EncodeUint64(nanosPurchased))
 }

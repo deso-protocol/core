@@ -172,12 +172,12 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Equal(t, string(validatorEntry.ExtraData["TestKey"]), "TestValue1")
 	}
 	{
-		// Query: retrieve top ValidatorEntries by stake
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(0)
+		// Query: retrieve top active ValidatorEntries by stake
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(0)
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
 
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(2)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(2)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 1)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
@@ -235,8 +235,8 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Nil(t, validatorEntry)
 	}
 	{
-		// Query: retrieve top ValidatorEntries by stake
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(1)
+		// Query: retrieve top active ValidatorEntries by stake
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(1)
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
 	}
@@ -619,12 +619,12 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 	_executeAllTestRollbackAndFlush(testMeta)
 }
 
-func TestGetTopValidatorsByStake(t *testing.T) {
-	_testGetTopValidatorsByStake(t, false)
-	_testGetTopValidatorsByStake(t, true)
+func TestGetTopActiveValidatorsByStake(t *testing.T) {
+	_testGetTopActiveValidatorsByStake(t, false)
+	_testGetTopActiveValidatorsByStake(t, true)
 }
 
-func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
+func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	var validatorEntries []*ValidatorEntry
 	var err error
 
@@ -703,7 +703,7 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 1)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
@@ -720,7 +720,7 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 2)
 	}
@@ -735,7 +735,7 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 3)
 	}
@@ -765,7 +765,7 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 3)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
@@ -784,7 +784,7 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 		_, err = _submitUnstakeTxn(testMeta, m3Pub, m3Priv, unstakeMetadata, nil, flushToDB)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 3)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
@@ -803,7 +803,7 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 		_, err = _submitUnstakeTxn(testMeta, m3Pub, m3Priv, unstakeMetadata, nil, flushToDB)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 3)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
@@ -819,7 +819,7 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 2)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
@@ -837,7 +837,7 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 2)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
@@ -855,7 +855,7 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 2)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
@@ -865,7 +865,7 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 	}
 	{
 		// Verify top validators with LIMIT.
-		validatorEntries, err = utxoView().GetTopValidatorsByStake(1)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(1)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 1)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
@@ -877,7 +877,7 @@ func _testGetTopValidatorsByStake(t *testing.T, flushToDB bool) {
 	_executeAllTestRollbackAndFlush(testMeta)
 }
 
-func TestGetTopValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
+func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	// For this test, we manually place ValidatorEntries in the database and
 	// UtxoView to test merging the two to determine the TopValidatorsByStake.
 
@@ -887,14 +887,24 @@ func TestGetTopValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	require.NoError(t, err)
 	blockHeight := uint64(chain.blockTip().Height + 1)
 
+	// m0 will be stored in the db with Stake=100.
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
+	// m1 will be stored in the db with Stake=400 and Status=Jailed.
 	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
+	// m2 will be stored in the db and UtxoView with Stake=300.
 	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes).PKID
+	// m3 will be stored in the db and UtxoView with Stake=600 and isDeleted=true.
+	m3PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m3PkBytes).PKID
+	// m4 will be stored in the UtxoView only with Stake=50.
+	m4PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m4PkBytes).PKID
+	// m5 will be stored in the UtxoView only with Stake=500 and Status=Jailed.
+	m5PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m5PkBytes).PKID
 
 	// Store m0's ValidatorEntry in the db with TotalStake = 100 nanos.
 	validatorEntry := &ValidatorEntry{
 		ValidatorPKID:         m0PKID,
 		TotalStakeAmountNanos: uint256.NewInt().SetUint64(100),
+		Status:                ValidatorStatusActive,
 	}
 	utxoView._setValidatorEntryMappings(validatorEntry)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
@@ -908,65 +918,130 @@ func TestGetTopValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	// Verify m0 is not stored in the UtxoView.
 	require.Empty(t, utxoView.ValidatorMapKeyToValidatorEntry)
 
-	// Store m1's ValidatorEntry in the database with TotalStake = 200 nanos.
+	// Store m1's jailed ValidatorEntry in the db with TotalStake = 400 nanos.
 	validatorEntry = &ValidatorEntry{
 		ValidatorPKID:         m1PKID,
-		TotalStakeAmountNanos: uint256.NewInt().SetUint64(200),
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(400),
+		Status:                ValidatorStatusJailed,
 	}
 	utxoView._setValidatorEntryMappings(validatorEntry)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
-
-	// Fetch m1 so it is also cached in the UtxoView.
-	validatorEntry, err = utxoView.GetValidatorByPKID(m1PKID)
-	require.NoError(t, err)
-	require.NotNil(t, validatorEntry)
 
 	// Verify m1 is stored in the db.
 	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m1PKID)
 	require.NoError(t, err)
 	require.NotNil(t, validatorEntry)
-	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(200))
+	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(400))
+	require.Equal(t, validatorEntry.Status, ValidatorStatusJailed)
 
-	// Verify m1 is also stored in the UtxoView.
-	require.Len(t, utxoView.ValidatorMapKeyToValidatorEntry, 1)
-	require.Equal(t, utxoView.ValidatorMapKeyToValidatorEntry[validatorEntry.ToMapKey()].ValidatorPKID, m1PKID)
-	require.Equal(
-		t,
-		utxoView.ValidatorMapKeyToValidatorEntry[validatorEntry.ToMapKey()].TotalStakeAmountNanos,
-		uint256.NewInt().SetUint64(200),
-	)
-
-	// Store m2's ValidatorEntry in the UtxoView.
+	// Store m2's ValidatorEntry in the db with TotalStake = 300 nanos.
 	m2ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:         m2PKID,
-		TotalStakeAmountNanos: uint256.NewInt().SetUint64(50),
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(300),
+		Status:                ValidatorStatusActive,
 	}
 	utxoView._setValidatorEntryMappings(m2ValidatorEntry)
+	require.NoError(t, utxoView.FlushToDb(blockHeight))
 
-	// Verify m2 is not stored in the db.
+	// Verify m2 is stored in the db.
 	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m2PKID)
 	require.NoError(t, err)
-	require.Nil(t, validatorEntry)
+	require.NotNil(t, validatorEntry)
+	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(300))
 
-	// Verify m2 is stored in the UtxoView.
-	require.Len(t, utxoView.ValidatorMapKeyToValidatorEntry, 2)
+	// Store m3's ValidatorEntry in the db with TotalStake = 600 nanos.
+	m3ValidatorEntry := &ValidatorEntry{
+		ValidatorPKID:         m3PKID,
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(600),
+		Status:                ValidatorStatusActive,
+	}
+	utxoView._setValidatorEntryMappings(m3ValidatorEntry)
+	require.NoError(t, utxoView.FlushToDb(blockHeight))
 
+	// Verify m3 is stored in the db.
+	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m3PKID)
+	require.NoError(t, err)
+	require.NotNil(t, validatorEntry)
+	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(600))
+
+	// Fetch m2 so it is also cached in the UtxoView.
+	validatorEntry, err = utxoView.GetValidatorByPKID(m2PKID)
+	require.NoError(t, err)
+	require.NotNil(t, validatorEntry)
+
+	// Verify m2 is also stored in the UtxoView.
+	require.Len(t, utxoView.ValidatorMapKeyToValidatorEntry, 1)
 	require.Equal(t, utxoView.ValidatorMapKeyToValidatorEntry[m2ValidatorEntry.ToMapKey()].ValidatorPKID, m2PKID)
 	require.Equal(
 		t,
 		utxoView.ValidatorMapKeyToValidatorEntry[m2ValidatorEntry.ToMapKey()].TotalStakeAmountNanos,
+		uint256.NewInt().SetUint64(300),
+	)
+
+	// Store m3's ValidatorEntry in the UtxoView with isDeleted=true.
+	m3ValidatorEntry.isDeleted = true
+	utxoView._setValidatorEntryMappings(m3ValidatorEntry)
+
+	// Verify m3 is stored in the UtxoView with isDeleted=true.
+	require.Equal(t, utxoView.ValidatorMapKeyToValidatorEntry[m3ValidatorEntry.ToMapKey()].ValidatorPKID, m3PKID)
+	require.True(t, utxoView.ValidatorMapKeyToValidatorEntry[m3ValidatorEntry.ToMapKey()].isDeleted)
+
+	// Store m4's ValidatorEntry in the UtxoView with TotalStake = 50 nanos.
+	m4ValidatorEntry := &ValidatorEntry{
+		ValidatorPKID:         m4PKID,
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(50),
+		Status:                ValidatorStatusActive,
+	}
+	utxoView._setValidatorEntryMappings(m4ValidatorEntry)
+
+	// Verify m4 is not stored in the db.
+	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m4PKID)
+	require.NoError(t, err)
+	require.Nil(t, validatorEntry)
+
+	// Verify m4 is stored in the UtxoView.
+	require.Len(t, utxoView.ValidatorMapKeyToValidatorEntry, 3)
+	require.Equal(t, utxoView.ValidatorMapKeyToValidatorEntry[m4ValidatorEntry.ToMapKey()].ValidatorPKID, m4PKID)
+	require.Equal(
+		t,
+		utxoView.ValidatorMapKeyToValidatorEntry[m4ValidatorEntry.ToMapKey()].TotalStakeAmountNanos,
 		uint256.NewInt().SetUint64(50),
 	)
 
-	// Fetch TopValidatorsByStake merging ValidatorEntries from the db and UtxoView.
-	validatorEntries, err := utxoView.GetTopValidatorsByStake(3)
+	// Store m5's jailed ValidatorEntry in the UtxoView with TotalStake = 500 nanos.
+	m5ValidatorEntry := &ValidatorEntry{
+		ValidatorPKID:         m5PKID,
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(500),
+		Status:                ValidatorStatusJailed,
+	}
+	utxoView._setValidatorEntryMappings(m5ValidatorEntry)
+
+	// Verify m5 is not stored in the db.
+	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m5PKID)
+	require.NoError(t, err)
+	require.Nil(t, validatorEntry)
+
+	// Verify m5 is stored in the UtxoView.
+	require.Len(t, utxoView.ValidatorMapKeyToValidatorEntry, 4)
+	require.Equal(t, utxoView.ValidatorMapKeyToValidatorEntry[m5ValidatorEntry.ToMapKey()].ValidatorPKID, m5PKID)
+	require.Equal(
+		t,
+		utxoView.ValidatorMapKeyToValidatorEntry[m5ValidatorEntry.ToMapKey()].TotalStakeAmountNanos,
+		uint256.NewInt().SetUint64(500),
+	)
+	require.Equal(
+		t, utxoView.ValidatorMapKeyToValidatorEntry[m5ValidatorEntry.ToMapKey()].Status, ValidatorStatusJailed,
+	)
+
+	// Fetch TopActiveValidatorsByStake merging ValidatorEntries from the db and UtxoView.
+	validatorEntries, err := utxoView.GetTopActiveValidatorsByStake(6)
 	require.NoError(t, err)
 	require.Len(t, validatorEntries, 3)
-	require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
-	require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(200))
+	require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
+	require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(300))
 	require.Equal(t, validatorEntries[1].ValidatorPKID, m0PKID)
 	require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
-	require.Equal(t, validatorEntries[2].ValidatorPKID, m2PKID)
+	require.Equal(t, validatorEntries[2].ValidatorPKID, m4PKID)
 	require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt().SetUint64(50))
 }
 
