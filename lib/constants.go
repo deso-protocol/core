@@ -600,6 +600,10 @@ type DeSoParams struct {
 	// user must wait before unlocking their unstaked stake.
 	StakeLockupEpochDuration uint64
 
+	// ValidatorJailEpochDuration is the number of epochs that a validator must
+	// wait after being jailed before submitting an UnjailValidator txn.
+	ValidatorJailEpochDuration uint64
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -975,6 +979,9 @@ var DeSoMainnetParams = DeSoParams{
 	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
 	StakeLockupEpochDuration: uint64(3),
 
+	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
+	ValidatorJailEpochDuration: uint64(3),
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1205,6 +1212,9 @@ var DeSoTestnetParams = DeSoParams{
 
 	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
 	StakeLockupEpochDuration: uint64(3),
+
+	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
+	ValidatorJailEpochDuration: uint64(3),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),

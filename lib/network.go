@@ -244,8 +244,9 @@ const (
 	TxnTypeStake                        TxnType = 36
 	TxnTypeUnstake                      TxnType = 37
 	TxnTypeUnlockStake                  TxnType = 38
+	TxnTypeUnjailValidator              TxnType = 39
 
-	// NEXT_ID = 39
+	// NEXT_ID = 40
 )
 
 type TxnString string
@@ -290,6 +291,7 @@ const (
 	TxnStringStake                        TxnString = "STAKE"
 	TxnStringUnstake                      TxnString = "UNSTAKE"
 	TxnStringUnlockStake                  TxnString = "UNLOCK_STAKE"
+	TxnStringUnjailValidator              TxnString = "UNJAIL_VALIDATOR"
 )
 
 var (
@@ -302,7 +304,7 @@ var (
 		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeCreateUserAssociation,
 		TxnTypeDeleteUserAssociation, TxnTypeCreatePostAssociation, TxnTypeDeletePostAssociation,
 		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage, TxnTypeRegisterAsValidator,
-		TxnTypeUnregisterAsValidator, TxnTypeStake, TxnTypeUnstake, TxnTypeUnlockStake,
+		TxnTypeUnregisterAsValidator, TxnTypeStake, TxnTypeUnstake, TxnTypeUnlockStake, TxnTypeUnjailValidator,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -313,7 +315,7 @@ var (
 		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringCreateUserAssociation,
 		TxnStringDeleteUserAssociation, TxnStringCreatePostAssociation, TxnStringDeletePostAssociation,
 		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage, TxnStringRegisterAsValidator,
-		TxnStringUnregisterAsValidator, TxnStringStake, TxnStringUnstake, TxnStringUnlockStake,
+		TxnStringUnregisterAsValidator, TxnStringStake, TxnStringUnstake, TxnStringUnlockStake, TxnStringUnjailValidator,
 	}
 )
 
@@ -403,6 +405,8 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringUnstake
 	case TxnTypeUnlockStake:
 		return TxnStringUnlockStake
+	case TxnTypeUnjailValidator:
+		return TxnStringUnjailValidator
 	default:
 		return TxnStringUndefined
 	}
@@ -486,6 +490,8 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeUnstake
 	case TxnStringUnlockStake:
 		return TxnTypeUnlockStake
+	case TxnStringUnjailValidator:
+		return TxnTypeUnjailValidator
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset

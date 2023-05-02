@@ -314,6 +314,28 @@ func (txnData *UnregisterAsValidatorMetadata) New() DeSoTxnMetadata {
 }
 
 //
+// TYPES: UnjailValidatorMetadata
+//
+
+type UnjailValidatorMetadata struct{}
+
+func (txnData *UnjailValidatorMetadata) GetTxnType() TxnType {
+	return TxnTypeUnjailValidator
+}
+
+func (txnData *UnjailValidatorMetadata) ToBytes(preSignature bool) ([]byte, error) {
+	return []byte{}, nil
+}
+
+func (txnData *UnjailValidatorMetadata) FromBytes(data []byte) error {
+	return nil
+}
+
+func (txnData *UnjailValidatorMetadata) New() DeSoTxnMetadata {
+	return &UnjailValidatorMetadata{}
+}
+
+//
 // TYPES: RegisterAsValidatorTxindexMetadata
 //
 
@@ -493,6 +515,41 @@ func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetVersionByte(bloc
 
 func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeUnregisterAsValidatorTxindexMetadata
+}
+
+//
+// TYPES: UnjailValidatorTxindexMetadata
+//
+
+type UnjailValidatorTxindexMetadata struct {
+	ValidatorPublicKeyBase58Check string
+}
+
+func (txindexMetadata *UnjailValidatorTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray([]byte(txindexMetadata.ValidatorPublicKeyBase58Check))...)
+	return data
+}
+
+func (txindexMetadata *UnjailValidatorTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+
+	// ValidatorPublicKeyBase58Check
+	validatorPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnjailValidatorTxindexMetadata.Decode: Problem reading ValidatorPublicKeyBase58Check: ")
+	}
+	txindexMetadata.ValidatorPublicKeyBase58Check = string(validatorPublicKeyBase58CheckBytes)
+
+	return nil
+}
+
+func (txindexMetadata *UnjailValidatorTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txindexMetadata *UnjailValidatorTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUnjailValidatorTxindexMetadata
 }
 
 //
@@ -850,6 +907,82 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 	if spendAmount != 0 {
 		return nil, 0, 0, 0, fmt.Errorf(
 			"Blockchain.CreateUnregisterAsValidatorTxn: spend amount is non-zero: %d", spendAmount,
+		)
+	}
+	return txn, totalInput, changeAmount, fees, nil
+}
+
+func (bc *Blockchain) CreateUnjailValidatorTxn(
+	transactorPublicKey []byte,
+	metadata *UnjailValidatorMetadata,
+	extraData map[string][]byte,
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (
+	_txn *MsgDeSoTxn,
+	_totalInput uint64,
+	_changeAmount uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Create a txn containing the UnjailValidator fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: transactorPublicKey,
+		TxnMeta:   metadata,
+		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
+		// We wait to compute the signature until
+		// we've added all the inputs and change.
+	}
+
+	// Create a new UtxoView. If we have access to a mempool object, use
+	// it to get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrap(
+			err, "Blockchain.CreateUnjailValidatorTxn: problem creating new utxo view: ",
+		)
+	}
+	if mempool != nil {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(
+				err, "Blockchain.CreateUnjailValidatorTxn: problem getting augmented utxo view from mempool: ",
+			)
+		}
+	}
+
+	// Validate txn metadata.
+	if err = utxoView.IsValidUnjailValidatorMetadata(transactorPublicKey, metadata); err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateUnjailValidatorTxn: invalid txn metadata: ",
+		)
+	}
+
+	// We don't need to make any tweaks to the amount because
+	// it's basically a standard "pay per kilobyte" transaction.
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
+		txn, minFeeRateNanosPerKB, mempool,
+	)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "Blockchain.CreateUnjailValidatorTxn: problem adding inputs: ",
+		)
+	}
+
+	// Validate that the transaction has at least one input, even if it all goes
+	// to change. This ensures that the transaction will not be "replayable."
+	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
+		return nil, 0, 0, 0, errors.New(
+			"Blockchain.CreateUnjailValidatorTxn: txn has zero inputs, try increasing the fee rate",
+		)
+	}
+
+	// Sanity-check that the spendAmount is zero.
+	if spendAmount != 0 {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"Blockchain.CreateUnjailValidatorTxn: spend amount is non-zero: %d", spendAmount,
 		)
 	}
 	return txn, totalInput, changeAmount, fees, nil
@@ -1316,6 +1449,157 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	)
 }
 
+func (bav *UtxoView) _connectUnjailValidator(
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	verifySignatures bool,
+) (
+	_totalInput uint64,
+	_totalOutput uint64,
+	_utxoOps []*UtxoOperation,
+	_err error,
+) {
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectUnjailValidator: ")
+	}
+
+	// Validate the txn TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeUnjailValidator {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectUnjailValidator: called with bad TxnType %s", txn.TxnMeta.GetTxnType().String(),
+		)
+	}
+
+	// Connect a basic transfer to get the total input and the
+	// total output without considering the txn metadata.
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
+		txn, txHash, blockHeight, verifySignatures,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnjailValidator: ")
+	}
+	if verifySignatures {
+		// _connectBasicTransfer has already checked that the txn is signed
+		// by the top-level public key, which we take to be the sender's
+		// public key so there is no need to verify anything further.
+	}
+
+	// Grab the txn metadata.
+	txMeta := txn.TxnMeta.(*UnjailValidatorMetadata)
+
+	// Validate the txn metadata.
+	if err = bav.IsValidUnjailValidatorMetadata(txn.PublicKey, txMeta); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnjailValidator: ")
+	}
+
+	// Convert TransactorPublicKey to TransactorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "_connectUnjailValidator: ")
+	}
+
+	// Retrieve the existing ValidatorEntry that will be overwritten.
+	// This ValidatorEntry will be restored if we disconnect this txn.
+	prevValidatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnjailValidator: ")
+	}
+	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted {
+		return 0, 0, nil, errors.Wrapf(RuleErrorValidatorNotFound, "_connectUnjailValidator: ")
+	}
+	if prevValidatorEntry.Status != ValidatorStatusJailed {
+		return 0, 0, nil, errors.Wrapf(RuleErrorUnjailingNonjailedValidator, "_connectUnjailValidator: ")
+	}
+
+	// Copy the existing ValidatorEntry.
+	currentValidatorEntry := prevValidatorEntry.Copy()
+
+	// Update Status to Active.
+	currentValidatorEntry.Status = ValidatorStatusActive
+
+	// Retrieve the CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnjailValidator: error retrieving CurrentEpochNumber: ")
+	}
+
+	// Update LastActiveEpochNumber to CurrentEpochNumber.
+	currentValidatorEntry.LastActiveEpochNumber = currentEpochNumber
+
+	// Merge ExtraData with existing ExtraData.
+	currentValidatorEntry.ExtraData = mergeExtraData(prevValidatorEntry.ExtraData, txn.ExtraData)
+
+	// Delete the PrevValidatorEntry.
+	bav._deleteValidatorEntryMappings(prevValidatorEntry)
+
+	// Set the CurrentValidatorEntry.
+	bav._setValidatorEntryMappings(currentValidatorEntry)
+
+	// Add a UTXO operation
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:               OperationTypeUnjailValidator,
+		PrevValidatorEntry: prevValidatorEntry,
+	})
+	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _disconnectUnjailValidator(
+	operationType OperationType,
+	currentTxn *MsgDeSoTxn,
+	txHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation,
+	blockHeight uint32,
+) error {
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+		return errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_disconnectUnjailValidator: ")
+	}
+
+	// Validate the last operation is an UnjailValidator operation.
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectUnjailValidator: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+	operationData := utxoOpsForTxn[operationIndex]
+	if operationData.Type != OperationTypeUnjailValidator {
+		return fmt.Errorf(
+			"_disconnectUnjailValidator: trying to revert %v but found %v",
+			OperationTypeUnjailValidator,
+			operationData.Type,
+		)
+	}
+
+	// Convert TransactorPublicKey to TransactorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return errors.Wrapf(RuleErrorInvalidValidatorPKID, "_disconnectUnjailValidator: ")
+	}
+
+	// Delete the current ValidatorEntry.
+	currentValidatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectUnjailValidator: ")
+	}
+	if currentValidatorEntry == nil || currentValidatorEntry.isDeleted {
+		return errors.Wrapf(RuleErrorValidatorNotFound, "_disconnectUnjailValidator: ")
+	}
+	bav._deleteValidatorEntryMappings(currentValidatorEntry)
+
+	// Restore the PrevValidatorEntry.
+	prevValidatorEntry := operationData.PrevValidatorEntry
+	if prevValidatorEntry == nil {
+		return errors.New("_disconnectUnjailValidator: PrevValidatorEntry is nil")
+	}
+	bav._setValidatorEntryMappings(prevValidatorEntry)
+
+	// Disconnect the BasicTransfer.
+	return bav._disconnectBasicTransfer(
+		currentTxn, txHash, utxoOpsForTxn[:operationIndex], blockHeight,
+	)
+}
+
 func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []byte, metadata *RegisterAsValidatorMetadata) error {
 	// Validate ValidatorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKey)
@@ -1385,9 +1669,35 @@ func (bav *UtxoView) IsValidUnregisterAsValidatorMetadata(transactorPublicKey []
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.IsValidUnregisterAsValidatorMetadata: ")
 	}
-	if validatorEntry == nil {
+	if validatorEntry == nil || validatorEntry.isDeleted {
 		return errors.Wrapf(RuleErrorValidatorNotFound, "UtxoView.IsValidUnregisterAsValidatorMetadata: ")
 	}
+
+	return nil
+}
+
+func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte, metadata *UnjailValidatorMetadata) error {
+	// Validate ValidatorPKID.
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.IsValidUnjailValidatorMetadata: ")
+	}
+
+	// Validate ValidatorEntry exists.
+	validatorEntry, err := bav.GetValidatorByPKID(transactorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: ")
+	}
+	if validatorEntry == nil || validatorEntry.isDeleted {
+		return errors.Wrapf(RuleErrorValidatorNotFound, "UtxoView.IsValidUnjailValidatorMetadata: ")
+	}
+
+	// Validate ValidatorEntry is jailed.
+	if validatorEntry.Status != ValidatorStatusJailed {
+		return errors.Wrapf(RuleErrorUnjailingNonjailedValidator, "UtxoView.IsValidUnjailValidatorMetadata: ")
+	}
+
+	// TODO: Validate enough epochs have elapsed for validator to be unjailed.
 
 	return nil
 }
@@ -1686,6 +1996,32 @@ func (bav *UtxoView) CreateUnregisterAsValidatorTxindexMetadata(
 	return txindexMetadata, affectedPublicKeys
 }
 
+func (bav *UtxoView) CreateUnjailValidatorTxindexMetadata(
+	utxoOp *UtxoOperation,
+	txn *MsgDeSoTxn,
+) (
+	*UnjailValidatorTxindexMetadata,
+	[]*AffectedPublicKey,
+) {
+	// Cast ValidatorPublicKey to ValidatorPublicKeyBase58Check.
+	validatorPublicKeyBase58Check := PkToString(txn.PublicKey, bav.Params)
+
+	// Construct TxindexMetadata.
+	txindexMetadata := &UnjailValidatorTxindexMetadata{
+		ValidatorPublicKeyBase58Check: validatorPublicKeyBase58Check,
+	}
+
+	// Construct AffectedPublicKeys.
+	affectedPublicKeys := []*AffectedPublicKey{
+		{
+			PublicKeyBase58Check: validatorPublicKeyBase58Check,
+			Metadata:             "UnjailedValidatorPublicKeyBase58Check",
+		},
+	}
+
+	return txindexMetadata, affectedPublicKeys
+}
+
 //
 // CONSTANTS
 //
@@ -1698,5 +2034,6 @@ const RuleErrorValidatorInvalidDomain RuleError = "RuleErrorValidatorInvalidDoma
 const RuleErrorValidatorDuplicateDomains RuleError = "RuleErrorValidatorDuplicateDomains"
 const RuleErrorValidatorNotFound RuleError = "RuleErrorValidatorNotFound"
 const RuleErrorValidatorDisablingExistingDelegatedStakers RuleError = "RuleErrorValidatorDisablingExistingDelegatedStakers"
+const RuleErrorUnjailingNonjailedValidator RuleError = "RuleErrorUnjailingNonjailedValidator"
 
 const MaxValidatorNumDomains int = 12

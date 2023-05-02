@@ -1373,6 +1373,10 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	case TxnTypeUnlockStake:
 		return bav._disconnectUnlockStake(
 			OperationTypeUnlockStake, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeUnjailValidator:
+		return bav._disconnectUnjailValidator(
+			OperationTypeUnjailValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -3308,6 +3312,9 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	case TxnTypeUnlockStake:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnlockStake(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeUnjailValidator:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnjailValidator(txn, txHash, blockHeight, verifySignatures)
 
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())

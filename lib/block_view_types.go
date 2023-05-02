@@ -156,9 +156,10 @@ const (
 	EncoderTypeStakeTxindexMetadata                 EncoderType = 1000032
 	EncoderTypeUnstakeTxindexMetadata               EncoderType = 1000033
 	EncoderTypeUnlockStakeTxindexMetadata           EncoderType = 1000034
+	EncoderTypeUnjailValidatorTxindexMetadata       EncoderType = 1000035
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndTxIndex EncoderType = 1000035
+	EncoderTypeEndTxIndex EncoderType = 1000036
 )
 
 // This function translates the EncoderType into an empty DeSoEncoder struct.
@@ -327,6 +328,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &UnstakeTxindexMetadata{}
 	case EncoderTypeUnlockStakeTxindexMetadata:
 		return &UnlockStakeTxindexMetadata{}
+	case EncoderTypeUnjailValidatorTxindexMetadata:
+		return &UnjailValidatorTxindexMetadata{}
 	default:
 		return nil
 	}
@@ -626,8 +629,9 @@ const (
 	OperationTypeStake                        OperationType = 41
 	OperationTypeUnstake                      OperationType = 42
 	OperationTypeUnlockStake                  OperationType = 43
+	OperationTypeUnjailValidator              OperationType = 44
 
-	// NEXT_TAG = 44
+	// NEXT_TAG = 45
 )
 
 func (op OperationType) String() string {
@@ -718,6 +722,8 @@ func (op OperationType) String() string {
 		return "OperationTypeUnstake"
 	case OperationTypeUnlockStake:
 		return "OperationTypeUnlockStake"
+	case OperationTypeUnjailValidator:
+		return "OperationTypeUnjailValidator"
 	}
 	return "OperationTypeUNKNOWN"
 }

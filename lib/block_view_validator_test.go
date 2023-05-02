@@ -1449,3 +1449,12 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
 	_executeAllTestRollbackAndFlush(testMeta)
 }
+
+func TestUnjailValidator(t *testing.T) {
+	_testUnjailValidator(t, false)
+	_testUnjailValidator(t, true)
+}
+
+func _testUnjailValidator(t *testing.T, flushToDB bool) {
+	// TODO
+}
