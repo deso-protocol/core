@@ -954,10 +954,15 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	// Otherwise, retain the existing LastActiveEpochNumber.
 	var lastActiveEpochNumber uint64
 	if prevValidatorEntry != nil {
+		// Retain the existing LastActiveEpochNumber.
 		lastActiveEpochNumber = prevValidatorEntry.LastActiveEpochNumber
 	} else {
 		// Retrieve the CurrentEpochNumber.
-		currentEpochNumber := uint64(0) // TODO: update
+		currentEpochNumber, err := bav.GetCurrentEpochNumber()
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectRegisterAsValidator: error retrieving CurrentEpochNumber: ")
+		}
+		// Set LastActiveEpochNumber to CurrentEpochNumber.
 		lastActiveEpochNumber = currentEpochNumber
 	}
 
