@@ -30,10 +30,25 @@ type ValidatorEntry struct {
 	VotingSignatureBlockHeight uint64
 	TotalStakeAmountNanos      *uint256.Int
 	RegisteredAtBlockHeight    uint64
-	Status                     ValidatorStatus
-	LastActiveEpochNumber      uint64
+	LastActiveAtEpochNumber    uint64
+	JailedAtEpochNumber        uint64
 	ExtraData                  map[string][]byte
 	isDeleted                  bool
+}
+
+func (validatorEntry *ValidatorEntry) Status() ValidatorStatus {
+	// ValidatorEntry.Status() is a virtual/derived field that is not stored in
+	// the database, but instead constructed from other ValidatorEntry fields.
+	// No sense in storing duplicative data twice. This saves memory and ensures
+	// that e.g. the ValidatorEntry.JailedAtEpochNumber field and the
+	// ValidatorEntry.Status() return value will never get out of sync.
+	//
+	// Make sure that any fields referenced here are included in the ValidatorMapKey
+	// since the ValidatorEntry.Status() value is used as a field in a Badger index.
+	if validatorEntry.JailedAtEpochNumber > uint64(0) {
+		return ValidatorStatusJailed
+	}
+	return ValidatorStatusActive
 }
 
 type ValidatorStatus uint8
@@ -51,7 +66,7 @@ type ValidatorMapKey struct {
 	ValidatorPKID           PKID
 	TotalStakeAmountNanos   uint256.Int
 	RegisteredAtBlockHeight uint64
-	Status                  ValidatorStatus
+	JailedAtEpochNumber     uint64
 }
 
 func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
@@ -72,8 +87,8 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 		VotingSignatureBlockHeight: validatorEntry.VotingSignatureBlockHeight,
 		TotalStakeAmountNanos:      validatorEntry.TotalStakeAmountNanos.Clone(),
 		RegisteredAtBlockHeight:    validatorEntry.RegisteredAtBlockHeight,
-		Status:                     validatorEntry.Status,
-		LastActiveEpochNumber:      validatorEntry.LastActiveEpochNumber,
+		LastActiveAtEpochNumber:    validatorEntry.LastActiveAtEpochNumber,
+		JailedAtEpochNumber:        validatorEntry.JailedAtEpochNumber,
 		ExtraData:                  copyExtraData(validatorEntry.ExtraData),
 		isDeleted:                  validatorEntry.isDeleted,
 	}
@@ -84,7 +99,7 @@ func (validatorEntry *ValidatorEntry) ToMapKey() ValidatorMapKey {
 		ValidatorPKID:           *validatorEntry.ValidatorPKID,
 		TotalStakeAmountNanos:   *validatorEntry.TotalStakeAmountNanos,
 		RegisteredAtBlockHeight: validatorEntry.RegisteredAtBlockHeight,
-		Status:                  validatorEntry.Status,
+		JailedAtEpochNumber:     validatorEntry.JailedAtEpochNumber,
 	}
 }
 
@@ -105,8 +120,8 @@ func (validatorEntry *ValidatorEntry) RawEncodeWithoutMetadata(blockHeight uint6
 	data = append(data, UintToBuf(validatorEntry.VotingSignatureBlockHeight)...)
 	data = append(data, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	data = append(data, UintToBuf(validatorEntry.RegisteredAtBlockHeight)...)
-	data = append(data, EncodeUint16(uint16(validatorEntry.Status))...)
-	data = append(data, UintToBuf(validatorEntry.LastActiveEpochNumber)...)
+	data = append(data, UintToBuf(validatorEntry.LastActiveAtEpochNumber)...)
+	data = append(data, UintToBuf(validatorEntry.JailedAtEpochNumber)...)
 	data = append(data, EncodeExtraData(validatorEntry.ExtraData)...)
 	return data
 }
@@ -179,20 +194,16 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading RegisteredAtBlockHeight: ")
 	}
 
-	// Status
-	status, err := ReadUint16(rr)
+	// LastActiveAtEpochNumber
+	validatorEntry.LastActiveAtEpochNumber, err = ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading Status: ")
+		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading LastActiveAtEpochNumber: ")
 	}
-	if status > math.MaxUint8 {
-		return fmt.Errorf("ValidatorEntry.Decode: ValidatorEntry.Status overflows uint8: %d", status)
-	}
-	validatorEntry.Status = ValidatorStatus(uint8(status))
 
-	// LastActiveEpochNumber
-	validatorEntry.LastActiveEpochNumber, err = ReadUvarint(rr)
+	// JailedAtEpochNumber
+	validatorEntry.JailedAtEpochNumber, err = ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading LastActiveEpochNumber: ")
+		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading JailedAtEpochNumber: ")
 	}
 
 	// ExtraData
@@ -564,7 +575,7 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
-	key = append(key, EncodeUint16(uint16(validatorEntry.Status))...)
+	key = append(key, EncodeUint16(uint16(validatorEntry.Status()))...)
 	// TotalStakeAmountNanos will never be nil here, but EncodeOptionalUint256
 	// is used because it provides a fixed-width encoding of uint256.Ints.
 	key = append(key, EncodeOptionalUint256(validatorEntry.TotalStakeAmountNanos)...)         // Highest stake first
@@ -1076,27 +1087,27 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		registeredAtBlockHeight = prevValidatorEntry.RegisteredAtBlockHeight
 	}
 
-	// Set Status to Active if this is a new ValidatorEntry.
-	// Otherwise, retain the existing Status.
-	status := ValidatorStatusActive
+	// Set LastActiveAtEpochNumber to CurrentEpochNumber if this is a new ValidatorEntry.
+	// Otherwise, retain the existing LastActiveAtEpochNumber.
+	var lastActiveAtEpochNumber uint64
 	if prevValidatorEntry != nil {
-		status = prevValidatorEntry.Status
-	}
-
-	// Set LastActiveEpochNumber to CurrentEpochNumber if this is a new ValidatorEntry.
-	// Otherwise, retain the existing LastActiveEpochNumber.
-	var lastActiveEpochNumber uint64
-	if prevValidatorEntry != nil {
-		// Retain the existing LastActiveEpochNumber.
-		lastActiveEpochNumber = prevValidatorEntry.LastActiveEpochNumber
+		// Retain the existing LastActiveAtEpochNumber.
+		lastActiveAtEpochNumber = prevValidatorEntry.LastActiveAtEpochNumber
 	} else {
 		// Retrieve the CurrentEpochNumber.
 		currentEpochNumber, err := bav.GetCurrentEpochNumber()
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectRegisterAsValidator: error retrieving CurrentEpochNumber: ")
 		}
-		// Set LastActiveEpochNumber to CurrentEpochNumber.
-		lastActiveEpochNumber = currentEpochNumber
+		// Set LastActiveAtEpochNumber to CurrentEpochNumber.
+		lastActiveAtEpochNumber = currentEpochNumber
+	}
+
+	// Set JailedAtEpochNumber to zero if this is a new ValidatorEntry.
+	// Otherwise, retain the existing JailedAtEpochNumber.
+	jailedAtEpochNumber := uint64(0)
+	if prevValidatorEntry != nil {
+		jailedAtEpochNumber = prevValidatorEntry.JailedAtEpochNumber
 	}
 
 	// Retrieve existing ExtraData to merge with any new ExtraData.
@@ -1118,8 +1129,8 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		VotingSignatureBlockHeight: txMeta.VotingSignatureBlockHeight,
 		TotalStakeAmountNanos:      totalStakeAmountNanos,
 		RegisteredAtBlockHeight:    registeredAtBlockHeight,
-		Status:                     status,
-		LastActiveEpochNumber:      lastActiveEpochNumber,
+		LastActiveAtEpochNumber:    lastActiveAtEpochNumber,
+		JailedAtEpochNumber:        jailedAtEpochNumber,
 		ExtraData:                  mergeExtraData(prevExtraData, txn.ExtraData),
 	}
 	// Set the ValidatorEntry.
@@ -1787,7 +1798,7 @@ func (bav *UtxoView) GetTopActiveValidatorsByStake(limit int) ([]*ValidatorEntry
 	}
 	// Add !isDeleted, active ValidatorEntries from the UtxoView to the ValidatorEntries from the db.
 	for _, validatorEntry := range utxoViewValidatorEntries {
-		if !validatorEntry.isDeleted && validatorEntry.Status == ValidatorStatusActive {
+		if !validatorEntry.isDeleted && validatorEntry.Status() == ValidatorStatusActive {
 			validatorEntries = append(validatorEntries, validatorEntry)
 		}
 	}
