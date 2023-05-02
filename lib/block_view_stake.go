@@ -576,14 +576,14 @@ func DBGetStakeEntryWithTxn(
 		if err == badger.ErrKeyNotFound {
 			return nil, nil
 		}
-		return nil, errors.Wrapf(err, "DBGetStakeByValidatorByStaker: problem retrieving StakeEntry: ")
+		return nil, errors.Wrapf(err, "DBGetStakeEntry: problem retrieving StakeEntry: ")
 	}
 
 	// Decode StakeEntry from bytes.
 	rr := bytes.NewReader(stakeEntryBytes)
 	stakeEntry, err := DecodeDeSoEncoder(&StakeEntry{}, rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetStakeByValidatorByStaker: problem decoding StakeEntry: ")
+		return nil, errors.Wrapf(err, "DBGetStakeEntry: problem decoding StakeEntry: ")
 	}
 	return stakeEntry, nil
 }
@@ -649,7 +649,7 @@ func DBGetLockedStakeEntryWithTxn(
 			return nil, nil
 		}
 		return nil, errors.Wrapf(
-			err, "DBGetLockedStakeByValidatorByStakerByLockedAt: problem retrieving LockedStakeEntry: ",
+			err, "DBGetLockedStakeEntry: problem retrieving LockedStakeEntry: ",
 		)
 	}
 
@@ -658,7 +658,7 @@ func DBGetLockedStakeEntryWithTxn(
 	lockedStakeEntry, err := DecodeDeSoEncoder(&LockedStakeEntry{}, rr)
 	if err != nil {
 		return nil, errors.Wrapf(
-			err, "DBGetLockedStakeByValidatorByStakerByLockedAt: problem decoding LockedStakeEntry: ",
+			err, "DBGetLockedStakeEntry: problem decoding LockedStakeEntry: ",
 		)
 	}
 	return lockedStakeEntry, nil
@@ -755,7 +755,7 @@ func DBPutStakeEntryWithTxn(
 	key := DBKeyForStakeByValidatorByStaker(stakeEntry)
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, stakeEntry)); err != nil {
 		return errors.Wrapf(
-			err, "DBPutStakeWithTxn: problem storing StakeEntry in index PrefixStakeByValidatorByStaker",
+			err, "DBPutStakeEntryWithTxn: problem storing StakeEntry in index PrefixStakeByValidatorByStaker: ",
 		)
 	}
 
@@ -776,7 +776,7 @@ func DBPutLockedStakeEntryWithTxn(
 	key := DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry)
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, lockedStakeEntry)); err != nil {
 		return errors.Wrapf(
-			err, "DBPutLockedStakeWithTxn: problem storing LockedStakeEntry in index PrefixLockedStakeByValidatorByStakerByLockedAt",
+			err, "DBPutLockedStakeEntryWithTxn: problem storing LockedStakeEntry in index PrefixLockedStakeByValidatorByStakerByLockedAt: ",
 		)
 	}
 
@@ -797,7 +797,7 @@ func DBDeleteStakeEntryWithTxn(
 	key := DBKeyForStakeByValidatorByStaker(stakeEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteStakeWithTxn: problem deleting StakeEntry from index PrefixStakeByValidatorByStaker",
+			err, "DBDeleteStakeEntryWithTxn: problem deleting StakeEntry from index PrefixStakeByValidatorByStaker: ",
 		)
 	}
 
@@ -818,7 +818,7 @@ func DBDeleteLockedStakeEntryWithTxn(
 	key := DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteLockedStakeWithTxn: problem deleting StakeEntry from index PrefixLockedStakeByValidatorByStakerByLockedAt",
+			err, "DBDeleteLockedStakeEntryWithTxn: problem deleting StakeEntry from index PrefixLockedStakeByValidatorByStakerByLockedAt: ",
 		)
 	}
 
@@ -1134,12 +1134,14 @@ func (bav *UtxoView) _connectStake(
 
 	// Check if there is an existing StakeEntry that will be updated.
 	// The existing StakeEntry will be restored if we disconnect this transaction.
+	var prevStakeEntries []*StakeEntry
 	prevStakeEntry, err := bav.GetStakeEntry(prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectStake: ")
 	}
 	// Delete the existing StakeEntry, if exists.
 	if prevStakeEntry != nil {
+		prevStakeEntries = append(prevStakeEntries, prevStakeEntry)
 		bav._deleteStakeEntryMappings(prevStakeEntry)
 	}
 
@@ -1217,7 +1219,7 @@ func (bav *UtxoView) _connectStake(
 		Type:                       OperationTypeStake,
 		PrevValidatorEntry:         prevValidatorEntry,
 		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
-		PrevStakeEntries:           []*StakeEntry{prevStakeEntry},
+		PrevStakeEntries:           prevStakeEntries,
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -1378,6 +1380,7 @@ func (bav *UtxoView) _connectUnstake(
 	if prevStakeEntry.StakeAmountNanos.Cmp(txMeta.UnstakeAmountNanos) < 0 {
 		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidUnstakeInsufficientStakeFound, "_connectUnstake: ")
 	}
+	prevStakeEntries := []*StakeEntry{prevStakeEntry}
 
 	// Update the StakeEntry, decreasing the StakeAmountNanos.
 	// 1. Calculate the updated StakeAmountNanos.
@@ -1427,8 +1430,13 @@ func (bav *UtxoView) _connectUnstake(
 	// 2. Set the new GlobalStakeAmountNanos.
 	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
 
+	// Retrieve the CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error retrieving CurrentEpochNumber: ")
+	}
+
 	// Update the LockedStakeEntry, if exists. Create if not.
-	currentEpochNumber := uint64(0) // TODO: set this
 	// 1. Retrieve the PrevLockedStakeEntry. This will be restored if we disconnect this txn.
 	prevLockedStakeEntry, err := bav.GetLockedStakeEntry(
 		prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID, currentEpochNumber,
@@ -1437,6 +1445,7 @@ func (bav *UtxoView) _connectUnstake(
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
 	}
 	// 2. Create a CurrrentLockedStakeEntry.
+	var prevLockedStakeEntries []*LockedStakeEntry
 	var currentLockedStakeEntry *LockedStakeEntry
 	if prevLockedStakeEntry != nil {
 		// Update the existing LockedStakeEntry.
@@ -1461,6 +1470,7 @@ func (bav *UtxoView) _connectUnstake(
 	}
 	// 3. Delete the PrevLockedStakeEntry, if exists.
 	if prevLockedStakeEntry != nil {
+		prevLockedStakeEntries = append(prevLockedStakeEntries, prevLockedStakeEntry)
 		bav._deleteLockedStakeEntryMappings(prevLockedStakeEntry)
 	}
 	// 4. Set the CurrentLockedStakeEntry.
@@ -1471,8 +1481,9 @@ func (bav *UtxoView) _connectUnstake(
 		Type:                       OperationTypeUnstake,
 		PrevValidatorEntry:         prevValidatorEntry,
 		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
-		PrevStakeEntries:           []*StakeEntry{prevStakeEntry},
-		PrevLockedStakeEntries:     []*LockedStakeEntry{prevLockedStakeEntry},
+		PrevStakeEntries:           prevStakeEntries,
+		PrevLockedStakeEntries:     prevLockedStakeEntries,
+		PrevEpochNumber:            currentEpochNumber,
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -1558,10 +1569,9 @@ func (bav *UtxoView) _disconnectUnstake(
 	// Restore the PrevLockedStakeEntry, if exists. The PrevLockedStakeEntry will exist if the
 	// transactor has previously unstaked stake assigned to this validator within the same epoch.
 	// The PrevLockedStakeEntry will not exist otherwise.
-	currentEpochNumber := uint64(0) // TODO: set this
 	// 1. Retrieve the CurrentLockedStakeEntry.
 	currentLockedStakeEntry, err := bav.GetLockedStakeEntry(
-		prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID, currentEpochNumber,
+		prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID, operationData.PrevEpochNumber,
 	)
 	if err != nil {
 		return errors.Wrapf(err, "_disconnectUnstake: ")
@@ -1860,7 +1870,17 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	if metadata.StartEpochNumber > metadata.EndEpochNumber {
 		return errors.Wrapf(RuleErrorInvalidUnlockStakeEpochRange, "UtxoView.IsValidUnlockStakeMetadata: ")
 	}
-	// TODO: validate EndEpochNumber is <= CurrentEpochNumber - 2
+
+	// Retrieve CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: error retrieving CurrentEpochNumber: ")
+	}
+
+	// Validate EndEpochNumber + StakeLockupEpochDuration <= CurrentEpochNumber.
+	if metadata.EndEpochNumber+bav.Params.StakeLockupEpochDuration > currentEpochNumber {
+		return errors.Wrapf(RuleErrorInvalidUnlockStakeMustWaitLockupDuration, "UtxoView.IsValidUnlockStakeMetadata: ")
+	}
 
 	// Validate LockedStakeEntries exist.
 	lockedStakeEntries, err := bav.GetLockedStakeEntriesInRange(
@@ -2562,6 +2582,7 @@ const RuleErrorInvalidUnstakeNoStakeFound RuleError = "RuleErrorInvalidUnstakeNo
 const RuleErrorInvalidUnstakeAmountNanos RuleError = "RuleErrorInvalidUnstakeAmountNanos"
 const RuleErrorInvalidUnstakeInsufficientStakeFound RuleError = "RuleErrorInvalidUnstakeInsufficientStakeFound"
 const RuleErrorInvalidUnlockStakeEpochRange RuleError = "RuleErrorInvalidUnlockStakeEpochRange"
+const RuleErrorInvalidUnlockStakeMustWaitLockupDuration RuleError = "RuleErrorInvalidUnlockStakeMustWaitLockupDuration"
 const RuleErrorInvalidUnlockStakeNoUnlockableStakeFound RuleError = "RuleErrorInvalidUnlockStakeNoUnlockableStakeFound"
 const RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64 RuleError = "RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64"
 const RuleErrorStakeTransactionSpendingLimitNotFound RuleError = "RuleErrorStakeTransactionSpendingLimitNotFound"
