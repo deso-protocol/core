@@ -1505,6 +1505,11 @@ func (bav *UtxoView) _connectUnjailValidator(
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnjailValidator: ")
 	}
 
+	// At this point, we have validated in IsValidUnjailValidatorMetadata()
+	// that the ValidatorEntry exists, belongs to the transactor, is jailed,
+	// and a sufficient number of epochs have elapsed for this validator to
+	// be unjailed.
+
 	// Convert TransactorPublicKey to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
@@ -1520,15 +1525,9 @@ func (bav *UtxoView) _connectUnjailValidator(
 	if prevValidatorEntry == nil || prevValidatorEntry.isDeleted {
 		return 0, 0, nil, errors.Wrapf(RuleErrorValidatorNotFound, "_connectUnjailValidator: ")
 	}
-	if prevValidatorEntry.Status != ValidatorStatusJailed {
-		return 0, 0, nil, errors.Wrapf(RuleErrorUnjailingNonjailedValidator, "_connectUnjailValidator: ")
-	}
 
 	// Copy the existing ValidatorEntry.
 	currentValidatorEntry := prevValidatorEntry.Copy()
-
-	// Update Status to Active.
-	currentValidatorEntry.Status = ValidatorStatusActive
 
 	// Retrieve the CurrentEpochNumber.
 	currentEpochNumber, err := bav.GetCurrentEpochNumber()
@@ -1536,8 +1535,11 @@ func (bav *UtxoView) _connectUnjailValidator(
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnjailValidator: error retrieving CurrentEpochNumber: ")
 	}
 
-	// Update LastActiveEpochNumber to CurrentEpochNumber.
-	currentValidatorEntry.LastActiveEpochNumber = currentEpochNumber
+	// Update LastActiveAtEpochNumber to CurrentEpochNumber.
+	currentValidatorEntry.LastActiveAtEpochNumber = currentEpochNumber
+
+	// Reset JailedAtEpochNumber to zero.
+	currentValidatorEntry.JailedAtEpochNumber = 0
 
 	// Merge ExtraData with existing ExtraData.
 	currentValidatorEntry.ExtraData = mergeExtraData(prevValidatorEntry.ExtraData, txn.ExtraData)
@@ -1704,11 +1706,20 @@ func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte, 
 	}
 
 	// Validate ValidatorEntry is jailed.
-	if validatorEntry.Status != ValidatorStatusJailed {
+	if validatorEntry.Status() != ValidatorStatusJailed {
 		return errors.Wrapf(RuleErrorUnjailingNonjailedValidator, "UtxoView.IsValidUnjailValidatorMetadata: ")
 	}
 
-	// TODO: Validate enough epochs have elapsed for validator to be unjailed.
+	// Retrieve CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving CurrentEpochNumber: ")
+	}
+
+	// Validate sufficient epochs have elapsed for validator to be unjailed.
+	if validatorEntry.JailedAtEpochNumber+bav.Params.ValidatorJailEpochDuration < currentEpochNumber {
+		return errors.Wrapf(RuleErrorUnjailingValidatorTooEarly, "UtxoView.IsValidUnjailValidatorMetadata: ")
+	}
 
 	return nil
 }
@@ -2046,5 +2057,6 @@ const RuleErrorValidatorDuplicateDomains RuleError = "RuleErrorValidatorDuplicat
 const RuleErrorValidatorNotFound RuleError = "RuleErrorValidatorNotFound"
 const RuleErrorValidatorDisablingExistingDelegatedStakers RuleError = "RuleErrorValidatorDisablingExistingDelegatedStakers"
 const RuleErrorUnjailingNonjailedValidator RuleError = "RuleErrorUnjailingNonjailedValidator"
+const RuleErrorUnjailingValidatorTooEarly RuleError = "RuleErrorUnjailingValidatorTooEarly"
 
 const MaxValidatorNumDomains int = 12
