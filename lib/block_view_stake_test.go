@@ -1779,9 +1779,9 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	chain.snapshot = nil
 
-	// For these tests, we set StakeLockupEpochDuration to 2.
+	// For these tests, we set StakeLockupEpochDuration to 3.
 	// We test the lockup logic in a separate test.
-	params.StakeLockupEpochDuration = 2
+	params.StakeLockupEpochDuration = 3
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -1890,11 +1890,11 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 		require.Contains(t, err.Error(), RuleErrorInvalidUnlockStakeMustWaitLockupDuration)
 	}
 	{
-		// Simulate two epochs passing by seeding a new CurrentEpochEntry.
+		// Simulate three epochs passing by seeding a new CurrentEpochEntry.
 		// Note that we can't test the disconnect logic after these tests
 		// since we have updated the CurrentEpochNumber.
 		err = newUtxoView().SetCurrentEpochEntry(
-			&EpochEntry{EpochNumber: currentEpochNumber + 2, FinalBlockHeight: blockHeight + 10},
+			&EpochEntry{EpochNumber: currentEpochNumber + 3, FinalBlockHeight: blockHeight + 10},
 			blockHeight,
 		)
 		require.NoError(t, err)
@@ -1908,8 +1908,8 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StartEpochNumber:   currentEpochNumber - 2,
-			EndEpochNumber:     currentEpochNumber - 2,
+			StartEpochNumber:   currentEpochNumber - 3,
+			EndEpochNumber:     currentEpochNumber - 3,
 		}
 		feeNanos, err := _submitUnlockStakeTxn(testMeta, m0Pub, m0Priv, unlockStakeMetadata, nil, true)
 		require.NoError(t, err)

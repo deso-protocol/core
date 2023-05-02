@@ -972,8 +972,8 @@ var DeSoMainnetParams = DeSoParams{
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
-	// Unstaked stake can be unlocked after a minimum of two elapsed epochs.
-	StakeLockupEpochDuration: uint64(2),
+	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
+	StakeLockupEpochDuration: uint64(3),
 
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
@@ -1203,8 +1203,8 @@ var DeSoTestnetParams = DeSoParams{
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
-	// Unstaked stake can be unlocked after a minimum of two elapsed epochs.
-	StakeLockupEpochDuration: uint64(2),
+	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
+	StakeLockupEpochDuration: uint64(3),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
