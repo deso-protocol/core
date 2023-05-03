@@ -33,11 +33,21 @@ func TestCurrentEpoch(t *testing.T) {
 		EpochNumber:      1,
 		FinalBlockHeight: blockHeight + 5,
 	}
-	err = utxoView.SetCurrentEpochEntry(epochEntry, blockHeight)
-	require.NoError(t, err)
+	utxoView._setCurrentEpochEntry(epochEntry)
+	require.NoError(t, utxoView.FlushToDb(blockHeight))
 
 	// Test that the CurrentEpoch is set in the db.
 	epochEntry, err = DBGetCurrentEpochEntry(db, utxoView.Snapshot)
+	require.NoError(t, err)
+	require.NotNil(t, epochEntry)
+	require.Equal(t, epochEntry.EpochNumber, uint64(1))
+	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
+
+	// Test that the CurrentEpoch is flushed from the UtxoView.
+	require.Nil(t, utxoView.CurrentEpochEntry)
+
+	// Test GetCurrentEpoch().
+	epochEntry, err = utxoView.GetCurrentEpochEntry()
 	require.NoError(t, err)
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
@@ -49,15 +59,8 @@ func TestCurrentEpoch(t *testing.T) {
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
 	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
 
-	// Test GetCurrentEpoch().
-	epochEntry, err = utxoView.GetCurrentEpochEntry()
-	require.NoError(t, err)
-	require.NotNil(t, epochEntry)
-	require.Equal(t, epochEntry.EpochNumber, uint64(1))
-	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
-
 	// Delete CurrentEpoch from the UtxoView.
-	utxoView.DeleteCurrentEpochEntry()
+	utxoView.CurrentEpochEntry = nil
 	require.Nil(t, utxoView.CurrentEpochEntry)
 
 	// CurrentEpoch still exists in the db.
