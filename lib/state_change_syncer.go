@@ -574,7 +574,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Server) {
 	go func() {
 		// Wait for mempool to be initialized.
-		for server.mempool == nil && server.blockchain.chainState() != SyncStateFullyCurrent {
+		for server.mempool == nil || server.blockchain.chainState() != SyncStateFullyCurrent {
 			time.Sleep(1000 * time.Millisecond)
 		}
 		fmt.Printf("\n\n*****STARTING THE MEMPOOL SYNC****\n")
