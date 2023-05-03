@@ -158,8 +158,7 @@ func DBPutCurrentEpochEntryWithTxn(txn *badger.Txn, snap *Snapshot, epochEntry *
 	if epochEntry == nil {
 		// This is just a safety check that we are not accidentally overwriting an
 		// existing EpochEntry with a nil EpochEntry. This should never happen.
-		glog.Errorf("DBPutCurrentEpochEntryWithTxn: called with nil EpochEntry")
-		return nil
+		return errors.New("DBPutCurrentEpochEntryWithTxn: called with nil EpochEntry")
 	}
 	key := DBKeyForCurrentEpoch()
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, epochEntry)); err != nil {
