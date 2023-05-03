@@ -609,6 +609,13 @@ func (bav *UtxoView) _connectUpdateProfile(
 		}
 	}
 
+	// See if a profile already exists for this public key.
+	existingProfileEntry := bav.GetProfileEntryForPublicKey(profilePublicKey)
+	var extraSpend uint64
+	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
+		extraSpend = bav.GlobalParamsEntry.CreateProfileFeeNanos
+	}
+
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
 	//
@@ -620,19 +627,18 @@ func (bav *UtxoView) _connectUpdateProfile(
 	var utxoOpsForTxn = []*UtxoOperation{}
 	var err error
 	if !ignoreUtxos {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransferWithExtraSpend(
+			txn, txHash, blockHeight, extraSpend, verifySignatures)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectUpdateProfile: ")
 		}
 
 		// Force the input to be non-zero so that we can prevent replay attacks.
-		if totalInput == 0 {
+		if totalInput == 0 && blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 			return 0, 0, nil, RuleErrorProfileUpdateRequiresNonZeroInput
 		}
 	}
 
-	// See if a profile already exists for this public key.
-	existingProfileEntry := bav.GetProfileEntryForPublicKey(profilePublicKey)
 	// If we are creating a profile for the first time, assess the create profile fee.
 	if existingProfileEntry == nil {
 		createProfileFeeNanos := bav.GlobalParamsEntry.CreateProfileFeeNanos
@@ -641,7 +647,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 			return 0, 0, nil, RuleErrorCreateProfileTxnOutputExceedsInput
 		}
 	}
-	// Save a copy of the profile entry so so that we can safely modify it.
+	// Save a copy of the profile entry so that we can safely modify it.
 	var prevProfileEntry *ProfileEntry
 	if existingProfileEntry != nil {
 		// NOTE: The only pointer in here is the StakeEntry and CreatorCoinEntry pointer, but since
@@ -810,7 +816,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 	}
 
 	// Force the input to be non-zero so that we can prevent replay attacks.
-	if totalInput == 0 {
+	if totalInput == 0 && blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil, RuleErrorProfileUpdateRequiresNonZeroInput
 	}
 

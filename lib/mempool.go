@@ -347,16 +347,16 @@ func (mp *DeSoMempool) resetPool(newPool *DeSoMempool) {
 // UpdateAfterConnectBlock updates the mempool after a block has been added to the
 // blockchain. It does this by basically removing all known transactions in the block
 // from the mempool as follows:
-// - Build a map of all of the transactions in the block indexed by their hash.
-// - Create a new mempool object.
-// - Iterate through all the transactions in the mempool and add the transactions
-//   to the new pool object *only if* they don't appear in the block. Do this for
-//   transactions in the pool and in the unconnectedTx pool.
-// - Compute which transactions were newly-accepted into the pool by effectively diffing
-//   the new pool's transactions with the old pool's transactions.
-// - Once the new pool object is up-to-date, the fields of the new pool object
-//   replace the fields of the original pool object.
-// - Return the newly added transactions computed earlier.
+//   - Build a map of all of the transactions in the block indexed by their hash.
+//   - Create a new mempool object.
+//   - Iterate through all the transactions in the mempool and add the transactions
+//     to the new pool object *only if* they don't appear in the block. Do this for
+//     transactions in the pool and in the unconnectedTx pool.
+//   - Compute which transactions were newly-accepted into the pool by effectively diffing
+//     the new pool's transactions with the old pool's transactions.
+//   - Once the new pool object is up-to-date, the fields of the new pool object
+//     replace the fields of the original pool object.
+//   - Return the newly added transactions computed earlier.
 //
 // TODO: This is fairly inefficient but the story is the same as for
 // UpdateAfterDisconnectBlock.
@@ -368,7 +368,6 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 	// Make a map of all the txns in the block except the block reward.
 	txnsInBlock := make(map[BlockHash]bool)
 	for _, txn := range blk.Txns[1:] {
-		fmt.Printf("\nHere is the tx in block: %v\n", txn.TxnMeta.GetTxnType())
 		txHash := txn.Hash()
 		txnsInBlock[*txHash] = true
 	}
@@ -397,7 +396,6 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		if _, exists := txnsInBlock[*mempoolTx.Hash]; exists {
 			continue
 		}
-		fmt.Printf("\nHere is the tx: %+v\n", mempoolTx.TxMeta.TxnType)
 
 		// Attempt to add the txn to the mempool as we go. If it fails that's fine.
 		txnsAccepted, err := newPool.processTransaction(
@@ -456,15 +454,15 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 // UpdateAfterDisconnectBlock updates the mempool to reflect that a block has been
 // disconnected from the blockchain. It does this by basically adding all the
 // transactions in the block back to the mempool as follows:
-// - A new pool object is created containing no transactions.
-// - The block's transactions are added to this new pool object. This is done in order
-//   to minimize dependency-related conflicts with transactions already in the mempool.
-// - Then the transactions in the original pool are layered on top of the block's
-//   transactions in the new pool object. Again this is done to avoid dependency
-//   issues since the ordering of <block txns> followed by <original mempool txns>
-//   is much less likely to have issues.
-// - Then, once the new pool object is up-to-date, the fields of the new pool object
-//   replace the fields of the original pool object.
+//   - A new pool object is created containing no transactions.
+//   - The block's transactions are added to this new pool object. This is done in order
+//     to minimize dependency-related conflicts with transactions already in the mempool.
+//   - Then the transactions in the original pool are layered on top of the block's
+//     transactions in the new pool object. Again this is done to avoid dependency
+//     issues since the ordering of <block txns> followed by <original mempool txns>
+//     is much less likely to have issues.
+//   - Then, once the new pool object is up-to-date, the fields of the new pool object
+//     replace the fields of the original pool object.
 //
 // This function is safe for concurrent access. It is assumed the ChainLock is
 // held before this function is a accessed.
@@ -868,7 +866,7 @@ func (mp *DeSoMempool) addTransaction(
 	_, _, _, _, err = mp.universalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
 		false /*verifySignatures*/, false /*ignoreUtxos*/)
 	if err != nil {
-		return nil, fmt.Errorf("ERROR addTransaction: _connectTransaction " +
+		return nil, errors.Wrap(err, "ERROR addTransaction: _connectTransaction "+
 			"failed on universalUtxoView; this is a HUGE problem and should never happen")
 	}
 	// Add it to the universalTransactionList if it made it through the view
@@ -876,7 +874,7 @@ func (mp *DeSoMempool) addTransaction(
 	if updateBackupView {
 		_, _, _, _, err = mp.backupUniversalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height, false, false)
 		if err != nil {
-			return nil, fmt.Errorf("ERROR addTransaction: _connectTransaction " +
+			return nil, errors.Wrap(err, "ERROR addTransaction: _connectTransaction "+
 				"failed on backupUniversalUtxoView; this is a HUGE problem and should never happen")
 		}
 	}
@@ -988,6 +986,19 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	// Block reward transactions shouldn't appear individually
 	if tx.TxnMeta != nil && tx.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 		return nil, nil, TxErrorIndividualBlockReward
+	}
+
+	if blockHeight >= uint64(mp.bc.params.ForkHeights.BalanceModelBlockHeight) {
+		if tx.TxnNonce == nil {
+			return nil, nil, TxErrorNoNonceAfterBalanceModelBlockHeight
+		}
+		if tx.TxnNonce.ExpirationBlockHeight < blockHeight {
+			return nil, nil, TxErrorNonceExpired
+		}
+		if mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 &&
+			tx.TxnNonce.ExpirationBlockHeight > blockHeight+mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset {
+			return nil, nil, TxErrorNonceExpirationBlockHeightOffsetExceeded
+		}
 	}
 
 	// Compute the hash of the transaction.

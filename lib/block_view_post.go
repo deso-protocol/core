@@ -726,7 +726,7 @@ func (bav *UtxoView) _connectSubmitPost(txn *MsgDeSoTxn, txHash *BlockHash, bloc
 		}
 
 		// Force the input to be non-zero so that we can prevent replay attacks.
-		if totalInput == 0 {
+		if totalInput == 0 && blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 			return 0, 0, nil, RuleErrorSubmitPostRequiresNonZeroInput
 		}
 	}

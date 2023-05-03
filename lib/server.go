@@ -148,6 +148,8 @@ type Server struct {
 	// timer is a helper variable that allows timing events for development purposes.
 	// It can be used to find computational bottlenecks.
 	timer *Timer
+
+	stateChangeSyncer *StateChangeSyncer
 }
 
 func (srv *Server) HasProcessedFirstTransactionBundle() bool {
@@ -409,6 +411,10 @@ func NewServer(
 		forceChecksum:                _forceChecksum,
 	}
 
+	if stateChangeSyncer != nil {
+		srv.stateChangeSyncer = stateChangeSyncer
+	}
+
 	// The same timesource is used in the chain data structure and in the connection
 	// manager. It just takes and keeps track of the median time among our peers so
 	// we can keep a consistent clock.
@@ -453,6 +459,10 @@ func NewServer(
 		hex.EncodeToString(_chain.blockTip().Hash[:]),
 		hex.EncodeToString(BigintToHash(_chain.blockTip().CumWork)[:]))
 
+	if srv.stateChangeSyncer != nil {
+		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
+	}
+
 	// Create a mempool to store transactions until they're ready to be mined into
 	// blocks.
 	_mempool := NewDeSoMempool(_chain, _rateLimitFeerateNanosPerKB,
@@ -496,11 +506,6 @@ func NewServer(
 		go func() {
 			_blockProducer.Start()
 		}()
-	}
-
-	if _stateChangeFilePath != "" {
-		stateChangeSyncer.Server = srv
-		//eventManager.OnSnapshotCompleted(stateChangeSyncer.StartMempoolSyncRoutine)
 	}
 
 	// TODO(miner): Make the miner its own binary and pull it out of here.
@@ -1481,6 +1486,12 @@ func (srv *Server) _startSync() {
 		"header tip height %v from peer %v", bestHeight, bestPeer)
 
 	srv.SyncPeer = bestPeer
+
+	// Initialize state syncer mempool job, if needed.
+	if srv.stateChangeSyncer != nil {
+		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
+	}
+
 }
 
 func (srv *Server) _handleNewPeer(pp *Peer) {
@@ -1962,7 +1973,7 @@ func (srv *Server) ProcessSingleTxnWithChainLock(
 		pp.ID, true /*verifySignatures*/)
 }
 
-func (srv *Server) _processTransactions(pp *Peer, msg *MsgDeSoTransactionBundle) []*MempoolTx {
+func (srv *Server) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []*MempoolTx {
 	// Try and add all the transactions to our mempool in the order we received
 	// them. If any fail to get added, just log an error.
 	//
@@ -1971,10 +1982,10 @@ func (srv *Server) _processTransactions(pp *Peer, msg *MsgDeSoTransactionBundle)
 	// a block. Doing something like this would make it so that if a transaction
 	// was initially rejected due to us not having its dependencies, then we
 	// will eventually add it as opposed to just forgetting about it.
-	glog.V(2).Infof("Server._handleTransactionBundle: Processing message %v from "+
-		"peer %v", msg, pp)
+	glog.V(2).Infof("Server._processTransactions: Processing %d transactions from "+
+		"peer %v", len(transactions), pp)
 	transactionsToRelay := []*MempoolTx{}
-	for _, txn := range msg.Transactions {
+	for _, txn := range transactions {
 		// Process the transaction with rate-limiting while allowing unconnectedTxns and
 		// verifying signatures.
 		newlyAcceptedTxns, err := srv.ProcessSingleTxnWithChainLock(pp, txn)
@@ -2009,6 +2020,13 @@ func (srv *Server) _processTransactions(pp *Peer, msg *MsgDeSoTransactionBundle)
 
 func (srv *Server) _handleTransactionBundle(pp *Peer, msg *MsgDeSoTransactionBundle) {
 	glog.V(1).Infof("Server._handleTransactionBundle: Received TransactionBundle "+
+		"message of size %v from Peer %v", len(msg.Transactions), pp)
+
+	pp.AddDeSoMessage(msg, true /*inbound*/)
+}
+
+func (srv *Server) _handleTransactionBundleV2(pp *Peer, msg *MsgDeSoTransactionBundleV2) {
+	glog.V(1).Infof("Server._handleTransactionBundleV2: Received TransactionBundle "+
 		"message of size %v from Peer %v", len(msg.Transactions), pp)
 
 	pp.AddDeSoMessage(msg, true /*inbound*/)
@@ -2159,6 +2177,8 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 		srv._handleGetTransactions(serverMessage.Peer, msg)
 	case *MsgDeSoTransactionBundle:
 		srv._handleTransactionBundle(serverMessage.Peer, msg)
+	case *MsgDeSoTransactionBundleV2:
+		srv._handleTransactionBundleV2(serverMessage.Peer, msg)
 	case *MsgDeSoMempool:
 		srv._handleMempool(serverMessage.Peer, msg)
 	case *MsgDeSoInv:
@@ -2197,7 +2217,7 @@ func (srv *Server) messageHandler() {
 
 		// Always check for and handle control messages regardless of whether the
 		// BitcoinManager is synced. Note that we filter control messages out in a
-		// Peer's inHander so any control message we get at this point should be bona fide.
+		// Peer's inHandler so any control message we get at this point should be bona fide.
 		shouldQuit := srv._handleControlMessages(serverMessage)
 		if shouldQuit {
 			break

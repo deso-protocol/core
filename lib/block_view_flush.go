@@ -138,6 +138,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushDAOCoinLimitOrderEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
+	if err := bav._flushNonceEntriesToDbWithTxn(txn); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1408,6 +1411,34 @@ func (bav *UtxoView) _flushPostAssociationEntriesToDbWithTxn(txn *badger.Txn, bl
 			// put the corresponding mappings for it into the db.
 			if err := DBPutPostAssociationWithTxn(txn, bav.Snapshot, &associationEntry, blockHeight, bav.EventManager, bav.IsMempoolView); err != nil {
 				return fmt.Errorf("_flushPostAssociationEntriesToDbWithTxn: %v", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (bav *UtxoView) _flushNonceEntriesToDbWithTxn(txn *badger.Txn) error {
+	for _, nonceEntry := range bav.TransactorNonceMapKeyToTransactorNonceEntry {
+		// Delete the existing mappings in the db for this TransactorNonceEntry. They
+		// will be re-added if the corresponding entry in memory has isDeleted=false.
+		if err := DbDeleteTransactorNonceEntryWithTxn(txn, bav.Snapshot, nonceEntry.Nonce, nonceEntry.TransactorPKID, bav.EventManager, nonceEntry.isDeleted, bav.IsMempoolView); err != nil {
+			return fmt.Errorf(
+				"_flushNonceEntriesToDbWithTxn: problem deleting account nonce mappings for account nonce %v: %v",
+				nonceEntry.Nonce.String(),
+				err,
+			)
+		}
+	}
+
+	for _, nonceEntry := range bav.TransactorNonceMapKeyToTransactorNonceEntry {
+		if nonceEntry.isDeleted {
+			// If the TransactorNonceEntry has isDeleted=true then there's
+			// nothing to do because we already deleted the entry above.
+		} else {
+			// If the TransactorNonceEntry has isDeleted=false then we
+			// put the corresponding mappings for it into the db.
+			if err := DbPutTransactorNonceEntryWithTxn(txn, bav.Snapshot, nonceEntry.Nonce, nonceEntry.TransactorPKID, bav.EventManager, bav.IsMempoolView); err != nil {
+				return fmt.Errorf("_flushNonceEntriesToDbWithTxn: %v", err)
 			}
 		}
 	}

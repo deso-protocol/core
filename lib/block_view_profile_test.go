@@ -78,11 +78,15 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeSwapIdentity operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeSwapIdentity operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeSwapIdentity, utxoOps[len(utxoOps)-1].Type)
 
@@ -155,13 +159,21 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 	require.Equal(totalInput, totalOutput+fees)
-	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeUpdateProfile operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		require.Equal(totalInput, totalInputMake)
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeUpdateProfile operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.GreaterOrEqual(totalInput, totalInputMake)
+		if totalInput != totalInputMake {
+			require.Equal(totalInput, totalInputMake+utxoView.GlobalParamsEntry.CreateProfileFeeNanos)
+		}
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeUpdateProfile, utxoOps[len(utxoOps)-1].Type)
 
@@ -204,6 +216,26 @@ const (
 	otherShortPic string = "data:image/jpeg;base64,/9j/2wCEAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDIBCQkJDAsMGA0NGDIhHCEyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMv/AABEIAGQAZAMBIgACEQEDEQH/xAGiAAABBQEBAQEBAQAAAAAAAAAAAQIDBAUGBwgJCgsQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+gEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoLEQACAQIEBAMEBwUEBAABAncAAQIDEQQFITEGEkFRB2FxEyIygQgUQpGhscEJIzNS8BVictEKFiQ04SXxFxgZGiYnKCkqNTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqCg4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2dri4+Tl5ufo6ery8/T19vf4+fr/2gAMAwEAAhEDEQA/APf6KKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAoopGJVSQpYgcAd6AForyO++JmrHUJCgg05bZyj2dxHuckcEOeD/wB8fma7SDxpDH4Stte1OxurRJ3WNIVQyO5Y4UqBzhu2QDz0rSdKUEpPqZQrRnJxj08jqKKwbTxdp17p9/cwR3ZksB+/tGt2SdTjcAEbBJI6etXptasLU2KXU4gkvmCQRyAhmbaWwR2OAevpWZqaFFc5qfjfRtJv5bS5kuD5Gw3M8UDPFbb/ALvmOOFzViz8TQXfiSfQ2sryC5ihadZJkURyxhgu5SGJIJPcCgDbopnmx/N86/L97np9ar6hqVnpdjPe3twkNvAhkkdudq+uBzQBbopkM0c8SyROHRgCCD1p9ABRRRQAUjbtp2kBscZGRS0UAfP/AIkOqN4guzrccn29WAcW0a+XKv8AAU7gHpzkn7pzjFd34hsvEWo/DywXULaSbUlvbeaWOxTEiRrID9N4XqRgZ6V291o+n3t/a31zaxyXNoSYZGHKZ/n+PQ81exSV+rua1JwlFKMUn1fc8dvNEu7jQPE3m+H9WvVvmT+z2vYlkuxMImXe5z8qLwFPUZPFamt6UNU03wxqk3hm6uPsUyw3tvJbKZzCI2XG3PzLvIOPxr07FGKZkeb2R1HQb3WY7Xwvd3cerSQz2URRViRfLVDHMcny9u3pg8dKmvJ9Sk+IUtxbaPqcSHTH02O6EA8tZjJkPnP3B1z+lehYoxQB4gfCeq3Witaaf4fu7G8j0eaDUpJsAX05KlcHJ8w7lZg3vitbU9Ev/FDeJLj+wrqIz6PAlkt7EEYzp5nTk4YZ46dfevWcUYoA5/wetpHoax2miz6SqsN8M1uISz7RlsA8+mfaugoooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9k="
 )
 
+func TestBalanceModelUpdateProfile(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestUpdateProfile(t)
+	TestSpamUpdateProfile(t)
+	TestUpdateProfileChangeBack(t)
+}
+
+func TestBalanceModelSwapIdentity(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
+	TestSwapIdentityCreatorCoinBuySimple(t)
+	TestSwapIdentityFailureCases(t)
+	TestSwapIdentityMain(t)
+	TestSwapIdentityWithFollows(t)
+}
+
 func TestUpdateProfile(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -218,6 +250,7 @@ func TestUpdateProfile(t *testing.T) {
 	// For testing purposes, we set the fix block height to be 0 for the ParamUpdaterProfileUpdateFixBlockHeight.
 	params.ForkHeights.ParamUpdaterProfileUpdateFixBlockHeight = 0
 	params.ForkHeights.UpdateProfileFixBlockHeight = 0
+	params.BlockRewardMaturity = time.Second
 
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -317,6 +350,18 @@ func TestUpdateProfile(t *testing.T) {
 	// Do some UpdateProfile transactions
 	// ===================================================================================
 
+	{
+		// Set min network fee rate to 1 for balance model
+		if chain.blockTip().Height >= chain.params.ForkHeights.BalanceModelBlockHeight {
+			updateGlobalParamsEntry(
+				100,
+				m3Pub,
+				m3Priv,
+				-1,
+				1,
+				-1)
+		}
+	}
 	// Zero input txn should fail.
 	{
 		_, _, _, err = _updateProfile(
@@ -332,7 +377,12 @@ func TestUpdateProfile(t *testing.T) {
 			2*100*100,     /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		blockHeight := chain.blockTip().Height
+		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorTxnMustHaveAtLeastOneInput)
+		} else {
+			require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
+		}
 	}
 
 	// Username too long should fail.
@@ -820,9 +870,14 @@ func TestUpdateProfile(t *testing.T) {
 			1.5*100*100,
 			false)
 		require.Error(err)
-		require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
-		// Reduce the create profile fee, Set minimum network fee to 10 nanos per kb
+		blockHeight := chain.blockTip().Height + 1
+		if blockHeight >= params.ForkHeights.BalanceModelBlockHeight {
+			require.Contains(err.Error(), RuleErrorInsufficientBalance)
+		} else {
+			require.Contains(err.Error(), RuleErrorCreateProfileTxnOutputExceedsInput)
+		}
 
+		// Reduce the create profile fee, Set minimum network fee to 10 nanos per kb
 		updateGlobalParamsEntry(
 			100,
 			m3Pub,
@@ -1198,7 +1253,7 @@ func TestSpamUpdateProfile(t *testing.T) {
 		startTimeMempoolAdd := time.Now()
 		mempoolTxsAdded, err := mempool.processTransaction(
 			txn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-			true /*verifySignatures*/, false /*emitTxStateChange*/)
+			true /*verifySignatures*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxsAdded))
 		fmt.Printf("Adding to mempool took: %v seconds\n", time.Since(startTimeMempoolAdd).Seconds())
@@ -1248,6 +1303,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m2 buy some of m0's coins
 		{
@@ -1275,6 +1333,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           4827626815,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// Have m1 sell half of their stake
 		{
@@ -1303,6 +1364,10 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           4827626815,
 			m3DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
+			m3BalanceModelBalance:   6000000000,
 		},
 		// Swap m0 and m3
 		// State after swapping:
@@ -1333,6 +1398,10 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           4827626815,
 			m3DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
+			m3BalanceModelBalance:   6000000000,
 		},
 		// Swap m3 and m1
 		// State after swapping:
@@ -1364,6 +1433,10 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           4827626815,
 			m3DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
+			m3BalanceModelBalance:   6000000000,
 		},
 		// Swap m0 and m1. Should restore m0's profile to it.
 		// State after swapping:
@@ -1395,6 +1468,10 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           4827626815,
 			m3DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
+			m3BalanceModelBalance:   6000000000,
 		},
 		// Swap m1 and m3. Should restore everything back to normal.
 		// State after swapping:
@@ -1426,6 +1503,10 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           4827626815,
 			m3DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
+			m3BalanceModelBalance:   6000000000,
 		},
 		// Have m2 sell all of their stake
 		{
@@ -1453,6 +1534,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   5243756079,
 		},
 		// Have m1 buy more, m0 should receive 25% of the minted coins as a founders reward
 		{
@@ -1480,6 +1564,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4232379830,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4232379833,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m1 sell the rest of their stake
@@ -1508,6 +1595,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m0 sell all of their stake except leave 1 DeSo locked
@@ -1536,6 +1626,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           6119715429,
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   6119715430,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		{
@@ -1564,9 +1657,12 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           6119715427,
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   6119715429,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
 		},
 
-		// Have m1 buy a little more, m0 should receieve some
+		// Have m1 buy a little more, m0 should receive some
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -1592,6 +1688,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           6119715427,
 			m1DeSoBalance:           4512158337,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   6119715429,
+			m1BalanceModelBalance:   4512158342,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m1 sell their creator coins. m0 should be the only one left with coins.
@@ -1622,6 +1721,9 @@ func TestSwapIdentityNOOPCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           6119715427,
 			m1DeSoBalance:           6602018090,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   6119715429,
+			m1BalanceModelBalance:   6602018096,
+			m2BalanceModelBalance:   5243756079,
 		},
 	}
 
@@ -1675,6 +1777,9 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m2 buy some of m0's coins
 		{
@@ -1702,6 +1807,9 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           4827626815,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// Have m1 sell half of their stake
 		{
@@ -1729,6 +1837,9 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           4827626815,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
 		},
 
 		// Swap m0 and m3
@@ -1756,6 +1867,9 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           4827626815,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
 		},
 
 		// Have m2 sell all of their stake
@@ -1786,8 +1900,11 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   5243756079,
 		},
-		// Have m1 buy more, m3 should receieve a founders reward
+		// Have m1 buy more, m3 should receive a founders reward
 		{
 			// These are the transaction params
 			UpdaterPublicKeyBase58Check:  m1Pub,
@@ -1815,6 +1932,9 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4232379830,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4232379833,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m1 sell the rest of their stake
@@ -1845,6 +1965,9 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m3 sell all of their stake except leave 1 DeSo locked
@@ -1876,6 +1999,10 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
 			m3DeSoBalance:           6119715431,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
+			m3BalanceModelBalance:   6119715432,
 		},
 
 		{
@@ -1908,6 +2035,10 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
 			m3DeSoBalance:           6119715429,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
+			m3BalanceModelBalance:   6119715431,
 		},
 
 		// Have m1 buy a little more, m3 should receieve a founders reward
@@ -1939,6 +2070,10 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           4512158337,
 			m2DeSoBalance:           5243756077,
 			m3DeSoBalance:           6119715429,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4512158342,
+			m2BalanceModelBalance:   5243756079,
+			m3BalanceModelBalance:   6119715431,
 		},
 
 		// Have m1 sell their creator coins except CreatorCoinAutoSellThresholdNanos - 1. This should
@@ -1971,6 +2106,10 @@ func TestSwapIdentityCreatorCoinBuySimple(t *testing.T) {
 			m1DeSoBalance:           6602018090,
 			m2DeSoBalance:           5243756077,
 			m3DeSoBalance:           6119715429,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6602018096,
+			m2BalanceModelBalance:   5243756079,
+			m3BalanceModelBalance:   6119715431,
 		},
 	}
 
@@ -2091,6 +2230,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m4DeSoBalance:           6000000000,
 			m5DeSoBalance:           6000000000,
 			m6DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998, // m0 lost 2 nanos in fees when creating her profile
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
+			m3BalanceModelBalance:   6000000000,
+			m4BalanceModelBalance:   6000000000,
+			m5BalanceModelBalance:   6000000000,
+			m6BalanceModelBalance:   6000000000,
 
 			// Profiles should not exist for either of these keys
 			ProfilesToCheckPublicKeysBase58Check: []string{m1Pub, m2Pub},
@@ -2133,6 +2279,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m4DeSoBalance:           6000000000,
 			m5DeSoBalance:           6000000000,
 			m6DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
+			m3BalanceModelBalance:   5999999998,
+			m4BalanceModelBalance:   6000000000,
+			m5BalanceModelBalance:   6000000000,
+			m6BalanceModelBalance:   6000000000,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub},
@@ -2177,6 +2330,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m4DeSoBalance:           6000000000,
 			m5DeSoBalance:           4728876542,
 			m6DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
+			m3BalanceModelBalance:   5999999998,
+			m4BalanceModelBalance:   6000000000,
+			m5BalanceModelBalance:   4728876543,
+			m6BalanceModelBalance:   6000000000,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub},
@@ -2219,6 +2379,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m4DeSoBalance:           6000000000,
 			m5DeSoBalance:           4728876542,
 			m6DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
+			m3BalanceModelBalance:   5999999998,
+			m4BalanceModelBalance:   6000000000,
+			m5BalanceModelBalance:   4728876543,
+			m6BalanceModelBalance:   6000000000,
 
 			// Profile check. Note m2 is the public key that owns the profile now.
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m2Pub, m3Pub},
@@ -2264,6 +2431,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m4DeSoBalance:           6000000000,
 			m5DeSoBalance:           4728876542,
 			m6DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
+			m3BalanceModelBalance:   5999999996,
+			m4BalanceModelBalance:   6000000000,
+			m5BalanceModelBalance:   4728876543,
+			m6BalanceModelBalance:   6000000000,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m2Pub, m3Pub},
@@ -2308,6 +2482,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m4DeSoBalance:           6000000000,
 			m5DeSoBalance:           4728876542,
 			m6DeSoBalance:           3999999997,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
+			m3BalanceModelBalance:   5999999996,
+			m4BalanceModelBalance:   6000000000,
+			m5BalanceModelBalance:   4728876543,
+			m6BalanceModelBalance:   3999999998,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m2Pub, m3Pub},
@@ -2352,6 +2533,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m4DeSoBalance:           6000000000,
 			m5DeSoBalance:           4728876542,
 			m6DeSoBalance:           3999999985,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
+			m3BalanceModelBalance:   5999999996,
+			m4BalanceModelBalance:   6000000000,
+			m5BalanceModelBalance:   4728876543,
+			m6BalanceModelBalance:   3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m2Pub, m3Pub},
@@ -2373,27 +2561,34 @@ func TestSwapIdentityMain(t *testing.T) {
 			DeSoLockedNanos:         1999800000,
 			CoinWatermarkNanos:      12598787739,
 			// This was previously the m3 cap table, but now it's the m2 cap table.
-			m0CCBalance:    0,
-			m0HasPurchased: false,
-			m1CCBalance:    0,
-			m1HasPurchased: false,
-			m2CCBalance:    3149696934,
-			m2HasPurchased: false,
-			m3CCBalance:    0,
-			m3HasPurchased: false,
-			m4CCBalance:    0,
-			m4HasPurchased: false,
-			m5CCBalance:    0,
-			m5HasPurchased: false,
-			m6CCBalance:    9449090805, // m6 now owns some m2
-			m6HasPurchased: true,
-			m0DeSoBalance:  5999999998,
-			m1DeSoBalance:  6000000000,
-			m2DeSoBalance:  6000000000,
-			m3DeSoBalance:  5999999996,
-			m4DeSoBalance:  6000000000,
-			m5DeSoBalance:  4728876542,
-			m6DeSoBalance:  3999999985,
+			m0CCBalance:           0,
+			m0HasPurchased:        false,
+			m1CCBalance:           0,
+			m1HasPurchased:        false,
+			m2CCBalance:           3149696934,
+			m2HasPurchased:        false,
+			m3CCBalance:           0,
+			m3HasPurchased:        false,
+			m4CCBalance:           0,
+			m4HasPurchased:        false,
+			m5CCBalance:           0,
+			m5HasPurchased:        false,
+			m6CCBalance:           9449090805, // m6 now owns some m2
+			m6HasPurchased:        true,
+			m0DeSoBalance:         5999999998,
+			m1DeSoBalance:         6000000000,
+			m2DeSoBalance:         6000000000,
+			m3DeSoBalance:         5999999996,
+			m4DeSoBalance:         6000000000,
+			m5DeSoBalance:         4728876542,
+			m6DeSoBalance:         3999999985,
+			m0BalanceModelBalance: 5999999998,
+			m1BalanceModelBalance: 6000000000,
+			m2BalanceModelBalance: 6000000000,
+			m3BalanceModelBalance: 5999999996,
+			m4BalanceModelBalance: 6000000000,
+			m5BalanceModelBalance: 4728876543,
+			m6BalanceModelBalance: 3999999987,
 
 			// Profile check. Note m2 is the public key that owns the profile now.
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub},
@@ -2438,6 +2633,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m4DeSoBalance:           6000000000,
 			m5DeSoBalance:           4728876530,
 			m6DeSoBalance:           3999999985,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
+			m3BalanceModelBalance:   5999999996,
+			m4BalanceModelBalance:   6000000000,
+			m5BalanceModelBalance:   4728876532,
+			m6BalanceModelBalance:   3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub},
@@ -2480,6 +2682,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m4DeSoBalance:           6000000000,
 			m5DeSoBalance:           4728876530,
 			m6DeSoBalance:           3999999985,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
+			m3BalanceModelBalance:   5999999996,
+			m4BalanceModelBalance:   6000000000,
+			m5BalanceModelBalance:   4728876532,
+			m6BalanceModelBalance:   3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m4Pub, m2Pub, m3Pub},
@@ -2502,26 +2711,33 @@ func TestSwapIdentityMain(t *testing.T) {
 			DeSoLockedNanos:         1999800000,
 			CoinWatermarkNanos:      12598787739,
 			// This was previously the m2 cap table, but now it's the m3 cap table.
-			m0CCBalance:    0,
-			m0HasPurchased: false,
-			m1CCBalance:    0,
-			m1HasPurchased: false,
-			m2CCBalance:    0,
-			m2HasPurchased: false,
-			m3CCBalance:    3149696934,
-			m3HasPurchased: false,
-			m4CCBalance:    0,
-			m4HasPurchased: false,
-			m5CCBalance:    0,
-			m6CCBalance:    9449090805,
-			m6HasPurchased: true,
-			m0DeSoBalance:  5999999998,
-			m1DeSoBalance:  6000000000,
-			m2DeSoBalance:  6000000000,
-			m3DeSoBalance:  5999999996,
-			m4DeSoBalance:  6000000000,
-			m5DeSoBalance:  4728876530,
-			m6DeSoBalance:  3999999985,
+			m0CCBalance:           0,
+			m0HasPurchased:        false,
+			m1CCBalance:           0,
+			m1HasPurchased:        false,
+			m2CCBalance:           0,
+			m2HasPurchased:        false,
+			m3CCBalance:           3149696934,
+			m3HasPurchased:        false,
+			m4CCBalance:           0,
+			m4HasPurchased:        false,
+			m5CCBalance:           0,
+			m6CCBalance:           9449090805,
+			m6HasPurchased:        true,
+			m0DeSoBalance:         5999999998,
+			m1DeSoBalance:         6000000000,
+			m2DeSoBalance:         6000000000,
+			m3DeSoBalance:         5999999996,
+			m4DeSoBalance:         6000000000,
+			m5DeSoBalance:         4728876530,
+			m6DeSoBalance:         3999999985,
+			m0BalanceModelBalance: 5999999998,
+			m1BalanceModelBalance: 6000000000,
+			m2BalanceModelBalance: 6000000000,
+			m3BalanceModelBalance: 5999999996,
+			m4BalanceModelBalance: 6000000000,
+			m5BalanceModelBalance: 4728876532,
+			m6BalanceModelBalance: 3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m4Pub, m3Pub, m2Pub},
@@ -2540,27 +2756,34 @@ func TestSwapIdentityMain(t *testing.T) {
 			DeSoLockedNanos:         1999800000,
 			CoinWatermarkNanos:      12598787739,
 			// This was previously the m2 cap table, but now it's the m3 cap table.
-			m0CCBalance:    0,
-			m0HasPurchased: false,
-			m1CCBalance:    0,
-			m1HasPurchased: false,
-			m2CCBalance:    0,
-			m2HasPurchased: false,
-			m3CCBalance:    0,
-			m3HasPurchased: false,
-			m4CCBalance:    3149696934,
-			m4HasPurchased: false,
-			m5CCBalance:    0,
-			m5HasPurchased: false,
-			m6CCBalance:    9449090805,
-			m6HasPurchased: true,
-			m0DeSoBalance:  5999999998,
-			m1DeSoBalance:  6000000000,
-			m2DeSoBalance:  6000000000,
-			m3DeSoBalance:  5999999996,
-			m4DeSoBalance:  6000000000,
-			m5DeSoBalance:  4728876530,
-			m6DeSoBalance:  3999999985,
+			m0CCBalance:           0,
+			m0HasPurchased:        false,
+			m1CCBalance:           0,
+			m1HasPurchased:        false,
+			m2CCBalance:           0,
+			m2HasPurchased:        false,
+			m3CCBalance:           0,
+			m3HasPurchased:        false,
+			m4CCBalance:           3149696934,
+			m4HasPurchased:        false,
+			m5CCBalance:           0,
+			m5HasPurchased:        false,
+			m6CCBalance:           9449090805,
+			m6HasPurchased:        true,
+			m0DeSoBalance:         5999999998,
+			m1DeSoBalance:         6000000000,
+			m2DeSoBalance:         6000000000,
+			m3DeSoBalance:         5999999996,
+			m4DeSoBalance:         6000000000,
+			m5DeSoBalance:         4728876530,
+			m6DeSoBalance:         3999999985,
+			m0BalanceModelBalance: 5999999998,
+			m1BalanceModelBalance: 6000000000,
+			m2BalanceModelBalance: 6000000000,
+			m3BalanceModelBalance: 5999999996,
+			m4BalanceModelBalance: 6000000000,
+			m5BalanceModelBalance: 4728876532,
+			m6BalanceModelBalance: 3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m4Pub, m2Pub},
@@ -2604,6 +2827,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m4DeSoBalance:           6000000000,
 			m5DeSoBalance:           4728876518,
 			m6DeSoBalance:           3999999985,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
+			m3BalanceModelBalance:   5999999996,
+			m4BalanceModelBalance:   6000000000,
+			m5BalanceModelBalance:   4728876521,
+			m6BalanceModelBalance:   3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m4Pub, m2Pub},
@@ -2648,6 +2878,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m4DeSoBalance:           6000000000,
 			m5DeSoBalance:           4728876518,
 			m6DeSoBalance:           3999999985,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   5999999998,
+			m3BalanceModelBalance:   5999999996,
+			m4BalanceModelBalance:   6000000000,
+			m5BalanceModelBalance:   4728876521,
+			m6BalanceModelBalance:   3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m4Pub, m2Pub},
@@ -2666,27 +2903,34 @@ func TestSwapIdentityMain(t *testing.T) {
 			DeSoLockedNanos:         0,
 			CoinWatermarkNanos:      0,
 			// This was previously the m2 cap table, but now it's the m3 cap table.
-			m0CCBalance:    0,
-			m0HasPurchased: false,
-			m1CCBalance:    0,
-			m1HasPurchased: false,
-			m2CCBalance:    0,
-			m2HasPurchased: false,
-			m3CCBalance:    0,
-			m3HasPurchased: false,
-			m4CCBalance:    0,
-			m4HasPurchased: false,
-			m5CCBalance:    0,
-			m5HasPurchased: false,
-			m6CCBalance:    0,
-			m6HasPurchased: false,
-			m0DeSoBalance:  5999999998,
-			m1DeSoBalance:  6000000000,
-			m2DeSoBalance:  5999999998,
-			m3DeSoBalance:  5999999996,
-			m4DeSoBalance:  6000000000,
-			m5DeSoBalance:  4728876518,
-			m6DeSoBalance:  3999999985,
+			m0CCBalance:           0,
+			m0HasPurchased:        false,
+			m1CCBalance:           0,
+			m1HasPurchased:        false,
+			m2CCBalance:           0,
+			m2HasPurchased:        false,
+			m3CCBalance:           0,
+			m3HasPurchased:        false,
+			m4CCBalance:           0,
+			m4HasPurchased:        false,
+			m5CCBalance:           0,
+			m5HasPurchased:        false,
+			m6CCBalance:           0,
+			m6HasPurchased:        false,
+			m0DeSoBalance:         5999999998,
+			m1DeSoBalance:         6000000000,
+			m2DeSoBalance:         5999999998,
+			m3DeSoBalance:         5999999996,
+			m4DeSoBalance:         6000000000,
+			m5DeSoBalance:         4728876518,
+			m6DeSoBalance:         3999999985,
+			m0BalanceModelBalance: 5999999998,
+			m1BalanceModelBalance: 6000000000,
+			m2BalanceModelBalance: 5999999998,
+			m3BalanceModelBalance: 5999999996,
+			m4BalanceModelBalance: 6000000000,
+			m5BalanceModelBalance: 4728876521,
+			m6BalanceModelBalance: 3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub, m4Pub},
@@ -2732,6 +2976,13 @@ func TestSwapIdentityMain(t *testing.T) {
 			m4DeSoBalance:           6000000000,
 			m5DeSoBalance:           4728876506,
 			m6DeSoBalance:           3999999985,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   5999999998,
+			m3BalanceModelBalance:   5999999996,
+			m4BalanceModelBalance:   6000000000,
+			m5BalanceModelBalance:   4728876510,
+			m6BalanceModelBalance:   3999999987,
 
 			// Profile check
 			ProfilesToCheckPublicKeysBase58Check: []string{m0Pub, m3Pub, m2Pub, m4Pub},
@@ -3021,252 +3272,247 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 	_ = assert
 	_ = require
 
-	// This test fails non-deterministically so we wrap it in a loop to make it
-	// not flake.
-	for ii := 0; ii < 10; ii++ {
-		chain, params, db := NewLowDifficultyBlockchain(t)
-		mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-		// Make m3 a paramUpdater for this test
-		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	// Make m3 a paramUpdater for this test
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m3PkBytes)] = true
 
-		// Mine a few blocks to give the senderPkString some money.
-		_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m0Pub,
+		moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m1Pub,
+		moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m2Pub,
+		moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m3Pub,
+		moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
+
+	// m0 takes m0
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m0PkBytes,
+			m0PkBytes,
+			"m0",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
 		require.NoError(err)
-		_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m0Priv)
 		require.NoError(err)
-		_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
 		require.NoError(err)
-		_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+		require.Equal(1, len(mempoolTxsAdded))
+	}
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m1PkBytes,
+			m1PkBytes,
+			"m1",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
 		require.NoError(err)
 
-		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, moneyPkString, m0Pub,
-			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
-		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, moneyPkString, m1Pub,
-			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
-		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, moneyPkString, m2Pub,
-			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
-		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, moneyPkString, m3Pub,
-			moneyPrivString, 10000 /*amount to send*/, 11 /*feerate*/)
-
-		// m0 takes m0
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m0PkBytes,
-				m0PkBytes,
-				"m0",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
-
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m0Priv)
-			require.NoError(err)
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
-			require.NoError(err)
-			require.Equal(1, len(mempoolTxsAdded))
-		}
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m1PkBytes,
-				m1PkBytes,
-				"m1",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
-
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m1Priv)
-			require.NoError(err)
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
-			require.NoError(err)
-			require.Equal(1, len(mempoolTxsAdded))
-		}
-		// Write to db
-		block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m1Priv)
 		require.NoError(err)
-		// one for the block reward, two for the new profiles
-		require.Equal(1+2, len(block.Txns))
-
-		// m1 takes m2
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m1PkBytes,
-				m1PkBytes,
-				"m2",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
-
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m1Priv)
-			require.NoError(err)
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
-			require.NoError(err)
-			require.Equal(1, len(mempoolTxsAdded))
-		}
-		// m0 takes m1
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m0PkBytes,
-				m0PkBytes,
-				"m1",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
-
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m0Priv)
-			require.NoError(err)
-
-			// This ensure that the read-only version of the utxoView accurately reflects the current set of profile names taken.
-			utxoViewCopy, err := mempool.universalUtxoView.CopyUtxoView()
-			require.NoError(err)
-			txnSize := getTxnSize(*txn)
-			_, _, _, _, err = utxoViewCopy.ConnectTransaction(txn, txn.Hash(), txnSize, chain.blockTip().Height+1, false, false)
-			require.NoError(err)
-
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
-			require.NoError(err)
-			require.Equal(1, len(mempoolTxsAdded))
-		}
-		// m1 takes m0
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m1PkBytes,
-				m1PkBytes,
-				"m0",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
-
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m1Priv)
-			require.NoError(err)
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
-			require.NoError(err)
-			require.Equal(1, len(mempoolTxsAdded))
-		}
-		// Write to db
-		block, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
 		require.NoError(err)
-		// one for the block reward, three for the new txns
-		require.Equal(1+3, len(block.Txns))
+		require.Equal(1, len(mempoolTxsAdded))
+	}
+	// Write to db
+	block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	// one for the block reward, two for the new profiles
+	require.Equal(1+2, len(block.Txns))
 
-		// m2 takes m0 should fail
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m2PkBytes,
-				m2PkBytes,
-				"m0",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
+	// m1 takes m2
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m1PkBytes,
+			m1PkBytes,
+			"m2",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
+		require.NoError(err)
 
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m2Priv)
-			require.NoError(err)
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
-			require.Error(err)
-			require.Equal(0, len(mempoolTxsAdded))
-		}
-		// m3 takes m0 should fail
-		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				m3PkBytes,
-				m3PkBytes,
-				"m0",
-				"",
-				"",
-				0,
-				20000,
-				false,
-				0,
-				nil,
-				100,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
-			require.NoError(err)
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m1Priv)
+		require.NoError(err)
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
+		require.NoError(err)
+		require.Equal(1, len(mempoolTxsAdded))
+	}
+	// m0 takes m1
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m0PkBytes,
+			m0PkBytes,
+			"m1",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
+		require.NoError(err)
 
-			// Sign the transaction now that its inputs are set up.
-			_signTxn(t, txn, m3Priv)
-			require.NoError(err)
-			mempoolTxsAdded, err := mempool.processTransaction(
-				txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
-			require.Error(err)
-			require.Equal(0, len(mempoolTxsAdded))
-		}
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m0Priv)
+		require.NoError(err)
+
+		// This ensure that the read-only version of the utxoView accurately reflects the current set of profile names taken.
+		utxoViewCopy, err := mempool.universalUtxoView.CopyUtxoView()
+		require.NoError(err)
+		txnSize := getTxnSize(*txn)
+		_, _, _, _, err = utxoViewCopy.ConnectTransaction(txn, txn.Hash(), txnSize, chain.blockTip().Height+1, false, false)
+		require.NoError(err)
+
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
+		require.NoError(err)
+		require.Equal(1, len(mempoolTxsAdded))
+	}
+	// m1 takes m0
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m1PkBytes,
+			m1PkBytes,
+			"m0",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
+		require.NoError(err)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m1Priv)
+		require.NoError(err)
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
+		require.NoError(err)
+		require.Equal(1, len(mempoolTxsAdded))
+	}
+	// Write to db
+	block, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	// one for the block reward, three for the new txns
+	require.Equal(1+3, len(block.Txns))
+
+	// m2 takes m0 should fail
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m2PkBytes,
+			m2PkBytes,
+			"m0",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
+		require.NoError(err)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m2Priv)
+		require.NoError(err)
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
+		require.Error(err)
+		require.Equal(0, len(mempoolTxsAdded))
+	}
+	// m3 takes m0 should fail
+	{
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
+			m3PkBytes,
+			m3PkBytes,
+			"m0",
+			"",
+			"",
+			0,
+			20000,
+			false,
+			0,
+			nil,
+			100,
+			mempool, /*mempool*/
+			[]*DeSoOutput{})
+		require.NoError(err)
+
+		// Sign the transaction now that its inputs are set up.
+		_signTxn(t, txn, m3Priv)
+		require.NoError(err)
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
+		require.Error(err)
+		require.Equal(0, len(mempoolTxsAdded))
 	}
 }
 
 // Check that Eth personal_sign works on some test data.
 func TestEthSignature(t *testing.T) {
 	require := require.New(t)
-	_ = require
 
 	// Make sure encoder migrations are not triggered yet.
 	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {

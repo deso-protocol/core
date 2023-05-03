@@ -52,11 +52,15 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeFollow operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeFollow operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeFollow, utxoOps[len(utxoOps)-1].Type)
 
@@ -65,6 +69,12 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	return utxoOps, txn, blockHeight, nil
 }
 
+func TestBalanceModelFollows(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestFollowTxns(t)
+}
 func TestFollowTxns(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -671,6 +681,8 @@ func TestFollowTxns(t *testing.T) {
 
 	testDisconnectedState()
 
+	getConditionalBalance := GetConditionalBalanceFunc(chain, params)
+
 	// All the txns should be in the mempool already so mining a block should put
 	// all those transactions in it.
 	block, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -687,9 +699,9 @@ func TestFollowTxns(t *testing.T) {
 		// higher. And with a high minfee the value returned should be equal to the
 		// fee.
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(0, 0)))
+		require.Equal(getConditionalBalance(4, 6), chain.EstimateDefaultFeeRateNanosPerKB(0, 0))
 		require.Equal(int64(7), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 7)))
-		require.Equal(int64(4), int64(chain.EstimateDefaultFeeRateNanosPerKB(.01, 1)))
+		require.Equal(getConditionalBalance(4, 6), chain.EstimateDefaultFeeRateNanosPerKB(.01, 1))
 	}
 
 	testConnectedState()

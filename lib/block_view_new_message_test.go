@@ -49,6 +49,13 @@ func (data *NewMessageTestData) GetInputType() transactionTestInputType {
 	return transactionTestInputTypeNewMessage
 }
 
+func TestBalanceModelNewMessages(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestNewMessage(t)
+}
+
 func TestNewMessage(t *testing.T) {
 	require := require.New(t)
 	_ = require

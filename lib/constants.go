@@ -264,6 +264,10 @@ type ForkHeights struct {
 	// introduced a few improvements for associations' derived key spending limits.
 	AssociationsDerivedKeySpendingLimitBlockHeight uint32
 
+	// BalanceModelBlockHeight defines the height at which we convert from a UTXO model
+	// to an account balance model for accounting.
+	BalanceModelBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -274,46 +278,46 @@ type ForkHeights struct {
 //     step is to define a new value in ForkHeights, and set the value accordingly for
 //     mainnet, testnet, and regtest param structs. Add a name for your migration so that
 //     it can be accessed robustly.
-//	1. Define a new block height in the EncoderMigrationHeights struct. This should map
+//  1. Define a new block height in the EncoderMigrationHeights struct. This should map
 //     1:1 with the fork height defined prior.
-//	2. Add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods that
+//  2. Add conditional statements to the RawEncode / RawDecodeWithoutMetadata methods that
 //     trigger at the defined height.
-//	3. Add a condition to GetVersionByte to return version associated with the migration height.
+//  3. Add a condition to GetVersionByte to return version associated with the migration height.
 //
 // So for example, let's say you want to add a migration for UtxoEntry at height 1200.
 //
-// 0. Add a field to ForkHeight that marks the point at which this entry will come
-//    into play:
+//  0. Add a field to ForkHeight that marks the point at which this entry will come
+//     into play:
 //     - Add the following to the ForkHeight struct:
-//         UtxoEntryTestHeight uint64
+//     UtxoEntryTestHeight uint64
 //     - Add the following to the individual param structs (MainnetForkHeights, TestnetForkHeights,
-//       and RegtestForkHeights):
-//         UtxoEntryTestHeight: 1200 (may differ for mainnet vs testnet & regtest)
+//     and RegtestForkHeights):
+//     UtxoEntryTestHeight: 1200 (may differ for mainnet vs testnet & regtest)
 //     - Add the migration name below DefaultMigration
-//     		UtxoEntryTestHeight MigrationName = "UtxoEntryTestHeight"
+//     UtxoEntryTestHeight MigrationName = "UtxoEntryTestHeight"
 //
-// 1. Add a field to the EncoderMigrationHeights that looks like this:
-//		UtxoEntryTestHeight MigrationHeight
+//  1. Add a field to the EncoderMigrationHeights that looks like this:
+//     UtxoEntryTestHeight MigrationHeight
 //
-// 2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
-//	end of RawEncodeWithoutMetadata (note the usage of the MigrationName UtxoEntryTestHeight):
-//		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
-//			data = append(data, byte(127))
-//		}
-//	And this at the end of RawDecodeWithoutMetadata:
-//		if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
-//			_, err = rr.ReadByte()
-//			if err != nil {
-//				return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte.")
-//			}
-//		}
-//	MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
+//  2. Modify func (utxoEntry *UtxoEntry) RawEncode/RawDecodeWithoutMetadata. E.g. add the following condition at the
+//     end of RawEncodeWithoutMetadata (note the usage of the MigrationName UtxoEntryTestHeight):
+//     if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
+//     data = append(data, byte(127))
+//     }
+//     And this at the end of RawDecodeWithoutMetadata:
+//     if MigrationTriggered(blockHeight, UtxoEntryTestHeight) {
+//     _, err = rr.ReadByte()
+//     if err != nil {
+//     return errors.Wrapf(err, "UtxoEntry.Decode: Problem reading random byte.")
+//     }
+//     }
+//     MAKE SURE TO WRITE CORRECT CONDITIONS FOR THE HEIGHTS IN BOTH ENCODE AND DECODE!
 //
-// 3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. Use the
-//		function GetMigrationVersion to chain encoder migrations (Note the variadic parameter of GetMigrationVersion and
-//		the usage of the MigrationName UtxoEntryTestHeight)
+//  3. Modify func (utxo *UtxoEntry) GetVersionByte to return the correct encoding version depending on the height. Use the
+//     function GetMigrationVersion to chain encoder migrations (Note the variadic parameter of GetMigrationVersion and
+//     the usage of the MigrationName UtxoEntryTestHeight)
 //
-//		return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
+//     return GetMigrationVersion(blockHeight, UtxoEntryTestHeight)
 //
 // That's it!
 type MigrationName string
@@ -327,6 +331,7 @@ const (
 	DefaultMigration                     MigrationName = "DefaultMigration"
 	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
 	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
+	BalanceModelMigration                MigrationName = "BalanceModelMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -337,6 +342,9 @@ type EncoderMigrationHeights struct {
 
 	// This coincides with the AssociationsAndAccessGroups block
 	AssociationsAndAccessGroups MigrationHeight
+
+	// This coincides with the BalanceModel block
+	BalanceModel MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -355,6 +363,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 2,
 			Height:  uint64(forkHeights.AssociationsAndAccessGroupsBlockHeight),
 			Name:    AssociationsAndAccessGroupsMigration,
+		},
+		BalanceModel: MigrationHeight{
+			Version: 3,
+			Height:  uint64(forkHeights.BalanceModelBlockHeight),
+			Name:    BalanceModelMigration,
 		},
 	}
 }
@@ -598,6 +611,9 @@ var RegtestForkHeights = ForkHeights{
 	DeSoUnlimitedDerivedKeysBlockHeight:                  uint32(0),
 	AssociationsAndAccessGroupsBlockHeight:               uint32(0),
 	AssociationsDerivedKeySpendingLimitBlockHeight:       uint32(0),
+	// For convenience, we set the block height to 1 since the
+	// genesis block was created using the utxo model.
+	BalanceModelBlockHeight: uint32(1),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -746,6 +762,9 @@ var MainnetForkHeights = ForkHeights{
 
 	// Wed Mar 8 2023 @ 5pm PST
 	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(213487),
+
+	// Mon Apr 24 2023 @ 9am PST
+	BalanceModelBlockHeight: uint32(226839),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1007,6 +1026,9 @@ var TestnetForkHeights = ForkHeights{
 	// Mon Mar 6 2023 @ 7pm PT
 	AssociationsDerivedKeySpendingLimitBlockHeight: uint32(642270),
 
+	// Tues Apr 11 2023 @ 5pm PT
+	BalanceModelBlockHeight: uint32(683058),
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -1189,12 +1211,13 @@ const (
 	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
-	USDCentsPerBitcoinKey            = "USDCentsPerBitcoin"
-	MinNetworkFeeNanosPerKBKey       = "MinNetworkFeeNanosPerKB"
-	CreateProfileFeeNanosKey         = "CreateProfileFeeNanos"
-	CreateNFTFeeNanosKey             = "CreateNFTFeeNanos"
-	MaxCopiesPerNFTKey               = "MaxCopiesPerNFT"
-	ForbiddenBlockSignaturePubKeyKey = "ForbiddenBlockSignaturePubKey"
+	USDCentsPerBitcoinKey                  = "USDCentsPerBitcoin"
+	MinNetworkFeeNanosPerKBKey             = "MinNetworkFeeNanosPerKB"
+	CreateProfileFeeNanosKey               = "CreateProfileFeeNanos"
+	CreateNFTFeeNanosKey                   = "CreateNFTFeeNanos"
+	MaxCopiesPerNFTKey                     = "MaxCopiesPerNFT"
+	MaxNonceExpirationBlockHeightOffsetKey = "MaxNonceExpirationBlockHeightOffset"
+	ForbiddenBlockSignaturePubKeyKey       = "ForbiddenBlockSignaturePubKey"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
@@ -1293,6 +1316,10 @@ const (
 	// Access group key constants
 	MinAccessGroupKeyNameCharacters = 1
 	MaxAccessGroupKeyNameCharacters = 32
+
+	// DefaultMaxNonceExpirationBlockHeightOffset - default value to which the MaxNonceExpirationBlockHeightOffset
+	// is set to before specified by ParamUpdater.
+	DefaultMaxNonceExpirationBlockHeightOffset = 288
 
 	// TODO: Are these fields needed?
 	// Access group enumeration max recursion depth.

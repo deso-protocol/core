@@ -203,7 +203,7 @@ type StateChangeSyncer struct {
 	StateSyncerMutex *sync.Mutex
 	EntryCount       uint32
 
-	Server *Server
+	BlockHeight uint64
 }
 
 // Open a file, create if it doesn't exist.
@@ -357,7 +357,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 
 	// Encode the state change entry. We encode as a byte array, so the consumer can buffer just the bytes needed
 	// to decode this entry when reading from file.
-	entryBytes := EncodeToBytes(0, stateChangeEntry, false)
+	entryBytes := EncodeToBytes(stateChangeSyncer.BlockHeight, stateChangeEntry, false)
 	writeBytes := EncodeByteArray(entryBytes)
 
 	// Add the StateChangeEntry bytes to the queue of bytes to be written to the state change file upon Badger db flush.
@@ -528,13 +528,13 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *DBFlu
 }
 
 func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Server) (bool, error) {
-	stateChangeSyncer.StateSyncerMutex.Lock()
 	originalCommittedFlushId := stateChangeSyncer.BlockSyncFlushId
-	stateChangeSyncer.StateSyncerMutex.Unlock()
 
 	if server.mempool.stopped {
 		return true, nil
 	}
+
+	stateChangeSyncer.BlockHeight = uint64(server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Height)
 
 	mempoolUtxoView, err := server.GetMempool().GetAugmentedUniversalView()
 	if err != nil {
@@ -571,21 +571,22 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	return false, nil
 }
 
-func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine() {
+func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Server) {
 	go func() {
 		// Wait for mempool to be initialized.
-		for stateChangeSyncer.Server.mempool == nil {
+		for server.mempool == nil && server.blockchain.chainState() != SyncStateFullyCurrent {
 			time.Sleep(1000 * time.Millisecond)
 		}
+		fmt.Printf("\n\n*****STARTING THE MEMPOOL SYNC****\n")
 
 		// TODO: Exit if mempool is closed.
-		mempoolClosed := stateChangeSyncer.Server.mempool.stopped
+		mempoolClosed := server.mempool.stopped
 		for !mempoolClosed {
 			// Sleep for a short while to avoid a tight loop.
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(1000 * time.Millisecond)
 			var err error
 			// If the mempool is not empty, sync the mempool to the state syncer.
-			mempoolClosed, err = stateChangeSyncer.SyncMempoolToStateSyncer(stateChangeSyncer.Server)
+			mempoolClosed, err = stateChangeSyncer.SyncMempoolToStateSyncer(server)
 			if err != nil {
 				glog.Errorf("StateChangeSyncer.StartMempoolSyncRoutine: Error syncing mempool to state syncer: %v", err)
 			}

@@ -70,86 +70,88 @@ type EncoderType uint32
 
 // Block view encoder types. These types to different structs implementing the DeSoEncoder interface.
 const (
-	EncoderTypeUtxoEntry EncoderType = iota
-	EncoderTypeUtxoOperation
-	EncoderTypeUtxoOperationBundle
-	EncoderTypeMessageEntry
-	EncoderTypeGroupKeyName
-	EncoderTypeMessagingGroupEntry
-	EncoderTypeMessagingGroupMember
-	EncoderTypeForbiddenPubKeyEntry
-	EncoderTypeLikeEntry
-	EncoderTypeNFTEntry
-	EncoderTypeNFTBidEntry
-	EncoderTypeNFTBidEntryBundle
-	EncoderTypeDerivedKeyEntry
-	EncoderTypeDiamondEntry
-	EncoderTypeRepostEntry
-	EncoderTypeGlobalParamsEntry
-	EncoderTypePostEntry
-	EncoderTypeBalanceEntry
-	EncoderTypeCoinEntry
-	EncoderTypePublicKeyRoyaltyPair
-	EncoderTypePKIDEntry
-	EncoderTypeProfileEntry
-	EncoderTypeAffectedPublicKey
-	EncoderTypeUtxoKey
-	EncoderTypeDeSoOutput
-	EncoderTypePKID
-	EncoderTypePublicKey
-	EncoderTypeBlockHash
-	EncoderTypeDAOCoinLimitOrderEntry
-	EncoderTypeFilledDAOCoinLimitOrder
-	EncoderTypeUserAssociationEntry
-	EncoderTypePostAssociationEntry
-	EncoderTypeAccessGroupEntry
-	EncoderTypeAccessGroupMemberEntry
-	EncoderTypeGroupMembershipKey
-	EncoderTypeNewMessageEntry
-	EncoderTypeAccessGroupMemberEnumerationEntry
-	EncoderTypeDmThreadEntry
-	EncoderTypeStateChangeEntry
-	EncoderTypeFollowEntry
+	EncoderTypeUtxoEntry                         EncoderType = 0
+	EncoderTypeUtxoOperation                     EncoderType = 1
+	EncoderTypeUtxoOperationBundle               EncoderType = 2
+	EncoderTypeMessageEntry                      EncoderType = 3
+	EncoderTypeGroupKeyName                      EncoderType = 4
+	EncoderTypeMessagingGroupEntry               EncoderType = 5
+	EncoderTypeMessagingGroupMember              EncoderType = 6
+	EncoderTypeForbiddenPubKeyEntry              EncoderType = 7
+	EncoderTypeLikeEntry                         EncoderType = 8
+	EncoderTypeNFTEntry                          EncoderType = 9
+	EncoderTypeNFTBidEntry                       EncoderType = 10
+	EncoderTypeNFTBidEntryBundle                 EncoderType = 11
+	EncoderTypeDerivedKeyEntry                   EncoderType = 12
+	EncoderTypeDiamondEntry                      EncoderType = 13
+	EncoderTypeRepostEntry                       EncoderType = 14
+	EncoderTypeGlobalParamsEntry                 EncoderType = 15
+	EncoderTypePostEntry                         EncoderType = 16
+	EncoderTypeBalanceEntry                      EncoderType = 17
+	EncoderTypeCoinEntry                         EncoderType = 18
+	EncoderTypePublicKeyRoyaltyPair              EncoderType = 19
+	EncoderTypePKIDEntry                         EncoderType = 20
+	EncoderTypeProfileEntry                      EncoderType = 21
+	EncoderTypeAffectedPublicKey                 EncoderType = 22
+	EncoderTypeUtxoKey                           EncoderType = 23
+	EncoderTypeDeSoOutput                        EncoderType = 24
+	EncoderTypePKID                              EncoderType = 25
+	EncoderTypePublicKey                         EncoderType = 26
+	EncoderTypeBlockHash                         EncoderType = 27
+	EncoderTypeDAOCoinLimitOrderEntry            EncoderType = 28
+	EncoderTypeFilledDAOCoinLimitOrder           EncoderType = 29
+	EncoderTypeUserAssociationEntry              EncoderType = 30
+	EncoderTypePostAssociationEntry              EncoderType = 31
+	EncoderTypeAccessGroupEntry                  EncoderType = 32
+	EncoderTypeAccessGroupMemberEntry            EncoderType = 33
+	EncoderTypeGroupMembershipKey                EncoderType = 34
+	EncoderTypeNewMessageEntry                   EncoderType = 35
+	EncoderTypeAccessGroupMemberEnumerationEntry EncoderType = 36
+	EncoderTypeDmThreadEntry                     EncoderType = 37
+	EncoderTypeDeSoNonce                         EncoderType = 38
+	EncoderTypeTransactorNonceEntry              EncoderType = 39
+	EncoderTypeStateChangeEntry                  EncoderType = 40
+	EncoderTypeFollowEntry                       EncoderType = 41
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView
+	EncoderTypeEndBlockView EncoderType = 42
 )
 
 // Txindex encoder types.
 const (
-	EncoderTypeTransactionMetadata EncoderType = 1000000 + iota
-	EncoderTypeBasicTransferTxindexMetadata
-	EncoderTypeBitcoinExchangeTxindexMetadata
-	EncoderTypeCreatorCoinTxindexMetadata
-	EncoderTypeCreatorCoinTransferTxindexMetadata
-	EncoderTypeDAOCoinTransferTxindexMetadata
-	EncoderTypeFilledDAOCoinLimitOrderMetadata
-	EncoderTypeDAOCoinLimitOrderTxindexMetadata
-	EncoderTypeUpdateProfileTxindexMetadata
-	EncoderTypeSubmitPostTxindexMetadata
-	EncoderTypeLikeTxindexMetadata
-	EncoderTypeFollowTxindexMetadata
-	EncoderTypePrivateMessageTxindexMetadata
-	EncoderTypeSwapIdentityTxindexMetadata
-	EncoderTypeNFTRoyaltiesMetadata
-	EncoderTypeNFTBidTxindexMetadata
-	EncoderTypeAcceptNFTBidTxindexMetadata
-	EncoderTypeNFTTransferTxindexMetadata
-	EncoderTypeAcceptNFTTransferTxindexMetadata
-	EncoderTypeBurnNFTTxindexMetadata
-	EncoderTypeDAOCoinTxindexMetadata
-	EncoderTypeCreateNFTTxindexMetadata
-	EncoderTypeUpdateNFTTxindexMetadata
-	EncoderTypeCreateUserAssociationTxindexMetadata
-	EncoderTypeDeleteUserAssociationTxindexMetadata
-	EncoderTypeCreatePostAssociationTxindexMetadata
-	EncoderTypeDeletePostAssociationTxindexMetadata
-	EncoderTypeAccessGroupTxindexMetadata
-	EncoderTypeAccessGroupMembersTxindexMetadata
-	EncoderTypeNewMessageTxindexMetadata
+	EncoderTypeTransactionMetadata                  EncoderType = 1000000
+	EncoderTypeBasicTransferTxindexMetadata         EncoderType = 1000001
+	EncoderTypeBitcoinExchangeTxindexMetadata       EncoderType = 1000002
+	EncoderTypeCreatorCoinTxindexMetadata           EncoderType = 1000003
+	EncoderTypeCreatorCoinTransferTxindexMetadata   EncoderType = 1000004
+	EncoderTypeDAOCoinTransferTxindexMetadata       EncoderType = 1000005
+	EncoderTypeFilledDAOCoinLimitOrderMetadata      EncoderType = 1000006
+	EncoderTypeDAOCoinLimitOrderTxindexMetadata     EncoderType = 1000007
+	EncoderTypeUpdateProfileTxindexMetadata         EncoderType = 1000008
+	EncoderTypeSubmitPostTxindexMetadata            EncoderType = 1000009
+	EncoderTypeLikeTxindexMetadata                  EncoderType = 1000010
+	EncoderTypeFollowTxindexMetadata                EncoderType = 1000011
+	EncoderTypePrivateMessageTxindexMetadata        EncoderType = 1000012
+	EncoderTypeSwapIdentityTxindexMetadata          EncoderType = 1000013
+	EncoderTypeNFTRoyaltiesMetadata                 EncoderType = 1000014
+	EncoderTypeNFTBidTxindexMetadata                EncoderType = 1000015
+	EncoderTypeAcceptNFTBidTxindexMetadata          EncoderType = 1000016
+	EncoderTypeNFTTransferTxindexMetadata           EncoderType = 1000017
+	EncoderTypeAcceptNFTTransferTxindexMetadata     EncoderType = 1000018
+	EncoderTypeBurnNFTTxindexMetadata               EncoderType = 1000019
+	EncoderTypeDAOCoinTxindexMetadata               EncoderType = 1000020
+	EncoderTypeCreateNFTTxindexMetadata             EncoderType = 1000021
+	EncoderTypeUpdateNFTTxindexMetadata             EncoderType = 1000022
+	EncoderTypeCreateUserAssociationTxindexMetadata EncoderType = 1000023
+	EncoderTypeDeleteUserAssociationTxindexMetadata EncoderType = 1000024
+	EncoderTypeCreatePostAssociationTxindexMetadata EncoderType = 1000025
+	EncoderTypeDeletePostAssociationTxindexMetadata EncoderType = 1000026
+	EncoderTypeAccessGroupTxindexMetadata           EncoderType = 1000027
+	EncoderTypeAccessGroupMembersTxindexMetadata    EncoderType = 1000028
+	EncoderTypeNewMessageTxindexMetadata            EncoderType = 1000029
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndTxIndex
+	EncoderTypeEndTxIndex EncoderType = 1000030
 )
 
 // This function translates the EncoderType into an empty DeSoEncoder struct.
@@ -232,6 +234,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMemberEnumerationEntry{}
 	case EncoderTypeDmThreadEntry:
 		return &DmThreadEntry{}
+	case EncoderTypeDeSoNonce:
+		return &DeSoNonce{}
+	case EncoderTypeTransactorNonceEntry:
+		return &TransactorNonceEntry{}
 	case EncoderTypeFollowEntry:
 		return &FollowEntry{}
 	case EncoderTypeStateChangeEntry:
@@ -328,10 +334,18 @@ type DeSoEncoder interface {
 	GetEncoderType() EncoderType
 }
 
+type EncodeToBytesFunc func(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte
+
+var EncodeToBytesImpl EncodeToBytesFunc = encodeToBytes
+
 // EncodeToBytes encodes a DeSoEncoder type to bytes, including encoder metadata such as existence byte, the encoder
 // type, and the current blockHeight. The skipMetadata parameter should be always passed if we're nesting DeSoEncoders,
 // but in general it shouldn't be passed. This parameter is only used when we're computing the state checksum.
 func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
+	return EncodeToBytesImpl(blockHeight, encoder, skipMetadata...)
+}
+
+func encodeToBytes(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
 	var data []byte
 
 	// Encoding without metadata is used in the checksum computation. We do this because metadata is kind of arbitrary.
@@ -363,9 +377,17 @@ func EncodeToBytes(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool
 	return data
 }
 
+type DecodeFromByteFunc func(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool, _error error)
+
+var DecodeFromBytesImpl = decodeFromBytes
+
 // DecodeFromBytes decodes a DeSoEncoder type from bytes. We check
 // for the existence byte, which tells us whether actual data was encoded, or a nil pointer.
 func DecodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool, _error error) {
+	return DecodeFromBytesImpl(encoder, rr)
+}
+
+func decodeFromBytes(encoder DeSoEncoder, rr *bytes.Reader) (_existenceByte bool, _error error) {
 	if existenceByte, err := ReadBoolByte(rr); existenceByte && err == nil {
 
 		encoderType, err := ReadUvarint(rr)
@@ -575,152 +597,90 @@ const (
 	OperationTypeAccessGroup                  OperationType = 33
 	OperationTypeAccessGroupMembers           OperationType = 34
 	OperationTypeNewMessage                   OperationType = 35
-
-	// NEXT_TAG = 36
+	OperationTypeAddBalance                   OperationType = 36
+	OperationTypeSpendBalance                 OperationType = 37
+	OperationTypeDeleteExpiredNonces          OperationType = 38
+	// NEXT_TAG = 39
 )
 
 func (op OperationType) String() string {
 	switch op {
 	case OperationTypeAddUtxo:
-		{
-			return "OperationTypeAddUtxo"
-		}
+		return "OperationTypeAddUtxo"
 	case OperationTypeSpendUtxo:
-		{
-			return "OperationTypeSpendUtxo"
-		}
+		return "OperationTypeSpendUtxo"
 	case OperationTypeBitcoinExchange:
-		{
-			return "OperationTypeBitcoinExchange"
-		}
+		return "OperationTypeBitcoinExchange"
 	case OperationTypePrivateMessage:
-		{
-			return "OperationTypePrivateMessage"
-		}
+		return "OperationTypePrivateMessage"
 	case OperationTypeSubmitPost:
-		{
-			return "OperationTypeSubmitPost"
-		}
+		return "OperationTypeSubmitPost"
 	case OperationTypeUpdateProfile:
-		{
-			return "OperationTypeUpdateProfile"
-		}
+		return "OperationTypeUpdateProfile"
 	case OperationTypeDeletePost:
-		{
-			return "OperationTypeDeletePost"
-		}
+		return "OperationTypeDeletePost"
 	case OperationTypeUpdateBitcoinUSDExchangeRate:
-		{
-			return "OperationTypeUpdateBitcoinUSDExchangeRate"
-		}
+		return "OperationTypeUpdateBitcoinUSDExchangeRate"
 	case OperationTypeFollow:
-		{
-			return "OperationTypeFollow"
-		}
+		return "OperationTypeFollow"
 	case OperationTypeLike:
-		{
-			return "OperationTypeLike"
-		}
+		return "OperationTypeLike"
 	case OperationTypeCreatorCoin:
-		{
-			return "OperationTypeCreatorCoin"
-		}
+		return "OperationTypeCreatorCoin"
 	case OperationTypeSwapIdentity:
-		{
-			return "OperationTypeSwapIdentity"
-		}
+		return "OperationTypeSwapIdentity"
 	case OperationTypeUpdateGlobalParams:
-		{
-			return "OperationTypeUpdateGlobalParams"
-		}
+		return "OperationTypeUpdateGlobalParams"
 	case OperationTypeCreatorCoinTransfer:
-		{
-			return "OperationTypeCreatorCoinTransfer"
-		}
+		return "OperationTypeCreatorCoinTransfer"
 	case OperationTypeCreateNFT:
-		{
-			return "OperationTypeCreateNFT"
-		}
+		return "OperationTypeCreateNFT"
 	case OperationTypeUpdateNFT:
-		{
-			return "OperationTypeUpdateNFT"
-		}
+		return "OperationTypeUpdateNFT"
 	case OperationTypeAcceptNFTBid:
-		{
-			return "OperationTypeAcceptNFTBid"
-		}
+		return "OperationTypeAcceptNFTBid"
 	case OperationTypeNFTBid:
-		{
-			return "OperationTypeNFTBid"
-		}
+		return "OperationTypeNFTBid"
 	case OperationTypeDeSoDiamond:
-		{
-			return "OperationTypeDeSoDiamond"
-		}
+		return "OperationTypeDeSoDiamond"
 	case OperationTypeNFTTransfer:
-		{
-			return "OperationTypeNFTTransfer"
-		}
+		return "OperationTypeNFTTransfer"
 	case OperationTypeAcceptNFTTransfer:
-		{
-			return "OperationTypeAcceptNFTTransfer"
-		}
+		return "OperationTypeAcceptNFTTransfer"
 	case OperationTypeBurnNFT:
-		{
-			return "OperationTypeBurnNFT"
-		}
+		return "OperationTypeBurnNFT"
 	case OperationTypeAuthorizeDerivedKey:
-		{
-			return "OperationTypeAuthorizeDerivedKey"
-		}
+		return "OperationTypeAuthorizeDerivedKey"
 	case OperationTypeMessagingKey:
-		{
-			return "OperationTypeMessagingKey"
-		}
+		return "OperationTypeMessagingKey"
 	case OperationTypeDAOCoin:
-		{
-			return "OperationTypeDAOCoin"
-		}
+		return "OperationTypeDAOCoin"
 	case OperationTypeDAOCoinTransfer:
-		{
-			return "OperationTypeDAOCoinTransfer"
-		}
+		return "OperationTypeDAOCoinTransfer"
 	case OperationTypeSpendingLimitAccounting:
-		{
-			return "OperationTypeSpendingLimitAccounting"
-		}
+		return "OperationTypeSpendingLimitAccounting"
 	case OperationTypeDAOCoinLimitOrder:
-		{
-			return "OperationTypeDAOCoinLimitOrder"
-		}
+		return "OperationTypeDAOCoinLimitOrder"
 	case OperationTypeCreateUserAssociation:
-		{
-			return "OperationTypeCreateUserAssociation"
-		}
+		return "OperationTypeCreateUserAssociation"
 	case OperationTypeDeleteUserAssociation:
-		{
-			return "OperationTypeDeleteUserAssociation"
-		}
+		return "OperationTypeDeleteUserAssociation"
 	case OperationTypeCreatePostAssociation:
-		{
-			return "OperationTypeCreatePostAssociation"
-		}
+		return "OperationTypeCreatePostAssociation"
 	case OperationTypeDeletePostAssociation:
-		{
-			return "OperationTypeDeletePostAssociation"
-		}
+		return "OperationTypeDeletePostAssociation"
 	case OperationTypeAccessGroup:
-		{
-			return "OperationTypeAccessGroup"
-		}
+		return "OperationTypeAccessGroup"
 	case OperationTypeAccessGroupMembers:
-		{
-			return "OperationTypeAccessGroupMembers"
-		}
+		return "OperationTypeAccessGroupMembers"
 	case OperationTypeNewMessage:
-		{
-			return "OperationTypeNewMessage"
-		}
+		return "OperationTypeNewMessage"
+	case OperationTypeAddBalance:
+		return "OperationTypeAddBalance"
+	case OperationTypeSpendBalance:
+		return "OperationTypeSpendBalance"
+	case OperationTypeDeleteExpiredNonces:
+		return "OperationTypeDeleteExpiredNonces"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -898,6 +858,13 @@ type UtxoOperation struct {
 	PrevNewMessageEntry *NewMessageEntry
 	// PrevDmThreadEntry is used for disconnecting DM message threads.
 	PrevDmThreadEntry *DmThreadEntry
+
+	// When we add to or spend balance, we keep track of the public key and amount.
+	BalancePublicKey   []byte
+	BalanceAmountNanos uint64
+
+	// When we connect a block, we delete expired nonce entries.
+	PrevNonceEntries []*TransactorNonceEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1203,6 +1170,16 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// PrevDmThreadEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevDmThreadEntry, skipMetadata...)...)
+	}
+
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		data = append(data, EncodeByteArray(op.BalancePublicKey)...)
+		data = append(data, UintToBuf(op.BalanceAmountNanos)...)
+
+		data = append(data, UintToBuf(uint64(len(op.PrevNonceEntries)))...)
+		for _, entry := range op.PrevNonceEntries {
+			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
+		}
 	}
 
 	return data
@@ -1795,11 +1772,36 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 	}
 
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		op.BalancePublicKey, err = DecodeByteArray(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PublicKeyBytes")
+		}
+		op.BalanceAmountNanos, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading BalanceAmountNanos")
+		}
+
+		var numPrevNonceEntries uint64
+		numPrevNonceEntries, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading numPrevNonceEntries")
+		}
+
+		for ; numPrevNonceEntries > 0; numPrevNonceEntries-- {
+			prevNonceEntry := &TransactorNonceEntry{}
+			if _, err = DecodeFromBytes(prevNonceEntry, rr); err != nil {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading prevNonceEntry")
+			}
+			op.PrevNonceEntries = append(op.PrevNonceEntries, prevNonceEntry)
+		}
+	}
+
 	return nil
 }
 
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration)
+	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration, BalanceModelMigration)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {
@@ -3445,7 +3447,8 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration, AssociationsAndAccessGroupsMigration)
+	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration, AssociationsAndAccessGroupsMigration,
+		BalanceModelMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {
@@ -3707,6 +3710,12 @@ type GlobalParamsEntry struct {
 
 	// The new minimum fee the network will accept
 	MinimumNetworkFeeNanosPerKB uint64
+
+	// MaxNonceExpirationBlockHeightOffset is maximum value nodes will
+	// tolerate for the difference between the current block height
+	// and the expiration block height specified in the nonce for a
+	// transaction.
+	MaxNonceExpirationBlockHeightOffset uint64
 }
 
 func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -3717,7 +3726,9 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 	data = append(data, UintToBuf(gp.CreateNFTFeeNanos)...)
 	data = append(data, UintToBuf(gp.MaxCopiesPerNFT)...)
 	data = append(data, UintToBuf(gp.MinimumNetworkFeeNanosPerKB)...)
-
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockHeightOffset)...)
+	}
 	return data
 }
 
@@ -3744,12 +3755,17 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	if err != nil {
 		return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MinimumNetworkFeeNanosPerKB")
 	}
-
+	if MigrationTriggered(blockHeight, BalanceModelMigration) {
+		gp.MaxNonceExpirationBlockHeightOffset, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxNonceExpirationBlockHeightOffset")
+		}
+	}
 	return nil
 }
 
 func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(blockHeight, BalanceModelMigration)
 }
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {
@@ -4258,6 +4274,18 @@ type CoinEntry struct {
 	MintingDisabled bool
 
 	TransferRestrictionStatus TransferRestrictionStatus
+}
+
+func (ce *CoinEntry) Copy() *CoinEntry {
+	return &CoinEntry{
+		CreatorBasisPoints:        ce.CreatorBasisPoints,
+		DeSoLockedNanos:           ce.DeSoLockedNanos,
+		NumberOfHolders:           ce.NumberOfHolders,
+		CoinsInCirculationNanos:   *uint256.NewInt().Set(&ce.CoinsInCirculationNanos),
+		CoinWatermarkNanos:        ce.CoinWatermarkNanos,
+		MintingDisabled:           ce.MintingDisabled,
+		TransferRestrictionStatus: ce.TransferRestrictionStatus,
+	}
 }
 
 func (ce *CoinEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -6105,4 +6133,63 @@ func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetVersionByte(block
 
 func (newMessageTxindexMetadata *NewMessageTxindexMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeNewMessageTxindexMetadata
+}
+
+type TransactorNonceEntry struct {
+	Nonce          *DeSoNonce
+	TransactorPKID *PKID
+	isDeleted      bool
+}
+
+func (tne *TransactorNonceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, tne.Nonce, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, tne.TransactorPKID, skipMetadata...)...)
+	return data
+}
+
+func (tne *TransactorNonceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	nonce := &DeSoNonce{}
+	if exists, err := DecodeFromBytes(nonce, rr); exists && err == nil {
+		tne.Nonce = nonce
+	} else if err != nil {
+		return err
+	}
+
+	transactorPKID := &PKID{}
+	if exists, err := DecodeFromBytes(transactorPKID, rr); exists && err == nil {
+		tne.TransactorPKID = transactorPKID
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (tne *TransactorNonceEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (tne *TransactorNonceEntry) GetEncoderType() EncoderType {
+	return EncoderTypeTransactorNonceEntry
+}
+
+func (tne *TransactorNonceEntry) ToMapKey() TransactorNonceMapKey {
+	return TransactorNonceMapKey{
+		Nonce:          *tne.Nonce,
+		TransactorPKID: *tne.TransactorPKID,
+	}
+}
+
+func (tne *TransactorNonceEntry) Copy() *TransactorNonceEntry {
+	copiedNonce := *tne.Nonce
+	return &TransactorNonceEntry{
+		Nonce:          &copiedNonce,
+		TransactorPKID: tne.TransactorPKID.NewPKID(),
+		isDeleted:      tne.isDeleted,
+	}
+}
+
+type TransactorNonceMapKey struct {
+	Nonce          DeSoNonce
+	TransactorPKID PKID
 }

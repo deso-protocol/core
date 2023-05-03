@@ -204,19 +204,33 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 		return mempoolTxs[ii].Added.Before(mempoolTxs[jj].Added)
 	})
 
-	// Add all of the fetched transactions to a response.
-	res := &MsgDeSoTransactionBundle{}
+	// Create a list of the fetched transactions to a response.
+	txnList := []*MsgDeSoTxn{}
 	for _, mempoolTx := range mempoolTxs {
-		res.Transactions = append(res.Transactions, mempoolTx.Tx)
+		txnList = append(txnList, mempoolTx.Tx)
 	}
 
-	// At this point the response should have all of the transactions that
+	// At this point the txnList should have all of the transactions that
 	// we had available from the request. It should also be below the limit
 	// for number of transactions since the request itself was below the
 	// limit. So push the bundle to the Peer.
-	glog.V(1).Infof("Peer._handleGetTransactions: Sending txn bundle with size %v to peer %v",
-		len(res.Transactions), pp)
-	pp.QueueMessage(res)
+	glog.V(2).Infof("Peer._handleGetTransactions: Sending txn bundle with size %v to peer %v",
+		len(txnList), pp)
+
+	// Now we must enqueue the transactions in a transaction bundle. The type of transaction
+	// bundle we enqueue depends on the blockheight. If the next block is going to be a
+	// balance model block, the transactions will include TxnFeeNanos, TxnNonce, and
+	// TxnVersion. These fields are only supported by the TransactionBundleV2.
+	nextBlockHeight := pp.srv.blockchain.blockTip().Height + 1
+	if nextBlockHeight >= pp.srv.blockchain.params.ForkHeights.BalanceModelBlockHeight {
+		res := &MsgDeSoTransactionBundleV2{}
+		res.Transactions = txnList
+		pp.QueueMessage(res)
+	} else {
+		res := &MsgDeSoTransactionBundle{}
+		res.Transactions = txnList
+		pp.QueueMessage(res)
+	}
 }
 
 func (pp *Peer) HandleTransactionBundleMessage(msg *MsgDeSoTransactionBundle) {
@@ -228,26 +242,41 @@ func (pp *Peer) HandleTransactionBundleMessage(msg *MsgDeSoTransactionBundle) {
 	glog.V(1).Infof("Received TransactionBundle "+
 		"message of size %v from Peer %v", len(msg.Transactions), pp)
 
-	transactionsToRelay := pp.srv._processTransactions(pp, msg)
-	glog.V(1).Infof("Server._handleTransactionBundle: Accepted %v txns from Peer %v",
+	pp._processTransactionsAndMaybeRemoveRequests(msg.Transactions)
+
+	pp.srv.hasProcessedFirstTransactionBundle = true
+}
+
+func (pp *Peer) HandleTransactionBundleMessageV2(msg *MsgDeSoTransactionBundleV2) {
+	// TODO: I think making it so that we can't process more than one TransactionBundle at
+	// a time would reduce transaction reorderings. Right now, if you get multiple bundles
+	// from multiple peers they'll be processed all at once, potentially interleaving with
+	// one another.
+
+	glog.V(2).Infof("Received TransactionBundleV2 "+
+		"message of size %v from Peer %v", len(msg.Transactions), pp)
+
+	pp._processTransactionsAndMaybeRemoveRequests(msg.Transactions)
+
+	pp.srv.hasProcessedFirstTransactionBundle = true
+}
+
+func (pp *Peer) _processTransactionsAndMaybeRemoveRequests(transactions []*MsgDeSoTxn) {
+	transactionsToRelay := pp.srv._processTransactions(pp, transactions)
+	glog.V(2).Infof("Server._handleTransactionBundle: Accepted %v txns from Peer %v",
 		len(transactionsToRelay), pp)
 
 	_ = transactionsToRelay
-
 	// Remove all the transactions we received from requestedTransactions now
 	// that we've processed them. Don't remove them from inventoryBeingProcessed,
 	// since that will guard against reprocessing transactions that had errors while
 	// processing.
 	pp.srv.dataLock.Lock()
-	for _, txn := range msg.Transactions {
+	for _, txn := range transactions {
 		txHash := txn.Hash()
 		delete(pp.srv.requestedTransactionsMap, *txHash)
 	}
 	pp.srv.dataLock.Unlock()
-
-	// At this point we should have attempted to add all the transactions to our
-	// mempool.
-	pp.srv.hasProcessedFirstTransactionBundle = true
 }
 
 func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
@@ -534,37 +563,42 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 		// If we get here we know we have a transaction to process.
 
 		if msgToProcess.Inbound {
-			if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetTransactions {
+			switch msgToProcess.DeSoMessage.GetMsgType() {
+			case MsgTypeGetTransactions:
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetTransactions)
 				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
 					"num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.HashList), pp)
 				pp.HandleGetTransactionsMsg(msg)
-
-			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeTransactionBundle {
+			case MsgTypeTransactionBundle:
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundle)
 				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
 					"num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.Transactions), pp)
 				pp.HandleTransactionBundleMessage(msg)
+			case MsgTypeTransactionBundleV2:
+				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of "+
+					"type %v with num txns %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(),
+					len(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundleV2).Transactions), pp)
+				pp.HandleTransactionBundleMessageV2(msgToProcess.DeSoMessage.(*MsgDeSoTransactionBundleV2))
 
-			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeInv {
+			case MsgTypeInv:
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoInv)
 				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
 					"num invs %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.InvList), pp)
 				pp.HandleInv(msg)
 
-			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetBlocks {
+			case MsgTypeGetBlocks:
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetBlocks)
 				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with "+
 					"num hashes %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), len(msg.HashList), pp)
 				pp.HandleGetBlocks(msg)
 
-			} else if msgToProcess.DeSoMessage.GetMsgType() == MsgTypeGetSnapshot {
+			case MsgTypeGetSnapshot:
 				msg := msgToProcess.DeSoMessage.(*MsgDeSoGetSnapshot)
 				glog.V(1).Infof("StartDeSoMessageProcessor: RECEIVED message of type %v with start key %v "+
 					"and prefix %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), msg.SnapshotStartKey, msg.GetPrefix(), pp)
 
 				pp.HandleGetSnapshot(msg)
-			} else {
+			default:
 				glog.Errorf("StartDeSoMessageProcessor: ERROR RECEIVED message of "+
 					"type %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), pp)
 			}
@@ -778,7 +812,8 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 	// If we're sending the peer a GetBlocks message, we expect to receive the
 	// blocks at minimum within a few seconds of each other.
 	stallTimeout := time.Duration(int64(pp.stallTimeoutSeconds) * int64(time.Second))
-	if msg.GetMsgType() == MsgTypeGetBlocks {
+	switch msg.GetMsgType() {
+	case MsgTypeGetBlocks:
 		getBlocks := msg.(*MsgDeSoGetBlocks)
 		// We have one block expected for each entry in the message.
 		for ii := range getBlocks.HashList {
@@ -788,37 +823,48 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 				MessageType: MsgTypeBlock,
 			})
 		}
-	}
-
-	// If we're sending a GetHeaders message, the Peer should respond within
-	// a few seconds with a HeaderBundle.
-	if msg.GetMsgType() == MsgTypeGetHeaders {
+	case MsgTypeGetHeaders:
+		// If we're sending a GetHeaders message, the Peer should respond within
+		// a few seconds with a HeaderBundle.
 		pp._addExpectedResponse(&ExpectedResponse{
 			TimeExpected: time.Now().Add(stallTimeout),
 			MessageType:  MsgTypeHeaderBundle,
 		})
-	}
-
-	// If we're sending a GetTransactions message, the Peer should respond within
-	// a few seconds with a TransactionBundle. Every GetTransactions message should
-	// receive a TransactionBundle in response. The
-	// Server handles situations in which we request certain hashes but only get
-	// back a subset of them in the response (i.e. a case in which we received a
-	// timely reply but the reply was incomplete).
-	if msg.GetMsgType() == MsgTypeGetTransactions {
-		pp._addExpectedResponse(&ExpectedResponse{
-			TimeExpected: time.Now().Add(stallTimeout),
-			MessageType:  MsgTypeTransactionBundle,
-			// The Server handles situations in which the Peer doesn't send us all of
-			// the hashes we were expecting using timeouts on requested hashes.
-		})
-	}
-
-	// If we're sending a GetSnapshot message, the peer should respond within a few seconds with a SnapshotData.
-	if msg.GetMsgType() == MsgTypeGetSnapshot {
+	case MsgTypeGetSnapshot:
+		// If we're sending a GetSnapshot message, the peer should respond within a few seconds with a SnapshotData.
 		pp._addExpectedResponse(&ExpectedResponse{
 			TimeExpected: time.Now().Add(stallTimeout),
 			MessageType:  MsgTypeSnapshotData,
+		})
+	case MsgTypeGetTransactions:
+		// If we're sending a GetTransactions message, the Peer should respond within
+		// a few seconds with a TransactionBundle. Every GetTransactions message should
+		// receive a TransactionBundle in response. The
+		// Server handles situations in which we request certain hashes but only get
+		// back a subset of them in the response (i.e. a case in which we received a
+		// timely reply but the reply was incomplete).
+		//
+		// NOTE: at the BalanceModelBlockHeight, MsgTypeTransactionBundle is replaced by
+		// the more capable MsgTypeTransactionBundleV2.
+		// TODO: After fork, remove this recover block and always expect msg type MsgTypeTransactionBundleV2.
+		defer func() {
+			if r := recover(); r != nil {
+				isSrvNil := pp.srv == nil
+				isBlockchainNil := isSrvNil && pp.srv.blockchain == nil
+				isBlockTipNil := !isSrvNil && !isBlockchainNil && pp.srv.blockchain.blockTip() == nil
+				glog.Errorf(
+					"Peer._handleOutExpectedResponse: Recovered from panic: %v.\nsrv is nil: %t\nsrv.Blockchain is nil: %t\n,srv.Blockchain.BlockTip is nil: %t", r, isSrvNil, isBlockchainNil, isBlockTipNil)
+			}
+		}()
+		expectedMsgType := MsgTypeTransactionBundle
+		if pp.srv.blockchain.blockTip().Height+1 >= pp.Params.ForkHeights.BalanceModelBlockHeight {
+			expectedMsgType = MsgTypeTransactionBundleV2
+		}
+		pp._addExpectedResponse(&ExpectedResponse{
+			TimeExpected: time.Now().Add(stallTimeout),
+			MessageType:  expectedMsgType,
+			// The Server handles situations in which the Peer doesn't send us all of
+			// the hashes we were expecting using timeouts on requested hashes.
 		})
 	}
 }
@@ -1005,6 +1051,7 @@ func (pp *Peer) _handleInExpectedResponse(rmsg DeSoMessage) error {
 	if msgType == MsgTypeBlock ||
 		msgType == MsgTypeHeaderBundle ||
 		msgType == MsgTypeTransactionBundle ||
+		msgType == MsgTypeTransactionBundleV2 ||
 		msgType == MsgTypeSnapshotData {
 
 		expectedResponse := pp._removeEarliestExpectedResponse(msgType)
@@ -1463,7 +1510,7 @@ func (pp *Peer) Disconnect() {
 
 	// Add the Peer to donePeers so that the ConnectionManager and Server can do any
 	// cleanup they need to do.
-	if pp.cmgr != nil && atomic.LoadInt32(&pp.cmgr.shutdown) == 0 {
+	if pp.cmgr != nil && atomic.LoadInt32(&pp.cmgr.shutdown) == 0 && pp.cmgr.donePeerChan != nil {
 		pp.cmgr.donePeerChan <- pp
 	}
 }
