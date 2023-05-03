@@ -598,6 +598,7 @@ type DeSoParams struct {
 
 	// StakeLockupEpochDuration is the number of epochs that a
 	// user must wait before unlocking their unstaked stake.
+	// TODO: Move this to GlobalParamsEntry.
 	StakeLockupEpochDuration uint64
 
 	ForkHeights ForkHeights
