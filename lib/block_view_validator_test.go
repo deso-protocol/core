@@ -992,8 +992,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	)
 
 	// Store m3's ValidatorEntry in the UtxoView with isDeleted=true.
-	m3ValidatorEntry.isDeleted = true
-	utxoView._setValidatorEntryMappings(m3ValidatorEntry)
+	utxoView._deleteValidatorEntryMappings(m3ValidatorEntry)
 
 	// Verify m3 is stored in the UtxoView with isDeleted=true.
 	require.Equal(t, utxoView.ValidatorMapKeyToValidatorEntry[m3ValidatorEntry.ToMapKey()].ValidatorPKID, m3PKID)

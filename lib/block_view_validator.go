@@ -518,7 +518,7 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
-	key = append(key, EncodeUint16(uint16(validatorEntry.Status()))...)
+	key = append(key, EncodeUint8(uint8(validatorEntry.Status()))...)
 	// TotalStakeAmountNanos will never be nil here, but EncodeOptionalUint256
 	// is used because it provides a fixed-width encoding of uint256.Ints.
 	key = append(key, EncodeOptionalUint256(validatorEntry.TotalStakeAmountNanos)...)         // Highest stake first
@@ -578,7 +578,7 @@ func DBGetTopActiveValidatorsByStake(
 
 	// Retrieve top N active ValidatorEntry PKIDs by stake.
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
-	key = append(key, EncodeUint16(uint16(ValidatorStatusActive))...)
+	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
 	_, validatorPKIDsBytes, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, limit, nil, true, validatorKeysToSkip,
 	)
@@ -1481,13 +1481,23 @@ func (bav *UtxoView) GetTopActiveValidatorsByStake(limit int) ([]*ValidatorEntry
 	for _, validatorEntry := range bav.ValidatorMapKeyToValidatorEntry {
 		utxoViewValidatorEntries = append(utxoViewValidatorEntries, validatorEntry)
 	}
-	// Pull top N ValidatorEntries from the database (not present in the UtxoView).
-	validatorEntries, err := DBGetTopActiveValidatorsByStake(bav.Handle, bav.Snapshot, limit, utxoViewValidatorEntries)
+	// Pull top N active ValidatorEntries from the database (not present in the UtxoView).
+	dbValidatorEntries, err := DBGetTopActiveValidatorsByStake(bav.Handle, bav.Snapshot, limit, utxoViewValidatorEntries)
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GetTopActiveValidatorsByStake: error retrieving entries from db: ")
 	}
-	// Add !isDeleted, active ValidatorEntries from the UtxoView to the ValidatorEntries from the db.
-	for _, validatorEntry := range utxoViewValidatorEntries {
+	// Cache top N active ValidatorEntries from the db in the UtxoView.
+	for _, validatorEntry := range dbValidatorEntries {
+		// We only pull ValidatorEntries from the db that are not present in the
+		// UtxoView. As a sanity check, we double-check that the ValidatorEntry
+		// is not already in the UtxoView here.
+		if _, exists := bav.ValidatorMapKeyToValidatorEntry[validatorEntry.ToMapKey()]; !exists {
+			bav._setValidatorEntryMappings(validatorEntry)
+		}
+	}
+	// Pull !isDeleted, active ValidatorEntries from the UtxoView.
+	var validatorEntries []*ValidatorEntry
+	for _, validatorEntry := range bav.ValidatorMapKeyToValidatorEntry {
 		if !validatorEntry.isDeleted && validatorEntry.Status() == ValidatorStatusActive {
 			validatorEntries = append(validatorEntries, validatorEntry)
 		}

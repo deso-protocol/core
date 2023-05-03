@@ -4223,23 +4223,21 @@ func DecodeUint64(scoreBytes []byte) uint64 {
 	return binary.BigEndian.Uint64(scoreBytes)
 }
 
-func EncodeUint16(num uint16) []byte {
-	numBytes := make([]byte, 2)
-	binary.BigEndian.PutUint16(numBytes, num)
-	return numBytes
+func EncodeUint8(num uint8) []byte {
+	return []byte{num}
 }
 
-func DecodeUint16(numBytes []byte) uint16 {
-	return binary.BigEndian.Uint16(numBytes)
+func DecodeUint8(numBytes []byte) uint8 {
+	return numBytes[0]
 }
 
-func ReadUint16(rr *bytes.Reader) (uint16, error) {
-	var numBytes [2]byte
+func ReadUint8(rr *bytes.Reader) (uint8, error) {
+	var numBytes [1]byte
 	_, err := io.ReadFull(rr, numBytes[:])
 	if err != nil {
 		return 0, err
 	}
-	return DecodeUint16(numBytes[:]), nil
+	return DecodeUint8(numBytes[:]), nil
 }
 
 func DbPutNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot, nanosPurchased uint64) error {
