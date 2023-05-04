@@ -1,8 +1,10 @@
 package lib
 
 import (
+	"bytes"
 	"io/ioutil"
 	"log"
+	"math"
 	"math/big"
 	"testing"
 	"time"
@@ -664,4 +666,22 @@ func TestDeleteExpiredTransactorNonceEntries(t *testing.T) {
 		require.Equal(3, len(nonceEntries))
 	}
 
+}
+
+func TestEncodeUint8(t *testing.T) {
+	for _, num := range []uint8{0, 95, math.MaxUint8} {
+		// Encode to bytes.
+		encoded := EncodeUint8(num)
+		require.Len(t, encoded, 1)
+
+		// Decode from bytes.
+		decoded := DecodeUint8(encoded)
+		require.Equal(t, num, decoded)
+
+		// Read from bytes.
+		rr := bytes.NewReader(encoded)
+		decoded2, err := ReadUint8(rr)
+		require.NoError(t, err)
+		require.Equal(t, num, decoded2)
+	}
 }

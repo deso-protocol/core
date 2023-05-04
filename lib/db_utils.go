@@ -4223,6 +4223,23 @@ func DecodeUint64(scoreBytes []byte) uint64 {
 	return binary.BigEndian.Uint64(scoreBytes)
 }
 
+func EncodeUint8(num uint8) []byte {
+	return []byte{num}
+}
+
+func DecodeUint8(numBytes []byte) uint8 {
+	return numBytes[0]
+}
+
+func ReadUint8(rr *bytes.Reader) (uint8, error) {
+	var numBytes [1]byte
+	_, err := io.ReadFull(rr, numBytes[:])
+	if err != nil {
+		return 0, err
+	}
+	return DecodeUint8(numBytes[:]), nil
+}
+
 func DbPutNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot, nanosPurchased uint64) error {
 	return DBSetWithTxn(txn, snap, Prefixes.PrefixNanosPurchased, EncodeUint64(nanosPurchased))
 }
