@@ -1056,12 +1056,16 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: error retrieving StakeEntries: ")
 	}
 
+	// Retrieve the CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: error retrieving CurrentEpochNumber: ")
+	}
+
 	// Delete each StakeEntry and create or update the corresponding LockedStakeEntry.
 	// Track TotalUnstakedAmountNanos and PrevLockedStakeEntries.
 	totalUnstakedAmountNanos := uint256.NewInt()
 	var prevLockedStakeEntries []*LockedStakeEntry
-
-	currentEpochNumber := uint64(0) // TODO: Retrieve this from the db.
 
 	for _, prevStakeEntry := range prevStakeEntries {
 		// Add the UnstakedAmountNanos to the TotalUnstakedAmountNanos.
@@ -1223,9 +1227,13 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 		bav._setStakeEntryMappings(prevStakeEntry)
 	}
 
-	// Restore the PrevLockedStakeEntries, if any.
-	currentEpochNumber := uint64(0) // TODO: Retrieve this from the db.
+	// Retrieve the CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectUnregisterAsValidator: error retrieving CurrentEpochNumber: ")
+	}
 
+	// Restore the PrevLockedStakeEntries, if any.
 	for _, prevLockedStakeEntry := range operationData.PrevLockedStakeEntries {
 		// Delete the CurrentLockedStakeEntry.
 		currentLockedStakeEntry, err := bav.GetLockedStakeEntry(
