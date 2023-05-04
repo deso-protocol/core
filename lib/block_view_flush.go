@@ -152,6 +152,12 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushLockedStakeEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
+	// TODO: We may want to move this into a new FlushToDb function that only flushes
+	// entries set in the OnEpochEndHook. No sense in wasting a bunch of cycles flushing
+	// all the other entries which will always be nil/empty in the OnEpochEndHook.
+	if err := bav._flushCurrentEpochEntryToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
 	return nil
 }
 

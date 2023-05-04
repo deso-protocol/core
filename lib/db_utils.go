@@ -502,7 +502,11 @@ type DBPrefixes struct {
 	// Prefix, ValidatorPKID, StakerPKID, LockedAtEpochNumber -> LockedStakeEntry
 	PrefixLockedStakeByValidatorByStakerByLockedAt []byte `prefix_id:"[82]" is_state:"true"`
 
-	// NEXT_TAG: 83
+	// PrefixCurrentEpoch: Retrieve the current EpochEntry.
+	// Prefix -> EpochEntry
+	PrefixCurrentEpoch []byte `prefix_id:"[83]" is_state:"true"`
+
+	// NEXT_TAG: 84
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -719,6 +723,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixLockedStakeByValidatorByStakerByLockedAt) {
 		// prefix_id:"[82]"
 		return true, &LockedStakeEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentEpoch) {
+		// prefix_id:"[83]"
+		return true, &EpochEntry{}
 	}
 
 	return true, nil
