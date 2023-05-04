@@ -1134,12 +1134,14 @@ func (bav *UtxoView) _connectStake(
 
 	// Check if there is an existing StakeEntry that will be updated.
 	// The existing StakeEntry will be restored if we disconnect this transaction.
+	var prevStakeEntries []*StakeEntry
 	prevStakeEntry, err := bav.GetStakeEntry(prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectStake: ")
 	}
 	// Delete the existing StakeEntry, if exists.
 	if prevStakeEntry != nil {
+		prevStakeEntries = append(prevStakeEntries, prevStakeEntry)
 		bav._deleteStakeEntryMappings(prevStakeEntry)
 	}
 
@@ -1217,7 +1219,7 @@ func (bav *UtxoView) _connectStake(
 		Type:                       OperationTypeStake,
 		PrevValidatorEntry:         prevValidatorEntry,
 		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
-		PrevStakeEntries:           []*StakeEntry{prevStakeEntry},
+		PrevStakeEntries:           prevStakeEntries,
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -1378,6 +1380,7 @@ func (bav *UtxoView) _connectUnstake(
 	if prevStakeEntry.StakeAmountNanos.Cmp(txMeta.UnstakeAmountNanos) < 0 {
 		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidUnstakeInsufficientStakeFound, "_connectUnstake: ")
 	}
+	prevStakeEntries := []*StakeEntry{prevStakeEntry}
 
 	// Update the StakeEntry, decreasing the StakeAmountNanos.
 	// 1. Calculate the updated StakeAmountNanos.
@@ -1442,6 +1445,7 @@ func (bav *UtxoView) _connectUnstake(
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
 	}
 	// 2. Create a CurrrentLockedStakeEntry.
+	var prevLockedStakeEntries []*LockedStakeEntry
 	var currentLockedStakeEntry *LockedStakeEntry
 	if prevLockedStakeEntry != nil {
 		// Update the existing LockedStakeEntry.
@@ -1466,6 +1470,7 @@ func (bav *UtxoView) _connectUnstake(
 	}
 	// 3. Delete the PrevLockedStakeEntry, if exists.
 	if prevLockedStakeEntry != nil {
+		prevLockedStakeEntries = append(prevLockedStakeEntries, prevLockedStakeEntry)
 		bav._deleteLockedStakeEntryMappings(prevLockedStakeEntry)
 	}
 	// 4. Set the CurrentLockedStakeEntry.
@@ -1476,8 +1481,8 @@ func (bav *UtxoView) _connectUnstake(
 		Type:                       OperationTypeUnstake,
 		PrevValidatorEntry:         prevValidatorEntry,
 		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
-		PrevStakeEntries:           []*StakeEntry{prevStakeEntry},
-		PrevLockedStakeEntries:     []*LockedStakeEntry{prevLockedStakeEntry},
+		PrevStakeEntries:           prevStakeEntries,
+		PrevLockedStakeEntries:     prevLockedStakeEntries,
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -1870,7 +1875,17 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	if metadata.StartEpochNumber > metadata.EndEpochNumber {
 		return errors.Wrapf(RuleErrorInvalidUnlockStakeEpochRange, "UtxoView.IsValidUnlockStakeMetadata: ")
 	}
-	// TODO: validate EndEpochNumber is <= CurrentEpochNumber - 2
+
+	// Retrieve CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: error retrieving CurrentEpochNumber: ")
+	}
+
+	// Validate EndEpochNumber + StakeLockupEpochDuration <= CurrentEpochNumber.
+	if metadata.EndEpochNumber+bav.Params.StakeLockupEpochDuration > currentEpochNumber {
+		return errors.Wrapf(RuleErrorInvalidUnlockStakeMustWaitLockupDuration, "UtxoView.IsValidUnlockStakeMetadata: ")
+	}
 
 	// Validate LockedStakeEntries exist.
 	lockedStakeEntries, err := bav.GetLockedStakeEntriesInRange(
@@ -2572,6 +2587,7 @@ const RuleErrorInvalidUnstakeNoStakeFound RuleError = "RuleErrorInvalidUnstakeNo
 const RuleErrorInvalidUnstakeAmountNanos RuleError = "RuleErrorInvalidUnstakeAmountNanos"
 const RuleErrorInvalidUnstakeInsufficientStakeFound RuleError = "RuleErrorInvalidUnstakeInsufficientStakeFound"
 const RuleErrorInvalidUnlockStakeEpochRange RuleError = "RuleErrorInvalidUnlockStakeEpochRange"
+const RuleErrorInvalidUnlockStakeMustWaitLockupDuration RuleError = "RuleErrorInvalidUnlockStakeMustWaitLockupDuration"
 const RuleErrorInvalidUnlockStakeNoUnlockableStakeFound RuleError = "RuleErrorInvalidUnlockStakeNoUnlockableStakeFound"
 const RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64 RuleError = "RuleErrorInvalidUnlockStakeUnlockableStakeOverflowsUint64"
 const RuleErrorStakeTransactionSpendingLimitNotFound RuleError = "RuleErrorStakeTransactionSpendingLimitNotFound"

@@ -596,6 +596,11 @@ type DeSoParams struct {
 	// attack the bancor curve to any meaningful measure.
 	CreatorCoinAutoSellThresholdNanos uint64
 
+	// StakeLockupEpochDuration is the number of epochs that a
+	// user must wait before unlocking their unstaked stake.
+	// TODO: Move this to GlobalParamsEntry.
+	StakeLockupEpochDuration uint64
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -968,6 +973,9 @@ var DeSoMainnetParams = DeSoParams{
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
+	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
+	StakeLockupEpochDuration: uint64(3),
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1195,6 +1203,9 @@ var DeSoTestnetParams = DeSoParams{
 	// It's just high enough where you avoid drifting creating coin
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
+
+	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
+	StakeLockupEpochDuration: uint64(3),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
