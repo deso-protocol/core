@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -92,37 +93,25 @@ func (bav *UtxoView) GetCurrentEpochNumber() (uint64, error) {
 	return epochEntry.EpochNumber, nil
 }
 
-func (bav *UtxoView) SetCurrentEpochEntry(epochEntry *EpochEntry, blockHeight uint64) error {
-	// This function should only ever be called from the OnEpochEnd hook.
+func (bav *UtxoView) _setCurrentEpochEntry(epochEntry *EpochEntry) {
 	if epochEntry == nil {
-		return errors.New("UtxoView.SetCurrentEpochEntry: called with nil EpochEntry")
+		glog.Errorf("UtxoView._setCurrentEpochEntry: called with nil EpochEntry")
+		return
 	}
-
-	// TODO: is this what we should do here?
-	if bav.Snapshot != nil {
-		// We're about to set a record to the db, so we initiate a snapshot update.
-		// This function prepares the data structures in the snapshot.
-		bav.Snapshot.PrepareAncestralRecordsFlush()
-
-		// When we finish setting to the db, we'll also flush to ancestral records.
-		// This happens concurrently, which is why we have the 2-phase prepare-flush
-		// happening for snapshot.
-		defer bav.Snapshot.StartAncestralRecordsFlush(true)
-	}
-
-	// Set the current EpochEntry in the db.
-	if err := DBPutCurrentEpochEntry(bav.Handle, bav.Snapshot, epochEntry, blockHeight); err != nil {
-		return errors.Wrapf(err, "UtxoView.SetCurrentEpochEntry: problem setting EpochEntry in db: ")
-	}
-
-	// Set the current EpochEntry in the UtxoView.
 	bav.CurrentEpochEntry = epochEntry.Copy()
-	return nil
 }
 
-func (bav *UtxoView) DeleteCurrentEpochEntry() {
-	// This function should only ever be called from the OnEpochEnd hook.
-	bav.CurrentEpochEntry = nil
+func (bav *UtxoView) _flushCurrentEpochEntryToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	if bav.CurrentEpochEntry == nil {
+		// It is possible that the current UtxoView never interacted with the CurrentEpochEntry
+		// in which case the CurrentEpochEntry in the UtxoView will be nil. In that case, we
+		// don't want to overwrite what is in the database. Just no-op.
+		return nil
+	}
+	if err := DBPutCurrentEpochEntryWithTxn(txn, bav.Snapshot, bav.CurrentEpochEntry, blockHeight); err != nil {
+		return errors.Wrapf(err, "_flushCurrentEpochEntryToDbWithTxn: ")
+	}
+	return nil
 }
 
 //
@@ -164,18 +153,17 @@ func DBGetCurrentEpochEntryWithTxn(txn *badger.Txn, snap *Snapshot) (*EpochEntry
 	return epochEntry, nil
 }
 
-func DBPutCurrentEpochEntry(handle *badger.DB, snap *Snapshot, epochEntry *EpochEntry, blockHeight uint64) error {
-	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutCurrentEpochEntryWithTxn(txn, snap, epochEntry, blockHeight)
-	})
-}
-
 func DBPutCurrentEpochEntryWithTxn(txn *badger.Txn, snap *Snapshot, epochEntry *EpochEntry, blockHeight uint64) error {
 	// Set EpochEntry in PrefixCurrentEpoch.
+	if epochEntry == nil {
+		// This is just a safety check that we are not accidentally overwriting an
+		// existing EpochEntry with a nil EpochEntry. This should never happen.
+		return errors.New("DBPutCurrentEpochEntryWithTxn: called with nil EpochEntry")
+	}
 	key := DBKeyForCurrentEpoch()
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, epochEntry)); err != nil {
 		return errors.Wrapf(
-			err, "DBPutCurrentEpochEntry: problem storing EpochEntry in index PrefixCurrentEpoch: ",
+			err, "DBPutCurrentEpochEntryWithTxn: problem storing EpochEntry in index PrefixCurrentEpoch: ",
 		)
 	}
 	return nil
