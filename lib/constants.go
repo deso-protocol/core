@@ -598,10 +598,12 @@ type DeSoParams struct {
 
 	// StakeLockupEpochDuration is the number of epochs that a
 	// user must wait before unlocking their unstaked stake.
+	// TODO: Move this to GlobalParamsEntry.
 	StakeLockupEpochDuration uint64
 
 	// ValidatorJailEpochDuration is the number of epochs that a validator must
 	// wait after being jailed before submitting an UnjailValidator txn.
+	// TODO: Move this to GlobalParamsEntry.
 	ValidatorJailEpochDuration uint64
 
 	ForkHeights ForkHeights

@@ -63,8 +63,10 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 
 	// Seed a CurrentEpochEntry.
-	err = utxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(t, err)
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 
 	{
 		// ParamUpdater set min fee rate
@@ -528,8 +530,10 @@ func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
 	}
 
 	// Seed a CurrentEpochEntry.
-	err = newUtxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(t, err)
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 
 	{
 		// ParamUpdater set min fee rate
@@ -690,8 +694,10 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes).PKID
 
 	// Seed a CurrentEpochEntry.
-	err = utxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(t, err)
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 
 	{
 		// ParamUpdater set min fee rate
@@ -992,8 +998,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	)
 
 	// Store m3's ValidatorEntry in the UtxoView with isDeleted=true.
-	m3ValidatorEntry.isDeleted = true
-	utxoView._setValidatorEntryMappings(m3ValidatorEntry)
+	utxoView._deleteValidatorEntryMappings(m3ValidatorEntry)
 
 	// Verify m3 is stored in the UtxoView with isDeleted=true.
 	require.Equal(t, utxoView.ValidatorMapKeyToValidatorEntry[m3ValidatorEntry.ToMapKey()].ValidatorPKID, m3PKID)
@@ -1112,8 +1117,10 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 
 	// Seed a CurrentEpochEntry.
-	err = utxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(t, err)
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 
 	{
 		// ParamUpdater set min fee rate
@@ -1302,8 +1309,10 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
 
 	// Seed a CurrentEpochEntry.
-	err = utxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(t, err)
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 	currentEpochNumber, err := utxoView().GetCurrentEpochNumber()
 	require.NoError(t, err)
 

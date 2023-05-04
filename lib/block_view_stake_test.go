@@ -72,8 +72,10 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	}
 
 	// Seed a CurrentEpochEntry.
-	err = utxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
+	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(t, err)
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 	currentEpochNumber, err := utxoView().GetCurrentEpochNumber()
 	require.NoError(t, err)
 
@@ -929,8 +931,9 @@ func _testStakingWithDerivedKey(t *testing.T) {
 	}
 
 	// Seed a CurrentEpochEntry.
-	err = newUtxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10}, blockHeight)
-	require.NoError(t, err)
+	epochUtxoView := newUtxoView()
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 	currentEpochNumber, err := newUtxoView().GetCurrentEpochNumber()
 	require.NoError(t, err)
 
@@ -1814,8 +1817,9 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 	}
 
 	// Seed a CurrentEpochEntry.
-	err = newUtxoView().SetCurrentEpochEntry(&EpochEntry{EpochNumber: 5, FinalBlockHeight: blockHeight + 10}, blockHeight)
-	require.NoError(t, err)
+	epochUtxoView := newUtxoView()
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 5, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 	currentEpochNumber, err := newUtxoView().GetCurrentEpochNumber()
 	require.NoError(t, err)
 
@@ -1893,11 +1897,11 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 		// Simulate three epochs passing by seeding a new CurrentEpochEntry.
 		// Note that we can't test the disconnect logic after these tests
 		// since we have updated the CurrentEpochNumber.
-		err = newUtxoView().SetCurrentEpochEntry(
+		epochUtxoView = newUtxoView()
+		epochUtxoView._setCurrentEpochEntry(
 			&EpochEntry{EpochNumber: currentEpochNumber + 3, FinalBlockHeight: blockHeight + 10},
-			blockHeight,
 		)
-		require.NoError(t, err)
+		require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 		currentEpochNumber, err = newUtxoView().GetCurrentEpochNumber()
 		require.NoError(t, err)
 	}

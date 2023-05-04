@@ -1483,7 +1483,6 @@ func (bav *UtxoView) _connectUnstake(
 		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
 		PrevStakeEntries:           prevStakeEntries,
 		PrevLockedStakeEntries:     prevLockedStakeEntries,
-		PrevEpochNumber:            currentEpochNumber,
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -1566,12 +1565,18 @@ func (bav *UtxoView) _disconnectUnstake(
 	// Restore the PrevGlobalStakeAmountNanos.
 	bav._setGlobalStakeAmountNanos(operationData.PrevGlobalStakeAmountNanos)
 
+	// Retrieve the CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectUnstake: error retrieving CurrentEpochNumber: ")
+	}
+
 	// Restore the PrevLockedStakeEntry, if exists. The PrevLockedStakeEntry will exist if the
 	// transactor has previously unstaked stake assigned to this validator within the same epoch.
 	// The PrevLockedStakeEntry will not exist otherwise.
 	// 1. Retrieve the CurrentLockedStakeEntry.
 	currentLockedStakeEntry, err := bav.GetLockedStakeEntry(
-		prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID, operationData.PrevEpochNumber,
+		prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID, currentEpochNumber,
 	)
 	if err != nil {
 		return errors.Wrapf(err, "_disconnectUnstake: ")
