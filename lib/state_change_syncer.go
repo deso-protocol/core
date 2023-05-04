@@ -158,9 +158,9 @@ func (stateChangeEntry *StateChangeEntry) GetEncoderType() EncoderType {
 // UnflushedStateSyncerBytes is used to keep track of the bytes that should be written to the state change file upon a db flush.
 type UnflushedStateSyncerBytes struct {
 	StateChangeBytes     []byte
-	StateChangeBytesSize uint32
+	StateChangeBytesSize uint64
 	// This is a list of the indexes of the state change bytes that should be written to the state change index file.
-	StateChangeOperationIndexes []uint32
+	StateChangeOperationIndexes []uint64
 }
 
 // StateChangeSyncer is used to keep track of the state changes that should be written to the state change file.
@@ -171,9 +171,9 @@ type StateChangeSyncer struct {
 	// The file that allows quick lookup of a StateChangeEntry given its index in the file.
 	// This is represented by a list of uint32s, where each uint32 is the offset of the state change entry in the state change file.
 	StateChangeIndexFile        *os.File
-	StateChangeFileSize         uint32
+	StateChangeFileSize         uint64
 	StateChangeMempoolIndexFile *os.File
-	StateChangeMempoolFileSize  uint32
+	StateChangeMempoolFileSize  uint64
 
 	DeSoParams *DeSoParams
 	// This map is used to keep track of the bytes should be written to the state change file upon a db flush.
@@ -246,10 +246,10 @@ func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string) *S
 	return &StateChangeSyncer{
 		StateChangeFile:             stateChangeFile,
 		StateChangeIndexFile:        stateChangeIndexFile,
-		StateChangeFileSize:         uint32(stateChangeFileInfo.Size()),
+		StateChangeFileSize:         uint64(stateChangeFileInfo.Size()),
 		StateChangeMempoolFile:      stateChangeMempoolFile,
 		StateChangeMempoolIndexFile: stateChangeMempoolIndexFile,
-		StateChangeMempoolFileSize:  uint32(stateChangeMempoolFileInfo.Size()),
+		StateChangeMempoolFileSize:  uint64(stateChangeMempoolFileInfo.Size()),
 		DeSoParams:                  desoParams,
 		UnflushedBytes:              make(map[uuid.UUID]UnflushedStateSyncerBytes),
 		MempoolKeyValueMap:          make(map[string][]byte),
@@ -423,7 +423,7 @@ func (stateChangeSyncer *StateChangeSyncer) addTransactionToQueue(flushId uuid.U
 		unflushedBytes = UnflushedStateSyncerBytes{
 			StateChangeBytes:            []byte{},
 			StateChangeBytesSize:        0,
-			StateChangeOperationIndexes: []uint32{},
+			StateChangeOperationIndexes: []uint64{},
 		}
 	}
 
@@ -435,7 +435,7 @@ func (stateChangeSyncer *StateChangeSyncer) addTransactionToQueue(flushId uuid.U
 	unflushedBytes.StateChangeOperationIndexes = append(unflushedBytes.StateChangeOperationIndexes, dbOperationIndex)
 
 	// Update the state change file size.
-	transactionLen := uint32(len(writeBytes))
+	transactionLen := uint64(len(writeBytes))
 	unflushedBytes.StateChangeBytesSize += transactionLen
 
 	stateChangeSyncer.UnflushedBytes[flushId] = unflushedBytes
@@ -452,7 +452,7 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *DBFlu
 	}
 
 	var flushFile *os.File
-	var flushFileSize uint32
+	var flushFileSize uint64
 	var indexFile *os.File
 	if event.IsMempoolFlush {
 		flushFile = stateChangeSyncer.StateChangeMempoolFile
@@ -504,9 +504,9 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *DBFlu
 	for _, indexBytes := range unflushedBytes.StateChangeOperationIndexes {
 		// Get the byte index of where this transaction occurs in the state change file.
 		dbOperationIndex := indexBytes + flushFileSize
-		// Convert the byte index value to a uint32 byte slice.
-		dbOperationIndexBytes := make([]byte, 4)
-		binary.LittleEndian.PutUint32(dbOperationIndexBytes, dbOperationIndex)
+		// Convert the byte index value to a uint64 byte slice.
+		dbOperationIndexBytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(dbOperationIndexBytes, dbOperationIndex)
 
 		stateChangeIndexBuf = append(stateChangeIndexBuf, dbOperationIndexBytes...)
 	}
