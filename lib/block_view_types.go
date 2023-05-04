@@ -918,10 +918,6 @@ type UtxoOperation struct {
 	// PrevLockedStakeEntries is a slice of LockedStakeEntries
 	// prior to a unstake or unlock stake txn.
 	PrevLockedStakeEntries []*LockedStakeEntry
-
-	// PrevEpochNumber is the CurrentEpochNumber during the connect logic. This should be used
-	// during disconnect logic instead of the CurrentEpochNumber which may have changed.
-	PrevEpochNumber uint64
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1251,9 +1247,6 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// PrevLockedStakeEntries
 		data = append(data, EncodeDeSoEncoderSlice(op.PrevLockedStakeEntries, blockHeight, skipMetadata...)...)
-
-		// PrevEpochNumber
-		data = append(data, UintToBuf(op.PrevEpochNumber)...)
 	}
 
 	return data
@@ -1893,13 +1886,6 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		if op.PrevLockedStakeEntries, err = DecodeDeSoEncoderSlice[*LockedStakeEntry](rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedStakeEntries: ")
 		}
-
-		// PrevEpochNumber
-		op.PrevEpochNumber, err = ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevEpochNumber: ")
-		}
-
 	}
 
 	return nil
