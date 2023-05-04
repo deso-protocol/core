@@ -3093,56 +3093,58 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	// Take snapshot of balance
 	balanceSnapshot := make(map[PublicKey]uint64)
-	for publicKey, balance := range bav.PublicKeyToDeSoBalanceNanos {
-		balanceSnapshot[publicKey] = balance
-	}
-	// Special case: take snapshot of the creator coin entry.
 	var creatorCoinSnapshot *CoinEntry
-	if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
-		// Get the creator coin entry.
-		creatorCoinTxnMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
-		creatorProfile := bav.GetProfileEntryForPublicKey(creatorCoinTxnMeta.ProfilePublicKey)
-		if creatorProfile == nil || creatorProfile.IsDeleted() {
-			return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: Profile not found for "+
-				"public key: %v", PkToString(creatorCoinTxnMeta.ProfilePublicKey, bav.Params))
-		}
-		creatorCoinSnapshot = creatorProfile.CreatorCoinEntry.Copy()
-	}
-	// When an NFT is sold, we may need to account for royalties that end up getting
-	// generated and paid to a user's creator coin directly.
 	nftCreatorCoinRoyaltyEntriesSnapshot := make(map[PKID]*CoinEntry)
-	if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid || txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
-		// We don't really care if it's an NFT buy now bid or not. We just want to
-		// capture the royalties that occur to account for ALL DESO.
-		var nftPostHash *BlockHash
-		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
-			nftPostHash = txn.TxnMeta.(*AcceptNFTBidMetadata).NFTPostHash
-		} else {
-			nftPostHash = txn.TxnMeta.(*NFTBidMetadata).NFTPostHash
+	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
+		for publicKey, balance := range bav.PublicKeyToDeSoBalanceNanos {
+			balanceSnapshot[publicKey] = balance
 		}
-		postEntry := bav.GetPostEntryForPostHash(nftPostHash)
-		if postEntry == nil || postEntry.IsDeleted() {
-			return nil, 0, 0, 0, errors.Wrapf(RuleErrorNFTBidOnNonExistentPost, "_connectTransaction: PostEntry not found for "+
-				"post hash: %v", nftPostHash.String())
-		}
-		nftCreatorProfileEntry := bav.GetProfileEntryForPublicKey(postEntry.PosterPublicKey)
-		if nftCreatorProfileEntry == nil || nftCreatorProfileEntry.IsDeleted() {
-			return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: Profile not found for "+
-				"public key: %v", PkToString(postEntry.PosterPublicKey, bav.Params))
-		}
-		pkidEntry := bav.GetPKIDForPublicKey(postEntry.PosterPublicKey)
-		if pkidEntry == nil || pkidEntry.isDeleted {
-			return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: PKID not found for "+
-				"public key: %v", PkToString(postEntry.PosterPublicKey, bav.Params))
-		}
-		nftCreatorCoinRoyaltyEntriesSnapshot[*(pkidEntry.PKID)] = nftCreatorProfileEntry.CreatorCoinEntry.Copy()
-		for pkid := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
-			profileEntry := bav.GetProfileEntryForPKID(&pkid)
-			if profileEntry == nil || profileEntry.IsDeleted() {
+		// Special case: take snapshot of the creator coin entry.
+		if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
+			// Get the creator coin entry.
+			creatorCoinTxnMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
+			creatorProfile := bav.GetProfileEntryForPublicKey(creatorCoinTxnMeta.ProfilePublicKey)
+			if creatorProfile == nil || creatorProfile.IsDeleted() {
 				return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: Profile not found for "+
-					"pkid: %v", PkToString(pkid.ToBytes(), bav.Params))
+					"public key: %v", PkToString(creatorCoinTxnMeta.ProfilePublicKey, bav.Params))
 			}
-			nftCreatorCoinRoyaltyEntriesSnapshot[pkid] = profileEntry.CreatorCoinEntry.Copy()
+			creatorCoinSnapshot = creatorProfile.CreatorCoinEntry.Copy()
+		}
+		// When an NFT is sold, we may need to account for royalties that end up getting
+		// generated and paid to a user's creator coin directly.
+		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid || txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+			// We don't really care if it's an NFT buy now bid or not. We just want to
+			// capture the royalties that occur to account for ALL DESO.
+			var nftPostHash *BlockHash
+			if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+				nftPostHash = txn.TxnMeta.(*AcceptNFTBidMetadata).NFTPostHash
+			} else {
+				nftPostHash = txn.TxnMeta.(*NFTBidMetadata).NFTPostHash
+			}
+			postEntry := bav.GetPostEntryForPostHash(nftPostHash)
+			if postEntry == nil || postEntry.IsDeleted() {
+				return nil, 0, 0, 0, errors.Wrapf(RuleErrorNFTBidOnNonExistentPost, "_connectTransaction: PostEntry not found for "+
+					"post hash: %v", nftPostHash.String())
+			}
+			nftCreatorProfileEntry := bav.GetProfileEntryForPublicKey(postEntry.PosterPublicKey)
+			if nftCreatorProfileEntry == nil || nftCreatorProfileEntry.IsDeleted() {
+				return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: Profile not found for "+
+					"public key: %v", PkToString(postEntry.PosterPublicKey, bav.Params))
+			}
+			pkidEntry := bav.GetPKIDForPublicKey(postEntry.PosterPublicKey)
+			if pkidEntry == nil || pkidEntry.isDeleted {
+				return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: PKID not found for "+
+					"public key: %v", PkToString(postEntry.PosterPublicKey, bav.Params))
+			}
+			nftCreatorCoinRoyaltyEntriesSnapshot[*(pkidEntry.PKID)] = nftCreatorProfileEntry.CreatorCoinEntry.Copy()
+			for pkid := range postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints {
+				profileEntry := bav.GetProfileEntryForPKID(&pkid)
+				if profileEntry == nil || profileEntry.IsDeleted() {
+					return nil, 0, 0, 0, fmt.Errorf("_connectTransaction: Profile not found for "+
+						"pkid: %v", PkToString(pkid.ToBytes(), bav.Params))
+				}
+				nftCreatorCoinRoyaltyEntriesSnapshot[pkid] = profileEntry.CreatorCoinEntry.Copy()
+			}
 		}
 	}
 
@@ -3360,8 +3362,8 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	// Validate that we aren't printing any DESO
 	if txn.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
-		txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange {
-
+		txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange &&
+		blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 		balanceDelta, _, err := bav._compareBalancesToSnapshot(balanceSnapshot)
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error comparing current balances to snapshot")
