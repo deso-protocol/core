@@ -583,6 +583,8 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&UnstakeMetadata{}).New(), nil
 	case TxnTypeUnlockStake:
 		return (&UnlockStakeMetadata{}).New(), nil
+	case TxnTypeUnjailValidator:
+		return (&UnjailValidatorMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}

@@ -1510,12 +1510,14 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains: [][]byte{[]byte("https://example.com")},
 		}
-		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
+		extraData := map[string][]byte{"TestKey": []byte("TestValue1")}
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB)
 		require.NoError(t, err)
 
 		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
 		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.ExtraData["TestKey"], []byte("TestValue1"))
 	}
 	{
 		// RuleErrorUnjailingNonjailedValidator
@@ -1524,7 +1526,9 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorUnjailingNonjailedValidator)
 	}
 	{
-		// m0 is jailed.
+		// m0 is jailed. Since this update takes place outside a transaction,
+		// we cannot test rollbacks. We will run into an error where m0 is
+		// trying to unjail himself, but he was never jailed.
 
 		// Delete m0's ValidatorEntry from the UtxoView.
 		delete(mempool.universalUtxoView.ValidatorMapKeyToValidatorEntry, validatorEntry.ToMapKey())
@@ -1609,29 +1613,284 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 	}
 	{
 		// RuleErrorProofofStakeTxnBeforeBlockHeight
-		//params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(0)
-		//GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-		//GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
-		//
-		//_, err = _submitUnjailValidatorTxn(testMeta, m0Pub, m0Priv, nil, flushToDB)
-		//require.NoError(t, err)
-		//require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
-		//
-		//params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
-		//GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-		//GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = math.MaxUint32
+		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+		_, err = _submitUnjailValidatorTxn(testMeta, m0Pub, m0Priv, nil, flushToDB)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
+
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	}
 	{
 		// m0 unjails himself.
-	}
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.Status(), ValidatorStatusJailed)
+		require.Equal(t, validatorEntry.LastActiveAtEpochNumber, uint64(1))
 
-	// Flush mempool to the db and test rollbacks.
-	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
-	_executeAllTestRollbackAndFlush(testMeta)
+		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
+		_, err = _submitUnjailValidatorTxn(testMeta, m0Pub, m0Priv, extraData, flushToDB)
+		require.NoError(t, err)
+
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.Status(), ValidatorStatusActive)
+		require.Equal(t, validatorEntry.LastActiveAtEpochNumber, uint64(4))
+		require.Equal(t, validatorEntry.ExtraData["TestKey"], []byte("TestValue2"))
+	}
 }
 
 func TestUnjailValidatorWithDerivedKey(t *testing.T) {
-	// TODO
+	var validatorEntry *ValidatorEntry
+	var derivedKeyPriv string
+	var err error
+
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	// Initialize test chain and miner.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Initialize fork heights.
+	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err = miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height) + 1
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       uint32(blockHeight),
+		feeRateNanosPerKb: uint64(101),
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+	require.NoError(t, err)
+	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
+	require.NoError(t, err)
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	senderPKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, senderPkBytes).PKID
+
+	newUtxoView := func() *UtxoView {
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		return utxoView
+	}
+
+	_submitAuthorizeDerivedKeyUnjailValidatorTxn := func(count uint64) (string, error) {
+		utxoView := newUtxoView()
+
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				TxnTypeAuthorizeDerivedKey: 1,
+				TxnTypeUnjailValidator:     count,
+			},
+		}
+
+		derivedKeyMetadata, derivedKeyAuthPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
+			t, senderPrivKey, blockHeight+5, txnSpendingLimit, false, blockHeight,
+		)
+		derivedKeyAuthPrivBase58Check := Base58CheckEncode(derivedKeyAuthPriv.Serialize(), true, params)
+
+		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, senderPkString)
+
+		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraDataAndSpendingLimits(
+			testMeta,
+			utxoView,
+			testMeta.feeRateNanosPerKb,
+			senderPkBytes,
+			derivedKeyMetadata.DerivedPublicKey,
+			derivedKeyAuthPrivBase58Check,
+			derivedKeyMetadata.ExpirationBlock,
+			derivedKeyMetadata.AccessSignature,
+			false,
+			nil,
+			nil,
+			txnSpendingLimit,
+		)
+		if err != nil {
+			return "", err
+		}
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
+		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
+		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+		testMeta.txns = append(testMeta.txns, txn)
+
+		err = utxoView.ValidateDerivedKey(
+			senderPkBytes, derivedKeyMetadata.DerivedPublicKey, blockHeight,
+		)
+		require.NoError(t, err)
+		return derivedKeyAuthPrivBase58Check, nil
+	}
+
+	_submitUnjailValidatorTxnWithDerivedKey := func(transactorPkBytes []byte, derivedKeyPrivBase58Check string) error {
+		utxoView := newUtxoView()
+		// Construct txn.
+		txn, _, _, _, err := testMeta.chain.CreateUnjailValidatorTxn(
+			transactorPkBytes,
+			&UnjailValidatorMetadata{},
+			make(map[string][]byte),
+			testMeta.feeRateNanosPerKb,
+			mempool,
+			[]*DeSoOutput{},
+		)
+		if err != nil {
+			return err
+		}
+		// Sign txn.
+		_signTxnWithDerivedKeyAndType(t, txn, derivedKeyPrivBase58Check, 1)
+		// Store the original transactor balance.
+		transactorPublicKeyBase58Check := Base58CheckEncode(transactorPkBytes, false, params)
+		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
+		// Connect txn.
+		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
+			txn,
+			txn.Hash(),
+			getTxnSize(*txn),
+			testMeta.savedHeight,
+			true,
+			false,
+		)
+		if err != nil {
+			return err
+		}
+		// Flush UTXO view to the db.
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
+		// Track txn for rolling back.
+		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
+		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+		testMeta.txns = append(testMeta.txns, txn)
+		return nil
+	}
+
+	// Seed a CurrentEpochEntry.
+	epochUtxoView := newUtxoView()
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
+	currentEpochNumber, err := newUtxoView().GetCurrentEpochNumber()
+	require.NoError(t, err)
+
+	{
+		// ParamUpdater set min fee rate
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1,
+			int64(testMeta.feeRateNanosPerKb),
+			-1,
+			-1,
+			-1,
+		)
+	}
+	{
+		// sender registers as a validator.
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains: [][]byte{[]byte("https://example.com")},
+		}
+		_, err = _submitRegisterAsValidatorTxn(testMeta, senderPkString, senderPrivString, registerMetadata, nil, true)
+		require.NoError(t, err)
+
+		validatorEntry, err = newUtxoView().GetValidatorByPKID(senderPKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+	}
+	{
+		// sender is jailed. Since this update takes place outside a transaction,
+		// we cannot test rollbacks. We will run into an error where sender is
+		// trying to unjail himself, but he was never jailed.
+
+		// Delete sender's ValidatorEntry from the UtxoView.
+		delete(mempool.universalUtxoView.ValidatorMapKeyToValidatorEntry, validatorEntry.ToMapKey())
+		delete(mempool.readOnlyUtxoView.ValidatorMapKeyToValidatorEntry, validatorEntry.ToMapKey())
+
+		// Set JailedAtEpochNumber.
+		validatorEntry.JailedAtEpochNumber = currentEpochNumber
+
+		// Store sender's ValidatorEntry in the db.
+		tmpUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		tmpUtxoView._setValidatorEntryMappings(validatorEntry)
+		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
+
+		// Verify sender is jailed.
+		validatorEntry, err = newUtxoView().GetValidatorByPKID(senderPKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.Status(), ValidatorStatusJailed)
+	}
+	{
+		// sender creates a DerivedKey that can perform one UnjailValidator txn.
+		derivedKeyPriv, err = _submitAuthorizeDerivedKeyUnjailValidatorTxn(1)
+		require.NoError(t, err)
+	}
+	{
+		// RuleErrorUnjailingValidatorTooEarly
+		err = _submitUnjailValidatorTxnWithDerivedKey(senderPkBytes, derivedKeyPriv)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorUnjailingValidatorTooEarly)
+	}
+	{
+		// Simulate three epochs passing by seeding a new CurrentEpochEntry.
+
+		// Delete the CurrentEpochEntry from the UtxoView.
+		mempool.universalUtxoView.CurrentEpochEntry = nil
+		mempool.readOnlyUtxoView.CurrentEpochEntry = nil
+
+		// Store a new CurrentEpochEntry in the db.
+		epochUtxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		epochUtxoView._setCurrentEpochEntry(
+			&EpochEntry{EpochNumber: currentEpochNumber + 3, FinalBlockHeight: blockHeight + 10},
+		)
+		require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
+
+		// Verify CurrentEpochNumber.
+		currentEpochNumber, err = newUtxoView().GetCurrentEpochNumber()
+		require.NoError(t, err)
+		require.Equal(t, currentEpochNumber, uint64(4))
+	}
+	{
+		// sender unjails himself using a DerivedKey.
+		validatorEntry, err = newUtxoView().GetValidatorByPKID(senderPKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.Status(), ValidatorStatusJailed)
+		require.Equal(t, validatorEntry.LastActiveAtEpochNumber, uint64(1))
+
+		err = _submitUnjailValidatorTxnWithDerivedKey(senderPkBytes, derivedKeyPriv)
+		require.NoError(t, err)
+
+		validatorEntry, err = newUtxoView().GetValidatorByPKID(senderPKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.Status(), ValidatorStatusActive)
+		require.Equal(t, validatorEntry.LastActiveAtEpochNumber, uint64(4))
+	}
 }
 
 func _submitUnjailValidatorTxn(
