@@ -4,7 +4,6 @@ go 1.20
 
 require (
 	github.com/DataDog/datadog-go v4.5.0+incompatible
-	github.com/NVIDIA/sortedmap v0.0.0-20210902154213-c8c741ed94c5
 	github.com/brianvoe/gofakeit v3.18.0+incompatible
 	github.com/btcsuite/btcd v0.21.0-beta
 	github.com/btcsuite/btcutil v1.0.2
@@ -40,7 +39,7 @@ require (
 )
 
 require (
-	github.com/fergusstrange/embedded-postgres v1.19.0 // indirect
+	github.com/fergusstrange/embedded-postgres v1.19.0
 	github.com/lib/pq v1.10.4 // indirect
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
 )

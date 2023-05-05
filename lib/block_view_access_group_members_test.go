@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
@@ -45,6 +46,16 @@ func (data *accessGroupMembersTestData) IsDependency(other transactionTestInputS
 
 func (data *accessGroupMembersTestData) GetInputType() transactionTestInputType {
 	return transactionTestInputTypeAccessGroupMembers
+}
+
+func TestBalanceModelAccessGroupMembers(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestAccessGroupMembersAdd(t)
+	TestAccessGroupMembersUpdate(t)
+	TestAccessGroupMembersRemove(t)
+	TestAccessGroupMembersTxnWithDerivedKey(t)
 }
 
 func TestAccessGroupMembersAdd(t *testing.T) {
@@ -1534,6 +1545,7 @@ func _setAccessGroupParams(tm *transactionTestMeta) {
 	tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
 	tm.params.EncoderMigrationHeights = GetEncoderMigrationHeights(&tm.params.ForkHeights)
 	tm.params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&tm.params.ForkHeights)
+	tm.params.BlockRewardMaturity = time.Second
 	GlobalDeSoParams = *tm.params
 }
 
@@ -1677,10 +1689,7 @@ func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
 		derivedKeyAuthPrivBase58Check := Base58CheckEncode(derivedKeyAuthPriv.Serialize(), true, params)
 
 		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraDataAndSpendingLimits(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			testMeta.feeRateNanosPerKb,
 			senderPkBytes,

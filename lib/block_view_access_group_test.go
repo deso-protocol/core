@@ -31,6 +31,14 @@ func (data *AccessGroupTestData) GetInputType() transactionTestInputType {
 	return transactionTestInputTypeAccessGroup
 }
 
+func TestBalanceModelAccessGroups(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestAccessGroup(t)
+	TestAccessGroupTxnWithDerivedKey(t)
+}
+
 func TestAccessGroup(t *testing.T) {
 	require := require.New(t)
 	_ = require
@@ -484,20 +492,14 @@ func _customCreateAccessGroupTxn(
 }
 
 func TestAccessGroupTxnWithDerivedKey(t *testing.T) {
+	// Initialize fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
 	// Initialize test chain and miner.
 	var err error
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
-
-	// Initialize fork heights.
-	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(0)
-	params.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(0)
-	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
-	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -531,13 +533,30 @@ func TestAccessGroupTxnWithDerivedKey(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
 
+		fillerAccessGroupLimitKey := AccessGroupLimitKey{
+			AccessGroupOwnerPublicKey: accessGroupLimitKey.AccessGroupOwnerPublicKey,
+			AccessGroupScopeType:      AccessGroupScopeTypeAny,
+			AccessGroupKeyName:        *NewGroupKeyName([]byte{0x1, 0x2, 0x3}),
+			OperationType:             AccessGroupOperationTypeCreate,
+		}
+		fillerAccessGroupLimitValue := uint64(15)
+		anotherFillerGroupLimitKey := AccessGroupLimitKey{
+			AccessGroupOwnerPublicKey: accessGroupLimitKey.AccessGroupOwnerPublicKey,
+			AccessGroupScopeType:      AccessGroupScopeTypeAny,
+			AccessGroupKeyName:        *NewGroupKeyName([]byte{0x1, 0x2, 0x3, 0x4}),
+			OperationType:             AccessGroupOperationTypeCreate,
+		}
+		anotherFillerAccessGroupLimitValue := uint64(20)
+
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
 			AccessGroupMap: map[AccessGroupLimitKey]uint64{
-				accessGroupLimitKey: uint64(count),
+				accessGroupLimitKey:        uint64(count),
+				fillerAccessGroupLimitKey:  fillerAccessGroupLimitValue,
+				anotherFillerGroupLimitKey: anotherFillerAccessGroupLimitValue,
 			},
 		}
 
@@ -547,10 +566,7 @@ func TestAccessGroupTxnWithDerivedKey(t *testing.T) {
 		derivedKeyAuthPrivBase58Check := Base58CheckEncode(derivedKeyAuthPriv.Serialize(), true, params)
 
 		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraDataAndSpendingLimits(
-			t,
-			chain,
-			db,
-			params,
+			testMeta,
 			utxoView,
 			testMeta.feeRateNanosPerKb,
 			senderPkBytes,
@@ -564,7 +580,7 @@ func TestAccessGroupTxnWithDerivedKey(t *testing.T) {
 			txnSpendingLimit,
 		)
 		require.NoError(t, err)
-		require.NoError(t, utxoView.FlushToDb(0))
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
 		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 		testMeta.txns = append(testMeta.txns, txn)
 
@@ -611,7 +627,7 @@ func TestAccessGroupTxnWithDerivedKey(t *testing.T) {
 			return err
 		}
 		// Flush UTXO view to the db.
-		require.NoError(t, utxoView.FlushToDb(0))
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
 		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 		testMeta.txns = append(testMeta.txns, txn)
 		return nil

@@ -866,7 +866,7 @@ func (mp *DeSoMempool) addTransaction(
 	_, _, _, _, err = mp.universalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
 		false /*verifySignatures*/, false /*ignoreUtxos*/)
 	if err != nil {
-		return nil, fmt.Errorf("ERROR addTransaction: _connectTransaction " +
+		return nil, errors.Wrap(err, "ERROR addTransaction: _connectTransaction "+
 			"failed on universalUtxoView; this is a HUGE problem and should never happen")
 	}
 	// Add it to the universalTransactionList if it made it through the view
@@ -875,7 +875,7 @@ func (mp *DeSoMempool) addTransaction(
 		_, _, _, _, err = mp.backupUniversalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
 			false /*verifySignatures*/, false /*ignoreUtxos*/)
 		if err != nil {
-			return nil, fmt.Errorf("ERROR addTransaction: _connectTransaction " +
+			return nil, errors.Wrap(err, "ERROR addTransaction: _connectTransaction "+
 				"failed on backupUniversalUtxoView; this is a HUGE problem and should never happen")
 		}
 	}
@@ -988,6 +988,19 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	// Block reward transactions shouldn't appear individually
 	if tx.TxnMeta != nil && tx.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 		return nil, nil, TxErrorIndividualBlockReward
+	}
+
+	if blockHeight >= uint64(mp.bc.params.ForkHeights.BalanceModelBlockHeight) {
+		if tx.TxnNonce == nil {
+			return nil, nil, TxErrorNoNonceAfterBalanceModelBlockHeight
+		}
+		if tx.TxnNonce.ExpirationBlockHeight < blockHeight {
+			return nil, nil, TxErrorNonceExpired
+		}
+		if mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 &&
+			tx.TxnNonce.ExpirationBlockHeight > blockHeight+mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset {
+			return nil, nil, TxErrorNonceExpirationBlockHeightOffsetExceeded
+		}
 	}
 
 	// Compute the hash of the transaction.

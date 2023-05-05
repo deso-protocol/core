@@ -5,6 +5,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"strconv"
 	"testing"
 )
 
@@ -78,6 +79,13 @@ type _CreatorCoinTestData struct {
 	m4DeSoBalance           uint64
 	m5DeSoBalance           uint64
 	m6DeSoBalance           uint64
+	m0BalanceModelBalance   uint64
+	m1BalanceModelBalance   uint64
+	m2BalanceModelBalance   uint64
+	m3BalanceModelBalance   uint64
+	m4BalanceModelBalance   uint64
+	m5BalanceModelBalance   uint64
+	m6BalanceModelBalance   uint64
 	m0HasPurchased          bool
 	m1HasPurchased          bool
 	m2HasPurchased          bool
@@ -126,8 +134,12 @@ func _helpTestCreatorCoinBuySell(
 	if !desoFounderReward {
 		params.ForkHeights.DeSoFounderRewardBlockHeight = 1e9
 	}
+	// Mine a block
+	var err error
+	finalBlock1, err := miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(err)
 
-	// Give paramUpdater some mony
+	// Give paramUpdater some money
 	_, _, _ = _doBasicTransferWithViewFlush(
 		t, chain, db, params, moneyPkString, paramUpdaterPub,
 		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
@@ -163,6 +175,28 @@ func _helpTestCreatorCoinBuySell(
 	m5StartNanos := _getBalance(t, chain, nil, m5Pub)
 	m6StartNanos := _getBalance(t, chain, nil, m6Pub)
 
+	checkBal := func(testBalance uint64, pubKey string, prefix string, message string) {
+		if testBalance == 0 {
+			return
+		}
+		bal := _getBalance(t, chain, mempool, pubKey)
+		if bal == 6*NanosPerUnit {
+			return
+		}
+		assert.Equalf(int64(testBalance), int64(bal), "%v: %v", prefix, message)
+	}
+
+	checkBalWithView := func(view *UtxoView, testBalance uint64, pubKey string, prefix string, message string) {
+		if testBalance == 0 {
+			return
+		}
+		bal := _getBalanceWithView(t, chain, view, pubKey)
+		if bal == 6*NanosPerUnit {
+			return
+		}
+		assert.Equalf(int64(testBalance), int64(bal), "%v: %v", prefix, message)
+	}
+
 	testUtxoOps := [][]*UtxoOperation{}
 	testTxns := []*MsgDeSoTxn{}
 	_checkTestData := func(
@@ -175,34 +209,24 @@ func _helpTestCreatorCoinBuySell(
 
 		// If a mempool object is provided then just check balances and return
 		if mempool != nil {
-			// DeSo balances
-			if _getBalance(t, chain, mempool, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m0DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m0Pub)), "MempoolIncrementalBalanceCheck: m0 DeSo balance: %v", message)
-			}
-			if _getBalance(t, chain, mempool, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m1DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m1Pub)), "MempoolIncrementalBalanceCheck: m1 DeSo balance: %v", message)
-			}
-			if _getBalance(t, chain, mempool, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m2DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m2Pub)), "MempoolIncrementalBalanceCheck: m2 DeSo balance: %v", message)
-			}
-			if _getBalance(t, chain, mempool, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m3DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m3Pub)), "MempoolIncrementalBalanceCheck: m3 DeSo balance: %v", message)
-			}
-			if _getBalance(t, chain, mempool, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m4DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m4Pub)), "MempoolIncrementalBalanceCheck: m4 DeSo balance: %v", message)
-			}
-			if _getBalance(t, chain, mempool, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m5DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m5Pub)), "MempoolIncrementalBalanceCheck: m5 DeSo balance: %v", message)
-			}
-			if _getBalance(t, chain, mempool, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
-				assert.Equalf(int64(testData.m6DeSoBalance),
-					int64(_getBalance(t, chain, mempool, m6Pub)), "MempoolIncrementalBalanceCheck: m6 DeSo balance: %v", message)
+			if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
+				// DeSo balances
+				checkBal(testData.m0DeSoBalance, m0Pub, "MempoolIncrementalBalanceCheck: m0 DeSo balance", message)
+				checkBal(testData.m1DeSoBalance, m1Pub, "MempoolIncrementalBalanceCheck: m1 DeSo balance", message)
+				checkBal(testData.m2DeSoBalance, m2Pub, "MempoolIncrementalBalanceCheck: m2 DeSo balance", message)
+				checkBal(testData.m3DeSoBalance, m3Pub, "MempoolIncrementalBalanceCheck: m3 DeSo balance", message)
+				checkBal(testData.m4DeSoBalance, m4Pub, "MempoolIncrementalBalanceCheck: m4 DeSo balance", message)
+				checkBal(testData.m5DeSoBalance, m5Pub, "MempoolIncrementalBalanceCheck: m5 DeSo balance", message)
+				checkBal(testData.m6DeSoBalance, m6Pub, "MempoolIncrementalBalanceCheck: m6 DeSo balance", message)
+			} else {
+				// DeSo balances
+				checkBal(testData.m0BalanceModelBalance, m0Pub, "MempoolIncrementalBalanceCheck: m0 DeSo balance", message)
+				checkBal(testData.m1BalanceModelBalance, m1Pub, "MempoolIncrementalBalanceCheck: m1 DeSo balance", message)
+				checkBal(testData.m2BalanceModelBalance, m2Pub, "MempoolIncrementalBalanceCheck: m2 DeSo balance", message)
+				checkBal(testData.m3BalanceModelBalance, m3Pub, "MempoolIncrementalBalanceCheck: m3 DeSo balance", message)
+				checkBal(testData.m4BalanceModelBalance, m4Pub, "MempoolIncrementalBalanceCheck: m4 DeSo balance", message)
+				checkBal(testData.m5BalanceModelBalance, m5Pub, "MempoolIncrementalBalanceCheck: m5 DeSo balance", message)
+				checkBal(testData.m6BalanceModelBalance, m6Pub, "MempoolIncrementalBalanceCheck: m6 DeSo balance", message)
 			}
 
 			return
@@ -339,34 +363,24 @@ func _helpTestCreatorCoinBuySell(
 			int64(creatorProfile.CreatorCoinEntry.CoinsInCirculationNanos.Uint64()),
 			"m0+m1+m2+m3+m4+m5+m6 != CoinsInCirculationNanos: %v", message)
 
-		// DeSo balances
-		if _getBalanceWithView(t, utxoView, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m0DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m0Pub)), "m0 DeSo balance: %v", message)
-		}
-		if _getBalanceWithView(t, utxoView, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m1DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m1Pub)), "m1 DeSo balance: %v", message)
-		}
-		if _getBalanceWithView(t, utxoView, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m2DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m2Pub)), "m2 DeSo balance: %v", message)
-		}
-		if _getBalanceWithView(t, utxoView, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m3DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m3Pub)), "m3 DeSo balance: %v", message)
-		}
-		if _getBalanceWithView(t, utxoView, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m4DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m4Pub)), "m4 DeSo balance: %v", message)
-		}
-		if _getBalanceWithView(t, utxoView, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m5DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m5Pub)), "m5 DeSo balance: %v", message)
-		}
-		if _getBalanceWithView(t, utxoView, m6Pub) != 6*NanosPerUnit && testData.m6DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m6DeSoBalance),
-				int64(_getBalanceWithView(t, utxoView, m6Pub)), "m6 DeSo balance: %v", message)
+		if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
+			// DeSo balances
+			checkBalWithView(utxoView, testData.m0DeSoBalance, m0Pub, "m0 DeSo balance", message)
+			checkBalWithView(utxoView, testData.m1DeSoBalance, m1Pub, "m1 DeSo balance", message)
+			checkBalWithView(utxoView, testData.m2DeSoBalance, m2Pub, "m2 DeSo balance", message)
+			checkBalWithView(utxoView, testData.m3DeSoBalance, m3Pub, "m3 DeSo balance", message)
+			checkBalWithView(utxoView, testData.m4DeSoBalance, m4Pub, "m4 DeSo balance", message)
+			checkBalWithView(utxoView, testData.m5DeSoBalance, m5Pub, "m5 DeSo balance", message)
+			checkBalWithView(utxoView, testData.m6DeSoBalance, m6Pub, "m6 DeSo balance", message)
+		} else {
+			// Balance Model DESO balances
+			checkBalWithView(utxoView, testData.m0BalanceModelBalance, m0Pub, "m0 Balance Model balance", message)
+			checkBalWithView(utxoView, testData.m1BalanceModelBalance, m1Pub, "m1 Balance Model balance", message)
+			checkBalWithView(utxoView, testData.m2BalanceModelBalance, m2Pub, "m2 Balance Model balance", message)
+			checkBalWithView(utxoView, testData.m3BalanceModelBalance, m3Pub, "m3 Balance Model balance", message)
+			checkBalWithView(utxoView, testData.m4BalanceModelBalance, m4Pub, "m4 Balance Model balance", message)
+			checkBalWithView(utxoView, testData.m5BalanceModelBalance, m5Pub, "m5 Balance Model balance", message)
+			checkBalWithView(utxoView, testData.m6BalanceModelBalance, m6Pub, "m6 Balance Model balance", message)
 		}
 
 		for ii, profilePubStr := range testData.ProfilesToCheckPublicKeysBase58Check {
@@ -700,17 +714,13 @@ func _helpTestCreatorCoinBuySell(
 	// Mine a block with all the mempool transactions.
 	//
 	// All the txns should be in the mempool already so mining a block should put
-	// all those transactions in it. Note we need to mine two blocks since the first
-	// one just makes the DeSo chain time-current.
-	finalBlock1, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	_ = finalBlock1
+	// all those transactions in it.
+
 	finalBlock2, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 	require.Equal(0, len(mempool.poolMap))
 
 	// Add one for the block reward. Now we have a meaty block.
-	require.Equal(len(finalBlock1.Txns), 1)
 	require.Equal(len(finalBlock2.Txns), len(creatorCoinTests)+1)
 
 	// The balances after mining the block should match the last testData
@@ -718,36 +728,25 @@ func _helpTestCreatorCoinBuySell(
 		// Check that the state matches the final testData.
 		testIndex := len(creatorCoinTests) - 1
 		testData := creatorCoinTests[testIndex]
-		// DeSo balances
-		if _getBalance(t, chain, nil, m0Pub) != 6*NanosPerUnit && testData.m0DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m0DeSoBalance),
-				int64(_getBalance(t, chain, nil, m0Pub)), "BlockConnect: m0 DeSo balance: %v", testIndex)
+		if chain.blockTip().Height < params.ForkHeights.BalanceModelBlockHeight {
+			// DeSo balances
+			checkBal(testData.m0DeSoBalance, m0Pub, "BlockConnect: m0 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m1DeSoBalance, m1Pub, "BlockConnect: m1 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m2DeSoBalance, m2Pub, "BlockConnect: m2 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m3DeSoBalance, m3Pub, "BlockConnect: m3 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m4DeSoBalance, m4Pub, "BlockConnect: m4 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m5DeSoBalance, m5Pub, "BlockConnect: m5 DeSo balance", strconv.Itoa(testIndex))
+			checkBal(testData.m6DeSoBalance, m6Pub, "BlockConnect: m6 DeSo balance", strconv.Itoa(testIndex))
+		} else {
+			// Balance Model balances
+			checkBal(testData.m0BalanceModelBalance, m0Pub, "BlockConnect: m0 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m1BalanceModelBalance, m1Pub, "BlockConnect: m1 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m2BalanceModelBalance, m2Pub, "BlockConnect: m2 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m3BalanceModelBalance, m3Pub, "BlockConnect: m3 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m4BalanceModelBalance, m4Pub, "BlockConnect: m4 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m5BalanceModelBalance, m5Pub, "BlockConnect: m5 BalanceModel balance", strconv.Itoa(testIndex))
+			checkBal(testData.m6BalanceModelBalance, m6Pub, "BlockConnect: m6 BalanceModel balance", strconv.Itoa(testIndex))
 		}
-		if _getBalance(t, chain, nil, m1Pub) != 6*NanosPerUnit && testData.m1DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m1DeSoBalance),
-				int64(_getBalance(t, chain, nil, m1Pub)), "BlockConnect: m1 DeSo balance: %v", testIndex)
-		}
-		if _getBalance(t, chain, nil, m2Pub) != 6*NanosPerUnit && testData.m2DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m2DeSoBalance),
-				int64(_getBalance(t, chain, nil, m2Pub)), "BlockConnect: m2 DeSo balance: %v", testIndex)
-		}
-		if _getBalance(t, chain, nil, m3Pub) != 6*NanosPerUnit && testData.m3DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m3DeSoBalance),
-				int64(_getBalance(t, chain, nil, m3Pub)), "BlockConnect: m3 DeSo balance: %v", testIndex)
-		}
-		if _getBalance(t, chain, nil, m4Pub) != 6*NanosPerUnit && testData.m4DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m4DeSoBalance),
-				int64(_getBalance(t, chain, nil, m4Pub)), "BlockConnect: m4 DeSo balance: %v", testIndex)
-		}
-		if _getBalance(t, chain, nil, m5Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m5DeSoBalance),
-				int64(_getBalance(t, chain, nil, m5Pub)), "BlockConnect: m5 DeSo balance: %v", testIndex)
-		}
-		if _getBalance(t, chain, nil, m6Pub) != 6*NanosPerUnit && testData.m5DeSoBalance != 0 {
-			assert.Equalf(int64(testData.m6DeSoBalance),
-				int64(_getBalance(t, chain, nil, m6Pub)), "BlockConnect: m6 DeSo balance: %v", testIndex)
-		}
-
 	}
 
 	// Roll back the blocks and make sure we don't hit any errors.
@@ -768,6 +767,7 @@ func _helpTestCreatorCoinBuySell(
 		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
 		require.NoError(err)
 
+		// This fails because public key is not defined in one of the creator coin sell transactions
 		disconnectSingleBlock(finalBlock2, utxoView)
 		disconnectSingleBlock(finalBlock1, utxoView)
 
@@ -789,6 +789,50 @@ func _helpTestCreatorCoinBuySell(
 		int64(_getBalance(t, chain, nil, m5Pub)), "m5 DeSo balance after BlockDisconnect is incorrect")
 	assert.Equalf(int64(m6StartNanos),
 		int64(_getBalance(t, chain, nil, m6Pub)), "m6 DeSo balance after BlockDisconnect is incorrect")
+}
+
+func TestBalanceModelCreatorCoins(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestCreatorCoinWithDiamonds(t)
+	TestCreatorCoinWithDiamondsFailureCases(t)
+	TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t)
+	TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t)
+	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
+}
+
+func TestBalanceModelCreatorCoins2(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestCreatorCoinTransferWithSwapIdentity(t)
+	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
+	TestCreatorCoinTransferWithMaxTransfers(t)
+	TestCreatorCoinTransferBelowMinThreshold(t)
+	TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t)
+}
+
+func TestBalanceModelCreatorCoins3(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
+	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
+	TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t)
+	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
+	TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t)
+}
+
+func TestBalanceModelCreatorCoins4(t *testing.T) {
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
+	TestCreatorCoinAroundThresholdBuySellAmounts(t)
+	TestSalomonSequence(t)
+	TestCreatorCoinBigBuyAfterSmallBuy(t)
+	TestCreatorCoinBigBigBuyBigSell(t)
 }
 
 func TestCreatorCoinWithDiamonds(t *testing.T) {
@@ -838,6 +882,9 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 			m0DeSoBalance:           4728876540,
 			m1DeSoBalance:           6000000000,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   4728876541,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Create a post for m0
 		{
@@ -903,6 +950,9 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 			m0DeSoBalance:           4728876535,
 			m1DeSoBalance:           5999999998,
 			m2DeSoBalance:           5999999998,
+			m0BalanceModelBalance:   4728876538,
+			m1BalanceModelBalance:   5999999998,
+			m2BalanceModelBalance:   5999999998,
 		},
 		// m0 upgrading the diamond level should work
 		{
@@ -931,6 +981,9 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 			m0DeSoBalance:           4728876532,
 			m1DeSoBalance:           5999999998,
 			m2DeSoBalance:           5999999998,
+			m0BalanceModelBalance:   4728876536,
+			m1BalanceModelBalance:   5999999998,
+			m2BalanceModelBalance:   5999999998,
 		},
 		// m0 giving diamond level 4 to m2 should result in the same
 		// CC balance for m2 as m1 has
@@ -960,6 +1013,9 @@ func TestCreatorCoinWithDiamonds(t *testing.T) {
 			m0DeSoBalance:           4728876529,
 			m1DeSoBalance:           5999999998,
 			m2DeSoBalance:           5999999998,
+			m0BalanceModelBalance:   4728876534,
+			m1BalanceModelBalance:   5999999998,
+			m2BalanceModelBalance:   5999999998,
 		},
 	}
 
@@ -1536,6 +1592,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 transfer some creator coins to m2
 		{
@@ -1560,6 +1619,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876540,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876541,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 transfer some more creator coins to m2
 		{
@@ -1584,6 +1646,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876538,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876539,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 transfer some more creator coins to m0
 		{
@@ -1608,6 +1673,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876536,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876537,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 transfer the rest of her creator coins to m0
 		{
@@ -1632,6 +1700,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876534,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876535,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m0 transfer all coins back to m2
 		{
@@ -1656,6 +1727,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999996,
 			m1DeSoBalance:           4728876534,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999996,
+			m1BalanceModelBalance:   4728876535,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m2 transfer all coins back to m1. Weeeeee!!!
 		{
@@ -1680,6 +1754,9 @@ func TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999996,
 			m1DeSoBalance:           4728876534,
 			m2DeSoBalance:           5999999998,
+			m0BalanceModelBalance:   5999999996,
+			m1BalanceModelBalance:   4728876535,
+			m2BalanceModelBalance:   5999999998,
 		},
 	}
 
@@ -1733,6 +1810,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           6317749083,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   6317749083,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// [2] Have m1 transfer some creator coins to m2
 		{
@@ -1757,6 +1837,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           6317749083,
 			m1DeSoBalance:           4728876540,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   6317749083,
+			m1BalanceModelBalance:   4728876541,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// [3] Have m1 transfer some more creator coins to m2
 		{
@@ -1781,6 +1864,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           6317749083,
 			m1DeSoBalance:           4728876538,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   6317749083,
+			m1BalanceModelBalance:   4728876539,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// [4] Have m1 transfer some more creator coins to m0
 		{
@@ -1805,6 +1891,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           6317749083,
 			m1DeSoBalance:           4728876536,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   6317749083,
+			m1BalanceModelBalance:   4728876537,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// [5] Have m1 transfer the rest of her creator coins to m0
 		{
@@ -1829,6 +1918,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           6317749083,
 			m1DeSoBalance:           4728876534,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   6317749083,
+			m1BalanceModelBalance:   4728876535,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// [6] Have m0 transfer all coins back to m2
 		{
@@ -1853,6 +1945,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           6317749081,
 			m1DeSoBalance:           4728876534,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   6317749081,
+			m1BalanceModelBalance:   4728876535,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// [7] Have m2 transfer all coins back to m1. Weeeeee!!!
 		{
@@ -1877,6 +1972,9 @@ func TestCreatorCoinTransferSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           6317749081,
 			m1DeSoBalance:           4728876534,
 			m2DeSoBalance:           5999999998,
+			m0BalanceModelBalance:   6317749081,
+			m1BalanceModelBalance:   4728876535,
+			m2BalanceModelBalance:   5999999998,
 		},
 	}
 
@@ -1930,6 +2028,9 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m2 buy some of m0's coins
 		{
@@ -1957,6 +2058,9 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           4827626815,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// Have m1 transfer 1e9 creator coins to m2
 		{
@@ -1981,6 +2085,9 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876540,
 			m2DeSoBalance:           4827626815,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876541,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// Swap m0 and m3
 		{
@@ -2007,6 +2114,9 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876540,
 			m2DeSoBalance:           4827626815,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876541,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// Have m2 transfer 2e9 creator coins (now attached to m3Pub's profile) to m0
 		{
@@ -2033,6 +2143,9 @@ func TestCreatorCoinTransferWithSwapIdentity(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876540,
 			m2DeSoBalance:           4827626813,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876541,
+			m2BalanceModelBalance:   4827626814,
 		},
 	}
 
@@ -2086,6 +2199,9 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 all but one nano of their creator coins to m2
 		{
@@ -2110,6 +2226,9 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876540,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876541,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m2 transfer all but the min threshold back to m1 (threshold assumed to be 10 nanos).
 		{
@@ -2134,6 +2253,9 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876540,
 			m2DeSoBalance:           5999999998,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876541,
+			m2BalanceModelBalance:   5999999998,
 		},
 		// Have m2 transfer their remaining 10 nanos back to m1.
 		{
@@ -2158,6 +2280,9 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876540,
 			m2DeSoBalance:           5999999996,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876541,
+			m2BalanceModelBalance:   5999999996,
 		},
 		// Have m1 transfer all but 5 nanos back to m0.
 		{
@@ -2182,6 +2307,9 @@ func TestCreatorCoinTransferWithSmallBalancesLeftOver(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876538,
 			m2DeSoBalance:           5999999996,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876539,
+			m2BalanceModelBalance:   5999999996,
 		},
 	}
 
@@ -2235,6 +2363,9 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 send all of their creator coins to m2
 		{
@@ -2259,6 +2390,9 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876540,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876541,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 buy some more of m0's coins
 		{
@@ -2286,6 +2420,9 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           3457753082,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   3457753084,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 transfer all their m0 coins to m2
 		{
@@ -2310,6 +2447,9 @@ func TestCreatorCoinTransferWithMaxTransfers(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           3457753080,
 			m2DeSoBalance:           5999999998,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   3457753082,
+			m2BalanceModelBalance:   5999999998,
 		},
 	}
 
@@ -2424,6 +2564,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m2 buy some of m0's coins
 		{
@@ -2451,6 +2594,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           4827626815,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// Have m1 sell half of their stake
 		{
@@ -2478,6 +2624,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           4827626815,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// Have m2 sell all of their stake
 		{
@@ -2505,6 +2654,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           6355836621,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6355836623,
+			m2BalanceModelBalance:   5243756079,
 		},
 		// Have m1 buy more
 		// Following SalomonFixBlockHeight, this should continue
@@ -2535,6 +2687,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           4232379830,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   4232379833,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m1 sell the rest of their stake
@@ -2563,6 +2718,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		{
@@ -2592,6 +2750,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           6119715430,
 			m1DeSoBalance:           6635615128,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   6119715431,
+			m1BalanceModelBalance:   6635615132,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m1 buy a little more, again m0 should receive some more as a founders reward
@@ -2620,6 +2781,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           6119715430,
 			m1DeSoBalance:           4512158337,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   6119715431,
+			m1BalanceModelBalance:   4512158342,
+			m2BalanceModelBalance:   5243756079,
 		},
 
 		// Have m1 sell their creator coins.
@@ -2648,6 +2812,9 @@ func TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           6119715430,
 			m1DeSoBalance:           6602018090,
 			m2DeSoBalance:           5243756077,
+			m0BalanceModelBalance:   6119715431,
+			m1BalanceModelBalance:   6602018096,
+			m2BalanceModelBalance:   5243756079,
 		},
 	}
 
@@ -2701,6 +2868,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           6317749083,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   6317749083,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// [2] Have m2 buy some of m0's coins
 		{
@@ -2728,6 +2898,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           6610813069,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           4827626815,
+			m0BalanceModelBalance:   6610813069,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// [3] Have m1 sell a large chunk of their stake
 		{
@@ -2755,6 +2928,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           6610813069,
 			m1DeSoBalance:           6027066284,
 			m2DeSoBalance:           4827626815,
+			m0BalanceModelBalance:   6610813069,
+			m1BalanceModelBalance:   6027066286,
+			m2BalanceModelBalance:   4827626816,
 		},
 		// [4] Have m2 sell all of their stake
 		{
@@ -2782,6 +2958,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           6610813069,
 			m1DeSoBalance:           6027066284,
 			m2DeSoBalance:           5174738544,
+			m0BalanceModelBalance:   6610813069,
+			m1BalanceModelBalance:   6027066286,
+			m2BalanceModelBalance:   5174738546,
 		},
 		// [5] Have m1 buy more
 		// Following SalomonFixBlockHeight, this should continue
@@ -2812,6 +2991,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           7141624179,
 			m1DeSoBalance:           3903609493,
 			m2DeSoBalance:           5174738544,
+			m0BalanceModelBalance:   7141624179,
+			m1BalanceModelBalance:   3903609496,
+			m2BalanceModelBalance:   5174738546,
 		},
 
 		// [6] Have m1 sell the rest of their stake
@@ -2840,6 +3022,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           7141624179,
 			m1DeSoBalance:           5682838078,
 			m2DeSoBalance:           5174738544,
+			m0BalanceModelBalance:   7141624179,
+			m1BalanceModelBalance:   5682838082,
+			m2BalanceModelBalance:   5174738546,
 		},
 
 		// [7] Have m0 buy some of their own coins.
@@ -2868,6 +3053,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           7140624177,
 			m1DeSoBalance:           5682838078,
 			m2DeSoBalance:           5174738544,
+			m0BalanceModelBalance:   7140624178,
+			m1BalanceModelBalance:   5682838082,
+			m2BalanceModelBalance:   5174738546,
 		},
 
 		{
@@ -2897,6 +3085,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           7141623975,
 			m1DeSoBalance:           5682838078,
 			m2DeSoBalance:           5174738544,
+			m0BalanceModelBalance:   7141623977,
+			m1BalanceModelBalance:   5682838082,
+			m2BalanceModelBalance:   5174738546,
 		},
 
 		// [9] Have m1 buy a little more, again m0 should receive some deso as a founders reward
@@ -2925,6 +3116,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           7672435085,
 			m1DeSoBalance:           3559381287,
 			m2DeSoBalance:           5174738544,
+			m0BalanceModelBalance:   7672435087,
+			m1BalanceModelBalance:   3559381292,
+			m2BalanceModelBalance:   5174738546,
 		},
 
 		// [10] Have m1 sell their creator coins.
@@ -2953,6 +3147,9 @@ func TestCreatorCoinBuySellSimple_DeSoFounderReward(t *testing.T) {
 			m0DeSoBalance:           7672435085,
 			m1DeSoBalance:           5151655374,
 			m2DeSoBalance:           5174738544,
+			m0BalanceModelBalance:   7672435087,
+			m1BalanceModelBalance:   5151655380,
+			m2BalanceModelBalance:   5174738546,
 		},
 	}
 
@@ -3008,6 +3205,9 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           4728876540,
 			m1DeSoBalance:           6000000000,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   4728876541,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m0 buy his own coins *again*
 		{
@@ -3035,6 +3235,9 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           3556503355,
 			m1DeSoBalance:           6000000000,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   3556503357,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m0 sell half of his own coins
 		{
@@ -3062,6 +3265,9 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           4309373139,
 			m1DeSoBalance:           6000000000,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   4309373142,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m0 sell the rest of his own coins
 		{
@@ -3089,6 +3295,9 @@ func TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t *testing.T) {
 			m0DeSoBalance:           5999511313,
 			m1DeSoBalance:           6000000000,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999511317,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
 		},
 	}
 
@@ -3144,6 +3353,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           5899999998,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   5899999999,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m0 sell all their coins such that they're below the autosell threshold
 		{
@@ -3170,6 +3382,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m0DeSoBalance:           6000029986,
 			m1DeSoBalance:           5899999998,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   6000029987,
+			m1BalanceModelBalance:   5899999999,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 buy more just up till CoinsInCirculationNanos is almost CoinWatermarkNanos
 		// m0 should continue to receieve 1 basis point founders reward irrelevant of the CoinWatermarkNanos.
@@ -3190,14 +3405,17 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			CoinWatermarkNanos:      4641433551,
 			m0CCBalance:             15, // Notice how this is just barely above the autosell threshold.
 			// If this was any smaller, this transaction would fail.
-			m0HasPurchased: false,
-			m1CCBalance:    4641124133,
-			m1HasPurchased: true,
-			m2CCBalance:    0,
-			m2HasPurchased: false,
-			m0DeSoBalance:  6000029986,
-			m1DeSoBalance:  5899989996,
-			m2DeSoBalance:  6000000000,
+			m0HasPurchased:        false,
+			m1CCBalance:           4641124133,
+			m1HasPurchased:        true,
+			m2CCBalance:           0,
+			m2HasPurchased:        false,
+			m0DeSoBalance:         6000029986,
+			m1DeSoBalance:         5899989996,
+			m2DeSoBalance:         6000000000,
+			m0BalanceModelBalance: 6000029987,
+			m1BalanceModelBalance: 5899989998,
+			m2BalanceModelBalance: 6000000000,
 		},
 		// Now we have m2 buy a tiny amount of m0
 		// This should also mint m0 a tiny founders reward, but because m0's balance
@@ -3226,6 +3444,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m0DeSoBalance:           6000029986,
 			m1DeSoBalance:           5899989996,
 			m2DeSoBalance:           5999998998,
+			m0BalanceModelBalance:   6000029987,
+			m1BalanceModelBalance:   5899989998,
+			m2BalanceModelBalance:   5999998999,
 		},
 	}
 
@@ -3278,6 +3499,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 			m0DeSoBalance:           6000009997,
 			m1DeSoBalance:           5899999998,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   6000009997,
+			m1BalanceModelBalance:   5899999999,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 buy more just up till CoinsInCirculationNanos is almost CoinWatermarkNanos
 		// m0 should continue to receieve 1 basis point founders reward irrelevant of the CoinWatermarkNanos.
@@ -3305,6 +3529,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 			m0DeSoBalance:           6000009997,
 			m1DeSoBalance:           5899989996,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   6000009997,
+			m1BalanceModelBalance:   5899989998,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Now we have m2 buy a tiny amount of m0
 		// This should also mint m0 a tiny founders reward, but because m0's balance
@@ -3333,6 +3560,9 @@ func TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t *testing
 			m0DeSoBalance:           6000009997,
 			m1DeSoBalance:           5899989996,
 			m2DeSoBalance:           5999998998,
+			m0BalanceModelBalance:   6000009997,
+			m1BalanceModelBalance:   5899989998,
+			m2BalanceModelBalance:   5999998999,
 		},
 	}
 
@@ -3385,6 +3615,9 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           5899999998,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   5899999999,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m0 sell. The DeSo should've effectively
 		// been transferred from m1 to m0.
@@ -3412,6 +3645,9 @@ func TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t *
 			m0DeSoBalance:           6099979997,
 			m1DeSoBalance:           5899999998,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   6099979998,
+			m1BalanceModelBalance:   5899999999,
+			m2BalanceModelBalance:   6000000000,
 		},
 	}
 
@@ -3464,6 +3700,9 @@ func TestCreatorCoinLargeFounderRewardBuySellAmounts(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           5899999998,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   5899999999,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m2 try and buy a small amount of m0. If you set the amount
 		// to 64000 DeSo nanos to sell, the amount to mint for m2 would
@@ -3495,6 +3734,9 @@ func TestCreatorCoinLargeFounderRewardBuySellAmounts(t *testing.T) {
 			m0DeSoBalance:           5999999998,
 			m1DeSoBalance:           5899999998,
 			m2DeSoBalance:           5999933998,
+			m0BalanceModelBalance:   5999999998,
+			m1BalanceModelBalance:   5899999999,
+			m2BalanceModelBalance:   5999933999,
 		},
 	}
 
@@ -3547,6 +3789,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m0DeSoBalance:           5999999989,
 			m1DeSoBalance:           6000000000,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999990,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// m0 sells just enough creator coins to reach the CreatorCoinAutoSellThresholdNanos.
 		// This should not completely sell the remaining holdings.
@@ -3574,6 +3819,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m0DeSoBalance:           5999999992,
 			m1DeSoBalance:           6000000000,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999994,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// m1 buys m0 increasing the total number of holders to 2.
 		{
@@ -3600,6 +3848,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m0DeSoBalance:           5999999992,
 			m1DeSoBalance:           5999998998,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999994,
+			m1BalanceModelBalance:   5999998999,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// m0 sells a single nano of their own creator coin. This triggers the
 		// CreatorCoinAutoSellThresholdNanos. This reduces the number of holders to 1.
@@ -3627,6 +3878,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m0DeSoBalance:           5999999990,
 			m1DeSoBalance:           5999998998,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999993,
+			m1BalanceModelBalance:   5999998999,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// m2 now purchases m0's creator coins
 		{
@@ -3653,6 +3907,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m0DeSoBalance:           5999999990,
 			m1DeSoBalance:           5999998998,
 			m2DeSoBalance:           4999999998,
+			m0BalanceModelBalance:   5999999993,
+			m1BalanceModelBalance:   5999998999,
+			m2BalanceModelBalance:   4999999999,
 		},
 		// m1 sells to just past the threshold, should trigger an autosell
 		{
@@ -3679,6 +3936,9 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m0DeSoBalance:           5999999990,
 			m1DeSoBalance:           6029685269,
 			m2DeSoBalance:           4999999998,
+			m0BalanceModelBalance:   5999999993,
+			m1BalanceModelBalance:   6029685271,
+			m2BalanceModelBalance:   4999999999,
 		},
 		// m2 sells to just past the threshold, should trigger an autosell and clear the profile
 		{
@@ -3705,10 +3965,13 @@ func TestCreatorCoinAroundThresholdBuySellAmounts(t *testing.T) {
 			m0DeSoBalance:           5999999990,
 			m1DeSoBalance:           6029685269,
 			m2DeSoBalance:           5970114731,
+			m0BalanceModelBalance:   5999999993,
+			m1BalanceModelBalance:   6029685271,
+			m2BalanceModelBalance:   5970114733,
 		},
 	}
 
-	// These tests shoudl behave the same since there is no founder reward.
+	// These tests should behave the same since there is no founder reward.
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, false)
 	_helpTestCreatorCoinBuySell(t, creatorCoinTests, true /*desoFounderReward*/)
 }
@@ -3763,6 +4026,9 @@ func TestSalomonSequence(t *testing.T) {
 			m0DeSoBalance:           5676893873,
 			m1DeSoBalance:           6000000000,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5676893874,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// m0 follows up with another specific purchase.
 		// In the UI this represented selling 191807888 nanos.
@@ -3790,6 +4056,9 @@ func TestSalomonSequence(t *testing.T) {
 			m0DeSoBalance:           5485085977,
 			m1DeSoBalance:           6000000000,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5485085979,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Now is where things got interesting. In the original salomon sequence,
 		// the user (m0) attempted a max sell of all their creator coins. However,
@@ -3821,6 +4090,9 @@ func TestSalomonSequence(t *testing.T) {
 			m0DeSoBalance:           5999897012,
 			m1DeSoBalance:           6000000000,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999897015,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
 		},
 	}
 
@@ -3876,6 +4148,9 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			m0DeSoBalance:           5999999994,
 			m1DeSoBalance:           6000000000,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999995,
+			m1BalanceModelBalance:   6000000000,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 do a normal-sized buy of m0's coins
 		{
@@ -3903,6 +4178,9 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			m0DeSoBalance:           5999999994,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   5999999995,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m0 sell their amount.
 		{
@@ -3929,6 +4207,9 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			m0DeSoBalance:           6736204829,
 			m1DeSoBalance:           4728876542,
 			m2DeSoBalance:           6000000000,
+			m0BalanceModelBalance:   6736204831,
+			m1BalanceModelBalance:   4728876543,
+			m2BalanceModelBalance:   6000000000,
 		},
 		// Have m1 sell their amount.
 		{
@@ -3954,7 +4235,10 @@ func TestCreatorCoinBigBuyAfterSmallBuy(t *testing.T) {
 			m2HasPurchased:          false,
 			m0DeSoBalance:           6736204829,
 			m1DeSoBalance:           5263540947,
-			m2DeSoBalance:           6000000000,
+			m2DeSoBalance:           000000000,
+			m0BalanceModelBalance:   6736204831,
+			m1BalanceModelBalance:   5263540949,
+			m2BalanceModelBalance:   000000000,
 		},
 	}
 
@@ -4056,6 +4340,9 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		return nil, nil, 0, err
 	}
 
+	// Always use height+1 for validation since it's assumed the transaction will
+	// get mined into the next block.
+	blockHeight := chain.blockTip().Height + 1
 	if OperationType == CreatorCoinOperationTypeBuy {
 		require.Equal(int64(totalInputMake), int64(changeAmountMake+feesMake+DeSoToSellNanos))
 	} else {
@@ -4066,9 +4353,6 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	_signTxn(t, txn, UpdaterPrivateKeyBase58Check)
 
 	txHash := txn.Hash()
-	// Always use height+1 for validation since it's assumed the transaction will
-	// get mined into the next block.
-	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 	// ConnectTransaction should treat the amount locked as contributing to the
@@ -4079,15 +4363,23 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.GreaterOrEqual(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreatorCoin operation at the end.
-	numInputs := len(txn.TxInputs)
 	numOps := len(utxoOps)
-	for ii := 0; ii < numInputs; ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
-	}
-	for ii := numInputs; ii < numOps-1; ii++ {
-		require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeCreatorCoin operation at the end.
+		numInputs := len(txn.TxInputs)
+		for ii := 0; ii < numInputs; ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+		for ii := numInputs; ii < numOps-1; ii++ {
+			require.Equal(OperationTypeAddUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
+		if OperationType == CreatorCoinOperationTypeBuy && numOps == 3 {
+			// Founder reward case.
+			require.Equal(OperationTypeAddBalance, utxoOps[1].Type)
+		}
 	}
 	require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)
 
@@ -4175,12 +4467,17 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 	require.Equal(totalInput, totalOutput+fees)
 	require.GreaterOrEqual(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreatorCoinTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeCreatorCoinTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
+
 	require.Equal(OperationTypeCreatorCoinTransfer, utxoOps[len(utxoOps)-1].Type)
 
 	require.NoError(utxoView.FlushToDb(0))
@@ -4243,11 +4540,15 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.Equal(totalInput, totalOutput+fees)
 	require.Equal(totalInput, totalInputMake)
 
-	// We should have one SPEND UtxoOperation for each input, one ADD operation
-	// for each output, and one OperationTypeCreatorCoinTransfer operation at the end.
-	require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
-	for ii := 0; ii < len(txn.TxInputs); ii++ {
-		require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+	if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+		// We should have one SPEND UtxoOperation for each input, one ADD operation
+		// for each output, and one OperationTypeCreatorCoinTransfer operation at the end.
+		require.Equal(len(txn.TxInputs)+len(txn.TxOutputs)+1, len(utxoOps))
+		for ii := 0; ii < len(txn.TxInputs); ii++ {
+			require.Equal(OperationTypeSpendUtxo, utxoOps[ii].Type)
+		}
+	} else {
+		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}
 	require.Equal(OperationTypeCreatorCoinTransfer, utxoOps[len(utxoOps)-1].Type)
 
