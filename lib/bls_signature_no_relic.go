@@ -9,6 +9,14 @@ import (
 
 const BLSNoRelicError = "BLS keys can't be used without Relic installed"
 
+func AggregateBLSSignatures(blsSignatures []*BLSSignature) (*BLSSignature, error) {
+	panic(BLSNoRelicError)
+}
+
+func VerifyAggregateBLSSignature(blsPublicKeys []*BLSPublicKey, blsSignature *BLSSignature, payloadBytes []byte) (bool, error) {
+	panic(BLSNoRelicError)
+}
+
 //
 // TYPES: BLSPrivateKey
 //
