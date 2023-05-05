@@ -7,17 +7,49 @@ import (
 	"io"
 )
 
+const BLSNoRelicError = "BLS keys can't be used without Relic installed"
+
+//
+// TYPES: BLSPrivateKey
+//
+
+type BLSPrivateKey struct {
+	PrivateKey flowCrypto.PrivateKey
+}
+
+func NewBLSPrivateKey() (*BLSPrivateKey, error) {
+	panic(BLSNoRelicError)
+}
+
+func (blsPrivateKey *BLSPrivateKey) Sign(payloadBytes []byte) (*BLSSignature, error) {
+	panic(BLSNoRelicError)
+}
+
+func (blsPrivateKey *BLSPrivateKey) PublicKey() *BLSPublicKey {
+	panic(BLSNoRelicError)
+}
+
+func (blsPrivateKey *BLSPrivateKey) ToString() string {
+	panic(BLSNoRelicError)
+}
+
+func (blsPrivateKey *BLSPrivateKey) FromString(privateKeyString string) error {
+	panic(BLSNoRelicError)
+}
+
+func (blsPrivateKey *BLSPrivateKey) Eq(other *BLSPrivateKey) bool {
+	panic(BLSNoRelicError)
+}
+
 //
 // TYPES: BLSPublicKey
 //
-
-const BLSNoRelicError = "BLS keys can't be used without Relic installed"
 
 type BLSPublicKey struct {
 	PublicKey flowCrypto.PublicKey
 }
 
-func NewBLSPublicKey(publicKeyBytes []byte) (*BLSPublicKey, error) {
+func (blsPublicKey *BLSPublicKey) Verify(blsSignature *BLSSignature, input []byte) (bool, error) {
 	panic(BLSNoRelicError)
 }
 
@@ -25,11 +57,19 @@ func (blsPublicKey *BLSPublicKey) ToBytes() []byte {
 	panic(BLSNoRelicError)
 }
 
-func (blsPublicKey *BLSPublicKey) FromBytes(rr io.Reader) error {
+func (blsPublicKey *BLSPublicKey) FromBytes(publicKeyBytes []byte) error {
 	panic(BLSNoRelicError)
 }
 
-func (blsPublicKey *BLSPublicKey) Verify(blsSignature *BLSSignature, input []byte) (bool, error) {
+func (blsPublicKey *BLSPublicKey) ReadBytes(rr io.Reader) error {
+	panic(BLSNoRelicError)
+}
+
+func (blsPublicKey *BLSPublicKey) ToString() string {
+	panic(BLSNoRelicError)
+}
+
+func (blsPublicKey *BLSPublicKey) FromString(publicKeyString string) error {
 	panic(BLSNoRelicError)
 }
 
@@ -45,15 +85,23 @@ type BLSSignature struct {
 	Signature flowCrypto.Signature
 }
 
-func NewBLSSignature(signature []byte) *BLSSignature {
-	panic(BLSNoRelicError)
-}
-
 func (blsSignature *BLSSignature) ToBytes() []byte {
 	panic(BLSNoRelicError)
 }
 
-func (blsSignature *BLSSignature) FromBytes(rr io.Reader) error {
+func (blsSignature *BLSSignature) FromBytes(signatureBytes []byte) error {
+	panic(BLSNoRelicError)
+}
+
+func (blsSignature *BLSSignature) ReadBytes(rr io.Reader) error {
+	panic(BLSNoRelicError)
+}
+
+func (blsSignature *BLSSignature) ToString() string {
+	panic(BLSNoRelicError)
+}
+
+func (blsSignature *BLSSignature) FromString(signatureString string) error {
 	panic(BLSNoRelicError)
 }
 
