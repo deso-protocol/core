@@ -11,6 +11,7 @@ WORKDIR /deso/src/core
 
 COPY go.mod .
 COPY go.sum .
+
 RUN go mod download
 
 COPY scripts/install-relic.sh .

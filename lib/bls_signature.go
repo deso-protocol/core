@@ -15,6 +15,26 @@ const BLSSigningAlgorithm = flowCrypto.BLSBLS12381
 // TODO: what should the domainTag param be?
 var BLSHashingAlgorithm = flowCrypto.NewExpandMsgXOFKMAC128("deso-protocol")
 
+func AggregateBLSSignatures(blsSignatures []*BLSSignature) (*BLSSignature, error) {
+	var signatures []flowCrypto.Signature
+	for _, blsSignature := range blsSignatures {
+		signatures = append(signatures, blsSignature.Signature)
+	}
+	aggregateSignature, err := flowCrypto.AggregateBLSSignatures(signatures)
+	if err != nil {
+		return nil, err
+	}
+	return &BLSSignature{Signature: aggregateSignature}, nil
+}
+
+func VerifyAggregateBLSSignature(blsPublicKeys []*BLSPublicKey, blsSignature *BLSSignature, payloadBytes []byte) (bool, error) {
+	var publicKeys []flowCrypto.PublicKey
+	for _, blsPublicKey := range blsPublicKeys {
+		publicKeys = append(publicKeys, blsPublicKey.PublicKey)
+	}
+	return flowCrypto.VerifyBLSSignatureOneMessage(publicKeys, blsSignature.Signature, payloadBytes, BLSHashingAlgorithm)
+}
+
 //
 // TYPES: BLSPrivateKey
 //

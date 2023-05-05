@@ -18,7 +18,7 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	require.NoError(t, err)
 	blsPublicKey2 := blsPrivateKey2.PublicKey()
 
-	// Test BLSPublicKey.Verify().
+	// Test BLSPrivateKey.Sign() and BLSPublicKey.Verify().
 	// 1. PrivateKey1 signs a random payload.
 	randomPayload1 := RandomBytes(256)
 	blsSignature1, err := blsPrivateKey1.Sign(randomPayload1)
@@ -44,6 +44,38 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	isVerified, err = blsPublicKey2.Verify(blsSignature2, randomPayload2)
 	require.NoError(t, err)
 	require.True(t, isVerified)
+
+	// Test AggregateBLSSignatures() and VerifyAggregateBLSSignature().
+	// 1. PrivateKey1 signs a random payload.
+	randomPayload3 := RandomBytes(256)
+	blsSignature1, err = blsPrivateKey1.Sign(randomPayload3)
+	require.NoError(t, err)
+	// 2. PrivateKey2 signs the same random payload.
+	blsSignature2, err = blsPrivateKey2.Sign(randomPayload3)
+	require.NoError(t, err)
+	// 3. Aggregate their signatures.
+	aggregateSignature, err := AggregateBLSSignatures([]*BLSSignature{blsSignature1, blsSignature2})
+	require.NoError(t, err)
+	// 4. Verify the AggregateSignature.
+	isVerified, err = VerifyAggregateBLSSignature(
+		[]*BLSPublicKey{blsPublicKey1, blsPublicKey2}, aggregateSignature, randomPayload3,
+	)
+	require.NoError(t, err)
+	require.True(t, isVerified)
+	// 5. Verify PrivateKey1's signature doesn't work on its own.
+	isVerified, err = VerifyAggregateBLSSignature([]*BLSPublicKey{blsPublicKey1}, aggregateSignature, randomPayload3)
+	require.NoError(t, err)
+	require.False(t, isVerified)
+	// 6. Verify PrivateKey2's signature doesn't work on its own.
+	isVerified, err = VerifyAggregateBLSSignature([]*BLSPublicKey{blsPublicKey2}, aggregateSignature, randomPayload3)
+	require.NoError(t, err)
+	require.False(t, isVerified)
+	// 7. Verify the AggregateSignature doesn't work on a different payload.
+	isVerified, err = VerifyAggregateBLSSignature(
+		[]*BLSPublicKey{blsPublicKey1, blsPublicKey2}, aggregateSignature, randomPayload1,
+	)
+	require.NoError(t, err)
+	require.False(t, isVerified)
 
 	// Test BLSPrivateKey.Eq().
 	require.True(t, blsPrivateKey1.Eq(blsPrivateKey1))
