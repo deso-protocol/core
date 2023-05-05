@@ -1,13 +1,10 @@
 #!/bin/bash
 # This script installs Relic, a C library dependency for the BLS signature implementation
-# provided by Flow. This file was copy-pasted as-is from Flow's installation README found
-# here: https://github.com/onflow/flow-go/tree/master/crypto.
+# provided by Flow. This file was copy-pasted from Flow's installation README found here:
+# https://github.com/onflow/flow-go/tree/master/crypto.
 
 # crypto package
 PKG_NAME="github.com/onflow/flow-go/crypto"
-
-# go get the package
-go get ${PKG_NAME}
 
 # go.mod
 MOD_FILE="./go.mod"
@@ -23,7 +20,7 @@ else
    { echo "couldn't find go.mod file - make sure the script is in the project root directory"; exit 1; }
 fi
 
-# grant permissions if not existant
+# grant permissions if not existent
 if [[ ! -r ${PKG_DIR}  || ! -w ${PKG_DIR} || ! -x ${PKG_DIR} ]]; then
    sudo chmod -R 755 "${PKG_DIR}"
 fi
