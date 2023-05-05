@@ -127,4 +127,16 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	copyBLSSignature = &BLSSignature{}
 	require.NoError(t, copyBLSSignature.FromString(blsSignatureString))
 	require.True(t, blsSignature1.Eq(copyBLSSignature))
+
+	// Test BLSPublicKey.Copy().
+	// TODO: how do we test that they are not the same pointer?
+	blsPublicKey1Copy := blsPublicKey1.Copy()
+	require.True(t, blsPublicKey1.Eq(blsPublicKey1Copy))
+	require.NotEqual(t, &blsPublicKey1, &blsPublicKey1Copy)
+
+	// Test BLSSignature.Copy().
+	// TODO: how do we test that they are not the same pointer?
+	blsSignature1Copy := blsSignature1.Copy()
+	require.True(t, blsSignature1.Eq(blsSignature1Copy))
+	require.NotEqual(t, &blsSignature1, &blsSignature1Copy)
 }

@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
@@ -21,12 +22,10 @@ type ValidatorEntry struct {
 	ValidatorPKID *PKID
 	// Note: if someone is updating their ValidatorEntry, they need to include
 	// all domains. The Domains field is not appended to. It is overwritten.
-	Domains               [][]byte
-	DisableDelegatedStake bool
-	// TODO: We will implement BLS public keys and signatures in a subsequent PR.
-	// For now, we include them just as a placeholder byte slice.
-	VotingPublicKey            []byte
-	VotingPublicKeySignature   []byte
+	Domains                    [][]byte
+	DisableDelegatedStake      bool
+	VotingPublicKey            *BLSPublicKey
+	VotingPublicKeySignature   *BLSSignature
 	VotingSignatureBlockHeight uint64
 	TotalStakeAmountNanos      *uint256.Int
 	RegisteredAtBlockHeight    uint64
@@ -82,8 +81,8 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 		ValidatorPKID:              validatorEntry.ValidatorPKID.NewPKID(),
 		Domains:                    domainsCopy,
 		DisableDelegatedStake:      validatorEntry.DisableDelegatedStake,
-		VotingPublicKey:            append([]byte{}, validatorEntry.VotingPublicKey...),
-		VotingPublicKeySignature:   append([]byte{}, validatorEntry.VotingPublicKeySignature...),
+		VotingPublicKey:            validatorEntry.VotingPublicKey.Copy(),
+		VotingPublicKeySignature:   validatorEntry.VotingPublicKeySignature.Copy(),
 		VotingSignatureBlockHeight: validatorEntry.VotingSignatureBlockHeight,
 		TotalStakeAmountNanos:      validatorEntry.TotalStakeAmountNanos.Clone(),
 		RegisteredAtBlockHeight:    validatorEntry.RegisteredAtBlockHeight,
@@ -115,8 +114,8 @@ func (validatorEntry *ValidatorEntry) RawEncodeWithoutMetadata(blockHeight uint6
 	}
 
 	data = append(data, BoolToByte(validatorEntry.DisableDelegatedStake))
-	data = append(data, EncodeByteArray(validatorEntry.VotingPublicKey)...)
-	data = append(data, EncodeByteArray(validatorEntry.VotingPublicKeySignature)...)
+	data = append(data, validatorEntry.VotingPublicKey.ToBytes()...)
+	data = append(data, validatorEntry.VotingPublicKeySignature.ToBytes()...)
 	data = append(data, UintToBuf(validatorEntry.VotingSignatureBlockHeight)...)
 	data = append(data, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	data = append(data, UintToBuf(validatorEntry.RegisteredAtBlockHeight)...)
@@ -165,14 +164,14 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 	}
 
 	// VotingPublicKey
-	validatorEntry.VotingPublicKey, err = DecodeByteArray(rr)
-	if err != nil {
+	validatorEntry.VotingPublicKey = &BLSPublicKey{}
+	if err = validatorEntry.VotingPublicKey.ReadBytes(rr); err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading VotingPublicKey: ")
 	}
 
 	// VotingPublicKeySignature
-	validatorEntry.VotingPublicKeySignature, err = DecodeByteArray(rr)
-	if err != nil {
+	validatorEntry.VotingPublicKeySignature = &BLSSignature{}
+	if err = validatorEntry.VotingPublicKeySignature.ReadBytes(rr); err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading VotingPublicKeySignature: ")
 	}
 
@@ -230,8 +229,8 @@ func (validatorEntry *ValidatorEntry) GetEncoderType() EncoderType {
 type RegisterAsValidatorMetadata struct {
 	Domains                    [][]byte
 	DisableDelegatedStake      bool
-	VotingPublicKey            []byte
-	VotingPublicKeySignature   []byte
+	VotingPublicKey            *BLSPublicKey
+	VotingPublicKeySignature   *BLSSignature
 	VotingSignatureBlockHeight uint64
 }
 
@@ -249,8 +248,8 @@ func (txnData *RegisterAsValidatorMetadata) ToBytes(preSignature bool) ([]byte, 
 	}
 
 	data = append(data, BoolToByte(txnData.DisableDelegatedStake))
-	data = append(data, EncodeByteArray(txnData.VotingPublicKey)...)
-	data = append(data, EncodeByteArray(txnData.VotingPublicKeySignature)...)
+	data = append(data, txnData.VotingPublicKey.ToBytes()...)
+	data = append(data, txnData.VotingPublicKeySignature.ToBytes()...)
 	data = append(data, UintToBuf(txnData.VotingSignatureBlockHeight)...)
 	return data, nil
 }
@@ -278,14 +277,14 @@ func (txnData *RegisterAsValidatorMetadata) FromBytes(data []byte) error {
 	}
 
 	// VotingPublicKey
-	txnData.VotingPublicKey, err = DecodeByteArray(rr)
-	if err != nil {
+	txnData.VotingPublicKey = &BLSPublicKey{}
+	if err = txnData.VotingPublicKey.ReadBytes(rr); err != nil {
 		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading VotingPublicKey: ")
 	}
 
 	// VotingPublicKeySignature
-	txnData.VotingPublicKeySignature, err = DecodeByteArray(rr)
-	if err != nil {
+	txnData.VotingPublicKeySignature = &BLSSignature{}
+	if err = txnData.VotingPublicKeySignature.ReadBytes(rr); err != nil {
 		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading VotingPublicKeySignature: ")
 	}
 
@@ -1353,7 +1352,27 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 		return errors.Wrapf(RuleErrorValidatorDuplicateDomains, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
 
-	// TODO: In subsequent PR, validate VotingPublicKey, VotingPublicKeySignature, and VotingSignatureBlockHeight.
+	// Validate VotingPublicKey, VotingPublicKeySignature, and VotingSignatureBlockHeight.
+	if metadata.VotingPublicKey == nil {
+		return errors.Wrapf(RuleErrorValidatorMissingVotingPublicKey, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
+	}
+	if metadata.VotingPublicKeySignature == nil {
+		return errors.Wrapf(RuleErrorValidatorMissingVotingPublicKeySignature, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
+	}
+	if metadata.VotingSignatureBlockHeight == 0 {
+		// TODO: Validate that CurrentBlockHeight <= VotingSignatureBlockHeight <= CurrentBlockHeight + params.ValidatorVotingSignatureBlockHeightWindow
+		return errors.Wrapf(RuleErrorValidatorInvalidVotingSignatureBlockHeight, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
+	}
+	votingSignaturePayload := CreateValidatorVotingSignaturePayload(
+		transactorPublicKey, metadata.VotingPublicKey, metadata.VotingSignatureBlockHeight,
+	)
+	isValidBLSSignature, err := metadata.VotingPublicKey.Verify(metadata.VotingPublicKeySignature, votingSignaturePayload)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error verifying VotingPublicKeySignature: ")
+	}
+	if !isValidBLSSignature {
+		return errors.Wrapf(RuleErrorValidatorInvalidVotingPublicKeySignature, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
+	}
 
 	// Error if updating DisableDelegatedStake from false to
 	// true and there are existing delegated StakeEntries.
@@ -1644,10 +1663,9 @@ func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
 		ValidatorPublicKeyBase58Check: validatorPublicKeyBase58Check,
 		Domains:                       domains,
 		DisableDelegatedStake:         metadata.DisableDelegatedStake,
-		// TODO: In a subsequent PR, update to convert BLS public keys and signatures to strings.
-		VotingPublicKey:            string(metadata.VotingPublicKey),
-		VotingPublicKeySignature:   string(metadata.VotingPublicKeySignature),
-		VotingSignatureBlockHeight: metadata.VotingSignatureBlockHeight,
+		VotingPublicKey:               metadata.VotingPublicKey.ToString(),
+		VotingPublicKeySignature:      metadata.VotingPublicKeySignature.ToString(),
+		VotingSignatureBlockHeight:    metadata.VotingSignatureBlockHeight,
 	}
 
 	// Construct AffectedPublicKeys.
@@ -1708,6 +1726,29 @@ func (bav *UtxoView) CreateUnregisterAsValidatorTxindexMetadata(
 }
 
 //
+// BLS UTILS
+//
+
+func CreateValidatorVotingSignaturePayload(
+	transactorPublicKeyBytes []byte,
+	votingPublicKey *BLSPublicKey,
+	votingSignatureBlockHeight uint64,
+) []byte {
+	var data []byte
+	// HASH(TransactorPublicKey)
+	hashedTransactorPublicKey := sha256.Sum256(transactorPublicKeyBytes)
+	data = append(data, hashedTransactorPublicKey[:]...)
+	// HASH(VotingPublicKey)
+	hashedVotingPublicKey := sha256.Sum256(votingPublicKey.ToBytes())
+	data = append(data, hashedVotingPublicKey[:]...)
+	// VotingSignatureBlockHeight
+	data = append(data, UintToBuf(votingSignatureBlockHeight)...)
+	// HASH( HASH(TransactorPublicKey) || HASH(VotingPublicKey) || VotingSignatureBlockHeight )
+	hashedData := sha256.Sum256(data)
+	return hashedData[:]
+}
+
+//
 // CONSTANTS
 //
 
@@ -1718,6 +1759,10 @@ const RuleErrorValidatorTooManyDomains RuleError = "RuleErrorValidatorTooManyDom
 const RuleErrorValidatorInvalidDomain RuleError = "RuleErrorValidatorInvalidDomain"
 const RuleErrorValidatorDuplicateDomains RuleError = "RuleErrorValidatorDuplicateDomains"
 const RuleErrorValidatorNotFound RuleError = "RuleErrorValidatorNotFound"
+const RuleErrorValidatorMissingVotingPublicKey RuleError = "RuleErrorValidatorMissingVotingPublicKey"
+const RuleErrorValidatorMissingVotingPublicKeySignature RuleError = "RuleErrorValidatorMissingVotingPublicKeySignature"
+const RuleErrorValidatorInvalidVotingPublicKeySignature RuleError = "RuleErrorValidatorInvalidVotingPublicKeySignature"
+const RuleErrorValidatorInvalidVotingSignatureBlockHeight RuleError = "RuleErrorValidatorInvalidVotingSignatureBlockHeight"
 const RuleErrorValidatorDisablingExistingDelegatedStakers RuleError = "RuleErrorValidatorDisablingExistingDelegatedStakers"
 
 const MaxValidatorNumDomains int = 12

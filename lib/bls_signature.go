@@ -135,6 +135,12 @@ func (blsPublicKey *BLSPublicKey) Eq(other *BLSPublicKey) bool {
 	return blsPublicKey.PublicKey.Equals(other.PublicKey)
 }
 
+func (blsPublicKey *BLSPublicKey) Copy() *BLSPublicKey {
+	blsPublicKeyCopy := &BLSPublicKey{}
+	blsPublicKeyCopy.FromBytes(append([]byte{}, blsPublicKey.ToBytes()...))
+	return blsPublicKeyCopy
+}
+
 //
 // TYPES: BLSSignature
 //
@@ -179,4 +185,10 @@ func (blsSignature *BLSSignature) FromString(signatureString string) error {
 
 func (blsSignature *BLSSignature) Eq(other *BLSSignature) bool {
 	return bytes.Equal(blsSignature.ToBytes(), other.ToBytes())
+}
+
+func (blsSignature *BLSSignature) Copy() *BLSSignature {
+	blsSignatureCopy := &BLSSignature{}
+	blsSignatureCopy.FromBytes(append([]byte{}, blsSignature.ToBytes()...))
+	return blsSignatureCopy
 }
