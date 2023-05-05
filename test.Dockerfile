@@ -2,7 +2,7 @@ FROM alpine:latest AS core
 
 RUN apk update
 RUN apk upgrade
-RUN apk add --update bash cmake git go gcc g++ make vips vips-dev
+RUN apk add --update bash cmake git gcc g++ make vips vips-dev
 
 COPY --from=golang:1.20-alpine /usr/local/go/ /usr/local/go/
 ENV PATH="/usr/local/go/bin:${PATH}"
