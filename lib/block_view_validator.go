@@ -751,7 +751,7 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 	}
 
 	// Validate txn metadata.
-	blockHeight := bc.blockTip().Height + 1
+	blockHeight := uint64(bc.blockTip().Height) + 1
 	if err = utxoView.IsValidRegisterAsValidatorMetadata(transactorPublicKey, metadata, blockHeight); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateRegisterAsValidatorTxn: invalid txn metadata: ",
@@ -907,7 +907,7 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	txMeta := txn.TxnMeta.(*RegisterAsValidatorMetadata)
 
 	// Validate the txn metadata.
-	if err = bav.IsValidRegisterAsValidatorMetadata(txn.PublicKey, txMeta, blockHeight); err != nil {
+	if err = bav.IsValidRegisterAsValidatorMetadata(txn.PublicKey, txMeta, uint64(blockHeight)); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectRegisterAsValidator: ")
 	}
 
@@ -1326,7 +1326,7 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(
 	transactorPublicKey []byte,
 	metadata *RegisterAsValidatorMetadata,
-	blockHeight uint32,
+	blockHeight uint64,
 ) error {
 	// Validate ValidatorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKey)
@@ -1353,16 +1353,20 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(
 		return errors.Wrapf(RuleErrorValidatorDuplicateDomains, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
 
-	// Validate VotingPublicKey, VotingPublicKeySignature, and VotingSignatureBlockHeight.
+	// Validate VotingPublicKey.
 	if metadata.VotingPublicKey == nil {
 		return errors.Wrapf(RuleErrorValidatorMissingVotingPublicKey, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
+
+	// Validate VotingSignatureBlockHeight.
+	if metadata.VotingSignatureBlockHeight < blockHeight ||
+		metadata.VotingSignatureBlockHeight > blockHeight+bav.Params.ValidatorVotingSignatureBlockHeightWindow {
+		return errors.Wrapf(RuleErrorValidatorInvalidVotingSignatureBlockHeight, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
+	}
+
+	// Validate VotingPublicKeySignature.
 	if metadata.VotingPublicKeySignature == nil {
 		return errors.Wrapf(RuleErrorValidatorMissingVotingPublicKeySignature, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
-	}
-	if metadata.VotingSignatureBlockHeight == 0 {
-		// TODO: Validate that CurrentBlockHeight <= VotingSignatureBlockHeight <= CurrentBlockHeight + params.ValidatorVotingSignatureBlockHeightWindow
-		return errors.Wrapf(RuleErrorValidatorInvalidVotingSignatureBlockHeight, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
 	votingSignaturePayload := CreateValidatorVotingSignaturePayload(
 		transactorPublicKey, metadata.VotingPublicKey, metadata.VotingSignatureBlockHeight,

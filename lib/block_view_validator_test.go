@@ -162,6 +162,121 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorValidatorDuplicateDomains)
 	}
 	{
+		// RuleErrorValidatorMissingVotingPublicKey
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains: [][]byte{[]byte("https://example.com")},
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorMissingVotingPublicKey)
+	}
+	{
+		// RuleErrorValidatorInvalidVotingSignatureBlockHeight: missing
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:                  [][]byte{[]byte("https://example.com")},
+			VotingPublicKey:          votingPublicKey,
+			VotingPublicKeySignature: votingSignature,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorInvalidVotingSignatureBlockHeight)
+	}
+	{
+		// RuleErrorValidatorInvalidVotingSignatureBlockHeight: too low
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:                    [][]byte{[]byte("https://example.com")},
+			VotingPublicKey:            votingPublicKey,
+			VotingPublicKeySignature:   votingSignature,
+			VotingSignatureBlockHeight: blockHeight - 1,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorInvalidVotingSignatureBlockHeight)
+	}
+	{
+		// RuleErrorValidatorInvalidVotingSignatureBlockHeight: too high
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:                    [][]byte{[]byte("https://example.com")},
+			VotingPublicKey:            votingPublicKey,
+			VotingPublicKeySignature:   votingSignature,
+			VotingSignatureBlockHeight: blockHeight + params.ValidatorVotingSignatureBlockHeightWindow + 1,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorInvalidVotingSignatureBlockHeight)
+	}
+	{
+		// RuleErrorValidatorMissingVotingPublicKeySignature
+		votingPublicKey, _ := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:                    [][]byte{[]byte("https://example.com")},
+			VotingPublicKey:            votingPublicKey,
+			VotingSignatureBlockHeight: blockHeight,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorMissingVotingPublicKeySignature)
+	}
+	{
+		// RuleErrorValidatorInvalidVotingPublicKeySignature: invalid TransactorPkBytes
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes, blockHeight)
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:                    [][]byte{[]byte("https://example.com")},
+			VotingPublicKey:            votingPublicKey,
+			VotingPublicKeySignature:   votingSignature,
+			VotingSignatureBlockHeight: blockHeight,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorInvalidVotingPublicKeySignature)
+	}
+	{
+		// RuleErrorValidatorInvalidVotingPublicKeySignature: invalid VotingPublicKey
+		votingPublicKey, _ := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		_, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:                    [][]byte{[]byte("https://example.com")},
+			VotingPublicKey:            votingPublicKey,
+			VotingPublicKeySignature:   votingSignature,
+			VotingSignatureBlockHeight: blockHeight,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorInvalidVotingPublicKeySignature)
+	}
+	{
+		// RuleErrorValidatorInvalidVotingPublicKeySignature: invalid VotingSignatureBlockHeight
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:                    [][]byte{[]byte("https://example.com")},
+			VotingPublicKey:            votingPublicKey,
+			VotingPublicKeySignature:   votingSignature,
+			VotingSignatureBlockHeight: blockHeight + 1,
+		}
+		_, _, _, err = _submitRegisterAsValidatorTxn(
+			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorInvalidVotingPublicKeySignature)
+	}
+	{
 		// Happy path: register a validator
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
 		registerMetadata = &RegisterAsValidatorMetadata{

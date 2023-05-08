@@ -601,6 +601,11 @@ type DeSoParams struct {
 	// TODO: Move this to GlobalParamsEntry.
 	StakeLockupEpochDuration uint64
 
+	// When registering, a validator must include a VotingSignatureBlockHeight within CurrentBlockHeight
+	// to CurrentBlockHeight + ValidatorVotingSignatureBlockHeightWindow blocks. This is to prevent
+	// validator registration replay attacks.
+	ValidatorVotingSignatureBlockHeightWindow uint64
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -976,6 +981,11 @@ var DeSoMainnetParams = DeSoParams{
 	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
 	StakeLockupEpochDuration: uint64(3),
 
+	// When registering, a validator must include a VotingSignatureBlockHeight within CurrentBlockHeight
+	// to CurrentBlockHeight + ValidatorVotingSignatureBlockHeightWindow blocks. This is to prevent
+	// validator registration replay attacks.
+	ValidatorVotingSignatureBlockHeightWindow: uint64(60),
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1206,6 +1216,11 @@ var DeSoTestnetParams = DeSoParams{
 
 	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
 	StakeLockupEpochDuration: uint64(3),
+
+	// When registering, a validator must include a VotingSignatureBlockHeight within CurrentBlockHeight
+	// to CurrentBlockHeight + ValidatorVotingSignatureBlockHeightWindow blocks. This is to prevent
+	// validator registration replay attacks.
+	ValidatorVotingSignatureBlockHeightWindow: uint64(60),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
