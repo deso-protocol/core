@@ -751,7 +751,8 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 	}
 
 	// Validate txn metadata.
-	if err = utxoView.IsValidRegisterAsValidatorMetadata(transactorPublicKey, metadata); err != nil {
+	blockHeight := bc.blockTip().Height + 1
+	if err = utxoView.IsValidRegisterAsValidatorMetadata(transactorPublicKey, metadata, blockHeight); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateRegisterAsValidatorTxn: invalid txn metadata: ",
 		)
@@ -906,7 +907,7 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	txMeta := txn.TxnMeta.(*RegisterAsValidatorMetadata)
 
 	// Validate the txn metadata.
-	if err = bav.IsValidRegisterAsValidatorMetadata(txn.PublicKey, txMeta); err != nil {
+	if err = bav.IsValidRegisterAsValidatorMetadata(txn.PublicKey, txMeta, blockHeight); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectRegisterAsValidator: ")
 	}
 
@@ -1322,7 +1323,11 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	)
 }
 
-func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []byte, metadata *RegisterAsValidatorMetadata) error {
+func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(
+	transactorPublicKey []byte,
+	metadata *RegisterAsValidatorMetadata,
+	blockHeight uint32,
+) error {
 	// Validate ValidatorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {

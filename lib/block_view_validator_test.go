@@ -92,7 +92,6 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
-
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:                    [][]byte{[]byte("https://example.com")},
 			DisableDelegatedStake:      false,
@@ -165,7 +164,6 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	{
 		// Happy path: register a validator
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
-
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:                    [][]byte{[]byte("https://example.com")},
 			DisableDelegatedStake:      false,
@@ -209,7 +207,6 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	{
 		// Happy path: update a validator
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
-
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:                    [][]byte{[]byte("https://example1.com"), []byte("https://example2.com")},
 			DisableDelegatedStake:      false,
@@ -746,7 +743,6 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	{
 		// m0 registers as a validator.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
-
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                    [][]byte{[]byte("https://m0.com")},
 			VotingPublicKey:            votingPublicKey,
@@ -768,7 +764,6 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	{
 		// m1 registers as a validator.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes, blockHeight)
-
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                    [][]byte{[]byte("https://m1.com")},
 			VotingPublicKey:            votingPublicKey,
@@ -788,7 +783,6 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	{
 		// m2 registers as a validator.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m2PkBytes, blockHeight)
-
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                    [][]byte{[]byte("https://m2.com")},
 			VotingPublicKey:            votingPublicKey,
@@ -1208,7 +1202,6 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 	{
 		// m0 registers as a validator with DisableDelegatedStake = FALSE.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
-
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                    [][]byte{[]byte("https://m0.com")},
 			DisableDelegatedStake:      false,
@@ -1233,7 +1226,6 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 	{
 		// m0 updates DisableDelegatedStake = TRUE.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
-
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                    [][]byte{[]byte("https://m0.com")},
 			DisableDelegatedStake:      true,
@@ -1282,7 +1274,6 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 	{
 		// m0 updates DisableDelegatedStake = FALSE.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
-
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                    [][]byte{[]byte("https://m0.com")},
 			DisableDelegatedStake:      false,
@@ -1318,7 +1309,6 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 	{
 		// m0 tries to update DisableDelegateStake = TRUE. Errors.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
-
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                    [][]byte{[]byte("https://m0.com")},
 			DisableDelegatedStake:      true,
@@ -1422,7 +1412,6 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	{
 		// m0 registers as a validator.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
-
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                    [][]byte{[]byte("https://m0.com")},
 			VotingPublicKey:            votingPublicKey,
