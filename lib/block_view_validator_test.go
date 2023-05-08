@@ -1654,7 +1654,8 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 }
 
 func _generateVotingPublicKeyAndSignature(t *testing.T, transactorPkBytes []byte, blockHeight uint64) (*bls.PublicKey, *bls.Signature) {
-	blsPrivateKey := bls._generateRandomBLSPrivateKey(t)
+	blsPrivateKey, err := bls.NewPrivateKey()
+	require.NoError(t, err)
 	votingPublicKey := blsPrivateKey.PublicKey()
 	signaturePayload := CreateValidatorVotingSignaturePayload(transactorPkBytes, votingPublicKey, blockHeight)
 	votingSignature, err := blsPrivateKey.Sign(signaturePayload)
