@@ -5,6 +5,7 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	flowCrypto "github.com/onflow/flow-go/crypto"
 	"io"
 	"strings"
@@ -44,6 +45,9 @@ type BLSPrivateKey struct {
 }
 
 func (blsPrivateKey *BLSPrivateKey) Sign(payloadBytes []byte) (*BLSSignature, error) {
+	if blsPrivateKey.PrivateKey == nil {
+		return nil, errors.New("BLSPrivateKey is nil")
+	}
 	signature, err := blsPrivateKey.PrivateKey.Sign(payloadBytes, BLSHashingAlgorithm)
 	if err != nil {
 		return nil, err
@@ -52,14 +56,23 @@ func (blsPrivateKey *BLSPrivateKey) Sign(payloadBytes []byte) (*BLSSignature, er
 }
 
 func (blsPrivateKey *BLSPrivateKey) PublicKey() *BLSPublicKey {
+	if blsPrivateKey.PrivateKey == nil {
+		return nil
+	}
 	return &BLSPublicKey{PublicKey: blsPrivateKey.PrivateKey.PublicKey()}
 }
 
 func (blsPrivateKey *BLSPrivateKey) ToString() string {
+	if blsPrivateKey.PrivateKey == nil {
+		return ""
+	}
 	return blsPrivateKey.PrivateKey.String()
 }
 
 func (blsPrivateKey *BLSPrivateKey) FromString(privateKeyString string) (*BLSPrivateKey, error) {
+	if privateKeyString == "" {
+		return nil, errors.New("empty BLSPrivateKey string provided")
+	}
 	// Chop off leading 0x, if exists. Otherwise, does nothing.
 	privateKeyStringCopy, _ := strings.CutPrefix(privateKeyString, "0x")
 	// Convert from hex string to byte slice.
@@ -73,6 +86,9 @@ func (blsPrivateKey *BLSPrivateKey) FromString(privateKeyString string) (*BLSPri
 }
 
 func (blsPrivateKey *BLSPrivateKey) Eq(other *BLSPrivateKey) bool {
+	if blsPrivateKey.PrivateKey == nil || other == nil {
+		return false
+	}
 	return blsPrivateKey.PrivateKey.Equals(other.PrivateKey)
 }
 
@@ -85,11 +101,18 @@ type BLSPublicKey struct {
 }
 
 func (blsPublicKey *BLSPublicKey) Verify(blsSignature *BLSSignature, input []byte) (bool, error) {
+	if blsPublicKey.PublicKey == nil {
+		return false, errors.New("BLSPublicKey is nil")
+	}
 	return blsPublicKey.PublicKey.Verify(blsSignature.Signature, input, BLSHashingAlgorithm)
 }
 
 func (blsPublicKey *BLSPublicKey) ToBytes() []byte {
-	return EncodeByteArray(blsPublicKey.PublicKey.Encode())
+	var publicKeyBytes []byte
+	if blsPublicKey.PublicKey != nil {
+		publicKeyBytes = blsPublicKey.PublicKey.Encode()
+	}
+	return EncodeByteArray(publicKeyBytes)
 }
 
 func (blsPublicKey *BLSPublicKey) FromBytes(publicKeyBytes []byte) (*BLSPublicKey, error) {
@@ -106,10 +129,16 @@ func (blsPublicKey *BLSPublicKey) ReadBytes(rr io.Reader) (*BLSPublicKey, error)
 }
 
 func (blsPublicKey *BLSPublicKey) ToString() string {
+	if blsPublicKey.PublicKey == nil {
+		return ""
+	}
 	return blsPublicKey.PublicKey.String()
 }
 
 func (blsPublicKey *BLSPublicKey) FromString(publicKeyString string) (*BLSPublicKey, error) {
+	if publicKeyString == "" {
+		return nil, errors.New("empty BLSPublicKey string provided")
+	}
 	// Chop off leading 0x, if exists. Otherwise, does nothing.
 	publicKeyStringCopy, _ := strings.CutPrefix(publicKeyString, "0x")
 	// Convert from hex string to byte slice.
@@ -123,6 +152,9 @@ func (blsPublicKey *BLSPublicKey) FromString(publicKeyString string) (*BLSPublic
 }
 
 func (blsPublicKey *BLSPublicKey) Eq(other *BLSPublicKey) bool {
+	if blsPublicKey.PublicKey == nil || other == nil {
+		return false
+	}
 	return blsPublicKey.PublicKey.Equals(other.PublicKey)
 }
 
@@ -141,7 +173,11 @@ type BLSSignature struct {
 }
 
 func (blsSignature *BLSSignature) ToBytes() []byte {
-	return EncodeByteArray(blsSignature.Signature.Bytes())
+	var signatureBytes []byte
+	if blsSignature.Signature != nil {
+		signatureBytes = blsSignature.Signature.Bytes()
+	}
+	return EncodeByteArray(signatureBytes)
 }
 
 func (blsSignature *BLSSignature) FromBytes(signatureBytes []byte) (*BLSSignature, error) {
@@ -158,10 +194,16 @@ func (blsSignature *BLSSignature) ReadBytes(rr io.Reader) (*BLSSignature, error)
 }
 
 func (blsSignature *BLSSignature) ToString() string {
+	if blsSignature.Signature == nil {
+		return ""
+	}
 	return blsSignature.Signature.String()
 }
 
 func (blsSignature *BLSSignature) FromString(signatureString string) (*BLSSignature, error) {
+	if signatureString == "" {
+		return nil, errors.New("empty BLSSignature string provided")
+	}
 	// Chop off leading 0x, if exists. Otherwise, does nothing.
 	signatureStringCopy, _ := strings.CutPrefix(signatureString, "0x")
 	// Convert from hex string to byte slice.
@@ -175,10 +217,16 @@ func (blsSignature *BLSSignature) FromString(signatureString string) (*BLSSignat
 }
 
 func (blsSignature *BLSSignature) Eq(other *BLSSignature) bool {
+	if blsSignature.Signature == nil || other == nil {
+		return false
+	}
 	return bytes.Equal(blsSignature.ToBytes(), other.ToBytes())
 }
 
 func (blsSignature *BLSSignature) Copy() *BLSSignature {
+	if blsSignature.Signature == nil {
+		return &BLSSignature{}
+	}
 	return &BLSSignature{
 		Signature: append([]byte{}, blsSignature.Signature.Bytes()...),
 	}
