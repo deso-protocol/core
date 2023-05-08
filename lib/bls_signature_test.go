@@ -4,9 +4,19 @@ package lib
 
 import (
 	"bytes"
+	flowCrypto "github.com/onflow/flow-go/crypto"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
+
+func NewBLSPrivateKey() (*BLSPrivateKey, error) {
+	// This is a helper util for generating a random BLSPrivateKey.
+	privateKey, err := flowCrypto.GeneratePrivateKey(BLSSigningAlgorithm, RandomBytes(64))
+	if err != nil {
+		return nil, err
+	}
+	return &BLSPrivateKey{PrivateKey: privateKey}, nil
+}
 
 func TestVerifyingBLSSignatures(t *testing.T) {
 	// Generate two BLS public/private key pairs.
@@ -84,8 +94,8 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 
 	// Test BLSPrivateKey.ToString() and BLSPrivateKey.FromString().
 	blsPrivateKeyString := blsPrivateKey1.ToString()
-	copyBLSPrivateKey1 := &BLSPrivateKey{}
-	require.NoError(t, copyBLSPrivateKey1.FromString(blsPrivateKeyString))
+	copyBLSPrivateKey1, err := (&BLSPrivateKey{}).FromString(blsPrivateKeyString)
+	require.NoError(t, err)
 	require.True(t, blsPrivateKey1.Eq(copyBLSPrivateKey1))
 
 	// Test BLSPublicKey.Eq().
@@ -95,17 +105,17 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 
 	// Test BLSPublicKey.ToBytes(), BLSPublicKey.FromBytes(), and BLSPublicKey.ReadBytes().
 	blsPublicKeyBytes := blsPublicKey1.ToBytes()
-	copyBLSPublicKey1 := &BLSPublicKey{}
-	require.NoError(t, copyBLSPublicKey1.FromBytes(blsPublicKeyBytes))
+	copyBLSPublicKey1, err := (&BLSPublicKey{}).FromBytes(blsPublicKeyBytes)
+	require.NoError(t, err)
 	require.True(t, blsPublicKey1.Eq(copyBLSPublicKey1))
-	copyBLSPublicKey1 = &BLSPublicKey{}
-	require.NoError(t, copyBLSPublicKey1.ReadBytes(bytes.NewBuffer(blsPublicKeyBytes)))
+	copyBLSPublicKey1, err = (&BLSPublicKey{}).ReadBytes(bytes.NewBuffer(blsPublicKeyBytes))
+	require.NoError(t, err)
 	require.True(t, blsPublicKey1.Eq(copyBLSPublicKey1))
 
 	// Test BLSPublicKey.ToString() and BLSPublicKey.FromString().
 	blsPublicKeyString := blsPublicKey1.ToString()
-	copyBLSPublicKey1 = &BLSPublicKey{}
-	require.NoError(t, copyBLSPublicKey1.FromString(blsPublicKeyString))
+	copyBLSPublicKey1, err = (&BLSPublicKey{}).FromString(blsPublicKeyString)
+	require.NoError(t, err)
 	require.True(t, blsPublicKey1.Eq(copyBLSPublicKey1))
 
 	// Test BLSSignature.Eq().
@@ -115,28 +125,24 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 
 	// Test BLSSignature.ToBytes(), BLSSignature.FromBytes(), and BLSSignature.ReadBytes().
 	blsSignatureBytes := blsSignature1.ToBytes()
-	copyBLSSignature := &BLSSignature{}
-	require.NoError(t, copyBLSSignature.FromBytes(blsSignatureBytes))
+	copyBLSSignature, err := (&BLSSignature{}).FromBytes(blsSignatureBytes)
+	require.NoError(t, err)
 	require.True(t, blsSignature1.Eq(copyBLSSignature))
-	copyBLSSignature = &BLSSignature{}
-	require.NoError(t, copyBLSSignature.ReadBytes(bytes.NewBuffer(blsSignatureBytes)))
+	copyBLSSignature, err = (&BLSSignature{}).ReadBytes(bytes.NewBuffer(blsSignatureBytes))
+	require.NoError(t, err)
 	require.True(t, blsSignature1.Eq(copyBLSSignature))
 
 	// Test BLSSignature.ToString() and BLSSignature.FromString().
 	blsSignatureString := blsSignature1.ToString()
-	copyBLSSignature = &BLSSignature{}
-	require.NoError(t, copyBLSSignature.FromString(blsSignatureString))
+	copyBLSSignature, err = (&BLSSignature{}).FromString(blsSignatureString)
+	require.NoError(t, err)
 	require.True(t, blsSignature1.Eq(copyBLSSignature))
 
 	// Test BLSPublicKey.Copy().
-	// TODO: how do we test that they are not the same pointer?
 	blsPublicKey1Copy := blsPublicKey1.Copy()
 	require.True(t, blsPublicKey1.Eq(blsPublicKey1Copy))
-	require.NotEqual(t, &blsPublicKey1, &blsPublicKey1Copy)
 
 	// Test BLSSignature.Copy().
-	// TODO: how do we test that they are not the same pointer?
 	blsSignature1Copy := blsSignature1.Copy()
 	require.True(t, blsSignature1.Eq(blsSignature1Copy))
-	require.NotEqual(t, &blsSignature1, &blsSignature1Copy)
 }

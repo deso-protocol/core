@@ -25,10 +25,6 @@ type BLSPrivateKey struct {
 	PrivateKey flowCrypto.PrivateKey
 }
 
-func NewBLSPrivateKey() (*BLSPrivateKey, error) {
-	panic(BLSNoRelicError)
-}
-
 func (blsPrivateKey *BLSPrivateKey) Sign(payloadBytes []byte) (*BLSSignature, error) {
 	panic(BLSNoRelicError)
 }

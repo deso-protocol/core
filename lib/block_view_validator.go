@@ -164,14 +164,12 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 	}
 
 	// VotingPublicKey
-	validatorEntry.VotingPublicKey = &BLSPublicKey{}
-	if err = validatorEntry.VotingPublicKey.ReadBytes(rr); err != nil {
+	if validatorEntry.VotingPublicKey, err = (&BLSPublicKey{}).ReadBytes(rr); err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading VotingPublicKey: ")
 	}
 
 	// VotingPublicKeySignature
-	validatorEntry.VotingPublicKeySignature = &BLSSignature{}
-	if err = validatorEntry.VotingPublicKeySignature.ReadBytes(rr); err != nil {
+	if validatorEntry.VotingPublicKeySignature, err = (&BLSSignature{}).ReadBytes(rr); err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading VotingPublicKeySignature: ")
 	}
 
@@ -277,14 +275,12 @@ func (txnData *RegisterAsValidatorMetadata) FromBytes(data []byte) error {
 	}
 
 	// VotingPublicKey
-	txnData.VotingPublicKey = &BLSPublicKey{}
-	if err = txnData.VotingPublicKey.ReadBytes(rr); err != nil {
+	if txnData.VotingPublicKey, err = (&BLSPublicKey{}).ReadBytes(rr); err != nil {
 		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading VotingPublicKey: ")
 	}
 
 	// VotingPublicKeySignature
-	txnData.VotingPublicKeySignature = &BLSSignature{}
-	if err = txnData.VotingPublicKeySignature.ReadBytes(rr); err != nil {
+	if txnData.VotingPublicKeySignature, err = (&BLSSignature{}).ReadBytes(rr); err != nil {
 		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading VotingPublicKeySignature: ")
 	}
 
