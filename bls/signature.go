@@ -84,7 +84,7 @@ func (privateKey *PrivateKey) ToString() string {
 
 func (privateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, error) {
 	if privateKeyString == "" {
-		return nil, errors.New("empty bls.PrivateKey string provided")
+		return nil, nil
 	}
 	// Chop off leading 0x, if exists. Otherwise, does nothing.
 	privateKeyStringCopy, _ := strings.CutPrefix(privateKeyString, "0x")
@@ -130,7 +130,7 @@ func (publicKey *PublicKey) ToBytes() []byte {
 
 func (publicKey *PublicKey) FromBytes(publicKeyBytes []byte) (*PublicKey, error) {
 	if len(publicKeyBytes) == 0 {
-		return nil, errors.New("empty bls.PublicKey bytes provided")
+		return nil, nil
 	}
 	var err error
 	publicKey.flowPublicKey, err = flowCrypto.DecodePublicKey(SigningAlgorithm, publicKeyBytes)
@@ -146,7 +146,7 @@ func (publicKey *PublicKey) ToString() string {
 
 func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, error) {
 	if publicKeyString == "" {
-		return nil, errors.New("empty bls.PublicKey string provided")
+		return nil, nil
 	}
 	// Chop off leading 0x, if exists. Otherwise, does nothing.
 	publicKeyStringCopy, _ := strings.CutPrefix(publicKeyString, "0x")
@@ -191,7 +191,7 @@ func (signature *Signature) ToBytes() []byte {
 
 func (signature *Signature) FromBytes(signatureBytes []byte) (*Signature, error) {
 	if len(signatureBytes) == 0 {
-		return nil, errors.New("empty bls.Signature bytes provided")
+		return nil, nil
 	}
 	signature.flowSignature = signatureBytes
 	return signature, nil
@@ -206,7 +206,7 @@ func (signature *Signature) ToString() string {
 
 func (signature *Signature) FromString(signatureString string) (*Signature, error) {
 	if signatureString == "" {
-		return nil, errors.New("empty bls.Signature string provided")
+		return nil, nil
 	}
 	// Chop off leading 0x, if exists. Otherwise, does nothing.
 	signatureStringCopy, _ := strings.CutPrefix(signatureString, "0x")
