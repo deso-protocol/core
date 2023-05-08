@@ -9,23 +9,12 @@ import (
 	"testing"
 )
 
-func NewBLSPrivateKey() (*BLSPrivateKey, error) {
-	// This is a helper util for generating a random BLSPrivateKey.
-	privateKey, err := flowCrypto.GeneratePrivateKey(BLSSigningAlgorithm, RandomBytes(64))
-	if err != nil {
-		return nil, err
-	}
-	return &BLSPrivateKey{PrivateKey: privateKey}, nil
-}
-
 func TestVerifyingBLSSignatures(t *testing.T) {
 	// Generate two BLS public/private key pairs.
-	blsPrivateKey1, err := NewBLSPrivateKey()
-	require.NoError(t, err)
+	blsPrivateKey1 := _generateRandomBLSPrivateKey(t)
 	blsPublicKey1 := blsPrivateKey1.PublicKey()
 
-	blsPrivateKey2, err := NewBLSPrivateKey()
-	require.NoError(t, err)
+	blsPrivateKey2 := _generateRandomBLSPrivateKey(t)
 	blsPublicKey2 := blsPrivateKey2.PublicKey()
 
 	// Test BLSPrivateKey.Sign() and BLSPublicKey.Verify().
@@ -145,4 +134,78 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	// Test BLSSignature.Copy().
 	blsSignature1Copy := blsSignature1.Copy()
 	require.True(t, blsSignature1.Eq(blsSignature1Copy))
+
+	// Test nil BLSPrivateKey edge cases.
+	// Sign()
+	_, err = (&BLSPrivateKey{}).Sign(randomPayload1)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "BLSPrivateKey is nil")
+	// PublicKey()
+	require.Nil(t, (&BLSPrivateKey{}).PublicKey())
+	// ToString()
+	require.Equal(t, (&BLSPrivateKey{}).ToString(), "")
+	// FromString()
+	_, err = (&BLSPrivateKey{}).FromString("")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "empty BLSPrivateKey string provided")
+	// Eq()
+	require.False(t, (&BLSPrivateKey{}).Eq(nil))
+	require.False(t, (&BLSPrivateKey{}).Eq(&BLSPrivateKey{}))
+	require.False(t, (&BLSPrivateKey{}).Eq(_generateRandomBLSPrivateKey(t)))
+	require.False(t, _generateRandomBLSPrivateKey(t).Eq(nil))
+	require.False(t, _generateRandomBLSPrivateKey(t).Eq(&BLSPrivateKey{}))
+	require.False(t, _generateRandomBLSPrivateKey(t).Eq(_generateRandomBLSPrivateKey(t)))
+
+	// Test nil BLSPublicKey edge cases.
+	// Verify()
+	_, err = (&BLSPublicKey{}).Verify(blsSignature1, randomPayload1)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "BLSPublicKey is nil")
+	// ToBytes()
+	require.True(t, bytes.Equal((&BLSPublicKey{}).ToBytes(), EncodeByteArray([]byte{})))
+	// FromBytes()
+	_, err = (&BLSPublicKey{}).FromBytes([]byte{})
+	require.Error(t, err)
+	// ToString()
+	require.Equal(t, (&BLSPublicKey{}).ToString(), "")
+	// FromString()
+	_, err = (&BLSPublicKey{}).FromString("")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "empty BLSPublicKey string provided")
+	// Eq()
+	require.False(t, (&BLSPublicKey{}).Eq(nil))
+	require.False(t, (&BLSPublicKey{}).Eq(&BLSPublicKey{}))
+	require.False(t, (&BLSPublicKey{}).Eq(_generateRandomBLSPrivateKey(t).PublicKey()))
+	require.False(t, _generateRandomBLSPrivateKey(t).PublicKey().Eq(nil))
+	require.False(t, _generateRandomBLSPrivateKey(t).PublicKey().Eq((&BLSPrivateKey{}).PublicKey()))
+	require.False(t, _generateRandomBLSPrivateKey(t).PublicKey().Eq(_generateRandomBLSPrivateKey(t).PublicKey()))
+	// Copy()
+	require.Nil(t, (&BLSPublicKey{}).Copy().PublicKey)
+
+	// Test nil BLSSignature edge cases.
+	// ToBytes()
+	require.True(t, bytes.Equal((&BLSSignature{}).ToBytes(), EncodeByteArray([]byte{})))
+	// FromBytes()
+	_, err = (&BLSSignature{}).FromBytes([]byte{})
+	require.Error(t, err)
+	// ToString()
+	require.Equal(t, (&BLSSignature{}).ToString(), "")
+	// FromString()
+	_, err = (&BLSSignature{}).FromString("")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "empty BLSSignature string provided")
+	// Eq()
+	require.False(t, (&BLSSignature{}).Eq(nil))
+	require.False(t, (&BLSSignature{}).Eq(&BLSSignature{}))
+	require.False(t, (&BLSSignature{}).Eq(blsSignature1))
+	require.False(t, blsSignature1.Eq(nil))
+	require.False(t, blsSignature1.Eq(&BLSSignature{}))
+	// Copy()
+	require.Nil(t, (&BLSSignature{}).Copy().Signature)
+}
+
+func _generateRandomBLSPrivateKey(t *testing.T) *BLSPrivateKey {
+	privateKey, err := flowCrypto.GeneratePrivateKey(BLSSigningAlgorithm, RandomBytes(64))
+	require.NoError(t, err)
+	return &BLSPrivateKey{PrivateKey: privateKey}
 }
