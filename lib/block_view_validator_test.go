@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/core/bls"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 	"math"
@@ -1652,8 +1653,8 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	_executeAllTestRollbackAndFlush(testMeta)
 }
 
-func _generateVotingPublicKeyAndSignature(t *testing.T, transactorPkBytes []byte, blockHeight uint64) (*BLSPublicKey, *BLSSignature) {
-	blsPrivateKey := _generateRandomBLSPrivateKey(t)
+func _generateVotingPublicKeyAndSignature(t *testing.T, transactorPkBytes []byte, blockHeight uint64) (*bls.PublicKey, *bls.Signature) {
+	blsPrivateKey := bls._generateRandomBLSPrivateKey(t)
 	votingPublicKey := blsPrivateKey.PublicKey()
 	signaturePayload := CreateValidatorVotingSignaturePayload(transactorPkBytes, votingPublicKey, blockHeight)
 	votingSignature, err := blsPrivateKey.Sign(signaturePayload)
