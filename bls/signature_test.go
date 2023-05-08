@@ -179,7 +179,7 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	require.False(t, _generateRandomBLSPrivateKey(t).PublicKey().Eq((&PrivateKey{}).PublicKey()))
 	require.False(t, _generateRandomBLSPrivateKey(t).PublicKey().Eq(_generateRandomBLSPrivateKey(t).PublicKey()))
 	// Copy()
-	require.Nil(t, (&PublicKey{}).Copy().PublicKey)
+	require.Nil(t, (&PublicKey{}).Copy().flowPublicKey)
 
 	// Test nil bls.Signature edge cases.
 	// ToBytes()
@@ -204,13 +204,13 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	require.False(t, blsSignature1.Eq(nil))
 	require.False(t, blsSignature1.Eq(&Signature{}))
 	// Copy()
-	require.Nil(t, (&Signature{}).Copy().Signature)
+	require.Nil(t, (&Signature{}).Copy().flowSignature)
 }
 
 func _generateRandomBLSPrivateKey(t *testing.T) *PrivateKey {
-	privateKey, err := flowCrypto.GeneratePrivateKey(SigningAlgorithm, _generateRandomBytes(t, 64))
+	flowPrivateKey, err := flowCrypto.GeneratePrivateKey(SigningAlgorithm, _generateRandomBytes(t, 64))
 	require.NoError(t, err)
-	return &PrivateKey{PrivateKey: privateKey}
+	return &PrivateKey{flowPrivateKey: flowPrivateKey}
 }
 
 func _generateRandomBytes(t *testing.T, numBytes int) []byte {

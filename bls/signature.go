@@ -15,24 +15,24 @@ const SigningAlgorithm = flowCrypto.BLSBLS12381
 // TODO: what should the domainTag param be?
 var HashingAlgorithm = flowCrypto.NewExpandMsgXOFKMAC128("deso-protocol")
 
-func AggregateSignatures(blsSignatures []*Signature) (*Signature, error) {
-	var signatures []flowCrypto.Signature
-	for _, blsSignature := range blsSignatures {
-		signatures = append(signatures, blsSignature.Signature)
+func AggregateSignatures(signatures []*Signature) (*Signature, error) {
+	var flowSignatures []flowCrypto.Signature
+	for _, signature := range signatures {
+		flowSignatures = append(flowSignatures, signature.flowSignature)
 	}
-	aggregateSignature, err := flowCrypto.AggregateBLSSignatures(signatures)
+	aggregateFlowSignature, err := flowCrypto.AggregateBLSSignatures(flowSignatures)
 	if err != nil {
 		return nil, err
 	}
-	return &Signature{Signature: aggregateSignature}, nil
+	return &Signature{flowSignature: aggregateFlowSignature}, nil
 }
 
-func VerifyAggregateSignature(blsPublicKeys []*PublicKey, blsSignature *Signature, payloadBytes []byte) (bool, error) {
-	var publicKeys []flowCrypto.PublicKey
-	for _, blsPublicKey := range blsPublicKeys {
-		publicKeys = append(publicKeys, blsPublicKey.PublicKey)
+func VerifyAggregateSignature(publicKeys []*PublicKey, signature *Signature, payloadBytes []byte) (bool, error) {
+	var flowPublicKeys []flowCrypto.PublicKey
+	for _, publicKey := range publicKeys {
+		flowPublicKeys = append(flowPublicKeys, publicKey.flowPublicKey)
 	}
-	return flowCrypto.VerifyBLSSignatureOneMessage(publicKeys, blsSignature.Signature, payloadBytes, HashingAlgorithm)
+	return flowCrypto.VerifyBLSSignatureOneMessage(flowPublicKeys, signature.flowSignature, payloadBytes, HashingAlgorithm)
 }
 
 //
@@ -40,35 +40,35 @@ func VerifyAggregateSignature(blsPublicKeys []*PublicKey, blsSignature *Signatur
 //
 
 type PrivateKey struct {
-	PrivateKey flowCrypto.PrivateKey
+	flowPrivateKey flowCrypto.PrivateKey
 }
 
-func (blsPrivateKey *PrivateKey) Sign(payloadBytes []byte) (*Signature, error) {
-	if blsPrivateKey.PrivateKey == nil {
+func (privateKey *PrivateKey) Sign(payloadBytes []byte) (*Signature, error) {
+	if privateKey.flowPrivateKey == nil {
 		return nil, errors.New("bls.PrivateKey is nil")
 	}
-	signature, err := blsPrivateKey.PrivateKey.Sign(payloadBytes, HashingAlgorithm)
+	flowSignature, err := privateKey.flowPrivateKey.Sign(payloadBytes, HashingAlgorithm)
 	if err != nil {
 		return nil, err
 	}
-	return &Signature{Signature: signature}, nil
+	return &Signature{flowSignature: flowSignature}, nil
 }
 
-func (blsPrivateKey *PrivateKey) PublicKey() *PublicKey {
-	if blsPrivateKey.PrivateKey == nil {
+func (privateKey *PrivateKey) PublicKey() *PublicKey {
+	if privateKey.flowPrivateKey == nil {
 		return nil
 	}
-	return &PublicKey{PublicKey: blsPrivateKey.PrivateKey.PublicKey()}
+	return &PublicKey{flowPublicKey: privateKey.flowPrivateKey.PublicKey()}
 }
 
-func (blsPrivateKey *PrivateKey) ToString() string {
-	if blsPrivateKey.PrivateKey == nil {
+func (privateKey *PrivateKey) ToString() string {
+	if privateKey.flowPrivateKey == nil {
 		return ""
 	}
-	return blsPrivateKey.PrivateKey.String()
+	return privateKey.flowPrivateKey.String()
 }
 
-func (blsPrivateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, error) {
+func (privateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, error) {
 	if privateKeyString == "" {
 		return nil, errors.New("empty bls.PrivateKey string provided")
 	}
@@ -80,15 +80,15 @@ func (blsPrivateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKe
 		return nil, err
 	}
 	// Convert from byte slice to bls.PrivateKey.
-	blsPrivateKey.PrivateKey, err = flowCrypto.DecodePrivateKey(SigningAlgorithm, privateKeyBytes)
-	return blsPrivateKey, err
+	privateKey.flowPrivateKey, err = flowCrypto.DecodePrivateKey(SigningAlgorithm, privateKeyBytes)
+	return privateKey, err
 }
 
-func (blsPrivateKey *PrivateKey) Eq(other *PrivateKey) bool {
-	if blsPrivateKey.PrivateKey == nil || other == nil {
+func (privateKey *PrivateKey) Eq(other *PrivateKey) bool {
+	if privateKey.flowPrivateKey == nil || other == nil {
 		return false
 	}
-	return blsPrivateKey.PrivateKey.Equals(other.PrivateKey)
+	return privateKey.flowPrivateKey.Equals(other.flowPrivateKey)
 }
 
 //
@@ -96,41 +96,41 @@ func (blsPrivateKey *PrivateKey) Eq(other *PrivateKey) bool {
 //
 
 type PublicKey struct {
-	PublicKey flowCrypto.PublicKey
+	flowPublicKey flowCrypto.PublicKey
 }
 
-func (blsPublicKey *PublicKey) Verify(blsSignature *Signature, input []byte) (bool, error) {
-	if blsPublicKey.PublicKey == nil {
+func (publicKey *PublicKey) Verify(signature *Signature, input []byte) (bool, error) {
+	if publicKey.flowPublicKey == nil {
 		return false, errors.New("bls.PublicKey is nil")
 	}
-	return blsPublicKey.PublicKey.Verify(blsSignature.Signature, input, HashingAlgorithm)
+	return publicKey.flowPublicKey.Verify(signature.flowSignature, input, HashingAlgorithm)
 }
 
-func (blsPublicKey *PublicKey) ToBytes() []byte {
+func (publicKey *PublicKey) ToBytes() []byte {
 	var publicKeyBytes []byte
-	if blsPublicKey.PublicKey != nil {
-		publicKeyBytes = blsPublicKey.PublicKey.Encode()
+	if publicKey.flowPublicKey != nil {
+		publicKeyBytes = publicKey.flowPublicKey.Encode()
 	}
 	return publicKeyBytes
 }
 
-func (blsPublicKey *PublicKey) FromBytes(publicKeyBytes []byte) (*PublicKey, error) {
+func (publicKey *PublicKey) FromBytes(publicKeyBytes []byte) (*PublicKey, error) {
 	if len(publicKeyBytes) == 0 {
 		return nil, errors.New("empty bls.PublicKey bytes provided")
 	}
 	var err error
-	blsPublicKey.PublicKey, err = flowCrypto.DecodePublicKey(SigningAlgorithm, publicKeyBytes)
-	return blsPublicKey, err
+	publicKey.flowPublicKey, err = flowCrypto.DecodePublicKey(SigningAlgorithm, publicKeyBytes)
+	return publicKey, err
 }
 
-func (blsPublicKey *PublicKey) ToString() string {
-	if blsPublicKey.PublicKey == nil {
+func (publicKey *PublicKey) ToString() string {
+	if publicKey.flowPublicKey == nil {
 		return ""
 	}
-	return blsPublicKey.PublicKey.String()
+	return publicKey.flowPublicKey.String()
 }
 
-func (blsPublicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, error) {
+func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, error) {
 	if publicKeyString == "" {
 		return nil, errors.New("empty bls.PublicKey string provided")
 	}
@@ -142,20 +142,20 @@ func (blsPublicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, e
 		return nil, err
 	}
 	// Convert from byte slice to bls.PublicKey.
-	blsPublicKey.PublicKey, err = flowCrypto.DecodePublicKey(SigningAlgorithm, publicKeyBytes)
-	return blsPublicKey, err
+	publicKey.flowPublicKey, err = flowCrypto.DecodePublicKey(SigningAlgorithm, publicKeyBytes)
+	return publicKey, err
 }
 
-func (blsPublicKey *PublicKey) Eq(other *PublicKey) bool {
-	if blsPublicKey.PublicKey == nil || other == nil {
+func (publicKey *PublicKey) Eq(other *PublicKey) bool {
+	if publicKey.flowPublicKey == nil || other == nil {
 		return false
 	}
-	return blsPublicKey.PublicKey.Equals(other.PublicKey)
+	return publicKey.flowPublicKey.Equals(other.flowPublicKey)
 }
 
-func (blsPublicKey *PublicKey) Copy() *PublicKey {
+func (publicKey *PublicKey) Copy() *PublicKey {
 	return &PublicKey{
-		PublicKey: blsPublicKey.PublicKey,
+		flowPublicKey: publicKey.flowPublicKey,
 	}
 }
 
@@ -164,33 +164,33 @@ func (blsPublicKey *PublicKey) Copy() *PublicKey {
 //
 
 type Signature struct {
-	Signature flowCrypto.Signature
+	flowSignature flowCrypto.Signature
 }
 
-func (blsSignature *Signature) ToBytes() []byte {
+func (signature *Signature) ToBytes() []byte {
 	var signatureBytes []byte
-	if blsSignature.Signature != nil {
-		signatureBytes = blsSignature.Signature.Bytes()
+	if signature.flowSignature != nil {
+		signatureBytes = signature.flowSignature.Bytes()
 	}
 	return signatureBytes
 }
 
-func (blsSignature *Signature) FromBytes(signatureBytes []byte) (*Signature, error) {
+func (signature *Signature) FromBytes(signatureBytes []byte) (*Signature, error) {
 	if len(signatureBytes) == 0 {
 		return nil, errors.New("empty bls.Signature bytes provided")
 	}
-	blsSignature.Signature = signatureBytes
-	return blsSignature, nil
+	signature.flowSignature = signatureBytes
+	return signature, nil
 }
 
-func (blsSignature *Signature) ToString() string {
-	if blsSignature.Signature == nil {
+func (signature *Signature) ToString() string {
+	if signature.flowSignature == nil {
 		return ""
 	}
-	return blsSignature.Signature.String()
+	return signature.flowSignature.String()
 }
 
-func (blsSignature *Signature) FromString(signatureString string) (*Signature, error) {
+func (signature *Signature) FromString(signatureString string) (*Signature, error) {
 	if signatureString == "" {
 		return nil, errors.New("empty bls.Signature string provided")
 	}
@@ -202,22 +202,22 @@ func (blsSignature *Signature) FromString(signatureString string) (*Signature, e
 		return nil, err
 	}
 	// Convert from byte slice to bls.Signature.
-	blsSignature.Signature = signatureBytes
-	return blsSignature, nil
+	signature.flowSignature = signatureBytes
+	return signature, nil
 }
 
-func (blsSignature *Signature) Eq(other *Signature) bool {
-	if blsSignature.Signature == nil || other == nil {
+func (signature *Signature) Eq(other *Signature) bool {
+	if signature.flowSignature == nil || other == nil {
 		return false
 	}
-	return bytes.Equal(blsSignature.ToBytes(), other.ToBytes())
+	return bytes.Equal(signature.ToBytes(), other.ToBytes())
 }
 
-func (blsSignature *Signature) Copy() *Signature {
-	if blsSignature.Signature == nil {
+func (signature *Signature) Copy() *Signature {
+	if signature.flowSignature == nil {
 		return &Signature{}
 	}
 	return &Signature{
-		Signature: append([]byte{}, blsSignature.Signature.Bytes()...),
+		flowSignature: append([]byte{}, signature.flowSignature.Bytes()...),
 	}
 }

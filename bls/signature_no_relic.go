@@ -2,17 +2,13 @@
 
 package bls
 
-import (
-	flowCrypto "github.com/onflow/flow-go/crypto"
-)
-
 const BLSNoRelicError = "BLS keys can't be used without Relic installed"
 
-func AggregateSignatures(blsSignatures []*Signature) (*Signature, error) {
+func AggregateSignatures(signatures []*Signature) (*Signature, error) {
 	panic(BLSNoRelicError)
 }
 
-func VerifyAggregateSignature(blsPublicKeys []*PublicKey, blsSignature *Signature, payloadBytes []byte) (bool, error) {
+func VerifyAggregateSignature(publicKeys []*PublicKey, signature *Signature, payloadBytes []byte) (bool, error) {
 	panic(BLSNoRelicError)
 }
 
@@ -20,27 +16,25 @@ func VerifyAggregateSignature(blsPublicKeys []*PublicKey, blsSignature *Signatur
 // TYPES: PrivateKey
 //
 
-type PrivateKey struct {
-	PrivateKey flowCrypto.PrivateKey
-}
+type PrivateKey struct{}
 
-func (blsPrivateKey *PrivateKey) Sign(payloadBytes []byte) (*Signature, error) {
+func (privateKey *PrivateKey) Sign(payloadBytes []byte) (*Signature, error) {
 	panic(BLSNoRelicError)
 }
 
-func (blsPrivateKey *PrivateKey) PublicKey() *PublicKey {
+func (privateKey *PrivateKey) PublicKey() *PublicKey {
 	panic(BLSNoRelicError)
 }
 
-func (blsPrivateKey *PrivateKey) ToString() string {
+func (privateKey *PrivateKey) ToString() string {
 	panic(BLSNoRelicError)
 }
 
-func (blsPrivateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, error) {
+func (privateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, error) {
 	panic(BLSNoRelicError)
 }
 
-func (blsPrivateKey *PrivateKey) Eq(other *PrivateKey) bool {
+func (privateKey *PrivateKey) Eq(other *PrivateKey) bool {
 	panic(BLSNoRelicError)
 }
 
@@ -48,35 +42,33 @@ func (blsPrivateKey *PrivateKey) Eq(other *PrivateKey) bool {
 // TYPES: PublicKey
 //
 
-type PublicKey struct {
-	PublicKey flowCrypto.PublicKey
-}
+type PublicKey struct{}
 
-func (blsPublicKey *PublicKey) Verify(blsSignature *Signature, input []byte) (bool, error) {
+func (publicKey *PublicKey) Verify(signature *Signature, input []byte) (bool, error) {
 	panic(BLSNoRelicError)
 }
 
-func (blsPublicKey *PublicKey) ToBytes() []byte {
+func (publicKey *PublicKey) ToBytes() []byte {
 	panic(BLSNoRelicError)
 }
 
-func (blsPublicKey *PublicKey) FromBytes(publicKeyBytes []byte) (*PublicKey, error) {
+func (publicKey *PublicKey) FromBytes(publicKeyBytes []byte) (*PublicKey, error) {
 	panic(BLSNoRelicError)
 }
 
-func (blsPublicKey *PublicKey) ToString() string {
+func (publicKey *PublicKey) ToString() string {
 	panic(BLSNoRelicError)
 }
 
-func (blsPublicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, error) {
+func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, error) {
 	panic(BLSNoRelicError)
 }
 
-func (blsPublicKey *PublicKey) Eq(other *PublicKey) bool {
+func (publicKey *PublicKey) Eq(other *PublicKey) bool {
 	panic(BLSNoRelicError)
 }
 
-func (blsPublicKey *PublicKey) Copy() *PublicKey {
+func (publicKey *PublicKey) Copy() *PublicKey {
 	panic(BLSNoRelicError)
 }
 
@@ -84,30 +76,28 @@ func (blsPublicKey *PublicKey) Copy() *PublicKey {
 // TYPES: Signature
 //
 
-type Signature struct {
-	Signature flowCrypto.Signature
-}
+type Signature struct{}
 
-func (blsSignature *Signature) ToBytes() []byte {
+func (signature *Signature) ToBytes() []byte {
 	panic(BLSNoRelicError)
 }
 
-func (blsSignature *Signature) FromBytes(signatureBytes []byte) (*Signature, error) {
+func (signature *Signature) FromBytes(signatureBytes []byte) (*Signature, error) {
 	panic(BLSNoRelicError)
 }
 
-func (blsSignature *Signature) ToString() string {
+func (signature *Signature) ToString() string {
 	panic(BLSNoRelicError)
 }
 
-func (blsSignature *Signature) FromString(signatureString string) (*Signature, error) {
+func (signature *Signature) FromString(signatureString string) (*Signature, error) {
 	panic(BLSNoRelicError)
 }
 
-func (blsSignature *Signature) Eq(other *Signature) bool {
+func (signature *Signature) Eq(other *Signature) bool {
 	panic(BLSNoRelicError)
 }
 
-func (blsSignature *Signature) Copy() *Signature {
+func (signature *Signature) Copy() *Signature {
 	panic(BLSNoRelicError)
 }
