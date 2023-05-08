@@ -25,10 +25,6 @@ type BLSPrivateKey struct {
 	PrivateKey flowCrypto.PrivateKey
 }
 
-func NewBLSPrivateKey() (*BLSPrivateKey, error) {
-	panic(BLSNoRelicError)
-}
-
 func (blsPrivateKey *BLSPrivateKey) Sign(payloadBytes []byte) (*BLSSignature, error) {
 	panic(BLSNoRelicError)
 }
@@ -85,6 +81,10 @@ func (blsPublicKey *BLSPublicKey) Eq(other *BLSPublicKey) bool {
 	panic(BLSNoRelicError)
 }
 
+func (blsPublicKey *BLSPublicKey) Copy() *BLSPublicKey {
+	panic(BLSNoRelicError)
+}
+
 //
 // TYPES: BLSSignature
 //
@@ -114,5 +114,9 @@ func (blsSignature *BLSSignature) FromString(signatureString string) error {
 }
 
 func (blsSignature *BLSSignature) Eq(other *BLSSignature) bool {
+	panic(BLSNoRelicError)
+}
+
+func (blsSignature *BLSSignature) Copy() *BLSSignature {
 	panic(BLSNoRelicError)
 }
