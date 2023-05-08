@@ -37,7 +37,7 @@ func (blsPrivateKey *BLSPrivateKey) ToString() string {
 	panic(BLSNoRelicError)
 }
 
-func (blsPrivateKey *BLSPrivateKey) FromString(privateKeyString string) error {
+func (blsPrivateKey *BLSPrivateKey) FromString(privateKeyString string) (*BLSPrivateKey, error) {
 	panic(BLSNoRelicError)
 }
 
@@ -61,11 +61,11 @@ func (blsPublicKey *BLSPublicKey) ToBytes() []byte {
 	panic(BLSNoRelicError)
 }
 
-func (blsPublicKey *BLSPublicKey) FromBytes(publicKeyBytes []byte) error {
+func (blsPublicKey *BLSPublicKey) FromBytes(publicKeyBytes []byte) (*BLSPublicKey, error) {
 	panic(BLSNoRelicError)
 }
 
-func (blsPublicKey *BLSPublicKey) ReadBytes(rr io.Reader) error {
+func (blsPublicKey *BLSPublicKey) ReadBytes(rr io.Reader) (*BLSPublicKey, error) {
 	panic(BLSNoRelicError)
 }
 
@@ -73,7 +73,7 @@ func (blsPublicKey *BLSPublicKey) ToString() string {
 	panic(BLSNoRelicError)
 }
 
-func (blsPublicKey *BLSPublicKey) FromString(publicKeyString string) error {
+func (blsPublicKey *BLSPublicKey) FromString(publicKeyString string) (*BLSPublicKey, error) {
 	panic(BLSNoRelicError)
 }
 
@@ -97,11 +97,11 @@ func (blsSignature *BLSSignature) ToBytes() []byte {
 	panic(BLSNoRelicError)
 }
 
-func (blsSignature *BLSSignature) FromBytes(signatureBytes []byte) error {
+func (blsSignature *BLSSignature) FromBytes(signatureBytes []byte) (*BLSSignature, error) {
 	panic(BLSNoRelicError)
 }
 
-func (blsSignature *BLSSignature) ReadBytes(rr io.Reader) error {
+func (blsSignature *BLSSignature) ReadBytes(rr io.Reader) (*BLSSignature, error) {
 	panic(BLSNoRelicError)
 }
 
@@ -109,7 +109,7 @@ func (blsSignature *BLSSignature) ToString() string {
 	panic(BLSNoRelicError)
 }
 
-func (blsSignature *BLSSignature) FromString(signatureString string) error {
+func (blsSignature *BLSSignature) FromString(signatureString string) (*BLSSignature, error) {
 	panic(BLSNoRelicError)
 }
 
