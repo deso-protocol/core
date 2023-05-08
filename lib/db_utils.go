@@ -6804,6 +6804,7 @@ type TransactionMetadata struct {
 	StakeTxindexMetadata                 *StakeTxindexMetadata                 `json:",omitempty"`
 	UnstakeTxindexMetadata               *UnstakeTxindexMetadata               `json:",omitempty"`
 	UnlockStakeTxindexMetadata           *UnlockStakeTxindexMetadata           `json:",omitempty"`
+	UnjailValidatorTxindexMetadata       *UnjailValidatorTxindexMetadata       `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -6896,6 +6897,8 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnstakeTxindexMetadata, skipMetadata...)...)
 		// encoding UnlockStakeTxindexMetadata
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnlockStakeTxindexMetadata, skipMetadata...)...)
+		// encoding UnjailValidatorTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnjailValidatorTxindexMetadata, skipMetadata...)...)
 	}
 
 	return data
@@ -7150,23 +7153,27 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
 		// decoding RegisterAsValidatorTxindexMetadata
 		if txnMeta.RegisterAsValidatorTxindexMetadata, err = DecodeDeSoEncoder(&RegisterAsValidatorTxindexMetadata{}, rr); err != nil {
-			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading RegisterAsValidatorTxindexMetadata")
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading RegisterAsValidatorTxindexMetadata: ")
 		}
 		// decoding UnregisterAsValidatorTxindexMetadata
 		if txnMeta.UnregisterAsValidatorTxindexMetadata, err = DecodeDeSoEncoder(&UnregisterAsValidatorTxindexMetadata{}, rr); err != nil {
-			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnregisterAsValidatorTxindexMetadata")
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnregisterAsValidatorTxindexMetadata: ")
 		}
 		// decoding StakeTxindexMetadata
 		if txnMeta.StakeTxindexMetadata, err = DecodeDeSoEncoder(&StakeTxindexMetadata{}, rr); err != nil {
-			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading StakeTxindexMetadata")
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading StakeTxindexMetadata: ")
 		}
 		// decoding UnstakeTxindexMetadata
 		if txnMeta.UnstakeTxindexMetadata, err = DecodeDeSoEncoder(&UnstakeTxindexMetadata{}, rr); err != nil {
-			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnstakeTxindexMetadata")
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnstakeTxindexMetadata: ")
 		}
 		// decoding UnlockStakeTxindexMetadata
 		if txnMeta.UnlockStakeTxindexMetadata, err = DecodeDeSoEncoder(&UnlockStakeTxindexMetadata{}, rr); err != nil {
-			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnlockStakeTxindexMetadata")
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnlockStakeTxindexMetadata: ")
+		}
+		// decoding UnjailValidatorTxindexMetadata
+		if txnMeta.UnjailValidatorTxindexMetadata, err = DecodeDeSoEncoder(&UnjailValidatorTxindexMetadata{}, rr); err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnjailValidatorTxindexMetadata: ")
 		}
 	}
 

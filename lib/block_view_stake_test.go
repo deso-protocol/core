@@ -12,7 +12,6 @@ import (
 func TestStaking(t *testing.T) {
 	_testStaking(t, false)
 	_testStaking(t, true)
-	_testStakingWithDerivedKey(t)
 }
 
 func _testStaking(t *testing.T, flushToDB bool) {
@@ -103,9 +102,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
 			Domains: [][]byte{[]byte("https://example.com")},
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerAsValidatorMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerAsValidatorMetadata, nil, flushToDB)
 		require.NoError(t, err)
 
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
@@ -755,7 +752,7 @@ func _submitUnlockStakeTxn(
 	return fees, nil
 }
 
-func _testStakingWithDerivedKey(t *testing.T) {
+func TestStakingWithDerivedKey(t *testing.T) {
 	var derivedKeyPriv string
 	var err error
 
@@ -957,9 +954,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
 			Domains: [][]byte{[]byte("https://example1.com")},
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerAsValidatorMetadata, nil, true,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerAsValidatorMetadata, nil, true)
 		require.NoError(t, err)
 	}
 	{
@@ -967,9 +962,7 @@ func _testStakingWithDerivedKey(t *testing.T) {
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
 			Domains: [][]byte{[]byte("https://example2.com")},
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m1Pub, m1Priv, registerAsValidatorMetadata, nil, true,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m1Pub, m1Priv, registerAsValidatorMetadata, nil, true)
 		require.NoError(t, err)
 	}
 	{
@@ -1783,7 +1776,6 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 	chain.snapshot = nil
 
 	// For these tests, we set StakeLockupEpochDuration to 3.
-	// We test the lockup logic in a separate test.
 	params.StakeLockupEpochDuration = 3
 
 	// Mine a few blocks to give the senderPkString some money.
@@ -1843,7 +1835,7 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains: [][]byte{[]byte("https://m1.com")},
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, true)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, true)
 		require.NoError(t, err)
 
 		validatorEntry, err := newUtxoView().GetValidatorByPKID(m0PKID)
