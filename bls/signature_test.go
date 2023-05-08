@@ -5,7 +5,6 @@ package bls
 import (
 	"bytes"
 	"crypto/rand"
-	flowCrypto "github.com/onflow/flow-go/crypto"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -208,9 +207,9 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 }
 
 func _generateRandomBLSPrivateKey(t *testing.T) *PrivateKey {
-	flowPrivateKey, err := flowCrypto.GeneratePrivateKey(SigningAlgorithm, _generateRandomBytes(t, 64))
+	privateKey, err := NewPrivateKey()
 	require.NoError(t, err)
-	return &PrivateKey{flowPrivateKey: flowPrivateKey}
+	return privateKey
 }
 
 func _generateRandomBytes(t *testing.T, numBytes int) []byte {

@@ -18,6 +18,10 @@ func VerifyAggregateSignature(publicKeys []*PublicKey, signature *Signature, pay
 
 type PrivateKey struct{}
 
+func NewPrivateKey() (*PrivateKey, error) {
+	panic(BLSNoRelicError)
+}
+
 func (privateKey *PrivateKey) Sign(payloadBytes []byte) (*Signature, error) {
 	panic(BLSNoRelicError)
 }

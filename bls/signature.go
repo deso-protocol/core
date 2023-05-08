@@ -4,6 +4,7 @@ package bls
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	flowCrypto "github.com/onflow/flow-go/crypto"
@@ -41,6 +42,19 @@ func VerifyAggregateSignature(publicKeys []*PublicKey, signature *Signature, pay
 
 type PrivateKey struct {
 	flowPrivateKey flowCrypto.PrivateKey
+}
+
+func NewPrivateKey() (*PrivateKey, error) {
+	randomBytes := make([]byte, 64)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		return nil, err
+	}
+	flowPrivateKey, err := flowCrypto.GeneratePrivateKey(SigningAlgorithm, randomBytes)
+	if err != nil {
+		return nil, err
+	}
+	return &PrivateKey{flowPrivateKey: flowPrivateKey}, nil
 }
 
 func (privateKey *PrivateKey) Sign(payloadBytes []byte) (*Signature, error) {
