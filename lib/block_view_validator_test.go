@@ -16,7 +16,6 @@ import (
 func TestValidatorRegistration(t *testing.T) {
 	_testValidatorRegistration(t, false)
 	_testValidatorRegistration(t, true)
-	_testValidatorRegistrationWithDerivedKey(t)
 }
 
 func _testValidatorRegistration(t *testing.T, flushToDB bool) {
@@ -100,9 +99,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
 
@@ -116,9 +113,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			Domains:               [][]byte{},
 			DisableDelegatedStake: false,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorValidatorNoDomains)
 	}
@@ -132,9 +127,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			Domains:               domains,
 			DisableDelegatedStake: false,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorValidatorTooManyDomains)
 	}
@@ -144,9 +137,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			Domains:               [][]byte{[]byte("InvalidURL")},
 			DisableDelegatedStake: false,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorValidatorInvalidDomain)
 	}
@@ -156,9 +147,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			Domains:               [][]byte{[]byte("https://example.com"), []byte("https://example.com")},
 			DisableDelegatedStake: false,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorValidatorDuplicateDomains)
 	}
@@ -167,7 +156,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains: [][]byte{[]byte("https://example.com")},
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
+		_, err = _submitRegisterAsValidatorTxn(
 			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
 		)
 		require.Error(t, err)
@@ -181,7 +170,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			VotingPublicKey:          votingPublicKey,
 			VotingPublicKeySignature: votingSignature,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
+		_, err = _submitRegisterAsValidatorTxn(
 			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
 		)
 		require.Error(t, err)
@@ -196,7 +185,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight - 1,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
+		_, err = _submitRegisterAsValidatorTxn(
 			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
 		)
 		require.Error(t, err)
@@ -211,7 +200,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight + params.ValidatorVotingSignatureBlockHeightWindow + 1,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
+		_, err = _submitRegisterAsValidatorTxn(
 			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
 		)
 		require.Error(t, err)
@@ -225,7 +214,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			VotingPublicKey:            votingPublicKey,
 			VotingSignatureBlockHeight: blockHeight,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
+		_, err = _submitRegisterAsValidatorTxn(
 			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
 		)
 		require.Error(t, err)
@@ -240,7 +229,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
+		_, err = _submitRegisterAsValidatorTxn(
 			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
 		)
 		require.Error(t, err)
@@ -256,7 +245,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
+		_, err = _submitRegisterAsValidatorTxn(
 			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
 		)
 		require.Error(t, err)
@@ -271,7 +260,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight + 1,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
+		_, err = _submitRegisterAsValidatorTxn(
 			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
 		)
 		require.Error(t, err)
@@ -288,9 +277,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			VotingSignatureBlockHeight: blockHeight,
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue1")}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB)
 		require.NoError(t, err)
 	}
 	{
@@ -331,9 +318,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			VotingSignatureBlockHeight: blockHeight,
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB)
 		require.NoError(t, err)
 	}
 	{
@@ -349,18 +334,18 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 	{
 		// Sad path: unregister validator that doesn't exist
-		_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m1Pub, m1Priv, flushToDB)
+		_, err = _submitUnregisterAsValidatorTxn(testMeta, m1Pub, m1Priv, flushToDB)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorValidatorNotFound)
 	}
 	{
 		// Happy path: unregister validator
-		_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
+		_, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
 		require.NoError(t, err)
 	}
 	{
 		// Sad path: unregister validator that doesn't exist
-		_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
+		_, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorValidatorNotFound)
 	}
@@ -395,7 +380,7 @@ func _submitRegisterAsValidatorTxn(
 	metadata *RegisterAsValidatorMetadata,
 	extraData map[string][]byte,
 	flushToDB bool,
-) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+) (_fees uint64, _err error) {
 	// Record transactor's prevBalance.
 	prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
 
@@ -413,7 +398,7 @@ func _submitRegisterAsValidatorTxn(
 		[]*DeSoOutput{},
 	)
 	if err != nil {
-		return nil, nil, 0, err
+		return 0, err
 	}
 	require.Equal(testMeta.t, totalInputMake, changeAmountMake+feesMake)
 
@@ -430,7 +415,7 @@ func _submitRegisterAsValidatorTxn(
 		false,
 	)
 	if err != nil {
-		return nil, nil, 0, err
+		return 0, err
 	}
 	require.Equal(testMeta.t, totalInput, totalOutput+fees)
 	require.Equal(testMeta.t, totalInput, totalInputMake)
@@ -444,7 +429,7 @@ func _submitRegisterAsValidatorTxn(
 	testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
 	testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 	testMeta.txns = append(testMeta.txns, txn)
-	return utxoOps, txn, testMeta.savedHeight, nil
+	return fees, nil
 }
 
 func _submitUnregisterAsValidatorTxn(
@@ -452,7 +437,7 @@ func _submitUnregisterAsValidatorTxn(
 	transactorPublicKeyBase58Check string,
 	transactorPrivateKeyBase58Check string,
 	flushToDB bool,
-) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+) (_fees uint64, _err error) {
 	// Record transactor's prevBalance.
 	prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
 
@@ -470,7 +455,7 @@ func _submitUnregisterAsValidatorTxn(
 		[]*DeSoOutput{},
 	)
 	if err != nil {
-		return nil, nil, 0, err
+		return 0, err
 	}
 	require.Equal(testMeta.t, totalInputMake, changeAmountMake+feesMake)
 
@@ -487,7 +472,7 @@ func _submitUnregisterAsValidatorTxn(
 		false,
 	)
 	if err != nil {
-		return nil, nil, 0, err
+		return 0, err
 	}
 	require.Equal(testMeta.t, totalInput, totalOutput+fees)
 	require.Equal(testMeta.t, totalInput, totalInputMake)
@@ -501,10 +486,10 @@ func _submitUnregisterAsValidatorTxn(
 	testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
 	testMeta.txnOps = append(testMeta.txnOps, utxoOps)
 	testMeta.txns = append(testMeta.txns, txn)
-	return utxoOps, txn, testMeta.savedHeight, nil
+	return fees, nil
 }
 
-func _testValidatorRegistrationWithDerivedKey(t *testing.T) {
+func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 	var err error
 
 	// Initialize balance model fork heights.
@@ -865,9 +850,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
 
 		// Verify top validators.
@@ -886,9 +869,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m1Pub, m1Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m1Pub, m1Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
 
 		// Verify top validators.
@@ -905,9 +886,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m2Pub, m2Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m2Pub, m2Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
 
 		// Verify top validators.
@@ -991,7 +970,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m2 unregisters as validator.
-		_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m2Pub, m2Priv, flushToDB)
+		_, err = _submitUnregisterAsValidatorTxn(testMeta, m2Pub, m2Priv, flushToDB)
 		require.NoError(t, err)
 
 		// Verify top validators.
@@ -1325,9 +1304,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
 
 		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
@@ -1349,9 +1326,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
 
 		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
@@ -1397,9 +1372,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
 
 		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
@@ -1432,9 +1405,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorValidatorDisablingExistingDelegatedStakers)
 	}
@@ -1534,9 +1505,7 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 			VotingPublicKeySignature:   votingSignature,
 			VotingSignatureBlockHeight: blockHeight,
 		}
-		_, _, _, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
-		)
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
 
 		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
@@ -1612,7 +1581,7 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m0 unregisters as a validator.
-		_, _, _, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
+		_, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
 		require.NoError(t, err)
 
 		// m0's ValidatorEntry is deleted.
@@ -1651,6 +1620,541 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	// Flush mempool to the db and test rollbacks.
 	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
 	_executeAllTestRollbackAndFlush(testMeta)
+}
+
+func TestUnjailValidator(t *testing.T) {
+	_testUnjailValidator(t, false)
+	_testUnjailValidator(t, true)
+}
+
+func _testUnjailValidator(t *testing.T, flushToDB bool) {
+	var validatorEntry *ValidatorEntry
+	var err error
+
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	// Initialize test chain and miner.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Initialize PoS fork height.
+	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	chain.snapshot = nil
+
+	// For these tests, we set ValidatorJailEpochDuration to 3.
+	params.ValidatorJailEpochDuration = 3
+
+	utxoView := func() *UtxoView {
+		newUtxoView, err := mempool.GetAugmentedUniversalView()
+		require.NoError(t, err)
+		return newUtxoView
+	}
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err = miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height + 1)
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       uint32(blockHeight),
+		feeRateNanosPerKb: uint64(101),
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
+	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
+
+	// Seed a CurrentEpochEntry.
+	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	require.NoError(t, err)
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
+	currentEpochNumber, err := utxoView().GetCurrentEpochNumber()
+	require.NoError(t, err)
+
+	{
+		// ParamUpdater set min fee rate
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1,
+			int64(testMeta.feeRateNanosPerKb),
+			-1,
+			-1,
+			-1,
+		)
+	}
+	{
+		// m0 registers as a validator.
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains:                    [][]byte{[]byte("https://example.com")},
+			VotingPublicKey:            votingPublicKey,
+			VotingPublicKeySignature:   votingSignature,
+			VotingSignatureBlockHeight: blockHeight,
+		}
+		extraData := map[string][]byte{"TestKey": []byte("TestValue1")}
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB)
+		require.NoError(t, err)
+
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.ExtraData["TestKey"], []byte("TestValue1"))
+	}
+	{
+		// RuleErrorUnjailingNonjailedValidator
+		_, err = _submitUnjailValidatorTxn(testMeta, m0Pub, m0Priv, nil, flushToDB)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorUnjailingNonjailedValidator)
+	}
+	{
+		// m0 is jailed. Since this update takes place outside a transaction,
+		// we cannot test rollbacks. We will run into an error where m0 is
+		// trying to unjail himself, but he was never jailed.
+
+		// Delete m0's ValidatorEntry from the UtxoView.
+		delete(mempool.universalUtxoView.ValidatorMapKeyToValidatorEntry, validatorEntry.ToMapKey())
+		delete(mempool.readOnlyUtxoView.ValidatorMapKeyToValidatorEntry, validatorEntry.ToMapKey())
+
+		// Set JailedAtEpochNumber.
+		validatorEntry.JailedAtEpochNumber = currentEpochNumber
+
+		// Store m0's ValidatorEntry in the db.
+		tmpUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		tmpUtxoView._setValidatorEntryMappings(validatorEntry)
+		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
+
+		// Verify m0 is jailed.
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.Status(), ValidatorStatusJailed)
+	}
+	{
+		// m1 stakes with m0. Succeeds. You can stake to a jailed validator.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
+		}
+		_, err = _submitStakeTxn(testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
+		require.NoError(t, err)
+		require.NotNil(t, stakeEntry)
+	}
+	{
+		// m1 unstakes from m0. Succeeds. You can unstake from a jailed validator.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(100),
+		}
+		_, err = _submitUnstakeTxn(testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
+		require.NoError(t, err)
+		require.Nil(t, stakeEntry)
+
+		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
+		require.NoError(t, err)
+		require.NotNil(t, lockedStakeEntry)
+	}
+	{
+		// RuleErrorValidatorNotFound
+		_, err = _submitUnjailValidatorTxn(testMeta, m1Pub, m1Priv, nil, flushToDB)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorNotFound)
+	}
+	{
+		// RuleErrorUnjailingValidatorTooEarly
+		_, err = _submitUnjailValidatorTxn(testMeta, m0Pub, m0Priv, nil, flushToDB)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorUnjailingValidatorTooEarly)
+	}
+	{
+		// Simulate three epochs passing by seeding a new CurrentEpochEntry.
+
+		// Delete the CurrentEpochEntry from the UtxoView.
+		mempool.universalUtxoView.CurrentEpochEntry = nil
+		mempool.readOnlyUtxoView.CurrentEpochEntry = nil
+
+		// Store a new CurrentEpochEntry in the db.
+		epochUtxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		epochUtxoView._setCurrentEpochEntry(
+			&EpochEntry{EpochNumber: currentEpochNumber + 3, FinalBlockHeight: blockHeight + 10},
+		)
+		require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
+
+		// Verify CurrentEpochNumber.
+		currentEpochNumber, err = utxoView().GetCurrentEpochNumber()
+		require.NoError(t, err)
+		require.Equal(t, currentEpochNumber, uint64(4))
+	}
+	{
+		// RuleErrorProofofStakeTxnBeforeBlockHeight
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = math.MaxUint32
+		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+		_, err = _submitUnjailValidatorTxn(testMeta, m0Pub, m0Priv, nil, flushToDB)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
+
+		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	}
+	{
+		// m0 unjails himself.
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.Status(), ValidatorStatusJailed)
+		require.Equal(t, validatorEntry.LastActiveAtEpochNumber, uint64(1))
+
+		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
+		_, err = _submitUnjailValidatorTxn(testMeta, m0Pub, m0Priv, extraData, flushToDB)
+		require.NoError(t, err)
+
+		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.Status(), ValidatorStatusActive)
+		require.Equal(t, validatorEntry.LastActiveAtEpochNumber, uint64(4))
+		require.Equal(t, validatorEntry.ExtraData["TestKey"], []byte("TestValue2"))
+	}
+}
+
+func TestUnjailValidatorWithDerivedKey(t *testing.T) {
+	var validatorEntry *ValidatorEntry
+	var derivedKeyPriv string
+	var err error
+
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	// Initialize test chain and miner.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Initialize fork heights.
+	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err = miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height) + 1
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       uint32(blockHeight),
+		feeRateNanosPerKb: uint64(101),
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
+	require.NoError(t, err)
+	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
+	require.NoError(t, err)
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	senderPKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, senderPkBytes).PKID
+
+	newUtxoView := func() *UtxoView {
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		return utxoView
+	}
+
+	_submitAuthorizeDerivedKeyUnjailValidatorTxn := func(count uint64) (string, error) {
+		utxoView := newUtxoView()
+
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				TxnTypeAuthorizeDerivedKey: 1,
+				TxnTypeUnjailValidator:     count,
+			},
+		}
+
+		derivedKeyMetadata, derivedKeyAuthPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
+			t, senderPrivKey, blockHeight+5, txnSpendingLimit, false, blockHeight,
+		)
+		derivedKeyAuthPrivBase58Check := Base58CheckEncode(derivedKeyAuthPriv.Serialize(), true, params)
+
+		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, senderPkString)
+
+		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraDataAndSpendingLimits(
+			testMeta,
+			utxoView,
+			testMeta.feeRateNanosPerKb,
+			senderPkBytes,
+			derivedKeyMetadata.DerivedPublicKey,
+			derivedKeyAuthPrivBase58Check,
+			derivedKeyMetadata.ExpirationBlock,
+			derivedKeyMetadata.AccessSignature,
+			false,
+			nil,
+			nil,
+			txnSpendingLimit,
+		)
+		if err != nil {
+			return "", err
+		}
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
+		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
+		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+		testMeta.txns = append(testMeta.txns, txn)
+
+		err = utxoView.ValidateDerivedKey(
+			senderPkBytes, derivedKeyMetadata.DerivedPublicKey, blockHeight,
+		)
+		require.NoError(t, err)
+		return derivedKeyAuthPrivBase58Check, nil
+	}
+
+	_submitUnjailValidatorTxnWithDerivedKey := func(transactorPkBytes []byte, derivedKeyPrivBase58Check string) error {
+		utxoView := newUtxoView()
+		// Construct txn.
+		txn, _, _, _, err := testMeta.chain.CreateUnjailValidatorTxn(
+			transactorPkBytes,
+			&UnjailValidatorMetadata{},
+			make(map[string][]byte),
+			testMeta.feeRateNanosPerKb,
+			mempool,
+			[]*DeSoOutput{},
+		)
+		if err != nil {
+			return err
+		}
+		// Sign txn.
+		_signTxnWithDerivedKeyAndType(t, txn, derivedKeyPrivBase58Check, 1)
+		// Store the original transactor balance.
+		transactorPublicKeyBase58Check := Base58CheckEncode(transactorPkBytes, false, params)
+		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
+		// Connect txn.
+		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
+			txn,
+			txn.Hash(),
+			getTxnSize(*txn),
+			testMeta.savedHeight,
+			true,
+			false,
+		)
+		if err != nil {
+			return err
+		}
+		// Flush UTXO view to the db.
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
+		// Track txn for rolling back.
+		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
+		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+		testMeta.txns = append(testMeta.txns, txn)
+		return nil
+	}
+
+	// Seed a CurrentEpochEntry.
+	epochUtxoView := newUtxoView()
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
+	currentEpochNumber, err := newUtxoView().GetCurrentEpochNumber()
+	require.NoError(t, err)
+
+	{
+		// ParamUpdater set min fee rate
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1,
+			int64(testMeta.feeRateNanosPerKb),
+			-1,
+			-1,
+			-1,
+		)
+	}
+	{
+		// sender registers as a validator.
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, senderPkBytes, blockHeight)
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains:                    [][]byte{[]byte("https://example.com")},
+			VotingPublicKey:            votingPublicKey,
+			VotingPublicKeySignature:   votingSignature,
+			VotingSignatureBlockHeight: blockHeight,
+		}
+		_, err = _submitRegisterAsValidatorTxn(testMeta, senderPkString, senderPrivString, registerMetadata, nil, true)
+		require.NoError(t, err)
+
+		validatorEntry, err = newUtxoView().GetValidatorByPKID(senderPKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+	}
+	{
+		// sender is jailed. Since this update takes place outside a transaction,
+		// we cannot test rollbacks. We will run into an error where sender is
+		// trying to unjail himself, but he was never jailed.
+
+		// Delete sender's ValidatorEntry from the UtxoView.
+		delete(mempool.universalUtxoView.ValidatorMapKeyToValidatorEntry, validatorEntry.ToMapKey())
+		delete(mempool.readOnlyUtxoView.ValidatorMapKeyToValidatorEntry, validatorEntry.ToMapKey())
+
+		// Set JailedAtEpochNumber.
+		validatorEntry.JailedAtEpochNumber = currentEpochNumber
+
+		// Store sender's ValidatorEntry in the db.
+		tmpUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		tmpUtxoView._setValidatorEntryMappings(validatorEntry)
+		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
+
+		// Verify sender is jailed.
+		validatorEntry, err = newUtxoView().GetValidatorByPKID(senderPKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.Status(), ValidatorStatusJailed)
+	}
+	{
+		// sender creates a DerivedKey that can perform one UnjailValidator txn.
+		derivedKeyPriv, err = _submitAuthorizeDerivedKeyUnjailValidatorTxn(1)
+		require.NoError(t, err)
+	}
+	{
+		// RuleErrorUnjailingValidatorTooEarly
+		err = _submitUnjailValidatorTxnWithDerivedKey(senderPkBytes, derivedKeyPriv)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorUnjailingValidatorTooEarly)
+	}
+	{
+		// Simulate three epochs passing by seeding a new CurrentEpochEntry.
+
+		// Delete the CurrentEpochEntry from the UtxoView.
+		mempool.universalUtxoView.CurrentEpochEntry = nil
+		mempool.readOnlyUtxoView.CurrentEpochEntry = nil
+
+		// Store a new CurrentEpochEntry in the db.
+		epochUtxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		epochUtxoView._setCurrentEpochEntry(
+			&EpochEntry{EpochNumber: currentEpochNumber + 3, FinalBlockHeight: blockHeight + 10},
+		)
+		require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
+
+		// Verify CurrentEpochNumber.
+		currentEpochNumber, err = newUtxoView().GetCurrentEpochNumber()
+		require.NoError(t, err)
+		require.Equal(t, currentEpochNumber, uint64(4))
+	}
+	{
+		// sender unjails himself using a DerivedKey.
+		validatorEntry, err = newUtxoView().GetValidatorByPKID(senderPKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.Status(), ValidatorStatusJailed)
+		require.Equal(t, validatorEntry.LastActiveAtEpochNumber, uint64(1))
+
+		err = _submitUnjailValidatorTxnWithDerivedKey(senderPkBytes, derivedKeyPriv)
+		require.NoError(t, err)
+
+		validatorEntry, err = newUtxoView().GetValidatorByPKID(senderPKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.Status(), ValidatorStatusActive)
+		require.Equal(t, validatorEntry.LastActiveAtEpochNumber, uint64(4))
+	}
+}
+
+func _submitUnjailValidatorTxn(
+	testMeta *TestMeta,
+	transactorPublicKeyBase58Check string,
+	transactorPrivateKeyBase58Check string,
+	extraData map[string][]byte,
+	flushToDB bool,
+) (_fees uint64, _err error) {
+	// Record transactor's prevBalance.
+	prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
+
+	// Convert PublicKeyBase58Check to PkBytes.
+	updaterPkBytes, _, err := Base58CheckDecode(transactorPublicKeyBase58Check)
+	require.NoError(testMeta.t, err)
+
+	// Create the transaction.
+	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.chain.CreateUnjailValidatorTxn(
+		updaterPkBytes,
+		&UnjailValidatorMetadata{},
+		extraData,
+		testMeta.feeRateNanosPerKb,
+		testMeta.mempool,
+		[]*DeSoOutput{},
+	)
+	if err != nil {
+		return 0, err
+	}
+	require.Equal(testMeta.t, totalInputMake, changeAmountMake+feesMake)
+
+	// Sign the transaction now that its inputs are set up.
+	_signTxn(testMeta.t, txn, transactorPrivateKeyBase58Check)
+
+	// Connect the transaction.
+	utxoOps, totalInput, totalOutput, fees, err := testMeta.mempool.universalUtxoView.ConnectTransaction(
+		txn,
+		txn.Hash(),
+		getTxnSize(*txn),
+		testMeta.savedHeight,
+		true,
+		false,
+	)
+	if err != nil {
+		return 0, err
+	}
+	require.Equal(testMeta.t, totalInput, totalOutput+fees)
+	require.Equal(testMeta.t, totalInput, totalInputMake)
+	require.Equal(testMeta.t, OperationTypeUnjailValidator, utxoOps[len(utxoOps)-1].Type)
+	if flushToDB {
+		require.NoError(testMeta.t, testMeta.mempool.universalUtxoView.FlushToDb(uint64(testMeta.savedHeight)))
+	}
+	require.NoError(testMeta.t, testMeta.mempool.RegenerateReadOnlyView())
+
+	// Record the txn.
+	testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
+	testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+	testMeta.txns = append(testMeta.txns, txn)
+	return fees, nil
 }
 
 func _generateVotingPublicKeyAndSignature(t *testing.T, transactorPkBytes []byte, blockHeight uint64) (*bls.PublicKey, *bls.Signature) {

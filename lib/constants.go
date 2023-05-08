@@ -601,9 +601,15 @@ type DeSoParams struct {
 	// TODO: Move this to GlobalParamsEntry.
 	StakeLockupEpochDuration uint64
 
+	// ValidatorJailEpochDuration is the number of epochs that a validator must
+	// wait after being jailed before submitting an UnjailValidator txn.
+	// TODO: Move this to GlobalParamsEntry.
+	ValidatorJailEpochDuration uint64
+
 	// When registering, a validator must include a VotingSignatureBlockHeight within CurrentBlockHeight
 	// to CurrentBlockHeight + ValidatorVotingSignatureBlockHeightWindow blocks. This is to prevent
 	// validator registration replay attacks.
+	// TODO: Move this to GlobalParamsEntry.
 	ValidatorVotingSignatureBlockHeightWindow uint64
 
 	ForkHeights ForkHeights
@@ -981,6 +987,9 @@ var DeSoMainnetParams = DeSoParams{
 	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
 	StakeLockupEpochDuration: uint64(3),
 
+	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
+	ValidatorJailEpochDuration: uint64(3),
+
 	// When registering, a validator must include a VotingSignatureBlockHeight within CurrentBlockHeight
 	// to CurrentBlockHeight + ValidatorVotingSignatureBlockHeightWindow blocks. This is to prevent
 	// validator registration replay attacks.
@@ -1216,6 +1225,9 @@ var DeSoTestnetParams = DeSoParams{
 
 	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
 	StakeLockupEpochDuration: uint64(3),
+
+	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
+	ValidatorJailEpochDuration: uint64(3),
 
 	// When registering, a validator must include a VotingSignatureBlockHeight within CurrentBlockHeight
 	// to CurrentBlockHeight + ValidatorVotingSignatureBlockHeightWindow blocks. This is to prevent
