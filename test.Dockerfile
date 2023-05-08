@@ -17,14 +17,15 @@ RUN go mod download
 COPY scripts/install-relic.sh .
 RUN ./install-relic.sh
 
-COPY desohash desohash
+COPY bls       bls
 COPY cmd       cmd
+COPY desohash  desohash
 COPY lib       lib
-COPY test_data test_data
 COPY migrate   migrate
+COPY test_data test_data
 COPY main.go   .
 
 # build backend
 RUN GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core main.go
 
-ENTRYPOINT ["go", "test", "-tags", "relic", "-v", "github.com/deso-protocol/core/lib"]
+ENTRYPOINT ["go", "test", "-tags", "relic", "-v", "./..."]
