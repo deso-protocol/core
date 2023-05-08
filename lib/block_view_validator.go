@@ -533,25 +533,13 @@ func (txindexMetadata *UnregisterAsValidatorTxindexMetadata) GetEncoderType() En
 //
 
 type UnjailValidatorTxindexMetadata struct {
-	ValidatorPublicKeyBase58Check string
 }
 
 func (txindexMetadata *UnjailValidatorTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	var data []byte
-	data = append(data, EncodeByteArray([]byte(txindexMetadata.ValidatorPublicKeyBase58Check))...)
-	return data
+	return []byte{}
 }
 
 func (txindexMetadata *UnjailValidatorTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	var err error
-
-	// ValidatorPublicKeyBase58Check
-	validatorPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
-	if err != nil {
-		return errors.Wrapf(err, "UnjailValidatorTxindexMetadata.Decode: Problem reading ValidatorPublicKeyBase58Check: ")
-	}
-	txindexMetadata.ValidatorPublicKeyBase58Check = string(validatorPublicKeyBase58CheckBytes)
-
 	return nil
 }
 
@@ -889,7 +877,7 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 	}
 
 	// Validate txn metadata.
-	if err = utxoView.IsValidUnregisterAsValidatorMetadata(transactorPublicKey, metadata); err != nil {
+	if err = utxoView.IsValidUnregisterAsValidatorMetadata(transactorPublicKey); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateUnregisterAsValidatorTxn: invalid txn metadata: ",
 		)
@@ -965,7 +953,7 @@ func (bc *Blockchain) CreateUnjailValidatorTxn(
 	}
 
 	// Validate txn metadata.
-	if err = utxoView.IsValidUnjailValidatorMetadata(transactorPublicKey, metadata); err != nil {
+	if err = utxoView.IsValidUnjailValidatorMetadata(transactorPublicKey); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateUnjailValidatorTxn: invalid txn metadata: ",
 		)
@@ -1240,11 +1228,8 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 		// public key so there is no need to verify anything further.
 	}
 
-	// Grab the txn metadata.
-	txMeta := txn.TxnMeta.(*UnregisterAsValidatorMetadata)
-
-	// Validate the txn metadata.
-	if err = bav.IsValidUnregisterAsValidatorMetadata(txn.PublicKey, txMeta); err != nil {
+	// Validate the transactor.
+	if err = bav.IsValidUnregisterAsValidatorMetadata(txn.PublicKey); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: ")
 	}
 
@@ -1497,11 +1482,8 @@ func (bav *UtxoView) _connectUnjailValidator(
 		// public key so there is no need to verify anything further.
 	}
 
-	// Grab the txn metadata.
-	txMeta := txn.TxnMeta.(*UnjailValidatorMetadata)
-
-	// Validate the txn metadata.
-	if err = bav.IsValidUnjailValidatorMetadata(txn.PublicKey, txMeta); err != nil {
+	// Validate the transactor.
+	if err = bav.IsValidUnjailValidatorMetadata(txn.PublicKey); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnjailValidator: ")
 	}
 
@@ -1670,7 +1652,7 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(transactorPublicKey []by
 	return nil
 }
 
-func (bav *UtxoView) IsValidUnregisterAsValidatorMetadata(transactorPublicKey []byte, metadata *UnregisterAsValidatorMetadata) error {
+func (bav *UtxoView) IsValidUnregisterAsValidatorMetadata(transactorPublicKey []byte) error {
 	// Validate ValidatorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
@@ -1689,7 +1671,7 @@ func (bav *UtxoView) IsValidUnregisterAsValidatorMetadata(transactorPublicKey []
 	return nil
 }
 
-func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte, metadata *UnjailValidatorMetadata) error {
+func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte) error {
 	// Validate ValidatorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
@@ -2038,11 +2020,6 @@ func (bav *UtxoView) CreateUnjailValidatorTxindexMetadata(
 	// Cast ValidatorPublicKey to ValidatorPublicKeyBase58Check.
 	validatorPublicKeyBase58Check := PkToString(txn.PublicKey, bav.Params)
 
-	// Construct TxindexMetadata.
-	txindexMetadata := &UnjailValidatorTxindexMetadata{
-		ValidatorPublicKeyBase58Check: validatorPublicKeyBase58Check,
-	}
-
 	// Construct AffectedPublicKeys.
 	affectedPublicKeys := []*AffectedPublicKey{
 		{
@@ -2051,7 +2028,7 @@ func (bav *UtxoView) CreateUnjailValidatorTxindexMetadata(
 		},
 	}
 
-	return txindexMetadata, affectedPublicKeys
+	return &UnjailValidatorTxindexMetadata{}, affectedPublicKeys
 }
 
 //
