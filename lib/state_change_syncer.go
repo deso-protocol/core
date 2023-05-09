@@ -354,7 +354,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 		encoderType = encoder.GetEncoderType()
 	} else {
 		// If the keyBytes is not an encoder, then we decode the entry from the key value.
-		keyEncoder, err := DecodeStateKey(stateChangeEntry.KeyBytes)
+		keyEncoder, err := DecodeStateKey(stateChangeEntry.KeyBytes, stateChangeEntry.EncoderBytes)
 		if err != nil {
 			glog.Fatalf("Server._handleDbTransaction: Error decoding state key: %v", err)
 		}

@@ -112,9 +112,10 @@ const (
 	EncoderTypeTransactorNonceEntry              EncoderType = 39
 	EncoderTypeStateChangeEntry                  EncoderType = 40
 	EncoderTypeFollowEntry                       EncoderType = 41
+	EncoderTypeDeSoBalanceEntry                  EncoderType = 42
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 42
+	EncoderTypeEndBlockView EncoderType = 43
 )
 
 // Txindex encoder types.
@@ -242,6 +243,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &FollowEntry{}
 	case EncoderTypeStateChangeEntry:
 		return &StateChangeEntry{}
+	case EncoderTypeDeSoBalanceEntry:
+		return &DeSoBalanceEntry{}
 	}
 
 	// Txindex encoder types
@@ -3540,6 +3543,50 @@ func (fe *FollowEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (fe *FollowEntry) GetEncoderType() EncoderType {
 	return EncoderTypeFollowEntry
+}
+
+// DeSoBalanceEntry stores the user's pkid and their corresponding DeSo balance nanos.
+type DeSoBalanceEntry struct {
+	PKID         *PKID
+	BalanceNanos uint64
+
+	// Whether or not this entry is deleted in the view.
+	isDeleted bool
+}
+
+func (desoBalanceEntry *DeSoBalanceEntry) IsDeleted() bool {
+	return desoBalanceEntry.isDeleted
+}
+
+func (desoBalanceEntry *DeSoBalanceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, desoBalanceEntry.PKID, skipMetadata...)...)
+	data = append(data, UintToBuf(desoBalanceEntry.BalanceNanos)...)
+	return data
+}
+
+func (desoBalanceEntry *DeSoBalanceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	balancePKID := &PKID{}
+	if exist, err := DecodeFromBytes(balancePKID, rr); exist && err == nil {
+		desoBalanceEntry.PKID = balancePKID
+	} else if err != nil {
+		return errors.Wrapf(err, "DesoBalanceEntry.Decode: Problem reading PKID")
+	}
+
+	balanceNanos, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DesoBalanceEntry.Decode: Problem reading BalanceNanos")
+	}
+	desoBalanceEntry.BalanceNanos = balanceNanos
+	return nil
+}
+
+func (desoBalanceEntry *DeSoBalanceEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (desoBalanceEntry *DeSoBalanceEntry) GetEncoderType() EncoderType {
+	return EncoderTypeDeSoBalanceEntry
 }
 
 type DiamondKey struct {

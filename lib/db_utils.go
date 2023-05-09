@@ -185,7 +185,7 @@ type DBPrefixes struct {
 	// If no mapping exists for a particular public key, then the PKID is simply
 	// the public key itself.
 	// <prefix_id, [33]byte> -> <PKID [33]byte>
-	PrefixPublicKeyToPKID []byte `prefix_id:"[36]" is_state:"true"`
+	PrefixPublicKeyToPKID []byte `prefix_id:"[36]" is_state:"true" core_state:"true"`
 	// <prefix_id, PKID [33]byte> -> <PublicKey [33]byte>
 	PrefixPKIDToPublicKey []byte `prefix_id:"[37]" is_state:"true"`
 	// Prefix for storing mempool transactions in badger. These stored transactions are
@@ -224,7 +224,7 @@ type DBPrefixes struct {
 	PrefixBidderPKIDPostHashSerialNumberToBidNanos []byte `prefix_id:"[51]" is_state:"true"`
 
 	// <prefix_id, PublicKey [33]byte> -> uint64
-	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"`
+	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true" core_state:"true"`
 
 	// Block reward prefix:
 	//   - This index is needed because block rewards take N blocks to mature, which means we need
@@ -483,7 +483,7 @@ type DBPrefixes struct {
 
 // DecodeStateKey decodes a state key into a DeSoEncoder type. This is useful for encoders which don't have a stored
 // value in badger (meaning all info is stored via the key).
-func DecodeStateKey(key []byte) (DeSoEncoder, error) {
+func DecodeStateKey(key []byte, value []byte) (DeSoEncoder, error) {
 	prefix := key[:1]
 	if bytes.Equal(prefix, Prefixes.PrefixLikerPubKeyToLikedPostHash) {
 		if likeEntry, err := _decodeDbKeyForLikerPubKeyToLikedPostHashMapping(key); err != nil {
@@ -502,6 +502,12 @@ func DecodeStateKey(key []byte) (DeSoEncoder, error) {
 			return nil, err
 		} else {
 			return bidEntry, nil
+		}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPublicKeyToDeSoBalanceNanos) {
+		if balanceEntry, err := _decodeDbKeyForPublicKeyToDeSoBalanceNanosMapping(key, value); err != nil {
+			return nil, err
+		} else {
+			return balanceEntry, nil
 		}
 	}
 	return nil, fmt.Errorf("DecodeStateKey: No encoder found for prefix: %v", prefix)
@@ -1461,6 +1467,20 @@ func _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey []byte) []byte {
 	prefixCopy := append([]byte{}, Prefixes.PrefixPublicKeyToDeSoBalanceNanos...)
 	key := append(prefixCopy, publicKey...)
 	return key
+}
+
+func _decodeDbKeyForPublicKeyToDeSoBalanceNanosMapping(key []byte, value []byte) (*DeSoBalanceEntry, error) {
+	if len(key) != btcec.PubKeyBytesLenCompressed+1 {
+		return nil, fmt.Errorf("_decodeDbKeyForPublicKeyToDeSoBalanceNanosMapping: key is incorrect length: %v", len(key))
+	}
+	if len(value) != 8 {
+		return nil, fmt.Errorf("_decodeDbKeyForPublicKeyToDeSoBalanceNanosMapping: value is incorrect length: %v", len(value))
+	}
+	balanceEntry := &DeSoBalanceEntry{}
+	balanceEntry.PKID = &PKID{}
+	copy(balanceEntry.PKID[:], key[1:])
+	balanceEntry.BalanceNanos = DecodeUint64(value)
+	return balanceEntry, nil
 }
 
 func DbGetPrefixForPublicKeyToDesoBalanceNanos() []byte {
