@@ -9,6 +9,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
+	"io"
 	"math"
 	"net/url"
 	"sort"
@@ -114,23 +115,9 @@ func (validatorEntry *ValidatorEntry) RawEncodeWithoutMetadata(blockHeight uint6
 		data = append(data, EncodeByteArray(domain)...)
 	}
 
-	// VotingPublicKey
-	var votingPublicKeyBytes []byte
-	if validatorEntry.VotingPublicKey != nil {
-		votingPublicKeyBytes = validatorEntry.VotingPublicKey.ToBytes()
-	}
-	votingPublicKeyBytes = EncodeByteArray(votingPublicKeyBytes)
-
-	// VotingPublicKeySignature
-	var votingPublicKeySignatureBytes []byte
-	if validatorEntry.VotingPublicKeySignature != nil {
-		votingPublicKeySignatureBytes = validatorEntry.VotingPublicKeySignature.ToBytes()
-	}
-	votingPublicKeySignatureBytes = EncodeByteArray(votingPublicKeySignatureBytes)
-
 	data = append(data, BoolToByte(validatorEntry.DisableDelegatedStake))
-	data = append(data, votingPublicKeyBytes...)
-	data = append(data, votingPublicKeySignatureBytes...)
+	data = append(data, EncodeBLSPublicKey(validatorEntry.VotingPublicKey)...)
+	data = append(data, EncodeBLSSignature(validatorEntry.VotingPublicKeySignature)...)
 	data = append(data, UintToBuf(validatorEntry.VotingSignatureBlockHeight)...)
 	data = append(data, EncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	data = append(data, UintToBuf(validatorEntry.RegisteredAtBlockHeight)...)
@@ -179,21 +166,13 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 	}
 
 	// VotingPublicKey
-	var votingPublicKeyBytes []byte
-	if votingPublicKeyBytes, err = DecodeByteArray(rr); err != nil {
-		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading VotingPublicKey: ")
-	}
-	validatorEntry.VotingPublicKey, err = (&bls.PublicKey{}).FromBytes(votingPublicKeyBytes)
+	validatorEntry.VotingPublicKey, err = DecodeBLSPublicKey(rr)
 	if err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading VotingPublicKey: ")
 	}
 
 	// VotingPublicKeySignature
-	var votingPublicKeySignatureBytes []byte
-	if votingPublicKeySignatureBytes, err = DecodeByteArray(rr); err != nil {
-		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading VotingPublicKeySignature: ")
-	}
-	validatorEntry.VotingPublicKeySignature, err = (&bls.Signature{}).FromBytes(votingPublicKeySignatureBytes)
+	validatorEntry.VotingPublicKeySignature, err = DecodeBLSSignature(rr)
 	if err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading VotingPublicKeySignature: ")
 	}
@@ -270,23 +249,9 @@ func (txnData *RegisterAsValidatorMetadata) ToBytes(preSignature bool) ([]byte, 
 		data = append(data, EncodeByteArray(domain)...)
 	}
 
-	// VotingPublicKey
-	var votingPublicKeyBytes []byte
-	if txnData.VotingPublicKey != nil {
-		votingPublicKeyBytes = txnData.VotingPublicKey.ToBytes()
-	}
-	votingPublicKeyBytes = EncodeByteArray(votingPublicKeyBytes)
-
-	// VotingPublicKeySignature
-	var votingPublicKeySignatureBytes []byte
-	if txnData.VotingPublicKeySignature != nil {
-		votingPublicKeySignatureBytes = txnData.VotingPublicKeySignature.ToBytes()
-	}
-	votingPublicKeySignatureBytes = EncodeByteArray(votingPublicKeySignatureBytes)
-
 	data = append(data, BoolToByte(txnData.DisableDelegatedStake))
-	data = append(data, votingPublicKeyBytes...)
-	data = append(data, votingPublicKeySignatureBytes...)
+	data = append(data, EncodeBLSPublicKey(txnData.VotingPublicKey)...)
+	data = append(data, EncodeBLSSignature(txnData.VotingPublicKeySignature)...)
 	data = append(data, UintToBuf(txnData.VotingSignatureBlockHeight)...)
 	return data, nil
 }
@@ -314,21 +279,13 @@ func (txnData *RegisterAsValidatorMetadata) FromBytes(data []byte) error {
 	}
 
 	// VotingPublicKey
-	var votingPublicKeyBytes []byte
-	if votingPublicKeyBytes, err = DecodeByteArray(rr); err != nil {
-		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading VotingPublicKey: ")
-	}
-	txnData.VotingPublicKey, err = (&bls.PublicKey{}).FromBytes(votingPublicKeyBytes)
+	txnData.VotingPublicKey, err = DecodeBLSPublicKey(rr)
 	if err != nil {
 		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading VotingPublicKey: ")
 	}
 
 	// VotingPublicKeySignature
-	var votingPublicKeySignatureBytes []byte
-	if votingPublicKeySignatureBytes, err = DecodeByteArray(rr); err != nil {
-		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading VotingPublicKeySignature: ")
-	}
-	txnData.VotingPublicKeySignature, err = (&bls.Signature{}).FromBytes(votingPublicKeySignatureBytes)
+	txnData.VotingPublicKeySignature, err = DecodeBLSSignature(rr)
 	if err != nil {
 		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading VotingPublicKeySignature: ")
 	}
@@ -2106,6 +2063,38 @@ func (bav *UtxoView) CreateUnjailValidatorTxindexMetadata(
 //
 // BLS UTILS
 //
+
+func EncodeBLSPublicKey(blsPublicKey *bls.PublicKey) []byte {
+	var blsPublicKeyBytes []byte
+	if blsPublicKey != nil {
+		blsPublicKeyBytes = blsPublicKey.ToBytes()
+	}
+	return EncodeByteArray(blsPublicKeyBytes)
+}
+
+func DecodeBLSPublicKey(rr io.Reader) (*bls.PublicKey, error) {
+	publicKeyBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return nil, err
+	}
+	return (&bls.PublicKey{}).FromBytes(publicKeyBytes)
+}
+
+func EncodeBLSSignature(blsSignature *bls.Signature) []byte {
+	var blsSignatureBytes []byte
+	if blsSignature != nil {
+		blsSignatureBytes = blsSignature.ToBytes()
+	}
+	return EncodeByteArray(blsSignatureBytes)
+}
+
+func DecodeBLSSignature(rr io.Reader) (*bls.Signature, error) {
+	signatureBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return nil, err
+	}
+	return (&bls.Signature{}).FromBytes(signatureBytes)
+}
 
 func CreateValidatorVotingSignaturePayload(
 	transactorPublicKeyBytes []byte,
