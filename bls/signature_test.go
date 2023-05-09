@@ -124,10 +124,16 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	// Test bls.PublicKey.Copy().
 	blsPublicKey1Copy := blsPublicKey1.Copy()
 	require.True(t, blsPublicKey1.Eq(blsPublicKey1Copy))
+	blsPublicKey1Copy.flowPublicKey = _generateRandomBLSPrivateKey(t).PublicKey().flowPublicKey
+	require.False(t, blsPublicKey1.Eq(blsPublicKey1Copy))
 
 	// Test bls.Signature.Copy().
 	blsSignature1Copy := blsSignature1.Copy()
 	require.True(t, blsSignature1.Eq(blsSignature1Copy))
+	blsRandomSignature, err := _generateRandomBLSPrivateKey(t).Sign(randomPayload1)
+	require.NoError(t, err)
+	blsSignature1Copy.flowSignature = blsRandomSignature.flowSignature
+	require.False(t, blsSignature1.Eq(blsSignature1Copy))
 
 	// Test nil bls.PrivateKey edge cases.
 	// Sign()
