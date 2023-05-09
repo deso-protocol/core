@@ -993,7 +993,7 @@ var DeSoMainnetParams = DeSoParams{
 	// When registering, a validator must include a VotingSignatureBlockHeight within CurrentBlockHeight
 	// to CurrentBlockHeight + ValidatorVotingSignatureBlockHeightWindow blocks. This is to prevent
 	// validator registration replay attacks.
-	ValidatorVotingSignatureBlockHeightWindow: uint64(60),
+	ValidatorVotingSignatureBlockHeightWindow: uint64(300),
 
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
@@ -1232,7 +1232,7 @@ var DeSoTestnetParams = DeSoParams{
 	// When registering, a validator must include a VotingSignatureBlockHeight within CurrentBlockHeight
 	// to CurrentBlockHeight + ValidatorVotingSignatureBlockHeightWindow blocks. This is to prevent
 	// validator registration replay attacks.
-	ValidatorVotingSignatureBlockHeightWindow: uint64(60),
+	ValidatorVotingSignatureBlockHeightWindow: uint64(300),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
