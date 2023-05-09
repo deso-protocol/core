@@ -46,6 +46,8 @@ type StateChangeEntry struct {
 	EncoderType EncoderType
 	// The flush this entry belongs to.
 	FlushId uuid.UUID
+	// The height of the block this entry belongs to.
+	BlockHeight uint64
 }
 
 // RawEncodeWithoutMetadata constructs the bytes to represent a StateChangeEntry.
@@ -98,6 +100,9 @@ func (stateChangeEntry *StateChangeEntry) RawEncodeWithoutMetadata(blockHeight u
 
 	data = append(data, flushIdBytes...)
 
+	// Encode the block height.
+	data = append(data, UintToBuf(blockHeight)...)
+
 	return data
 }
 
@@ -144,6 +149,14 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding flush UUID")
 	}
 	stateChangeEntry.FlushId, err = uuid.FromBytes(flushIdBytes)
+
+	// Decode the block height.
+	entryBlockHeight, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding block height")
+	}
+	stateChangeEntry.BlockHeight = entryBlockHeight
+
 	return nil
 }
 
