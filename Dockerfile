@@ -10,8 +10,9 @@ COPY go.sum .
 
 RUN go mod download
 
-COPY desohash desohash
+COPY bls       bls
 COPY cmd       cmd
+COPY desohash  desohash
 COPY lib       lib
 COPY migrate   migrate
 COPY test_data test_data
