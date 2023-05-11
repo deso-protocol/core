@@ -1473,13 +1473,18 @@ func _decodeDbKeyForPublicKeyToDeSoBalanceNanosMapping(key []byte, value []byte)
 	if len(key) != btcec.PubKeyBytesLenCompressed+1 {
 		return nil, fmt.Errorf("_decodeDbKeyForPublicKeyToDeSoBalanceNanosMapping: key is incorrect length: %v", len(key))
 	}
-	if len(value) != 8 {
+	var balanceNanos uint64
+	if len(value) == 0 {
+		balanceNanos = 0
+	} else if len(value) != 8 {
 		return nil, fmt.Errorf("_decodeDbKeyForPublicKeyToDeSoBalanceNanosMapping: value is incorrect length: %v", len(value))
+	} else {
+		balanceNanos = DecodeUint64(value)
 	}
 	balanceEntry := &DeSoBalanceEntry{}
 	balanceEntry.PKID = &PKID{}
 	copy(balanceEntry.PKID[:], key[1:])
-	balanceEntry.BalanceNanos = DecodeUint64(value)
+	balanceEntry.BalanceNanos = balanceNanos
 	return balanceEntry, nil
 }
 
@@ -5099,8 +5104,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -9175,7 +9180,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -9302,7 +9307,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}

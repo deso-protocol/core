@@ -360,6 +360,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 		}
 		encoderType = keyEncoder.GetEncoderType()
 		stateChangeEntry.Encoder = keyEncoder
+		stateChangeEntry.EncoderBytes = nil
 	}
 
 	// Set the encoder type.
