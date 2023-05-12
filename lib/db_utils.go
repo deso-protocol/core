@@ -506,7 +506,11 @@ type DBPrefixes struct {
 	// Prefix -> EpochEntry
 	PrefixCurrentEpoch []byte `prefix_id:"[83]" is_state:"true"`
 
-	// NEXT_TAG: 84
+	// PrefixCurrentRandomSeedHash: Retrieve the current RandomSeedHash.
+	// Prefix -> RandomSeedHash.
+	PrefixCurrentRandomSeedHash []byte `prefix_id:"[84]" is_state:"true"`
+
+	// NEXT_TAG: 85
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -726,6 +730,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentEpoch) {
 		// prefix_id:"[83]"
 		return true, &EpochEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentRandomSeedHash) {
+		// prefix_id:"[84]"
+		return false, nil
 	}
 
 	return true, nil
