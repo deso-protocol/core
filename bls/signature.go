@@ -58,8 +58,8 @@ func NewPrivateKey() (*PrivateKey, error) {
 }
 
 func (privateKey *PrivateKey) Sign(payloadBytes []byte) (*Signature, error) {
-	if privateKey.flowPrivateKey == nil {
-		return nil, errors.New("bls.PrivateKey is nil")
+	if privateKey == nil || privateKey.flowPrivateKey == nil {
+		return nil, errors.New("PrivateKey is nil")
 	}
 	flowSignature, err := privateKey.flowPrivateKey.Sign(payloadBytes, HashingAlgorithm)
 	if err != nil {
@@ -69,21 +69,21 @@ func (privateKey *PrivateKey) Sign(payloadBytes []byte) (*Signature, error) {
 }
 
 func (privateKey *PrivateKey) PublicKey() *PublicKey {
-	if privateKey.flowPrivateKey == nil {
+	if privateKey == nil || privateKey.flowPrivateKey == nil {
 		return nil
 	}
 	return &PublicKey{flowPublicKey: privateKey.flowPrivateKey.PublicKey()}
 }
 
 func (privateKey *PrivateKey) ToString() string {
-	if privateKey.flowPrivateKey == nil {
+	if privateKey == nil || privateKey.flowPrivateKey == nil {
 		return ""
 	}
 	return privateKey.flowPrivateKey.String()
 }
 
 func (privateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, error) {
-	if privateKeyString == "" {
+	if privateKey == nil || privateKeyString == "" {
 		return nil, nil
 	}
 	// Chop off leading 0x, if exists. Otherwise, does nothing.
@@ -99,7 +99,7 @@ func (privateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, 
 }
 
 func (privateKey *PrivateKey) Eq(other *PrivateKey) bool {
-	if privateKey.flowPrivateKey == nil || other == nil {
+	if privateKey == nil || privateKey.flowPrivateKey == nil || other == nil {
 		return false
 	}
 	return privateKey.flowPrivateKey.Equals(other.flowPrivateKey)
@@ -114,7 +114,7 @@ type PublicKey struct {
 }
 
 func (publicKey *PublicKey) Verify(signature *Signature, input []byte) (bool, error) {
-	if publicKey.flowPublicKey == nil {
+	if publicKey == nil || publicKey.flowPublicKey == nil {
 		return false, errors.New("bls.PublicKey is nil")
 	}
 	return publicKey.flowPublicKey.Verify(signature.flowSignature, input, HashingAlgorithm)
@@ -122,14 +122,14 @@ func (publicKey *PublicKey) Verify(signature *Signature, input []byte) (bool, er
 
 func (publicKey *PublicKey) ToBytes() []byte {
 	var publicKeyBytes []byte
-	if publicKey.flowPublicKey != nil {
+	if publicKey != nil && publicKey.flowPublicKey != nil {
 		publicKeyBytes = publicKey.flowPublicKey.Encode()
 	}
 	return publicKeyBytes
 }
 
 func (publicKey *PublicKey) FromBytes(publicKeyBytes []byte) (*PublicKey, error) {
-	if len(publicKeyBytes) == 0 {
+	if publicKey == nil || len(publicKeyBytes) == 0 {
 		return nil, nil
 	}
 	var err error
@@ -138,14 +138,14 @@ func (publicKey *PublicKey) FromBytes(publicKeyBytes []byte) (*PublicKey, error)
 }
 
 func (publicKey *PublicKey) ToString() string {
-	if publicKey.flowPublicKey == nil {
+	if publicKey == nil || publicKey.flowPublicKey == nil {
 		return ""
 	}
 	return publicKey.flowPublicKey.String()
 }
 
 func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, error) {
-	if publicKeyString == "" {
+	if publicKey == nil || publicKeyString == "" {
 		return nil, nil
 	}
 	// Chop off leading 0x, if exists. Otherwise, does nothing.
@@ -161,13 +161,16 @@ func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, erro
 }
 
 func (publicKey *PublicKey) Eq(other *PublicKey) bool {
-	if publicKey.flowPublicKey == nil || other == nil {
+	if publicKey == nil || publicKey.flowPublicKey == nil || other == nil {
 		return false
 	}
 	return publicKey.flowPublicKey.Equals(other.flowPublicKey)
 }
 
 func (publicKey *PublicKey) Copy() *PublicKey {
+	if publicKey == nil {
+		return nil
+	}
 	return &PublicKey{
 		flowPublicKey: publicKey.flowPublicKey,
 	}
@@ -183,14 +186,14 @@ type Signature struct {
 
 func (signature *Signature) ToBytes() []byte {
 	var signatureBytes []byte
-	if signature.flowSignature != nil {
+	if signature != nil && signature.flowSignature != nil {
 		signatureBytes = signature.flowSignature.Bytes()
 	}
 	return signatureBytes
 }
 
 func (signature *Signature) FromBytes(signatureBytes []byte) (*Signature, error) {
-	if len(signatureBytes) == 0 {
+	if signature == nil || len(signatureBytes) == 0 {
 		return nil, nil
 	}
 	signature.flowSignature = signatureBytes
@@ -198,14 +201,14 @@ func (signature *Signature) FromBytes(signatureBytes []byte) (*Signature, error)
 }
 
 func (signature *Signature) ToString() string {
-	if signature.flowSignature == nil {
+	if signature == nil || signature.flowSignature == nil {
 		return ""
 	}
 	return signature.flowSignature.String()
 }
 
 func (signature *Signature) FromString(signatureString string) (*Signature, error) {
-	if signatureString == "" {
+	if signature == nil || signatureString == "" {
 		return nil, nil
 	}
 	// Chop off leading 0x, if exists. Otherwise, does nothing.
@@ -221,13 +224,16 @@ func (signature *Signature) FromString(signatureString string) (*Signature, erro
 }
 
 func (signature *Signature) Eq(other *Signature) bool {
-	if signature.flowSignature == nil || other == nil {
+	if signature == nil || signature.flowSignature == nil || other == nil {
 		return false
 	}
 	return bytes.Equal(signature.ToBytes(), other.ToBytes())
 }
 
 func (signature *Signature) Copy() *Signature {
+	if signature == nil {
+		return nil
+	}
 	if signature.flowSignature == nil {
 		return &Signature{}
 	}

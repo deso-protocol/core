@@ -139,7 +139,7 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	// Sign()
 	_, err = (&PrivateKey{}).Sign(randomPayload1)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "bls.PrivateKey is nil")
+	require.Contains(t, err.Error(), "PrivateKey is nil")
 	// PublicKey()
 	require.Nil(t, (&PrivateKey{}).PublicKey())
 	// ToString()
