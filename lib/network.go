@@ -6401,11 +6401,11 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 	}
 
 	for stakeLimitKey, stakeLimitDESONanos := range tsl.StakeLimitMap {
-		copyTSL.StakeLimitMap[stakeLimitKey] = stakeLimitDESONanos
+		copyTSL.StakeLimitMap[stakeLimitKey] = stakeLimitDESONanos.Clone()
 	}
 
 	for stakeLimitKey, unstakeLimitDESONanos := range tsl.UnstakeLimitMap {
-		copyTSL.UnstakeLimitMap[stakeLimitKey] = unstakeLimitDESONanos
+		copyTSL.UnstakeLimitMap[stakeLimitKey] = unstakeLimitDESONanos.Clone()
 	}
 
 	for stakeLimitKey, unlockStakeOperationCount := range tsl.UnlockStakeLimitMap {

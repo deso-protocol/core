@@ -131,18 +131,14 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 	var err error
 
 	// ValidatorID
-	validatorID := &BlockHash{}
-	if exist, err := DecodeFromBytes(validatorID, rr); exist && err == nil {
-		validatorEntry.ValidatorID = validatorID
-	} else if err != nil {
+	validatorEntry.ValidatorID, err = DecodeDeSoEncoder(&BlockHash{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading ValidatorID: ")
 	}
 
 	// ValidatorPKID
-	validatorPKID := &PKID{}
-	if exist, err := DecodeFromBytes(validatorPKID, rr); exist && err == nil {
-		validatorEntry.ValidatorPKID = validatorPKID
-	} else if err != nil {
+	validatorEntry.ValidatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading ValidatorPKID: ")
 	}
 
