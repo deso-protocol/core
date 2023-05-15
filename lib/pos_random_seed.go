@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"github.com/deso-protocol/core/bls"
 	"github.com/dgraph-io/badger/v3"
@@ -9,14 +10,16 @@ import (
 	"io"
 )
 
-const GenesisRandomSeedHash = "0x00" // TODO: what should we put here?
-
 type RandomSeedHash [32]byte
 
 func (randomSeedHash *RandomSeedHash) Copy() *RandomSeedHash {
-	var randomSeedHashCopy *RandomSeedHash
+	randomSeedHashCopy := &RandomSeedHash{}
 	copy(randomSeedHashCopy[:], randomSeedHash[:])
 	return randomSeedHashCopy
+}
+
+func (randomSeedHash *RandomSeedHash) Eq(other *RandomSeedHash) bool {
+	return bytes.Equal(randomSeedHash.ToBytes(), other.ToBytes())
 }
 
 func (randomSeedHash *RandomSeedHash) ToBytes() []byte {
@@ -55,36 +58,29 @@ func (bav *UtxoView) GenerateRandomSeedSignature(signerPrivateKey *bls.PrivateKe
 	return randomSeedSignature, nil
 }
 
-func (bav *UtxoView) ProcessNewRandomSeedSignature(
+func (bav *UtxoView) VerifyRandomSeedSignature(
 	signerPublicKey *bls.PublicKey,
 	randomSeedSignature *bls.Signature,
 ) (*RandomSeedHash, error) {
 	// Verify the RandomSeedSignature.
-	isVerified, err := bav.VerifyRandomSeedSignature(signerPublicKey, randomSeedSignature)
+	currentRandomSeedHash, err := bav.GetCurrentRandomSeedHash()
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.ProcessNewRandomSeedSignature: problem verifying RandomSeedSignature: ")
+		return nil, errors.Wrapf(err, "UtxoView.VerifyRandomSeedSignature: problem retrieving CurrentRandomSeedHash: ")
+	}
+	isVerified, err := signerPublicKey.Verify(randomSeedSignature, currentRandomSeedHash[:])
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.VerifyRandomSeedSignature: problem verifying RandomSeedSignature: ")
 	}
 	if !isVerified {
-		return nil, errors.New("UtxoView.ProcessNewRandomSeedSignature: invalid RandomSeedSignature provided")
+		return nil, errors.New("UtxoView.VerifyRandomSeedSignature: invalid RandomSeedSignature provided")
 	}
 	// Convert the RandomSeedSignature to a RandomSeedHash.
 	randomSeedSHA256 := sha256.Sum256(randomSeedSignature.ToBytes())
 	randomSeedHash, err := (&RandomSeedHash{}).FromBytes(randomSeedSHA256[:])
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.ProcessNewRandomSeedSignature: problem hashing RandomSeedSignature: ")
+		return nil, errors.Wrapf(err, "UtxoView.VerifyRandomSeedSignature: problem hashing RandomSeedSignature: ")
 	}
-	// Store the RandomSeedHash in the UtxoView.
-	bav._setCurrentRandomSeedHash(randomSeedHash)
-	// Return the RandomSeedHash.
 	return randomSeedHash, nil
-}
-
-func (bav *UtxoView) VerifyRandomSeedSignature(signerPublicKey *bls.PublicKey, randomSeedSignature *bls.Signature) (bool, error) {
-	currentRandomSeedHash, err := bav.GetCurrentRandomSeedHash()
-	if err != nil {
-		return false, errors.Wrapf(err, "UtxoView.VerifyRandomSeedSignature: problem retrieving CurrentRandomSeedHash: ")
-	}
-	return signerPublicKey.Verify(randomSeedSignature, currentRandomSeedHash[:])
 }
 
 func (bav *UtxoView) GetCurrentRandomSeedHash() (*RandomSeedHash, error) {
@@ -102,7 +98,9 @@ func (bav *UtxoView) GetCurrentRandomSeedHash() (*RandomSeedHash, error) {
 		bav.CurrentRandomSeedHash = currentRandomSeedHash.Copy()
 		return currentRandomSeedHash, nil
 	}
-	// If no RandomSeedHash is found in the UtxoView or db, return the GenesisRandomSeedHash.
+	// If no RandomSeedHash is found in the UtxoView or db, return the
+	// GenesisRandomSeedHash which is 32 bytes of zeroes.
+	// TODO: should we change this? should we store it as a constant hex and parse into a byte slice?
 	var genesisRandomSeedHashBytes [32]byte
 	return (&RandomSeedHash{}).FromBytes(genesisRandomSeedHashBytes[:])
 }
