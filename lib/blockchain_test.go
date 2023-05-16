@@ -222,7 +222,6 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 	var err error
 
 	db, dbDir := GetTestBadgerDb()
-	fmt.Println("dbDir: ", dbDir)
 	if usePostgres {
 		if len(os.Getenv("POSTGRES_URI")) > 0 {
 			glog.Infof("NewLowDifficultyBlockchainWithParamsAndDb: Using Postgres DB from provided POSTGRES_URI")
