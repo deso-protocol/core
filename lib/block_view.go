@@ -204,6 +204,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
+	if bav == nil {
+		return nil, fmt.Errorf("CopyUtxoView: bav is nil")
+	}
 	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot)
 	if err != nil {
 		return nil, err
