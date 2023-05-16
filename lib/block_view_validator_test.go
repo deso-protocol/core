@@ -163,21 +163,6 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorValidatorMissingVotingPublicKey)
 	}
 	{
-		// Got rid of VotingSignatureBlockHeight but going to leave this test here.
-		// Originally, it was testing to ensure that VotingSignatureBlockHeight not being included
-		// resulted in an error.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
-		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
-		}
-		_, err = _submitRegisterAsValidatorTxn(
-			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
-		)
-		require.NoError(t, err)
-	}
-	{
 		// RuleErrorValidatorMissingVotingPublicKeySignature
 		votingPublicKey, _ := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
 		registerMetadata = &RegisterAsValidatorMetadata{

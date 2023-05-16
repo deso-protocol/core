@@ -16,27 +16,69 @@ import (
 	"github.com/pkg/errors"
 )
 
-// FIXME: Add a big comment here explaining how validator Register/Unregister/Unjail
-// all fit together at a high level.
+// RegisterAsValidator: Registers a new validator. This transaction can be called multiple times
+// if a validator needs to update any of their registration info such as their domains. Once
+// a validator is registered, stake can be assigned to that validator, the validator is eligible
+// to participate in consensus by voting, and may be selected as leader to propose new blocks.
+//
+// UnregisterAsValidator: Unregisters an existing validator. This unstakes all stake assigned to this
+// validator and removes this validator from the set of eligible validators. A user would have to
+// re-register by submitting a subsequent RegisterAsValidator transaction to be re-included.
+//
+// UnjailValidator: Unjails a jailed validator if sufficient time (epochs) have elapsed since the
+// validator was first jailed. A validator is jailed if they fail to participate in consensus by
+// either voting or proposing blocks for too long. A jailed validator is ineligible to receive
+// any block rewards and ineligible to elected leader.
 
 //
 // TYPES: ValidatorEntry
 //
 
 type ValidatorEntry struct {
+	// The ValidatorPKID is the primary key for a ValidatorEntry. It is the PKID
+	// for the transactor who registered the validator. A user's PKID can ever
+	// only be association with one validator.
 	ValidatorPKID *PKID
+	// Domains is a slice of web domains where the validator can be reached.
 	// Note: if someone is updating their ValidatorEntry, they need to include
 	// all domains. The Domains field is not appended to. It is overwritten.
-	Domains                  [][]byte
-	DisableDelegatedStake    bool
-	VotingPublicKey          *bls.PublicKey
+	Domains [][]byte
+	// DisableDelegatedStake is a boolean that indicates whether the validator
+	// disallows delegated / 3rd party stake being assigned to themselves. If
+	// a validator sets DisableDelegatedStake to true, then they can still
+	// stake with themselves, but all other users will receive an error if they
+	// try to stake with this validator.
+	DisableDelegatedStake bool
+	// The VotingPublicKey is a BLS PublicKey that is used in consensus messages.
+	// A validator signs consensus messages with their VotingPrivateKey and then
+	// other validators can reliably prove the message came from this validator
+	// by verifying against their VotingPublicKey.
+	VotingPublicKey *bls.PublicKey
+	// The VotingPublicKeySiganture is the signature of the SHA256(VotingPublicKey).
+	// This proves that this validator is indeed the proper owner of the corresponding
+	// VotingPrivateKey.
 	VotingPublicKeySignature *bls.Signature
-	TotalStakeAmountNanos    *uint256.Int
-	RegisteredAtBlockHeight  uint64
-	LastActiveAtEpochNumber  uint64
-	JailedAtEpochNumber      uint64
-	ExtraData                map[string][]byte
-	isDeleted                bool
+	// TotalStakeAmountNanos is a cached value of this validator's total stake, calculated
+	// by summing all the corresponding StakeEntries assigned to this validator. We cache
+	// the value here to avoid the O(N) operation of recomputing when determining a
+	// validator's total stake. This way it is an O(1) operation instead.
+	TotalStakeAmountNanos *uint256.Int
+	// RegisteredAtBlockHeight is the BlockHeight at which this validator first registered.
+	// If a validator were to subsequently update their registration info, e.g. their Domains,
+	// The RegisteredAtBlockHeight would not change. This value is only used as a tie-breaker
+	// in the ValidatorByTotalStake index. If two validators have the exact same stake, to the
+	// nano, then the older validator will appear first.
+	RegisteredAtBlockHeight uint64
+	// LastActiveAtEpochNumber is the last epoch in which this validator either 1) participated in
+	// consensus by voting or proposing blocks, or 2) unjailed themselves. If a validator is
+	// inactive for too long, then they are jailed.
+	LastActiveAtEpochNumber uint64
+	// JailedAtEpochNumber tracks when a validator was first jailed. This helps to verify
+	// that enough time (epochs) have passed before the validator is able to unjail themselves.
+	JailedAtEpochNumber uint64
+
+	ExtraData map[string][]byte
+	isDeleted bool
 }
 
 func (validatorEntry *ValidatorEntry) Status() ValidatorStatus {
@@ -512,8 +554,6 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
 	key = append(key, EncodeUint8(uint8(validatorEntry.Status()))...)
-	// TotalStakeAmountNanos will never be nil here, but FixedWidthEncodeUint256
-	// is used because it provides a fixed-width encoding of uint256.Ints.
 	key = append(key, FixedWidthEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)       // Highest stake first
 	key = append(key, EncodeUint64(math.MaxUint64-validatorEntry.RegisteredAtBlockHeight)...) // Oldest first
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
@@ -569,22 +609,24 @@ func DBGetTopActiveValidatorsByStake(
 		validatorKeysToSkip.Add(string(DBKeyForValidatorByStake(validatorEntryToSkip)))
 	}
 
-	// Retrieve top N active ValidatorEntry PKIDs by stake.
+	// Retrieve top N active ValidatorEntry keys by stake.
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
 	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
-	_, validatorPKIDsBytes, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, limit, nil, true, validatorKeysToSkip,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem retrieving top validators: ")
 	}
 
-	// For each PKID, retrieve the ValidatorEntry by PKID.
-	for _, validatorPKIDBytes := range validatorPKIDsBytes {
+	// For each key found, parse the ValidatorPKID from the key,
+	// then retrieve the ValidatorEntry by the ValidatorPKID.
+	for _, keyFound := range keysFound {
+		// Parse the PKIDBytes from the key. The ValidatorPKID is the last component of the key.
+		validatorPKIDBytes := keyFound[len(keyFound)-PublicKeyLenCompressed:]
 		// Convert PKIDBytes to PKID.
 		validatorPKID := &PKID{}
-		exists, err := DecodeFromBytes(validatorPKID, bytes.NewReader(validatorPKIDBytes))
-		if !exists || err != nil {
+		if err = validatorPKID.FromBytes(bytes.NewReader(validatorPKIDBytes)); err != nil {
 			return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem reading ValidatorPKID: ")
 		}
 		// Retrieve ValidatorEntry by PKID.
@@ -650,9 +692,10 @@ func DBPutValidatorWithTxn(
 		)
 	}
 
-	// Set ValidatorEntry.PKID in PrefixValidatorByStake.
+	// Set ValidatorEntry key in PrefixValidatorByStake. The value should be nil.
+	// We parse the ValidatorPKID from the key for this index.
 	key = DBKeyForValidatorByStake(validatorEntry)
-	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry.ValidatorPKID)); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, nil); err != nil {
 		return errors.Wrapf(
 			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByStake",
 		)
@@ -2079,7 +2122,6 @@ const RuleErrorValidatorNotFound RuleError = "RuleErrorValidatorNotFound"
 const RuleErrorValidatorMissingVotingPublicKey RuleError = "RuleErrorValidatorMissingVotingPublicKey"
 const RuleErrorValidatorMissingVotingPublicKeySignature RuleError = "RuleErrorValidatorMissingVotingPublicKeySignature"
 const RuleErrorValidatorInvalidVotingPublicKeySignature RuleError = "RuleErrorValidatorInvalidVotingPublicKeySignature"
-const RuleErrorValidatorInvalidVotingSignatureBlockHeight RuleError = "RuleErrorValidatorInvalidVotingSignatureBlockHeight"
 const RuleErrorValidatorDisablingExistingDelegatedStakers RuleError = "RuleErrorValidatorDisablingExistingDelegatedStakers"
 const RuleErrorUnjailingNonjailedValidator RuleError = "RuleErrorUnjailingNonjailedValidator"
 const RuleErrorUnjailingValidatorTooEarly RuleError = "RuleErrorUnjailingValidatorTooEarly"

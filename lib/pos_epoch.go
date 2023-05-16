@@ -67,7 +67,7 @@ func (bav *UtxoView) GetCurrentEpochEntry() (*EpochEntry, error) {
 	// First, check the UtxoView.
 	epochEntry = bav.CurrentEpochEntry
 	if epochEntry != nil {
-		return epochEntry.Copy(), nil
+		return epochEntry, nil
 	}
 
 	// If not found, check the database.
@@ -77,7 +77,7 @@ func (bav *UtxoView) GetCurrentEpochEntry() (*EpochEntry, error) {
 	}
 	if epochEntry != nil {
 		// Cache in the UtxoView.
-		bav.CurrentEpochEntry = epochEntry.Copy()
+		bav.CurrentEpochEntry = epochEntry
 	}
 	return epochEntry, nil
 }

@@ -11,8 +11,22 @@ import (
 	"github.com/pkg/errors"
 )
 
-// FIXME: Add a big comment here explaining how Stake/Unstake/Unlock
-// all fit together at a high level.
+// Stake: Any user can assign stake to a registered validator who allows delegated stake.
+// When a user stakes with a validator, they lock up $DESO from their account balance
+// into a StakeEntry. As reward for staking, a user is eligible to receive a percentage
+// of the block rewards attributed to the validator. Any staked $DESO is unspendable
+// until the user unstakes and unlocks their stake. See below.
+//
+// Unstake: If a user wants to retrieve their funds from being staked with a validator,
+// they must submit an Unstake transaction. This deletes or updates their existing
+// StakeEntry and creates or updates a LockedStakeEntry. Unstaked stake is not immediately
+// withdrawalable and usable. It is locked for a period of time as determined by a consensus
+// parameter. This is to prevent byzantine users from trying to game block rewards or
+// leader schedules.
+//
+// UnlockStake: Once sufficient time has elapsed since unstaking their funds, a user can
+// submit an UnlockStake transaction to retrieve their funds. Any eligible funds are
+// unlocked and returned to the user's account balance.
 
 //
 // TYPES: StakeEntry
@@ -1458,7 +1472,7 @@ func (bav *UtxoView) _connectUnstake(
 	}
 	// 3. Delete the PrevLockedStakeEntry, if exists.
 	//
-	// Note that we don't technically need to do this since the flush will naturall delete
+	// Note that we don't technically need to do this since the flush will naturally delete
 	// the old value from the db before setting the new one, but we do it here for clarity.
 	if prevLockedStakeEntry != nil {
 		prevLockedStakeEntries = append(prevLockedStakeEntries, prevLockedStakeEntry)
