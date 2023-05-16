@@ -1,9 +1,9 @@
 package lib
 
 import (
-	"io/ioutil"
 	"log"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -69,7 +69,7 @@ func _GetTestBlockNode() *BlockNode {
 }
 
 func GetTestBadgerDb() (_db *badger.DB, _dir string) {
-	dir, err := ioutil.TempDir("", "badgerdb")
+	dir, err := os.MkdirTemp("", "badgerdb")
 	if err != nil {
 		log.Fatal(err)
 	}

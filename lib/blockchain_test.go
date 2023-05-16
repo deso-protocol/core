@@ -222,6 +222,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 	var err error
 
 	db, dbDir := GetTestBadgerDb()
+	fmt.Println("dbDir: ", dbDir)
 	if usePostgres {
 		if len(os.Getenv("POSTGRES_URI")) > 0 {
 			glog.Infof("NewLowDifficultyBlockchainWithParamsAndDb: Using Postgres DB from provided POSTGRES_URI")
@@ -381,6 +382,9 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 			balanceForUserNanos += utxoEntry.AmountNanos
 		}
 		// DO NOT REMOVE: This is used to test the similarity of UTXOs vs. the pubkey balance index.
+		if balanceForUserNanos != balanceNanos {
+			fmt.Printf("pkStr: %s, balanceForUserNanos: %v, balanceNanos: %v", pkStr, balanceForUserNanos, balanceNanos)
+		}
 		require.Equal(t, balanceForUserNanos, balanceNanos)
 	} else {
 		// After the BalanceModelBlockHeight, UTXOs are no longer stored so the UTXO balance
