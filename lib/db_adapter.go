@@ -559,6 +559,8 @@ func (adapter *DbAdapter) GetPaginatedMessageEntriesForGroupChatThread(groupChat
 
 // GetDeSoBalanceForPublicKey returns the balance of the given public key in nanos.
 func (adapter *DbAdapter) GetDeSoBalanceForPublicKey(publicKey []byte) (uint64, error) {
-	// Always use badger for DeSo Balances
+	if adapter.postgresDb != nil {
+		return adapter.postgresDb.GetBalance(NewPublicKey(publicKey)), nil
+	}
 	return DbGetDeSoBalanceNanosForPublicKey(adapter.badgerDb, adapter.snapshot, publicKey)
 }
