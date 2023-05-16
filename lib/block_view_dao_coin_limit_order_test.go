@@ -31,6 +31,11 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 	// Initialize test chain and miner.
 	require := require.New(t)
 	chain, params, db := NewLowDifficultyBlockchain(t)
+	defer func() {
+		if chain.postgres != nil {
+			require.NoError(ResetPostgres(chain.postgres))
+		}
+	}()
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
