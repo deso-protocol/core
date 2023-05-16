@@ -7,8 +7,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	flowCrypto "github.com/onflow/flow-go/crypto"
 	"strings"
+
+	flowCrypto "github.com/onflow/flow-go/crypto"
 )
 
 const SigningAlgorithm = flowCrypto.BLSBLS12381

@@ -3,19 +3,22 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"sort"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
-	"sort"
 )
+
+// FIXME: Add a big comment here explaining how Stake/Unstake/Unlock
+// all fit together at a high level.
 
 //
 // TYPES: StakeEntry
 //
 
 type StakeEntry struct {
-	StakeID          *BlockHash
 	StakerPKID       *PKID
 	ValidatorPKID    *PKID
 	StakeAmountNanos *uint256.Int
@@ -30,7 +33,6 @@ type StakeMapKey struct {
 
 func (stakeEntry *StakeEntry) Copy() *StakeEntry {
 	return &StakeEntry{
-		StakeID:          stakeEntry.StakeID.NewBlockHash(),
 		StakerPKID:       stakeEntry.StakerPKID.NewPKID(),
 		ValidatorPKID:    stakeEntry.ValidatorPKID.NewPKID(),
 		StakeAmountNanos: stakeEntry.StakeAmountNanos.Clone(),
@@ -40,7 +42,7 @@ func (stakeEntry *StakeEntry) Copy() *StakeEntry {
 }
 
 func (stakeEntry *StakeEntry) Eq(other *StakeEntry) bool {
-	return stakeEntry.StakeID.IsEqual(other.StakeID)
+	return stakeEntry.ToMapKey() == other.ToMapKey()
 }
 
 func (stakeEntry *StakeEntry) ToMapKey() StakeMapKey {
@@ -52,22 +54,15 @@ func (stakeEntry *StakeEntry) ToMapKey() StakeMapKey {
 
 func (stakeEntry *StakeEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
-	data = append(data, EncodeToBytes(blockHeight, stakeEntry.StakeID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, stakeEntry.StakerPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, stakeEntry.ValidatorPKID, skipMetadata...)...)
-	data = append(data, EncodeUint256(stakeEntry.StakeAmountNanos)...)
+	data = append(data, VariableEncodeUint256(stakeEntry.StakeAmountNanos)...)
 	data = append(data, EncodeExtraData(stakeEntry.ExtraData)...)
 	return data
 }
 
 func (stakeEntry *StakeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
-
-	// StakeID
-	stakeEntry.StakeID, err = DecodeDeSoEncoder(&BlockHash{}, rr)
-	if err != nil {
-		return errors.Wrapf(err, "StakeEntry.Decode: Problem reading StakeID: ")
-	}
 
 	// StakerPKID
 	stakeEntry.StakerPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
@@ -82,7 +77,7 @@ func (stakeEntry *StakeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 	}
 
 	// StakeAmountNanos
-	stakeEntry.StakeAmountNanos, err = DecodeUint256(rr)
+	stakeEntry.StakeAmountNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "StakeEntry.Decode: Problem reading StakeAmountNanos: ")
 	}
@@ -109,7 +104,6 @@ func (stakeEntry *StakeEntry) GetEncoderType() EncoderType {
 //
 
 type LockedStakeEntry struct {
-	LockedStakeID       *BlockHash
 	StakerPKID          *PKID
 	ValidatorPKID       *PKID
 	LockedAmountNanos   *uint256.Int
@@ -126,7 +120,6 @@ type LockedStakeMapKey struct {
 
 func (lockedStakeEntry *LockedStakeEntry) Copy() *LockedStakeEntry {
 	return &LockedStakeEntry{
-		LockedStakeID:       lockedStakeEntry.LockedStakeID.NewBlockHash(),
 		StakerPKID:          lockedStakeEntry.StakerPKID.NewPKID(),
 		ValidatorPKID:       lockedStakeEntry.ValidatorPKID.NewPKID(),
 		LockedAmountNanos:   lockedStakeEntry.LockedAmountNanos.Clone(),
@@ -137,7 +130,7 @@ func (lockedStakeEntry *LockedStakeEntry) Copy() *LockedStakeEntry {
 }
 
 func (lockedStakeEntry *LockedStakeEntry) Eq(other *LockedStakeEntry) bool {
-	return lockedStakeEntry.LockedStakeID.IsEqual(other.LockedStakeID)
+	return lockedStakeEntry.ToMapKey() == other.ToMapKey()
 }
 
 func (lockedStakeEntry *LockedStakeEntry) ToMapKey() LockedStakeMapKey {
@@ -150,10 +143,9 @@ func (lockedStakeEntry *LockedStakeEntry) ToMapKey() LockedStakeMapKey {
 
 func (lockedStakeEntry *LockedStakeEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
-	data = append(data, EncodeToBytes(blockHeight, lockedStakeEntry.LockedStakeID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, lockedStakeEntry.StakerPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, lockedStakeEntry.ValidatorPKID, skipMetadata...)...)
-	data = append(data, EncodeUint256(lockedStakeEntry.LockedAmountNanos)...)
+	data = append(data, VariableEncodeUint256(lockedStakeEntry.LockedAmountNanos)...)
 	data = append(data, UintToBuf(lockedStakeEntry.LockedAtEpochNumber)...)
 	data = append(data, EncodeExtraData(lockedStakeEntry.ExtraData)...)
 	return data
@@ -161,12 +153,6 @@ func (lockedStakeEntry *LockedStakeEntry) RawEncodeWithoutMetadata(blockHeight u
 
 func (lockedStakeEntry *LockedStakeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
-
-	// LockedStakeID
-	lockedStakeEntry.LockedStakeID, err = DecodeDeSoEncoder(&BlockHash{}, rr)
-	if err != nil {
-		return errors.Wrapf(err, "LockedStakeEntry.Decode: Problem reading LockedStakeID: ")
-	}
 
 	// StakerPKID
 	lockedStakeEntry.StakerPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
@@ -181,7 +167,7 @@ func (lockedStakeEntry *LockedStakeEntry) RawDecodeWithoutMetadata(blockHeight u
 	}
 
 	// LockedAmountNanos
-	lockedStakeEntry.LockedAmountNanos, err = DecodeUint256(rr)
+	lockedStakeEntry.LockedAmountNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "LockedStakeEntry.Decode: Problem reading LockedAmountNanos: ")
 	}
@@ -225,7 +211,7 @@ func (txnData *StakeMetadata) GetTxnType() TxnType {
 func (txnData *StakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.ValidatorPublicKey.ToBytes())...)
-	data = append(data, EncodeUint256(txnData.StakeAmountNanos)...)
+	data = append(data, VariableEncodeUint256(txnData.StakeAmountNanos)...)
 	return data, nil
 }
 
@@ -240,7 +226,7 @@ func (txnData *StakeMetadata) FromBytes(data []byte) error {
 	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
 
 	// StakeAmountNanos
-	txnData.StakeAmountNanos, err = DecodeUint256(rr)
+	txnData.StakeAmountNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "StakeMetadata.FromBytes: Problem reading StakeAmountNanos: ")
 	}
@@ -268,7 +254,7 @@ func (txnData *UnstakeMetadata) GetTxnType() TxnType {
 func (txnData *UnstakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.ValidatorPublicKey.ToBytes())...)
-	data = append(data, EncodeUint256(txnData.UnstakeAmountNanos)...)
+	data = append(data, VariableEncodeUint256(txnData.UnstakeAmountNanos)...)
 	return data, nil
 }
 
@@ -283,7 +269,7 @@ func (txnData *UnstakeMetadata) FromBytes(data []byte) error {
 	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
 
 	// UnstakeAmountNanos
-	txnData.UnstakeAmountNanos, err = DecodeUint256(rr)
+	txnData.UnstakeAmountNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UnstakeMetadata.FromBytes: Problem reading UnstakeAmountNanos: ")
 	}
@@ -360,7 +346,7 @@ func (txindexMetadata *StakeTxindexMetadata) RawEncodeWithoutMetadata(blockHeigh
 	var data []byte
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.StakerPublicKeyBase58Check))...)
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.ValidatorPublicKeyBase58Check))...)
-	data = append(data, EncodeUint256(txindexMetadata.StakeAmountNanos)...)
+	data = append(data, VariableEncodeUint256(txindexMetadata.StakeAmountNanos)...)
 	return data
 }
 
@@ -382,7 +368,7 @@ func (txindexMetadata *StakeTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 	txindexMetadata.ValidatorPublicKeyBase58Check = string(validatorPublicKeyBase58CheckBytes)
 
 	// StakeAmountNanos
-	txindexMetadata.StakeAmountNanos, err = DecodeUint256(rr)
+	txindexMetadata.StakeAmountNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "StakeTxindexMetadata.Decode: Problem reading StakeAmountNanos: ")
 	}
@@ -412,7 +398,7 @@ func (txindexMetadata *UnstakeTxindexMetadata) RawEncodeWithoutMetadata(blockHei
 	var data []byte
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.StakerPublicKeyBase58Check))...)
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.ValidatorPublicKeyBase58Check))...)
-	data = append(data, EncodeUint256(txindexMetadata.UnstakeAmountNanos)...)
+	data = append(data, VariableEncodeUint256(txindexMetadata.UnstakeAmountNanos)...)
 	return data
 }
 
@@ -434,7 +420,7 @@ func (txindexMetadata *UnstakeTxindexMetadata) RawDecodeWithoutMetadata(blockHei
 	txindexMetadata.ValidatorPublicKeyBase58Check = string(validatorPublicKeyBase58CheckBytes)
 
 	// UnstakeAmountNanos
-	txindexMetadata.UnstakeAmountNanos, err = DecodeUint256(rr)
+	txindexMetadata.UnstakeAmountNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UnstakeTxindexMetadata.Decode: Problem reading UnstakeAmountNanos: ")
 	}
@@ -468,7 +454,7 @@ func (txindexMetadata *UnlockStakeTxindexMetadata) RawEncodeWithoutMetadata(bloc
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.ValidatorPublicKeyBase58Check))...)
 	data = append(data, UintToBuf(txindexMetadata.StartEpochNumber)...)
 	data = append(data, UintToBuf(txindexMetadata.EndEpochNumber)...)
-	data = append(data, EncodeUint256(txindexMetadata.TotalUnlockedAmountNanos)...)
+	data = append(data, VariableEncodeUint256(txindexMetadata.TotalUnlockedAmountNanos)...)
 	return data
 }
 
@@ -502,7 +488,7 @@ func (txindexMetadata *UnlockStakeTxindexMetadata) RawDecodeWithoutMetadata(bloc
 	}
 
 	// TotalUnlockedAmountNanos
-	txindexMetadata.TotalUnlockedAmountNanos, err = DecodeUint256(rr)
+	txindexMetadata.TotalUnlockedAmountNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "UnlockStakeTxindexMetadata.Decode: Problem reading TotalUnlockedAmountNanos: ")
 	}
@@ -522,26 +508,26 @@ func (txindexMetadata *UnlockStakeTxindexMetadata) GetEncoderType() EncoderType 
 // DB UTILS
 //
 
-func DBKeyForStakeByValidatorByStaker(stakeEntry *StakeEntry) []byte {
+func DBKeyForStakeByValidatorAndStaker(stakeEntry *StakeEntry) []byte {
 	data := DBKeyForStakeByValidator(stakeEntry)
 	data = append(data, stakeEntry.StakerPKID.ToBytes()...)
 	return data
 }
 
 func DBKeyForStakeByValidator(stakeEntry *StakeEntry) []byte {
-	data := append([]byte{}, Prefixes.PrefixStakeByValidatorByStaker...)
+	data := append([]byte{}, Prefixes.PrefixStakeByValidatorAndStaker...)
 	data = append(data, stakeEntry.ValidatorPKID.ToBytes()...)
 	return data
 }
 
-func DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry *LockedStakeEntry) []byte {
-	data := DBPrefixKeyForLockedStakeByValidatorByStaker(lockedStakeEntry)
+func DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(lockedStakeEntry *LockedStakeEntry) []byte {
+	data := DBPrefixKeyForLockedStakeByValidatorAndStaker(lockedStakeEntry)
 	data = append(data, UintToBuf(lockedStakeEntry.LockedAtEpochNumber)...)
 	return data
 }
 
-func DBPrefixKeyForLockedStakeByValidatorByStaker(lockedStakeEntry *LockedStakeEntry) []byte {
-	data := append([]byte{}, Prefixes.PrefixLockedStakeByValidatorByStakerByLockedAt...)
+func DBPrefixKeyForLockedStakeByValidatorAndStaker(lockedStakeEntry *LockedStakeEntry) []byte {
+	data := append([]byte{}, Prefixes.PrefixLockedStakeByValidatorAndStakerAndLockedAt...)
 	data = append(data, lockedStakeEntry.ValidatorPKID.ToBytes()...)
 	data = append(data, lockedStakeEntry.StakerPKID.ToBytes()...)
 	return data
@@ -569,7 +555,7 @@ func DBGetStakeEntryWithTxn(
 	stakerPKID *PKID,
 ) (*StakeEntry, error) {
 	// Retrieve StakeEntry from db.
-	key := DBKeyForStakeByValidatorByStaker(&StakeEntry{ValidatorPKID: validatorPKID, StakerPKID: stakerPKID})
+	key := DBKeyForStakeByValidatorAndStaker(&StakeEntry{ValidatorPKID: validatorPKID, StakerPKID: stakerPKID})
 	stakeEntryBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		// We don't want to error if the key isn't found. Instead, return nil.
@@ -637,7 +623,7 @@ func DBGetLockedStakeEntryWithTxn(
 	lockedAtEpochNumber uint64,
 ) (*LockedStakeEntry, error) {
 	// Retrieve LockedStakeEntry from db.
-	key := DBKeyForLockedStakeByValidatorByStakerByLockedAt(&LockedStakeEntry{
+	key := DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(&LockedStakeEntry{
 		ValidatorPKID:       validatorPKID,
 		StakerPKID:          stakerPKID,
 		LockedAtEpochNumber: lockedAtEpochNumber,
@@ -695,14 +681,14 @@ func DBGetLockedStakeEntriesInRangeWithTxn(
 	// StartEpochNumber <= LockedAtEpochNumber <= EndEpochNumber.
 
 	// Start at the StartEpochNumber.
-	startKey := DBKeyForLockedStakeByValidatorByStakerByLockedAt(&LockedStakeEntry{
+	startKey := DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(&LockedStakeEntry{
 		ValidatorPKID:       validatorPKID,
 		StakerPKID:          stakerPKID,
 		LockedAtEpochNumber: startEpochNumber,
 	})
 
 	// Consider only LockedStakeEntries for this ValidatorPKID, StakerPKID.
-	prefixKey := DBPrefixKeyForLockedStakeByValidatorByStaker(&LockedStakeEntry{
+	prefixKey := DBPrefixKeyForLockedStakeByValidatorAndStaker(&LockedStakeEntry{
 		ValidatorPKID: validatorPKID,
 		StakerPKID:    stakerPKID,
 	})
@@ -752,7 +738,7 @@ func DBPutStakeEntryWithTxn(
 	}
 
 	// Set StakeEntry in PrefixStakeByValidatorByStaker.
-	key := DBKeyForStakeByValidatorByStaker(stakeEntry)
+	key := DBKeyForStakeByValidatorAndStaker(stakeEntry)
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, stakeEntry)); err != nil {
 		return errors.Wrapf(
 			err, "DBPutStakeEntryWithTxn: problem storing StakeEntry in index PrefixStakeByValidatorByStaker: ",
@@ -773,7 +759,7 @@ func DBPutLockedStakeEntryWithTxn(
 	}
 
 	// Set LockedStakeEntry in PrefixLockedStakeByValidatorByStakerByLockedAt.
-	key := DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry)
+	key := DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(lockedStakeEntry)
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, lockedStakeEntry)); err != nil {
 		return errors.Wrapf(
 			err, "DBPutLockedStakeEntryWithTxn: problem storing LockedStakeEntry in index PrefixLockedStakeByValidatorByStakerByLockedAt: ",
@@ -794,7 +780,7 @@ func DBDeleteStakeEntryWithTxn(
 	}
 
 	// Delete StakeEntry from PrefixStakeByValidatorByStaker.
-	key := DBKeyForStakeByValidatorByStaker(stakeEntry)
+	key := DBKeyForStakeByValidatorAndStaker(stakeEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteStakeEntryWithTxn: problem deleting StakeEntry from index PrefixStakeByValidatorByStaker: ",
@@ -815,7 +801,7 @@ func DBDeleteLockedStakeEntryWithTxn(
 	}
 
 	// Delete LockedStakeEntry from PrefixLockedStakeByValidatorByStakerByLockedAt.
-	key := DBKeyForLockedStakeByValidatorByStakerByLockedAt(lockedStakeEntry)
+	key := DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(lockedStakeEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteLockedStakeEntryWithTxn: problem deleting StakeEntry from index PrefixLockedStakeByValidatorByStakerByLockedAt: ",
@@ -1140,15 +1126,12 @@ func (bav *UtxoView) _connectStake(
 		return 0, 0, nil, errors.Wrapf(err, "_connectStake: ")
 	}
 	// Delete the existing StakeEntry, if exists.
+	//
+	// Note that we don't really need to do this, as setting a new StakeEntry will naturally cause
+	// the old entry to be deleted in the database. However, we do this here for clarity.
 	if prevStakeEntry != nil {
 		prevStakeEntries = append(prevStakeEntries, prevStakeEntry)
 		bav._deleteStakeEntryMappings(prevStakeEntry)
-	}
-
-	// Set StakeID only if this is a new StakeEntry.
-	stakeID := txHash
-	if prevStakeEntry != nil {
-		stakeID = prevStakeEntry.StakeID
 	}
 
 	// Calculate StakeAmountNanos.
@@ -1168,7 +1151,6 @@ func (bav *UtxoView) _connectStake(
 
 	// Construct new StakeEntry from metadata.
 	currentStakeEntry := &StakeEntry{
-		StakeID:          stakeID,
 		StakerPKID:       transactorPKIDEntry.PKID,
 		ValidatorPKID:    prevValidatorEntry.ValidatorPKID,
 		StakeAmountNanos: stakeAmountNanos,
@@ -1181,6 +1163,9 @@ func (bav *UtxoView) _connectStake(
 	// 1. Copy the existing ValidatorEntry.
 	currentValidatorEntry := prevValidatorEntry.Copy()
 	// 2. Delete the existing ValidatorEntry.
+	//
+	// Note that we don't really need to do this, as setting a new ValidatorEntry will naturally cause
+	// the old entry to be deleted in the database. However, we do this here for clarity.
 	bav._deleteValidatorEntryMappings(prevValidatorEntry)
 	// 3. Update the new ValidatorEntry's TotalStakeAmountNanos.
 	currentValidatorEntry.TotalStakeAmountNanos, err = SafeUint256().Add(
@@ -1369,7 +1354,7 @@ func (bav *UtxoView) _connectUnstake(
 		return 0, 0, nil, errors.Wrapf(RuleErrorInvalidValidatorPKID, "_connectUnstake: ")
 	}
 
-	// Retrieve PrevStakeEntry. This will be restored if we disconnect the txn.
+	// Retrieve prevStakeEntry. This will be restored if we disconnect the txn.
 	prevStakeEntry, err := bav.GetStakeEntry(prevValidatorEntry.ValidatorPKID, transactorPKIDEntry.PKID)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
@@ -1388,15 +1373,15 @@ func (bav *UtxoView) _connectUnstake(
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error subtracting UnstakeAmountNanos from StakeAmountNanos: ")
 	}
-	// 2. Create a CurrentStakeEntry, if updated StakeAmountNanos > 0.
+	// 2. Create a currentStakeEntry, if updated StakeAmountNanos > 0.
 	var currentStakeEntry *StakeEntry
 	if stakeAmountNanos.Cmp(uint256.NewInt()) > 0 {
 		currentStakeEntry = prevStakeEntry.Copy()
 		currentStakeEntry.StakeAmountNanos = stakeAmountNanos.Clone()
 	}
-	// 3. Delete the PrevStakeEntry.
+	// 3. Delete the prevStakeEntry.
 	bav._deleteStakeEntryMappings(prevStakeEntry)
-	// 4. Set the CurrentStakeEntry, if exists. The CurrentStakeEntry will not exist
+	// 4. Set the currentStakeEntry, if exists. The currentStakeEntry will not exist
 	//    if the transactor has unstaked all stake assigned to this validator.
 	if currentStakeEntry != nil {
 		bav._setStakeEntryMappings(currentStakeEntry)
@@ -1406,6 +1391,10 @@ func (bav *UtxoView) _connectUnstake(
 	// 1. Copy the existing ValidatorEntry.
 	currentValidatorEntry := prevValidatorEntry.Copy()
 	// 2. Delete the existing ValidatorEntry.
+	//
+	// Note that we don't technically need to delete the ValidatorEntry here since
+	// the old ValidatorEntry will automatically be deleted in favor of the new one,
+	// but we do this here for clarity.
 	bav._deleteValidatorEntryMappings(prevValidatorEntry)
 	// 3. Update the new ValidatorEntry's TotalStakeAmountNanos.
 	currentValidatorEntry.TotalStakeAmountNanos, err = SafeUint256().Sub(
@@ -1460,7 +1449,6 @@ func (bav *UtxoView) _connectUnstake(
 	} else {
 		// Create a new LockedStakeEntry.
 		currentLockedStakeEntry = &LockedStakeEntry{
-			LockedStakeID:       txn.Hash(),
 			StakerPKID:          transactorPKIDEntry.PKID,
 			ValidatorPKID:       prevValidatorEntry.ValidatorPKID,
 			LockedAmountNanos:   txMeta.UnstakeAmountNanos,
@@ -1469,6 +1457,9 @@ func (bav *UtxoView) _connectUnstake(
 		}
 	}
 	// 3. Delete the PrevLockedStakeEntry, if exists.
+	//
+	// Note that we don't technically need to do this since the flush will naturall delete
+	// the old value from the db before setting the new one, but we do it here for clarity.
 	if prevLockedStakeEntry != nil {
 		prevLockedStakeEntries = append(prevLockedStakeEntries, prevLockedStakeEntry)
 		bav._deleteLockedStakeEntryMappings(prevLockedStakeEntry)
@@ -2406,6 +2397,8 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 		delete(derivedKeyEntry.TransactionSpendingLimitTracker.StakeLimitMap, stakeLimitKey)
 		return derivedKeyEntry, nil
 	}
+	// If we get here, it means that we did not find a valid spendingLimit with enough stake
+	// to cover the transaction's required stake amount.
 
 	// Error if the spending limit was found but the staking limit was exceeded.
 	if isSpendingLimitExceeded {
@@ -2416,6 +2409,8 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 	return derivedKeyEntry, errors.Wrapf(RuleErrorStakeTransactionSpendingLimitNotFound, "UtxoView._checkStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 }
 
+// TODO: This function is highly-redundant with the previous function. Probably makes sense
+// to consolidate in the future.
 func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
 	derivedKeyEntry DerivedKeyEntry,
 	transactorPublicKeyBytes []byte,

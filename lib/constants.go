@@ -3,7 +3,6 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/pkg/errors"
 	"log"
 	"math"
 	"math/big"
@@ -13,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/holiman/uint256"
 
