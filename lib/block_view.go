@@ -204,9 +204,6 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
-	if bav == nil {
-		return nil, fmt.Errorf("CopyUtxoView: bav is nil")
-	}
 	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot)
 	if err != nil {
 		return nil, err
@@ -488,7 +485,10 @@ func NewUtxoView(
 	// not concern itself with the header chain (see comment on GetBestHash for more
 	// info on that).
 	if view.Postgres != nil {
-		view.TipHash = view.Postgres.GetChain(MAIN_CHAIN).TipHash
+		pgChain := view.Postgres.GetChain(MAIN_CHAIN)
+		if pgChain != nil {
+			view.TipHash = pgChain.TipHash
+		}
 	} else {
 		view.TipHash = DbGetBestHash(view.Handle, view.Snapshot, ChainTypeDeSoBlock /* don't get the header chain */)
 	}
