@@ -51,9 +51,6 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 
 	// Only flush to BadgerDB if Postgres is disabled
 	if bav.Postgres == nil {
-		if err := bav._flushUtxosToDbWithTxn(txn, blockHeight); err != nil {
-			return err
-		}
 		if err := bav._flushProfileEntriesToDbWithTxn(txn, blockHeight); err != nil {
 			return err
 		}
@@ -135,6 +132,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		return err
 	}
 	if err := bav._flushNonceEntriesToDbWithTxn(txn); err != nil {
+		return err
+	}
+	if err := bav._flushUtxosToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
 	if err := bav._flushDeSoBalancesToDbWithTxn(txn); err != nil {
