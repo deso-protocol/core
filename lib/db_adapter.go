@@ -2,7 +2,6 @@ package lib
 
 import (
 	"bytes"
-	"fmt"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -560,16 +559,5 @@ func (adapter *DbAdapter) GetPaginatedMessageEntriesForGroupChatThread(groupChat
 
 // GetDeSoBalanceForPublicKey returns the balance of the given public key in nanos.
 func (adapter *DbAdapter) GetDeSoBalanceForPublicKey(publicKey []byte) (uint64, error) {
-	dbRes, err := DbGetDeSoBalanceNanosForPublicKey(adapter.badgerDb, adapter.snapshot, publicKey)
-	if err != nil {
-		return 0, err
-	}
-	if adapter.postgresDb != nil {
-		pgRes := adapter.postgresDb.GetBalance(NewPublicKey(publicKey))
-		if pgRes != dbRes {
-			panic(fmt.Sprintf("PG AND BADGER MISMATCH: pubKey: %v, pgRes: %v, dbRes: %v", PkToString(publicKey, &DeSoTestnetParams), pgRes, dbRes))
-		}
-		return pgRes, nil
-	}
-	return dbRes, err
+	return DbGetDeSoBalanceNanosForPublicKey(adapter.badgerDb, adapter.snapshot, publicKey)
 }
