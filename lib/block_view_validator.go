@@ -63,12 +63,6 @@ type ValidatorEntry struct {
 	// the value here to avoid the O(N) operation of recomputing when determining a
 	// validator's total stake. This way it is an O(1) operation instead.
 	TotalStakeAmountNanos *uint256.Int
-	// RegisteredAtBlockHeight is the BlockHeight at which this validator first registered.
-	// If a validator were to subsequently update their registration info, e.g. their Domains,
-	// The RegisteredAtBlockHeight would not change. This value is only used as a tie-breaker
-	// in the ValidatorByTotalStake index. If two validators have the exact same stake, to the
-	// nano, then the older validator will appear first.
-	RegisteredAtBlockHeight uint64
 	// LastActiveAtEpochNumber is the last epoch in which this validator either 1) participated in
 	// consensus by voting or proposing blocks, or 2) unjailed themselves. If a validator is
 	// inactive for too long, then they are jailed.
@@ -119,7 +113,6 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 		VotingPublicKey:          validatorEntry.VotingPublicKey.Copy(),
 		VotingPublicKeySignature: validatorEntry.VotingPublicKeySignature.Copy(),
 		TotalStakeAmountNanos:    validatorEntry.TotalStakeAmountNanos.Clone(),
-		RegisteredAtBlockHeight:  validatorEntry.RegisteredAtBlockHeight,
 		LastActiveAtEpochNumber:  validatorEntry.LastActiveAtEpochNumber,
 		JailedAtEpochNumber:      validatorEntry.JailedAtEpochNumber,
 		ExtraData:                copyExtraData(validatorEntry.ExtraData),
@@ -141,7 +134,6 @@ func (validatorEntry *ValidatorEntry) RawEncodeWithoutMetadata(blockHeight uint6
 	data = append(data, EncodeBLSPublicKey(validatorEntry.VotingPublicKey)...)
 	data = append(data, EncodeBLSSignature(validatorEntry.VotingPublicKeySignature)...)
 	data = append(data, VariableEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
-	data = append(data, UintToBuf(validatorEntry.RegisteredAtBlockHeight)...)
 	data = append(data, UintToBuf(validatorEntry.LastActiveAtEpochNumber)...)
 	data = append(data, UintToBuf(validatorEntry.JailedAtEpochNumber)...)
 	data = append(data, EncodeExtraData(validatorEntry.ExtraData)...)
@@ -192,12 +184,6 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 	validatorEntry.TotalStakeAmountNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading TotalStakeAmountNanos: ")
-	}
-
-	// RegisteredAtBlockHeight
-	validatorEntry.RegisteredAtBlockHeight, err = ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading RegisteredAtBlockHeight: ")
 	}
 
 	// LastActiveAtEpochNumber
@@ -554,8 +540,7 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
 	key = append(key, EncodeUint8(uint8(validatorEntry.Status()))...)
-	key = append(key, FixedWidthEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)       // Highest stake first
-	key = append(key, EncodeUint64(math.MaxUint64-validatorEntry.RegisteredAtBlockHeight)...) // Oldest first
+	key = append(key, FixedWidthEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
 	return key
 }
@@ -1068,13 +1053,6 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		totalStakeAmountNanos = prevValidatorEntry.TotalStakeAmountNanos.Clone()
 	}
 
-	// Set RegisteredAtBlockHeight to CurrentBlockHeight if this is a new ValidatorEntry.
-	// Otherwise, retain the existing RegisteredAtBlockHeight.
-	registeredAtBlockHeight := uint64(blockHeight)
-	if prevValidatorEntry != nil {
-		registeredAtBlockHeight = prevValidatorEntry.RegisteredAtBlockHeight
-	}
-
 	// Set LastActiveAtEpochNumber to CurrentEpochNumber if this is a new ValidatorEntry.
 	// Otherwise, retain the existing LastActiveAtEpochNumber.
 	var lastActiveAtEpochNumber uint64
@@ -1114,7 +1092,6 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		VotingPublicKey:          txMeta.VotingPublicKey,
 		VotingPublicKeySignature: txMeta.VotingPublicKeySignature,
 		TotalStakeAmountNanos:    totalStakeAmountNanos,
-		RegisteredAtBlockHeight:  registeredAtBlockHeight,
 		LastActiveAtEpochNumber:  lastActiveAtEpochNumber,
 		JailedAtEpochNumber:      jailedAtEpochNumber,
 		ExtraData:                mergeExtraData(prevExtraData, txn.ExtraData),
