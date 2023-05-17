@@ -1346,14 +1346,18 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 	// Set the new GlobalStakeAmountNanos.
 	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
 
-	// Add a UTXO operation.
-	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+	// Create a UTXO operation.
+	utxoOpForTxn := &UtxoOperation{
 		Type:                       OperationTypeUnregisterAsValidator,
 		PrevValidatorEntry:         prevValidatorEntry,
 		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
 		PrevStakeEntries:           prevStakeEntries,
 		PrevLockedStakeEntries:     prevLockedStakeEntries,
-	})
+	}
+	if err = bav.SanityCheckUnregisterAsValidatorTxn(transactorPKIDEntry.PKID, utxoOpForTxn, totalUnstakedAmountNanos); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: ")
+	}
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOpForTxn)
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -1723,6 +1727,72 @@ func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte) 
 	return nil
 }
 
+func (bav *UtxoView) SanityCheckUnregisterAsValidatorTxn(
+	transactorPKID *PKID,
+	utxoOp *UtxoOperation,
+	amountNanos *uint256.Int,
+) error {
+	if utxoOp.Type != OperationTypeUnregisterAsValidator {
+		return fmt.Errorf("SanityCheckUnregisterAsValidatorTxn: called with %v", utxoOp.Type)
+	}
+
+	// Sanity check the deleted ValidatorEntry.
+	if utxoOp.PrevValidatorEntry == nil {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: nil PrevValidatorEntry provided")
+	}
+	if !utxoOp.PrevValidatorEntry.ValidatorPKID.Eq(transactorPKID) {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: ValidatorPKID doesn't match TransactorPKID")
+	}
+	if !utxoOp.PrevValidatorEntry.TotalStakeAmountNanos.Eq(amountNanos) {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: TotalStakeAmountNanos doesn't match")
+	}
+	currentValidatorEntry, err := bav.GetValidatorByPKID(utxoOp.PrevValidatorEntry.ValidatorPKID)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error retrieving ValidatorEntry: ")
+	}
+	if currentValidatorEntry != nil {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: ValidatorEntry was not deleted")
+	}
+
+	// Sanity check that there are no existing StakeEntries for the validator.
+	stakeEntries, err := bav.GetStakeEntriesForValidatorPKID(utxoOp.PrevValidatorEntry.ValidatorPKID)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error retrieving StakeEntries: ")
+	}
+	if len(stakeEntries) != 0 {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: StakeEntries for ValidatorEntry still exist")
+	}
+
+	// Sanity check the deleted StakeEntries.
+	totalUnstakedAmountNanos := uint256.NewInt()
+	for _, stakeEntry := range utxoOp.PrevStakeEntries {
+		totalUnstakedAmountNanos, err = SafeUint256().Add(totalUnstakedAmountNanos, stakeEntry.StakeAmountNanos)
+		if err != nil {
+			return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error calculating TotalUnstakedAmountNanos: ")
+		}
+	}
+	if !totalUnstakedAmountNanos.Eq(amountNanos) {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: TotalUnstakedAmountNanos doesn't match")
+	}
+
+	// Sanity check that the GlobalStakeAmountNanos was decreased by amountNanos.
+	if utxoOp.PrevGlobalStakeAmountNanos == nil {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: nil PrevGlobalStakeAmountNanos provided")
+	}
+	currentGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error retrieving GlobalStakeAmountNanos: ")
+	}
+	globalStakeAmountNanosDecrease, err := SafeUint256().Sub(utxoOp.PrevGlobalStakeAmountNanos, currentGlobalStakeAmountNanos)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error calculating GlobalStakeAmountNanos decrease: ")
+	}
+	if !globalStakeAmountNanosDecrease.Eq(amountNanos) {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: GlobalStakeAmountNanos decrease doesn't match")
+	}
+	return nil
+}
+
 func (bav *UtxoView) GetValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
 	// First check the UtxoView.
 	validatorEntry, exists := bav.ValidatorPKIDToValidatorEntry[*pkid]
@@ -1815,25 +1885,20 @@ func (bav *UtxoView) GetTopActiveValidatorsByStake(limit int) ([]*ValidatorEntry
 }
 
 func (bav *UtxoView) GetGlobalStakeAmountNanos() (*uint256.Int, error) {
-	var globalStakeAmountNanos *uint256.Int
-	var err error
 	// Read the GlobalStakeAmountNanos from the UtxoView.
 	if bav.GlobalStakeAmountNanos != nil {
-		globalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
+		return bav.GlobalStakeAmountNanos, nil
 	}
 	// If not set, read the GlobalStakeAmountNanos from the db.
-	// TODO: Confirm if the GlobalStakeAmountNanos.IsZero() that we should look in the db.
-	if globalStakeAmountNanos == nil || globalStakeAmountNanos.IsZero() {
-		globalStakeAmountNanos, err = DBGetGlobalStakeAmountNanos(bav.Handle, bav.Snapshot)
-		if err != nil {
-			return nil, errors.Wrapf(err, "UtxoView.GetGlobalStakeAmountNanos: ")
-		}
-		if globalStakeAmountNanos == nil {
-			globalStakeAmountNanos = uint256.NewInt()
-		}
-		// Cache the GlobaleStakeAmountNanos from the db in the UtxoView.
-		bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
+	globalStakeAmountNanos, err := DBGetGlobalStakeAmountNanos(bav.Handle, bav.Snapshot)
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GetGlobalStakeAmountNanos: ")
 	}
+	if globalStakeAmountNanos == nil {
+		globalStakeAmountNanos = uint256.NewInt()
+	}
+	// Cache the GlobalStakeAmountNanos from the db in the UtxoView.
+	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
 	return globalStakeAmountNanos, nil
 }
 
