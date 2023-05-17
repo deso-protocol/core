@@ -1493,14 +1493,18 @@ func (bav *UtxoView) _connectUnstake(
 	// 4. Set the CurrentLockedStakeEntry.
 	bav._setLockedStakeEntryMappings(currentLockedStakeEntry)
 
-	// Add a UTXO operation
-	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+	// Create a UTXO operation.
+	utxoOpForTxn := &UtxoOperation{
 		Type:                       OperationTypeUnstake,
 		PrevValidatorEntry:         prevValidatorEntry,
 		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
 		PrevStakeEntries:           prevStakeEntries,
 		PrevLockedStakeEntries:     prevLockedStakeEntries,
-	})
+	}
+	if err = bav.SanityCheckUnstakeTxn(transactorPKIDEntry.PKID, utxoOpForTxn, txMeta.UnstakeAmountNanos); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
+	}
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOpForTxn)
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -2029,6 +2033,97 @@ func (bav *UtxoView) SanityCheckStakeTxn(
 }
 
 func (bav *UtxoView) SanityCheckUnstakeTxn(transactorPKID *PKID, utxoOp *UtxoOperation, amountNanos *uint256.Int) error {
+	if utxoOp.Type != OperationTypeUnstake {
+		return fmt.Errorf("SanityCheckUnstakeTxn: called with %v", utxoOp.Type)
+	}
+
+	// Validate ValidatorEntry.TotalStakeAmountNanos decrease.
+	if utxoOp.PrevValidatorEntry == nil {
+		return errors.New("SanityCheckUnstakeTxn: nil PrevValidatorEntry provided")
+	}
+	currentValidatorEntry, err := bav.GetValidatorByPKID(utxoOp.PrevValidatorEntry.ValidatorPKID)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error retrieving ValidatorEntry: ")
+	}
+	if currentValidatorEntry == nil {
+		return errors.New("SanityCheckUnstakeTxn: no CurrentValidatorEntry found")
+	}
+	validatorEntryTotalStakeAmountNanosDecrease, err := SafeUint256().Sub(
+		utxoOp.PrevValidatorEntry.TotalStakeAmountNanos, currentValidatorEntry.TotalStakeAmountNanos,
+	)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error calculating TotalStakeAmountNanos decrease: ")
+	}
+	if !validatorEntryTotalStakeAmountNanosDecrease.Eq(amountNanos) {
+		return errors.New("SanityCheckUnstakeTxn: TotalStakeAmountNanos decrease does not match")
+	}
+
+	// Validate PrevStakeEntry.StakeAmountNanos decrease.
+	if len(utxoOp.PrevStakeEntries) != 1 {
+		return errors.New("SanityCheckUnstakeTxn: PrevStakeEntries should have exactly one entry")
+	}
+	prevStakeEntry := utxoOp.PrevStakeEntries[0]
+	currentStakeEntry, err := bav.GetStakeEntry(prevStakeEntry.ValidatorPKID, transactorPKID)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error retrieving StakeEntry: ")
+	}
+	if currentStakeEntry == nil {
+		currentStakeEntry = &StakeEntry{StakeAmountNanos: uint256.NewInt()}
+	}
+	stakeEntryStakeAmounsNanosDecrease, err := SafeUint256().Sub(
+		prevStakeEntry.StakeAmountNanos, currentStakeEntry.StakeAmountNanos,
+	)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error calculating StakeAmountNanos decrease: ")
+	}
+	if !stakeEntryStakeAmounsNanosDecrease.Eq(amountNanos) {
+		return errors.New("SanityCheckUnstakeTxn: StakeAmountNanos decrease does not match")
+	}
+
+	// Validate LockedStakeEntry.LockedAmountNanos increase.
+	prevLockedStakeEntry := &LockedStakeEntry{LockedAmountNanos: uint256.NewInt()}
+	if len(utxoOp.PrevLockedStakeEntries) == 1 {
+		prevLockedStakeEntry = utxoOp.PrevLockedStakeEntries[0]
+	}
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error retrieving CurrentEpochNumber: ")
+	}
+	currentLockedStakeEntry, err := bav.GetLockedStakeEntry(
+		currentValidatorEntry.ValidatorPKID, transactorPKID, currentEpochNumber,
+	)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error retrieving LockedStakeEntry: ")
+	}
+	lockedStakeEntryLockedAmountNanosIncrease, err := SafeUint256().Sub(
+		currentLockedStakeEntry.LockedAmountNanos, prevLockedStakeEntry.LockedAmountNanos,
+	)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error calculating LockedAmountNanos increase: ")
+	}
+	if !lockedStakeEntryLockedAmountNanosIncrease.Eq(amountNanos) {
+		return errors.New("SanityCheckUnstakeTxn: LockedAmountNanos increase does not match")
+	}
+
+	// Validate GlobalStakeAmountNanos decrease.
+	if utxoOp.PrevGlobalStakeAmountNanos == nil {
+		return errors.New("SanityCheckUnstakeTxn: nil PrevGlobalStakeAmountNanos provided")
+	}
+	currentGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error retrieving CurrentGlobalStakeAmountNanos: ")
+	}
+	if currentGlobalStakeAmountNanos == nil {
+		return errors.New("SanityCheckUnstakeTxn: no CurrentGlobalStakeAmountNanos found")
+	}
+	globalStakeAmountNanosDecrease, err := SafeUint256().Sub(utxoOp.PrevGlobalStakeAmountNanos, currentGlobalStakeAmountNanos)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error calculating GlobalStakeAmountNanos decrease: ")
+	}
+	if !globalStakeAmountNanosDecrease.Eq(amountNanos) {
+		return errors.New("SanityCheckUnstakeTxn: GlobalStakeAmountNanos decrease does not match")
+	}
+
 	return nil
 }
 
