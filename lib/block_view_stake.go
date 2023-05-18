@@ -2099,13 +2099,13 @@ func (bav *UtxoView) SanityCheckUnstakeTxn(transactorPKID *PKID, utxoOp *UtxoOpe
 	if currentStakeEntry == nil {
 		currentStakeEntry = &StakeEntry{StakeAmountNanos: uint256.NewInt()}
 	}
-	stakeEntryStakeAmounsNanosDecrease, err := SafeUint256().Sub(
+	stakeEntryStakeAmountNanosDecrease, err := SafeUint256().Sub(
 		prevStakeEntry.StakeAmountNanos, currentStakeEntry.StakeAmountNanos,
 	)
 	if err != nil {
 		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error calculating StakeAmountNanos decrease: ")
 	}
-	if !stakeEntryStakeAmounsNanosDecrease.Eq(amountNanos) {
+	if !stakeEntryStakeAmountNanosDecrease.Eq(amountNanos) {
 		return errors.New("SanityCheckUnstakeTxn: StakeAmountNanos decrease does not match")
 	}
 

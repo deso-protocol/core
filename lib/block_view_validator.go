@@ -54,7 +54,7 @@ type ValidatorEntry struct {
 	// other validators can reliably prove the message came from this validator
 	// by verifying against their VotingPublicKey.
 	VotingPublicKey *bls.PublicKey
-	// The VotingPublicKeySignature is the signature of the SHA256(VotingPublicKey).
+	// The VotingPublicKeySignature is the signature of the SHA256(TransactorPublicKey).
 	// This proves that this validator is indeed the proper owner of the corresponding
 	// VotingPrivateKey.
 	VotingPublicKeySignature *bls.Signature
