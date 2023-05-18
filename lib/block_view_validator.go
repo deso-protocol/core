@@ -29,6 +29,10 @@ import (
 // validator was first jailed. A validator is jailed if they fail to participate in consensus by
 // either voting or proposing blocks for too long. A jailed validator is ineligible to receive
 // any block rewards and ineligible to elected leader.
+//
+// FIXME: In the future, when we flesh out the jail/unjail functionality, we will want to make it
+// so that the validator's stake is removed/added to GlobalStakeAmountNanos. See FIXME on
+// _connectUnjailValidator for more details.
 
 //
 // TYPES: ValidatorEntry
@@ -54,9 +58,10 @@ type ValidatorEntry struct {
 	// other validators can reliably prove the message came from this validator
 	// by verifying against their VotingPublicKey.
 	VotingPublicKey *bls.PublicKey
-	// The VotingPublicKeySignature is the signature of the SHA256(TransactorPublicKey).
+	// The VotingPublicKeySignature is the signature of the SHA256(TransactorPublicKey)
+	// by the VotingPrivateKey.
 	// This proves that this validator is indeed the proper owner of the corresponding
-	// VotingPrivateKey.
+	// VotingPrivateKey. See comment on CreateValidatorVotingSignaturePayload for more details.
 	VotingPublicKeySignature *bls.Signature
 	// TotalStakeAmountNanos is a cached value of this validator's total stake, calculated
 	// by summing all the corresponding StakeEntries assigned to this validator. We cache
@@ -1418,6 +1423,10 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	)
 }
 
+// FIXME: Currently, unjail does not re-add a validator's stake back to the GlobalStakeAmountNanos.
+// When we flesh out the logic for jail/unjail, we will want to make it so that the process that
+// jails a validator *removes* their stake from GlobalStakeAmountNanos, and the process that unjails,
+// i.e. this function, *re-adds* their stake back to GlobalStakeAmountNanos.
 func (bav *UtxoView) _connectUnjailValidator(
 	txn *MsgDeSoTxn,
 	txHash *BlockHash,
