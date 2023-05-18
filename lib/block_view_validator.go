@@ -36,8 +36,8 @@ import (
 
 type ValidatorEntry struct {
 	// The ValidatorPKID is the primary key for a ValidatorEntry. It is the PKID
-	// for the transactor who registered the validator. A user's PKID can ever
-	// only be association with one validator.
+	// for the transactor who registered the validator. A user's PKID can only
+	// be associated with one validator.
 	ValidatorPKID *PKID
 	// Domains is a slice of web domains where the validator can be reached.
 	// Note: if someone is updating their ValidatorEntry, they need to include
@@ -54,7 +54,7 @@ type ValidatorEntry struct {
 	// other validators can reliably prove the message came from this validator
 	// by verifying against their VotingPublicKey.
 	VotingPublicKey *bls.PublicKey
-	// The VotingPublicKeySiganture is the signature of the SHA256(VotingPublicKey).
+	// The VotingPublicKeySignature is the signature of the SHA256(VotingPublicKey).
 	// This proves that this validator is indeed the proper owner of the corresponding
 	// VotingPrivateKey.
 	VotingPublicKeySignature *bls.Signature
@@ -1626,24 +1626,14 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(
 		!validatorEntry.DisableDelegatedStake && // Existing ValidatorEntry.DisableDelegatedStake = false
 		metadata.DisableDelegatedStake { // Updating DisableDelegatedStake = true
 
-		// Retrieve existing StakeEntries.
-		//
-		// TODO: This is currently a very inefficient way to check to see if a validator has any
-		// stake entries because it fetches *every* stake entry that the validator has attached to
-		// him. If this gets slow we should write a "peek" function that just checks if any exist
-		// rather than returning all of the stake entries.
-		prevStakeEntries, err := bav.GetStakeEntriesForValidatorPKID(transactorPKIDEntry.PKID)
+		hasDelegatedStake, err := bav.ValidatorHasDelegatedStake(transactorPKIDEntry.PKID)
 		if err != nil {
-			return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error retrieving existing StakeEntries: ")
+			return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error checking for existing delegated StakeEntries: ")
 		}
-
-		// Error if any belong to someone other than the validator.
-		for _, stakeEntry := range prevStakeEntries {
-			if !stakeEntry.StakerPKID.Eq(transactorPKIDEntry.PKID) {
-				return errors.Wrapf(
-					RuleErrorValidatorDisablingExistingDelegatedStakers, "UtxoView.IsValidRegisterAsValidatorMetadata: ",
-				)
-			}
+		if hasDelegatedStake {
+			return errors.Wrapf(
+				RuleErrorValidatorDisablingExistingDelegatedStakers, "UtxoView.IsValidRegisterAsValidatorMetadata: ",
+			)
 		}
 	}
 
@@ -1864,7 +1854,7 @@ func (bav *UtxoView) GetTopActiveValidatorsByStake(limit int) ([]*ValidatorEntry
 func (bav *UtxoView) GetGlobalStakeAmountNanos() (*uint256.Int, error) {
 	// Read the GlobalStakeAmountNanos from the UtxoView.
 	if bav.GlobalStakeAmountNanos != nil {
-		return bav.GlobalStakeAmountNanos, nil
+		return bav.GlobalStakeAmountNanos.Clone(), nil
 	}
 	// If not set, read the GlobalStakeAmountNanos from the db.
 	globalStakeAmountNanos, err := DBGetGlobalStakeAmountNanos(bav.Handle, bav.Snapshot)

@@ -611,6 +611,35 @@ func DBGetStakeEntriesForValidatorPKID(handle *badger.DB, snap *Snapshot, valida
 	return stakeEntries, nil
 }
 
+func DBValidatorHasDelegatedStake(
+	handle *badger.DB,
+	snap *Snapshot,
+	validatorPKID *PKID,
+	utxoDeletedStakeEntries []*StakeEntry,
+) (bool, error) {
+	// Skip any stake the validator has assigned to himself (if exists).
+	skipKeys := NewSet([]string{
+		string(DBKeyForStakeByValidatorAndStaker(&StakeEntry{ValidatorPKID: validatorPKID, StakerPKID: validatorPKID})),
+	})
+
+	// Skip any StakeEntries deleted in the UtxoView.
+	for _, utxoDeletedStakeEntry := range utxoDeletedStakeEntries {
+		skipKeys.Add(string(DBKeyForStakeByValidatorAndStaker(utxoDeletedStakeEntry)))
+	}
+
+	// Scan for any delegated StakeEntries (limiting to at most one row).
+	prefix := DBKeyForStakeByValidator(&StakeEntry{ValidatorPKID: validatorPKID})
+	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+		handle, prefix, 1, nil, false, skipKeys,
+	)
+	if err != nil {
+		return false, errors.Wrapf(err, "DBValidatorHasDelegatedStake: problem retrieving StakeEntries: ")
+	}
+
+	// Return true if any delegated StakeEntries were found.
+	return len(keysFound) > 0, nil
+}
+
 func DBGetLockedStakeEntry(
 	handle *badger.DB,
 	snap *Snapshot,
@@ -1982,13 +2011,13 @@ func (bav *UtxoView) SanityCheckStakeTxn(
 	if currentStakeEntry == nil {
 		return errors.New("SanityCheckStakeTxn: no CurrentStakeEntry found")
 	}
-	stakeEntryStakeAmounsNanosIncrease, err := SafeUint256().Sub(
+	stakeEntryStakeAmountNanosIncrease, err := SafeUint256().Sub(
 		currentStakeEntry.StakeAmountNanos, prevStakeEntry.StakeAmountNanos,
 	)
 	if err != nil {
 		return errors.Wrapf(err, "SanityCheckStakeTxn: error calculating StakeAmountNanos increase: ")
 	}
-	if !stakeEntryStakeAmounsNanosIncrease.Eq(amountNanos) {
+	if !stakeEntryStakeAmountNanosIncrease.Eq(amountNanos) {
 		return errors.New("SanityCheckStakeTxn: StakeAmountNanos increase does not match")
 	}
 
@@ -2240,6 +2269,32 @@ func (bav *UtxoView) GetStakeEntriesForValidatorPKID(validatorPKID *PKID) ([]*St
 		) < 0
 	})
 	return stakeEntries, nil
+}
+
+func (bav *UtxoView) ValidatorHasDelegatedStake(validatorPKID *PKID) (bool, error) {
+	// True if the validator has any delegated stake assigned to them.
+
+	// First check the UtxoView.
+	var utxoDeletedStakeEntries []*StakeEntry
+	for _, stakeEntry := range bav.StakeMapKeyToStakeEntry {
+		if !stakeEntry.ValidatorPKID.Eq(validatorPKID) {
+			// Skip any stake assigned to other validators.
+			continue
+		}
+		if stakeEntry.StakerPKID.Eq(validatorPKID) {
+			// Skip any stake the validator assigned to themselves.
+			continue
+		}
+		if !stakeEntry.isDeleted {
+			// A non-deleted delegated StakeEntry for this validator was found in the UtxoView.
+			return true, nil
+		}
+		// A deleted delegated StakeEntry for this validator was found in the UtxoView.
+		utxoDeletedStakeEntries = append(utxoDeletedStakeEntries, stakeEntry)
+	}
+
+	// Next, check the database skipping any deleted StakeEntries for this validator.
+	return DBValidatorHasDelegatedStake(bav.Handle, bav.Snapshot, validatorPKID, utxoDeletedStakeEntries)
 }
 
 func (bav *UtxoView) GetLockedStakeEntry(

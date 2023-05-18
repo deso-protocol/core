@@ -77,7 +77,7 @@ func (bav *UtxoView) GetCurrentEpochEntry() (*EpochEntry, error) {
 	}
 	if epochEntry != nil {
 		// Cache in the UtxoView.
-		bav.CurrentEpochEntry = epochEntry
+		bav._setCurrentEpochEntry(epochEntry)
 	}
 	return epochEntry, nil
 }
