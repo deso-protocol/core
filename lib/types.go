@@ -275,8 +275,8 @@ func ReadOptionalBlockHash(rr *bytes.Reader) (*BlockHash, error) {
 }
 
 // FixedWidthEncodeUint256 guarantees fixed-width encoding which is useful
-// in BadgerDB keys. It is less space-efficient than EncodeUint256,
-// which should be used elsewhere. Both EncodeUint256 and
+// in BadgerDB keys. It is less space-efficient than VariableEncodeUint256,
+// which should be used elsewhere. Both VariableEncodeUint256 and
 // FixedWidthEncodeUint256 can handle nil inputs.
 func FixedWidthEncodeUint256(val *uint256.Int) []byte {
 	if val == nil {

@@ -482,19 +482,8 @@ type DBPrefixes struct {
 	PrefixValidatorByPKID []byte `prefix_id:"[78]" is_state:"true"`
 
 	// PrefixValidatorByStake: Retrieve the top N validators by stake.
-	// Prefix, TotalStakeAmountNanos, MaxUint64 - RegisteredAtBlockHeight, ValidatorPKID -> ValidatorPKID
-	//
-	// Note that we technically only need to include TotalStakeAmountNanos and ValidatorPKID in our key,
-	// but that including (MaxUint64 - RegisteredAtBlockHeight) causes the validators to be sorted by
-	// "oldest first" when there's a tie on TotalStakeAmountNanos, which is a bit better than breaking
-	// ties on PKID, which is random.
-	//
-	// FIXME: @DH, should we duplicate the ValidatorPKID in the key and the value?
-	// Alternatively, we could just store and parse the ValidatorPKID from the key
-	// and store a struct{} as the value. That saves on space, but makes retrieving
-	// the ValidatorPKID from the key bytes more complex than just reading the value
-	// bytes directly since the key includes other preceding fields. Interesting
-	// trade-off. Curious your opinion.
+	// Prefix, TotalStakeAmountNanos, ValidatorPKID -> nil
+	// Note that we save space by storing a nil value and parsing the ValidatorPKID from the key.
 	PrefixValidatorByStake []byte `prefix_id:"[79]" is_state:"true"`
 
 	// PrefixGlobalStakeAmountNanos: Retrieve the cumulative stake across all validators.
@@ -743,7 +732,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 		return true, &ValidatorEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStake) {
 		// prefix_id:"[79]"
-		return true, &PKID{}
+		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixGlobalStakeAmountNanos) {
 		// prefix_id:"[80]"
 		return false, nil

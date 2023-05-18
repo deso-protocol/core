@@ -16,27 +16,68 @@ import (
 	"github.com/pkg/errors"
 )
 
-// FIXME: Add a big comment here explaining how validator Register/Unregister/Unjail
-// all fit together at a high level.
+// RegisterAsValidator: Registers a new validator. This transaction can be called multiple times
+// if a validator needs to update any of their registration info such as their domains. Once
+// a validator is registered, stake can be assigned to that validator, the validator is eligible
+// to participate in consensus by voting, and may be selected as leader to propose new blocks.
+//
+// UnregisterAsValidator: Unregisters an existing validator. This unstakes all stake assigned to this
+// validator and removes this validator from the set of eligible validators. A user would have to
+// re-register by submitting a subsequent RegisterAsValidator transaction to be re-included.
+//
+// UnjailValidator: Unjails a jailed validator if sufficient time (epochs) have elapsed since the
+// validator was first jailed. A validator is jailed if they fail to participate in consensus by
+// either voting or proposing blocks for too long. A jailed validator is ineligible to receive
+// any block rewards and ineligible to elected leader.
+//
+// FIXME: In the future, when we flesh out the jail/unjail functionality, we will want to make it
+// so that the validator's stake is removed/added to GlobalStakeAmountNanos. See FIXME on
+// _connectUnjailValidator for more details.
 
 //
 // TYPES: ValidatorEntry
 //
 
 type ValidatorEntry struct {
+	// The ValidatorPKID is the primary key for a ValidatorEntry. It is the PKID
+	// for the transactor who registered the validator. A user's PKID can only
+	// be associated with one validator.
 	ValidatorPKID *PKID
+	// Domains is a slice of web domains where the validator can be reached.
 	// Note: if someone is updating their ValidatorEntry, they need to include
 	// all domains. The Domains field is not appended to. It is overwritten.
-	Domains                  [][]byte
-	DisableDelegatedStake    bool
-	VotingPublicKey          *bls.PublicKey
+	Domains [][]byte
+	// DisableDelegatedStake is a boolean that indicates whether the validator
+	// disallows delegated / 3rd party stake being assigned to themselves. If
+	// a validator sets DisableDelegatedStake to true, then they can still
+	// stake with themselves, but all other users will receive an error if they
+	// try to stake with this validator.
+	DisableDelegatedStake bool
+	// The VotingPublicKey is a BLS PublicKey that is used in consensus messages.
+	// A validator signs consensus messages with their VotingPrivateKey and then
+	// other validators can reliably prove the message came from this validator
+	// by verifying against their VotingPublicKey.
+	VotingPublicKey *bls.PublicKey
+	// The VotingPublicKeySignature is the signature of the SHA256(TransactorPublicKey)
+	// by the VotingPrivateKey.
+	// This proves that this validator is indeed the proper owner of the corresponding
+	// VotingPrivateKey. See comment on CreateValidatorVotingSignaturePayload for more details.
 	VotingPublicKeySignature *bls.Signature
-	TotalStakeAmountNanos    *uint256.Int
-	RegisteredAtBlockHeight  uint64
-	LastActiveAtEpochNumber  uint64
-	JailedAtEpochNumber      uint64
-	ExtraData                map[string][]byte
-	isDeleted                bool
+	// TotalStakeAmountNanos is a cached value of this validator's total stake, calculated
+	// by summing all the corresponding StakeEntries assigned to this validator. We cache
+	// the value here to avoid the O(N) operation of recomputing when determining a
+	// validator's total stake. This way it is an O(1) operation instead.
+	TotalStakeAmountNanos *uint256.Int
+	// LastActiveAtEpochNumber is the last epoch in which this validator either 1) participated in
+	// consensus by voting or proposing blocks, or 2) unjailed themselves. If a validator is
+	// inactive for too long, then they are jailed.
+	LastActiveAtEpochNumber uint64
+	// JailedAtEpochNumber tracks when a validator was first jailed. This helps to verify
+	// that enough time (epochs) have passed before the validator is able to unjail themselves.
+	JailedAtEpochNumber uint64
+
+	ExtraData map[string][]byte
+	isDeleted bool
 }
 
 func (validatorEntry *ValidatorEntry) Status() ValidatorStatus {
@@ -77,7 +118,6 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 		VotingPublicKey:          validatorEntry.VotingPublicKey.Copy(),
 		VotingPublicKeySignature: validatorEntry.VotingPublicKeySignature.Copy(),
 		TotalStakeAmountNanos:    validatorEntry.TotalStakeAmountNanos.Clone(),
-		RegisteredAtBlockHeight:  validatorEntry.RegisteredAtBlockHeight,
 		LastActiveAtEpochNumber:  validatorEntry.LastActiveAtEpochNumber,
 		JailedAtEpochNumber:      validatorEntry.JailedAtEpochNumber,
 		ExtraData:                copyExtraData(validatorEntry.ExtraData),
@@ -99,7 +139,6 @@ func (validatorEntry *ValidatorEntry) RawEncodeWithoutMetadata(blockHeight uint6
 	data = append(data, EncodeBLSPublicKey(validatorEntry.VotingPublicKey)...)
 	data = append(data, EncodeBLSSignature(validatorEntry.VotingPublicKeySignature)...)
 	data = append(data, VariableEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
-	data = append(data, UintToBuf(validatorEntry.RegisteredAtBlockHeight)...)
 	data = append(data, UintToBuf(validatorEntry.LastActiveAtEpochNumber)...)
 	data = append(data, UintToBuf(validatorEntry.JailedAtEpochNumber)...)
 	data = append(data, EncodeExtraData(validatorEntry.ExtraData)...)
@@ -150,12 +189,6 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 	validatorEntry.TotalStakeAmountNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading TotalStakeAmountNanos: ")
-	}
-
-	// RegisteredAtBlockHeight
-	validatorEntry.RegisteredAtBlockHeight, err = ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading RegisteredAtBlockHeight: ")
 	}
 
 	// LastActiveAtEpochNumber
@@ -512,10 +545,7 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
 	key = append(key, EncodeUint8(uint8(validatorEntry.Status()))...)
-	// TotalStakeAmountNanos will never be nil here, but FixedWidthEncodeUint256
-	// is used because it provides a fixed-width encoding of uint256.Ints.
-	key = append(key, FixedWidthEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)       // Highest stake first
-	key = append(key, EncodeUint64(math.MaxUint64-validatorEntry.RegisteredAtBlockHeight)...) // Oldest first
+	key = append(key, FixedWidthEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
 	return key
 }
@@ -569,22 +599,24 @@ func DBGetTopActiveValidatorsByStake(
 		validatorKeysToSkip.Add(string(DBKeyForValidatorByStake(validatorEntryToSkip)))
 	}
 
-	// Retrieve top N active ValidatorEntry PKIDs by stake.
+	// Retrieve top N active ValidatorEntry keys by stake.
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
 	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
-	_, validatorPKIDsBytes, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, limit, nil, true, validatorKeysToSkip,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem retrieving top validators: ")
 	}
 
-	// For each PKID, retrieve the ValidatorEntry by PKID.
-	for _, validatorPKIDBytes := range validatorPKIDsBytes {
+	// For each key found, parse the ValidatorPKID from the key,
+	// then retrieve the ValidatorEntry by the ValidatorPKID.
+	for _, keyFound := range keysFound {
+		// Parse the PKIDBytes from the key. The ValidatorPKID is the last component of the key.
+		validatorPKIDBytes := keyFound[len(keyFound)-PublicKeyLenCompressed:]
 		// Convert PKIDBytes to PKID.
 		validatorPKID := &PKID{}
-		exists, err := DecodeFromBytes(validatorPKID, bytes.NewReader(validatorPKIDBytes))
-		if !exists || err != nil {
+		if err = validatorPKID.FromBytes(bytes.NewReader(validatorPKIDBytes)); err != nil {
 			return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem reading ValidatorPKID: ")
 		}
 		// Retrieve ValidatorEntry by PKID.
@@ -650,9 +682,10 @@ func DBPutValidatorWithTxn(
 		)
 	}
 
-	// Set ValidatorEntry.PKID in PrefixValidatorByStake.
+	// Set ValidatorEntry key in PrefixValidatorByStake. The value should be nil.
+	// We parse the ValidatorPKID from the key for this index.
 	key = DBKeyForValidatorByStake(validatorEntry)
-	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry.ValidatorPKID)); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, nil); err != nil {
 		return errors.Wrapf(
 			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByStake",
 		)
@@ -1025,13 +1058,6 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		totalStakeAmountNanos = prevValidatorEntry.TotalStakeAmountNanos.Clone()
 	}
 
-	// Set RegisteredAtBlockHeight to CurrentBlockHeight if this is a new ValidatorEntry.
-	// Otherwise, retain the existing RegisteredAtBlockHeight.
-	registeredAtBlockHeight := uint64(blockHeight)
-	if prevValidatorEntry != nil {
-		registeredAtBlockHeight = prevValidatorEntry.RegisteredAtBlockHeight
-	}
-
 	// Set LastActiveAtEpochNumber to CurrentEpochNumber if this is a new ValidatorEntry.
 	// Otherwise, retain the existing LastActiveAtEpochNumber.
 	var lastActiveAtEpochNumber uint64
@@ -1071,7 +1097,6 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		VotingPublicKey:          txMeta.VotingPublicKey,
 		VotingPublicKeySignature: txMeta.VotingPublicKeySignature,
 		TotalStakeAmountNanos:    totalStakeAmountNanos,
-		RegisteredAtBlockHeight:  registeredAtBlockHeight,
 		LastActiveAtEpochNumber:  lastActiveAtEpochNumber,
 		JailedAtEpochNumber:      jailedAtEpochNumber,
 		ExtraData:                mergeExtraData(prevExtraData, txn.ExtraData),
@@ -1303,14 +1328,18 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 	// Set the new GlobalStakeAmountNanos.
 	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
 
-	// Add a UTXO operation.
-	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+	// Create a UTXO operation.
+	utxoOpForTxn := &UtxoOperation{
 		Type:                       OperationTypeUnregisterAsValidator,
 		PrevValidatorEntry:         prevValidatorEntry,
 		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
 		PrevStakeEntries:           prevStakeEntries,
 		PrevLockedStakeEntries:     prevLockedStakeEntries,
-	})
+	}
+	if err = bav.SanityCheckUnregisterAsValidatorTxn(transactorPKIDEntry.PKID, utxoOpForTxn, totalUnstakedAmountNanos); err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: ")
+	}
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOpForTxn)
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -1394,6 +1423,10 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	)
 }
 
+// FIXME: Currently, unjail does not re-add a validator's stake back to the GlobalStakeAmountNanos.
+// When we flesh out the logic for jail/unjail, we will want to make it so that the process that
+// jails a validator *removes* their stake from GlobalStakeAmountNanos, and the process that unjails,
+// i.e. this function, *re-adds* their stake back to GlobalStakeAmountNanos.
 func (bav *UtxoView) _connectUnjailValidator(
 	txn *MsgDeSoTxn,
 	txHash *BlockHash,
@@ -1602,24 +1635,14 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(
 		!validatorEntry.DisableDelegatedStake && // Existing ValidatorEntry.DisableDelegatedStake = false
 		metadata.DisableDelegatedStake { // Updating DisableDelegatedStake = true
 
-		// Retrieve existing StakeEntries.
-		//
-		// TODO: This is currently a very inefficient way to check to see if a validator has any
-		// stake entries because it fetches *every* stake entry that the validator has attached to
-		// him. If this gets slow we should write a "peek" function that just checks if any exist
-		// rather than returning all of the stake entries.
-		prevStakeEntries, err := bav.GetStakeEntriesForValidatorPKID(transactorPKIDEntry.PKID)
+		hasDelegatedStake, err := bav.ValidatorHasDelegatedStake(transactorPKIDEntry.PKID)
 		if err != nil {
-			return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error retrieving existing StakeEntries: ")
+			return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error checking for existing delegated StakeEntries: ")
 		}
-
-		// Error if any belong to someone other than the validator.
-		for _, stakeEntry := range prevStakeEntries {
-			if !stakeEntry.StakerPKID.Eq(transactorPKIDEntry.PKID) {
-				return errors.Wrapf(
-					RuleErrorValidatorDisablingExistingDelegatedStakers, "UtxoView.IsValidRegisterAsValidatorMetadata: ",
-				)
-			}
+		if hasDelegatedStake {
+			return errors.Wrapf(
+				RuleErrorValidatorDisablingExistingDelegatedStakers, "UtxoView.IsValidRegisterAsValidatorMetadata: ",
+			)
 		}
 	}
 
@@ -1677,6 +1700,72 @@ func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte) 
 		return errors.Wrapf(RuleErrorUnjailingValidatorTooEarly, "UtxoView.IsValidUnjailValidatorMetadata: ")
 	}
 
+	return nil
+}
+
+func (bav *UtxoView) SanityCheckUnregisterAsValidatorTxn(
+	transactorPKID *PKID,
+	utxoOp *UtxoOperation,
+	amountNanos *uint256.Int,
+) error {
+	if utxoOp.Type != OperationTypeUnregisterAsValidator {
+		return fmt.Errorf("SanityCheckUnregisterAsValidatorTxn: called with %v", utxoOp.Type)
+	}
+
+	// Sanity check the deleted ValidatorEntry.
+	if utxoOp.PrevValidatorEntry == nil {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: nil PrevValidatorEntry provided")
+	}
+	if !utxoOp.PrevValidatorEntry.ValidatorPKID.Eq(transactorPKID) {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: ValidatorPKID doesn't match TransactorPKID")
+	}
+	if !utxoOp.PrevValidatorEntry.TotalStakeAmountNanos.Eq(amountNanos) {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: TotalStakeAmountNanos doesn't match")
+	}
+	currentValidatorEntry, err := bav.GetValidatorByPKID(utxoOp.PrevValidatorEntry.ValidatorPKID)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error retrieving ValidatorEntry: ")
+	}
+	if currentValidatorEntry != nil {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: ValidatorEntry was not deleted")
+	}
+
+	// Sanity check that there are no existing StakeEntries for the validator.
+	stakeEntries, err := bav.GetStakeEntriesForValidatorPKID(utxoOp.PrevValidatorEntry.ValidatorPKID)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error retrieving StakeEntries: ")
+	}
+	if len(stakeEntries) != 0 {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: StakeEntries for ValidatorEntry still exist")
+	}
+
+	// Sanity check the deleted StakeEntries.
+	totalUnstakedAmountNanos := uint256.NewInt()
+	for _, stakeEntry := range utxoOp.PrevStakeEntries {
+		totalUnstakedAmountNanos, err = SafeUint256().Add(totalUnstakedAmountNanos, stakeEntry.StakeAmountNanos)
+		if err != nil {
+			return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error calculating TotalUnstakedAmountNanos: ")
+		}
+	}
+	if !totalUnstakedAmountNanos.Eq(amountNanos) {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: TotalUnstakedAmountNanos doesn't match")
+	}
+
+	// Sanity check that the GlobalStakeAmountNanos was decreased by amountNanos.
+	if utxoOp.PrevGlobalStakeAmountNanos == nil {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: nil PrevGlobalStakeAmountNanos provided")
+	}
+	currentGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error retrieving GlobalStakeAmountNanos: ")
+	}
+	globalStakeAmountNanosDecrease, err := SafeUint256().Sub(utxoOp.PrevGlobalStakeAmountNanos, currentGlobalStakeAmountNanos)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error calculating GlobalStakeAmountNanos decrease: ")
+	}
+	if !globalStakeAmountNanosDecrease.Eq(amountNanos) {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: GlobalStakeAmountNanos decrease doesn't match")
+	}
 	return nil
 }
 
@@ -1772,25 +1861,20 @@ func (bav *UtxoView) GetTopActiveValidatorsByStake(limit int) ([]*ValidatorEntry
 }
 
 func (bav *UtxoView) GetGlobalStakeAmountNanos() (*uint256.Int, error) {
-	var globalStakeAmountNanos *uint256.Int
-	var err error
 	// Read the GlobalStakeAmountNanos from the UtxoView.
 	if bav.GlobalStakeAmountNanos != nil {
-		globalStakeAmountNanos = bav.GlobalStakeAmountNanos.Clone()
+		return bav.GlobalStakeAmountNanos.Clone(), nil
 	}
 	// If not set, read the GlobalStakeAmountNanos from the db.
-	// TODO: Confirm if the GlobalStakeAmountNanos.IsZero() that we should look in the db.
-	if globalStakeAmountNanos == nil || globalStakeAmountNanos.IsZero() {
-		globalStakeAmountNanos, err = DBGetGlobalStakeAmountNanos(bav.Handle, bav.Snapshot)
-		if err != nil {
-			return nil, errors.Wrapf(err, "UtxoView.GetGlobalStakeAmountNanos: ")
-		}
-		if globalStakeAmountNanos == nil {
-			globalStakeAmountNanos = uint256.NewInt()
-		}
-		// Cache the GlobaleStakeAmountNanos from the db in the UtxoView.
-		bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
+	globalStakeAmountNanos, err := DBGetGlobalStakeAmountNanos(bav.Handle, bav.Snapshot)
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GetGlobalStakeAmountNanos: ")
 	}
+	if globalStakeAmountNanos == nil {
+		globalStakeAmountNanos = uint256.NewInt()
+	}
+	// Cache the GlobalStakeAmountNanos from the db in the UtxoView.
+	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
 	return globalStakeAmountNanos, nil
 }
 
@@ -2079,7 +2163,6 @@ const RuleErrorValidatorNotFound RuleError = "RuleErrorValidatorNotFound"
 const RuleErrorValidatorMissingVotingPublicKey RuleError = "RuleErrorValidatorMissingVotingPublicKey"
 const RuleErrorValidatorMissingVotingPublicKeySignature RuleError = "RuleErrorValidatorMissingVotingPublicKeySignature"
 const RuleErrorValidatorInvalidVotingPublicKeySignature RuleError = "RuleErrorValidatorInvalidVotingPublicKeySignature"
-const RuleErrorValidatorInvalidVotingSignatureBlockHeight RuleError = "RuleErrorValidatorInvalidVotingSignatureBlockHeight"
 const RuleErrorValidatorDisablingExistingDelegatedStakers RuleError = "RuleErrorValidatorDisablingExistingDelegatedStakers"
 const RuleErrorUnjailingNonjailedValidator RuleError = "RuleErrorUnjailingNonjailedValidator"
 const RuleErrorUnjailingValidatorTooEarly RuleError = "RuleErrorUnjailingValidatorTooEarly"

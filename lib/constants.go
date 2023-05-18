@@ -607,12 +607,6 @@ type DeSoParams struct {
 	// TODO: Move this to GlobalParamsEntry.
 	ValidatorJailEpochDuration uint64
 
-	// When registering, a validator must include a VotingSignatureBlockHeight within CurrentBlockHeight
-	// to CurrentBlockHeight + ValidatorVotingSignatureBlockHeightWindow blocks. This is to prevent
-	// validator registration replay attacks.
-	// TODO: Move this to GlobalParamsEntry.
-	ValidatorVotingSignatureBlockHeightWindow uint64
-
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -991,11 +985,6 @@ var DeSoMainnetParams = DeSoParams{
 	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
 	ValidatorJailEpochDuration: uint64(3),
 
-	// When registering, a validator must include a VotingSignatureBlockHeight within CurrentBlockHeight
-	// to CurrentBlockHeight + ValidatorVotingSignatureBlockHeightWindow blocks. This is to prevent
-	// validator registration replay attacks.
-	ValidatorVotingSignatureBlockHeightWindow: uint64(300),
-
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1229,11 +1218,6 @@ var DeSoTestnetParams = DeSoParams{
 
 	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
 	ValidatorJailEpochDuration: uint64(3),
-
-	// When registering, a validator must include a VotingSignatureBlockHeight within CurrentBlockHeight
-	// to CurrentBlockHeight + ValidatorVotingSignatureBlockHeightWindow blocks. This is to prevent
-	// validator registration replay attacks.
-	ValidatorVotingSignatureBlockHeightWindow: uint64(300),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
