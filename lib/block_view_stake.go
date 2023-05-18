@@ -1226,19 +1226,22 @@ func (bav *UtxoView) _connectStake(
 	// 4. Set the new ValidatorEntry.
 	bav._setValidatorEntryMappings(currentValidatorEntry)
 
-	// Increase the GlobalStakeAmountNanos.
-	// Retrieve the existing GlobalStakeAmountNanos.
-	// The PrevGlobalStakeAmountNanos will be restored if we disconnect this transaction.
-	prevGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectStake: error retrieving GlobalStakeAmountNanos: ")
+	// Increase the GlobalActiveStakeAmountNanos if the validator is active.
+	var prevGlobalActiveStakeAmountNanos *uint256.Int
+	if currentValidatorEntry.Status() == ValidatorStatusActive {
+		// Retrieve the existing GlobalActiveStakeAmountNanos.
+		// The PrevGlobalActiveStakeAmountNanos will be restored if we disconnect this transaction.
+		prevGlobalActiveStakeAmountNanos, err = bav.GetGlobalActiveStakeAmountNanos()
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectStake: error retrieving GlobalActiveStakeAmountNanos: ")
+		}
+		globalActiveStakeAmountNanos, err := SafeUint256().Add(prevGlobalActiveStakeAmountNanos, txMeta.StakeAmountNanos)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectStake: error adding StakeAmountNanos to GlobalActiveStakeAmountNanos: ")
+		}
+		// Set the new GlobalActiveStakeAmountNanos.
+		bav._setGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos)
 	}
-	globalStakeAmountNanos, err := SafeUint256().Add(prevGlobalStakeAmountNanos, txMeta.StakeAmountNanos)
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectStake: error adding StakeAmountNanos to GlobalStakeAmountNanos: ")
-	}
-	// Set the new GlobalStakeAmountNanos.
-	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
 
 	// Add the StakeAmountNanos to TotalOutput. The coins being staked are already
 	// part of the TotalInput. But they are not burned, so they are an implicit
@@ -1250,10 +1253,10 @@ func (bav *UtxoView) _connectStake(
 
 	// Create a UTXO operation
 	utxoOpForTxn := &UtxoOperation{
-		Type:                       OperationTypeStake,
-		PrevValidatorEntry:         prevValidatorEntry,
-		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
-		PrevStakeEntries:           prevStakeEntries,
+		Type:                             OperationTypeStake,
+		PrevValidatorEntry:               prevValidatorEntry,
+		PrevGlobalActiveStakeAmountNanos: prevGlobalActiveStakeAmountNanos,
+		PrevStakeEntries:                 prevStakeEntries,
 	}
 	if err = bav.SanityCheckStakeTxn(
 		transactorPKIDEntry.PKID, utxoOpForTxn, txMeta.StakeAmountNanos, txn.TxnFeeNanos, prevBalanceNanos,
@@ -1338,8 +1341,10 @@ func (bav *UtxoView) _disconnectStake(
 		bav._setStakeEntryMappings(operationData.PrevStakeEntries[0])
 	}
 
-	// Restore the PrevGlobalStakeAmountNanos.
-	bav._setGlobalStakeAmountNanos(operationData.PrevGlobalStakeAmountNanos)
+	// Restore the PrevGlobalActiveStakeAmountNanos if the PrevValidatorEntry was active.
+	if prevValidatorEntry.Status() == ValidatorStatusActive {
+		bav._setGlobalActiveStakeAmountNanos(operationData.PrevGlobalActiveStakeAmountNanos)
+	}
 
 	// Disconnect the BasicTransfer. Disconnecting the BasicTransfer also returns
 	// the extra spend associated with the amount the transactor staked.
@@ -1461,18 +1466,21 @@ func (bav *UtxoView) _connectUnstake(
 	// 4. Set the new ValidatorEntry.
 	bav._setValidatorEntryMappings(currentValidatorEntry)
 
-	// Decrease the GlobalStakeAmountNanos.
-	// 1. Retrieve the existing GlobalStakeAmountNanos. This will be restored if we disconnect this txn.
-	prevGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error retrieving GlobalStakeAmountNanos: ")
+	// Decrease the GlobalActiveStakeAmountNanos if the validator is active.
+	var prevGlobalActiveStakeAmountNanos *uint256.Int
+	if currentValidatorEntry.Status() == ValidatorStatusActive {
+		// 1. Retrieve the existing GlobalActiveStakeAmountNanos. This will be restored if we disconnect this txn.
+		prevGlobalActiveStakeAmountNanos, err = bav.GetGlobalActiveStakeAmountNanos()
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error retrieving GlobalActiveStakeAmountNanos: ")
+		}
+		globalActiveStakeAmountNanos, err := SafeUint256().Sub(prevGlobalActiveStakeAmountNanos, txMeta.UnstakeAmountNanos)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error subtracting UnstakeAmountNanos from GlobalActiveStakeAmountNanos: ")
+		}
+		// 2. Set the new GlobalActiveStakeAmountNanos.
+		bav._setGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos)
 	}
-	globalStakeAmountNanos, err := SafeUint256().Sub(prevGlobalStakeAmountNanos, txMeta.UnstakeAmountNanos)
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error subtracting UnstakeAmountNanos from GlobalStakeAmountNanos: ")
-	}
-	// 2. Set the new GlobalStakeAmountNanos.
-	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
 
 	// Retrieve the CurrentEpochNumber.
 	currentEpochNumber, err := bav.GetCurrentEpochNumber()
@@ -1524,11 +1532,11 @@ func (bav *UtxoView) _connectUnstake(
 
 	// Create a UTXO operation.
 	utxoOpForTxn := &UtxoOperation{
-		Type:                       OperationTypeUnstake,
-		PrevValidatorEntry:         prevValidatorEntry,
-		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
-		PrevStakeEntries:           prevStakeEntries,
-		PrevLockedStakeEntries:     prevLockedStakeEntries,
+		Type:                             OperationTypeUnstake,
+		PrevValidatorEntry:               prevValidatorEntry,
+		PrevGlobalActiveStakeAmountNanos: prevGlobalActiveStakeAmountNanos,
+		PrevStakeEntries:                 prevStakeEntries,
+		PrevLockedStakeEntries:           prevLockedStakeEntries,
 	}
 	if err = bav.SanityCheckUnstakeTxn(transactorPKIDEntry.PKID, utxoOpForTxn, txMeta.UnstakeAmountNanos); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
@@ -1612,8 +1620,10 @@ func (bav *UtxoView) _disconnectUnstake(
 	}
 	bav._setStakeEntryMappings(operationData.PrevStakeEntries[0])
 
-	// Restore the PrevGlobalStakeAmountNanos.
-	bav._setGlobalStakeAmountNanos(operationData.PrevGlobalStakeAmountNanos)
+	// Restore the PrevGlobalActiveStakeAmountNanos if the PrevValidatorEntry was active.
+	if prevValidatorEntry.Status() == ValidatorStatusActive {
+		bav._setGlobalActiveStakeAmountNanos(operationData.PrevGlobalActiveStakeAmountNanos)
+	}
 
 	// Retrieve the CurrentEpochNumber.
 	currentEpochNumber, err := bav.GetCurrentEpochNumber()
@@ -2021,22 +2031,24 @@ func (bav *UtxoView) SanityCheckStakeTxn(
 		return errors.New("SanityCheckStakeTxn: StakeAmountNanos increase does not match")
 	}
 
-	// Validate GlobalStakeAmountNanos increase.
-	if utxoOp.PrevGlobalStakeAmountNanos == nil {
-		return errors.New("SanityCheckStakeTxn: nil PrevGlobalStakeAmountNanos provided")
-	}
-	currentGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
-	if err != nil {
-		return errors.Wrapf(err, "SanityCheckStakeTxn: error retrieving CurrentGlobalStakeAmountNanos: ")
-	}
-	globalStakeAmountNanosIncrease, err := SafeUint256().Sub(
-		currentGlobalStakeAmountNanos, utxoOp.PrevGlobalStakeAmountNanos,
-	)
-	if err != nil {
-		return errors.Wrapf(err, "SanityCheckStakeTxn: error calculating GlobalStakeAmountNanos increase: ")
-	}
-	if !globalStakeAmountNanosIncrease.Eq(amountNanos) {
-		return errors.New("SanityCheckStakeTxn: GlobalStakeAmountNanos increase does not match")
+	// Validate GlobalActiveStakeAmountNanos increase if validator is active.
+	if currentValidatorEntry.Status() == ValidatorStatusActive {
+		if utxoOp.PrevGlobalActiveStakeAmountNanos == nil {
+			return errors.New("SanityCheckStakeTxn: nil PrevGlobalActiveStakeAmountNanos provided")
+		}
+		currentGlobalActiveStakeAmountNanos, err := bav.GetGlobalActiveStakeAmountNanos()
+		if err != nil {
+			return errors.Wrapf(err, "SanityCheckStakeTxn: error retrieving CurrentGlobalActiveStakeAmountNanos: ")
+		}
+		globalActiveStakeAmountNanosIncrease, err := SafeUint256().Sub(
+			currentGlobalActiveStakeAmountNanos, utxoOp.PrevGlobalActiveStakeAmountNanos,
+		)
+		if err != nil {
+			return errors.Wrapf(err, "SanityCheckStakeTxn: error calculating GlobalActiveStakeAmountNanos increase: ")
+		}
+		if !globalActiveStakeAmountNanosIncrease.Eq(amountNanos) {
+			return errors.New("SanityCheckStakeTxn: GlobalActiveStakeAmountNanos increase does not match")
+		}
 	}
 
 	// Validate TransactorBalance decrease.
@@ -2134,23 +2146,25 @@ func (bav *UtxoView) SanityCheckUnstakeTxn(transactorPKID *PKID, utxoOp *UtxoOpe
 		return errors.New("SanityCheckUnstakeTxn: LockedAmountNanos increase does not match")
 	}
 
-	// Validate GlobalStakeAmountNanos decrease.
-	if utxoOp.PrevGlobalStakeAmountNanos == nil {
-		return errors.New("SanityCheckUnstakeTxn: nil PrevGlobalStakeAmountNanos provided")
-	}
-	currentGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
-	if err != nil {
-		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error retrieving CurrentGlobalStakeAmountNanos: ")
-	}
-	if currentGlobalStakeAmountNanos == nil {
-		return errors.New("SanityCheckUnstakeTxn: no CurrentGlobalStakeAmountNanos found")
-	}
-	globalStakeAmountNanosDecrease, err := SafeUint256().Sub(utxoOp.PrevGlobalStakeAmountNanos, currentGlobalStakeAmountNanos)
-	if err != nil {
-		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error calculating GlobalStakeAmountNanos decrease: ")
-	}
-	if !globalStakeAmountNanosDecrease.Eq(amountNanos) {
-		return errors.New("SanityCheckUnstakeTxn: GlobalStakeAmountNanos decrease does not match")
+	// Validate GlobalActiveStakeAmountNanos decrease if validator is active.
+	if currentValidatorEntry.Status() == ValidatorStatusActive {
+		if utxoOp.PrevGlobalActiveStakeAmountNanos == nil {
+			return errors.New("SanityCheckUnstakeTxn: nil PrevGlobalActiveStakeAmountNanos provided")
+		}
+		currentGlobalActiveStakeAmountNanos, err := bav.GetGlobalActiveStakeAmountNanos()
+		if err != nil {
+			return errors.Wrapf(err, "SanityCheckUnstakeTxn: error retrieving CurrentGlobalActiveStakeAmountNanos: ")
+		}
+		if currentGlobalActiveStakeAmountNanos == nil {
+			return errors.New("SanityCheckUnstakeTxn: no CurrentGlobalActiveStakeAmountNanos found")
+		}
+		globalActiveStakeAmountNanosDecrease, err := SafeUint256().Sub(utxoOp.PrevGlobalActiveStakeAmountNanos, currentGlobalActiveStakeAmountNanos)
+		if err != nil {
+			return errors.Wrapf(err, "SanityCheckUnstakeTxn: error calculating GlobalActiveStakeAmountNanos decrease: ")
+		}
+		if !globalActiveStakeAmountNanosDecrease.Eq(amountNanos) {
+			return errors.New("SanityCheckUnstakeTxn: GlobalActiveStakeAmountNanos decrease does not match")
+		}
 	}
 
 	return nil

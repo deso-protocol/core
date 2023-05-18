@@ -24,7 +24,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	var registerMetadata *RegisterAsValidatorMetadata
 	var validatorEntry *ValidatorEntry
 	var validatorEntries []*ValidatorEntry
-	var globalStakeAmountNanos *uint256.Int
+	var globalActiveStakeAmountNanos *uint256.Int
 	var err error
 
 	// Initialize fork heights.
@@ -239,10 +239,10 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
 	}
 	{
-		// Query: retrieve GlobalStakeAmountNanos
-		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
+		// Query: retrieve GlobalActiveStakeAmountNanos
+		globalActiveStakeAmountNanos, err = utxoView().GetGlobalActiveStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
 	}
 	{
 		// Happy path: update a validator
@@ -298,10 +298,10 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Empty(t, validatorEntries)
 	}
 	{
-		// Query: retrieve GlobalStakeAmountNanos
-		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
+		// Query: retrieve GlobalActiveStakeAmountNanos
+		globalActiveStakeAmountNanos, err = utxoView().GetGlobalActiveStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
 	}
 
 	// Flush mempool to the db and test rollbacks.
@@ -1346,7 +1346,7 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	var stakeEntry *StakeEntry
 	var lockedStakeEntry *LockedStakeEntry
 	_ = lockedStakeEntry
-	var globalStakeAmountNanos *uint256.Int
+	var globalActiveStakeAmountNanos *uint256.Int
 	var err error
 
 	// Initialize balance model fork heights.
@@ -1448,9 +1448,9 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		require.NotNil(t, stakeEntry)
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(600))
 
-		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
+		globalActiveStakeAmountNanos, err = utxoView().GetGlobalActiveStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(600))
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(600))
 	}
 	{
 		// m1 stakes with m0.
@@ -1468,9 +1468,9 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		require.NotNil(t, stakeEntry)
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(400))
 
-		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
+		globalActiveStakeAmountNanos, err = utxoView().GetGlobalActiveStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(1000))
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(1000))
 	}
 	{
 		// m1 partially unstakes with m0.
@@ -1494,10 +1494,10 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		require.NotNil(t, lockedStakeEntry)
 		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(100))
 
-		// GlobalStakeAmountNanos is updated.
-		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
+		// GlobalActiveStakeAmountNanos is updated.
+		globalActiveStakeAmountNanos, err = utxoView().GetGlobalActiveStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(900))
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(900))
 	}
 	{
 		// m0 unregisters as a validator.
@@ -1531,10 +1531,10 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		require.NotNil(t, lockedStakeEntry)
 		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(400))
 
-		// GlobalStakeAmountNanos is updated.
-		globalStakeAmountNanos, err = utxoView().GetGlobalStakeAmountNanos()
+		// GlobalActiveStakeAmountNanos is updated.
+		globalActiveStakeAmountNanos, err = utxoView().GetGlobalActiveStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
 	}
 
 	// Flush mempool to the db and test rollbacks.
@@ -1651,18 +1651,15 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 		// we cannot test rollbacks. We will run into an error where m0 is
 		// trying to unjail himself, but he was never jailed.
 
-		// Delete m0's ValidatorEntry from the UtxoView.
-		delete(mempool.universalUtxoView.ValidatorPKIDToValidatorEntry, *validatorEntry.ValidatorPKID)
-		delete(mempool.readOnlyUtxoView.ValidatorPKIDToValidatorEntry, *validatorEntry.ValidatorPKID)
-
-		// Set JailedAtEpochNumber.
-		validatorEntry.JailedAtEpochNumber = currentEpochNumber
-
-		// Store m0's ValidatorEntry in the db.
+		// Jail m0.
 		tmpUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
-		tmpUtxoView._setValidatorEntryMappings(validatorEntry)
+		require.NoError(t, tmpUtxoView.JailValidator(validatorEntry))
 		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
+
+		// Delete m0's ValidatorEntry from the UtxoView so that it is read from the db.
+		delete(mempool.universalUtxoView.ValidatorPKIDToValidatorEntry, *validatorEntry.ValidatorPKID)
+		delete(mempool.readOnlyUtxoView.ValidatorPKIDToValidatorEntry, *validatorEntry.ValidatorPKID)
 
 		// Verify m0 is jailed.
 		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
@@ -1948,18 +1945,16 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 		// we cannot test rollbacks. We will run into an error where sender is
 		// trying to unjail himself, but he was never jailed.
 
-		// Delete sender's ValidatorEntry from the UtxoView.
-		delete(mempool.universalUtxoView.ValidatorPKIDToValidatorEntry, *validatorEntry.ValidatorPKID)
-		delete(mempool.readOnlyUtxoView.ValidatorPKIDToValidatorEntry, *validatorEntry.ValidatorPKID)
-
-		// Set JailedAtEpochNumber.
-		validatorEntry.JailedAtEpochNumber = currentEpochNumber
-
-		// Store sender's ValidatorEntry in the db.
+		// Jail the sender.
 		tmpUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
-		tmpUtxoView._setValidatorEntryMappings(validatorEntry)
+		err = tmpUtxoView.JailValidator(validatorEntry)
+		require.NoError(t, err)
 		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
+
+		// Delete sender's ValidatorEntry from the UtxoView so that it is read from the db.
+		delete(mempool.universalUtxoView.ValidatorPKIDToValidatorEntry, *validatorEntry.ValidatorPKID)
+		delete(mempool.readOnlyUtxoView.ValidatorPKIDToValidatorEntry, *validatorEntry.ValidatorPKID)
 
 		// Verify sender is jailed.
 		validatorEntry, err = newUtxoView().GetValidatorByPKID(senderPKID)

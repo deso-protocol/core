@@ -227,10 +227,10 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.NotNil(t, validatorEntry)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
 
-		// Verify GlobalStakeAmountNanos.
-		globalStakeAmountNanos, err := utxoView().GetGlobalStakeAmountNanos()
+		// Verify GlobalActiveStakeAmountNanos.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(100))
 
 		// Verify m1's DESO balance decreases by StakeAmountNanos (net of fees).
 		m1NewDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
@@ -262,10 +262,10 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.NotNil(t, validatorEntry)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(150))
 
-		// Verify GlobalStakeAmountNanos.
-		globalStakeAmountNanos, err := utxoView().GetGlobalStakeAmountNanos()
+		// Verify GlobalActiveStakeAmountNanos.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(150))
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(150))
 
 		// Verify m1's DESO balance decreases by StakeAmountNanos (net of fees).
 		m1NewDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
@@ -377,10 +377,10 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(110))
 
-		// Verify GlobalStakeAmountNanos.
-		globalStakeAmountNanos, err := utxoView().GetGlobalStakeAmountNanos()
+		// Verify GlobalActiveStakeAmountNanos.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(110))
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(110))
 
 		// Verify LockedStakeEntry.UnstakeAmountNanos.
 		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
@@ -415,10 +415,10 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(80))
 
-		// Verify GlobalStakeAmountNanos.
-		globalStakeAmountNanos, err := utxoView().GetGlobalStakeAmountNanos()
+		// Verify GlobalActiveStakeAmountNanos.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, uint256.NewInt().SetUint64(80))
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(80))
 
 		// Verify LockedStakeEntry.UnstakeAmountNanos.
 		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
@@ -452,10 +452,10 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt())
 
-		// Verify GlobalStakeAmountNanos.
-		globalStakeAmountNanos, err := utxoView().GetGlobalStakeAmountNanos()
+		// Verify GlobalActiveStakeAmountNanos.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
 
 		// Verify LockedStakeEntry.UnstakeAmountNanos.
 		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
@@ -560,10 +560,10 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt())
 
-		// Verify GlobalStakeAmountNanos.
-		globalStakeAmountNanos, err := utxoView().GetGlobalStakeAmountNanos()
+		// Verify GlobalActiveStakeAmountNanos.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, globalStakeAmountNanos, uint256.NewInt())
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
 
 		// Verify LockedStakeEntry.isDeleted.
 		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
@@ -1932,5 +1932,300 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 		newDesoBalanceNanos, err := newUtxoView().GetDeSoBalanceNanosForPublicKey(m0PkBytes)
 		require.NoError(t, err)
 		require.Equal(t, oldDesoBalanceNanos-feeNanos+uint64(100), newDesoBalanceNanos)
+	}
+}
+
+func TestStakingToJailedValidator(t *testing.T) {
+	testStakingToJailedValidator(t, false)
+	testStakingToJailedValidator(t, true)
+}
+
+func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
+	var err error
+
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights()
+	defer resetBalanceModelBlockHeights()
+
+	// Initialize test chain and miner.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Initialize fork heights.
+	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	chain.snapshot = nil
+
+	// For these tests, we set ValidatorJailEpochDuration to 0.
+	params.ValidatorJailEpochDuration = 0
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err = miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height + 1)
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       uint32(blockHeight),
+		feeRateNanosPerKb: uint64(101),
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
+
+	// Helper utils
+	utxoView := func() *UtxoView {
+		newUtxoView, err := mempool.GetAugmentedUniversalView()
+		require.NoError(t, err)
+		return newUtxoView
+	}
+
+	jailValidator := func(validatorPKID *PKID) {
+		// Retrieve current ValidatorEntry.
+		validatorEntry, err := utxoView().GetValidatorByPKID(validatorPKID)
+		require.NoError(t, err)
+
+		// Retrieve current GlobalActiveStakeAmountNanos.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
+		require.NoError(t, err)
+
+		// Jail the validator.
+		tmpUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		tmpUtxoView._setGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos)
+		require.NoError(t, tmpUtxoView.JailValidator(validatorEntry))
+		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
+
+		// Delete the ValidatorEntry and GlobalActiveStakeAmountNanos
+		// from the UtxoView so that they are next read from the db.
+		delete(mempool.universalUtxoView.ValidatorPKIDToValidatorEntry, *validatorPKID)
+		delete(mempool.readOnlyUtxoView.ValidatorPKIDToValidatorEntry, *validatorPKID)
+		mempool.universalUtxoView.GlobalActiveStakeAmountNanos = nil
+		mempool.readOnlyUtxoView.GlobalActiveStakeAmountNanos = nil
+
+	}
+
+	// Seed a CurrentEpochEntry.
+	epochUtxoView := utxoView()
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
+
+	{
+		// ParamUpdater set min fee rate
+		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1,
+			int64(testMeta.feeRateNanosPerKb),
+			-1,
+			-1,
+			-1,
+		)
+	}
+	{
+		// m0 registers as a validator.
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains:                  [][]byte{[]byte("https://m0.example.com")},
+			VotingPublicKey:          votingPublicKey,
+			VotingPublicKeySignature: votingSignature,
+		}
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
+		require.NoError(t, err)
+	}
+	{
+		// m1 stakes with m0. m0 is active.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(150),
+		}
+		_, err = _submitStakeTxn(testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		// m0 TotalStakeAmountNanos increases.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(150))
+
+		// GlobalActiveStakeAmountNanos increases.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(150))
+	}
+	{
+		// m1 unstakes some from m0. m0 is active.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
+		}
+		_, err = _submitUnstakeTxn(testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		// m0 TotalStakeAmountNanos decreases.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+
+		// GlobalActiveStakeAmountNanos decreases.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(100))
+	}
+	{
+		// Jail m0. Since this update takes place outside a transaction,
+		// we cannot test rollbacks. We will run into an error where m0
+		// is trying to unjail himself, but he was never jailed.
+		jailValidator(m0PKID)
+
+		// Verify m0 is jailed.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.Status(), ValidatorStatusJailed)
+
+		// m0 TotalStakeAmountNanos stays the same.
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+
+		// GlobalActiveStakeAmountNanos decreases.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
+	}
+	{
+		// m1 stakes more with m0. m0 is jailed.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(50),
+		}
+		_, err = _submitStakeTxn(testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		// m0 TotalStakeAmountNanos increases.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(150))
+
+		// GlobalActiveStakeAmountNanos stays the same.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
+	}
+	{
+		// m1 unstakes some from m0. m0 is jailed.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
+		}
+		_, err = _submitUnstakeTxn(testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		// m0 TotalStakeAmountNanos decreases.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+
+		// GlobalActiveStakeAmountNanos stays the same.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
+	}
+	{
+		// m0 unjails himself.
+		_, err = _submitUnjailValidatorTxn(testMeta, m0Pub, m0Priv, nil, flushToDB)
+		require.NoError(t, err)
+
+		// m0 TotalStakeAmountNanos stays the same.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+
+		// GlobalActiveStakeAmountNanos increases.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(100))
+	}
+	{
+		// m1 stakes more with m0. m0 is active.
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(50),
+		}
+		_, err = _submitStakeTxn(testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		// m0 TotalStakeAmountNanos increases.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(150))
+
+		// GlobalActiveStakeAmountNanos increases.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(150))
+	}
+	{
+		// m1 unstakes some from m0. m0 is active.
+		unstakeMetadata := &UnstakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
+		}
+		_, err = _submitUnstakeTxn(testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+
+		// m0 TotalStakeAmountNanos decreases.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+
+		// GlobalActiveStakeAmountNanos decreases.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(100))
+	}
+	{
+		// Jail m0 again. Since this update takes place outside a transaction,
+		// we cannot test rollbacks. We will run into an error where m0 is
+		// trying to unjail himself, but he was never jailed.
+		jailValidator(m0PKID)
+
+		// m0 TotalStakeAmountNanos stays the same.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+
+		// GlobalActiveStakeAmountNanos decreases.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
+	}
+	{
+		// m0 unregisters as a validator.
+		_, err = _submitUnregisterAsValidatorTxn(testMeta, m0Pub, m0Priv, flushToDB)
+		require.NoError(t, err)
+
+		// m0's ValidatorEntry is deleted.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Nil(t, validatorEntry)
+
+		// GlobalActiveStakeAmountNanos stays the same.
+		globalActiveStakeAmountNanos, err := utxoView().GetGlobalActiveStakeAmountNanos()
+		require.NoError(t, err)
+		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
 	}
 }
