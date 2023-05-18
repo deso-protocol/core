@@ -5,13 +5,14 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
+	"reflect"
+	"testing"
+	"time"
+
 	"github.com/brianvoe/gofakeit"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"reflect"
-	"testing"
-	"time"
 )
 
 // Initialize empty DeSoEncoders and check if they are encoded properly.
@@ -400,53 +401,53 @@ func TestEncodingUint256s(t *testing.T) {
 	num2 := uint256.NewInt().SetUint64(598128756)
 	num3 := MaxUint256
 
-	// Encode them to bytes using EncodeUint256.
-	encoded1 := EncodeUint256(num1)
-	encoded2 := EncodeUint256(num2)
-	encoded3 := EncodeUint256(num3)
+	// Encode them to bytes using VariableEncodeUint256.
+	encoded1 := VariableEncodeUint256(num1)
+	encoded2 := VariableEncodeUint256(num2)
+	encoded3 := VariableEncodeUint256(num3)
 
-	// Decode them from bytes using DecodeUint256. Verify values.
+	// Decode them from bytes using VariableDecodeUint256. Verify values.
 	rr := bytes.NewReader(encoded1)
-	decoded1, err := DecodeUint256(rr)
+	decoded1, err := VariableDecodeUint256(rr)
 	require.NoError(t, err)
 	require.True(t, num1.Eq(decoded1))
 
 	rr = bytes.NewReader(encoded2)
-	decoded2, err := DecodeUint256(rr)
+	decoded2, err := VariableDecodeUint256(rr)
 	require.NoError(t, err)
 	require.True(t, num2.Eq(decoded2))
 
 	rr = bytes.NewReader(encoded3)
-	decoded3, err := DecodeUint256(rr)
+	decoded3, err := VariableDecodeUint256(rr)
 	require.NoError(t, err)
 	require.True(t, num3.Eq(decoded3))
 
-	// Test that EncodeUint256 does not provide a fixed-width byte encoding.
+	// Test that VariableEncodeUint256 does not provide a fixed-width byte encoding.
 	require.NotEqual(t, len(encoded1), len(encoded2))
 	require.NotEqual(t, len(encoded1), len(encoded3))
 
-	// Encode them to bytes using EncodeOptionalUint256.
-	encoded1 = EncodeOptionalUint256(num1)
-	encoded2 = EncodeOptionalUint256(num2)
-	encoded3 = EncodeOptionalUint256(num3)
+	// Encode them to bytes using FixedWidthEncodeUint256.
+	encoded1 = FixedWidthEncodeUint256(num1)
+	encoded2 = FixedWidthEncodeUint256(num2)
+	encoded3 = FixedWidthEncodeUint256(num3)
 
-	// Decode them from bytes using ReadOptionalUint256. Verify values.
+	// Decode them from bytes using FixedWidthDecodeUint256. Verify values.
 	rr = bytes.NewReader(encoded1)
-	decoded1, err = ReadOptionalUint256(rr)
+	decoded1, err = FixedWidthDecodeUint256(rr)
 	require.NoError(t, err)
 	require.True(t, num1.Eq(decoded1))
 
 	rr = bytes.NewReader(encoded2)
-	decoded2, err = ReadOptionalUint256(rr)
+	decoded2, err = FixedWidthDecodeUint256(rr)
 	require.NoError(t, err)
 	require.True(t, num2.Eq(decoded2))
 
 	rr = bytes.NewReader(encoded3)
-	decoded3, err = ReadOptionalUint256(rr)
+	decoded3, err = FixedWidthDecodeUint256(rr)
 	require.NoError(t, err)
 	require.True(t, num3.Eq(decoded3))
 
-	// Test that EncodeOptionalUint256 provides a fixed-width byte encoding.
+	// Test that FixedWidthEncodeUint256 provides a fixed-width byte encoding.
 	require.Equal(t, len(encoded1), len(encoded2))
 	require.Equal(t, len(encoded1), len(encoded3))
 }

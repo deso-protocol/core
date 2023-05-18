@@ -1246,7 +1246,7 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
 
 		// PrevGlobalStakeAmountNanos
-		data = append(data, EncodeUint256(op.PrevGlobalStakeAmountNanos)...)
+		data = append(data, VariableEncodeUint256(op.PrevGlobalStakeAmountNanos)...)
 
 		// PrevStakeEntries
 		data = append(data, EncodeDeSoEncoderSlice(op.PrevStakeEntries, blockHeight, skipMetadata...)...)
@@ -1877,7 +1877,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 
 		// PrevGlobalStakeAmountNanos
-		if prevGlobalStakeAmountNanos, err := DecodeUint256(rr); err == nil {
+		if prevGlobalStakeAmountNanos, err := VariableDecodeUint256(rr); err == nil {
 			op.PrevGlobalStakeAmountNanos = prevGlobalStakeAmountNanos
 		} else {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalStakeAmountNanos: ")
@@ -4207,7 +4207,7 @@ func (be *BalanceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadat
 
 	data = append(data, EncodeToBytes(blockHeight, be.HODLerPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, be.CreatorPKID, skipMetadata...)...)
-	data = append(data, EncodeUint256(&be.BalanceNanos)...)
+	data = append(data, VariableEncodeUint256(&be.BalanceNanos)...)
 	data = append(data, BoolToByte(be.HasPurchased))
 
 	return data
@@ -4229,7 +4229,7 @@ func (be *BalanceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 		return errors.Wrapf(err, "BalanceEntry.Decode: Problem decoding CreatorPKID")
 	}
 
-	balanceNanos, err := DecodeUint256(rr)
+	balanceNanos, err := VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "BalanceEntry.Decode: Problem reading BalanceNanos")
 	}
@@ -4353,7 +4353,7 @@ func (ce *CoinEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata .
 	data = append(data, UintToBuf(ce.CreatorBasisPoints)...)
 	data = append(data, UintToBuf(ce.DeSoLockedNanos)...)
 	data = append(data, UintToBuf(ce.NumberOfHolders)...)
-	data = append(data, EncodeUint256(&ce.CoinsInCirculationNanos)...)
+	data = append(data, VariableEncodeUint256(&ce.CoinsInCirculationNanos)...)
 	data = append(data, UintToBuf(ce.CoinWatermarkNanos)...)
 	data = append(data, BoolToByte(ce.MintingDisabled))
 	data = append(data, byte(ce.TransferRestrictionStatus))
@@ -4377,7 +4377,7 @@ func (ce *CoinEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	if err != nil {
 		return errors.Wrapf(err, "CoinEntry.Decode: Problem reading NumberOfHolders")
 	}
-	coinsInCirculationNanos, err := DecodeUint256(rr)
+	coinsInCirculationNanos, err := VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CoinEntry.Decode: Problem reading NumberOfHolders")
 	}
@@ -4912,12 +4912,12 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 	return nil, nil
 }
 
-// EncodeUint256 is useful for space-efficient encoding of uint256s.
+// VariableEncodeUint256 is useful for space-efficient encoding of uint256s.
 // It does not guarantee fixed-width encoding, so should not be used
-// in BadgerDB keys. Use EncodeOptionalUint256 instead, which does
-// guarantee fixed-width encoding. Both EncodeUint256 and
-// EncodeOptionalUint256 can handle nil inputs.
-func EncodeUint256(number *uint256.Int) []byte {
+// in BadgerDB keys. Use FixedWidthEncodeUint256 instead, which does
+// guarantee fixed-width encoding. Both VariableEncodeUint256 and
+// FixedWidthEncodeUint256 can handle nil inputs.
+func VariableEncodeUint256(number *uint256.Int) []byte {
 	var data []byte
 	if number != nil {
 		data = append(data, BoolToByte(true))
@@ -4929,7 +4929,7 @@ func EncodeUint256(number *uint256.Int) []byte {
 	return data
 }
 
-func DecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
+func VariableDecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
 	if existenceByte, err := ReadBoolByte(rr); existenceByte && err == nil {
 		maxUint256BytesLen := len(MaxUint256.Bytes())
 		intLen, err := ReadUvarint(rr)
@@ -5089,8 +5089,8 @@ func (order *DAOCoinLimitOrderEntry) RawEncodeWithoutMetadata(blockHeight uint64
 	data = append(data, EncodeToBytes(blockHeight, order.TransactorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.BuyingDAOCoinCreatorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.SellingDAOCoinCreatorPKID, skipMetadata...)...)
-	data = append(data, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	data = append(data, EncodeUint256(order.QuantityToFillInBaseUnits)...)
+	data = append(data, VariableEncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, VariableEncodeUint256(order.QuantityToFillInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(order.OperationType))...)
 	data = append(data, UintToBuf(uint64(order.FillType))...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
@@ -5133,12 +5133,12 @@ func (order *DAOCoinLimitOrderEntry) RawDecodeWithoutMetadata(blockHeight uint64
 	}
 
 	// ScaledExchangeRateCoinsToSellPerCoinToBuy
-	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = DecodeUint256(rr); err != nil {
+	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = VariableDecodeUint256(rr); err != nil {
 		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem reading ScaledExchangeRateCoinsToSellPerCoinToBuy")
 	}
 
 	// QuantityToFillInBaseUnits
-	if order.QuantityToFillInBaseUnits, err = DecodeUint256(rr); err != nil {
+	if order.QuantityToFillInBaseUnits, err = VariableDecodeUint256(rr); err != nil {
 		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem reading QuantityToFillInBaseUnits")
 	}
 
@@ -5383,8 +5383,8 @@ func (order *FilledDAOCoinLimitOrder) RawEncodeWithoutMetadata(blockHeight uint6
 	data = append(data, EncodeToBytes(blockHeight, order.TransactorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.BuyingDAOCoinCreatorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.SellingDAOCoinCreatorPKID, skipMetadata...)...)
-	data = append(data, EncodeUint256(order.CoinQuantityInBaseUnitsBought)...)
-	data = append(data, EncodeUint256(order.CoinQuantityInBaseUnitsSold)...)
+	data = append(data, VariableEncodeUint256(order.CoinQuantityInBaseUnitsBought)...)
+	data = append(data, VariableEncodeUint256(order.CoinQuantityInBaseUnitsSold)...)
 	data = append(data, BoolToByte(order.IsFulfilled))
 
 	return data
@@ -5426,12 +5426,12 @@ func (order *FilledDAOCoinLimitOrder) RawDecodeWithoutMetadata(blockHeight uint6
 	}
 
 	// CoinQuantityInBaseUnitsBought
-	if order.CoinQuantityInBaseUnitsBought, err = DecodeUint256(rr); err != nil {
+	if order.CoinQuantityInBaseUnitsBought, err = VariableDecodeUint256(rr); err != nil {
 		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading CoinQuantityInBaseUnitsBought")
 	}
 
 	// CoinQuantityInBaseUnitsSold
-	if order.CoinQuantityInBaseUnitsSold, err = DecodeUint256(rr); err != nil {
+	if order.CoinQuantityInBaseUnitsSold, err = VariableDecodeUint256(rr); err != nil {
 		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading CoinQuantityInBaseUnitsSold")
 	}
 
