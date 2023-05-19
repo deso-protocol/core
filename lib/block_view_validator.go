@@ -1908,11 +1908,8 @@ func (bav *UtxoView) JailValidator(validatorEntry *ValidatorEntry) error {
 		return errors.Wrapf(err, "UtxoView.JailValidator: error retrieving CurrentEpochNumber: ")
 	}
 
-	// Set JailedAtEpochNumber = CurrentEpochNumber.
+	// Set ValidatorEntry.JailedAtEpochNumber to the CurrentEpochNumber.
 	validatorEntry.JailedAtEpochNumber = currentEpochNumber
-
-	// Store the updated ValidatorEntry.
-	bav._setValidatorEntryMappings(validatorEntry)
 
 	// Remove the validator's stake from the GlobalActiveStakeAmountNanos.
 	prevGlobalActiveStakeAmountNanos, err := bav.GetGlobalActiveStakeAmountNanos()
@@ -1925,6 +1922,11 @@ func (bav *UtxoView) JailValidator(validatorEntry *ValidatorEntry) error {
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.JailValidator: error calculating updated GlobalActiveStakeAmountNanos: ")
 	}
+
+	// Store the updated ValidatorEntry.
+	bav._setValidatorEntryMappings(validatorEntry)
+
+	// Store the updated GlobalActiveStakeAmountNanos.
 	bav._setGlobalActiveStakeAmountNanos(currentGlobalActiveStakeAmountNanos)
 
 	return nil
