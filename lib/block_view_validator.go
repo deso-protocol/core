@@ -1414,8 +1414,8 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 		bav._setLockedStakeEntryMappings(prevLockedStakeEntry)
 	}
 
-	// Restore the PrevGlobalActiveStakeAmountNanos if the PrevValidatorEntry was active.
-	if prevValidatorEntry.Status() == ValidatorStatusActive {
+	// Restore the PrevGlobalActiveStakeAmountNanos, if exists.
+	if operationData.PrevGlobalActiveStakeAmountNanos != nil {
 		bav._setGlobalActiveStakeAmountNanos(operationData.PrevGlobalActiveStakeAmountNanos)
 	}
 
@@ -1787,6 +1787,8 @@ func (bav *UtxoView) SanityCheckUnregisterAsValidatorTxn(
 		if !globalActiveStakeAmountNanosDecrease.Eq(amountNanos) {
 			return errors.New("SanityCheckUnregisterAsValidatorTxn: GlobalActiveStakeAmountNanos decrease doesn't match")
 		}
+	} else if utxoOp.PrevGlobalActiveStakeAmountNanos != nil {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: non-nil PrevGlobalActiveStakeAmountNanos provided for inactive validator")
 	}
 
 	return nil

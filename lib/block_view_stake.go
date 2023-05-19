@@ -1341,8 +1341,8 @@ func (bav *UtxoView) _disconnectStake(
 		bav._setStakeEntryMappings(operationData.PrevStakeEntries[0])
 	}
 
-	// Restore the PrevGlobalActiveStakeAmountNanos if the PrevValidatorEntry was active.
-	if prevValidatorEntry.Status() == ValidatorStatusActive {
+	// Restore the PrevGlobalActiveStakeAmountNanos, if exists.
+	if operationData.PrevGlobalActiveStakeAmountNanos != nil {
 		bav._setGlobalActiveStakeAmountNanos(operationData.PrevGlobalActiveStakeAmountNanos)
 	}
 
@@ -1620,8 +1620,8 @@ func (bav *UtxoView) _disconnectUnstake(
 	}
 	bav._setStakeEntryMappings(operationData.PrevStakeEntries[0])
 
-	// Restore the PrevGlobalActiveStakeAmountNanos if the PrevValidatorEntry was active.
-	if prevValidatorEntry.Status() == ValidatorStatusActive {
+	// Restore the PrevGlobalActiveStakeAmountNanos, if exists.
+	if operationData.PrevGlobalActiveStakeAmountNanos != nil {
 		bav._setGlobalActiveStakeAmountNanos(operationData.PrevGlobalActiveStakeAmountNanos)
 	}
 
@@ -2049,6 +2049,8 @@ func (bav *UtxoView) SanityCheckStakeTxn(
 		if !globalActiveStakeAmountNanosIncrease.Eq(amountNanos) {
 			return errors.New("SanityCheckStakeTxn: GlobalActiveStakeAmountNanos increase does not match")
 		}
+	} else if utxoOp.PrevGlobalActiveStakeAmountNanos != nil {
+		return errors.New("SanityCheckStakeTxn: non-nil PrevGlobalActiveStakeAmountNanos provided for inactive validator")
 	}
 
 	// Validate TransactorBalance decrease.
@@ -2165,6 +2167,8 @@ func (bav *UtxoView) SanityCheckUnstakeTxn(transactorPKID *PKID, utxoOp *UtxoOpe
 		if !globalActiveStakeAmountNanosDecrease.Eq(amountNanos) {
 			return errors.New("SanityCheckUnstakeTxn: GlobalActiveStakeAmountNanos decrease does not match")
 		}
+	} else if utxoOp.PrevGlobalActiveStakeAmountNanos != nil {
+		return errors.New("SanityCheckUnstakeTxn: non-nil PrevGlobalActiveStakeAmountNanos provided for inactive validator")
 	}
 
 	return nil

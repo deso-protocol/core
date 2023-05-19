@@ -1877,9 +1877,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 
 		// PrevGlobalActiveStakeAmountNanos
-		if prevGlobalActiveStakeAmountNanos, err := VariableDecodeUint256(rr); err == nil {
-			op.PrevGlobalActiveStakeAmountNanos = prevGlobalActiveStakeAmountNanos
-		} else {
+		if op.PrevGlobalActiveStakeAmountNanos, err = VariableDecodeUint256(rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalActiveStakeAmountNanos: ")
 		}
 
