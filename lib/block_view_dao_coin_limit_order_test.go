@@ -627,7 +627,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
-	params.BlockRewardMaturity = 0 * time.Second
+	params.BlockRewardMaturity = time.Second
 
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(err)

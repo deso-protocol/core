@@ -3900,6 +3900,10 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 		if tipHeight > 0 {
 			startHeight = tipHeight - 1
 		}
+		// This is a special case to support tests where the number of immature blocks is 0.
+		if numImmatureBlocks == 0 {
+			startHeight = tipHeight
+		}
 		outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), startHeight, tipHeight)
 
 		var err error
