@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"io"
 	"math"
 	"math/big"
@@ -17,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
@@ -5967,12 +5968,13 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 			for key := range tsl.StakeLimitMap {
 				keys = append(keys, key)
 			}
+			// Sort the keys to ensure deterministic ordering.
 			sort.Slice(keys, func(ii, jj int) bool {
 				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
 			})
 			for _, key := range keys {
 				data = append(data, key.Encode()...)
-				data = append(data, EncodeUint256(tsl.StakeLimitMap[key])...)
+				data = append(data, VariableEncodeUint256(tsl.StakeLimitMap[key])...)
 			}
 		}
 
@@ -5987,12 +5989,13 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 			for key := range tsl.UnstakeLimitMap {
 				keys = append(keys, key)
 			}
+			// Sort the keys to ensure deterministic ordering.
 			sort.Slice(keys, func(ii, jj int) bool {
 				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
 			})
 			for _, key := range keys {
 				data = append(data, key.Encode()...)
-				data = append(data, EncodeUint256(tsl.UnstakeLimitMap[key])...)
+				data = append(data, VariableEncodeUint256(tsl.UnstakeLimitMap[key])...)
 			}
 		}
 
@@ -6007,6 +6010,7 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 			for key := range tsl.UnlockStakeLimitMap {
 				keys = append(keys, key)
 			}
+			// Sort the keys to ensure deterministic ordering.
 			sort.Slice(keys, func(ii, jj int) bool {
 				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
 			})
@@ -6241,7 +6245,7 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 					return errors.Wrap(err, "Error decoding StakeLimitKey: ")
 				}
 				var stakeLimitDESONanos *uint256.Int
-				stakeLimitDESONanos, err = DecodeUint256(rr)
+				stakeLimitDESONanos, err = VariableDecodeUint256(rr)
 				if err != nil {
 					return err
 				}
@@ -6265,7 +6269,7 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 					return errors.Wrap(err, "Error decoding StakeLimitKey: ")
 				}
 				var unstakeLimitDESONanos *uint256.Int
-				unstakeLimitDESONanos, err = DecodeUint256(rr)
+				unstakeLimitDESONanos, err = VariableDecodeUint256(rr)
 				if err != nil {
 					return err
 				}
@@ -7501,8 +7505,8 @@ func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data := append([]byte{}, EncodeOptionalPublicKey(txnData.BuyingDAOCoinCreatorPublicKey)...)
 	data = append(data, EncodeOptionalPublicKey(txnData.SellingDAOCoinCreatorPublicKey)...)
-	data = append(data, EncodeOptionalUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	data = append(data, EncodeOptionalUint256(txnData.QuantityToFillInBaseUnits)...)
+	data = append(data, FixedWidthEncodeUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, FixedWidthEncodeUint256(txnData.QuantityToFillInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
 	data = append(data, UintToBuf(uint64(txnData.FillType))...)
 	data = append(data, EncodeOptionalBlockHash(txnData.CancelOrderID)...)
@@ -7549,13 +7553,13 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	}
 
 	// Parse ScaledExchangeRateCoinsToSellPerCoinToBuy
-	ret.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = ReadOptionalUint256(rr)
+	ret.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = FixedWidthDecodeUint256(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading ScaledPrice: %v", err)
 	}
 
 	// Parse QuantityToFillInBaseUnits
-	ret.QuantityToFillInBaseUnits, err = ReadOptionalUint256(rr)
+	ret.QuantityToFillInBaseUnits, err = FixedWidthDecodeUint256(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading QuantityToFillInBaseUnits: %v", err)
 	}

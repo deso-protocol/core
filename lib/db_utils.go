@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/holiman/uint256"
 	"io"
 	"log"
 	"math"
@@ -17,6 +16,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/holiman/uint256"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
@@ -481,26 +482,44 @@ type DBPrefixes struct {
 	PrefixValidatorByPKID []byte `prefix_id:"[78]" is_state:"true"`
 
 	// PrefixValidatorByStake: Retrieve the top N validators by stake.
-	// Prefix, TotalStakeAmountNanos, MaxUint64 - RegisteredAtBlockHeight, ValidatorPKID -> ValidatorPKID
-	// FIXME: @DH, should we duplicate the ValidatorPKID in the key and the value?
-	// Alternatively, we could just store and parse the ValidatorPKID from the key
-	// and store a struct{} as the value. That saves on space, but makes retrieving
-	// the ValidatorPKID from the key bytes more complex than just reading the value
-	// bytes directly since the key includes other preceding fields. Interesting
-	// trade-off. Curious your opinion.
+	// Prefix, TotalStakeAmountNanos, ValidatorPKID -> nil
+	// Note that we save space by storing a nil value and parsing the ValidatorPKID from the key.
 	PrefixValidatorByStake []byte `prefix_id:"[79]" is_state:"true"`
 
 	// PrefixGlobalStakeAmountNanos: Retrieve the cumulative stake across all validators.
 	// Prefix -> *uint256.Int
 	PrefixGlobalStakeAmountNanos []byte `prefix_id:"[80]" is_state:"true"`
 
-	// PrefixStakeByValidatorByStaker: Retrieve a StakeEntry.
+	// PrefixStakeByValidatorAndStaker: Retrieve a StakeEntry.
 	// Prefix, ValidatorPKID, StakerPKID -> StakeEntry
-	PrefixStakeByValidatorByStaker []byte `prefix_id:"[81]" is_state:"true"`
+	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[81]" is_state:"true"`
 
-	// PrefixLockedStakeByValidatorByStakerByLockedAt: Retrieve a LockedStakeEntry.
+	// PrefixLockedStakeByValidatorAndStakerAndLockedAt: Retrieve a LockedStakeEntry.
 	// Prefix, ValidatorPKID, StakerPKID, LockedAtEpochNumber -> LockedStakeEntry
-	PrefixLockedStakeByValidatorByStakerByLockedAt []byte `prefix_id:"[82]" is_state:"true"`
+	//
+	// The way staking works is that staking to a validator is instant and creates a StakeEntry
+	// immediately, but UNstaking from a validator has a "cooldown" period before the funds
+	// are returned to the user. This cooldown period is implemented in Unstake by decrementing
+	// from the StakeEntry and creating a new LockedStakeEntry with the amount being unstaked.
+	// the LockedStakeEntry has a LockedAtEpochNumber indicating when the Unstake occurred. This
+	// allows the user to then call a *second* Unlock txn to pull the LockedStake into their
+	// wallet balance after enough epochs have passed since LockedAtEpochNumber.
+	//
+	// Below is an example:
+	// - User stakes 100 DESO to a validator. A StakeEntry is created containing 100 DESO.
+	// - User unstakes 25 DESO at epoch 123. The StakeEntry is decremented to 75 DESO and a
+	//   LockedStakeEntry is created containing:
+	//   * <LockedStakeAmount=25 DESO, LockedAtEpochNumber=123>
+	// - Suppose the cooldown period is 3 epochs. If the user tries to call UnlockStake at
+	//   epoch 124, for example, which is one epoch after they called Unstake, the call will
+	//   fail because (CurrentEpoch - LockedAtEpockNumber) = 124 - 123 = 1, which is less
+	//   than cooldown = 3.
+	// - After 3 epochs have passed, however, the UnlockStake transaction will work. For
+	//   example, suppose the user calls UnlockStake at spoch 133. Now, we have
+	//   (CurrentEpoch - LockedAtEpochNumber) = 133 - 123 = 10, which is greater than
+	//   cooldown=3. Thus the UnlockStake will succeed, which will result in the
+	//   LockedStakeEntry being deleted and 25 DESO being added to the user's balance.
+	PrefixLockedStakeByValidatorAndStakerAndLockedAt []byte `prefix_id:"[82]" is_state:"true"`
 
 	// PrefixCurrentEpoch: Retrieve the current EpochEntry.
 	// Prefix -> EpochEntry
@@ -717,14 +736,14 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 		return true, &ValidatorEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStake) {
 		// prefix_id:"[79]"
-		return true, &PKID{}
+		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixGlobalStakeAmountNanos) {
 		// prefix_id:"[80]"
 		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByValidatorByStaker) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByValidatorAndStaker) {
 		// prefix_id:"[81]"
 		return true, &StakeEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixLockedStakeByValidatorByStakerByLockedAt) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockedStakeByValidatorAndStakerAndLockedAt) {
 		// prefix_id:"[82]"
 		return true, &LockedStakeEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentEpoch) {
@@ -5880,7 +5899,7 @@ func (txnMeta *DAOCoinTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHei
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.CreatorUsername))...)
-	data = append(data, EncodeUint256(&txnMeta.DAOCoinToTransferNanos)...)
+	data = append(data, VariableEncodeUint256(&txnMeta.DAOCoinToTransferNanos)...)
 	return data
 }
 
@@ -5893,7 +5912,7 @@ func (txnMeta *DAOCoinTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHei
 	}
 	txnMeta.CreatorUsername = string(creatorUsernameBytes)
 
-	DAOCoinToTransferNanos, err := DecodeUint256(rr)
+	DAOCoinToTransferNanos, err := VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinTransferTxindexMetadata.Decode: Problem reading DAOCoinToTransferNanos")
 	}
@@ -5923,8 +5942,8 @@ func (txnMeta *DAOCoinTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint
 	data = append(data, EncodeByteArray([]byte(txnMeta.CreatorUsername))...)
 	data = append(data, EncodeByteArray([]byte(txnMeta.OperationType))...)
 
-	data = append(data, EncodeUint256(txnMeta.CoinsToMintNanos)...)
-	data = append(data, EncodeUint256(txnMeta.CoinsToBurnNanos)...)
+	data = append(data, VariableEncodeUint256(txnMeta.CoinsToMintNanos)...)
+	data = append(data, VariableEncodeUint256(txnMeta.CoinsToBurnNanos)...)
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.TransferRestrictionStatus))...)
 	return data
@@ -5945,12 +5964,12 @@ func (txnMeta *DAOCoinTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint
 	}
 	txnMeta.OperationType = string(operationTypeBytes)
 
-	txnMeta.CoinsToMintNanos, err = DecodeUint256(rr)
+	txnMeta.CoinsToMintNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinTxindexMetadata.Decode: problem reading CoinsToMintNanos")
 	}
 
-	txnMeta.CoinsToBurnNanos, err = DecodeUint256(rr)
+	txnMeta.CoinsToBurnNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinTxindexMetadata.Decode: problem reading CoinsToBurnNanos")
 	}
@@ -5987,8 +6006,8 @@ func (orderMeta *FilledDAOCoinLimitOrderMetadata) RawEncodeWithoutMetadata(block
 	data = append(data, EncodeByteArray([]byte(orderMeta.TransactorPublicKeyBase58Check))...)
 	data = append(data, EncodeByteArray([]byte(orderMeta.BuyingDAOCoinCreatorPublicKey))...)
 	data = append(data, EncodeByteArray([]byte(orderMeta.SellingDAOCoinCreatorPublicKey))...)
-	data = append(data, EncodeUint256(orderMeta.CoinQuantityInBaseUnitsBought)...)
-	data = append(data, EncodeUint256(orderMeta.CoinQuantityInBaseUnitsSold)...)
+	data = append(data, VariableEncodeUint256(orderMeta.CoinQuantityInBaseUnitsBought)...)
+	data = append(data, VariableEncodeUint256(orderMeta.CoinQuantityInBaseUnitsSold)...)
 	data = append(data, BoolToByte(orderMeta.IsFulfilled))
 
 	return data
@@ -6018,13 +6037,13 @@ func (orderMeta *FilledDAOCoinLimitOrderMetadata) RawDecodeWithoutMetadata(block
 	orderMeta.SellingDAOCoinCreatorPublicKey = string(sellingDAOCoinCreatorPublicKey)
 
 	// CoinQuantityInBaseUnitsBought
-	orderMeta.CoinQuantityInBaseUnitsBought, err = DecodeUint256(rr)
+	orderMeta.CoinQuantityInBaseUnitsBought, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "FilledDAOCoinLimitOrderMetadata.Decode: Problem reading CoinQuantityInBaseUnitsBought")
 	}
 
 	// CoinQuantityInBaseUnitsSold
-	orderMeta.CoinQuantityInBaseUnitsSold, err = DecodeUint256(rr)
+	orderMeta.CoinQuantityInBaseUnitsSold, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "FilledDAOCoinLimitOrderMetadata.Decode: Problem reading CoinQuantityInBaseUnitsSold")
 	}
@@ -6057,8 +6076,8 @@ func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawEncodeWithoutMetadata(blockH
 
 	data = append(data, EncodeByteArray([]byte(daoMeta.BuyingDAOCoinCreatorPublicKey))...)
 	data = append(data, EncodeByteArray([]byte(daoMeta.SellingDAOCoinCreatorPublicKey))...)
-	data = append(data, EncodeUint256(daoMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	data = append(data, EncodeUint256(daoMeta.QuantityToFillInBaseUnits)...)
+	data = append(data, VariableEncodeUint256(daoMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, VariableEncodeUint256(daoMeta.QuantityToFillInBaseUnits)...)
 
 	data = append(data, UintToBuf(uint64(len(daoMeta.FilledDAOCoinLimitOrdersMetadata)))...)
 	for _, order := range daoMeta.FilledDAOCoinLimitOrdersMetadata {
@@ -6081,12 +6100,12 @@ func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawDecodeWithoutMetadata(blockH
 	}
 	daoMeta.SellingDAOCoinCreatorPublicKey = string(sellingDAOCoinCreatorPublicKey)
 
-	daoMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = DecodeUint256(rr)
+	daoMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinLimitOrderTxindexMetadata.Decode: Problem reading ScaledExchangeRateCoinsToSellPerCoinToBuy")
 	}
 
-	daoMeta.QuantityToFillInBaseUnits, err = DecodeUint256(rr)
+	daoMeta.QuantityToFillInBaseUnits, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinLimitOrderTxindexMetadata.Decode: Problem reading QuantityToFillInBaseUnits")
 	}
@@ -9330,7 +9349,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 
 func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	key := DBPrefixKeyForDAOCoinLimitOrder(order)
-	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	key = append(key, VariableEncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	// Store MaxUint32 - block height to guarantee FIFO
 	// orders as we seek in reverse order.
 	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
