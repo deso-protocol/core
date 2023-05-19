@@ -3889,10 +3889,13 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	immatureBlockRewards := uint64(0)
 
 	if bav.Postgres != nil {
+		// Note: badger is only getting the block reward for the previous block, so we make postgres
+		// do the same thing. This is not ideal, but it is the simplest way to get the same behavior
+		// and we will address the issue soon.
 		// Filter out immature block rewards in postgres. UtxoType needs to be set correctly when importing blocks
 		var startHeight uint32
-		if tipHeight > numImmatureBlocks {
-			startHeight = tipHeight - numImmatureBlocks
+		if tipHeight > 0 {
+			startHeight = tipHeight - 1
 		}
 		outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), startHeight, tipHeight)
 
