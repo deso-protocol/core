@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/holiman/uint256"
 	"math"
 	"math/big"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/holiman/uint256"
 
 	"github.com/davecgh/go-spew/spew"
 
@@ -115,9 +116,9 @@ type UtxoView struct {
 	TransactorNonceMapKeyToTransactorNonceEntry map[TransactorNonceMapKey]*TransactorNonceEntry
 
 	// Validator mappings
-	ValidatorMapKeyToValidatorEntry map[ValidatorMapKey]*ValidatorEntry
+	ValidatorPKIDToValidatorEntry map[PKID]*ValidatorEntry
 
-	// Global stake across validators
+	// Global stake across all validators
 	GlobalStakeAmountNanos *uint256.Int
 
 	// Stake mappings
@@ -222,7 +223,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.TransactorNonceMapKeyToTransactorNonceEntry = make(map[TransactorNonceMapKey]*TransactorNonceEntry)
 
 	// ValidatorEntries
-	bav.ValidatorMapKeyToValidatorEntry = make(map[ValidatorMapKey]*ValidatorEntry)
+	bav.ValidatorPKIDToValidatorEntry = make(map[PKID]*ValidatorEntry)
 
 	// Global stake across validators. We deliberately want this to initialize to nil and not zero
 	// since a zero value will overwrite an existing GlobalStakeAmountNanos value in the db, whereas
@@ -490,9 +491,9 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	}
 
 	// Copy the ValidatorEntries
-	newView.ValidatorMapKeyToValidatorEntry = make(map[ValidatorMapKey]*ValidatorEntry, len(bav.ValidatorMapKeyToValidatorEntry))
-	for entryKey, entry := range bav.ValidatorMapKeyToValidatorEntry {
-		newView.ValidatorMapKeyToValidatorEntry[entryKey] = entry.Copy()
+	newView.ValidatorPKIDToValidatorEntry = make(map[PKID]*ValidatorEntry, len(bav.ValidatorPKIDToValidatorEntry))
+	for entryKey, entry := range bav.ValidatorPKIDToValidatorEntry {
+		newView.ValidatorPKIDToValidatorEntry[entryKey] = entry.Copy()
 	}
 
 	// Copy the GlobalStakeAmountNanos.
