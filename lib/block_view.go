@@ -485,7 +485,10 @@ func NewUtxoView(
 	// not concern itself with the header chain (see comment on GetBestHash for more
 	// info on that).
 	if view.Postgres != nil {
-		view.TipHash = view.Postgres.GetChain(MAIN_CHAIN).TipHash
+		pgChain := view.Postgres.GetChain(MAIN_CHAIN)
+		if pgChain != nil {
+			view.TipHash = view.Postgres.GetChain(MAIN_CHAIN).TipHash
+		}
 	} else {
 		view.TipHash = DbGetBestHash(view.Handle, view.Snapshot, ChainTypeDeSoBlock /* don't get the header chain */)
 	}
@@ -3889,10 +3892,17 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	immatureBlockRewards := uint64(0)
 
 	if bav.Postgres != nil {
+		// Note: badger is only getting the block reward for the previous block, so we make postgres
+		// do the same thing. This is not ideal, but it is the simplest way to get the same behavior
+		// and we will address the issue soon.
 		// Filter out immature block rewards in postgres. UtxoType needs to be set correctly when importing blocks
 		var startHeight uint32
-		if tipHeight > numImmatureBlocks {
-			startHeight = tipHeight - numImmatureBlocks
+		if tipHeight > 0 {
+			startHeight = tipHeight - 1
+		}
+		// This is a special case to support tests where the number of immature blocks is 0.
+		if numImmatureBlocks == 0 {
+			startHeight = tipHeight
 		}
 		outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), startHeight, tipHeight)
 
