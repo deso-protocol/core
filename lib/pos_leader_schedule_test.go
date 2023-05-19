@@ -1,3 +1,5 @@
+//go:build relic
+
 package lib
 
 import (
@@ -8,6 +10,9 @@ import (
 )
 
 func TestGenerateLeaderSchedule(t *testing.T) {
+	var utxoView *UtxoView
+	var err error
+
 	// Initialize fork heights.
 	setBalanceModelBlockHeights()
 	defer resetBalanceModelBlockHeights()
@@ -23,7 +28,7 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
-		_, err := miner.MineAndProcessSingleBlock(0, mempool)
+		_, err = miner.MineAndProcessSingleBlock(0, mempool)
 		require.NoError(t, err)
 	}
 
@@ -73,6 +78,12 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		{PublicKey: m6Pub, PrivateKey: m6Priv, PKID: m6PKID}, // Stake = 700
 	}
 
+	// Seed a CurrentEpochEntry.
+	utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	require.NoError(t, err)
+	utxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, utxoView.FlushToDb(blockHeight))
+
 	{
 		// ParamUpdater set min fee rate
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
@@ -117,10 +128,32 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	}
 	{
 		// Verify GetTopActiveValidatorsByStake.
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
 		validatorEntries, err := utxoView.GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 7)
+		require.True(t, validatorEntries[0].ValidatorPKID.Eq(m6PKID))
+		require.True(t, validatorEntries[1].ValidatorPKID.Eq(m5PKID))
+		require.True(t, validatorEntries[2].ValidatorPKID.Eq(m4PKID))
+		require.True(t, validatorEntries[3].ValidatorPKID.Eq(m3PKID))
+		require.True(t, validatorEntries[4].ValidatorPKID.Eq(m2PKID))
+		require.True(t, validatorEntries[5].ValidatorPKID.Eq(m1PKID))
+		require.True(t, validatorEntries[6].ValidatorPKID.Eq(m0PKID))
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos.Uint64(), uint64(700))
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos.Uint64(), uint64(600))
+		require.Equal(t, validatorEntries[2].TotalStakeAmountNanos.Uint64(), uint64(500))
+		require.Equal(t, validatorEntries[3].TotalStakeAmountNanos.Uint64(), uint64(400))
+		require.Equal(t, validatorEntries[4].TotalStakeAmountNanos.Uint64(), uint64(300))
+		require.Equal(t, validatorEntries[5].TotalStakeAmountNanos.Uint64(), uint64(200))
+		require.Equal(t, validatorEntries[6].TotalStakeAmountNanos.Uint64(), uint64(100))
+	}
+	{
+		// Test GenerateLeaderSchedule().
+		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		leaderSchedule, err := utxoView.GenerateLeaderSchedule()
+		require.NoError(t, err)
+		require.Len(t, leaderSchedule, 7)
 	}
 }
