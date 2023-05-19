@@ -619,7 +619,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	defer func() {
 		if chain.postgres != nil {
-			require.NoError(t, ResetPostgres(chain.postgres))
+			require.NoError(ResetPostgres(chain.postgres))
 		}
 	}()
 	mempool, miner := NewTestMiner(t, chain, params, true)
