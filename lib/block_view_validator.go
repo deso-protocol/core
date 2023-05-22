@@ -1424,10 +1424,6 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	)
 }
 
-// FIXME: Currently, unjail does not re-add a validator's stake back to the GlobalStakeAmountNanos.
-// When we flesh out the logic for jail/unjail, we will want to make it so that the process that
-// jails a validator *removes* their stake from GlobalStakeAmountNanos, and the process that unjails,
-// i.e. this function, *re-adds* their stake back to GlobalStakeAmountNanos.
 func (bav *UtxoView) _connectUnjailValidator(
 	txn *MsgDeSoTxn,
 	txHash *BlockHash,
