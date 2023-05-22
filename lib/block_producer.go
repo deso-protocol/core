@@ -284,6 +284,13 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		return nil, nil, nil, fmt.Errorf(
 			"DeSoBlockProducer._getBlockTemplate: Error generating UtxoView to compute txn fees: %v", err)
 	}
+
+	// Parse the public key that should be used for the block reward.
+	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutput.PublicKey, btcec.S256())
+	if err != nil {
+		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: problem parsing block reward output public key: ")
+	}
+
 	// Skip the block reward, which is the first txn in the block.
 	for _, txnInBlock := range blockRet.Txns[1:] {
 		var feeNanos uint64
@@ -295,10 +302,25 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 				"DeSoBlockProducer._getBlockTemplate: Error attaching txn to UtxoView for computed block: %v", err)
 		}
 
-		// Add the fee to the block reward output as we go. Note this has some risk of
-		// increasing the size of the block by one byte, but it seems like this is an
-		// extreme edge case that goes away as soon as the function is called again.
-		totalFeeNanos += feeNanos
+		// Parse the transactor's public key to compare with the block reward output public key.
+		transactorPublicKey, err := btcec.ParsePubKey(txnInBlock.PublicKey, btcec.S256())
+		if err != nil {
+			return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: problem parsing transactor public key: ")
+		}
+		// If the transactor is not the block reward output, add the fee to the total.
+		// We exclude fees from transactions where the block reward output public key
+		// is the same as the transactor public key to prevent the block reward output
+		// public key from getting free transaction fees.
+		if !transactorPublicKey.IsEqual(blockRewardOutputPublicKey) {
+			// Check for overflow
+			if totalFeeNanos > math.MaxUint64-feeNanos {
+				return nil, nil, nil, fmt.Errorf("DeSoBlockProducer._getBlockTemplate: Total fee overflowed uint64")
+			}
+			// Add the fee to the block reward output as we go. Note this has some risk of
+			// increasing the size of the block by one byte, but it seems like this is an
+			// extreme edge case that goes away as soon as the function is called again.
+			totalFeeNanos += feeNanos
+		}
 	}
 
 	// Now that the total fees have been computed, set the value of the block reward

@@ -3356,6 +3356,30 @@ func (bav *UtxoView) ConnectBlock(
 	}
 
 	blockHeader := desoBlock.Header
+	var blockRewardOutputPublicKey *btcec.PublicKey
+	// If the block height is greater than or equal to the block reward patch height,
+	// we will verify that there is only one block reward output and we'll parse
+	// that public key
+	if blockHeight >= uint64(bav.Params.ForkHeights.BlockRewardPatchBlockHeight) {
+		// Make sure the block has transactions
+		if len(desoBlock.Txns) == 0 {
+			return nil, errors.Wrap(RuleErrorNoTxns,"ConnectBlock: Block has no transactions")
+		}
+		// Make sure the first transaction is a block reward.
+		if desoBlock.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
+			return nil, errors.Wrap(RuleErrorFirstTxnMustBeBlockReward, "ConnectBlock: First transaction in block is not a block reward")
+		}
+		// Ensure that the block reward transaction has exactly one output.
+		if len(desoBlock.Txns[0].TxOutputs) != 1 {
+			return nil, errors.Wrap(RuleErrorBlockRewardTxnMustHaveOneOutput, "ConnectBlock: Block reward transaction must have exactly one output")
+		}
+		var err error
+		if blockRewardOutputPublicKey, err =
+			btcec.ParsePubKey(desoBlock.Txns[0].TxOutputs[0].PublicKey, btcec.S256()); err != nil {
+			return nil, fmt.Errorf("ConnectBlock: Problem parsing block reward public key: %v", err)
+		}
+	}
+
 	// Loop through all the transactions and validate them using the view. Also
 	// keep track of the total fees throughout.
 	var totalFees uint64
@@ -3378,13 +3402,28 @@ func (bav *UtxoView) ConnectBlock(
 			return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
 		}
 
-		// Add the fees from this txn to the total fees. If any overflow occurs
-		// mark the block as invalid and return a rule error. Note that block reward
-		// txns should count as having zero fees.
-		if totalFees > (math.MaxUint64 - currentFees) {
-			return nil, RuleErrorTxnOutputWithInvalidAmount
+		// After the block reward patch block height, we only include fees from transactions
+		// where the transactor is not the block reward output public key. This prevents
+		// the block reward output public key from being able to get their transactions
+		// included in blocks for free.
+		includeFeesInBlockReward := true
+		if blockHeight >= uint64(bav.Params.ForkHeights.BlockRewardPatchBlockHeight) &&
+			txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+			transactorPubKey, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
+			if err != nil {
+				return nil, fmt.Errorf("ConnectBlock: Problem parsing transactor public key: %v", err)
+			}
+			includeFeesInBlockReward = !transactorPubKey.IsEqual(blockRewardOutputPublicKey)
 		}
-		totalFees += currentFees
+		if includeFeesInBlockReward {
+			// Add the fees from this txn to the total fees. If any overflow occurs
+			// mark the block as invalid and return a rule error. Note that block reward
+			// txns should count as having zero fees.
+			if totalFees > (math.MaxUint64 - currentFees) {
+				return nil, RuleErrorTxnOutputWithInvalidAmount
+			}
+			totalFees += currentFees
+		}
 
 		// Add the utxo operations to our list for all the txns.
 		utxoOps = append(utxoOps, utxoOpsForTxn)
