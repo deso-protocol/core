@@ -11,6 +11,10 @@ import (
 	"io"
 )
 
+//
+// TYPES: RandomSeedHash
+//
+
 type RandomSeedHash [32]byte
 
 func (randomSeedHash *RandomSeedHash) ToUint256() *uint256.Int {
@@ -50,6 +54,10 @@ func DecodeRandomSeedHash(rr io.Reader) (*RandomSeedHash, error) {
 	}
 	return (&RandomSeedHash{}).FromBytes(randomSeedHashBytes)
 }
+
+//
+// UTXO VIEW UTILS
+//
 
 func (bav *UtxoView) GenerateRandomSeedSignature(signerPrivateKey *bls.PrivateKey) (*bls.Signature, error) {
 	currentRandomSeedHash, err := bav.GetCurrentRandomSeedHash()
@@ -105,9 +113,7 @@ func (bav *UtxoView) GetCurrentRandomSeedHash() (*RandomSeedHash, error) {
 	}
 	// If no RandomSeedHash is found in the UtxoView or db, return the
 	// GenesisRandomSeedHash which is 32 bytes of zeroes.
-	// TODO: should we change this? should we store it as a constant hex and parse into a byte slice?
-	var genesisRandomSeedHashBytes [32]byte
-	return (&RandomSeedHash{}).FromBytes(genesisRandomSeedHashBytes[:])
+	return &RandomSeedHash{}, nil
 }
 
 func (bav *UtxoView) _setCurrentRandomSeedHash(randomSeedHash *RandomSeedHash) {
@@ -124,9 +130,12 @@ func (bav *UtxoView) _flushCurrentRandomSeedHashToDbWithTxn(txn *badger.Txn, blo
 	if bav.CurrentRandomSeedHash == nil {
 		return nil
 	}
-
 	return DBPutCurrentRandomSeedHashWithTxn(txn, bav.Snapshot, bav.CurrentRandomSeedHash, blockHeight)
 }
+
+//
+// DB UTILS
+//
 
 func DBKeyForCurrentRandomSeedHash() []byte {
 	return append([]byte{}, Prefixes.PrefixCurrentRandomSeedHash...)
@@ -153,7 +162,6 @@ func DBGetCurrentRandomSeedHashWithTxn(txn *badger.Txn, snap *Snapshot) (*Random
 		}
 		return nil, errors.Wrapf(err, "DBGetCurrentRandomSeedHashWithTxn: problem retrieving value")
 	}
-
 	// Decode from bytes.
 	return (&RandomSeedHash{}).FromBytes(currentRandomSeedHashBytes)
 }
@@ -169,7 +177,6 @@ func DBPutCurrentRandomSeedHashWithTxn(
 		glog.Errorf("DBPutCurrentRandomSeedHashWithTxn: called with nil CurrentRandomSeedHash")
 		return nil
 	}
-
 	key := DBKeyForCurrentRandomSeedHash()
 	return DBSetWithTxn(txn, snap, key, currentRandomSeedHash.ToBytes())
 }

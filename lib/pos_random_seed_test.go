@@ -4,6 +4,7 @@ package lib
 
 import (
 	"github.com/deso-protocol/core/bls"
+	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -56,6 +57,7 @@ func TestCurrentRandomSeedHash(t *testing.T) {
 	randomSeedHash1, err = utxoView.GetCurrentRandomSeedHash()
 	require.NoError(t, err)
 	require.True(t, randomSeedHash1.Eq(&RandomSeedHash{}))
+	require.True(t, randomSeedHash1.ToUint256().Eq(uint256.NewInt()))
 
 	// PrivateKey1 generates a new RandomSeedSignature.
 	randomSeedSignature1, err = utxoView.GenerateRandomSeedSignature(privateKey1)
@@ -81,4 +83,14 @@ func TestCurrentRandomSeedHash(t *testing.T) {
 	require.False(t, randomSeedHash2.Eq(&RandomSeedHash{}))
 	// The new RandomSeedHash is not the previous CurrentRandomSeedHash.
 	require.False(t, randomSeedHash2.Eq(randomSeedHash1))
+
+	// Test RandomSeedHash.ToUint256(). Generates a valid uint256.
+	// Idempotent: generates the same uint256 each time.
+	require.True(t, randomSeedHash1.ToUint256().Cmp(uint256.NewInt()) > 0)
+	require.True(t, randomSeedHash1.ToUint256().Cmp(MaxUint256) < 0)
+	require.True(t, randomSeedHash1.ToUint256().Eq(randomSeedHash1.ToUint256()))
+	require.True(t, randomSeedHash2.ToUint256().Cmp(uint256.NewInt()) > 0)
+	require.True(t, randomSeedHash2.ToUint256().Cmp(MaxUint256) < 0)
+	require.True(t, randomSeedHash2.ToUint256().Eq(randomSeedHash2.ToUint256()))
+	require.False(t, randomSeedHash1.ToUint256().Eq(randomSeedHash2.ToUint256()))
 }
