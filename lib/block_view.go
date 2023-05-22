@@ -118,7 +118,7 @@ type UtxoView struct {
 	// Validator mappings
 	ValidatorPKIDToValidatorEntry map[PKID]*ValidatorEntry
 
-	// Global active stake across all validators
+	// The global active stake is the sum of all stake across validators who have Status = Active.
 	GlobalActiveStakeAmountNanos *uint256.Int
 
 	// Stake mappings

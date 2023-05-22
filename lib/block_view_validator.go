@@ -1586,7 +1586,7 @@ func (bav *UtxoView) _disconnectUnjailValidator(
 	// Restore the PrevGlobalActiveStakeAmountNanos.
 	prevGlobalActiveStakeAmountNanos := operationData.PrevGlobalActiveStakeAmountNanos
 	if prevGlobalActiveStakeAmountNanos == nil {
-		return errors.New("_disconnectUnjailValidator: PrevGlobalActiveStakeAmountNanos is nil")
+		return errors.New("_disconnectUnjailValidator: PrevGlobalActiveStakeAmountNanos is nil, this should never happen")
 	}
 	bav._setGlobalActiveStakeAmountNanos(prevGlobalActiveStakeAmountNanos)
 
