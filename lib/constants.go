@@ -607,6 +607,11 @@ type DeSoParams struct {
 	// TODO: Move this to GlobalParamsEntry.
 	ValidatorJailEpochDuration uint64
 
+	// LeaderScheduleMaxNumValidators is the maximum number of validators that
+	// are included when generating a new Proof-of-Stake leader schedule.
+	// TODO: Move this to GlobalParamsEntry.
+	LeaderScheduleMaxNumValidators uint64
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -985,6 +990,9 @@ var DeSoMainnetParams = DeSoParams{
 	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
 	ValidatorJailEpochDuration: uint64(3),
 
+	// The max number of validators included in a leader schedule.
+	LeaderScheduleMaxNumValidators: uint64(100),
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1218,6 +1226,9 @@ var DeSoTestnetParams = DeSoParams{
 
 	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
 	ValidatorJailEpochDuration: uint64(3),
+
+	// The max number of validators included in a leader schedule.
+	LeaderScheduleMaxNumValidators: uint64(100),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),

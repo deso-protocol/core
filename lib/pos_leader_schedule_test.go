@@ -286,6 +286,13 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		require.Equal(t, leaderSchedule[5].ValidatorPKID, testValidators[0].PKID)
 		require.Equal(t, leaderSchedule[6].ValidatorPKID, testValidators[6].PKID)
 	}
+	{
+		// Test changing params.LeaderScheduleMaxNumValidators.
+		params.LeaderScheduleMaxNumValidators = 5
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		require.NoError(t, err)
+		require.Len(t, leaderSchedule, 5)
+	}
 
 	// Test rollbacks.
 	_executeAllTestRollbackAndFlush(testMeta)

@@ -7,8 +7,6 @@ import (
 )
 
 func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
-	numValidators := 100 // bav.Params.PoSLeaderScheduleNumValidators
-
 	// Retrieve CurrentRandomSeedHash.
 	currentRandomSeedHash, err := bav.GetCurrentRandomSeedHash()
 	if err != nil {
@@ -16,7 +14,7 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
 	}
 
 	// Retrieve top, active validators ordered by stake.
-	validatorEntries, err := bav.GetTopActiveValidatorsByStake(int(numValidators))
+	validatorEntries, err := bav.GetTopActiveValidatorsByStake(int(bav.Params.LeaderScheduleMaxNumValidators))
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error retrieving top ValidatorEntries: ")
 	}
@@ -34,15 +32,15 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
 	}
 
 	// Pseudocode for leader-selection algorithm:
-	// While len(LeaderSchedule) < len(ValidatorEntries)
-	//   Hash the CurrentRandomSeedHash to generate a new RandomUint256.
-	//   RandomUint256 %= TotalStakeAmountNanos.
-	//   For each ValidatorEntry...
-	//   Skip if ValidatorEntry.TotalStakeAmountNanos is zero.
-	//   Skip if ValidatorEntry has already been added to the leader schedule.
-	//   If ValidatorEntry.TotalStakeAmountNanos >= RandomUint256:
-	//     Add ValidatorEntry to LeaderSchedule.
-	//     TotalStakeAmountNanos -= ValidatorEntry.TotalStakeAmountNanos.
+	// Note this is an O(N^2) algorithm where N is the number of validators we include.
+	// While len(LeaderSchedule) < len(ValidatorEntries):
+	//   Hash the CurrentRandomSeedHash and generate a new RandomUint256.
+	//   Take RandomUint256 modulo TotalStakeAmountNanos.
+	//   For each ValidatorEntry:
+	//     Skip if ValidatorEntry has already been added to the leader schedule.
+	//     If ValidatorEntry.TotalStakeAmountNanos >= RandomUint256:
+	//       Add ValidatorEntry to LeaderSchedule.
+	//       TotalStakeAmountNanos -= ValidatorEntry.TotalStakeAmountNanos.
 	var leaderSchedule []*ValidatorEntry
 
 	// We also track a set of ValidatorPKIDs that have already been
