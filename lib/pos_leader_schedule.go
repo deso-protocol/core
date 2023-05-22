@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"crypto/sha256"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
@@ -34,6 +35,7 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
 
 	// Pseudocode for leader-selection algorithm:
 	// While len(LeaderSchedule) < len(ValidatorEntries)
+	//   Hash the CurrentRandomSeedHash to generate a new RandomUint256.
 	//   RandomUint256 %= TotalStakeAmountNanos.
 	//   For each ValidatorEntry...
 	//   Skip if ValidatorEntry.TotalStakeAmountNanos is zero.
@@ -49,6 +51,14 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
 	leaderSchedulePKIDs := NewSet([]*PKID{})
 
 	for len(leaderSchedule) < len(validatorEntries) {
+		// Hash the CurrentRandomSeedHash each iteration. This generates
+		// multiple predictable pseudorandom values from the same seed.
+		currentRandomSHA256 := sha256.Sum256(currentRandomSeedHash.ToBytes())
+		currentRandomSeedHash, err = (&RandomSeedHash{}).FromBytes(currentRandomSHA256[:])
+		if err != nil {
+			return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error hashing CurrentRandomSeedHash: ")
+		}
+
 		// Take RandomUint256 % TotalStakeAmountNanos.
 		randomUint256 := uint256.NewInt().Mod(currentRandomSeedHash.ToUint256(), totalStakeAmountNanos)
 

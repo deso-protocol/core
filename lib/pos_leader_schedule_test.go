@@ -177,8 +177,8 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 2)
-		require.Equal(t, leaderSchedule[0].ValidatorPKID, testValidators[1].PKID)
-		require.Equal(t, leaderSchedule[1].ValidatorPKID, testValidators[0].PKID)
+		require.Equal(t, leaderSchedule[0].ValidatorPKID, testValidators[0].PKID)
+		require.Equal(t, leaderSchedule[1].ValidatorPKID, testValidators[1].PKID)
 	}
 	{
 		// All remaining validators register and stake to themselves.
@@ -214,6 +214,22 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 7)
+		require.Equal(t, leaderSchedule[0].ValidatorPKID, testValidators[3].PKID)
+		require.Equal(t, leaderSchedule[1].ValidatorPKID, testValidators[2].PKID)
+		require.Equal(t, leaderSchedule[2].ValidatorPKID, testValidators[1].PKID)
+		require.Equal(t, leaderSchedule[3].ValidatorPKID, testValidators[0].PKID)
+		require.Equal(t, leaderSchedule[4].ValidatorPKID, testValidators[6].PKID)
+		require.Equal(t, leaderSchedule[5].ValidatorPKID, testValidators[5].PKID)
+		require.Equal(t, leaderSchedule[6].ValidatorPKID, testValidators[4].PKID)
+	}
+	{
+		// Seed a new CurrentRandomSeedHash.
+		setCurrentRandomSeedHash("3b4b028b-6a7c-4b38-bea3-a5f59b34e02d")
+
+		// Test GenerateLeaderSchedule().
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		require.NoError(t, err)
+		require.Len(t, leaderSchedule, 7)
 		require.Equal(t, leaderSchedule[0].ValidatorPKID, testValidators[6].PKID)
 		require.Equal(t, leaderSchedule[1].ValidatorPKID, testValidators[5].PKID)
 		require.Equal(t, leaderSchedule[2].ValidatorPKID, testValidators[4].PKID)
@@ -224,19 +240,50 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	}
 	{
 		// Seed a new CurrentRandomSeedHash.
-		setCurrentRandomSeedHash("3b4b028b-6a7c-4b38-bea3-a5f59b34e02d")
-	}
-	{
+		setCurrentRandomSeedHash("b4b38eaf-216d-4132-8725-a481baaf87cc")
+
 		// Test GenerateLeaderSchedule().
 		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0].ValidatorPKID, testValidators[0].PKID)
-		require.Equal(t, leaderSchedule[1].ValidatorPKID, testValidators[1].PKID)
-		require.Equal(t, leaderSchedule[2].ValidatorPKID, testValidators[2].PKID)
+		require.Equal(t, leaderSchedule[0].ValidatorPKID, testValidators[6].PKID)
+		require.Equal(t, leaderSchedule[1].ValidatorPKID, testValidators[5].PKID)
+		require.Equal(t, leaderSchedule[2].ValidatorPKID, testValidators[4].PKID)
 		require.Equal(t, leaderSchedule[3].ValidatorPKID, testValidators[3].PKID)
+		require.Equal(t, leaderSchedule[4].ValidatorPKID, testValidators[2].PKID)
+		require.Equal(t, leaderSchedule[5].ValidatorPKID, testValidators[1].PKID)
+		require.Equal(t, leaderSchedule[6].ValidatorPKID, testValidators[0].PKID)
+	}
+	{
+		// Seed a new CurrentRandomSeedHash.
+		setCurrentRandomSeedHash("7c87f290-d9ec-4cb4-ad47-c64c8ca46f0e")
+
+		// Test GenerateLeaderSchedule().
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		require.NoError(t, err)
+		require.Len(t, leaderSchedule, 7)
+		require.Equal(t, leaderSchedule[0].ValidatorPKID, testValidators[3].PKID)
+		require.Equal(t, leaderSchedule[1].ValidatorPKID, testValidators[2].PKID)
+		require.Equal(t, leaderSchedule[2].ValidatorPKID, testValidators[1].PKID)
+		require.Equal(t, leaderSchedule[3].ValidatorPKID, testValidators[0].PKID)
 		require.Equal(t, leaderSchedule[4].ValidatorPKID, testValidators[4].PKID)
-		require.Equal(t, leaderSchedule[5].ValidatorPKID, testValidators[5].PKID)
+		require.Equal(t, leaderSchedule[5].ValidatorPKID, testValidators[6].PKID)
+		require.Equal(t, leaderSchedule[6].ValidatorPKID, testValidators[5].PKID)
+	}
+	{
+		// Seed a new CurrentRandomSeedHash.
+		setCurrentRandomSeedHash("0999a3ce-15e4-455a-b061-6081b88b237d")
+
+		// Test GenerateLeaderSchedule().
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		require.NoError(t, err)
+		require.Len(t, leaderSchedule, 7)
+		require.Equal(t, leaderSchedule[0].ValidatorPKID, testValidators[5].PKID)
+		require.Equal(t, leaderSchedule[1].ValidatorPKID, testValidators[4].PKID)
+		require.Equal(t, leaderSchedule[2].ValidatorPKID, testValidators[3].PKID)
+		require.Equal(t, leaderSchedule[3].ValidatorPKID, testValidators[2].PKID)
+		require.Equal(t, leaderSchedule[4].ValidatorPKID, testValidators[1].PKID)
+		require.Equal(t, leaderSchedule[5].ValidatorPKID, testValidators[0].PKID)
 		require.Equal(t, leaderSchedule[6].ValidatorPKID, testValidators[6].PKID)
 	}
 
