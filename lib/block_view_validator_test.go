@@ -228,15 +228,11 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Equal(t, string(validatorEntry.ExtraData["TestKey"]), "TestValue1")
 	}
 	{
-		// Query: retrieve top active ValidatorEntries by stake
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(0)
+		// Query: retrieve top active ValidatorEntries by stake.
+		// Should be empty since m0's TotalStakeAmountNanos is zero.
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(1)
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
-
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(2)
-		require.NoError(t, err)
-		require.Len(t, validatorEntries, 1)
-		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
 	}
 	{
 		// Query: retrieve GlobalStakeAmountNanos
@@ -786,12 +782,10 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
 
-		// Verify top validators.
+		// Verify top validators is empty since m0's TotalStakeAmountNanos is zero.
 		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
-		require.Len(t, validatorEntries, 1)
-		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
-		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt())
+		require.Empty(t, validatorEntries)
 	}
 	{
 		// m1 registers as a validator.
@@ -804,10 +798,10 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m1Pub, m1Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
 
-		// Verify top validators.
+		// Verify top validators is empty since both validators' TotalStakeAmountNanos are zero.
 		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
-		require.Len(t, validatorEntries, 2)
+		require.Empty(t, validatorEntries)
 	}
 	{
 		// m2 registers as a validator.
@@ -820,10 +814,10 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m2Pub, m2Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
 
-		// Verify top validators.
+		// Verify top validators is empty since all three validators' TotalStakeAmountNanos are zero.
 		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
-		require.Len(t, validatorEntries, 3)
+		require.Empty(t, validatorEntries)
 	}
 	{
 		// m3 stakes 100 DESO nanos with m0.
@@ -891,13 +885,11 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		// Verify top validators.
 		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
-		require.Len(t, validatorEntries, 3)
+		require.Len(t, validatorEntries, 2)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
 		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(300))
 		require.Equal(t, validatorEntries[1].ValidatorPKID, m0PKID)
 		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
-		require.Equal(t, validatorEntries[2].ValidatorPKID, m1PKID)
-		require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt().SetUint64(0))
 	}
 	{
 		// m2 unregisters as validator.
@@ -907,11 +899,9 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		// Verify top validators.
 		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
-		require.Len(t, validatorEntries, 2)
+		require.Len(t, validatorEntries, 1)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
 		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
-		require.Equal(t, validatorEntries[1].ValidatorPKID, m1PKID)
-		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(0))
 	}
 	{
 		// m4 stakes with m1.
