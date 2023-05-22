@@ -29,10 +29,6 @@ import (
 // validator was first jailed. A validator is jailed if they fail to participate in consensus by
 // either voting or proposing blocks for too long. A jailed validator is ineligible to receive
 // any block rewards and ineligible to elected leader.
-//
-// FIXME: In the future, when we flesh out the jail/unjail functionality, we will want to make it
-// so that the validator's stake is removed/added to GlobalStakeAmountNanos. See FIXME on
-// _connectUnjailValidator for more details.
 
 //
 // TYPES: ValidatorEntry
@@ -550,8 +546,8 @@ func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	return key
 }
 
-func DBKeyForGlobalStakeAmountNanos() []byte {
-	return append([]byte{}, Prefixes.PrefixGlobalStakeAmountNanos...)
+func DBKeyForGlobalActiveStakeAmountNanos() []byte {
+	return append([]byte{}, Prefixes.PrefixGlobalActiveStakeAmountNanos...)
 }
 
 func DBGetValidatorByPKID(handle *badger.DB, snap *Snapshot, pkid *PKID) (*ValidatorEntry, error) {
@@ -630,36 +626,36 @@ func DBGetTopActiveValidatorsByStake(
 	return validatorEntries, nil
 }
 
-func DBGetGlobalStakeAmountNanos(handle *badger.DB, snap *Snapshot) (*uint256.Int, error) {
+func DBGetGlobalActiveStakeAmountNanos(handle *badger.DB, snap *Snapshot) (*uint256.Int, error) {
 	var ret *uint256.Int
 	err := handle.View(func(txn *badger.Txn) error {
 		var innerErr error
-		ret, innerErr = DBGetGlobalStakeAmountNanosWithTxn(txn, snap)
+		ret, innerErr = DBGetGlobalActiveStakeAmountNanosWithTxn(txn, snap)
 		return innerErr
 	})
 	return ret, err
 }
 
-func DBGetGlobalStakeAmountNanosWithTxn(txn *badger.Txn, snap *Snapshot) (*uint256.Int, error) {
+func DBGetGlobalActiveStakeAmountNanosWithTxn(txn *badger.Txn, snap *Snapshot) (*uint256.Int, error) {
 	// Retrieve from db.
-	key := DBKeyForGlobalStakeAmountNanos()
-	globalStakeAmountNanosBytes, err := DBGetWithTxn(txn, snap, key)
+	key := DBKeyForGlobalActiveStakeAmountNanos()
+	globalActiveStakeAmountNanosBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		// We don't want to error if the key isn't found. Instead, return 0.
 		if err == badger.ErrKeyNotFound {
 			return uint256.NewInt(), nil
 		}
-		return nil, errors.Wrapf(err, "DBGetGlobalStakeAmountNanosWithTxn: problem retrieving value")
+		return nil, errors.Wrapf(err, "DBGetGlobalActiveStakeAmountNanosWithTxn: problem retrieving value")
 	}
 
 	// Decode from bytes.
-	var globalStakeAmountNanos *uint256.Int
-	rr := bytes.NewReader(globalStakeAmountNanosBytes)
-	globalStakeAmountNanos, err = VariableDecodeUint256(rr)
+	var globalActiveStakeAmountNanos *uint256.Int
+	rr := bytes.NewReader(globalActiveStakeAmountNanosBytes)
+	globalActiveStakeAmountNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetGlobalStakeAmountNanosWithTxn: problem decoding value")
+		return nil, errors.Wrapf(err, "DBGetGlobalActiveStakeAmountNanosWithTxn: problem decoding value")
 	}
-	return globalStakeAmountNanos, nil
+	return globalActiveStakeAmountNanos, nil
 }
 
 func DBPutValidatorWithTxn(
@@ -734,20 +730,19 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorPKID *PK
 	return nil
 }
 
-func DBPutGlobalStakeAmountNanosWithTxn(
+func DBPutGlobalActiveStakeAmountNanosWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
-	globalStakeAmountNanos *uint256.Int,
+	globalActiveStakeAmountNanos *uint256.Int,
 	blockHeight uint64,
 ) error {
-	if globalStakeAmountNanos == nil {
+	if globalActiveStakeAmountNanos == nil {
 		// This should never happen but is a sanity check.
-		glog.Errorf("DBPutGlobalStakeAmountNanosWithTxn: called with nil GlobalStakeAmountNanos")
+		glog.Errorf("DBPutGlobalActiveStakeAmountNanosWithTxn: called with nil GlobalActiveStakeAmountNanos")
 		return nil
 	}
-
-	key := DBKeyForGlobalStakeAmountNanos()
-	return DBSetWithTxn(txn, snap, key, VariableEncodeUint256(globalStakeAmountNanos))
+	key := DBKeyForGlobalActiveStakeAmountNanos()
+	return DBSetWithTxn(txn, snap, key, VariableEncodeUint256(globalActiveStakeAmountNanos))
 }
 
 //
@@ -1310,31 +1305,35 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 		)
 	}
 
-	// Decrease the GlobalStakeAmountNanos by the amount that was unstaked.
-	// Fetch the existing GlobalStakeAmountNanos.
-	prevGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: error fetching GlobalStakeAmountNanos: ")
-	}
-	// Subtract the amount that was unstaked.
-	globalStakeAmountNanos, err := SafeUint256().Sub(
-		prevGlobalStakeAmountNanos, totalUnstakedAmountNanos,
-	)
-	if err != nil {
-		return 0, 0, nil, errors.Wrapf(
-			err, "_connectUnregisterAsValidator: error subtracting TotalUnstakedAmountNanos from GlobalStakeAmountNanos: ",
+	// If the validator was active, decrease the GlobalActiveStakeAmountNanos
+	// by the amount that was unstaked. Do nothing if the validator was jailed.
+	var prevGlobalActiveStakeAmountNanos *uint256.Int
+	if prevValidatorEntry.Status() == ValidatorStatusActive {
+		// Fetch the existing GlobalActiveStakeAmountNanos.
+		prevGlobalActiveStakeAmountNanos, err = bav.GetGlobalActiveStakeAmountNanos()
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: error fetching GlobalActiveStakeAmountNanos: ")
+		}
+		// Subtract the amount that was unstaked.
+		globalActiveStakeAmountNanos, err := SafeUint256().Sub(
+			prevGlobalActiveStakeAmountNanos, totalUnstakedAmountNanos,
 		)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(
+				err, "_connectUnregisterAsValidator: error subtracting TotalUnstakedAmountNanos from GlobalActiveStakeAmountNanos: ",
+			)
+		}
+		// Set the new GlobalActiveStakeAmountNanos.
+		bav._setGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos)
 	}
-	// Set the new GlobalStakeAmountNanos.
-	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
 
 	// Create a UTXO operation.
 	utxoOpForTxn := &UtxoOperation{
-		Type:                       OperationTypeUnregisterAsValidator,
-		PrevValidatorEntry:         prevValidatorEntry,
-		PrevGlobalStakeAmountNanos: prevGlobalStakeAmountNanos,
-		PrevStakeEntries:           prevStakeEntries,
-		PrevLockedStakeEntries:     prevLockedStakeEntries,
+		Type:                             OperationTypeUnregisterAsValidator,
+		PrevValidatorEntry:               prevValidatorEntry,
+		PrevGlobalActiveStakeAmountNanos: prevGlobalActiveStakeAmountNanos,
+		PrevStakeEntries:                 prevStakeEntries,
+		PrevLockedStakeEntries:           prevLockedStakeEntries,
 	}
 	if err = bav.SanityCheckUnregisterAsValidatorTxn(transactorPKIDEntry.PKID, utxoOpForTxn, totalUnstakedAmountNanos); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: ")
@@ -1414,8 +1413,10 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 		bav._setLockedStakeEntryMappings(prevLockedStakeEntry)
 	}
 
-	// Restore the PrevGlobalStakeAmountNanos.
-	bav._setGlobalStakeAmountNanos(operationData.PrevGlobalStakeAmountNanos)
+	// Restore the PrevGlobalActiveStakeAmountNanos, if exists.
+	if operationData.PrevGlobalActiveStakeAmountNanos != nil {
+		bav._setGlobalActiveStakeAmountNanos(operationData.PrevGlobalActiveStakeAmountNanos)
+	}
 
 	// Disconnect the BasicTransfer.
 	return bav._disconnectBasicTransfer(
@@ -1514,10 +1515,24 @@ func (bav *UtxoView) _connectUnjailValidator(
 	// Set the CurrentValidatorEntry.
 	bav._setValidatorEntryMappings(currentValidatorEntry)
 
+	// Increase the GlobalActiveStakeAmountNanos.
+	prevGlobalActiveStakeAmountNanos, err := bav.GetGlobalActiveStakeAmountNanos()
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnjailValidator: error retrieving existing GlobalActiveStakeAmountNanos: ")
+	}
+	currentGlobalActiveStakeAmountNanos, err := SafeUint256().Add(
+		prevGlobalActiveStakeAmountNanos, currentValidatorEntry.TotalStakeAmountNanos,
+	)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUnjailValidator: error calculating updated GlobalActiveStakeAmountNanos ")
+	}
+	bav._setGlobalActiveStakeAmountNanos(currentGlobalActiveStakeAmountNanos)
+
 	// Add a UTXO operation
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:               OperationTypeUnjailValidator,
-		PrevValidatorEntry: prevValidatorEntry,
+		Type:                             OperationTypeUnjailValidator,
+		PrevValidatorEntry:               prevValidatorEntry,
+		PrevGlobalActiveStakeAmountNanos: prevGlobalActiveStakeAmountNanos,
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
@@ -1570,6 +1585,13 @@ func (bav *UtxoView) _disconnectUnjailValidator(
 		return errors.New("_disconnectUnjailValidator: PrevValidatorEntry is nil")
 	}
 	bav._setValidatorEntryMappings(prevValidatorEntry)
+
+	// Restore the PrevGlobalActiveStakeAmountNanos.
+	prevGlobalActiveStakeAmountNanos := operationData.PrevGlobalActiveStakeAmountNanos
+	if prevGlobalActiveStakeAmountNanos == nil {
+		return errors.New("_disconnectUnjailValidator: PrevGlobalActiveStakeAmountNanos is nil, this should never happen")
+	}
+	bav._setGlobalActiveStakeAmountNanos(prevGlobalActiveStakeAmountNanos)
 
 	// Disconnect the BasicTransfer.
 	return bav._disconnectBasicTransfer(
@@ -1751,21 +1773,27 @@ func (bav *UtxoView) SanityCheckUnregisterAsValidatorTxn(
 		return errors.New("SanityCheckUnregisterAsValidatorTxn: TotalUnstakedAmountNanos doesn't match")
 	}
 
-	// Sanity check that the GlobalStakeAmountNanos was decreased by amountNanos.
-	if utxoOp.PrevGlobalStakeAmountNanos == nil {
-		return errors.New("SanityCheckUnregisterAsValidatorTxn: nil PrevGlobalStakeAmountNanos provided")
+	// Sanity check that the GlobalActiveStakeAmountNanos was decreased
+	// by amountNanos if the PrevValidatorEntry was active.
+	if utxoOp.PrevValidatorEntry.Status() == ValidatorStatusActive {
+		if utxoOp.PrevGlobalActiveStakeAmountNanos == nil {
+			return errors.New("SanityCheckUnregisterAsValidatorTxn: nil PrevGlobalActiveStakeAmountNanos provided")
+		}
+		currentGlobalActiveStakeAmountNanos, err := bav.GetGlobalActiveStakeAmountNanos()
+		if err != nil {
+			return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error retrieving GlobalActiveStakeAmountNanos: ")
+		}
+		globalActiveStakeAmountNanosDecrease, err := SafeUint256().Sub(utxoOp.PrevGlobalActiveStakeAmountNanos, currentGlobalActiveStakeAmountNanos)
+		if err != nil {
+			return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error calculating GlobalActiveStakeAmountNanos decrease: ")
+		}
+		if !globalActiveStakeAmountNanosDecrease.Eq(amountNanos) {
+			return errors.New("SanityCheckUnregisterAsValidatorTxn: GlobalActiveStakeAmountNanos decrease doesn't match")
+		}
+	} else if utxoOp.PrevGlobalActiveStakeAmountNanos != nil {
+		return errors.New("SanityCheckUnregisterAsValidatorTxn: non-nil PrevGlobalActiveStakeAmountNanos provided for inactive validator")
 	}
-	currentGlobalStakeAmountNanos, err := bav.GetGlobalStakeAmountNanos()
-	if err != nil {
-		return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error retrieving GlobalStakeAmountNanos: ")
-	}
-	globalStakeAmountNanosDecrease, err := SafeUint256().Sub(utxoOp.PrevGlobalStakeAmountNanos, currentGlobalStakeAmountNanos)
-	if err != nil {
-		return errors.Wrapf(err, "SanityCheckUnregisterAsValidatorTxn: error calculating GlobalStakeAmountNanos decrease: ")
-	}
-	if !globalStakeAmountNanosDecrease.Eq(amountNanos) {
-		return errors.New("SanityCheckUnregisterAsValidatorTxn: GlobalStakeAmountNanos decrease doesn't match")
-	}
+
 	return nil
 }
 
@@ -1844,10 +1872,12 @@ func (bav *UtxoView) GetTopActiveValidatorsByStake(limit int) ([]*ValidatorEntry
 			bav._setValidatorEntryMappings(validatorEntry)
 		}
 	}
-	// Pull !isDeleted, active ValidatorEntries from the UtxoView.
+	// Pull !isDeleted, active ValidatorEntries from the UtxoView with stake > 0.
 	var validatorEntries []*ValidatorEntry
 	for _, validatorEntry := range bav.ValidatorPKIDToValidatorEntry {
-		if !validatorEntry.isDeleted && validatorEntry.Status() == ValidatorStatusActive {
+		if !validatorEntry.isDeleted &&
+			validatorEntry.Status() == ValidatorStatusActive &&
+			!validatorEntry.TotalStakeAmountNanos.IsZero() {
 			validatorEntries = append(validatorEntries, validatorEntry)
 		}
 	}
@@ -1860,22 +1890,53 @@ func (bav *UtxoView) GetTopActiveValidatorsByStake(limit int) ([]*ValidatorEntry
 	return validatorEntries[0:upperBound], nil
 }
 
-func (bav *UtxoView) GetGlobalStakeAmountNanos() (*uint256.Int, error) {
-	// Read the GlobalStakeAmountNanos from the UtxoView.
-	if bav.GlobalStakeAmountNanos != nil {
-		return bav.GlobalStakeAmountNanos.Clone(), nil
+func (bav *UtxoView) GetGlobalActiveStakeAmountNanos() (*uint256.Int, error) {
+	// Read the GlobalActiveStakeAmountNanos from the UtxoView.
+	if bav.GlobalActiveStakeAmountNanos != nil {
+		return bav.GlobalActiveStakeAmountNanos.Clone(), nil
 	}
-	// If not set, read the GlobalStakeAmountNanos from the db.
-	globalStakeAmountNanos, err := DBGetGlobalStakeAmountNanos(bav.Handle, bav.Snapshot)
+	// If not set, read the GlobalActiveStakeAmountNanos from the db.
+	globalActiveStakeAmountNanos, err := DBGetGlobalActiveStakeAmountNanos(bav.Handle, bav.Snapshot)
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GetGlobalStakeAmountNanos: ")
+		return nil, errors.Wrapf(err, "UtxoView.GetGlobalActiveStakeAmountNanos: ")
 	}
-	if globalStakeAmountNanos == nil {
-		globalStakeAmountNanos = uint256.NewInt()
+	if globalActiveStakeAmountNanos == nil {
+		globalActiveStakeAmountNanos = uint256.NewInt()
 	}
-	// Cache the GlobalStakeAmountNanos from the db in the UtxoView.
-	bav._setGlobalStakeAmountNanos(globalStakeAmountNanos)
-	return globalStakeAmountNanos, nil
+	// Cache the GlobalActiveStakeAmountNanos from the db in the UtxoView.
+	bav._setGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos)
+	return globalActiveStakeAmountNanos, nil
+}
+
+func (bav *UtxoView) JailValidator(validatorEntry *ValidatorEntry) error {
+	// Retrieve the CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.JailValidator: error retrieving CurrentEpochNumber: ")
+	}
+
+	// Set ValidatorEntry.JailedAtEpochNumber to the CurrentEpochNumber.
+	validatorEntry.JailedAtEpochNumber = currentEpochNumber
+
+	// Remove the validator's stake from the GlobalActiveStakeAmountNanos.
+	prevGlobalActiveStakeAmountNanos, err := bav.GetGlobalActiveStakeAmountNanos()
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.JailValidator: error retrieving GlobalActiveStakeAmountNanos: ")
+	}
+	currentGlobalActiveStakeAmountNanos, err := SafeUint256().Sub(
+		prevGlobalActiveStakeAmountNanos, validatorEntry.TotalStakeAmountNanos,
+	)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.JailValidator: error calculating updated GlobalActiveStakeAmountNanos: ")
+	}
+
+	// Store the updated ValidatorEntry.
+	bav._setValidatorEntryMappings(validatorEntry)
+
+	// Store the updated GlobalActiveStakeAmountNanos.
+	bav._setGlobalActiveStakeAmountNanos(currentGlobalActiveStakeAmountNanos)
+
+	return nil
 }
 
 func (bav *UtxoView) _setValidatorEntryMappings(validatorEntry *ValidatorEntry) {
@@ -1900,13 +1961,13 @@ func (bav *UtxoView) _deleteValidatorEntryMappings(validatorEntry *ValidatorEntr
 	bav._setValidatorEntryMappings(&tombstoneEntry)
 }
 
-func (bav *UtxoView) _setGlobalStakeAmountNanos(globalStakeAmountNanos *uint256.Int) {
+func (bav *UtxoView) _setGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos *uint256.Int) {
 	// This function shouldn't be called with nil.
-	if globalStakeAmountNanos == nil {
-		glog.Errorf("_setGlobalStakeAmountNanos: called with nil entry, this should never happen")
+	if globalActiveStakeAmountNanos == nil {
+		glog.Errorf("_setGlobalActiveStakeAmountNanos: called with nil entry, this should never happen")
 		return
 	}
-	bav.GlobalStakeAmountNanos = globalStakeAmountNanos.Clone()
+	bav.GlobalActiveStakeAmountNanos = globalActiveStakeAmountNanos.Clone()
 }
 
 func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
@@ -1951,14 +2012,14 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 	return nil
 }
 
-func (bav *UtxoView) _flushGlobalStakeAmountNanosToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	// If GlobalStakeAmountNanos is nil, then it was never
+func (bav *UtxoView) _flushGlobalActiveStakeAmountNanosToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// If GlobalActiveStakeAmountNanos is nil, then it was never
 	// set and shouldn't overwrite the value in the db.
-	if bav.GlobalStakeAmountNanos == nil {
+	if bav.GlobalActiveStakeAmountNanos == nil {
 		return nil
 	}
 
-	return DBPutGlobalStakeAmountNanosWithTxn(txn, bav.Snapshot, bav.GlobalStakeAmountNanos, blockHeight)
+	return DBPutGlobalActiveStakeAmountNanosWithTxn(txn, bav.Snapshot, bav.GlobalActiveStakeAmountNanos, blockHeight)
 }
 
 //

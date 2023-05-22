@@ -486,9 +486,9 @@ type DBPrefixes struct {
 	// Note that we save space by storing a nil value and parsing the ValidatorPKID from the key.
 	PrefixValidatorByStake []byte `prefix_id:"[79]" is_state:"true"`
 
-	// PrefixGlobalStakeAmountNanos: Retrieve the cumulative stake across all validators.
+	// PrefixGlobalActiveStakeAmountNanos: Retrieve the cumulative stake across all validators.
 	// Prefix -> *uint256.Int
-	PrefixGlobalStakeAmountNanos []byte `prefix_id:"[80]" is_state:"true"`
+	PrefixGlobalActiveStakeAmountNanos []byte `prefix_id:"[80]" is_state:"true"`
 
 	// PrefixStakeByValidatorAndStaker: Retrieve a StakeEntry.
 	// Prefix, ValidatorPKID, StakerPKID -> StakeEntry
@@ -733,7 +733,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStake) {
 		// prefix_id:"[79]"
 		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixGlobalStakeAmountNanos) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixGlobalActiveStakeAmountNanos) {
 		// prefix_id:"[80]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByValidatorAndStaker) {
