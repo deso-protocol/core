@@ -3363,7 +3363,7 @@ func (bav *UtxoView) ConnectBlock(
 	if blockHeight >= uint64(bav.Params.ForkHeights.BlockRewardPatchBlockHeight) {
 		// Make sure the block has transactions
 		if len(desoBlock.Txns) == 0 {
-			return nil, errors.Wrap(RuleErrorNoTxns,"ConnectBlock: Block has no transactions")
+			return nil, errors.Wrap(RuleErrorNoTxns, "ConnectBlock: Block has no transactions")
 		}
 		// Make sure the first transaction is a block reward.
 		if desoBlock.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {

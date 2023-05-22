@@ -302,16 +302,22 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 				"DeSoBlockProducer._getBlockTemplate: Error attaching txn to UtxoView for computed block: %v", err)
 		}
 
-		// Parse the transactor's public key to compare with the block reward output public key.
-		transactorPublicKey, err := btcec.ParsePubKey(txnInBlock.PublicKey, btcec.S256())
-		if err != nil {
-			return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: problem parsing transactor public key: ")
+		includeFeesInBlockReward := true
+		if blockRet.Header.Height >= uint64(desoBlockProducer.params.ForkHeights.BlockRewardPatchBlockHeight) {
+			// Parse the transactor's public key to compare with the block reward output public key.
+			transactorPublicKey, err := btcec.ParsePubKey(txnInBlock.PublicKey, btcec.S256())
+			if err != nil {
+				return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: problem parsing transactor public key: ")
+			}
+			includeFeesInBlockReward = !transactorPublicKey.IsEqual(blockRewardOutputPublicKey)
 		}
-		// If the transactor is not the block reward output, add the fee to the total.
+
+		// If the transactor is not the block reward output (or we're before the BlockRewardPatchBlockHeight),
+		// add the fee to the total.
 		// We exclude fees from transactions where the block reward output public key
 		// is the same as the transactor public key to prevent the block reward output
 		// public key from getting free transaction fees.
-		if !transactorPublicKey.IsEqual(blockRewardOutputPublicKey) {
+		if includeFeesInBlockReward {
 			// Check for overflow
 			if totalFeeNanos > math.MaxUint64-feeNanos {
 				return nil, nil, nil, fmt.Errorf("DeSoBlockProducer._getBlockTemplate: Total fee overflowed uint64")
