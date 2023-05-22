@@ -1844,10 +1844,12 @@ func (bav *UtxoView) GetTopActiveValidatorsByStake(limit int) ([]*ValidatorEntry
 			bav._setValidatorEntryMappings(validatorEntry)
 		}
 	}
-	// Pull !isDeleted, active ValidatorEntries from the UtxoView.
+	// Pull !isDeleted, active ValidatorEntries from the UtxoView with stake > 0.
 	var validatorEntries []*ValidatorEntry
 	for _, validatorEntry := range bav.ValidatorPKIDToValidatorEntry {
-		if !validatorEntry.isDeleted && validatorEntry.Status() == ValidatorStatusActive {
+		if !validatorEntry.isDeleted &&
+			validatorEntry.Status() == ValidatorStatusActive &&
+			!validatorEntry.TotalStakeAmountNanos.IsZero() {
 			validatorEntries = append(validatorEntries, validatorEntry)
 		}
 	}
