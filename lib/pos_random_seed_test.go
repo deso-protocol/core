@@ -57,6 +57,7 @@ func TestCurrentRandomSeedHash(t *testing.T) {
 	randomSeedHash1, err = utxoView.GetCurrentRandomSeedHash()
 	require.NoError(t, err)
 	require.True(t, randomSeedHash1.Eq(&RandomSeedHash{}))
+	require.True(t, randomSeedHash1.ToUint256().Eq(uint256.NewInt()))
 
 	// PrivateKey1 generates a new RandomSeedSignature.
 	randomSeedSignature1, err = utxoView.GenerateRandomSeedSignature(privateKey1)
