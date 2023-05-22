@@ -3374,8 +3374,9 @@ func (bav *UtxoView) ConnectBlock(
 			return nil, errors.Wrap(RuleErrorBlockRewardTxnMustHaveOneOutput, "ConnectBlock: Block reward transaction must have exactly one output")
 		}
 		var err error
-		if blockRewardOutputPublicKey, err =
-			btcec.ParsePubKey(desoBlock.Txns[0].TxOutputs[0].PublicKey, btcec.S256()); err != nil {
+		blockRewardOutputPublicKey, err =
+			btcec.ParsePubKey(desoBlock.Txns[0].TxOutputs[0].PublicKey, btcec.S256())
+		if err != nil {
 			return nil, fmt.Errorf("ConnectBlock: Problem parsing block reward public key: %v", err)
 		}
 	}
@@ -3415,6 +3416,7 @@ func (bav *UtxoView) ConnectBlock(
 			}
 			includeFeesInBlockReward = !transactorPubKey.IsEqual(blockRewardOutputPublicKey)
 		}
+
 		if includeFeesInBlockReward {
 			// Add the fees from this txn to the total fees. If any overflow occurs
 			// mark the block as invalid and return a rule error. Note that block reward
@@ -3984,7 +3986,7 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 				return 0, errors.Wrapf(err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem adding "+
 					"block reward (%d) to immature block rewards (%d)", blockRewardForPK, immatureBlockRewards)
 			}
-			// This is the specific line that causes the bug. We should be using blockNode.Header.PrevBlockHash
+			// TODO: This is the specific line that causes the bug. We should be using blockNode.Header.PrevBlockHash
 			// instead. We are not serializing the Parent attribute when the block node is put into the DB,
 			// but we do have the header. As a result, this condition always evaluates to false and thus
 			// we only process the block reward for the previous block instead of all immature block rewards
