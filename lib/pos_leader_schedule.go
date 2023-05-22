@@ -41,6 +41,7 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
 	//     If ValidatorEntry.TotalStakeAmountNanos >= RandomUint256:
 	//       Add ValidatorEntry to LeaderSchedule.
 	//       TotalStakeAmountNanos -= ValidatorEntry.TotalStakeAmountNanos.
+	//       Break out of the inner loop.
 	var leaderSchedule []*ValidatorEntry
 
 	// We also track a set of ValidatorPKIDs that have already been
@@ -92,6 +93,12 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
 			if err != nil {
 				return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error subtracting TotalStakeAmountNanos: ")
 			}
+
+			// The current validator has been added to the leader schedule.
+			// Break out of this inner loop, generate a new RandomUint256,
+			// and find the next stake-weighted validator to add to the
+			// leader schedule.
+			break
 		}
 	}
 
