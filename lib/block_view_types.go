@@ -913,9 +913,9 @@ type UtxoOperation struct {
 	// register, unregister, stake, or unstake txn.
 	PrevValidatorEntry *ValidatorEntry
 
-	// PrevGlobalStakeAmountNanos is the previous GlobalStakeAmountNanos
+	// PrevGlobalActiveStakeAmountNanos is the previous GlobalActiveStakeAmountNanos
 	// prior to a stake or unstake operation txn.
-	PrevGlobalStakeAmountNanos *uint256.Int
+	PrevGlobalActiveStakeAmountNanos *uint256.Int
 
 	// PrevStakeEntries is a slice of StakeEntries prior to
 	// a register, unregister, stake, or unstake txn.
@@ -1245,8 +1245,8 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		// PrevValidatorEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
 
-		// PrevGlobalStakeAmountNanos
-		data = append(data, VariableEncodeUint256(op.PrevGlobalStakeAmountNanos)...)
+		// PrevGlobalActiveStakeAmountNanos
+		data = append(data, VariableEncodeUint256(op.PrevGlobalActiveStakeAmountNanos)...)
 
 		// PrevStakeEntries
 		data = append(data, EncodeDeSoEncoderSlice(op.PrevStakeEntries, blockHeight, skipMetadata...)...)
@@ -1876,11 +1876,9 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry: ")
 		}
 
-		// PrevGlobalStakeAmountNanos
-		if prevGlobalStakeAmountNanos, err := VariableDecodeUint256(rr); err == nil {
-			op.PrevGlobalStakeAmountNanos = prevGlobalStakeAmountNanos
-		} else {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalStakeAmountNanos: ")
+		// PrevGlobalActiveStakeAmountNanos
+		if op.PrevGlobalActiveStakeAmountNanos, err = VariableDecodeUint256(rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalActiveStakeAmountNanos: ")
 		}
 
 		// PrevStakeEntries
