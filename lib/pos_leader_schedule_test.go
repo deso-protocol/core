@@ -3,6 +3,7 @@
 package lib
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
@@ -10,9 +11,6 @@ import (
 )
 
 func TestGenerateLeaderSchedule(t *testing.T) {
-	var utxoView *UtxoView
-	var err error
-
 	// Initialize fork heights.
 	setBalanceModelBlockHeights()
 	defer resetBalanceModelBlockHeights()
@@ -28,7 +26,7 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
-		_, err = miner.MineAndProcessSingleBlock(0, mempool)
+		_, err := miner.MineAndProcessSingleBlock(0, mempool)
 		require.NoError(t, err)
 	}
 
@@ -62,6 +60,7 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	m5PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m5PkBytes).PKID
 	m6PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m6PkBytes).PKID
 
+	// Helper utils
 	type TestValidator struct {
 		PublicKey  string
 		PrivateKey string
@@ -78,11 +77,53 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		{PublicKey: m6Pub, PrivateKey: m6Priv, PKID: m6PKID}, // Stake = 700
 	}
 
+	newUtxoView := func() *UtxoView {
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		return utxoView
+	}
+
+	registerValidator := func(testValidator *TestValidator) {
+		validatorPkBytes, _, err := Base58CheckDecode(testValidator.PublicKey)
+		require.NoError(t, err)
+
+		// Validator registers.
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, validatorPkBytes, blockHeight)
+		registerMetadata := &RegisterAsValidatorMetadata{
+			Domains:                  [][]byte{[]byte(fmt.Sprintf("https://%s.com", testValidator.PublicKey))},
+			VotingPublicKey:          votingPublicKey,
+			VotingPublicKeySignature: votingSignature,
+		}
+		_, err = _submitRegisterAsValidatorTxn(
+			testMeta, testValidator.PublicKey, testValidator.PrivateKey, registerMetadata, nil, true,
+		)
+		require.NoError(t, err)
+	}
+
+	stakeValidator := func(testValidator *TestValidator, stakeAmountNanos uint64) {
+		validatorPkBytes, _, err := Base58CheckDecode(testValidator.PublicKey)
+		require.NoError(t, err)
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(validatorPkBytes),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(stakeAmountNanos),
+		}
+		_, err = _submitStakeTxn(testMeta, testValidator.PublicKey, testValidator.PrivateKey, stakeMetadata, nil, true)
+		require.NoError(t, err)
+	}
+
+	setCurrentRandomSeedHash := func(seed string) {
+		randomSHA256 := sha256.Sum256([]byte(seed))
+		randomSeedHash, err := (&RandomSeedHash{}).FromBytes(randomSHA256[:])
+		require.NoError(t, err)
+		tmpUtxoView := newUtxoView()
+		tmpUtxoView._setCurrentRandomSeedHash(randomSeedHash)
+		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
+	}
+
 	// Seed a CurrentEpochEntry.
-	utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
-	utxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, utxoView.FlushToDb(blockHeight))
+	tmpUtxoView := newUtxoView()
+	tmpUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
+	require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
 
 	{
 		// ParamUpdater set min fee rate
@@ -100,37 +141,57 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		)
 	}
 	{
-		// All validators register and stake to themselves.
+		// Test GenerateLeaderSchedule() edge case: no registered validators.
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		require.NoError(t, err)
+		require.Empty(t, leaderSchedule)
+	}
+	{
+		// m0 registers as validator.
+		registerValidator(testValidators[0])
+	}
+	{
+		// Test GenerateLeaderSchedule() edge case: one registered validator with zero stake.
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		require.NoError(t, err)
+		require.Empty(t, leaderSchedule)
+	}
+	{
+		// m0 stakes to himself.
+		stakeValidator(testValidators[0], 100)
+	}
+	{
+		// Test GenerateLeaderSchedule() edge case: one registered validator with non-zero stake.
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		require.NoError(t, err)
+		require.Len(t, leaderSchedule, 1)
+		require.Equal(t, leaderSchedule[0].ValidatorPKID, testValidators[0].PKID)
+	}
+	{
+		// m1 registers and stakes to himself.
+		registerValidator(testValidators[1])
+		stakeValidator(testValidators[1], 200)
+	}
+	{
+		// Test GenerateLeaderSchedule() edge case: two registered validators with non-zero stake.
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		require.NoError(t, err)
+		require.Len(t, leaderSchedule, 2)
+		require.Equal(t, leaderSchedule[0].ValidatorPKID, testValidators[1].PKID)
+		require.Equal(t, leaderSchedule[1].ValidatorPKID, testValidators[0].PKID)
+	}
+	{
+		// All remaining validators register and stake to themselves.
 		for index, testValidator := range testValidators {
-			validatorPkBytes, _, err := Base58CheckDecode(testValidator.PublicKey)
-			require.NoError(t, err)
-
-			// Validator registers.
-			votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, validatorPkBytes, blockHeight)
-			registerMetadata := &RegisterAsValidatorMetadata{
-				Domains:                  [][]byte{[]byte(fmt.Sprintf("https://%d.example.com", index))},
-				VotingPublicKey:          votingPublicKey,
-				VotingPublicKeySignature: votingSignature,
+			registerValidator(testValidator)
+			if index > 1 {
+				stakeValidator(testValidator, uint64((index+1)*100))
 			}
-			_, err = _submitRegisterAsValidatorTxn(
-				testMeta, testValidator.PublicKey, testValidator.PrivateKey, registerMetadata, nil, true,
-			)
-			require.NoError(t, err)
-
-			// Validator stakes to himself.
-			stakeMetadata := &StakeMetadata{
-				ValidatorPublicKey: NewPublicKey(validatorPkBytes),
-				StakeAmountNanos:   uint256.NewInt().SetUint64((uint64(index) + 1) * 100),
-			}
-			_, err = _submitStakeTxn(testMeta, testValidator.PublicKey, testValidator.PrivateKey, stakeMetadata, nil, true)
-			require.NoError(t, err)
 		}
 	}
 	{
 		// Verify GetTopActiveValidatorsByStake.
-		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
-		require.NoError(t, err)
-		validatorEntries, err := utxoView.GetTopActiveValidatorsByStake(10)
+		validatorEntries, err := newUtxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 7)
 		require.True(t, validatorEntries[0].ValidatorPKID.Eq(m6PKID))
@@ -150,10 +211,35 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	}
 	{
 		// Test GenerateLeaderSchedule().
-		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
-		require.NoError(t, err)
-		leaderSchedule, err := utxoView.GenerateLeaderSchedule()
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 7)
+		require.Equal(t, leaderSchedule[0].ValidatorPKID, testValidators[6].PKID)
+		require.Equal(t, leaderSchedule[1].ValidatorPKID, testValidators[5].PKID)
+		require.Equal(t, leaderSchedule[2].ValidatorPKID, testValidators[4].PKID)
+		require.Equal(t, leaderSchedule[3].ValidatorPKID, testValidators[3].PKID)
+		require.Equal(t, leaderSchedule[4].ValidatorPKID, testValidators[2].PKID)
+		require.Equal(t, leaderSchedule[5].ValidatorPKID, testValidators[1].PKID)
+		require.Equal(t, leaderSchedule[6].ValidatorPKID, testValidators[0].PKID)
 	}
+	{
+		// Seed a new CurrentRandomSeedHash.
+		setCurrentRandomSeedHash("3b4b028b-6a7c-4b38-bea3-a5f59b34e02d")
+	}
+	{
+		// Test GenerateLeaderSchedule().
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		require.NoError(t, err)
+		require.Len(t, leaderSchedule, 7)
+		require.Equal(t, leaderSchedule[0].ValidatorPKID, testValidators[0].PKID)
+		require.Equal(t, leaderSchedule[1].ValidatorPKID, testValidators[1].PKID)
+		require.Equal(t, leaderSchedule[2].ValidatorPKID, testValidators[2].PKID)
+		require.Equal(t, leaderSchedule[3].ValidatorPKID, testValidators[3].PKID)
+		require.Equal(t, leaderSchedule[4].ValidatorPKID, testValidators[4].PKID)
+		require.Equal(t, leaderSchedule[5].ValidatorPKID, testValidators[5].PKID)
+		require.Equal(t, leaderSchedule[6].ValidatorPKID, testValidators[6].PKID)
+	}
+
+	// Test rollbacks.
+	_executeAllTestRollbackAndFlush(testMeta)
 }
