@@ -3921,6 +3921,13 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 	return utxoEntriesToReturn, nil
 }
 
+// GetSpendableDeSoBalanceNanosForPublicKey gets the current spendable balance for the
+// provided public key. It only considers the last block as immature currently and
+// instead of the configured number of immature block rewards. Additionally, using the
+// tipHash of the view only gives us access to the previous block, not the current block,
+// so we are unable to mark the current block reward as immature.
+// However, this bug does not introduce a security issue and is addressed with the BlockRewardPatch fork,
+// but should be fixed soon.
 func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	tipHeight uint32) (_spendableBalance uint64, _err error) {
 	// In order to get the spendable balance, we need to account for any immature block rewards.
@@ -3977,6 +3984,11 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 				return 0, errors.Wrapf(err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem adding "+
 					"block reward (%d) to immature block rewards (%d)", blockRewardForPK, immatureBlockRewards)
 			}
+			// This is the specific line that causes the bug. We should be using blockNode.Header.PrevBlockHash
+			// instead. We are not serializing the Parent attribute when the block node is put into the DB,
+			// but we do have the header. As a result, this condition always evaluates to false and thus
+			// we only process the block reward for the previous block instead of all immature block rewards
+			// as defined by the params.
 			if blockNode.Parent != nil {
 				nextBlockHash = blockNode.Parent.Hash
 			} else {
