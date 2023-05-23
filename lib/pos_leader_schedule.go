@@ -47,7 +47,7 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
 	// We also track a set of ValidatorPKIDs that have already been
 	// added to the LeaderSchedule so that we can skip them when
 	// iterating over ValidatorEntries in O(1) time.
-	leaderSchedulePKIDs := NewSet([]*PKID{})
+	leaderSchedulePKIDs := NewSet([]PKID{})
 
 	for len(leaderSchedule) < len(validatorEntries) {
 		// Hash the CurrentRandomSeedHash each iteration. This generates
@@ -66,7 +66,7 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
 
 		for _, validatorEntry := range validatorEntries {
 			// Skip if ValidatorEntry has already been added to the leader schedule.
-			if leaderSchedulePKIDs.Includes(validatorEntry.ValidatorPKID) {
+			if leaderSchedulePKIDs.Includes(*validatorEntry.ValidatorPKID) {
 				continue
 			}
 
@@ -86,7 +86,7 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
 
 			// Add the current ValidatorEntry to the leaderSchedule.
 			leaderSchedule = append(leaderSchedule, validatorEntry)
-			leaderSchedulePKIDs.Add(validatorEntry.ValidatorPKID)
+			leaderSchedulePKIDs.Add(*validatorEntry.ValidatorPKID)
 
 			// Subtract the ValidatorEntry.TotalStakeAmountNanos from the TotalStakeAmountNanos.
 			totalStakeAmountNanos, err = SafeUint256().Sub(totalStakeAmountNanos, validatorEntry.TotalStakeAmountNanos)
