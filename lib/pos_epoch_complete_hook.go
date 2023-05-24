@@ -1,6 +1,8 @@
 package lib
 
-import "github.com/pkg/errors"
+import (
+	"github.com/pkg/errors"
+)
 
 func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error) {
 	// Returns true if this is the last block in the current epoch.
@@ -30,16 +32,7 @@ func (bav *UtxoView) RolloverEpochs(blockHeight uint64) error {
 		return errors.New("UtxoView.RolloverEpochs: called before current epoch is complete, this should never happen")
 	}
 
-	// Snapshot the current GlobalParamsEntry.
-	// TODO
-
-	// Snapshot the current validator set.
-	// TODO
-
-	// Generate + store a leader schedule.
-	// TODO
-
-	// Roll-over a new epoch by setting a new CurrentEpochEntry.
+	// Retrieve the CurrentEpochEntry.
 	currentEpochEntry, err := bav.GetCurrentEpochEntry()
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.RolloverEpochs: problem retrieving CurrentEpochEntry: ")
@@ -47,11 +40,29 @@ func (bav *UtxoView) RolloverEpochs(blockHeight uint64) error {
 	if currentEpochEntry == nil {
 		return errors.New("UtxoView.RolloverEpochs: CurrentEpochEntry is nil, this should never happen")
 	}
-	newEpochEntry := &EpochEntry{
+
+	// Snapshot the current GlobalParamsEntry.
+	// TODO
+
+	// Snapshot the current validator set.
+	// TODO
+
+	// Snapshot the current GlobalActiveStakeAmountNanos.
+	globalActiveStakeAmountNanos, err := bav.GetGlobalActiveStakeAmountNanos()
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.RolloverEpochs: problem retrieving GlobalActiveStakeAmountNanos: ")
+	}
+	bav._setSnapshotGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos, currentEpochEntry.EpochNumber)
+
+	// Generate + store a leader schedule.
+	// TODO
+
+	// Roll-over a new epoch by setting a new CurrentEpochEntry.
+	nextEpochEntry := &EpochEntry{
 		EpochNumber:      currentEpochEntry.EpochNumber + 1,
 		FinalBlockHeight: blockHeight + 100, // TODO: read this duration from the GlobalParamsEntry.
 	}
-	bav._setCurrentEpochEntry(newEpochEntry)
+	bav._setCurrentEpochEntry(nextEpochEntry)
 
 	return nil
 }
