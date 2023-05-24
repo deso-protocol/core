@@ -275,6 +275,9 @@ type ForkHeights struct {
 	// UnregisterAsValidator, Stake, Unstake, and UnlockStake.
 	ProofOfStakeNewTxnTypesBlockHeight uint32
 
+	// ProofOfStakeBlockHeight defines the height at which we cut over from PoW to PoS.
+	ProofOfStakeBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -340,6 +343,7 @@ const (
 	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
 	BalanceModelMigration                MigrationName = "BalanceModelMigration"
 	ProofOfStakeNewTxnTypesMigration     MigrationName = "ProofOfStakeNewTxnTypesMigration"
+	ProofOfStakeMigration                MigrationName = "ProofOfStakeMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -356,6 +360,9 @@ type EncoderMigrationHeights struct {
 
 	// This coincides with the ProofOfStakeNewTxnTypesBlockHeight
 	ProofOfStakeNewTxnTypesMigration MigrationHeight
+
+	// This coincides with the ProofOfStakeBlockHeight
+	ProofOfStakeMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -385,8 +392,14 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Height:  uint64(forkHeights.ProofOfStakeNewTxnTypesBlockHeight),
 			Name:    ProofOfStakeNewTxnTypesMigration,
 		},
+		ProofOfStakeMigration: MigrationHeight{
+			Version: 5,
+			Height:  uint64(forkHeights.ProofOfStakeBlockHeight),
+			Name:    ProofOfStakeMigration,
+		},
 	}
 }
+
 func GetEncoderMigrationHeightsList(forkHeights *ForkHeights) (
 	_migrationHeightsList []*MigrationHeight) {
 
@@ -641,6 +654,7 @@ var RegtestForkHeights = ForkHeights{
 	// genesis block was created using the utxo model.
 	BalanceModelBlockHeight:            uint32(1),
 	ProofOfStakeNewTxnTypesBlockHeight: uint32(1),
+	ProofOfStakeBlockHeight:            uint32(1),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -795,6 +809,9 @@ var MainnetForkHeights = ForkHeights{
 
 	// FIXME: set to real block height when ready
 	ProofOfStakeNewTxnTypesBlockHeight: uint32(math.MaxUint32),
+
+	// FIXME: set to real block height when ready
+	ProofOfStakeBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1067,6 +1084,9 @@ var TestnetForkHeights = ForkHeights{
 
 	// FIXME: set to real block height when ready
 	ProofOfStakeNewTxnTypesBlockHeight: uint32(math.MaxUint32),
+
+	// FIXME: set to real block height when ready
+	ProofOfStakeBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.

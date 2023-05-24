@@ -4,6 +4,10 @@ import "github.com/pkg/errors"
 
 func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error) {
 	// Returns true if this is the last block in the current epoch.
+	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStakeBlockHeight) {
+		// Return false if we are still using PoW and haven't cut over to PoS yet.
+		return false, nil
+	}
 	currentEpochEntry, err := bav.GetCurrentEpochEntry()
 	if err != nil {
 		return false, errors.Wrapf(err, "UtxoView.IsEpochComplete: problem retrieving CurrentEpochEntry: ")
