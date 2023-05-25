@@ -20,25 +20,25 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 	return currentEpochEntry.FinalBlockHeight == blockHeight, nil
 }
 
-func (bav *UtxoView) RolloverEpochs(blockHeight uint64) error {
+func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Rolls-over the current epoch into a new one. Takes care of the associated snapshotting + accounting.
 
 	// Sanity-check that the current block is the last block in the current epoch.
 	isLastBlockInCurrentEpoch, err := bav.IsLastBlockInCurrentEpoch(blockHeight)
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.RolloverEpochs: ")
+		return errors.Wrapf(err, "UtxoView.RunEpochCompleteHook: ")
 	}
 	if !isLastBlockInCurrentEpoch {
-		return errors.New("UtxoView.RolloverEpochs: called before current epoch is complete, this should never happen")
+		return errors.New("UtxoView.RunEpochCompleteHook: called before current epoch is complete, this should never happen")
 	}
 
 	// Retrieve the CurrentEpochEntry.
 	currentEpochEntry, err := bav.GetCurrentEpochEntry()
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.RolloverEpochs: problem retrieving CurrentEpochEntry: ")
+		return errors.Wrapf(err, "UtxoView.RunEpochCompleteHook: problem retrieving CurrentEpochEntry: ")
 	}
 	if currentEpochEntry == nil {
-		return errors.New("UtxoView.RolloverEpochs: CurrentEpochEntry is nil, this should never happen")
+		return errors.New("UtxoView.RunEpochCompleteHook: CurrentEpochEntry is nil, this should never happen")
 	}
 
 	// Snapshot the current GlobalParamsEntry.
@@ -50,7 +50,7 @@ func (bav *UtxoView) RolloverEpochs(blockHeight uint64) error {
 	// Snapshot the current GlobalActiveStakeAmountNanos.
 	globalActiveStakeAmountNanos, err := bav.GetGlobalActiveStakeAmountNanos()
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.RolloverEpochs: problem retrieving GlobalActiveStakeAmountNanos: ")
+		return errors.Wrapf(err, "UtxoView.RunEpochCompleteHook: problem retrieving GlobalActiveStakeAmountNanos: ")
 	}
 	bav._setSnapshotGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos, currentEpochEntry.EpochNumber)
 
