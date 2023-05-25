@@ -3774,6 +3774,17 @@ type GlobalParamsEntry struct {
 	MaxNonceExpirationBlockHeightOffset uint64
 }
 
+func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
+	return &GlobalParamsEntry{
+		USDCentsPerBitcoin:                  gp.USDCentsPerBitcoin,
+		CreateProfileFeeNanos:               gp.CreateProfileFeeNanos,
+		CreateNFTFeeNanos:                   gp.CreateNFTFeeNanos,
+		MaxCopiesPerNFT:                     gp.MaxCopiesPerNFT,
+		MinimumNetworkFeeNanosPerKB:         gp.MinimumNetworkFeeNanosPerKB,
+		MaxNonceExpirationBlockHeightOffset: gp.MaxNonceExpirationBlockHeightOffset,
+	}
+}
+
 func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 

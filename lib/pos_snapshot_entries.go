@@ -10,7 +10,100 @@ import (
 )
 
 //
-// SnapshotGlobalActiveStakeAmountNanos: UTXO VIEW UTILS
+// SnapshotGlobalParamsEntry
+//
+
+func (bav *UtxoView) GetSnapshotGlobalParamsEntry(epochNumber uint64) (*GlobalParamsEntry, error) {
+	// Check the UtxoView first.
+	if globalParamsEntry, exists := bav.SnapshotGlobalParamsEntries[epochNumber]; exists {
+		return globalParamsEntry, nil
+	}
+	// If we don't have it in the UtxoView, check the db.
+	globalParamsEntry, err := DBGetSnapshotGlobalParamsEntry(bav.Handle, bav.Snapshot, epochNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GetSnapshotGlobalParamsEntry: problem retrieving SnapshotGlobalParamsEntry from db: ")
+	}
+	if globalParamsEntry != nil {
+		// Cache the result in the UtxoView.
+		bav._setSnapshotGlobalParamsEntry(globalParamsEntry, epochNumber)
+	}
+	return globalParamsEntry, nil
+}
+
+func (bav *UtxoView) _setSnapshotGlobalParamsEntry(globalParamsEntry *GlobalParamsEntry, epochNumber uint64) {
+	if globalParamsEntry == nil {
+		glog.Errorf("UtxoView._setSnapshotGlobalParamsEntry: called with nil entry, this should never happen")
+	}
+	bav.SnapshotGlobalParamsEntries[epochNumber] = globalParamsEntry.Copy()
+}
+
+func (bav *UtxoView) _flushSnapshotGlobalParamsEntryToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	for epochNumber, globalParamsEntry := range bav.SnapshotGlobalParamsEntries {
+		if globalParamsEntry == nil {
+			return fmt.Errorf("UtxoView._flushSnapshotGlobalParamsEntryToDbWithTxn: found nil entry for epochNumber %d, this should never happen", epochNumber)
+		}
+		if err := DBPutSnapshotGlobalParamsEntryWithTxn(txn, bav.Snapshot, globalParamsEntry, epochNumber, blockHeight); err != nil {
+			return errors.Wrapf(err, "UtxoView._flushSnapshotGlobalParamsEntryToDbWithTxn: problem setting SnapshotGlobalParamsEntry for epochNumber %d: ", epochNumber)
+		}
+	}
+	return nil
+}
+
+func DBKeyForSnapshotGlobalParamsEntry(epochNumber uint64) []byte {
+	data := append([]byte{}, Prefixes.PrefixSnapshotGlobalParamsEntryByEpochNumber...)
+	data = append(data, UintToBuf(epochNumber)...)
+	return data
+}
+
+func DBGetSnapshotGlobalParamsEntry(handle *badger.DB, snap *Snapshot, epochNumber uint64) (*GlobalParamsEntry, error) {
+	var ret *GlobalParamsEntry
+	err := handle.View(func(txn *badger.Txn) error {
+		var innerErr error
+		ret, innerErr = DBGetSnapshotGlobalParamsEntryWithTxn(txn, snap, epochNumber)
+		return innerErr
+	})
+	return ret, err
+}
+
+func DBGetSnapshotGlobalParamsEntryWithTxn(txn *badger.Txn, snap *Snapshot, epochNumber uint64) (*GlobalParamsEntry, error) {
+	// Retrieve from db.
+	key := DBKeyForSnapshotGlobalParamsEntry(epochNumber)
+	globalParamsEntryBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetSnapshotGlobalParamsEntryWithTxn: problem retrieving value")
+	}
+
+	// Decode from bytes.
+	globalParamsEntry := &GlobalParamsEntry{}
+	rr := bytes.NewReader(globalParamsEntryBytes)
+	if exist, err := DecodeFromBytes(globalParamsEntry, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetSnapshotGlobalParamsEntryWithTxn: problem decoding GlobalParamsEntry: ")
+	}
+	return globalParamsEntry, nil
+}
+
+func DBPutSnapshotGlobalParamsEntryWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	globalParamsEntry *GlobalParamsEntry,
+	epochNumber uint64,
+	blockHeight uint64,
+) error {
+	if globalParamsEntry == nil {
+		// This should never happen but is a sanity check.
+		glog.Errorf("DBPutSnapshotGlobalParamsEntryWithTxn: called with nil GlobalParamsEntry, this should never happen")
+		return nil
+	}
+	key := DBKeyForSnapshotGlobalParamsEntry(epochNumber)
+	return DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, globalParamsEntry))
+}
+
+//
+// SnapshotGlobalActiveStakeAmountNanos
 //
 
 func (bav *UtxoView) GetSnapshotGlobalActiveStakeAmountNanos(epochNumber uint64) (*uint256.Int, error) {
@@ -25,7 +118,7 @@ func (bav *UtxoView) GetSnapshotGlobalActiveStakeAmountNanos(epochNumber uint64)
 	}
 	if globalActiveStakeAmountNanos != nil {
 		// Cache the result in the UtxoView.
-		bav.SnapshotGlobalActiveStakeAmountNanos[epochNumber] = globalActiveStakeAmountNanos
+		bav._setSnapshotGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos, epochNumber)
 	}
 	return globalActiveStakeAmountNanos, nil
 }
@@ -49,12 +142,8 @@ func (bav *UtxoView) _flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn(txn *
 	return nil
 }
 
-//
-// SnapshotGlobalActiveStakeAmountNanos: DB UTILS
-//
-
 func DBKeyForSnapshotGlobalActiveStakeAmountNanos(epochNumber uint64) []byte {
-	data := append([]byte{}, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanos...)
+	data := append([]byte{}, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber...)
 	data = append(data, UintToBuf(epochNumber)...)
 	return data
 }
@@ -100,7 +189,7 @@ func DBPutSnapshotGlobalActiveStakeAmountNanosWithTxn(
 ) error {
 	if globalActiveStakeAmountNanos == nil {
 		// This should never happen but is a sanity check.
-		glog.Errorf("DBPutSnapshotGlobalActiveStakeAmountNanosWithTxn: called with nil GlobalActiveStakeAmountNanos")
+		glog.Errorf("DBPutSnapshotGlobalActiveStakeAmountNanosWithTxn: called with nil GlobalActiveStakeAmountNanos, this should never happen")
 		return nil
 	}
 	key := DBKeyForSnapshotGlobalActiveStakeAmountNanos(epochNumber)

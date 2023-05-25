@@ -525,11 +525,15 @@ type DBPrefixes struct {
 	// Prefix -> EpochEntry
 	PrefixCurrentEpoch []byte `prefix_id:"[83]" is_state:"true"`
 
-	// PrefixSnapshotGlobalActiveStakeAmountNanos: Retrieve the GlobalActiveStakeAmountNanos by EpochNumber.
-	// Prefix, EpochNumber -> *uint256.Int
-	PrefixSnapshotGlobalActiveStakeAmountNanos []byte `prefix_id:"[84]" is_state:"true"`
+	// PrefixSnapshotGlobalParamsEntryByEpochNumber: Retrieve a snapshot GlobalParamsEntry by EpochNumber.
+	// Prefix, EpochNumber -> *GlobalParamsEntry
+	PrefixSnapshotGlobalParamsEntryByEpochNumber []byte `prefix_id:"[84]" is_state:"true"`
 
-	// NEXT_TAG: 85
+	// PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber: Retrieve a snapshot GlobalActiveStakeAmountNanos by EpochNumber.
+	// Prefix, EpochNumber -> *uint256.Int
+	PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber []byte `prefix_id:"[85]" is_state:"true"`
+
+	// NEXT_TAG: 86
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -749,8 +753,11 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentEpoch) {
 		// prefix_id:"[83]"
 		return true, &EpochEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanos) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalParamsEntryByEpochNumber) {
 		// prefix_id:"[84]"
+		return true, &GlobalParamsEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber) {
+		// prefix_id:"[85]"
 		return false, nil
 	}
 

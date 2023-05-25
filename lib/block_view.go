@@ -130,6 +130,10 @@ type UtxoView struct {
 	// Current EpochEntry
 	CurrentEpochEntry *EpochEntry
 
+	// SnapshotGlobalParamsEntries is a map of EpochNumber to GlobalParamsEntry.
+	// It contains the snapshot value of the GlobalParamsEntry at the given EpochNumber.
+	SnapshotGlobalParamsEntries map[uint64]*GlobalParamsEntry
+
 	// SnapshotGlobalActiveStakeAmountNanos is a map of EpochNumber to GlobalActiveStakeAmountNanos.
 	// It contains the snapshot value of the GlobalActiveStakeAmountNanos at the given EpochNumber.
 	SnapshotGlobalActiveStakeAmountNanos map[uint64]*uint256.Int
@@ -239,6 +243,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// CurrentEpochEntry
 	bav.CurrentEpochEntry = nil
+
+	// SnapshotGlobalParamsEntries
+	bav.SnapshotGlobalParamsEntries = make(map[uint64]*GlobalParamsEntry)
 
 	// SnapshotGlobalActiveStakeAmountNanos
 	bav.SnapshotGlobalActiveStakeAmountNanos = make(map[uint64]*uint256.Int)
@@ -522,6 +529,11 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the CurrentEpochEntry
 	if bav.CurrentEpochEntry != nil {
 		newView.CurrentEpochEntry = bav.CurrentEpochEntry.Copy()
+	}
+
+	// Copy the SnapshotGlobalParamsEntries
+	for epochNumber, globalParamsEntry := range bav.SnapshotGlobalParamsEntries {
+		newView.SnapshotGlobalParamsEntries[epochNumber] = globalParamsEntry.Copy()
 	}
 
 	// Copy the SnapshotGlobalActiveStakeAmountNanos

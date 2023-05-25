@@ -42,7 +42,7 @@ func (bav *UtxoView) RolloverEpochs(blockHeight uint64) error {
 	}
 
 	// Snapshot the current GlobalParamsEntry.
-	// TODO
+	bav._setSnapshotGlobalParamsEntry(bav.GlobalParamsEntry, currentEpochEntry.EpochNumber)
 
 	// Snapshot the current validator set.
 	// TODO
