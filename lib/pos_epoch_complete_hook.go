@@ -44,11 +44,10 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Snapshot the current GlobalParamsEntry.
 	bav._setSnapshotGlobalParamsEntry(bav.GlobalParamsEntry, currentEpochEntry.EpochNumber)
 
-	// Snapshot the current validators by PKID.
-	// TODO
-
-	// Snapshot the current validators by stake.
-	// TODO
+	// Snapshot the current ValidatorEntries.
+	if err = bav.SnapshotCurrentValidators(currentEpochEntry.EpochNumber); err != nil {
+		return errors.Wrapf(err, "UtxoView.RunEpochCompleteHook: problem snapshotting validators: ")
+	}
 
 	// Snapshot the current GlobalActiveStakeAmountNanos.
 	globalActiveStakeAmountNanos, err := bav.GetGlobalActiveStakeAmountNanos()

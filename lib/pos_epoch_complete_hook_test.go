@@ -177,23 +177,22 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Nil(t, snapshotGlobalParamsEntry)
 
 		// Test SnapshotValidatorByPKID is nil.
-		// TODO
-		//for _, pkid := range []*PKID{m0PKID, m1PKID, m2PKID, m3PKID, m4PKID, m5PKID, m6PKID} {
-		//	snapshotValidatorEntry, err := utxoView.GetSnapshotValidatorEntryByPKID(pkid, 1)
-		//	require.NoError(t, err)
-		//	require.Nil(t, snapshotValidatorEntry)
-		//}
+		for _, pkid := range []*PKID{m0PKID, m1PKID, m2PKID, m3PKID, m4PKID, m5PKID, m6PKID} {
+			snapshotValidatorEntry, err := utxoView.GetSnapshotValidatorByPKID(pkid, 1)
+			require.NoError(t, err)
+			require.Nil(t, snapshotValidatorEntry)
+		}
 
 		// Test SnapshotTopActiveValidatorsByStake is empty.
-		// TODO
-
-		// Test SnapshotLeaderSchedule is nil.
 		// TODO
 
 		// Test SnapshotGlobalActiveStakeAmountNanos is nil.
 		snapshotGlobalActiveStakeAmountNanos, err := utxoView.GetSnapshotGlobalActiveStakeAmountNanos(1)
 		require.NoError(t, err)
 		require.Nil(t, snapshotGlobalActiveStakeAmountNanos)
+
+		// Test SnapshotLeaderSchedule is nil.
+		// TODO
 	}
 	{
 		// Test RunOnEpochCompleteHook().
@@ -209,17 +208,21 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		//require.Equal(t, snapshotGlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
 
 		// Test SnapshotValidatorByPKID is populated.
-		// TODO
+		for _, pkid := range []*PKID{m0PKID, m1PKID, m2PKID, m3PKID, m4PKID, m5PKID, m6PKID} {
+			snapshotValidatorEntry, err := utxoView.GetSnapshotValidatorByPKID(pkid, 1)
+			require.NoError(t, err)
+			require.NotNil(t, snapshotValidatorEntry)
+		}
 
 		// Test SnapshotTopActiveValidatorsByStake is populated.
-		// TODO
-
-		// Test SnapshotLeaderSchedule is populated.
 		// TODO
 
 		// Test SnapshotGlobalActiveStakeAmountNanos is populated.
 		snapshotGlobalActiveStakeAmountNanos, err := utxoView.GetSnapshotGlobalActiveStakeAmountNanos(1)
 		require.NoError(t, err)
 		require.Equal(t, snapshotGlobalActiveStakeAmountNanos, uint256.NewInt().SetUint64(2800))
+
+		// Test SnapshotLeaderSchedule is populated.
+		// TODO
 	}
 }
