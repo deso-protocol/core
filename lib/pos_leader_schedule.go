@@ -6,7 +6,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
+func (bav *UtxoView) GenerateLeaderSchedule() ([]*PKID, error) {
 	// Retrieve CurrentRandomSeedHash.
 	currentRandomSeedHash, err := bav.GetCurrentRandomSeedHash()
 	if err != nil {
@@ -19,7 +19,7 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
 		return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error retrieving top ValidatorEntries: ")
 	}
 	if len(validatorEntries) == 0 {
-		return []*ValidatorEntry{}, nil
+		return []*PKID{}, nil
 	}
 
 	// Sum TotalStakeAmountNanos.
@@ -37,12 +37,12 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
 	//   Hash the CurrentRandomSeedHash and generate a new RandomUint256.
 	//   Take RandomUint256 modulo TotalStakeAmountNanos.
 	//   For each ValidatorEntry:
-	//     Skip if ValidatorEntry has already been added to the leader schedule.
+	//     Skip if ValidatorPKID has already been added to the leader schedule.
 	//     If ValidatorEntry.TotalStakeAmountNanos >= RandomUint256:
-	//       Add ValidatorEntry to LeaderSchedule.
+	//       Add ValidatorPKID to LeaderSchedule.
 	//       TotalStakeAmountNanos -= ValidatorEntry.TotalStakeAmountNanos.
 	//       Break out of the inner loop.
-	var leaderSchedule []*ValidatorEntry
+	var leaderSchedule []*PKID
 
 	// We also track a set of ValidatorPKIDs that have already been
 	// added to the LeaderSchedule so that we can skip them when
@@ -84,8 +84,8 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*ValidatorEntry, error) {
 			// If we get to this point, the current validator is the
 			// one we should add to the leader schedule next.
 
-			// Add the current ValidatorEntry to the leaderSchedule.
-			leaderSchedule = append(leaderSchedule, validatorEntry)
+			// Add the current ValidatorPKID to the leaderSchedule.
+			leaderSchedule = append(leaderSchedule, validatorEntry.ValidatorPKID)
 			leaderSchedulePKIDs.Add(*validatorEntry.ValidatorPKID)
 
 			// Subtract the ValidatorEntry.TotalStakeAmountNanos from the TotalStakeAmountNanos.

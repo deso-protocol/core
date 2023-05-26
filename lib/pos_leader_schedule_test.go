@@ -148,7 +148,7 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 1)
-		require.Equal(t, leaderSchedule[0].ValidatorPKID, m0PKID)
+		require.Equal(t, leaderSchedule[0], m0PKID)
 	}
 	{
 		// m1 registers and stakes to himself.
@@ -159,8 +159,8 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 2)
-		require.Equal(t, leaderSchedule[0].ValidatorPKID, m1PKID)
-		require.Equal(t, leaderSchedule[1].ValidatorPKID, m0PKID)
+		require.Equal(t, leaderSchedule[0], m1PKID)
+		require.Equal(t, leaderSchedule[1], m0PKID)
 	}
 	{
 		// All remaining validators register and stake to themselves.
@@ -195,13 +195,13 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0].ValidatorPKID, m6PKID)
-		require.Equal(t, leaderSchedule[1].ValidatorPKID, m5PKID)
-		require.Equal(t, leaderSchedule[2].ValidatorPKID, m4PKID)
-		require.Equal(t, leaderSchedule[3].ValidatorPKID, m2PKID)
-		require.Equal(t, leaderSchedule[4].ValidatorPKID, m3PKID)
-		require.Equal(t, leaderSchedule[5].ValidatorPKID, m1PKID)
-		require.Equal(t, leaderSchedule[6].ValidatorPKID, m0PKID)
+		require.Equal(t, leaderSchedule[0], m6PKID)
+		require.Equal(t, leaderSchedule[1], m5PKID)
+		require.Equal(t, leaderSchedule[2], m4PKID)
+		require.Equal(t, leaderSchedule[3], m2PKID)
+		require.Equal(t, leaderSchedule[4], m3PKID)
+		require.Equal(t, leaderSchedule[5], m1PKID)
+		require.Equal(t, leaderSchedule[6], m0PKID)
 	}
 	{
 		// Seed a new CurrentRandomSeedHash.
@@ -211,13 +211,13 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0].ValidatorPKID, m6PKID)
-		require.Equal(t, leaderSchedule[1].ValidatorPKID, m5PKID)
-		require.Equal(t, leaderSchedule[2].ValidatorPKID, m3PKID)
-		require.Equal(t, leaderSchedule[3].ValidatorPKID, m4PKID)
-		require.Equal(t, leaderSchedule[4].ValidatorPKID, m2PKID)
-		require.Equal(t, leaderSchedule[5].ValidatorPKID, m0PKID)
-		require.Equal(t, leaderSchedule[6].ValidatorPKID, m1PKID)
+		require.Equal(t, leaderSchedule[0], m6PKID)
+		require.Equal(t, leaderSchedule[1], m5PKID)
+		require.Equal(t, leaderSchedule[2], m3PKID)
+		require.Equal(t, leaderSchedule[3], m4PKID)
+		require.Equal(t, leaderSchedule[4], m2PKID)
+		require.Equal(t, leaderSchedule[5], m0PKID)
+		require.Equal(t, leaderSchedule[6], m1PKID)
 	}
 	{
 		// Seed a new CurrentRandomSeedHash.
@@ -227,13 +227,13 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0].ValidatorPKID, m4PKID)
-		require.Equal(t, leaderSchedule[1].ValidatorPKID, m5PKID)
-		require.Equal(t, leaderSchedule[2].ValidatorPKID, m6PKID)
-		require.Equal(t, leaderSchedule[3].ValidatorPKID, m3PKID)
-		require.Equal(t, leaderSchedule[4].ValidatorPKID, m1PKID)
-		require.Equal(t, leaderSchedule[5].ValidatorPKID, m2PKID)
-		require.Equal(t, leaderSchedule[6].ValidatorPKID, m0PKID)
+		require.Equal(t, leaderSchedule[0], m4PKID)
+		require.Equal(t, leaderSchedule[1], m5PKID)
+		require.Equal(t, leaderSchedule[2], m6PKID)
+		require.Equal(t, leaderSchedule[3], m3PKID)
+		require.Equal(t, leaderSchedule[4], m1PKID)
+		require.Equal(t, leaderSchedule[5], m2PKID)
+		require.Equal(t, leaderSchedule[6], m0PKID)
 	}
 	{
 		// Seed a new CurrentRandomSeedHash.
@@ -243,13 +243,13 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0].ValidatorPKID, m6PKID)
-		require.Equal(t, leaderSchedule[1].ValidatorPKID, m2PKID)
-		require.Equal(t, leaderSchedule[2].ValidatorPKID, m4PKID)
-		require.Equal(t, leaderSchedule[3].ValidatorPKID, m5PKID)
-		require.Equal(t, leaderSchedule[4].ValidatorPKID, m3PKID)
-		require.Equal(t, leaderSchedule[5].ValidatorPKID, m1PKID)
-		require.Equal(t, leaderSchedule[6].ValidatorPKID, m0PKID)
+		require.Equal(t, leaderSchedule[0], m6PKID)
+		require.Equal(t, leaderSchedule[1], m2PKID)
+		require.Equal(t, leaderSchedule[2], m4PKID)
+		require.Equal(t, leaderSchedule[3], m5PKID)
+		require.Equal(t, leaderSchedule[4], m3PKID)
+		require.Equal(t, leaderSchedule[5], m1PKID)
+		require.Equal(t, leaderSchedule[6], m0PKID)
 	}
 	{
 		// Seed a new CurrentRandomSeedHash.
@@ -259,26 +259,26 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0].ValidatorPKID, m6PKID)
-		require.Equal(t, leaderSchedule[1].ValidatorPKID, m5PKID)
-		require.Equal(t, leaderSchedule[2].ValidatorPKID, m4PKID)
-		require.Equal(t, leaderSchedule[3].ValidatorPKID, m2PKID)
-		require.Equal(t, leaderSchedule[4].ValidatorPKID, m1PKID)
-		require.Equal(t, leaderSchedule[5].ValidatorPKID, m0PKID)
-		require.Equal(t, leaderSchedule[6].ValidatorPKID, m3PKID)
+		require.Equal(t, leaderSchedule[0], m6PKID)
+		require.Equal(t, leaderSchedule[1], m5PKID)
+		require.Equal(t, leaderSchedule[2], m4PKID)
+		require.Equal(t, leaderSchedule[3], m2PKID)
+		require.Equal(t, leaderSchedule[4], m1PKID)
+		require.Equal(t, leaderSchedule[5], m0PKID)
+		require.Equal(t, leaderSchedule[6], m3PKID)
 
 		// Test GenerateLeaderSchedule() is idempotent. Given the same CurrentRandomSeedHash
 		// and the same stake-weighted validators, we generate the same leader schedule.
 		leaderSchedule, err = newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0].ValidatorPKID, m6PKID)
-		require.Equal(t, leaderSchedule[1].ValidatorPKID, m5PKID)
-		require.Equal(t, leaderSchedule[2].ValidatorPKID, m4PKID)
-		require.Equal(t, leaderSchedule[3].ValidatorPKID, m2PKID)
-		require.Equal(t, leaderSchedule[4].ValidatorPKID, m1PKID)
-		require.Equal(t, leaderSchedule[5].ValidatorPKID, m0PKID)
-		require.Equal(t, leaderSchedule[6].ValidatorPKID, m3PKID)
+		require.Equal(t, leaderSchedule[0], m6PKID)
+		require.Equal(t, leaderSchedule[1], m5PKID)
+		require.Equal(t, leaderSchedule[2], m4PKID)
+		require.Equal(t, leaderSchedule[3], m2PKID)
+		require.Equal(t, leaderSchedule[4], m1PKID)
+		require.Equal(t, leaderSchedule[5], m0PKID)
+		require.Equal(t, leaderSchedule[6], m3PKID)
 	}
 	{
 		// Test changing params.LeaderScheduleMaxNumValidators.
