@@ -171,6 +171,11 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Len(t, validatorEntries, 7)
 	}
 	{
+		// Test CurrentEpochNumber.
+		currentEpochNumber, err := utxoView.GetCurrentEpochNumber()
+		require.NoError(t, err)
+		require.Equal(t, currentEpochNumber, uint64(1))
+
 		// Test SnapshotGlobalParamsEntry is nil.
 		snapshotGlobalParamsEntry, err := utxoView.GetSnapshotGlobalParamsEntry(1)
 		require.NoError(t, err)
@@ -196,11 +201,15 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	}
 	{
 		// Test RunOnEpochCompleteHook().
-		require.NoError(t, utxoView.FlushToDb(blockHeight))
 		require.NoError(t, utxoView.RunEpochCompleteHook(blockHeight))
 		require.NoError(t, utxoView.FlushToDb(blockHeight))
 	}
 	{
+		// Test CurrentEpochNumber.
+		currentEpochNumber, err := utxoView.GetCurrentEpochNumber()
+		require.NoError(t, err)
+		require.Equal(t, currentEpochNumber, uint64(2))
+
 		// Test SnapshotGlobalParamsEntry is populated.
 		snapshotGlobalParamsEntry, err := utxoView.GetSnapshotGlobalParamsEntry(1)
 		require.NoError(t, err)

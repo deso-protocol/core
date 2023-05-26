@@ -151,6 +151,11 @@ func (bav *UtxoView) GetSnapshotValidatorByPKID(pkid *PKID, epochNumber uint64) 
 	return validatorEntry, nil
 }
 
+func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(epochNumber uint64) (*ValidatorEntry, error) {
+	// TODO
+	return nil, nil
+}
+
 func (bav *UtxoView) _setSnapshotValidatorEntry(validatorEntry *ValidatorEntry, epochNumber uint64) {
 	if validatorEntry == nil {
 		glog.Errorf("UtxoView._setSnapshotValidatorEntry: called with nil entry, this should never happen")
