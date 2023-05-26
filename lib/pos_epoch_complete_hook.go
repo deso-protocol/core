@@ -21,7 +21,7 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 }
 
 func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
-	// Rolls-over the current epoch into a new one. Takes care of the associated snapshotting + accounting.
+	// Rolls-over the current epoch into a new one. Handles the associated snapshotting + accounting.
 
 	// Sanity-check that the current block is the last block in the current epoch.
 	isLastBlockInCurrentEpoch, err := bav.IsLastBlockInCurrentEpoch(blockHeight)
@@ -44,7 +44,10 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Snapshot the current GlobalParamsEntry.
 	bav._setSnapshotGlobalParamsEntry(bav.GlobalParamsEntry, currentEpochEntry.EpochNumber)
 
-	// Snapshot the current validator set.
+	// Snapshot the current validators by PKID.
+	// TODO
+
+	// Snapshot the current validators by stake.
 	// TODO
 
 	// Snapshot the current GlobalActiveStakeAmountNanos.
@@ -54,8 +57,10 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	}
 	bav._setSnapshotGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos, currentEpochEntry.EpochNumber)
 
-	// Generate + store a leader schedule.
+	// Generate + snapshot a leader schedule.
 	// TODO
+
+	// TODO: Is there any clean-up we should do here deleting old snapshots that are no longer useful?
 
 	// Roll-over a new epoch by setting a new CurrentEpochEntry.
 	nextEpochEntry := &EpochEntry{

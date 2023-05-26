@@ -103,6 +103,58 @@ func DBPutSnapshotGlobalParamsEntryWithTxn(
 }
 
 //
+// SnapshotValidatorEntry
+//
+
+type SnapshotValidatorMapKey struct {
+	EpochNumber   uint64
+	ValidatorPKID PKID
+}
+
+func (bav *UtxoView) GetSnapshotValidatorByPKID(pkid *PKID, epochNumber uint64) (*ValidatorEntry, error) {
+	// Check the UtxoView first.
+	mapKey := SnapshotValidatorMapKey{EpochNumber: epochNumber, ValidatorPKID: *pkid}
+	if validatorEntry, exists := bav.SnapshotValidatorEntries[mapKey]; exists {
+		return validatorEntry, nil
+	}
+	// If we don't have it in the UtxoView, check the db.
+	validatorEntry, err := DBGetSnapshotValidatorByPKID(bav.Handle, bav.Snapshot, pkid, epochNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GetSnapshotValidatorByPKID: problem retrieving ValidatorEntry from db: ")
+	}
+	if validatorEntry != nil {
+		// Cache the result in the UtxoView.
+		bav._setSnapshotValidatorEntry(validatorEntry, epochNumber)
+	}
+	return validatorEntry, nil
+}
+
+func (bav *UtxoView) _setSnapshotValidatorEntry(validatorEntry *ValidatorEntry, epochNumber uint64) {
+	if validatorEntry == nil {
+		glog.Errorf("UtxoView._setSnapshotValidatorEntry: called with nil entry, this should never happen")
+		return
+	}
+	mapKey := SnapshotValidatorMapKey{EpochNumber: epochNumber, ValidatorPKID: *validatorEntry.ValidatorPKID}
+	bav.SnapshotValidatorEntries[mapKey] = validatorEntry.Copy()
+}
+
+func (bav *UtxoView) _flushSnapshotValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	for epochNumber, validatorEntry := range bav.SnapshotValidatorEntries {
+		if validatorEntry == nil {
+			return fmt.Errorf("UtxoView._flushSnapshotValidatorEntriesToDbWithTxn: found nil entry for epochNumber %d, this should never happen", epochNumber)
+		}
+		if err := DBPutSnapshotValidatorEntryWithTxn(txn, bav.Snapshot, validatorEntry, epochNumber, blockHeight); err != nil {
+			return errors.Wrapf(err, "UtxoView._flushSnapshotValidatorEntryToDbWithTxn: problem setting ValidatorEntry for epochNumber %d: ", epochNumber)
+		}
+	}
+	return nil
+}
+
+//
+// SnapshotValidatorsByStake
+//
+
+//
 // SnapshotGlobalActiveStakeAmountNanos
 //
 
@@ -163,9 +215,9 @@ func DBGetSnapshotGlobalActiveStakeAmountNanosWithTxn(txn *badger.Txn, snap *Sna
 	key := DBKeyForSnapshotGlobalActiveStakeAmountNanos(epochNumber)
 	globalActiveStakeAmountNanosBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
-		// We don't want to error if the key isn't found. Instead, return 0.
+		// We don't want to error if the key isn't found. Instead, return nil.
 		if err == badger.ErrKeyNotFound {
-			return uint256.NewInt(), nil
+			return nil, nil
 		}
 		return nil, errors.Wrapf(err, "DBGetSnapshotGlobalActiveStakeAmountNanosWithTxn: problem retrieving value")
 	}

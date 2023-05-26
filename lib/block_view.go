@@ -134,6 +134,10 @@ type UtxoView struct {
 	// It contains the snapshot value of the GlobalParamsEntry at the given EpochNumber.
 	SnapshotGlobalParamsEntries map[uint64]*GlobalParamsEntry
 
+	// SnapshotValidatorEntries is a map of <EpochNumber, ValidatorPKID> to a ValidatorEntry.
+	// It contains the snapshot value of a ValidatorEntry at the given EpochNumber.
+	SnapshotValidatorEntries map[SnapshotValidatorMapKey]*ValidatorEntry
+
 	// SnapshotGlobalActiveStakeAmountNanos is a map of EpochNumber to GlobalActiveStakeAmountNanos.
 	// It contains the snapshot value of the GlobalActiveStakeAmountNanos at the given EpochNumber.
 	SnapshotGlobalActiveStakeAmountNanos map[uint64]*uint256.Int
@@ -246,6 +250,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// SnapshotGlobalParamsEntries
 	bav.SnapshotGlobalParamsEntries = make(map[uint64]*GlobalParamsEntry)
+
+	// SnapshotValidatorEntries
+	bav.SnapshotValidatorEntries = make(map[SnapshotValidatorMapKey]*ValidatorEntry)
 
 	// SnapshotGlobalActiveStakeAmountNanos
 	bav.SnapshotGlobalActiveStakeAmountNanos = make(map[uint64]*uint256.Int)
@@ -534,6 +541,11 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the SnapshotGlobalParamsEntries
 	for epochNumber, globalParamsEntry := range bav.SnapshotGlobalParamsEntries {
 		newView.SnapshotGlobalParamsEntries[epochNumber] = globalParamsEntry.Copy()
+	}
+
+	// Copy the SnapshotValidatorEntries
+	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
+		newView.SnapshotValidatorEntries[mapKey] = validatorEntry.Copy()
 	}
 
 	// Copy the SnapshotGlobalActiveStakeAmountNanos

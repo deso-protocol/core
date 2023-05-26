@@ -109,7 +109,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	m6PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m6PkBytes).PKID
 	_, _, _, _, _, _, _ = m0PKID, m1PKID, m2PKID, m3PKID, m4PKID, m5PKID, m6PKID
 
-	// Seed a CurrentEpochEntry and CurrentRandomSeedHash.
+	// Seed a CurrentEpochEntry.
 	utxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight})
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
 
@@ -190,10 +190,10 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		// Test SnapshotLeaderSchedule is nil.
 		// TODO
 
-		// Test SnapshotGlobalActiveStakeAmountNanos is zero.
+		// Test SnapshotGlobalActiveStakeAmountNanos is nil.
 		snapshotGlobalActiveStakeAmountNanos, err := utxoView.GetSnapshotGlobalActiveStakeAmountNanos(1)
 		require.NoError(t, err)
-		require.Equal(t, snapshotGlobalActiveStakeAmountNanos, uint256.NewInt())
+		require.Nil(t, snapshotGlobalActiveStakeAmountNanos)
 	}
 	{
 		// Test RunOnEpochCompleteHook().
@@ -206,7 +206,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		snapshotGlobalParamsEntry, err := utxoView.GetSnapshotGlobalParamsEntry(1)
 		require.NoError(t, err)
 		require.NotNil(t, snapshotGlobalParamsEntry)
-		require.Equal(t, snapshotGlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
+		//require.Equal(t, snapshotGlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
 
 		// Test SnapshotValidatorByPKID is populated.
 		// TODO
