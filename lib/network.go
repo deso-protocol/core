@@ -2018,6 +2018,10 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error
 	return retBytes, nil
 }
 
+func (msg *MsgDeSoHeader) EncoderHeaderPosVersion0(preSignature bool) ([]byte, error) {
+	return msg.EncodeHeaderVersion1(preSignature)
+}
+
 func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
 
 	// Depending on the version, we decode the header differently.
@@ -2025,6 +2029,8 @@ func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
 		return msg.EncodeHeaderVersion0(preSignature)
 	} else if msg.Version == HeaderVersion1 {
 		return msg.EncodeHeaderVersion1(preSignature)
+	} else if msg.Version == HeaderPoSVersion0 {
+		return msg.EncoderHeaderPosVersion0(preSignature)
 	} else {
 		// If we have an unrecognized version then we default to serializing with
 		// version 0. This is necessary because there are places where we use a
@@ -2989,6 +2995,7 @@ type DeSoTxnVersion uint64
 const (
 	DeSoTxnVersion0 DeSoTxnVersion = 0
 	DeSoTxnVersion1 DeSoTxnVersion = 1
+	DeSoTxnVersion2 DeSoTxnVersion = 2
 )
 
 type MsgDeSoTxn struct {
@@ -3033,6 +3040,10 @@ type MsgDeSoTxn struct {
 	// BLOCK_REWARD and CREATE_deso transactions do not require a signature
 	// since they have no inputs.
 	Signature DeSoSignature
+
+	// This determines whether the transaction passed/failed validation in Revolution.
+	// Only works for blocks with HeaderPoSVersion0 in the header.
+	StateConnected bool
 
 	// (!!) **DO_NOT_USE** (!!)
 	//

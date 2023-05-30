@@ -494,6 +494,105 @@ func (desoBlockProducer *DeSoBlockProducer) UpdateLatestBlockTemplate() error {
 	return nil
 }
 
+func (desoBlockProducer *DeSoBlockProducer) GetFeeTimeBlock() (*MsgDeSoBlock, error) {
+	// This function will construct a block with Fee-Time transaction ordering.
+	// For now, I'm just putting boilerplate code.
+
+	lastNode := desoBlockProducer.chain.blockTip()
+
+	// 1. Get all header info
+	blockRet := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+
+	blockRewardOutput := &DeSoOutput{}
+	blockRewardOutput.AmountNanos = math.MaxUint64
+	blockRewardTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
+	blockRewardTxn.StateConnected = true
+	blockRewardTxn.TxOutputs = append(blockRewardTxn.TxOutputs, blockRewardOutput)
+	blockRewardTxn.TxnMeta = &BlockRewardMetadataa{
+		ExtraData: UintToBuf(0),
+	}
+	blockRet.Txns = append(blockRet.Txns, blockRewardTxn)
+
+	blockRet.Header.Version = HeaderPoSVersion0
+	blockRet.Header.Height = uint64(lastNode.Height + 1)
+	blockRet.Header.PrevBlockHash = lastNode.Hash
+	desoBlockProducer._updateBlockTimestamp(blockRet, lastNode)
+
+	// 2. Get Fee-Time ordered transactions from the mempool and determine the pass/fail flags for each txn.
+	feeTimeTxns := desoBlockProducer.mempool.GetTransactionsOrderedByFeeTime()
+
+	utxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
+		desoBlockProducer.postgres, desoBlockProducer.chain.snapshot)
+	if err != nil {
+		return nil, err
+	}
+
+	blockTxns := []*MsgDeSoTxn{}
+	for _, txn := range feeTimeTxns {
+		utxoViewCopy, err := utxoView.CopyUtxoView()
+		if err != nil {
+			return nil, errors.Wrapf(err, "Error copying UtxoView: ")
+		}
+
+		_, _, _, _, err = utxoViewCopy._connectTransaction(
+			txn.Tx, txn.Hash, int64(txn.TxSizeBytes), uint32(blockRet.Header.Height), true,
+			false /*ignoreUtxos*/)
+
+		// Check if the transaction passed validation and set the StateConnected pass/fail flag accordingly.
+		// FIXME: Note, we should expand what we do here a bit. For example, if the transaction fails because the user
+		// 	doesn't have enough money to cover minimal fee, we should just skip this transaction altogether.
+		txn.Tx.StateConnected = err != nil
+		blockTxns = append(blockTxns, txn.Tx)
+
+		if err != nil {
+			continue
+		}
+		_, _, _, _, err = utxoView._connectTransaction(
+			txn.Tx, txn.Hash, int64(txn.TxSizeBytes), uint32(blockRet.Header.Height), true,
+			false /*ignoreUtxos*/)
+	}
+
+	// 3. Run all related transaction fees computation.
+	//	- In the previous PoW scheme we summed up all the fees from connected transactions. (DeSoBlockProducer._getBlockTemplate)
+	//  - Here, we need to run BMF and check how much is burned and how much isn't.
+	//  - Then, we will adjust the block reward to the appropriate amount.
+	totalFeeNanos := uint64(0)
+	feesUtxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
+		desoBlockProducer.postgres, desoBlockProducer.chain.snapshot)
+	if err != nil {
+		return nil, err
+	}
+	// Skip the block reward, which is the first txn in the block.
+	for _, txnInBlock := range blockRet.Txns[1:] {
+		var feeNanos uint64
+		_, _, _, feeNanos, err = feesUtxoView._connectTransaction(
+			txnInBlock, txnInBlock.Hash(), 0, uint32(blockRet.Header.Height), false, /*verifySignatures*/
+			false /*ignoreUtxos*/)
+		if err != nil {
+			return nil, err
+		}
+
+		// Add the fee to the block reward output as we go. Note this has some risk of
+		// increasing the size of the block by one byte, but it seems like this is an
+		// extreme edge case that goes away as soon as the function is called again.
+		totalFeeNanos += feeNanos
+	}
+
+	// TODO: BMF stuff
+	blockRewardOutput.AmountNanos = CalcBlockRewardNanos(uint32(blockRet.Header.Height)) + totalFeeNanos
+
+	// 4. Compute the Transaction Merkle Root.
+	// Compute the merkle root for the block now that all of the transactions have
+	// been added.
+	merkleRoot, _, err := ComputeMerkleRoot(blockRet.Txns)
+	if err != nil {
+		return nil, err
+	}
+	blockRet.Header.TransactionMerkleRoot = merkleRoot
+
+	return blockRet, nil
+}
+
 func (desoBlockProducer *DeSoBlockProducer) SignBlock(blockFound *MsgDeSoBlock) error {
 	// If there's no private key on this BlockProducer then there's nothing to do.
 	if desoBlockProducer.blockProducerPrivateKey == nil {
