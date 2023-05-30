@@ -584,7 +584,7 @@ func DBGetValidatorByPKIDWithTxn(txn *badger.Txn, snap *Snapshot, pkid *PKID) (*
 func DBGetTopActiveValidatorsByStake(
 	handle *badger.DB,
 	snap *Snapshot,
-	limit int,
+	limit uint64,
 	validatorEntriesToSkip []*ValidatorEntry,
 ) ([]*ValidatorEntry, error) {
 	var validatorEntries []*ValidatorEntry
@@ -599,7 +599,7 @@ func DBGetTopActiveValidatorsByStake(
 	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
 	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
 	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
-		handle, key, limit, nil, true, validatorKeysToSkip,
+		handle, key, int(limit), nil, true, validatorKeysToSkip,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem retrieving top validators: ")
@@ -1838,9 +1838,9 @@ func (bav *UtxoView) GetValidatorByPublicKey(validatorPublicKey *PublicKey) (*Va
 	return validatorEntry, nil
 }
 
-func (bav *UtxoView) GetTopActiveValidatorsByStake(limit int) ([]*ValidatorEntry, error) {
+func (bav *UtxoView) GetTopActiveValidatorsByStake(limit uint64) ([]*ValidatorEntry, error) {
 	// Validate limit param.
-	if limit <= 0 {
+	if limit == 0 {
 		return []*ValidatorEntry{}, nil
 	}
 	// Create a slice of UtxoViewValidatorEntries. We want to skip pulling these from the database in
