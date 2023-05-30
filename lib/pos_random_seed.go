@@ -60,6 +60,9 @@ func DecodeRandomSeedHash(rr io.Reader) (*RandomSeedHash, error) {
 //
 
 func (bav *UtxoView) GenerateRandomSeedSignature(signerPrivateKey *bls.PrivateKey) (*bls.Signature, error) {
+	// This function generates a RandomSeedSignature by signing the CurrentRandomSeedHash
+	// with the provided bls.PrivateKey. This signature is deterministic: given the same
+	// CurrentRandomSeedHash and bls.PrivateKey, the same signature will always be generated.
 	currentRandomSeedHash, err := bav.GetCurrentRandomSeedHash()
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GenerateRandomSeedSignature: problem retrieving CurrentRandomSeedHash: ")
@@ -75,6 +78,11 @@ func (bav *UtxoView) VerifyRandomSeedSignature(
 	signerPublicKey *bls.PublicKey,
 	randomSeedSignature *bls.Signature,
 ) (*RandomSeedHash, error) {
+	// This function verifies that the provided RandomSeedSignature was signed by the corresponding
+	// bls.PrivateKey for the provided bls.PublicKey. If the RandomSeedSignature is invalid, we
+	// return an error. If the RandomSeedSignature is valid, we take the SHA256 of it to produce
+	// a RandomSeedHash, which is then returned.
+
 	// Verify the RandomSeedSignature.
 	currentRandomSeedHash, err := bav.GetCurrentRandomSeedHash()
 	if err != nil {
