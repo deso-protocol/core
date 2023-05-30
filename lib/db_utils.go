@@ -529,25 +529,25 @@ type DBPrefixes struct {
 	// Prefix -> <RandomSeedHash [32]byte>.
 	PrefixCurrentRandomSeedHash []byte `prefix_id:"[84]" is_state:"true"`
 
-	// PrefixSnapshotGlobalParamsEntryByEpochNumber: Retrieve a snapshot GlobalParamsEntry by EpochNumber.
-	// Prefix, EpochNumber -> *GlobalParamsEntry
-	PrefixSnapshotGlobalParamsEntryByEpochNumber []byte `prefix_id:"[85]" is_state:"true"`
+	// PrefixSnapshotGlobalParamsEntry: Retrieve a snapshot GlobalParamsEntry by SnapshotAtEpochNumber.
+	// Prefix, SnapshotAtEpochNumber -> *GlobalParamsEntry
+	PrefixSnapshotGlobalParamsEntry []byte `prefix_id:"[85]" is_state:"true"`
 
-	// PrefixSnapshotValidatorByEpochNumberAndPKID: Retrieve a snapshot ValidatorEntry by EpochNumber + PKID.
-	// Prefix, EpochNumber, ValidatorPKID -> *ValidatorEntry
-	PrefixSnapshotValidatorByEpochNumberAndPKID []byte `prefix_id:"[86]" is_state:"true"`
+	// PrefixSnapshotValidatorByPKID: Retrieve a snapshot ValidatorEntry by <SnapshotAtEpochNumber, PKID>.
+	// Prefix, SnapshotAtEpochNumber, ValidatorPKID -> *ValidatorEntry
+	PrefixSnapshotValidatorByPKID []byte `prefix_id:"[86]" is_state:"true"`
 
-	// PrefixSnapshotValidatorByEpochNumberAndStake: Retrieve stake-ordered ValidatorEntries by EpochNumber.
-	// Prefix, EpochNumber, Status, TotalStakeAmountNanos, ValidatorPKID -> nil
+	// PrefixSnapshotValidatorByStake: Retrieve stake-ordered ValidatorEntries by SnapshotAtEpochNumber.
+	// Prefix, SnapshotAtEpochNumber, Status, TotalStakeAmountNanos, ValidatorPKID -> nil
 	// Note: we parse the ValidatorPKID from the key and the value is nil to save space.
-	PrefixSnapshotValidatorByEpochNumberAndStake []byte `prefix_id:"[87]" is_state:"true"`
+	PrefixSnapshotValidatorByStake []byte `prefix_id:"[87]" is_state:"true"`
 
-	// PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber: Retrieve a snapshot GlobalActiveStakeAmountNanos by EpochNumber.
-	// Prefix, EpochNumber -> *uint256.Int
-	PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber []byte `prefix_id:"[88]" is_state:"true"`
+	// PrefixSnapshotGlobalActiveStakeAmountNanos: Retrieve a snapshot GlobalActiveStakeAmountNanos by SnapshotAtEpochNumber.
+	// Prefix, SnapshotAtEpochNumber -> *uint256.Int
+	PrefixSnapshotGlobalActiveStakeAmountNanos []byte `prefix_id:"[88]" is_state:"true"`
 
-	// PrefixSnapshotLeaderSchedule: Retrieve a ValidatorPKID by <EpochNumber, LeaderIndex>.
-	// Prefix, EpochNumber, LeaderIndex -> ValidatorPKID
+	// PrefixSnapshotLeaderSchedule: Retrieve a ValidatorPKID by <SnapshotAtEpochNumber, LeaderIndex>.
+	// Prefix, SnapshotAtEpochNumber, LeaderIndex -> ValidatorPKID
 	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[89]" is_state:"true"`
 
 	// NEXT_TAG: 90
@@ -773,16 +773,16 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentRandomSeedHash) {
 		// prefix_id:"[84]"
 		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalParamsEntryByEpochNumber) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalParamsEntry) {
 		// prefix_id:"[85]"
 		return true, &GlobalParamsEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByEpochNumberAndPKID) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByPKID) {
 		// prefix_id:"[86]"
 		return true, &ValidatorEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByEpochNumberAndStake) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByStake) {
 		// prefix_id:"[87]"
 		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanos) {
 		// prefix_id:"[88]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotLeaderSchedule) {
