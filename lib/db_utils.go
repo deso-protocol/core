@@ -525,24 +525,28 @@ type DBPrefixes struct {
 	// Prefix -> EpochEntry
 	PrefixCurrentEpoch []byte `prefix_id:"[83]" is_state:"true"`
 
+	// PrefixCurrentRandomSeedHash: Retrieve the current RandomSeedHash.
+	// Prefix -> <RandomSeedHash [32]byte>.
+	PrefixCurrentRandomSeedHash []byte `prefix_id:"[84]" is_state:"true"`
+
 	// PrefixSnapshotGlobalParamsEntryByEpochNumber: Retrieve a snapshot GlobalParamsEntry by EpochNumber.
 	// Prefix, EpochNumber -> *GlobalParamsEntry
-	PrefixSnapshotGlobalParamsEntryByEpochNumber []byte `prefix_id:"[84]" is_state:"true"`
+	PrefixSnapshotGlobalParamsEntryByEpochNumber []byte `prefix_id:"[85]" is_state:"true"`
 
 	// PrefixSnapshotValidatorByEpochNumberAndPKID: Retrieve a snapshot ValidatorEntry by EpochNumber + PKID.
 	// Prefix, EpochNumber, ValidatorPKID -> *ValidatorEntry
-	PrefixSnapshotValidatorByEpochNumberAndPKID []byte `prefix_id:"[85]" is_state:"true"`
+	PrefixSnapshotValidatorByEpochNumberAndPKID []byte `prefix_id:"[86]" is_state:"true"`
 
 	// PrefixSnapshotValidatorByEpochNumberAndStake: Retrieve stake-ordered ValidatorEntries by EpochNumber.
 	// Prefix, EpochNumber, Status, TotalStakeAmountNanos, ValidatorPKID -> nil
 	// Note: we parse the ValidatorPKID from the key and the value is nil to save space.
-	PrefixSnapshotValidatorByEpochNumberAndStake []byte `prefix_id:"[86]" is_state:"true"`
+	PrefixSnapshotValidatorByEpochNumberAndStake []byte `prefix_id:"[87]" is_state:"true"`
 
 	// PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber: Retrieve a snapshot GlobalActiveStakeAmountNanos by EpochNumber.
 	// Prefix, EpochNumber -> *uint256.Int
-	PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber []byte `prefix_id:"[87]" is_state:"true"`
+	PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber []byte `prefix_id:"[88]" is_state:"true"`
 
-	// NEXT_TAG: 88
+	// NEXT_TAG: 89
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -762,17 +766,20 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentEpoch) {
 		// prefix_id:"[83]"
 		return true, &EpochEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalParamsEntryByEpochNumber) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentRandomSeedHash) {
 		// prefix_id:"[84]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalParamsEntryByEpochNumber) {
+		// prefix_id:"[85]"
 		return true, &GlobalParamsEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByEpochNumberAndPKID) {
-		// prefix_id:"[85]"
+		// prefix_id:"[86]"
 		return true, &ValidatorEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByEpochNumberAndStake) {
-		// prefix_id:"[86]"
+		// prefix_id:"[87]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber) {
-		// prefix_id:"[87]"
+		// prefix_id:"[88]"
 		return false, nil
 	}
 

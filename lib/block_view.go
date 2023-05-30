@@ -130,6 +130,9 @@ type UtxoView struct {
 	// Current EpochEntry
 	CurrentEpochEntry *EpochEntry
 
+	// Current RandomSeedHash
+	CurrentRandomSeedHash *RandomSeedHash
+
 	// SnapshotGlobalParamsEntries is a map of EpochNumber to GlobalParamsEntry.
 	// It contains the snapshot value of the GlobalParamsEntry at the given EpochNumber.
 	SnapshotGlobalParamsEntries map[uint64]*GlobalParamsEntry
@@ -536,6 +539,11 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the CurrentEpochEntry
 	if bav.CurrentEpochEntry != nil {
 		newView.CurrentEpochEntry = bav.CurrentEpochEntry.Copy()
+	}
+
+	// Copy the CurrentRandomSeedHash
+	if bav.CurrentRandomSeedHash != nil {
+		newView.CurrentRandomSeedHash = bav.CurrentRandomSeedHash.Copy()
 	}
 
 	// Copy the SnapshotGlobalParamsEntries
