@@ -626,6 +626,10 @@ type DeSoParams struct {
 	// TODO: Move this to GlobalParamsEntry.
 	LeaderScheduleMaxNumValidators uint64
 
+	// EpochDurationNumBlocks is the number of blocks included in one epoch.
+	// TODO: Move this to GlobalParamsEntry.
+	EpochDurationNumBlocks uint64
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -1011,6 +1015,9 @@ var DeSoMainnetParams = DeSoParams{
 	// The max number of validators included in a leader schedule.
 	LeaderScheduleMaxNumValidators: uint64(100),
 
+	// The number of blocks in one epoch
+	EpochDurationNumBlocks: uint64(3600),
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1250,6 +1257,9 @@ var DeSoTestnetParams = DeSoParams{
 
 	// The max number of validators included in a leader schedule.
 	LeaderScheduleMaxNumValidators: uint64(100),
+
+	// The number of blocks in one epoch
+	EpochDurationNumBlocks: uint64(3600),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
