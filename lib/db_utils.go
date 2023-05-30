@@ -526,7 +526,7 @@ type DBPrefixes struct {
 	PrefixCurrentEpoch []byte `prefix_id:"[83]" is_state:"true"`
 
 	// PrefixCurrentRandomSeedHash: Retrieve the current RandomSeedHash.
-	// Prefix -> RandomSeedHash.
+	// Prefix -> <RandomSeedHash [32]byte>.
 	PrefixCurrentRandomSeedHash []byte `prefix_id:"[84]" is_state:"true"`
 
 	// NEXT_TAG: 85
