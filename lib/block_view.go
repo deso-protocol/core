@@ -133,9 +133,9 @@ type UtxoView struct {
 	// Current RandomSeedHash
 	CurrentRandomSeedHash *RandomSeedHash
 
-	// SnapshotGlobalParamsEntries is a map of EpochNumber to GlobalParamsEntry.
+	// SnapshotGlobalParamEntries is a map of EpochNumber to GlobalParamsEntry.
 	// It contains the snapshot value of the GlobalParamsEntry at the given EpochNumber.
-	SnapshotGlobalParamsEntries map[uint64]*GlobalParamsEntry
+	SnapshotGlobalParamEntries map[uint64]*GlobalParamsEntry
 
 	// SnapshotValidatorEntries is a map of <EpochNumber, ValidatorPKID> to a ValidatorEntry.
 	// It contains the snapshot value of a ValidatorEntry at the given EpochNumber.
@@ -256,8 +256,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// CurrentEpochEntry
 	bav.CurrentEpochEntry = nil
 
-	// SnapshotGlobalParamsEntries
-	bav.SnapshotGlobalParamsEntries = make(map[uint64]*GlobalParamsEntry)
+	// SnapshotGlobalParamEntries
+	bav.SnapshotGlobalParamEntries = make(map[uint64]*GlobalParamsEntry)
 
 	// SnapshotValidatorEntries
 	bav.SnapshotValidatorEntries = make(map[SnapshotValidatorMapKey]*ValidatorEntry)
@@ -554,9 +554,9 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.CurrentRandomSeedHash = bav.CurrentRandomSeedHash.Copy()
 	}
 
-	// Copy the SnapshotGlobalParamsEntries
-	for epochNumber, globalParamsEntry := range bav.SnapshotGlobalParamsEntries {
-		newView.SnapshotGlobalParamsEntries[epochNumber] = globalParamsEntry.Copy()
+	// Copy the SnapshotGlobalParamEntries
+	for epochNumber, globalParamsEntry := range bav.SnapshotGlobalParamEntries {
+		newView.SnapshotGlobalParamEntries[epochNumber] = globalParamsEntry.Copy()
 	}
 
 	// Copy the SnapshotValidatorEntries

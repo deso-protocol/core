@@ -344,6 +344,7 @@ const (
 	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
 	BalanceModelMigration                MigrationName = "BalanceModelMigration"
 	ProofOfStakeNewTxnTypesMigration     MigrationName = "ProofOfStakeNewTxnTypesMigration"
+	ProofOfStakeSnapshottingMigration    MigrationName = "ProofOfStakeSnapshottingMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -360,6 +361,9 @@ type EncoderMigrationHeights struct {
 
 	// This coincides with the ProofOfStakeNewTxnTypesBlockHeight
 	ProofOfStakeNewTxnTypesMigration MigrationHeight
+
+	// This coincides with the ProofOfStakeSnapshottingBlockHeight
+	ProofOfStakeSnapshottingMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -388,6 +392,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 4,
 			Height:  uint64(forkHeights.ProofOfStakeNewTxnTypesBlockHeight),
 			Name:    ProofOfStakeNewTxnTypesMigration,
+		},
+		ProofOfStakeSnapshottingMigration: MigrationHeight{
+			Version: 5,
+			Height:  uint64(forkHeights.ProofOfStakeSnapshottingBlockHeight),
+			Name:    ProofOfStakeSnapshottingMigration,
 		},
 	}
 }

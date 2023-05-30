@@ -7,6 +7,7 @@ import (
 
 func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error) {
 	// Returns true if this is the last block in the current epoch.
+
 	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStakeSnapshottingBlockHeight) {
 		// Return false if we have not started snapshotting the relevant PoS entries yet.
 		return false, nil
@@ -69,7 +70,8 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 		bav._setSnapshotLeaderScheduleValidator(validatorPKID, uint8(index), currentEpochEntry.EpochNumber)
 	}
 
-	// TODO: Is there any clean-up we should do here deleting old snapshots that are no longer useful?
+	// TODO: Jail inactive validators.
+	// TODO: Delete old snapshots that are no longer used.
 
 	// Roll-over a new epoch by setting a new CurrentEpochEntry.
 	nextEpochEntry := &EpochEntry{

@@ -17,7 +17,7 @@ import (
 
 func (bav *UtxoView) GetSnapshotGlobalParamsEntry(snapshotAtEpochNumber uint64) (*GlobalParamsEntry, error) {
 	// Check the UtxoView first.
-	if globalParamsEntry, exists := bav.SnapshotGlobalParamsEntries[snapshotAtEpochNumber]; exists {
+	if globalParamsEntry, exists := bav.SnapshotGlobalParamEntries[snapshotAtEpochNumber]; exists {
 		return globalParamsEntry, nil
 	}
 	// If we don't have it in the UtxoView, check the db.
@@ -39,11 +39,11 @@ func (bav *UtxoView) _setSnapshotGlobalParamsEntry(globalParamsEntry *GlobalPara
 	if globalParamsEntry == nil {
 		glog.Errorf("_setSnapshotGlobalParamsEntry: called with nil entry, this should never happen")
 	}
-	bav.SnapshotGlobalParamsEntries[snapshotAtEpochNumber] = globalParamsEntry.Copy()
+	bav.SnapshotGlobalParamEntries[snapshotAtEpochNumber] = globalParamsEntry.Copy()
 }
 
 func (bav *UtxoView) _flushSnapshotGlobalParamsEntryToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	for snapshotAtEpochNumber, globalParamsEntry := range bav.SnapshotGlobalParamsEntries {
+	for snapshotAtEpochNumber, globalParamsEntry := range bav.SnapshotGlobalParamEntries {
 		if globalParamsEntry == nil {
 			return fmt.Errorf(
 				"_flushSnapshotGlobalParamsEntryToDb: found nil entry for EpochNumber %d, this should never happen",
