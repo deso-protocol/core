@@ -480,7 +480,7 @@ func TestFeeTimeBucket(t *testing.T) {
 				if txnPool[i].FeePerKB > txnPool[j].FeePerKB {
 					return true
 				} else if txnPool[i].FeePerKB == txnPool[j].FeePerKB {
-					return txnPool[i].Hash().Gt(txnPool[j].Hash())
+					return txnPool[i].HashUint().Gt(txnPool[j].HashUint())
 				}
 			}
 		}

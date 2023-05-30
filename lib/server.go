@@ -144,6 +144,11 @@ type Server struct {
 	// It is basically a backlink to the node that calls Stop() and Start().
 	nodeMessageChannel chan NodeMessage
 
+	// consensusChannel is used to communicate with the Consensus Module. Sometimes the Consensus Module will desire that
+	// the Server performed some actions. This could include block production or network communication. Consensus will
+	// trigger these actions by sending a ConsensusMessage. A message that includes things like QC, AggregateQC, View, etc.
+	consensusChannel chan ConsensusMessage
+
 	shutdown int32
 	// timer is a helper variable that allows timing events for development purposes.
 	// It can be used to find computational bottlenecks.
@@ -534,6 +539,7 @@ func NewServer(
 	timer := &Timer{}
 	timer.Initialize()
 	srv.timer = timer
+	srv.consensusChannel = make(chan ConsensusMessage, 100)
 
 	// If shouldRestart is true, it means that the state checksum is likely corrupted, and we need to enter a recovery mode.
 	// This can happen if the node was terminated mid-operation last time it was running. The recovery process rolls back
@@ -2309,6 +2315,7 @@ func (srv *Server) Stop() {
 	// Iterate through all the peers and flush their logs before we quit.
 	glog.Info("Server.Stop: Flushing logs for all peers")
 	atomic.AddInt32(&srv.shutdown, 1)
+	close(srv.consensusChannel)
 
 	// Stop the ConnectionManager
 	srv.cmgr.Stop()
@@ -2364,6 +2371,78 @@ func (srv *Server) GetStatsdClient() *statsd.Client {
 	return srv.statsdClient
 }
 
+func (srv *Server) startBlockConstruction() {
+	if true {
+		return
+	}
+
+	for {
+		if atomic.LoadInt32(&srv.shutdown) >= 1 {
+			break
+		}
+
+		consensusMsg, ok := <-srv.consensusChannel
+		if !ok {
+			break
+		}
+
+		_ = consensusMsg
+		// FIXME: The minimal block construction duration logic should be included here.
+
+		// Here we use the information from the consensus module to construct a block.
+		feeTimeBlock, err := srv.blockProducer.GetFeeTimeBlock()
+		if err != nil {
+			glog.Errorf("error, bad %v", err)
+		}
+		// Set all consensus-related information like QC, AggregateQC, View, etc.
+		// feeTimeBlock.SetConsensusInformation(consensusMsg)
+		_ = feeTimeBlock
+
+		// Logic taken from (DeSoMiner.MineAndProcessSingleBlock)
+		// Sanitize the block for the comparison we're about to do. We need to do
+		// this because the comparison function below will think they're different
+		// if one has nil and one has an empty list. Annoying, but this solves the
+		// issue.
+		for _, tx := range feeTimeBlock.Txns {
+			if len(tx.TxInputs) == 0 {
+				tx.TxInputs = nil
+			}
+		}
+		blockBytes, err := feeTimeBlock.ToBytes(false)
+		if err != nil {
+			glog.Error(err)
+		}
+
+		blockFromBytes := &MsgDeSoBlock{}
+		err = blockFromBytes.FromBytes(blockBytes)
+		if err != nil || !reflect.DeepEqual(*feeTimeBlock, *blockFromBytes) {
+			glog.Errorf("Server.startBlockConstruction: ERROR: Problem with block "+
+				"serialization (see above for dumps of blocks): Diff: %v, err?: %v", Diff(feeTimeBlock, blockFromBytes), err)
+		}
+		glog.V(2).Infof("Produced block height:num_txns: %d:%d\n", feeTimeBlock.Header.Height, len(feeTimeBlock.Txns))
+
+		if err := srv.blockProducer.SignBlock(feeTimeBlock); err != nil {
+			glog.Errorf("Error signing block: %v", err)
+		}
+
+		// Process the block. If the block is connected and/or accepted, the Server
+		// will be informed about it. This will cause it to be relayed appropriately.
+		verifySignatures := true
+		// TODO(miner): Replace with a call to SubmitBlock.
+		isMainChain, isOrphan, err := srv.blockProducer.chain.ProcessBlock(
+			feeTimeBlock, verifySignatures)
+		glog.V(2).Infof("Called ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
+			isMainChain, isOrphan, err)
+		if err != nil {
+			glog.Errorf("ERROR calling ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
+				isMainChain, isOrphan, err)
+		}
+
+		// Note: The newly processed block will eventually be shared with peers. It forms the longest chain.
+		// Here we should do all remaining bookkeeping like updating the mempool internal state.
+	}
+}
+
 // Start actually kicks off all of the management processes. Among other things, it causes
 // the ConnectionManager to actually start connecting to peers and receiving messages. If
 // requested, it also starts the miner.
@@ -2387,6 +2466,8 @@ func (srv *Server) Start() {
 	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
 		go srv.miner.Start()
 	}
+
+	go srv.startBlockConstruction()
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in

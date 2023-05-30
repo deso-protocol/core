@@ -101,7 +101,7 @@ type RevolutionTx struct {
 // TODO: temporary hack, revisit this later.
 //
 //	This actually doesn't even work but whatever.
-func (txn *RevolutionTx) Hash() *uint256.Int {
+func (txn *RevolutionTx) HashUint() *uint256.Int {
 	bytes := RandomBytes(32)
 
 	hash := Sha256DoubleHash(bytes).ToBytes()
@@ -1283,6 +1283,10 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 		len(mp.poolMap))
 
 	return nil, mempoolTx, nil
+}
+
+func (mempool *DeSoMempool) GetTransactionsOrderedByFeeTime() []*RevolutionTx {
+	return mempool.txnRegister.GetBlockTransactions(mempool.bc.params)
 }
 
 func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
