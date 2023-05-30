@@ -344,7 +344,6 @@ const (
 	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
 	BalanceModelMigration                MigrationName = "BalanceModelMigration"
 	ProofOfStakeNewTxnTypesMigration     MigrationName = "ProofOfStakeNewTxnTypesMigration"
-	ProofOfStakeMigration                MigrationName = "ProofOfStakeMigration"
 )
 
 type EncoderMigrationHeights struct {

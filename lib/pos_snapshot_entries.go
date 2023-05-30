@@ -46,7 +46,7 @@ func (bav *UtxoView) _flushSnapshotGlobalParamsEntryToDbWithTxn(txn *badger.Txn,
 	for snapshotAtEpochNumber, globalParamsEntry := range bav.SnapshotGlobalParamsEntries {
 		if globalParamsEntry == nil {
 			return fmt.Errorf(
-				"_flushSnapshotGlobalParamsEntryToDbWithTxn: found nil entry for SnapshotAtEpochNumber %d, this should never happen",
+				"_flushSnapshotGlobalParamsEntryToDb: found nil entry for EpochNumber %d, this should never happen",
 				snapshotAtEpochNumber,
 			)
 		}
@@ -55,7 +55,7 @@ func (bav *UtxoView) _flushSnapshotGlobalParamsEntryToDbWithTxn(txn *badger.Txn,
 		); err != nil {
 			return errors.Wrapf(
 				err,
-				"_flushSnapshotGlobalParamsEntryToDbWithTxn: problem setting SnapshotGlobalParamsEntry for SnapshotAtEpochNumber %d: ",
+				"_flushSnapshotGlobalParamsEntryToDb: problem setting SnapshotGlobalParamsEntry for EpochNumber %d: ",
 				snapshotAtEpochNumber,
 			)
 		}
@@ -226,14 +226,16 @@ func (bav *UtxoView) _flushSnapshotValidatorEntriesToDbWithTxn(txn *badger.Txn, 
 	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
 		if validatorEntry == nil {
 			return fmt.Errorf(
-				"_flushSnapshotValidatorEntriesToDbWithTxn: found nil entry for SnapshotAtEpochNumber %d, this should never happen",
+				"_flushSnapshotValidatorEntriesToDb: found nil entry for EpochNumber %d, this should never happen",
 				mapKey.EpochNumber,
 			)
 		}
-		if err := DBPutSnapshotValidatorEntryWithTxn(txn, bav.Snapshot, validatorEntry, mapKey.EpochNumber, blockHeight); err != nil {
+		if err := DBPutSnapshotValidatorEntryWithTxn(
+			txn, bav.Snapshot, validatorEntry, mapKey.EpochNumber, blockHeight,
+		); err != nil {
 			return errors.Wrapf(
 				err,
-				"_flushSnapshotValidatorEntryToDbWithTxn: problem setting ValidatorEntry for SnapshotAtEpochNumber %d: ",
+				"_flushSnapshotValidatorEntriesToDb: problem setting ValidatorEntry for EpochNumber %d: ",
 				mapKey.EpochNumber,
 			)
 		}
@@ -435,7 +437,7 @@ func (bav *UtxoView) _flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn(txn *
 	for snapshotAtEpochNumber, globalActiveStakeAmountNanos := range bav.SnapshotGlobalActiveStakeAmountNanos {
 		if globalActiveStakeAmountNanos == nil {
 			return fmt.Errorf(
-				"_flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn: found nil entry for SnapshotAtEpochNumber %d, this should never happen",
+				"_flushSnapshotGlobalActiveStakeAmountNanosToDb: found nil entry for EpochNumber %d, this should never happen",
 				snapshotAtEpochNumber,
 			)
 		}
@@ -444,7 +446,7 @@ func (bav *UtxoView) _flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn(txn *
 		); err != nil {
 			return errors.Wrapf(
 				err,
-				"_flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn: problem setting SnapshotGlobalActiveStakeAmountNanos for SnapshotAtEpochNumber %d: ",
+				"_flushSnapshotGlobalActiveStakeAmountNanosToDb: problem setting SnapshotGlobalActiveStake for EpochNumber %d: ",
 				snapshotAtEpochNumber,
 			)
 		}
@@ -499,7 +501,7 @@ func DBPutSnapshotGlobalActiveStakeAmountNanosWithTxn(
 ) error {
 	if globalActiveStakeAmountNanos == nil {
 		// This should never happen but is a sanity check.
-		glog.Errorf("DBPutSnapshotGlobalActiveStakeAmountNanosWithTxn: called with nil GlobalActiveStakeAmountNanos, this should never happen")
+		glog.Errorf("DBPutSnapshotGlobalActiveStakeAmountNanos: called with nil GlobalActiveStake, this should never happen")
 		return nil
 	}
 	key := DBKeyForSnapshotGlobalActiveStakeAmountNanos(snapshotAtEpochNumber)
@@ -546,7 +548,7 @@ func (bav *UtxoView) _flushSnapshotLeaderScheduleToDbWithTxn(txn *badger.Txn, bl
 	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
 		if validatorPKID == nil {
 			return fmt.Errorf(
-				"_flushSnapshotLeaderScheduleToDbWithTxn: found nil PKID for SnapshotAtEpochNumber %d, this should never happen",
+				"_flushSnapshotLeaderScheduleToDb: found nil PKID for EpochNumber %d, this should never happen",
 				mapKey.SnapshotAtEpochNumber,
 			)
 		}
@@ -555,7 +557,7 @@ func (bav *UtxoView) _flushSnapshotLeaderScheduleToDbWithTxn(txn *badger.Txn, bl
 		); err != nil {
 			return errors.Wrapf(
 				err,
-				"_flushSnapshotLeaderScheduleToDbWithTxn: problem setting ValidatorPKID for SnapshotAtEpochNumber %d: ",
+				"_flushSnapshotLeaderScheduleToDb: problem setting ValidatorPKID for SnapshotAtEpochNumber %d: ",
 				mapKey.SnapshotAtEpochNumber,
 			)
 		}
