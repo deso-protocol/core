@@ -155,6 +155,9 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			-1,
 			-1,
 		)
+		// Reconstruct the UtxoView to pull in the updated GlobalParamsEntry.
+		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
 	}
 	{
 		// All validators register + stake to themselves.
@@ -220,7 +223,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		snapshotGlobalParamsEntry, err := utxoView.GetSnapshotGlobalParamsEntry(1)
 		require.NoError(t, err)
 		require.NotNil(t, snapshotGlobalParamsEntry)
-		//require.Equal(t, snapshotGlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
+		require.Equal(t, snapshotGlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
 
 		// Test SnapshotValidatorByPKID is populated.
 		for _, pkid := range validatorPKIDs {

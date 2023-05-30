@@ -437,7 +437,7 @@ func (bav *UtxoView) _flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn(txn *
 	for snapshotAtEpochNumber, globalActiveStakeAmountNanos := range bav.SnapshotGlobalActiveStakeAmountNanos {
 		if globalActiveStakeAmountNanos == nil {
 			return fmt.Errorf(
-				"_flushSnapshotGlobalActiveStakeAmountNanosToDb: found nil entry for EpochNumber %d, this should never happen",
+				"_flushSnapshotGlobalActiveStakeToDb: found nil entry for EpochNumber %d, this should never happen",
 				snapshotAtEpochNumber,
 			)
 		}
@@ -446,7 +446,7 @@ func (bav *UtxoView) _flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn(txn *
 		); err != nil {
 			return errors.Wrapf(
 				err,
-				"_flushSnapshotGlobalActiveStakeAmountNanosToDb: problem setting SnapshotGlobalActiveStake for EpochNumber %d: ",
+				"_flushSnapshotGlobalActiveStakeToDb: problem setting SnapshotGlobalActiveStake for EpochNumber %d: ",
 				snapshotAtEpochNumber,
 			)
 		}
