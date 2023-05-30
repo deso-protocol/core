@@ -2,7 +2,10 @@ package lib
 
 import (
 	"fmt"
+	"math/rand"
+	"sort"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -435,4 +438,61 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	t.Cleanup(func() {
 		mp.Stop()
 	})
+}
+
+func TestFeeTimeBucket(t *testing.T) {
+	seed := time.Now().UnixNano()
+	testCases := 10000
+	maxFee := uint64(10000)
+	maxTimestamp := uint64(100)
+
+	require := require.New(t)
+	rand := rand.New(rand.NewSource(seed))
+	txnPool := []*RevolutionTx{}
+	for ii := 0; ii < testCases; ii++ {
+		txnPool = append(txnPool, &RevolutionTx{
+			MempoolTx{
+				FeePerKB: rand.Uint64() % maxFee,
+			},
+			rand.Uint64() % maxTimestamp,
+		})
+	}
+
+	// Create new TransactionRegister and add the txn pool
+	txnRegister := NewTransactionRegister()
+	for ii := 0; ii < testCases; ii++ {
+		txnRegister.InsertTransaction(txnPool[ii])
+	}
+
+	// Iterate through TransactionRegister to get Fee-Time ordering.
+	registerTxns := txnRegister.GetFeeTimeTransactions()
+
+	// Now sort the txnPool by Fee-Time without priority queues.
+	sort.Slice(txnPool, func(i, j int) bool {
+		feeBucketI := txnPool[i].FeePerKB - (txnPool[i].FeePerKB % 1000)
+		feeBucketJ := txnPool[j].FeePerKB - (txnPool[j].FeePerKB % 1000)
+		if feeBucketI > feeBucketJ {
+			return true
+		} else if feeBucketI == feeBucketJ {
+			if txnPool[i].timestamp < txnPool[j].timestamp {
+				return true
+			} else if txnPool[i].timestamp == txnPool[j].timestamp {
+				if txnPool[i].FeePerKB > txnPool[j].FeePerKB {
+					return true
+				} else if txnPool[i].FeePerKB == txnPool[j].FeePerKB {
+					return txnPool[i].Hash().Gt(txnPool[j].Hash())
+				}
+			}
+		}
+		return false
+	})
+	//glog.Infof("===== sorted txn pool =====")
+
+	// Now compare the priority queue ordering with the non-priority queue ordering.
+	require.Equal(len(registerTxns), len(txnPool))
+	for ii := 0; ii < len(txnPool); ii++ {
+		//glog.Infof("Fee (%v) Timestamp (%v)", txnPool[ii].FeePerKB, txnPool[ii].timestamp)
+		require.Equal(registerTxns[ii].FeePerKB, txnPool[ii].FeePerKB)
+		require.Equal(registerTxns[ii].timestamp, txnPool[ii].timestamp)
+	}
 }

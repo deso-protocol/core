@@ -23,6 +23,7 @@ require (
 	github.com/holiman/uint256 v1.1.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/oleiade/lane v1.0.1
+	github.com/onflow/flow-go/crypto v0.24.7
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/robinjoseph08/go-pg-migrations/v3 v3.0.0
@@ -79,7 +80,6 @@ require (
 	github.com/mattn/goveralls v0.0.6 // indirect
 	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b // indirect
 	github.com/mitchellh/mapstructure v1.1.2 // indirect
-	github.com/onflow/flow-go/crypto v0.24.7 // indirect
 	github.com/onsi/ginkgo v1.15.0 // indirect
 	github.com/onsi/gomega v1.10.5 // indirect
 	github.com/pelletier/go-toml v1.7.0 // indirect
