@@ -2,6 +2,7 @@ package lib
 
 import (
 	"github.com/pkg/errors"
+	"math"
 )
 
 func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error) {
@@ -57,7 +58,16 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	bav._setSnapshotGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos, currentEpochEntry.EpochNumber)
 
 	// Generate + snapshot a leader schedule.
-	// TODO
+	leaderSchedule, err := bav.GenerateLeaderSchedule()
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.RunEpochCompleteHook: problem generating leader schedule: ")
+	}
+	for index, validatorPKID := range leaderSchedule {
+		if index > math.MaxUint8 {
+			return errors.Errorf("UtxoView.RunEpochCompleteHook: LeaderIndex %d overflows uint8", index)
+		}
+		bav._setSnapshotLeaderScheduleValidator(validatorPKID, uint8(index), currentEpochEntry.EpochNumber)
+	}
 
 	// TODO: Is there any clean-up we should do here deleting old snapshots that are no longer useful?
 

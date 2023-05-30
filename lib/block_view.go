@@ -145,6 +145,11 @@ type UtxoView struct {
 	// It contains the snapshot value of the GlobalActiveStakeAmountNanos at the given EpochNumber.
 	SnapshotGlobalActiveStakeAmountNanos map[uint64]*uint256.Int
 
+	// SnapshotLeaderSchedule is a map of <EpochNumber, LeaderIndex> to a ValidatorPKID.
+	// It contains the PKID of the validator at the given index in the leader schedule
+	// generated at the given EpochNumber.
+	SnapshotLeaderSchedule map[SnapshotLeaderScheduleMapKey]*PKID
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -259,6 +264,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// SnapshotGlobalActiveStakeAmountNanos
 	bav.SnapshotGlobalActiveStakeAmountNanos = make(map[uint64]*uint256.Int)
+
+	// SnapshotLeaderSchedule
+	bav.SnapshotLeaderSchedule = make(map[SnapshotLeaderScheduleMapKey]*PKID)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -559,6 +567,11 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the SnapshotGlobalActiveStakeAmountNanos
 	for epochNumber, globalActiveStakeAmountNanos := range bav.SnapshotGlobalActiveStakeAmountNanos {
 		newView.SnapshotGlobalActiveStakeAmountNanos[epochNumber] = globalActiveStakeAmountNanos.Clone()
+	}
+
+	// Copy the SnapshotLeaderSchedule
+	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
+		newView.SnapshotLeaderSchedule[mapKey] = validatorPKID.NewPKID()
 	}
 
 	return newView, nil

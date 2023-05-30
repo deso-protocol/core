@@ -107,7 +107,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	m4PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m4PkBytes).PKID
 	m5PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m5PkBytes).PKID
 	m6PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m6PkBytes).PKID
-	_, _, _, _, _, _, _ = m0PKID, m1PKID, m2PKID, m3PKID, m4PKID, m5PKID, m6PKID
+	validatorPKIDs := []*PKID{m0PKID, m1PKID, m2PKID, m3PKID, m4PKID, m5PKID, m6PKID}
 
 	// Seed a CurrentEpochEntry.
 	utxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight})
@@ -182,7 +182,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Nil(t, snapshotGlobalParamsEntry)
 
 		// Test SnapshotValidatorByPKID is nil.
-		for _, pkid := range []*PKID{m0PKID, m1PKID, m2PKID, m3PKID, m4PKID, m5PKID, m6PKID} {
+		for _, pkid := range validatorPKIDs {
 			snapshotValidatorEntry, err := utxoView.GetSnapshotValidatorByPKID(pkid, 1)
 			require.NoError(t, err)
 			require.Nil(t, snapshotValidatorEntry)
@@ -199,7 +199,11 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Nil(t, snapshotGlobalActiveStakeAmountNanos)
 
 		// Test SnapshotLeaderSchedule is nil.
-		// TODO
+		for index, _ := range validatorPKIDs {
+			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 1)
+			require.NoError(t, err)
+			require.Nil(t, snapshotLeaderScheduleValidator)
+		}
 	}
 	{
 		// Test RunOnEpochCompleteHook().
@@ -219,7 +223,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		//require.Equal(t, snapshotGlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
 
 		// Test SnapshotValidatorByPKID is populated.
-		for _, pkid := range []*PKID{m0PKID, m1PKID, m2PKID, m3PKID, m4PKID, m5PKID, m6PKID} {
+		for _, pkid := range validatorPKIDs {
 			snapshotValidatorEntry, err := utxoView.GetSnapshotValidatorByPKID(pkid, 1)
 			require.NoError(t, err)
 			require.NotNil(t, snapshotValidatorEntry)
@@ -240,7 +244,11 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, snapshotGlobalActiveStakeAmountNanos, uint256.NewInt().SetUint64(2800))
 
 		// Test SnapshotLeaderSchedule is populated.
-		// TODO
+		for index, _ := range validatorPKIDs {
+			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 1)
+			require.NoError(t, err)
+			require.NotNil(t, snapshotLeaderScheduleValidator)
+		}
 	}
 	{
 		// Test SnapshotGlobalParamsEntry for a future epoch is nil.
@@ -249,7 +257,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Nil(t, snapshotGlobalParamsEntry)
 
 		// Test SnapshotValidatorByPKID for a future epoch is nil.
-		for _, pkid := range []*PKID{m0PKID, m1PKID, m2PKID, m3PKID, m4PKID, m5PKID, m6PKID} {
+		for _, pkid := range validatorPKIDs {
 			snapshotValidatorEntry, err := utxoView.GetSnapshotValidatorByPKID(pkid, 2)
 			require.NoError(t, err)
 			require.Nil(t, snapshotValidatorEntry)
@@ -266,6 +274,10 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Nil(t, snapshotGlobalActiveStakeAmountNanos)
 
 		// Test SnapshotLeaderSchedule for a future epoch is nil.
-		// TODO
+		for index, _ := range validatorPKIDs {
+			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 2)
+			require.NoError(t, err)
+			require.Nil(t, snapshotLeaderScheduleValidator)
+		}
 	}
 }

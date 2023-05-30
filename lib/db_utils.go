@@ -546,7 +546,11 @@ type DBPrefixes struct {
 	// Prefix, EpochNumber -> *uint256.Int
 	PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber []byte `prefix_id:"[88]" is_state:"true"`
 
-	// NEXT_TAG: 89
+	// PrefixSnapshotLeaderSchedule: Retrieve a ValidatorPKID by <EpochNumber, LeaderIndex>.
+	// Prefix, EpochNumber, LeaderIndex -> ValidatorPKID
+	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[89]" is_state:"true"`
+
+	// NEXT_TAG: 90
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -781,6 +785,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanosByEpochNumber) {
 		// prefix_id:"[88]"
 		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotLeaderSchedule) {
+		// prefix_id:"[89]"
+		return true, &PKID{}
 	}
 
 	return true, nil

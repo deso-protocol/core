@@ -468,3 +468,111 @@ func DBPutSnapshotGlobalActiveStakeAmountNanosWithTxn(
 	key := DBKeyForSnapshotGlobalActiveStakeAmountNanos(epochNumber)
 	return DBSetWithTxn(txn, snap, key, VariableEncodeUint256(globalActiveStakeAmountNanos))
 }
+
+//
+// SnapshotLeaderScheduleValidator
+//
+
+type SnapshotLeaderScheduleMapKey struct {
+	EpochNumber uint64
+	LeaderIndex uint8
+}
+
+func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint8, epochNumber uint64) (*ValidatorEntry, error) {
+	// First, check the UtxoView.
+	mapKey := SnapshotLeaderScheduleMapKey{EpochNumber: epochNumber, LeaderIndex: leaderIndex}
+	if validatorPKID, exists := bav.SnapshotLeaderSchedule[mapKey]; exists {
+		return bav.GetSnapshotValidatorByPKID(validatorPKID, epochNumber)
+	}
+	// Next, check the db.
+	validatorEntry, err := DBGetSnapshotLeaderScheduleValidator(bav.Handle, bav.Snapshot, leaderIndex, epochNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GetSnapshotLeaderScheduleValidator: error retrieving ValidatorPKID: ")
+	}
+	if validatorEntry != nil {
+		// Cache the ValidatorPKID in the UtxoView.
+		bav._setSnapshotLeaderScheduleValidator(validatorEntry.ValidatorPKID, leaderIndex, epochNumber)
+	}
+	return validatorEntry, nil
+}
+
+func (bav *UtxoView) _setSnapshotLeaderScheduleValidator(validatorPKID *PKID, index uint8, epochNumber uint64) {
+	if validatorPKID == nil {
+		glog.Errorf("UtxoView._setSnapshotLeaderScheduleValidator: called with nil ValidatorPKID, this should never happen")
+		return
+	}
+	mapKey := SnapshotLeaderScheduleMapKey{EpochNumber: epochNumber, LeaderIndex: index}
+	bav.SnapshotLeaderSchedule[mapKey] = validatorPKID.NewPKID()
+}
+
+func (bav *UtxoView) _flushSnapshotLeaderScheduleToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
+		if validatorPKID == nil {
+			return fmt.Errorf("UtxoView._flushSnapshotLeaderScheduleToDbWithTxn: found nil PKID for epochNumber %d, this should never happen", mapKey.EpochNumber)
+		}
+		if err := DBPutSnapshotLeaderScheduleValidatorWithTxn(txn, bav.Snapshot, validatorPKID, mapKey.LeaderIndex, mapKey.EpochNumber, blockHeight); err != nil {
+			return errors.Wrapf(err, "UtxoView._flushSnapshotLeaderScheduleToDbWithTxn: problem setting ValidatorPKID for epochNumber %d: ", mapKey.EpochNumber)
+		}
+	}
+	return nil
+}
+
+func DBKeyForSnapshotLeaderScheduleValidator(leaderIndex uint8, epochNumber uint64) []byte {
+	data := append([]byte{}, Prefixes.PrefixSnapshotLeaderSchedule...)
+	data = append(data, UintToBuf(epochNumber)...)
+	data = append(data, EncodeUint8(leaderIndex)...)
+	return data
+}
+
+func DBGetSnapshotLeaderScheduleValidator(handle *badger.DB, snap *Snapshot, leaderIndex uint8, epochNumber uint64) (*ValidatorEntry, error) {
+	var ret *ValidatorEntry
+	err := handle.View(func(txn *badger.Txn) error {
+		var innerErr error
+		ret, innerErr = DBGetSnapshotLeaderScheduleValidatorWithTxn(txn, snap, leaderIndex, epochNumber)
+		return innerErr
+	})
+	return ret, err
+}
+
+func DBGetSnapshotLeaderScheduleValidatorWithTxn(txn *badger.Txn, snap *Snapshot, leaderIndex uint8, epochNumber uint64) (*ValidatorEntry, error) {
+	// Retrieve ValidatorPKID from db.
+	key := DBKeyForSnapshotLeaderScheduleValidator(leaderIndex, epochNumber)
+	validatorPKIDBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if err == badger.ErrKeyNotFound {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetSnapshotLeaderScheduleValidator: problem retrieving ValidatorPKID")
+	}
+
+	// Decode ValidatorPKID from bytes.
+	validatorPKID := &PKID{}
+	rr := bytes.NewReader(validatorPKIDBytes)
+	if exist, err := DecodeFromBytes(validatorPKID, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetSnapshotLeaderScheduleValidator: problem decoding ValidatorPKID")
+	}
+
+	// Retrieve ValidatorEntry by PKID from db.
+	return DBGetSnapshotValidatorByPKIDWithTxn(txn, snap, validatorPKID, epochNumber)
+}
+
+func DBPutSnapshotLeaderScheduleValidatorWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	validatorPKID *PKID,
+	leaderIndex uint8,
+	epochNumber uint64,
+	blockHeight uint64,
+) error {
+	if validatorPKID == nil {
+		// This should never happen but is a sanity check.
+		glog.Errorf("DBPutSnapshotLeaderScheduleValidatorWithTxn: called with nil ValidatorPKID, this should never happen")
+		return nil
+	}
+	key := DBKeyForSnapshotLeaderScheduleValidator(leaderIndex, epochNumber)
+	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorPKID)); err != nil {
+		return errors.Wrapf(err, "DBPutSnapshotLeaderScheduleValidatorWithTxn: problem putting ValidatorPKID in the SnapshotLeaderSchedule index: ")
+	}
+	return nil
+}
