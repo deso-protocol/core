@@ -1840,7 +1840,7 @@ func (bav *UtxoView) GetValidatorByPublicKey(validatorPublicKey *PublicKey) (*Va
 
 func (bav *UtxoView) GetTopActiveValidatorsByStake(limit uint64) ([]*ValidatorEntry, error) {
 	// Validate limit param.
-	if limit == 0 {
+	if limit == uint64(0) {
 		return []*ValidatorEntry{}, nil
 	}
 	// Create a slice of UtxoViewValidatorEntries. We want to skip pulling these from the database in
