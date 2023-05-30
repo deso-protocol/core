@@ -130,6 +130,9 @@ type UtxoView struct {
 	// Current EpochEntry
 	CurrentEpochEntry *EpochEntry
 
+	// Current RandomSeedHash
+	CurrentRandomSeedHash *RandomSeedHash
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -515,6 +518,11 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the CurrentEpochEntry
 	if bav.CurrentEpochEntry != nil {
 		newView.CurrentEpochEntry = bav.CurrentEpochEntry.Copy()
+	}
+
+	// Copy the CurrentRandomSeedHash
+	if bav.CurrentRandomSeedHash != nil {
+		newView.CurrentRandomSeedHash = bav.CurrentRandomSeedHash.Copy()
 	}
 
 	return newView, nil
