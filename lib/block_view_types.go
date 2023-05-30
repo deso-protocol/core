@@ -113,9 +113,10 @@ const (
 	EncoderTypeStateChangeEntry                  EncoderType = 40
 	EncoderTypeFollowEntry                       EncoderType = 41
 	EncoderTypeDeSoBalanceEntry                  EncoderType = 42
+	EncoderTypeBlock                             EncoderType = 43
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 43
+	EncoderTypeEndBlockView EncoderType = 44
 )
 
 // Txindex encoder types.
@@ -245,6 +246,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &StateChangeEntry{}
 	case EncoderTypeDeSoBalanceEntry:
 		return &DeSoBalanceEntry{}
+	case EncoderTypeBlock:
+		return &MsgDeSoBlock{}
 	}
 
 	// Txindex encoder types
@@ -868,6 +871,9 @@ type UtxoOperation struct {
 
 	// When we connect a block, we delete expired nonce entries.
 	PrevNonceEntries []*TransactorNonceEntry
+
+	// Metadata related to the state change that this operation represents.
+	StateChangeMetadata DeSoEncoder
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1183,6 +1189,11 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		for _, entry := range op.PrevNonceEntries {
 			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
 		}
+	}
+
+	// StateChangeMetadata
+	if op.StateChangeMetadata != nil {
+		data = append(data, EncodeToBytes(blockHeight, op.StateChangeMetadata, skipMetadata...)...)
 	}
 
 	return data
@@ -1797,6 +1808,16 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading prevNonceEntry")
 			}
 			op.PrevNonceEntries = append(op.PrevNonceEntries, prevNonceEntry)
+		}
+	}
+
+	// DeSoEncoder
+	stateChangeMetadata := GetStateChangeMetadataFromOpType(op.Type)
+	if stateChangeMetadata != nil {
+		if exist, err := DecodeFromBytes(stateChangeMetadata, rr); exist && err == nil {
+			op.StateChangeMetadata = stateChangeMetadata
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading DeSoEncoder")
 		}
 	}
 

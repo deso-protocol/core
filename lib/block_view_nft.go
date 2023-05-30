@@ -734,10 +734,21 @@ func (bav *UtxoView) _connectCreateNFT(
 		bav._setNFTEntryMappings(nftEntry)
 	}
 
+	// Track state changes for transaction.
+	additionalDESORoyaltiesMap := PkidRoyaltyMapToBase58CheckToRoyaltyMap(
+		postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints, bav)
+	additionalCoinRoyaltiesMap := PkidRoyaltyMapToBase58CheckToRoyaltyMap(
+		postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints, bav)
+	stateChangeMetadata := &CreateNFTStateChangeMetadata{
+		AdditionalDESORoyaltiesMap: additionalDESORoyaltiesMap,
+		AdditionalCoinRoyaltiesMap: additionalCoinRoyaltiesMap,
+	}
+
 	// Add an operation to the utxoOps list indicating we've created an NFT.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:          OperationTypeCreateNFT,
-		PrevPostEntry: prevPostEntry,
+		Type:                OperationTypeCreateNFT,
+		PrevPostEntry:       prevPostEntry,
+		StateChangeMetadata: stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -886,12 +897,24 @@ func (bav *UtxoView) _connectUpdateNFT(
 	// Set the new postEntry.
 	bav._setPostEntryMappings(postEntry)
 
+	// Track the state change metadata.
+	additionalDESORoyaltiesMap := PkidRoyaltyMapToBase58CheckToRoyaltyMap(
+		postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints, bav)
+	additionalCoinRoyaltiesMap := PkidRoyaltyMapToBase58CheckToRoyaltyMap(
+		postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints, bav)
+	stateChangeMetadata := &UpdateNFTStateChangeMetadata{
+		NFTPostEntry:               postEntry,
+		AdditionalDESORoyaltiesMap: additionalDESORoyaltiesMap,
+		AdditionalCoinRoyaltiesMap: additionalCoinRoyaltiesMap,
+	}
+
 	// Add an operation to the list at the end indicating we've connected an NFT update.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                 OperationTypeUpdateNFT,
 		PrevNFTEntry:         prevNFTEntry,
 		PrevPostEntry:        prevPostEntry,
 		DeletedNFTBidEntries: deletedBidEntries,
+		StateChangeMetadata:  stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -1514,6 +1537,11 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 		PrevNFTBidEntry:            args.PrevNFTBidEntry,
 	}
 	if args.Txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid {
+		// Track state change details.
+		stateChangeMetadata := &AcceptNFTBidStateChangeMetadata{
+			BidderPublicKeyBase58Check: PkToString(bav.GetPublicKeyForPKID(args.BidderPKID), bav.Params),
+		}
+		transactionUtxoOp.StateChangeMetadata = stateChangeMetadata
 		transactionUtxoOp.Type = OperationTypeAcceptNFTBid
 		// Rosetta fields
 		transactionUtxoOp.AcceptNFTBidCreatorPublicKey = nftPostEntry.PosterPublicKey
@@ -1527,6 +1555,12 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 			transactionUtxoOp.AcceptNFTBidAdditionalDESORoyalties = additionalDESORoyalties
 		}
 	} else if args.Txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
+		// Track state change details.
+		stateChangeMetadata := &NFTBidStateChangeMetadata{
+			PostEntry:                 nftPostEntry,
+			OwnerPublicKeyBase58Check: PkToString(bav.GetPublicKeyForPKID(prevNFTEntry.OwnerPKID), bav.Params),
+		}
+		transactionUtxoOp.StateChangeMetadata = stateChangeMetadata
 		transactionUtxoOp.Type = OperationTypeNFTBid
 		// Rosetta fields
 		transactionUtxoOp.NFTBidCreatorPublicKey = nftPostEntry.PosterPublicKey
@@ -1774,10 +1808,17 @@ func (bav *UtxoView) _connectNFTBid(
 		// Delete the previous bid and set the new bid.
 		deletePrevBidAndSetNewBid()
 
+		// Track state change details.
+		stateChangeMetadata := &NFTBidStateChangeMetadata{
+			PostEntry:                 postEntry,
+			OwnerPublicKeyBase58Check: PkToString(bav.GetPublicKeyForPKID(nftEntry.OwnerPKID), bav.Params),
+		}
+
 		// Add an operation to the list at the end indicating we've connected an NFT bid.
 		utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-			Type:            OperationTypeNFTBid,
-			PrevNFTBidEntry: prevNFTBidEntry,
+			Type:                OperationTypeNFTBid,
+			PrevNFTBidEntry:     prevNFTBidEntry,
+			StateChangeMetadata: stateChangeMetadata,
 		})
 
 		return totalInput, totalOutput, utxoOpsForTxn, nil

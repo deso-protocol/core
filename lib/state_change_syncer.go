@@ -351,6 +351,16 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	// Get the relevant deso encoder for this keyBytes.
 	var encoderType EncoderType
 	if isEncoder, encoder := StateKeyToDeSoEncoder(stateChangeEntry.KeyBytes); isEncoder && encoder != nil {
+		// Convert block encoder bytes to deso encoder bytes (append metadata).
+		if encoder.GetEncoderType() == EncoderTypeBlock {
+			var blockData []byte
+			blockData = append(blockData, BoolToByte(true))
+			blockData = append(blockData, UintToBuf(uint64(encoder.GetEncoderType()))...)
+			blockData = append(blockData, UintToBuf(uint64(encoder.GetVersionByte(stateChangeEntry.BlockHeight)))...)
+			blockData = append(blockData, EncodeByteArray(stateChangeEntry.EncoderBytes)...)
+			stateChangeEntry.EncoderBytes = blockData
+		}
+
 		encoderType = encoder.GetEncoderType()
 	} else {
 		// If the keyBytes is not an encoder, then we decode the entry from the key value.

@@ -64,7 +64,7 @@ type DBPrefixes struct {
 	// The prefix for the block index:
 	// Key format: <prefix_id, hash BlockHash>
 	// Value format: serialized MsgDeSoBlock
-	PrefixBlockHashToBlock []byte `prefix_id:"[0]"`
+	PrefixBlockHashToBlock []byte `prefix_id:"[0]" core_state:"true"`
 
 	// The prefix for the node index that we use to reconstruct the block tree.
 	// Storing the height in big-endian byte order allows us to read in all the
@@ -95,8 +95,8 @@ type DBPrefixes struct {
 	// that were applied by this block. To roll back the block, one must loop through
 	// the UtxoOperations for a particular block backwards and invert them.
 	//
-	// <prefix_id, hash *BlockHash > -> < serialized []UtxoOperation using custom encoding >
-	PrefixBlockHashToUtxoOperations []byte `prefix_id:"[9]"`
+	// <prefix_id, hash *BlockHash > -> < serialized [][]UtxoOperation using custom encoding >
+	PrefixBlockHashToUtxoOperations []byte `prefix_id:"[9]" core_state:"true"`
 	// The below are mappings related to the validation of BitcoinExchange transactions.
 	//
 	// The number of nanos that has been purchased thus far.
@@ -519,7 +519,10 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	if len(prefix) > MaxPrefixLen {
 		panic(any(fmt.Sprintf("Called with prefix longer than MaxPrefixLen, prefix: (%v), MaxPrefixLen: (%v)", prefix, MaxPrefixLen)))
 	}
-	if bytes.Equal(prefix, Prefixes.PrefixUtxoKeyToUtxoEntry) {
+	if bytes.Equal(prefix, Prefixes.PrefixBlockHashToBlock) {
+		// prefix_id:"[0]"
+		return true, &MsgDeSoBlock{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUtxoKeyToUtxoEntry) {
 		// prefix_id:"[5]"
 		return true, &UtxoEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixPubKeyUtxoKey) {
@@ -528,6 +531,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixUtxoNumEntries) {
 		// prefix_id:"[8]"
 		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixBlockHashToUtxoOperations) {
+		// prefix_id:"[9]"
+		return true, &UtxoOperationBundle{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixNanosPurchased) {
 		// prefix_id:"[10]"
 		return false, nil
@@ -5104,8 +5110,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
-		genesisBlock.Header,                                                               // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
+		genesisBlock.Header, // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -9180,7 +9186,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -9307,7 +9313,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true   /*reverse*/, false /*fetchValues*/)
+		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}

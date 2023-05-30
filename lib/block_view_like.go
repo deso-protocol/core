@@ -189,11 +189,17 @@ func (bav *UtxoView) _connectLike(
 	// Set the updated post entry so it has the new like count.
 	bav._setPostEntryMappings(&updatedPostEntry)
 
+	// Create the state change metadata for this like.
+	stateChangeMetadata := &LikeStateChangeMetadata{
+		LikedPostEntry: existingPostEntry,
+	}
+
 	// Add an operation to the list at the end indicating we've added a follow.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:          OperationTypeLike,
-		PrevLikeEntry: existingLikeEntry,
-		PrevLikeCount: existingPostEntry.LikeCount,
+		Type:                OperationTypeLike,
+		PrevLikeEntry:       existingLikeEntry,
+		PrevLikeCount:       existingPostEntry.LikeCount,
+		StateChangeMetadata: stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil

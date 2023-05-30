@@ -1035,6 +1035,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	}
 	desoLockedNanosDiff := int64(existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
 
+	// Add a CreatorCoinStateChangeMetadata to the UtxoOperation to track the state change.
+	stateChangeMetadata := &CreatorCoinStateChangeMetadata{
+		ProfileEntry: existingProfileEntry,
+	}
+
 	// Add an operation to the list at the end indicating we've executed a
 	// CreatorCoin txn. Save the previous state of the CreatorCoinEntry for easy
 	// reversion during disconnect.
@@ -1045,6 +1050,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		PrevCreatorBalanceEntry:        &prevCreatorBalanceEntry,
 		FounderRewardUtxoKey:           outputKey,
 		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
+		StateChangeMetadata:            stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, coinsBuyerGetsNanos, creatorCoinFounderRewardNanos, utxoOpsForTxn, nil
@@ -1338,6 +1344,11 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	}
 	desoLockedNanosDiff := int64(existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos) - int64(prevCoinEntry.DeSoLockedNanos)
 
+	// Add a CreatorCoinStateChangeMetadata to the UtxoOperation to track the state change.
+	stateChangeMetadata := &CreatorCoinStateChangeMetadata{
+		ProfileEntry: existingProfileEntry,
+	}
+
 	// Add an operation to the list at the end indicating we've executed a
 	// CreatorCoin txn. Save the previous state of the CreatorCoinEntry for easy
 	// reversion during disconnect.
@@ -1347,6 +1358,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 		PrevTransactorBalanceEntry:     &prevTransactorBalanceEntry,
 		PrevCreatorBalanceEntry:        nil,
 		CreatorCoinDESOLockedNanosDiff: desoLockedNanosDiff,
+		StateChangeMetadata:            stateChangeMetadata,
 	})
 
 	// The DeSo that the user gets from selling their creator coin counts

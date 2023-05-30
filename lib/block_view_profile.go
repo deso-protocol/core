@@ -921,6 +921,12 @@ func (bav *UtxoView) _connectSwapIdentity(
 		toNanos = toProfileEntry.CreatorCoinEntry.DeSoLockedNanos
 	}
 
+	// Create the metadata for the state change.
+	stateChangeMetadata := &SwapIdentityStateChangeMetadata{
+		FromProfile: fromProfileEntry,
+		ToProfile:   toProfileEntry,
+	}
+
 	// Add an operation to the list at the end indicating we've swapped identities.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type: OperationTypeSwapIdentity,
@@ -928,6 +934,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 		SwapIdentityFromDESOLockedNanos: fromNanos,
 		SwapIdentityToDESOLockedNanos:   toNanos,
 
+		StateChangeMetadata: stateChangeMetadata,
 		// Note that we don't need any metadata on this operation, since the swap is reversible
 		// without it.
 	})

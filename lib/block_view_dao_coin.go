@@ -426,6 +426,11 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 		bav._setProfileEntryMappings(creatorProfileEntry)
 	}
 
+	// Add state change metadata.
+	stateChangeMetadata := &DAOCoinStateChangeMetadata{
+		CreatorProfileEntry: creatorProfileEntry,
+	}
+
 	// Add an operation to the list at the end indicating we've executed a
 	// DAOCoin txn. Save the previous state of the CreatorCoinEntry for easy
 	// reversion during disconnect.
@@ -433,6 +438,7 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 		Type:                    OperationTypeDAOCoin,
 		PrevCoinEntry:           &prevDAOCoinEntry,
 		PrevCreatorBalanceEntry: &prevProfileOwnerBalanceEntry,
+		StateChangeMetadata:     stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -516,10 +522,16 @@ func (bav *UtxoView) HelpConnectDAOCoinBurn(
 	}
 	bav._setProfileEntryMappings(creatorProfileEntry)
 
+	// Add state change metadata.
+	stateChangeMetadata := &DAOCoinStateChangeMetadata{
+		CreatorProfileEntry: creatorProfileEntry,
+	}
+
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                       OperationTypeDAOCoin,
 		PrevCoinEntry:              &prevCoinEntry,
 		PrevTransactorBalanceEntry: &prevTransactorBalanceEntry,
+		StateChangeMetadata:        stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -553,9 +565,15 @@ func (bav *UtxoView) HelpConnectDAOCoinDisableMinting(
 
 	bav._setProfileEntryMappings(creatorProfileEntry)
 
+	// Add state change metadata.
+	stateChangeMetadata := &DAOCoinStateChangeMetadata{
+		CreatorProfileEntry: creatorProfileEntry,
+	}
+
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:          OperationTypeDAOCoin,
-		PrevCoinEntry: &prevCoinEntry,
+		Type:                OperationTypeDAOCoin,
+		PrevCoinEntry:       &prevCoinEntry,
+		StateChangeMetadata: stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -595,9 +613,15 @@ func (bav *UtxoView) HelpConnectUpdateTransferRestrictionStatus(
 
 	bav._setProfileEntryMappings(creatorProfileEntry)
 
+	// Add state change metadata.
+	stateChangeMetadata := &DAOCoinStateChangeMetadata{
+		CreatorProfileEntry: creatorProfileEntry,
+	}
+
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:          OperationTypeDAOCoin,
-		PrevCoinEntry: &prevCoinEntry,
+		Type:                OperationTypeDAOCoin,
+		PrevCoinEntry:       &prevCoinEntry,
+		StateChangeMetadata: stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, err

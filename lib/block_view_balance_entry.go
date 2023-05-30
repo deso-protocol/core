@@ -559,6 +559,18 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		}
 	}
 
+	// Track the state of the creator profile entry for this txn.
+	var stateChangeMetadata DeSoEncoder
+	if isDAOCoin {
+		stateChangeMetadata = &DAOCoinStateChangeMetadata{
+			CreatorProfileEntry: creatorProfileEntry,
+		}
+	} else {
+		stateChangeMetadata = &CCTransferStateChangeMetadata{
+			CreatorProfileEntry: creatorProfileEntry,
+		}
+	}
+
 	// Add an operation to the list at the end indicating we've executed a
 	// coin transfer txn. Save the previous state of the CreatorCoinEntry for easy
 	// reversion during disconnect.
@@ -576,8 +588,9 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 
 		// Legacy CreatorCoin fields from when diamonds were associated with
 		// CreatorCoin transfers.
-		PrevPostEntry:    previousDiamondPostEntry,
-		PrevDiamondEntry: previousDiamondEntry,
+		PrevPostEntry:       previousDiamondPostEntry,
+		PrevDiamondEntry:    previousDiamondEntry,
+		StateChangeMetadata: stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil

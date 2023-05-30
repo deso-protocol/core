@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/golang/glog"
 	"io"
 	"math"
 	"math/big"
@@ -2415,6 +2416,31 @@ func (msg *MsgDeSoBlock) String() string {
 		return "<nil block or header>"
 	}
 	return fmt.Sprintf("<Header: %v, %v>", msg.Header.String(), msg.BlockProducerInfo)
+}
+
+func (msg *MsgDeSoBlock) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	blockBytes, err := msg.ToBytes(false /*preSignature*/)
+	if err != nil {
+		glog.Errorf("MsgDeSoBlock.RawEncodeWithoutMetadata: Problem encoding block: %v", err)
+	}
+	return EncodeByteArray(blockBytes)
+}
+
+func (msg *MsgDeSoBlock) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	blockBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoBlock.RawDecodeWithoutMetadata: Problem decoding block")
+	}
+	return msg.FromBytes(blockBytes)
+}
+
+func (msg *MsgDeSoBlock) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+// GetEncoderType should return the EncoderType corresponding to the DeSoEncoder.
+func (msg *MsgDeSoBlock) GetEncoderType() EncoderType {
+	return EncoderTypeBlock
 }
 
 // ==================================================================

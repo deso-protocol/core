@@ -1495,9 +1495,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 					CreatorCoinRoyaltyNanos:     utxoOp.NFTBidCreatorRoyaltyNanos,
 					CreatorRoyaltyNanos:         utxoOp.NFTBidCreatorDESORoyaltyNanos,
 					CreatorPublicKeyBase58Check: creatorPublicKeyBase58Check,
-					AdditionalCoinRoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+					AdditionalCoinRoyaltiesMap: PubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 						utxoOp.NFTBidAdditionalCoinRoyalties, utxoView.Params),
-					AdditionalDESORoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+					AdditionalDESORoyaltiesMap: PubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 						utxoOp.NFTBidAdditionalDESORoyalties, utxoView.Params),
 				}
 			}
@@ -1556,9 +1556,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				CreatorCoinRoyaltyNanos:     utxoOp.AcceptNFTBidCreatorRoyaltyNanos,
 				CreatorRoyaltyNanos:         utxoOp.AcceptNFTBidCreatorDESORoyaltyNanos,
 				CreatorPublicKeyBase58Check: creatorPublicKeyBase58Check,
-				AdditionalCoinRoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+				AdditionalCoinRoyaltiesMap: PubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 					utxoOp.AcceptNFTBidAdditionalCoinRoyalties, utxoView.Params),
-				AdditionalDESORoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+				AdditionalDESORoyaltiesMap: PubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 					utxoOp.AcceptNFTBidAdditionalDESORoyalties, utxoView.Params),
 			},
 		}
@@ -1601,9 +1601,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 
 		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.NFTPostHash)
 
-		additionalDESORoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
+		additionalDESORoyaltiesMap := PkidRoyaltyMapToBase58CheckToRoyaltyMap(
 			postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints, utxoView)
-		additionalCoinRoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
+		additionalCoinRoyaltiesMap := PkidRoyaltyMapToBase58CheckToRoyaltyMap(
 			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints, utxoView)
 		txnMeta.CreateNFTTxindexMetadata = &CreateNFTTxindexMetadata{
 			NFTPostHashHex:             hex.EncodeToString(realTxMeta.NFTPostHash[:]),
@@ -1629,9 +1629,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 
 		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.NFTPostHash)
 
-		additionalDESORoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
+		additionalDESORoyaltiesMap := PkidRoyaltyMapToBase58CheckToRoyaltyMap(
 			postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints, utxoView)
-		additionalCoinRoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
+		additionalCoinRoyaltiesMap := PkidRoyaltyMapToBase58CheckToRoyaltyMap(
 			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints, utxoView)
 		txnMeta.UpdateNFTTxindexMetadata = &UpdateNFTTxindexMetadata{
 			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
@@ -1942,7 +1942,7 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 	return txnMeta
 }
 
-func pkidRoyaltyMapToBase58CheckToRoyaltyMap(royaltyMap map[PKID]uint64, utxoView *UtxoView) map[string]uint64 {
+func PkidRoyaltyMapToBase58CheckToRoyaltyMap(royaltyMap map[PKID]uint64, utxoView *UtxoView) map[string]uint64 {
 	if len(royaltyMap) == 0 {
 		return nil
 	}
@@ -1954,7 +1954,7 @@ func pkidRoyaltyMapToBase58CheckToRoyaltyMap(royaltyMap map[PKID]uint64, utxoVie
 	return pubKeyMap
 }
 
-func pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+func PubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 	publicKeyRoyaltyPairs []*PublicKeyRoyaltyPair, params *DeSoParams) map[string]uint64 {
 	if len(publicKeyRoyaltyPairs) == 0 {
 		return nil
