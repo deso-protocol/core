@@ -269,16 +269,18 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 
 		// Test GenerateLeaderSchedule() is idempotent. Given the same CurrentRandomSeedHash
 		// and the same stake-weighted validators, we generate the same leader schedule.
-		leaderSchedule, err = newUtxoView().GenerateLeaderSchedule()
-		require.NoError(t, err)
-		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0], m6PKID)
-		require.Equal(t, leaderSchedule[1], m5PKID)
-		require.Equal(t, leaderSchedule[2], m4PKID)
-		require.Equal(t, leaderSchedule[3], m2PKID)
-		require.Equal(t, leaderSchedule[4], m1PKID)
-		require.Equal(t, leaderSchedule[5], m0PKID)
-		require.Equal(t, leaderSchedule[6], m3PKID)
+		for ii := 0; ii < 10; ii++ {
+			leaderSchedule, err = newUtxoView().GenerateLeaderSchedule()
+			require.NoError(t, err)
+			require.Len(t, leaderSchedule, 7)
+			require.Equal(t, leaderSchedule[0], m6PKID)
+			require.Equal(t, leaderSchedule[1], m5PKID)
+			require.Equal(t, leaderSchedule[2], m4PKID)
+			require.Equal(t, leaderSchedule[3], m2PKID)
+			require.Equal(t, leaderSchedule[4], m1PKID)
+			require.Equal(t, leaderSchedule[5], m0PKID)
+			require.Equal(t, leaderSchedule[6], m3PKID)
+		}
 	}
 	{
 		// Test changing params.LeaderScheduleMaxNumValidators.

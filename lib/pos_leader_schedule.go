@@ -38,7 +38,7 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*PKID, error) {
 	//   Take RandomUint256 modulo TotalStakeAmountNanos.
 	//   For each ValidatorEntry:
 	//     Skip if ValidatorPKID has already been added to the leader schedule.
-	//     If ValidatorEntry.TotalStakeAmountNanos >= RandomUint256:
+	//     If the sum of the ValidatorEntry.TotalStakeAmountNanos seen so far >= RandomUint256:
 	//       Add ValidatorPKID to LeaderSchedule.
 	//       TotalStakeAmountNanos -= ValidatorEntry.TotalStakeAmountNanos.
 	//       Break out of the inner loop.
