@@ -103,6 +103,21 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
 	}
 
+	testGenerateLeaderSchedule := func(expectedOrder []*PKID) {
+		// We test that GenerateLeaderSchedule() is idempotent by running it 10 times.
+		// Given the same CurrentRandomSeedHash and the same stake-weighted validators,
+		// we verify that we generate the same leader schedule each time.
+		for ii := 0; ii < 10; ii++ {
+			leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+			require.NoError(t, err)
+			require.Len(t, leaderSchedule, len(expectedOrder))
+
+			for index, pkid := range leaderSchedule {
+				require.Equal(t, pkid, expectedOrder[index])
+			}
+		}
+	}
+
 	// Seed a CurrentEpochEntry.
 	tmpUtxoView := newUtxoView()
 	tmpUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
@@ -192,95 +207,43 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	}
 	{
 		// Test GenerateLeaderSchedule().
-		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
-		require.NoError(t, err)
-		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0], m6PKID)
-		require.Equal(t, leaderSchedule[1], m5PKID)
-		require.Equal(t, leaderSchedule[2], m4PKID)
-		require.Equal(t, leaderSchedule[3], m2PKID)
-		require.Equal(t, leaderSchedule[4], m3PKID)
-		require.Equal(t, leaderSchedule[5], m1PKID)
-		require.Equal(t, leaderSchedule[6], m0PKID)
+		testGenerateLeaderSchedule([]*PKID{m6PKID, m5PKID, m4PKID, m2PKID, m3PKID, m1PKID, m0PKID})
 	}
 	{
 		// Seed a new CurrentRandomSeedHash.
 		setCurrentRandomSeedHash("3b4b028b-6a7c-4b38-bea3-a5f59b34e02d")
-
 		// Test GenerateLeaderSchedule().
-		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
-		require.NoError(t, err)
-		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0], m6PKID)
-		require.Equal(t, leaderSchedule[1], m5PKID)
-		require.Equal(t, leaderSchedule[2], m3PKID)
-		require.Equal(t, leaderSchedule[3], m4PKID)
-		require.Equal(t, leaderSchedule[4], m2PKID)
-		require.Equal(t, leaderSchedule[5], m0PKID)
-		require.Equal(t, leaderSchedule[6], m1PKID)
+		testGenerateLeaderSchedule([]*PKID{m6PKID, m5PKID, m3PKID, m4PKID, m2PKID, m0PKID, m1PKID})
 	}
 	{
 		// Seed a new CurrentRandomSeedHash.
 		setCurrentRandomSeedHash("b4b38eaf-216d-4132-8725-a481baaf87cc")
-
 		// Test GenerateLeaderSchedule().
-		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
-		require.NoError(t, err)
-		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0], m4PKID)
-		require.Equal(t, leaderSchedule[1], m5PKID)
-		require.Equal(t, leaderSchedule[2], m6PKID)
-		require.Equal(t, leaderSchedule[3], m3PKID)
-		require.Equal(t, leaderSchedule[4], m1PKID)
-		require.Equal(t, leaderSchedule[5], m2PKID)
-		require.Equal(t, leaderSchedule[6], m0PKID)
+		testGenerateLeaderSchedule([]*PKID{m4PKID, m5PKID, m6PKID, m3PKID, m1PKID, m2PKID, m0PKID})
 	}
 	{
 		// Seed a new CurrentRandomSeedHash.
 		setCurrentRandomSeedHash("7c87f290-d9ec-4cb4-ad47-c64c8ca46f0e")
-
 		// Test GenerateLeaderSchedule().
-		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
-		require.NoError(t, err)
-		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0], m6PKID)
-		require.Equal(t, leaderSchedule[1], m2PKID)
-		require.Equal(t, leaderSchedule[2], m4PKID)
-		require.Equal(t, leaderSchedule[3], m5PKID)
-		require.Equal(t, leaderSchedule[4], m3PKID)
-		require.Equal(t, leaderSchedule[5], m1PKID)
-		require.Equal(t, leaderSchedule[6], m0PKID)
+		testGenerateLeaderSchedule([]*PKID{m6PKID, m2PKID, m4PKID, m5PKID, m3PKID, m1PKID, m0PKID})
 	}
 	{
 		// Seed a new CurrentRandomSeedHash.
 		setCurrentRandomSeedHash("0999a3ce-15e4-455a-b061-6081b88b237d")
-
 		// Test GenerateLeaderSchedule().
-		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
-		require.NoError(t, err)
-		require.Len(t, leaderSchedule, 7)
-		require.Equal(t, leaderSchedule[0], m6PKID)
-		require.Equal(t, leaderSchedule[1], m5PKID)
-		require.Equal(t, leaderSchedule[2], m4PKID)
-		require.Equal(t, leaderSchedule[3], m2PKID)
-		require.Equal(t, leaderSchedule[4], m1PKID)
-		require.Equal(t, leaderSchedule[5], m0PKID)
-		require.Equal(t, leaderSchedule[6], m3PKID)
-
-		// Test GenerateLeaderSchedule() is idempotent. Given the same CurrentRandomSeedHash
-		// and the same stake-weighted validators, we generate the same leader schedule.
-		for ii := 0; ii < 10; ii++ {
-			leaderSchedule, err = newUtxoView().GenerateLeaderSchedule()
-			require.NoError(t, err)
-			require.Len(t, leaderSchedule, 7)
-			require.Equal(t, leaderSchedule[0], m6PKID)
-			require.Equal(t, leaderSchedule[1], m5PKID)
-			require.Equal(t, leaderSchedule[2], m4PKID)
-			require.Equal(t, leaderSchedule[3], m2PKID)
-			require.Equal(t, leaderSchedule[4], m1PKID)
-			require.Equal(t, leaderSchedule[5], m0PKID)
-			require.Equal(t, leaderSchedule[6], m3PKID)
-		}
+		testGenerateLeaderSchedule([]*PKID{m6PKID, m5PKID, m4PKID, m2PKID, m1PKID, m0PKID, m3PKID})
+	}
+	{
+		// Seed a new CurrentRandomSeedHash.
+		setCurrentRandomSeedHash("dbfffc42-3c40-49c4-a3df-cfbd2606cce2")
+		// Test GenerateLeaderSchedule().
+		testGenerateLeaderSchedule([]*PKID{m6PKID, m5PKID, m4PKID, m3PKID, m0PKID, m2PKID, m1PKID})
+	}
+	{
+		// Seed a new CurrentRandomSeedHash.
+		setCurrentRandomSeedHash("ceea0ad8-7277-4468-a0a1-8bacb78b01ca")
+		// Test GenerateLeaderSchedule().
+		testGenerateLeaderSchedule([]*PKID{m3PKID, m5PKID, m6PKID, m4PKID, m2PKID, m1PKID, m0PKID})
 	}
 	{
 		// Test changing params.LeaderScheduleMaxNumValidators.

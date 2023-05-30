@@ -14,7 +14,7 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*PKID, error) {
 	}
 
 	// Retrieve top, active validators ordered by stake.
-	validatorEntries, err := bav.GetTopActiveValidatorsByStake(int(bav.Params.LeaderScheduleMaxNumValidators))
+	validatorEntries, err := bav.GetTopActiveValidatorsByStake(bav.Params.LeaderScheduleMaxNumValidators)
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error retrieving top ValidatorEntries: ")
 	}
