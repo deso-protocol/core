@@ -21,7 +21,7 @@ func TestIsLastBlockInCurrentEpoch(t *testing.T) {
 
 	// Initialize fork heights.
 	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
-	params.ForkHeights.ProofOfStakeBlockHeight = uint32(1)
+	params.ForkHeights.ProofOfStakeSnapshottingBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -65,7 +65,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 
 	// Initialize fork heights.
 	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
-	params.ForkHeights.ProofOfStakeBlockHeight = uint32(1)
+	params.ForkHeights.ProofOfStakeSnapshottingBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 

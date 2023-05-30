@@ -7,16 +7,16 @@ import (
 
 func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error) {
 	// Returns true if this is the last block in the current epoch.
-	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStakeBlockHeight) {
-		// Return false if we are still using PoW and haven't cut over to PoS yet.
+	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStakeSnapshottingBlockHeight) {
+		// Return false if we have not started snapshotting the relevant PoS entries yet.
 		return false, nil
 	}
 	currentEpochEntry, err := bav.GetCurrentEpochEntry()
 	if err != nil {
-		return false, errors.Wrapf(err, "UtxoView.IsEpochComplete: problem retrieving CurrentEpochEntry: ")
+		return false, errors.Wrapf(err, "IsEpochComplete: problem retrieving CurrentEpochEntry: ")
 	}
 	if currentEpochEntry == nil {
-		return false, errors.New("UtxoView.IsEpochComplete: CurrentEpochEntry is nil, this should never happen")
+		return false, errors.New("IsEpochComplete: CurrentEpochEntry is nil, this should never happen")
 	}
 	return currentEpochEntry.FinalBlockHeight == blockHeight, nil
 }
@@ -27,19 +27,19 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Sanity-check that the current block is the last block in the current epoch.
 	isLastBlockInCurrentEpoch, err := bav.IsLastBlockInCurrentEpoch(blockHeight)
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.RunEpochCompleteHook: ")
+		return errors.Wrapf(err, "RunEpochCompleteHook: ")
 	}
 	if !isLastBlockInCurrentEpoch {
-		return errors.New("UtxoView.RunEpochCompleteHook: called before current epoch is complete, this should never happen")
+		return errors.New("RunEpochCompleteHook: called before current epoch is complete, this should never happen")
 	}
 
 	// Retrieve the CurrentEpochEntry.
 	currentEpochEntry, err := bav.GetCurrentEpochEntry()
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.RunEpochCompleteHook: problem retrieving CurrentEpochEntry: ")
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving CurrentEpochEntry: ")
 	}
 	if currentEpochEntry == nil {
-		return errors.New("UtxoView.RunEpochCompleteHook: CurrentEpochEntry is nil, this should never happen")
+		return errors.New("RunEpochCompleteHook: CurrentEpochEntry is nil, this should never happen")
 	}
 
 	// Snapshot the current GlobalParamsEntry.
@@ -47,24 +47,24 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 
 	// Snapshot the current ValidatorEntries.
 	if err = bav.SnapshotCurrentValidators(currentEpochEntry.EpochNumber); err != nil {
-		return errors.Wrapf(err, "UtxoView.RunEpochCompleteHook: problem snapshotting validators: ")
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem snapshotting validators: ")
 	}
 
 	// Snapshot the current GlobalActiveStakeAmountNanos.
 	globalActiveStakeAmountNanos, err := bav.GetGlobalActiveStakeAmountNanos()
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.RunEpochCompleteHook: problem retrieving GlobalActiveStakeAmountNanos: ")
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving GlobalActiveStakeAmountNanos: ")
 	}
 	bav._setSnapshotGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos, currentEpochEntry.EpochNumber)
 
 	// Generate + snapshot a leader schedule.
 	leaderSchedule, err := bav.GenerateLeaderSchedule()
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.RunEpochCompleteHook: problem generating leader schedule: ")
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem generating leader schedule: ")
 	}
 	for index, validatorPKID := range leaderSchedule {
 		if index > math.MaxUint8 {
-			return errors.Errorf("UtxoView.RunEpochCompleteHook: LeaderIndex %d overflows uint8", index)
+			return errors.Errorf("RunEpochCompleteHook: LeaderIndex %d overflows uint8", index)
 		}
 		bav._setSnapshotLeaderScheduleValidator(validatorPKID, uint8(index), currentEpochEntry.EpochNumber)
 	}

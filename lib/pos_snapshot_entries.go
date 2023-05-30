@@ -25,7 +25,7 @@ func (bav *UtxoView) GetSnapshotGlobalParamsEntry(snapshotAtEpochNumber uint64) 
 	if err != nil {
 		return nil, errors.Wrapf(
 			err,
-			"UtxoView.GetSnapshotGlobalParamsEntry: problem retrieving SnapshotGlobalParamsEntry from db: ",
+			"GetSnapshotGlobalParamsEntry: problem retrieving SnapshotGlobalParamsEntry from db: ",
 		)
 	}
 	if globalParamsEntry != nil {
@@ -37,7 +37,7 @@ func (bav *UtxoView) GetSnapshotGlobalParamsEntry(snapshotAtEpochNumber uint64) 
 
 func (bav *UtxoView) _setSnapshotGlobalParamsEntry(globalParamsEntry *GlobalParamsEntry, snapshotAtEpochNumber uint64) {
 	if globalParamsEntry == nil {
-		glog.Errorf("UtxoView._setSnapshotGlobalParamsEntry: called with nil entry, this should never happen")
+		glog.Errorf("_setSnapshotGlobalParamsEntry: called with nil entry, this should never happen")
 	}
 	bav.SnapshotGlobalParamsEntries[snapshotAtEpochNumber] = globalParamsEntry.Copy()
 }
@@ -46,14 +46,16 @@ func (bav *UtxoView) _flushSnapshotGlobalParamsEntryToDbWithTxn(txn *badger.Txn,
 	for snapshotAtEpochNumber, globalParamsEntry := range bav.SnapshotGlobalParamsEntries {
 		if globalParamsEntry == nil {
 			return fmt.Errorf(
-				"UtxoView._flushSnapshotGlobalParamsEntryToDbWithTxn: found nil entry for SnapshotAtEpochNumber %d, this should never happen",
+				"_flushSnapshotGlobalParamsEntryToDbWithTxn: found nil entry for SnapshotAtEpochNumber %d, this should never happen",
 				snapshotAtEpochNumber,
 			)
 		}
-		if err := DBPutSnapshotGlobalParamsEntryWithTxn(txn, bav.Snapshot, globalParamsEntry, snapshotAtEpochNumber, blockHeight); err != nil {
+		if err := DBPutSnapshotGlobalParamsEntryWithTxn(
+			txn, bav.Snapshot, globalParamsEntry, snapshotAtEpochNumber, blockHeight,
+		); err != nil {
 			return errors.Wrapf(
 				err,
-				"UtxoView._flushSnapshotGlobalParamsEntryToDbWithTxn: problem setting SnapshotGlobalParamsEntry for SnapshotAtEpochNumber %d: ",
+				"_flushSnapshotGlobalParamsEntryToDbWithTxn: problem setting SnapshotGlobalParamsEntry for SnapshotAtEpochNumber %d: ",
 				snapshotAtEpochNumber,
 			)
 		}
@@ -137,7 +139,7 @@ func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64) err
 	// Second, snapshot the ValidatorEntries in the db (skipping any in the UtxoView).
 	dbValidatorEntries, err := DBEnumerateAllCurrentValidators(bav.Handle, utxoViewValidatorPKIDs)
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.SnapshotValidators: problem retrieving ValidatorEntries: ")
+		return errors.Wrapf(err, "SnapshotValidators: problem retrieving ValidatorEntries: ")
 	}
 	for _, validatorEntry := range dbValidatorEntries {
 		bav._setSnapshotValidatorEntry(validatorEntry, snapshotAtEpochNumber)
@@ -156,7 +158,7 @@ func (bav *UtxoView) GetSnapshotValidatorByPKID(pkid *PKID, snapshotAtEpochNumbe
 	if err != nil {
 		return nil, errors.Wrapf(
 			err,
-			"UtxoView.GetSnapshotValidatorByPKID: problem retrieving ValidatorEntry from db: ",
+			"GetSnapshotValidatorByPKID: problem retrieving ValidatorEntry from db: ",
 		)
 	}
 	if validatorEntry != nil {
@@ -180,7 +182,7 @@ func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64, snapsho
 		bav.Handle, bav.Snapshot, limit, snapshotAtEpochNumber, utxoViewValidatorEntries,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GetSnapshotTopActiveValidatorsByStake: error retrieving entries from db: ")
+		return nil, errors.Wrapf(err, "GetSnapshotTopActiveValidatorsByStake: error retrieving entries from db: ")
 	}
 	// Cache top N active ValidatorEntries from the db in the UtxoView.
 	for _, validatorEntry := range dbValidatorEntries {
@@ -213,7 +215,7 @@ func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64, snapsho
 
 func (bav *UtxoView) _setSnapshotValidatorEntry(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) {
 	if validatorEntry == nil {
-		glog.Errorf("UtxoView._setSnapshotValidatorEntry: called with nil entry, this should never happen")
+		glog.Errorf("_setSnapshotValidatorEntry: called with nil entry, this should never happen")
 		return
 	}
 	mapKey := SnapshotValidatorMapKey{EpochNumber: snapshotAtEpochNumber, ValidatorPKID: *validatorEntry.ValidatorPKID}
@@ -224,14 +226,14 @@ func (bav *UtxoView) _flushSnapshotValidatorEntriesToDbWithTxn(txn *badger.Txn, 
 	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
 		if validatorEntry == nil {
 			return fmt.Errorf(
-				"UtxoView._flushSnapshotValidatorEntriesToDbWithTxn: found nil entry for SnapshotAtEpochNumber %d, this should never happen",
+				"_flushSnapshotValidatorEntriesToDbWithTxn: found nil entry for SnapshotAtEpochNumber %d, this should never happen",
 				mapKey.EpochNumber,
 			)
 		}
 		if err := DBPutSnapshotValidatorEntryWithTxn(txn, bav.Snapshot, validatorEntry, mapKey.EpochNumber, blockHeight); err != nil {
 			return errors.Wrapf(
 				err,
-				"UtxoView._flushSnapshotValidatorEntryToDbWithTxn: problem setting ValidatorEntry for SnapshotAtEpochNumber %d: ",
+				"_flushSnapshotValidatorEntryToDbWithTxn: problem setting ValidatorEntry for SnapshotAtEpochNumber %d: ",
 				mapKey.EpochNumber,
 			)
 		}
@@ -265,7 +267,12 @@ func DBGetSnapshotValidatorByPKID(handle *badger.DB, snap *Snapshot, pkid *PKID,
 	return ret, err
 }
 
-func DBGetSnapshotValidatorByPKIDWithTxn(txn *badger.Txn, snap *Snapshot, pkid *PKID, snapshotAtEpochNumber uint64) (*ValidatorEntry, error) {
+func DBGetSnapshotValidatorByPKIDWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	pkid *PKID,
+	snapshotAtEpochNumber uint64,
+) (*ValidatorEntry, error) {
 	// Retrieve ValidatorEntry from db.
 	key := DBKeyForSnapshotValidatorByPKID(&ValidatorEntry{ValidatorPKID: pkid}, snapshotAtEpochNumber)
 	validatorBytes, err := DBGetWithTxn(txn, snap, key)
@@ -407,7 +414,7 @@ func (bav *UtxoView) GetSnapshotGlobalActiveStakeAmountNanos(snapshotAtEpochNumb
 	if err != nil {
 		return nil, errors.Wrapf(
 			err,
-			"UtxoView.GetSnapshotGlobalActiveStakeAmountNanos: problem retrieving SnapshotGlobalActiveStakeAmountNanos from db: ",
+			"GetSnapshotGlobalActiveStakeAmountNanos: problem retrieving SnapshotGlobalActiveStakeAmountNanos from db: ",
 		)
 	}
 	if globalActiveStakeAmountNanos != nil {
@@ -419,7 +426,7 @@ func (bav *UtxoView) GetSnapshotGlobalActiveStakeAmountNanos(snapshotAtEpochNumb
 
 func (bav *UtxoView) _setSnapshotGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos *uint256.Int, snapshotAtEpochNumber uint64) {
 	if globalActiveStakeAmountNanos == nil {
-		glog.Errorf("UtxoView._setSnapshotGlobalActiveStakeAmountNanos: called with nil entry, this should never happen")
+		glog.Errorf("_setSnapshotGlobalActiveStakeAmountNanos: called with nil entry, this should never happen")
 	}
 	bav.SnapshotGlobalActiveStakeAmountNanos[snapshotAtEpochNumber] = globalActiveStakeAmountNanos.Clone()
 }
@@ -428,14 +435,16 @@ func (bav *UtxoView) _flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn(txn *
 	for snapshotAtEpochNumber, globalActiveStakeAmountNanos := range bav.SnapshotGlobalActiveStakeAmountNanos {
 		if globalActiveStakeAmountNanos == nil {
 			return fmt.Errorf(
-				"UtxoView._flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn: found nil entry for SnapshotAtEpochNumber %d, this should never happen",
+				"_flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn: found nil entry for SnapshotAtEpochNumber %d, this should never happen",
 				snapshotAtEpochNumber,
 			)
 		}
-		if err := DBPutSnapshotGlobalActiveStakeAmountNanosWithTxn(txn, bav.Snapshot, globalActiveStakeAmountNanos, snapshotAtEpochNumber, blockHeight); err != nil {
+		if err := DBPutSnapshotGlobalActiveStakeAmountNanosWithTxn(
+			txn, bav.Snapshot, globalActiveStakeAmountNanos, snapshotAtEpochNumber, blockHeight,
+		); err != nil {
 			return errors.Wrapf(
 				err,
-				"UtxoView._flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn: problem setting SnapshotGlobalActiveStakeAmountNanos for SnapshotAtEpochNumber %d: ",
+				"_flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn: problem setting SnapshotGlobalActiveStakeAmountNanos for SnapshotAtEpochNumber %d: ",
 				snapshotAtEpochNumber,
 			)
 		}
@@ -515,7 +524,7 @@ func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint8, snaps
 	// Next, check the db.
 	validatorEntry, err := DBGetSnapshotLeaderScheduleValidator(bav.Handle, bav.Snapshot, leaderIndex, snapshotAtEpochNumber)
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GetSnapshotLeaderScheduleValidator: error retrieving ValidatorPKID: ")
+		return nil, errors.Wrapf(err, "GetSnapshotLeaderScheduleValidator: error retrieving ValidatorPKID: ")
 	}
 	if validatorEntry != nil {
 		// Cache the ValidatorPKID in the UtxoView.
@@ -526,7 +535,7 @@ func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint8, snaps
 
 func (bav *UtxoView) _setSnapshotLeaderScheduleValidator(validatorPKID *PKID, index uint8, snapshotAtEpochNumber uint64) {
 	if validatorPKID == nil {
-		glog.Errorf("UtxoView._setSnapshotLeaderScheduleValidator: called with nil ValidatorPKID, this should never happen")
+		glog.Errorf("_setSnapshotLeaderScheduleValidator: called with nil ValidatorPKID, this should never happen")
 		return
 	}
 	mapKey := SnapshotLeaderScheduleMapKey{SnapshotAtEpochNumber: snapshotAtEpochNumber, LeaderIndex: index}
@@ -537,7 +546,7 @@ func (bav *UtxoView) _flushSnapshotLeaderScheduleToDbWithTxn(txn *badger.Txn, bl
 	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
 		if validatorPKID == nil {
 			return fmt.Errorf(
-				"UtxoView._flushSnapshotLeaderScheduleToDbWithTxn: found nil PKID for SnapshotAtEpochNumber %d, this should never happen",
+				"_flushSnapshotLeaderScheduleToDbWithTxn: found nil PKID for SnapshotAtEpochNumber %d, this should never happen",
 				mapKey.SnapshotAtEpochNumber,
 			)
 		}
@@ -546,7 +555,7 @@ func (bav *UtxoView) _flushSnapshotLeaderScheduleToDbWithTxn(txn *badger.Txn, bl
 		); err != nil {
 			return errors.Wrapf(
 				err,
-				"UtxoView._flushSnapshotLeaderScheduleToDbWithTxn: problem setting ValidatorPKID for SnapshotAtEpochNumber %d: ",
+				"_flushSnapshotLeaderScheduleToDbWithTxn: problem setting ValidatorPKID for SnapshotAtEpochNumber %d: ",
 				mapKey.SnapshotAtEpochNumber,
 			)
 		}
