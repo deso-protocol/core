@@ -328,3 +328,29 @@ func FixedWidthDecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
 //	}
 //	return bb[:], nil
 //}
+
+type HeapMinUint64 []uint64
+
+func (hu HeapMinUint64) Len() int { return len(hu) }
+
+func (hu HeapMinUint64) Less(i, j int) bool {
+	return hu[i] < hu[j]
+}
+
+func (hu HeapMinUint64) Swap(i, j int) {
+	hu[i], hu[j] = hu[j], hu[i]
+}
+
+func (hu *HeapMinUint64) Push(x interface{}) {
+	item := x.(uint64)
+	*hu = append(*hu, item)
+}
+
+func (hu *HeapMinUint64) Pop() interface{} {
+	old := *hu
+	n := len(old)
+	item := old[n-1]
+	old[n-1] = 0
+	*hu = old[0 : n-1]
+	return item
+}
