@@ -133,21 +133,21 @@ type UtxoView struct {
 	// Current RandomSeedHash
 	CurrentRandomSeedHash *RandomSeedHash
 
-	// SnapshotGlobalParamEntries is a map of EpochNumber to GlobalParamsEntry.
-	// It contains the snapshot value of the GlobalParamsEntry at the given EpochNumber.
+	// SnapshotGlobalParamEntries is a map of SnapshotAtEpochNumber to GlobalParamsEntry.
+	// It contains the snapshot value of the GlobalParamsEntry at the given SnapshotAtEpochNumber.
 	SnapshotGlobalParamEntries map[uint64]*GlobalParamsEntry
 
-	// SnapshotValidatorEntries is a map of <EpochNumber, ValidatorPKID> to a ValidatorEntry.
-	// It contains the snapshot value of a ValidatorEntry at the given EpochNumber.
+	// SnapshotValidatorEntries is a map of <SnapshotAtEpochNumber, ValidatorPKID> to a ValidatorEntry.
+	// It contains the snapshot value of a ValidatorEntry at the given SnapshotAtEpochNumber.
 	SnapshotValidatorEntries map[SnapshotValidatorMapKey]*ValidatorEntry
 
-	// SnapshotGlobalActiveStakeAmountNanos is a map of EpochNumber to GlobalActiveStakeAmountNanos.
-	// It contains the snapshot value of the GlobalActiveStakeAmountNanos at the given EpochNumber.
+	// SnapshotGlobalActiveStakeAmountNanos is a map of SnapshotAtEpochNumber to GlobalActiveStakeAmountNanos.
+	// It contains the snapshot value of the GlobalActiveStakeAmountNanos at the given SnapshotAtEpochNumber.
 	SnapshotGlobalActiveStakeAmountNanos map[uint64]*uint256.Int
 
-	// SnapshotLeaderSchedule is a map of <EpochNumber, LeaderIndex> to a ValidatorPKID.
+	// SnapshotLeaderSchedule is a map of <SnapshotAtEpochNumber, LeaderIndex> to a ValidatorPKID.
 	// It contains the PKID of the validator at the given index in the leader schedule
-	// generated at the given EpochNumber.
+	// generated at the given SnapshotAtEpochNumber.
 	SnapshotLeaderSchedule map[SnapshotLeaderScheduleMapKey]*PKID
 
 	// The hash of the tip the view is currently referencing. Mainly used
