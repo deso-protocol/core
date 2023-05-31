@@ -32,7 +32,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 
 	// For these tests, we set StakeLockupEpochDuration to zero.
 	// We test the lockup logic in a separate test.
-	params.StakeLockupEpochDuration = 0
+	params.DefaultStakeLockupEpochDuration = 0
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -82,18 +82,14 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	require.NoError(t, err)
 
 	{
-		// Param Updater set min fee rate to 101 nanos per KB
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
@@ -779,7 +775,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 
 	// For these tests, we set StakeLockupEpochDuration to zero.
 	// We test the lockup logic in a separate test.
-	params.StakeLockupEpochDuration = 0
+	params.DefaultStakeLockupEpochDuration = 0
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -941,18 +937,14 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	require.NoError(t, err)
 
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
@@ -1787,9 +1779,6 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	chain.snapshot = nil
 
-	// For these tests, we set StakeLockupEpochDuration to 3.
-	params.StakeLockupEpochDuration = 3
-
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
 		_, err = miner.MineAndProcessSingleBlock(0, mempool)
@@ -1828,18 +1817,14 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 	require.NoError(t, err)
 
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos and StakeLockupEpochDuration=3.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{StakeLockupEpochDuration: UintToBuf(3)},
 		)
 	}
 	{
@@ -1958,7 +1943,7 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 	chain.snapshot = nil
 
 	// For these tests, we set ValidatorJailEpochDuration to 0.
-	params.ValidatorJailEpochDuration = 0
+	params.DefaultValidatorJailEpochDuration = 0
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -2023,18 +2008,14 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
