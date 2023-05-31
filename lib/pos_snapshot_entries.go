@@ -121,8 +121,8 @@ func DBPutSnapshotGlobalParamsEntryWithTxn(
 //
 
 type SnapshotValidatorMapKey struct {
-	EpochNumber   uint64
-	ValidatorPKID PKID
+	SnapshotAtEpochNumber uint64
+	ValidatorPKID         PKID
 }
 
 func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64) error {
@@ -149,7 +149,7 @@ func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64) err
 
 func (bav *UtxoView) GetSnapshotValidatorByPKID(pkid *PKID, snapshotAtEpochNumber uint64) (*ValidatorEntry, error) {
 	// Check the UtxoView first.
-	mapKey := SnapshotValidatorMapKey{EpochNumber: snapshotAtEpochNumber, ValidatorPKID: *pkid}
+	mapKey := SnapshotValidatorMapKey{SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorPKID: *pkid}
 	if validatorEntry, exists := bav.SnapshotValidatorEntries[mapKey]; exists {
 		return validatorEntry, nil
 	}
@@ -171,7 +171,7 @@ func (bav *UtxoView) GetSnapshotValidatorByPKID(pkid *PKID, snapshotAtEpochNumbe
 func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64, snapshotAtEpochNumber uint64) ([]*ValidatorEntry, error) {
 	var utxoViewValidatorEntries []*ValidatorEntry
 	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
-		if mapKey.EpochNumber == snapshotAtEpochNumber {
+		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber {
 			utxoViewValidatorEntries = append(utxoViewValidatorEntries, validatorEntry)
 		}
 	}
@@ -189,7 +189,9 @@ func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64, snapsho
 		// We only pull ValidatorEntries from the db that are not present in the
 		// UtxoView. As a sanity check, we double-check that the ValidatorEntry
 		// is not already in the UtxoView here.
-		mapKey := SnapshotValidatorMapKey{EpochNumber: snapshotAtEpochNumber, ValidatorPKID: *validatorEntry.ValidatorPKID}
+		mapKey := SnapshotValidatorMapKey{
+			SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorPKID: *validatorEntry.ValidatorPKID,
+		}
 		if _, exists := bav.SnapshotValidatorEntries[mapKey]; !exists {
 			bav._setValidatorEntryMappings(validatorEntry)
 		}
@@ -197,7 +199,7 @@ func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64, snapsho
 	// Pull !isDeleted, active ValidatorEntries from the UtxoView with stake > 0.
 	var validatorEntries []*ValidatorEntry
 	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
-		if mapKey.EpochNumber == snapshotAtEpochNumber &&
+		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber &&
 			!validatorEntry.isDeleted &&
 			validatorEntry.Status() == ValidatorStatusActive &&
 			!validatorEntry.TotalStakeAmountNanos.IsZero() {
@@ -218,7 +220,9 @@ func (bav *UtxoView) _setSnapshotValidatorEntry(validatorEntry *ValidatorEntry, 
 		glog.Errorf("_setSnapshotValidatorEntry: called with nil entry, this should never happen")
 		return
 	}
-	mapKey := SnapshotValidatorMapKey{EpochNumber: snapshotAtEpochNumber, ValidatorPKID: *validatorEntry.ValidatorPKID}
+	mapKey := SnapshotValidatorMapKey{
+		SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorPKID: *validatorEntry.ValidatorPKID,
+	}
 	bav.SnapshotValidatorEntries[mapKey] = validatorEntry.Copy()
 }
 
@@ -227,16 +231,16 @@ func (bav *UtxoView) _flushSnapshotValidatorEntriesToDbWithTxn(txn *badger.Txn, 
 		if validatorEntry == nil {
 			return fmt.Errorf(
 				"_flushSnapshotValidatorEntriesToDb: found nil entry for EpochNumber %d, this should never happen",
-				mapKey.EpochNumber,
+				mapKey.SnapshotAtEpochNumber,
 			)
 		}
 		if err := DBPutSnapshotValidatorEntryWithTxn(
-			txn, bav.Snapshot, validatorEntry, mapKey.EpochNumber, blockHeight,
+			txn, bav.Snapshot, validatorEntry, mapKey.SnapshotAtEpochNumber, blockHeight,
 		); err != nil {
 			return errors.Wrapf(
 				err,
 				"_flushSnapshotValidatorEntriesToDb: problem setting ValidatorEntry for EpochNumber %d: ",
-				mapKey.EpochNumber,
+				mapKey.SnapshotAtEpochNumber,
 			)
 		}
 	}
