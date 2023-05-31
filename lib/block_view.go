@@ -133,7 +133,7 @@ type UtxoView struct {
 	// Current RandomSeedHash
 	CurrentRandomSeedHash *RandomSeedHash
 
-	// SnapshotGlobalParamEntries is a map of SnapshotAtEpochNumber to GlobalParamsEntry.
+	// SnapshotGlobalParamEntries is a map of SnapshotAtEpochNumber to a GlobalParamsEntry.
 	// It contains the snapshot value of the GlobalParamsEntry at the given SnapshotAtEpochNumber.
 	SnapshotGlobalParamEntries map[uint64]*GlobalParamsEntry
 
@@ -141,7 +141,7 @@ type UtxoView struct {
 	// It contains the snapshot value of a ValidatorEntry at the given SnapshotAtEpochNumber.
 	SnapshotValidatorEntries map[SnapshotValidatorMapKey]*ValidatorEntry
 
-	// SnapshotGlobalActiveStakeAmountNanos is a map of SnapshotAtEpochNumber to GlobalActiveStakeAmountNanos.
+	// SnapshotGlobalActiveStakeAmountNanos is a map of SnapshotAtEpochNumber to a GlobalActiveStakeAmountNanos.
 	// It contains the snapshot value of the GlobalActiveStakeAmountNanos at the given SnapshotAtEpochNumber.
 	SnapshotGlobalActiveStakeAmountNanos map[uint64]*uint256.Int
 

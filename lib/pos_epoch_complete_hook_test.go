@@ -202,7 +202,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Nil(t, snapshotGlobalActiveStakeAmountNanos)
 
 		// Test SnapshotLeaderSchedule is nil.
-		for index, _ := range validatorPKIDs {
+		for index := range validatorPKIDs {
 			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 1)
 			require.NoError(t, err)
 			require.Nil(t, snapshotLeaderScheduleValidator)
@@ -247,7 +247,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, snapshotGlobalActiveStakeAmountNanos, uint256.NewInt().SetUint64(2800))
 
 		// Test SnapshotLeaderSchedule is populated.
-		for index, _ := range validatorPKIDs {
+		for index := range validatorPKIDs {
 			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 1)
 			require.NoError(t, err)
 			require.NotNil(t, snapshotLeaderScheduleValidator)
@@ -277,7 +277,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Nil(t, snapshotGlobalActiveStakeAmountNanos)
 
 		// Test SnapshotLeaderSchedule for a future epoch is nil.
-		for index, _ := range validatorPKIDs {
+		for index := range validatorPKIDs {
 			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 2)
 			require.NoError(t, err)
 			require.Nil(t, snapshotLeaderScheduleValidator)
