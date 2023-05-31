@@ -265,7 +265,7 @@ func (tb TimeBucketHeap) Less(i, j int) bool {
 			return true
 		} else if tb.txns[i].FeePerKB == tb.txns[j].FeePerKB {
 			// TODO: temporary hack, revisit later
-			return tb.txns[i].Hash().Gt(tb.txns[j].Hash())
+			return tb.txns[i].HashUint().Gt(tb.txns[j].HashUint())
 		}
 	}
 	return false

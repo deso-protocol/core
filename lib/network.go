@@ -3045,6 +3045,11 @@ type MsgDeSoTxn struct {
 	// Only works for blocks with HeaderPoSVersion0 in the header.
 	StateConnected bool
 
+	// ProposerTimestamp is the time of arrival of this transaction to the block proposer's mempool.
+	// This timestamp can be spoofed, without negative impact on the consensus. The timestamp determines
+	// the transaction ordering in blocks across fee-bucket.
+	ProposerTimestamp uint64
+
 	// (!!) **DO_NOT_USE** (!!)
 	//
 	// Use txn.TxnMeta.GetTxnType() instead.
