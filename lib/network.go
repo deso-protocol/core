@@ -1879,7 +1879,8 @@ type MsgDeSoHeader struct {
 	// uvarint or a uint64.
 	Version uint32
 
-	// Hash of the previous block in the chain.
+	// Hash of the previous block in the chain. This is a hash of the entire
+	// previous block, including the header, txns, and block producer info.
 	PrevBlockHash *BlockHash
 
 	// The merkle root of all the transactions contained within the block.
@@ -1892,6 +1893,10 @@ type MsgDeSoHeader struct {
 	// The height of the block this header corresponds to.
 	Height uint64
 
+	// Nonce is only used for Proof of Work blocks, and will only be populated
+	// in MsgDeSoHeader Version 0 and 1. For all later versions, this field will
+	// default to a value of zero.
+	//
 	// The nonce that is used by miners in order to produce valid blocks.
 	//
 	// Note: Before the upgrade from HeaderVersion0 to HeaderVersion1, miners would make
@@ -1899,9 +1904,30 @@ type MsgDeSoHeader struct {
 	// no longer needed since HeaderVersion1 upgraded the nonce to 64 bits from 32 bits.
 	Nonce uint64
 
-	// An extra nonce that can be used to provice *even more* entropy for miners, in the
+	// ExtraNonce is only used for Proof of Work blocks, and will only be populated
+	// in MsgDeSoHeader Version 0 and 1. For all later versions, this field will
+	// default to zero.
+	//
+	// An extra nonce that can be used to provide *even more* entropy for miners, in the
 	// event that ASICs become powerful enough to have birthday problems in the future.
 	ExtraNonce uint64
+
+	// ValidatorsVoteQC is only used for Proof of Stake blocks, and will only be
+	// populated in MsgDeSoHeader 2 and higher. For all earlier version, this field will
+	// be null.
+	//
+	// This corresponds to QC containing votes from 2/3 of validators for weighted by stake.
+	ValidatorsVoteQC *QuorumCertificate
+
+	// ValidatorsTimeoutAggregateQC is only used for Proof of Stake blocks, and will only be
+	// populated in MsgDeSoHeader 2 and higher. For all earlier version, this field will
+	// be null.
+	//
+	// In the event of a timeout, this field will contain the aggregate QC constructed from
+	// timeout messages from 2/3 of validators weighted by stake, and proves that they have
+	// time out. This value is set to null in normal cases where a regular block vote has
+	// taken place.
+	ValidatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate
 }
 
 func HeaderSizeBytes() int {
@@ -2030,6 +2056,95 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error
 	return retBytes, nil
 }
 
+func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error) {
+	retBytes := []byte{}
+
+	// Version
+	{
+		scratchBytes := [4]byte{}
+		binary.BigEndian.PutUint32(scratchBytes[:], msg.Version)
+		retBytes = append(retBytes, scratchBytes[:]...)
+	}
+
+	// PrevBlockHash
+	prevBlockHash := msg.PrevBlockHash
+	if prevBlockHash == nil {
+		prevBlockHash = &BlockHash{}
+	}
+	retBytes = append(retBytes, prevBlockHash[:]...)
+
+	// TransactionMerkleRoot
+	transactionMerkleRoot := msg.TransactionMerkleRoot
+	if transactionMerkleRoot == nil {
+		transactionMerkleRoot = &BlockHash{}
+	}
+	retBytes = append(retBytes, transactionMerkleRoot[:]...)
+
+	// TstampSecs
+	{
+		scratchBytes := [8]byte{}
+		binary.BigEndian.PutUint64(scratchBytes[:], msg.TstampSecs)
+		retBytes = append(retBytes, scratchBytes[:]...)
+
+		// TODO: Don't allow this field to exceed 32-bits for now. This will
+		// adjust once other parts of the code are fixed to handle the wider
+		// type.
+		if msg.TstampSecs > math.MaxUint32 {
+			return nil, fmt.Errorf("EncodeHeaderVersion1: TstampSecs not yet allowed " +
+				"to exceed max uint32. This will be fixed in the future")
+		}
+	}
+
+	// Height
+	{
+		scratchBytes := [8]byte{}
+		binary.BigEndian.PutUint64(scratchBytes[:], msg.Height)
+		retBytes = append(retBytes, scratchBytes[:]...)
+	}
+
+	// Nonce: for backwards compatibility with old nodes, we still encode a default
+	// zero value for nonce here, so that old can can read them and gracefully handle
+	// the zero values.
+	{
+		scratchBytes := [8]byte{}
+		binary.BigEndian.PutUint64(scratchBytes[:], 0)
+		retBytes = append(retBytes, scratchBytes[:]...)
+	}
+
+	// ExtraNonce
+	{
+		scratchBytes := [8]byte{}
+		binary.BigEndian.PutUint64(scratchBytes[:], 0)
+		retBytes = append(retBytes, scratchBytes[:]...)
+	}
+
+	// ValidatorsVoteQC
+	{
+		if msg.ValidatorsVoteQC == nil {
+			return nil, fmt.Errorf("EncodeHeaderVersion2: ValidatorsVoteQC must be non-nil")
+		}
+		encodedValidatorsVoteQC, err := msg.ValidatorsVoteQC.ToBytes()
+		if err != nil {
+			return nil, errors.Wrapf(err, "EncodeHeaderVersion2: error encoding ValidatorsVoteQC")
+		}
+		retBytes = append(retBytes, encodedValidatorsVoteQC...)
+	}
+
+	// ValidatorsTimeoutAggregateQC
+	{
+		if msg.ValidatorsTimeoutAggregateQC == nil {
+			return nil, fmt.Errorf("EncodeHeaderVersion2: ValidatorsTimeoutAggregateQC must be non-nil")
+		}
+		encodedValidatorsTimeoutAggregateQC, err := msg.ValidatorsTimeoutAggregateQC.ToBytes()
+		if err != nil {
+			return nil, errors.Wrapf(err, "EncodeHeaderVersion2: error encoding ValidatorsTimeoutAggregateQC")
+		}
+		retBytes = append(retBytes, encodedValidatorsTimeoutAggregateQC...)
+	}
+
+	return retBytes, nil
+}
+
 func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
 
 	// Depending on the version, we decode the header differently.
@@ -2037,6 +2152,8 @@ func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
 		return msg.EncodeHeaderVersion0(preSignature)
 	} else if msg.Version == HeaderVersion1 {
 		return msg.EncodeHeaderVersion1(preSignature)
+	} else if msg.Version == HeaderVersion2 {
+		return msg.EncodeHeaderVersion2(preSignature)
 	} else {
 		// If we have an unrecognized version then we default to serializing with
 		// version 0. This is necessary because there are places where we use a
@@ -2151,6 +2268,32 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgDeSoHeader, error) {
 	return retHeader, nil
 }
 
+func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
+	// Decode all of the Version1 fields first.
+	retHeader, err := DecodeHeaderVersion1(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Version1 fields")
+	}
+
+	// Decode the remaining PoS Version 2 fields
+
+	// ValidatorsVoteQC
+	validatorsVoteQC, err := DecodeQuorumCertificate(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ValidatorsVoteQC")
+	}
+	retHeader.ValidatorsVoteQC = validatorsVoteQC
+
+	// ValidatorsTimeoutAggregateQC
+	validatorsTimeoutAggregateQC, err := DecodeTimeoutAggregateQuorumCertificate(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ValidatorsTimeoutAggregateQC")
+	}
+	retHeader.ValidatorsTimeoutAggregateQC = validatorsTimeoutAggregateQC
+
+	return retHeader, nil
+}
+
 func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 	// Read the version to determine
 	scratchBytes := [4]byte{}
@@ -2165,10 +2308,16 @@ func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 		ret, err = DecodeHeaderVersion0(rr)
 	} else if headerVersion == HeaderVersion1 {
 		ret, err = DecodeHeaderVersion1(rr)
+	} else if headerVersion == HeaderVersion2 {
+		ret, err = DecodeHeaderVersion2(rr)
 	} else {
 		// If we have an unrecognized version then we default to de-serializing with
 		// version 0. This is necessary because there are places where we use a
 		// MsgDeSoHeader struct to store Bitcoin headers.
+		//
+		// TODO: If the version is unrecognized, it seems safest to not attempt to
+		// parse it entirely. The difference between V1 and V2 is large enough that
+		// that the old V0 decoder will not work for V2.
 		ret, err = DecodeHeaderVersion0(rr)
 	}
 	if err != nil {

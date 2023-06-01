@@ -101,7 +101,15 @@ const (
 	//
 	// At the time of this writing, the intent is to deploy it in a backwards-compatible
 	// fashion, with the eventual goal of phasing out blocks with the previous version.
-	HeaderVersion1       = uint32(1)
+	HeaderVersion1 = uint32(1)
+	// This version introduces the transition from Proof of Work to Proof of Stake blocks.
+	// It includes several changes to the header format:
+	//
+	HeaderVersion2 = uint32(2)
+	// TODO: Having an implicit CurrentHeaderVersion is risky for rolling header format
+	// migrations because the same deployed node will need to seamlessly migrate from
+	// version 1 or version 2. Ideally, we delete this CurrentHeaderVersion and instead
+	// have the code check for the version it wants explicitly.
 	CurrentHeaderVersion = HeaderVersion1
 )
 

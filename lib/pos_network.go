@@ -400,3 +400,91 @@ func DecodeAggregatedBLSSignature(rr io.Reader) (*AggregatedBLSSignature, error)
 
 	return &sig, nil
 }
+
+// TimeoutAggregateQuorumCertificate is an aggregation of timeout messages from 2/3rds
+// of all validators, weighted by stake, which indicates that these validators want to
+// time out a particular view.
+//
+// When validators want to time a view, they send their high QCs to the block proposer
+// who builds an aggregate QC extending the chain from the highest QC that it received
+// from all validators who timed out. To prove that it has selected the highest QC, the
+// proposer also includes a list of the high QC views that each validator has sent.
+type TimeoutAggregateQuorumCertificate struct {
+
+	// The view that the block proposers has produced a timeout QC for.
+	TimedOutView uint64
+
+	// This is the highest QC that the block proposer received from any validator who
+	// has timed out for the current view.
+	ValidatorsHighQC *QuorumCertificate
+
+	// Here we include a list of the HighQC.View values we got from each of the
+	// validators in the ValidatorTimeoutHighQCViews field. In addition, for each
+	// unique HighQC.View value we received, we combine all the partial signatures
+	// for that HighQC.View into a single BLSMultiSignature.
+	//
+	// Note: The aggregated signature is made up of partial signatures for all
+	// present validators, each of whom signed a payload with the pair
+	// (current view, the validator's local HighQC.View).
+	ValidatorTimeoutHighQCViews         []uint64
+	ValidatorTimeoutAggregatedSignature *AggregatedBLSSignature
+}
+
+func (aggQC *TimeoutAggregateQuorumCertificate) ToBytes() ([]byte, error) {
+	retBytes := []byte{}
+
+	// TimedOutView
+	retBytes = append(retBytes, UintToBuf(aggQC.TimedOutView)...)
+
+	// ValidatorsHighQC
+	if aggQC.ValidatorsHighQC == nil {
+		return nil, errors.New("TimeoutAggregateQuorumCertificate.ToBytes: ValidatorsHighQC must not be nil")
+	}
+	encodedValidatorsHighQC, err := aggQC.ValidatorsHighQC.ToBytes()
+	if err != nil {
+		return nil, errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.ToBytes: Error encoding ValidatorsHighQC")
+	}
+	retBytes = append(retBytes, encodedValidatorsHighQC...)
+
+	// ValidatorTimeoutHighQCViews
+	retBytes = append(retBytes, EncodeUint64Array(aggQC.ValidatorTimeoutHighQCViews)...)
+
+	// ValidatorTimeoutAggregatedSignature
+	if aggQC.ValidatorTimeoutAggregatedSignature == nil {
+		return nil, errors.New("TimeoutAggregateQuorumCertificate.ToBytes: ValidatorTimeoutAggregatedSignature must not be nil")
+	}
+	encodedValidatorTimeoutAggregatedSignature, err := aggQC.ValidatorTimeoutAggregatedSignature.ToBytes()
+	if err != nil {
+		return nil, errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.ToBytes: Error encoding ValidatorTimeoutAggregatedSignature")
+	}
+	retBytes = append(retBytes, encodedValidatorTimeoutAggregatedSignature...)
+
+	return retBytes, nil
+}
+
+func DecodeTimeoutAggregateQuorumCertificate(rr io.Reader) (*TimeoutAggregateQuorumCertificate, error) {
+	var aggQC TimeoutAggregateQuorumCertificate
+	var err error
+
+	aggQC.TimedOutView, err = ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding TimedOutView")
+	}
+
+	aggQC.ValidatorsHighQC, err = DecodeQuorumCertificate(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding ValidatorsHighQC")
+	}
+
+	aggQC.ValidatorTimeoutHighQCViews, err = DecodeUint64Array(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding ValidatorTimeoutHighQCViews")
+	}
+
+	aggQC.ValidatorTimeoutAggregatedSignature, err = DecodeAggregatedBLSSignature(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding ValidatorTimeoutAggregatedSignature")
+	}
+
+	return &aggQC, nil
+}
