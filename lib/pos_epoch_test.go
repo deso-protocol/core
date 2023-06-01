@@ -24,7 +24,7 @@ func TestCurrentEpoch(t *testing.T) {
 	// Test that the CurrentEpoch is nil in the UtxoView.
 	require.Nil(t, utxoView.CurrentEpochEntry)
 
-	// Test GetCurrentEpoch() returns the DefaultEpochEntry.
+	// Test GetCurrentEpoch() returns the GenesisEpochEntry.
 	epochEntry, err = utxoView.GetCurrentEpochEntry()
 	require.NoError(t, err)
 	require.NotNil(t, epochEntry)

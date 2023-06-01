@@ -82,7 +82,7 @@ func (bav *UtxoView) GetCurrentEpochEntry() (*EpochEntry, error) {
 		return epochEntry, nil
 	}
 
-	// If still not found, return the DefaultEpochEntry. This will
+	// If still not found, return the GenesisEpochEntry. This will
 	// be the case prior to the ProofOfStakeSnapshottingBlockHeight.
 	return &EpochEntry{EpochNumber: 0, FinalBlockHeight: math.MaxUint64}, nil
 }
