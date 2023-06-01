@@ -65,12 +65,6 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 
-	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
-
 	{
 		// ParamUpdater set min fee rate
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
@@ -576,12 +570,6 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 		return nil
 	}
 
-	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
-
 	{
 		// ParamUpdater set min fee rate
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
@@ -749,12 +737,6 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
 	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes).PKID
-
-	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 
 	{
 		// ParamUpdater set min fee rate
@@ -1188,12 +1170,6 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 
-	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
-
 	{
 		// ParamUpdater set min fee rate
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
@@ -1384,11 +1360,6 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
 
-	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 	currentEpochNumber, err := utxoView().GetCurrentEpochNumber()
 	require.NoError(t, err)
 
