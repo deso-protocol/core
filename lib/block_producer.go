@@ -542,7 +542,7 @@ func (desoBlockProducer *DeSoBlockProducer) GetFeeTimeBlock() (*MsgDeSoBlock, er
 		// FIXME: Note, we should expand what we do here a bit. For example, if the transaction fails because the user
 		// 	doesn't have enough money to cover minimal fee, we should just skip this transaction altogether.
 		txn.Tx.StateConnected = err != nil
-		txn.Tx.ProposerTimestamp = txn.timestamp
+		txn.Tx.ProposerTimestamp = uint64(txn.Added.UnixNano())
 		blockTxns = append(blockTxns, txn.Tx)
 
 		if err != nil {

@@ -331,6 +331,11 @@ func FixedWidthDecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
 
 type HeapMinUint64 []uint64
 
+func NewHeapMinUint64() *HeapMinUint64 {
+	heapUint64 := (HeapMinUint64)([]uint64{})
+	return &heapUint64
+}
+
 func (hu HeapMinUint64) Len() int { return len(hu) }
 
 func (hu HeapMinUint64) Less(i, j int) bool {
@@ -353,4 +358,8 @@ func (hu *HeapMinUint64) Pop() interface{} {
 	old[n-1] = 0
 	*hu = old[0 : n-1]
 	return item
+}
+
+func (hu *HeapMinUint64) Empty() bool {
+	return len(*hu) == 0
 }

@@ -401,20 +401,6 @@ type OrphanBlock struct {
 	Hash  *BlockHash
 }
 
-type RevolutionModule struct {
-	LeaderRevolutionRegisters map[PublicKey]*RevolutionRegister
-}
-
-type RevolutionRegister struct {
-	RevolutionTransactionsMap      map[BlockHash]*RevolutionMetadata
-	RevolutionViolationCounter     uint32
-	RevolutionViolationExpirations HeapMinUint64
-}
-
-type RevolutionMetadata struct {
-	RevolutionTransactionCounter uint64
-}
-
 type Blockchain struct {
 	db                              *badger.DB
 	postgres                        *Postgres
@@ -468,8 +454,6 @@ type Blockchain struct {
 	// variable.
 	syncingState                bool
 	downloadingHistoricalBlocks bool
-
-	revolutionModule RevolutionModule
 
 	timer *Timer
 }
@@ -1799,6 +1783,10 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 }
 
 func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _err error) {
+	// TODO: Revolution: PoS blocks contain pass/fail flags. It means we might not be able to connect all transactions
+	// 	to a single UtxoView without error. We should check if each transaction passes or fails according to what was
+	// 	advertised in the block by the proposer.
+
 	// TODO: Move this to be more isolated.
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
@@ -2561,72 +2549,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	bc.timer.Print("Blockchain.ProcessBlock: Transactions Db height & hash")
 	bc.timer.Print("Blockchain.ProcessBlock: Transactions Db utxo flush")
 
-	/*
-		Revolution Logic
-		Whenever we commit blocks A, B, ..., we will run Revolution Rule through all these blocks from first to last.
-
-		We also need mempool transactions to properly verify Revolution Rule.
-	*/
-	mempoolTxns := []*RevolutionTx{}
-	committedBlocks := []*MsgDeSoBlock{}
-	for _, block := range committedBlocks {
-		bc.ProcessCommittedBlockRevolution(block, mempoolTxns)
-	}
-
 	// At this point, the block we were processing originally should have been added
 	// to our data structures and any unconnectedTxns that are no longer unconnectedTxns should have
 	// also been processed.
 	return isMainChain, false, nil
-}
-
-func (bc *Blockchain) ProcessCommittedBlockRevolution(block *MsgDeSoBlock, mempoolTxns []*RevolutionTx) {
-
-	// 1. Run first-stage Revolution validation. Check if the transaction ordering in the block follows Fee-Time.
-	//	We should also run this validation step before we vote on the block. If the block doesn't follow Fee-Time,
-	//  We don't want to vote on it.
-	txnRegister := NewTransactionRegister()
-	for _, txn := range block.Txns {
-		// FIXME: turn the txn into the RevolutionTx
-		// 	Note that we already have MempoolTx.Added so maybe RevolutionTx is redundant.
-		revolutionTx := &RevolutionTx{
-			MempoolTx: MempoolTx{
-				Tx:          txn,
-				TxMeta:      nil,
-				Hash:        nil,
-				TxSizeBytes: 0,
-				Added:       time.Now(),
-				Height:      0,
-				Fee:         0,
-				FeePerKB:    0,
-			},
-		}
-		txnRegister.InsertTransaction(revolutionTx)
-	}
-
-	// Get Fee-Time
-	feeTimeTxns := txnRegister.GetFeeTimeTransactions()
-	for ii, txn := range feeTimeTxns {
-		if !txn.Hash.IsEqual(block.Txns[ii].Hash()) {
-			glog.Errorf("Block doesn't follow Fee-Time, do something.")
-		}
-	}
-
-	// If we get here, it means the block itself follows Fee-Time. Now we want to compare it with our mempool.
-	// 2. Run second-stage Revolution validation. Here, we want to check whether node's mempool txns + block txns
-	// 	sorted with Fee-Time match the ordering in the proposed block.
-	txnRegister = NewTransactionRegister()
-
-	// First add all the block txns
-	for _, txn := range feeTimeTxns {
-		txnRegister.InsertTransaction(txn)
-	}
-
-	// Now add all the mempool txns.
-	// FIXME: needs a mutex here.
-	// TODO: Expand the merge step to match the design doc. Add Revolution Rule check.
-	for _, txn := range mempoolTxns {
-		txnRegister.InsertTransaction(txn)
-	}
 }
 
 // DisconnectBlocksToHeight will rollback blocks from the db and blockchain structs until block tip reaches the provided
