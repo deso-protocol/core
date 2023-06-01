@@ -12,6 +12,10 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 		// Return false if we have not started snapshotting the relevant PoS entries yet.
 		return false, nil
 	}
+	if blockHeight == uint64(bav.Params.ForkHeights.ProofOfStakeSnapshottingBlockHeight) {
+		// As soon as we enable snapshotting for the first time, we should run the OnEpochCompleteHook.
+		return true, nil
+	}
 	currentEpochEntry, err := bav.GetCurrentEpochEntry()
 	if err != nil {
 		return false, errors.Wrapf(err, "IsEpochComplete: problem retrieving CurrentEpochEntry: ")

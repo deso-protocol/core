@@ -28,16 +28,15 @@ func TestIsLastBlockInCurrentEpoch(t *testing.T) {
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(t, err)
 
-	// The BlockHeight is before the PoS fork height.
+	// The BlockHeight is before the PoS snapshotting fork height.
 	isLastBlockInCurrentEpoch, err = utxoView.IsLastBlockInCurrentEpoch(0)
 	require.NoError(t, err)
 	require.False(t, isLastBlockInCurrentEpoch)
 
-	// The CurrentEpochEntry is nil.
+	// The BlockHeight is equal to the PoS snapshotting fork height.
 	isLastBlockInCurrentEpoch, err = utxoView.IsLastBlockInCurrentEpoch(1)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "CurrentEpochEntry is nil, this should never happen")
-	require.False(t, isLastBlockInCurrentEpoch)
+	require.NoError(t, err)
+	require.True(t, isLastBlockInCurrentEpoch)
 
 	// Seed a CurrentEpochEntry.
 	utxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: 5})
