@@ -5,6 +5,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"math"
 )
 
 //
@@ -78,8 +79,12 @@ func (bav *UtxoView) GetCurrentEpochEntry() (*EpochEntry, error) {
 	if epochEntry != nil {
 		// Cache in the UtxoView.
 		bav._setCurrentEpochEntry(epochEntry)
+		return epochEntry, nil
 	}
-	return epochEntry, nil
+
+	// If still not found, return the DefaultEpochEntry. This will
+	// be the case prior to the ProofOfStakeSnapshottingBlockHeight.
+	return &EpochEntry{EpochNumber: 0, FinalBlockHeight: math.MaxUint64}, nil
 }
 
 func (bav *UtxoView) GetCurrentEpochNumber() (uint64, error) {

@@ -933,10 +933,6 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		return fees, nil
 	}
 
-	// Seed a CurrentEpochEntry.
-	epochUtxoView := newUtxoView()
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 	currentEpochNumber, err := newUtxoView().GetCurrentEpochNumber()
 	require.NoError(t, err)
 
