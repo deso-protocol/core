@@ -9,7 +9,6 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/gernest/mention"
-	"github.com/holiman/uint256"
 	"log"
 	"math"
 	"os"
@@ -93,21 +92,6 @@ type MempoolTx struct {
 	index int
 }
 
-type RevolutionTx struct {
-	MempoolTx
-	timestamp uint64
-}
-
-// TODO: temporary hack, revisit this later.
-//
-//	This actually doesn't even work but whatever.
-func (txn *RevolutionTx) HashUint() *uint256.Int {
-	bytes := RandomBytes(32)
-
-	hash := Sha256DoubleHash(bytes).ToBytes()
-	return uint256.NewInt().SetBytes(hash)
-}
-
 // Summary stats for a set of transactions of a specific type in the mempool.
 type SummaryStats struct {
 	// Number of transactions of this type in the mempool.
@@ -152,144 +136,6 @@ func (pq *MempoolTxFeeMinHeap) Pop() interface{} {
 	item.index = -1 // for safety
 	*pq = old[0 : n-1]
 	return item
-}
-
-type TransactionRegister struct {
-	buckets *FeeBucketHeap
-}
-
-func NewTransactionRegister() *TransactionRegister {
-	buckets := (FeeBucketHeap)([]*TimeBucketHeap{})
-	return &TransactionRegister{
-		buckets: &buckets,
-	}
-}
-
-func (txnRegister *TransactionRegister) InsertTransaction(txn *RevolutionTx) {
-	txnBucketFee := txn.FeePerKB - (txn.FeePerKB % 1000)
-	for _, tb := range *txnRegister.buckets {
-		if tb.fee == txnBucketFee {
-			heap.Push(tb, txn)
-			return
-		}
-	}
-
-	timeBucket := NewTimeBucketHeap(txnBucketFee, []*RevolutionTx{txn})
-	heap.Push(txnRegister.buckets, timeBucket)
-}
-
-// FIXME: Note, this clears out the txn register. It has to be regenerated afterwards.
-func (txnRegister *TransactionRegister) GetFeeTimeTransactions() []*RevolutionTx {
-	feeTimeTxns := []*RevolutionTx{}
-	for !txnRegister.buckets.Empty() {
-		bucket := heap.Pop(txnRegister.buckets).(*TimeBucketHeap)
-		for !bucket.Empty() {
-			txn := heap.Pop(bucket).(*RevolutionTx)
-			feeTimeTxns = append(feeTimeTxns, txn)
-		}
-	}
-	return feeTimeTxns
-}
-
-// FIXME: Debatable whether we want a TransactionRegister method to be aware of block size and regenerate by itself.
-//
-//	The other option could be to make it a regular function, or make it a Blockchain's method.
-func (txnRegister *TransactionRegister) GetBlockTransactions(params *DeSoParams) []*RevolutionTx {
-	feeTimeTxns := txnRegister.GetFeeTimeTransactions()
-	blockTxns := []*RevolutionTx{}
-	currentSize := uint64(0)
-	for ii := 0; ii < len(feeTimeTxns); ii++ {
-		if currentSize+feeTimeTxns[ii].TxSizeBytes > params.MaxBlockSizeBytes {
-			// FIXME: Comment at the top
-			txnRegister.InsertTransaction(feeTimeTxns[ii])
-			continue
-		}
-		blockTxns = append(blockTxns, feeTimeTxns[ii])
-		currentSize += feeTimeTxns[ii].TxSizeBytes
-	}
-	return blockTxns
-}
-
-type FeeBucketHeap []*TimeBucketHeap
-
-func (fb FeeBucketHeap) Len() int { return len(fb) }
-
-func (fb FeeBucketHeap) Less(i, j int) bool {
-	return fb[i].fee > fb[j].fee
-}
-
-func (fb FeeBucketHeap) Swap(i, j int) {
-	fb[i], fb[j] = fb[j], fb[i]
-}
-
-func (fb *FeeBucketHeap) Push(x interface{}) {
-	item := x.(*TimeBucketHeap)
-	*fb = append(*fb, item)
-}
-
-func (fb *FeeBucketHeap) Pop() interface{} {
-	old := *fb
-	n := len(old)
-	item := *(old[n-1])
-	old[n-1] = nil
-	*fb = old[0 : n-1]
-	return &item
-}
-
-func (fb *FeeBucketHeap) Empty() bool {
-	return len(*fb) == 0
-}
-
-type TimeBucketHeap struct {
-	fee  uint64
-	txns []*RevolutionTx
-}
-
-func NewTimeBucketHeap(fee uint64, txns []*RevolutionTx) *TimeBucketHeap {
-	return &TimeBucketHeap{
-		fee:  fee,
-		txns: txns,
-	}
-}
-
-func (tb TimeBucketHeap) Len() int { return len(tb.txns) }
-
-func (tb TimeBucketHeap) Less(i, j int) bool {
-	if tb.txns[i].timestamp < tb.txns[j].timestamp {
-		return true
-	} else if tb.txns[i].timestamp == tb.txns[j].timestamp {
-		// When two transactions are in the same fee bucket and have the same timestamp, we
-		// give greater priority to higher-fee txn. However, in case timestamp AND fee are equal,
-		// we give greater priority to the txn with "higher" hash.
-		if tb.txns[i].FeePerKB > tb.txns[j].FeePerKB {
-			return true
-		} else if tb.txns[i].FeePerKB == tb.txns[j].FeePerKB {
-			// TODO: temporary hack, revisit later
-			return tb.txns[i].HashUint().Gt(tb.txns[j].HashUint())
-		}
-	}
-	return false
-}
-
-func (tb TimeBucketHeap) Swap(i, j int) {
-	tb.txns[i], tb.txns[j] = tb.txns[j], tb.txns[i]
-}
-
-func (tb *TimeBucketHeap) Push(x interface{}) {
-	item := x.(*RevolutionTx)
-	tb.txns = append(tb.txns, item)
-}
-
-func (tb *TimeBucketHeap) Pop() interface{} {
-	n := len(tb.txns)
-	item := *(tb.txns[n-1])
-	tb.txns[n-1] = nil
-	tb.txns = tb.txns[0 : n-1]
-	return &item
-}
-
-func (tb *TimeBucketHeap) Empty() bool {
-	return len(tb.txns) == 0
 }
 
 // UnconnectedTx is a transaction that has dependencies that we haven't added yet.
@@ -409,7 +255,7 @@ type DeSoMempool struct {
 	// temp badger db instances and dump mempool txns to them.
 	dataDir string
 
-	txnRegister TransactionRegister
+	txnRegister *TransactionRegister
 }
 
 // See comment on RemoveUnconnectedTxn. The mempool lock must be called for writing
@@ -1285,7 +1131,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	return nil, mempoolTx, nil
 }
 
-func (mempool *DeSoMempool) GetTransactionsOrderedByFeeTime() []*RevolutionTx {
+func (mempool *DeSoMempool) GetTransactionsOrderedByFeeTime() []*MempoolTx {
 	return mempool.txnRegister.GetBlockTransactions(mempool.bc.params)
 }
 
@@ -2783,6 +2629,7 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 		readOnlyUniversalTransactionMap: make(map[BlockHash]*MempoolTx),
 		readOnlyOutpoints:               make(map[UtxoKey]*MsgDeSoTxn),
 		dataDir:                         _dataDir,
+		txnRegister:                     NewTransactionRegister(),
 	}
 
 	if newPool.mempoolDir != "" {

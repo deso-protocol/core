@@ -149,6 +149,8 @@ type Server struct {
 	// trigger these actions by sending a ConsensusMessage. A message that includes things like QC, AggregateQC, View, etc.
 	consensusChannel chan ConsensusMessage
 
+	revolutionModule *RevolutionModule
+
 	shutdown int32
 	// timer is a helper variable that allows timing events for development purposes.
 	// It can be used to find computational bottlenecks.
@@ -540,6 +542,7 @@ func NewServer(
 	timer.Initialize()
 	srv.timer = timer
 	srv.consensusChannel = make(chan ConsensusMessage, 100)
+	srv.revolutionModule = NewRevolutionModule()
 
 	// If shouldRestart is true, it means that the state checksum is likely corrupted, and we need to enter a recovery mode.
 	// This can happen if the node was terminated mid-operation last time it was running. The recovery process rolls back
@@ -1811,6 +1814,16 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	srv.timer.End("Server._handleBlock: General")
 	srv.timer.Start("Server._handleBlock: Process Block")
 
+	/*
+		Revolution Logic
+		In the new PoS scheme, blocks follow the Fee-Time ordering. So, before we add the block to the chain in ProcessBlock,
+		we can run preliminary Fee-Time validation. Any block that doesn't follow the Block Rule, by e.g. placing
+		a low-fee transaction ahead of a high-fee transaction, will be outright rejected.
+	*/
+	if !srv.revolutionModule.ValidateBlock(blk.Txns) {
+		glog.Errorf("Block doesn't follow Fee-Time ordering.")
+	}
+
 	// Only verify signatures for recent blocks.
 	var isOrphan bool
 	if srv.blockchain.isSyncing() {
@@ -1827,6 +1840,17 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 			"signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp)))
 		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, true)
+	}
+
+	/*
+		Revolution Logic
+		Whenever we commit blocks A, B, ..., we will run Revolution Rule through all these blocks from first to last.
+
+		Let's pretend committedBlocks is a list of the committed blocks A, B, ....
+	*/
+	committedBlocks := []*MsgDeSoBlock{}
+	for _, block := range committedBlocks {
+		srv.revolutionModule.ProcessCommittedBlock(block, srv.mempool.txnRegister)
 	}
 
 	// If we hit an error then abort mission entirely. We should generally never
