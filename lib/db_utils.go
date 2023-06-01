@@ -6874,6 +6874,67 @@ type TransactionMetadata struct {
 	NewMessageTxindexMetadata            *NewMessageTxindexMetadata            `json:",omitempty"`
 }
 
+func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEncoder {
+	switch txnType {
+	case TxnTypeBasicTransfer:
+		return txnMeta.BasicTransferTxindexMetadata
+	case TxnTypeBitcoinExchange:
+		return txnMeta.BitcoinExchangeTxindexMetadata
+	case TxnTypeCreatorCoin:
+		return txnMeta.CreatorCoinTxindexMetadata
+	case TxnTypeCreatorCoinTransfer:
+		return txnMeta.CreatorCoinTransferTxindexMetadata
+	case TxnTypeUpdateProfile:
+		return txnMeta.UpdateProfileTxindexMetadata
+	case TxnTypeSubmitPost:
+		return txnMeta.SubmitPostTxindexMetadata
+	case TxnTypeLike:
+		return txnMeta.LikeTxindexMetadata
+	case TxnTypeFollow:
+		return txnMeta.FollowTxindexMetadata
+	case TxnTypePrivateMessage:
+		return txnMeta.PrivateMessageTxindexMetadata
+	case TxnTypeSwapIdentity:
+		return txnMeta.SwapIdentityTxindexMetadata
+	case TxnTypeNFTBid:
+		return txnMeta.NFTBidTxindexMetadata
+	case TxnTypeAcceptNFTBid:
+		return txnMeta.AcceptNFTBidTxindexMetadata
+	case TxnTypeNFTTransfer:
+		return txnMeta.NFTTransferTxindexMetadata
+	case TxnTypeAcceptNFTTransfer:
+		return txnMeta.AcceptNFTTransferTxindexMetadata
+	case TxnTypeBurnNFT:
+		return txnMeta.BurnNFTTxindexMetadata
+	case TxnTypeDAOCoin:
+		return txnMeta.DAOCoinTxindexMetadata
+	case TxnTypeDAOCoinTransfer:
+		return txnMeta.DAOCoinTransferTxindexMetadata
+	case TxnTypeCreateNFT:
+		return txnMeta.CreateNFTTxindexMetadata
+	case TxnTypeUpdateNFT:
+		return txnMeta.UpdateNFTTxindexMetadata
+	case TxnTypeDAOCoinLimitOrder:
+		return txnMeta.DAOCoinLimitOrderTxindexMetadata
+	case TxnTypeCreateUserAssociation:
+		return txnMeta.CreateUserAssociationTxindexMetadata
+	case TxnTypeDeleteUserAssociation:
+		return txnMeta.DeleteUserAssociationTxindexMetadata
+	case TxnTypeCreatePostAssociation:
+		return txnMeta.CreatePostAssociationTxindexMetadata
+	case TxnTypeDeletePostAssociation:
+		return txnMeta.DeletePostAssociationTxindexMetadata
+	case TxnTypeAccessGroup:
+		return txnMeta.AccessGroupTxindexMetadata
+	case TxnTypeAccessGroupMembers:
+		return txnMeta.AccessGroupMembersTxindexMetadata
+	case TxnTypeNewMessage:
+		return txnMeta.NewMessageTxindexMetadata
+	default:
+		return nil
+	}
+}
+
 func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
