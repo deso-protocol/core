@@ -1158,6 +1158,7 @@ func (bc *Blockchain) chainState() SyncState {
 	// If the header tip is current and the block tip is current but the block
 	// tip is not equal to the header tip then we're in SyncStateNeedBlocks.
 	if *blockTip.Hash != *headerTip.Hash {
+		fmt.Printf("\n\n****Blocktip hash: %v, headertip hash: %v****\n\n", *blockTip.Hash, *headerTip.Hash)
 		return SyncStateNeedBlocksss
 	}
 
