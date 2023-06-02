@@ -109,8 +109,11 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	validatorPKIDs := []*PKID{m0PKID, m1PKID, m2PKID, m3PKID, m4PKID, m5PKID, m6PKID}
 
 	// Seed a CurrentEpochEntry.
-	utxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight})
+	utxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 0, FinalBlockHeight: blockHeight})
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
+
+	// For these tests, we set each epoch duration to only one block.
+	params.EpochDurationNumBlocks = uint64(1)
 
 	// Helper utils
 	_registerAndStake := func(publicKey string, privateKey string, stakeAmountNanos uint64) {
@@ -159,6 +162,87 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 	}
 	{
+		// Test the state of the snapshots prior to running our first OnEpochCompleteHook.
+
+		// Test CurrentEpochNumber.
+		currentEpochNumber, err := utxoView.GetCurrentEpochNumber()
+		require.NoError(t, err)
+		require.Equal(t, currentEpochNumber, uint64(0))
+
+		// Test SnapshotGlobalParamsEntry is nil.
+		snapshotGlobalParamsEntry, err := utxoView.GetSnapshotGlobalParamsEntry(0)
+		require.NoError(t, err)
+		require.Nil(t, snapshotGlobalParamsEntry)
+
+		// Test SnapshotValidatorByPKID is nil.
+		for _, pkid := range validatorPKIDs {
+			snapshotValidatorEntry, err := utxoView.GetSnapshotValidatorByPKID(pkid, 0)
+			require.NoError(t, err)
+			require.Nil(t, snapshotValidatorEntry)
+		}
+
+		// Test SnapshotTopActiveValidatorsByStake is empty.
+		validatorEntries, err := utxoView.GetSnapshotTopActiveValidatorsByStake(10, 0)
+		require.NoError(t, err)
+		require.Empty(t, validatorEntries)
+
+		// Test SnapshotGlobalActiveStakeAmountNanos is nil.
+		snapshotGlobalActiveStakeAmountNanos, err := utxoView.GetSnapshotGlobalActiveStakeAmountNanos(0)
+		require.NoError(t, err)
+		require.Nil(t, snapshotGlobalActiveStakeAmountNanos)
+
+		// Test SnapshotLeaderSchedule is nil.
+		for index := range validatorPKIDs {
+			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 0)
+			require.NoError(t, err)
+			require.Nil(t, snapshotLeaderScheduleValidator)
+		}
+	}
+	{
+		// Test RunOnEpochCompleteHook() with no validators or stakers.
+		require.NoError(t, utxoView.RunEpochCompleteHook(blockHeight))
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
+	}
+	{
+		// Test the state of the snapshots after running our first OnEpochCompleteHook
+		// but with no existing validators or stakers.
+
+		// Test CurrentEpochNumber.
+		currentEpochNumber, err := utxoView.GetCurrentEpochNumber()
+		require.NoError(t, err)
+		require.Equal(t, currentEpochNumber, uint64(1))
+
+		// Test SnapshotGlobalParamsEntry is nil.
+		snapshotGlobalParamsEntry, err := utxoView.GetSnapshotGlobalParamsEntry(0)
+		require.NoError(t, err)
+		require.NotNil(t, snapshotGlobalParamsEntry)
+		require.Equal(t, snapshotGlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
+
+		// Test SnapshotValidatorByPKID is nil.
+		for _, pkid := range validatorPKIDs {
+			snapshotValidatorEntry, err := utxoView.GetSnapshotValidatorByPKID(pkid, 0)
+			require.NoError(t, err)
+			require.Nil(t, snapshotValidatorEntry)
+		}
+
+		// Test SnapshotTopActiveValidatorsByStake is empty.
+		validatorEntries, err := utxoView.GetSnapshotTopActiveValidatorsByStake(10, 0)
+		require.NoError(t, err)
+		require.Empty(t, validatorEntries)
+
+		// Test SnapshotGlobalActiveStakeAmountNanos is zero.
+		snapshotGlobalActiveStakeAmountNanos, err := utxoView.GetSnapshotGlobalActiveStakeAmountNanos(0)
+		require.NoError(t, err)
+		require.True(t, snapshotGlobalActiveStakeAmountNanos.IsZero())
+
+		// Test SnapshotLeaderSchedule is nil.
+		for index := range validatorPKIDs {
+			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 0)
+			require.NoError(t, err)
+			require.Nil(t, snapshotLeaderScheduleValidator)
+		}
+	}
+	{
 		// All validators register + stake to themselves.
 		_registerAndStake(m0Pub, m0Priv, 100)
 		_registerAndStake(m1Pub, m1Priv, 200)
@@ -173,46 +257,14 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Len(t, validatorEntries, 7)
 	}
 	{
-		// Test CurrentEpochNumber.
-		currentEpochNumber, err := utxoView.GetCurrentEpochNumber()
-		require.NoError(t, err)
-		require.Equal(t, currentEpochNumber, uint64(1))
-
-		// Test SnapshotGlobalParamsEntry is nil.
-		snapshotGlobalParamsEntry, err := utxoView.GetSnapshotGlobalParamsEntry(1)
-		require.NoError(t, err)
-		require.Nil(t, snapshotGlobalParamsEntry)
-
-		// Test SnapshotValidatorByPKID is nil.
-		for _, pkid := range validatorPKIDs {
-			snapshotValidatorEntry, err := utxoView.GetSnapshotValidatorByPKID(pkid, 1)
-			require.NoError(t, err)
-			require.Nil(t, snapshotValidatorEntry)
-		}
-
-		// Test SnapshotTopActiveValidatorsByStake is empty.
-		validatorEntries, err := utxoView.GetSnapshotTopActiveValidatorsByStake(10, 1)
-		require.NoError(t, err)
-		require.Empty(t, validatorEntries)
-
-		// Test SnapshotGlobalActiveStakeAmountNanos is nil.
-		snapshotGlobalActiveStakeAmountNanos, err := utxoView.GetSnapshotGlobalActiveStakeAmountNanos(1)
-		require.NoError(t, err)
-		require.Nil(t, snapshotGlobalActiveStakeAmountNanos)
-
-		// Test SnapshotLeaderSchedule is nil.
-		for index := range validatorPKIDs {
-			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 1)
-			require.NoError(t, err)
-			require.Nil(t, snapshotLeaderScheduleValidator)
-		}
-	}
-	{
 		// Test RunOnEpochCompleteHook().
-		require.NoError(t, utxoView.RunEpochCompleteHook(blockHeight))
+		require.NoError(t, utxoView.RunEpochCompleteHook(blockHeight+1))
 		require.NoError(t, utxoView.FlushToDb(blockHeight))
 	}
 	{
+		// Test the state of the snapshots after running the second
+		// OnEpochCompleteHook with existing validators and stakers.
+
 		// Test CurrentEpochNumber.
 		currentEpochNumber, err := utxoView.GetCurrentEpochNumber()
 		require.NoError(t, err)
