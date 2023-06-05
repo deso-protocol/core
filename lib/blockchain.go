@@ -3165,6 +3165,10 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	extraData map[string][]byte, minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
+	if extraData == nil {
+		extraData = make(map[string][]byte)
+	}
+
 	// Set RepostedPostHash and IsQuotedRepost on the extra data map as necessary to track reposting.
 	if usdCentsPerBitcoin >= 0 {
 		extraData[USDCentsPerBitcoinKey] = UintToBuf(uint64(usdCentsPerBitcoin))
