@@ -2,6 +2,7 @@ package lib
 
 import (
 	"github.com/stretchr/testify/require"
+	"math"
 	"testing"
 )
 
@@ -23,10 +24,12 @@ func TestCurrentEpoch(t *testing.T) {
 	// Test that the CurrentEpoch is nil in the UtxoView.
 	require.Nil(t, utxoView.CurrentEpochEntry)
 
-	// Test GetCurrentEpoch().
+	// Test GetCurrentEpoch() returns the GenesisEpochEntry.
 	epochEntry, err = utxoView.GetCurrentEpochEntry()
 	require.NoError(t, err)
-	require.Nil(t, epochEntry)
+	require.NotNil(t, epochEntry)
+	require.Equal(t, epochEntry.EpochNumber, uint64(0))
+	require.Equal(t, epochEntry.FinalBlockHeight, uint64(math.MaxUint64))
 
 	// Set the CurrentEpoch.
 	epochEntry = &EpochEntry{

@@ -597,15 +597,14 @@ type DeSoParams struct {
 	// attack the bancor curve to any meaningful measure.
 	CreatorCoinAutoSellThresholdNanos uint64
 
-	// StakeLockupEpochDuration is the number of epochs that a
-	// user must wait before unlocking their unstaked stake.
-	// TODO: Move this to GlobalParamsEntry.
-	StakeLockupEpochDuration uint64
+	// DefaultStakeLockupEpochDuration is the default number of epochs
+	// that a user must wait before unlocking their unstaked stake.
+	DefaultStakeLockupEpochDuration uint64
 
-	// ValidatorJailEpochDuration is the number of epochs that a validator must
-	// wait after being jailed before submitting an UnjailValidator txn.
-	// TODO: Move this to GlobalParamsEntry.
-	ValidatorJailEpochDuration uint64
+	// DefaultValidatorJailEpochDuration is the default number of epochs
+	// that a validator must wait after being jailed before submitting
+	// an UnjailValidator txn.
+	DefaultValidatorJailEpochDuration uint64
 
 	// LeaderScheduleMaxNumValidators is the maximum number of validators that
 	// are included when generating a new Proof-of-Stake leader schedule.
@@ -985,10 +984,10 @@ var DeSoMainnetParams = DeSoParams{
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
 	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
-	StakeLockupEpochDuration: uint64(3),
+	DefaultStakeLockupEpochDuration: uint64(3),
 
 	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
-	ValidatorJailEpochDuration: uint64(3),
+	DefaultValidatorJailEpochDuration: uint64(3),
 
 	// The max number of validators included in a leader schedule.
 	LeaderScheduleMaxNumValidators: uint64(100),
@@ -1222,10 +1221,10 @@ var DeSoTestnetParams = DeSoParams{
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
 	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
-	StakeLockupEpochDuration: uint64(3),
+	DefaultStakeLockupEpochDuration: uint64(3),
 
 	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
-	ValidatorJailEpochDuration: uint64(3),
+	DefaultValidatorJailEpochDuration: uint64(3),
 
 	// The max number of validators included in a leader schedule.
 	LeaderScheduleMaxNumValidators: uint64(100),
@@ -1274,6 +1273,8 @@ const (
 	MaxCopiesPerNFTKey                     = "MaxCopiesPerNFT"
 	MaxNonceExpirationBlockHeightOffsetKey = "MaxNonceExpirationBlockHeightOffset"
 	ForbiddenBlockSignaturePubKeyKey       = "ForbiddenBlockSignaturePubKey"
+	StakeLockupEpochDuration               = "StakeLockupEpochDuration"
+	ValidatorJailEpochDuration             = "ValidatorJailEpochDuration"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"

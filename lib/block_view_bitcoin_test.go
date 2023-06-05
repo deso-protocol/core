@@ -1918,6 +1918,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 					0,
 					nil,
 					-1,
+					map[string][]byte{},
 					100, /*feeRateNanosPerKB*/
 					nil,
 					[]*DeSoOutput{})

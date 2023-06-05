@@ -3772,6 +3772,14 @@ type GlobalParamsEntry struct {
 	// and the expiration block height specified in the nonce for a
 	// transaction.
 	MaxNonceExpirationBlockHeightOffset uint64
+
+	// StakeLockupEpochDuration is the number of epochs that a
+	// user must wait before unlocking their unstaked stake.
+	StakeLockupEpochDuration uint64
+
+	// ValidatorJailEpochDuration is the number of epochs that a validator must
+	// wait after being jailed before submitting an UnjailValidator txn.
+	ValidatorJailEpochDuration uint64
 }
 
 func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -3784,6 +3792,10 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 	data = append(data, UintToBuf(gp.MinimumNetworkFeeNanosPerKB)...)
 	if MigrationTriggered(blockHeight, BalanceModelMigration) {
 		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockHeightOffset)...)
+	}
+	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+		data = append(data, UintToBuf(gp.StakeLockupEpochDuration)...)
+		data = append(data, UintToBuf(gp.ValidatorJailEpochDuration)...)
 	}
 	return data
 }
@@ -3817,11 +3829,21 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxNonceExpirationBlockHeightOffset")
 		}
 	}
+	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+		gp.StakeLockupEpochDuration, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakeLockupEpochDuration")
+		}
+		gp.ValidatorJailEpochDuration, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading ValidatorJailEpochDuration")
+		}
+	}
 	return nil
 }
 
 func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, BalanceModelMigration)
+	return GetMigrationVersion(blockHeight, BalanceModelMigration, ProofOfStakeNewTxnTypesMigration)
 }
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {

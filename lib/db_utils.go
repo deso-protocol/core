@@ -482,7 +482,7 @@ type DBPrefixes struct {
 	PrefixValidatorByPKID []byte `prefix_id:"[78]" is_state:"true"`
 
 	// PrefixValidatorByStake: Retrieve the top N validators by stake.
-	// Prefix, TotalStakeAmountNanos, ValidatorPKID -> nil
+	// Prefix, Status, TotalStakeAmountNanos, ValidatorPKID -> nil
 	// Note that we save space by storing a nil value and parsing the ValidatorPKID from the key.
 	PrefixValidatorByStake []byte `prefix_id:"[79]" is_state:"true"`
 
