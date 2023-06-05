@@ -457,6 +457,7 @@ func _doTxnWithBlockHeight(
 			minNetworkFeeNanosPerKB,
 			nil,
 			-1,
+			map[string][]byte{},
 			feeRateNanosPerKB,
 			testMeta.mempool,
 			nil,
