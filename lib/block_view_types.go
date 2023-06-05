@@ -1241,7 +1241,7 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		}
 	}
 
-	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		// PrevValidatorEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
 
@@ -1870,7 +1870,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 	}
 
-	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		// PrevValidatorEntry
 		if op.PrevValidatorEntry, err = DecodeDeSoEncoder(&ValidatorEntry{}, rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry: ")
@@ -1900,7 +1900,7 @@ func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
 		blockHeight,
 		AssociationsAndAccessGroupsMigration,
 		BalanceModelMigration,
-		ProofOfStakeNewTxnTypesMigration,
+		ProofOfStake1StateSetupMigration,
 	)
 }
 

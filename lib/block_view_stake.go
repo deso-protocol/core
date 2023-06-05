@@ -1103,7 +1103,7 @@ func (bav *UtxoView) _connectStake(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectStake: ")
 	}
@@ -1275,7 +1275,7 @@ func (bav *UtxoView) _disconnectStake(
 	blockHeight uint32,
 ) error {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_disconnectStake: ")
 	}
@@ -1365,7 +1365,7 @@ func (bav *UtxoView) _connectUnstake(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectUnstake: ")
 	}
@@ -1553,7 +1553,7 @@ func (bav *UtxoView) _disconnectUnstake(
 	blockHeight uint32,
 ) error {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_disconnectUnstake: ")
 	}
@@ -1669,7 +1669,7 @@ func (bav *UtxoView) _connectUnlockStake(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectUnlockStake: ")
 	}
@@ -1795,7 +1795,7 @@ func (bav *UtxoView) _disconnectUnlockStake(
 	blockHeight uint32,
 ) error {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_disconnectUnlockStake: ")
 	}

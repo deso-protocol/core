@@ -270,10 +270,20 @@ type ForkHeights struct {
 	// to an account balance model for accounting.
 	BalanceModelBlockHeight uint32
 
-	// ProofOfStakeNewTxnTypesBlockHeight defines the height at which we introduced the
-	// new txn types to support Proof of Stake. These txns include: RegisterAsValidator,
-	// UnregisterAsValidator, Stake, Unstake, and UnlockStake.
-	ProofOfStakeNewTxnTypesBlockHeight uint32
+	// ProofOfStake1StateSetupBlockHeight defines the height at which we introduced all
+	// changes to set up the prerequisite state for cutting over to PoS consensus. These
+	// changes include, for example, introducing the new PoS txn types, consensus params,
+	// leader schedule generation, and snapshotting.
+	//
+	// The ProofOfStake1StateSetupBlockHeight needs to be set before the
+	// ProofOfStake2ConsensusCutoverBlockHeight so that we allow time for validators to
+	// register, stake to be assigned, and the validator set, consensus params, and
+	// leader schedule snapshots to be generated in advance.
+	ProofOfStake1StateSetupBlockHeight uint32
+
+	// ProofOfStake2ConsensusCutoverBlockHeight defines the height at which we cut over
+	// from PoW consensus to PoS consensus.
+	ProofOfStake2ConsensusCutoverBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -335,11 +345,12 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration                     MigrationName = "DefaultMigration"
-	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
-	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
-	BalanceModelMigration                MigrationName = "BalanceModelMigration"
-	ProofOfStakeNewTxnTypesMigration     MigrationName = "ProofOfStakeNewTxnTypesMigration"
+	DefaultMigration                       MigrationName = "DefaultMigration"
+	UnlimitedDerivedKeysMigration          MigrationName = "UnlimitedDerivedKeysMigration"
+	AssociationsAndAccessGroupsMigration   MigrationName = "AssociationsAndAccessGroupsMigration"
+	BalanceModelMigration                  MigrationName = "BalanceModelMigration"
+	ProofOfStake1StateSetupMigration       MigrationName = "ProofOfStake1StateSetupMigration"
+	ProofOfStake2ConsensusCutoverMigration MigrationName = "ProofOfStake2ConsensusCutoverMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -354,8 +365,11 @@ type EncoderMigrationHeights struct {
 	// This coincides with the BalanceModel block
 	BalanceModel MigrationHeight
 
-	// This coincides with the ProofOfStakeNewTxnTypesBlockHeight
-	ProofOfStakeNewTxnTypesMigration MigrationHeight
+	// This coincides with the ProofOfStake1StateSetupBlockHeight
+	ProofOfStake1StateSetupMigration MigrationHeight
+
+	// This coincides with the ProofOfStake2ConsensusCutoverBlockHeight
+	ProofOfStake2ConsensusCutoverMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -380,13 +394,19 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Height:  uint64(forkHeights.BalanceModelBlockHeight),
 			Name:    BalanceModelMigration,
 		},
-		ProofOfStakeNewTxnTypesMigration: MigrationHeight{
+		ProofOfStake1StateSetupMigration: MigrationHeight{
 			Version: 4,
-			Height:  uint64(forkHeights.ProofOfStakeNewTxnTypesBlockHeight),
-			Name:    ProofOfStakeNewTxnTypesMigration,
+			Height:  uint64(forkHeights.ProofOfStake1StateSetupBlockHeight),
+			Name:    ProofOfStake1StateSetupMigration,
+		},
+		ProofOfStake2ConsensusCutoverMigration: MigrationHeight{
+			Version: 5,
+			Height:  uint64(forkHeights.ProofOfStake2ConsensusCutoverBlockHeight),
+			Name:    ProofOfStake2ConsensusCutoverMigration,
 		},
 	}
 }
+
 func GetEncoderMigrationHeightsList(forkHeights *ForkHeights) (
 	_migrationHeightsList []*MigrationHeight) {
 
@@ -645,7 +665,10 @@ var RegtestForkHeights = ForkHeights{
 	// For convenience, we set the block height to 1 since the
 	// genesis block was created using the utxo model.
 	BalanceModelBlockHeight:            uint32(1),
-	ProofOfStakeNewTxnTypesBlockHeight: uint32(1),
+	ProofOfStake1StateSetupBlockHeight: uint32(1),
+
+	// FIXME: set to real block height when ready
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -799,7 +822,10 @@ var MainnetForkHeights = ForkHeights{
 	BalanceModelBlockHeight: uint32(226839),
 
 	// FIXME: set to real block height when ready
-	ProofOfStakeNewTxnTypesBlockHeight: uint32(math.MaxUint32),
+	ProofOfStake1StateSetupBlockHeight: uint32(math.MaxUint32),
+
+	// FIXME: set to real block height when ready
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1074,7 +1100,10 @@ var TestnetForkHeights = ForkHeights{
 	BalanceModelBlockHeight: uint32(683058),
 
 	// FIXME: set to real block height when ready
-	ProofOfStakeNewTxnTypesBlockHeight: uint32(math.MaxUint32),
+	ProofOfStake1StateSetupBlockHeight: uint32(math.MaxUint32),
+
+	// FIXME: set to real block height when ready
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.

@@ -310,8 +310,8 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						}
 					}
 
-					// ====== Proof of Stake New Txn Types Fork ======
-					if blockHeight >= bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+					// ====== Proof of Stake State Setup Fork ======
+					if blockHeight >= bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
 						// StakeLimitMap
 						for stakeLimitKey, stakingLimit := range transactionSpendingLimit.StakeLimitMap {
 							if err = bav.IsValidStakeLimitKey(txn.PublicKey, stakeLimitKey); err != nil {
