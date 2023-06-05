@@ -1955,6 +1955,7 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	}
 
 	// Validate EndEpochNumber + StakeLockupEpochDuration <= CurrentEpochNumber.
+	// TODO: Retrieve snapshot StakeLockupEpochDuration, not current value.
 	if metadata.EndEpochNumber+bav.GetStakeLockupEpochDuration(0) > currentEpochNumber {
 		return errors.Wrapf(RuleErrorInvalidUnlockStakeMustWaitLockupDuration, "UtxoView.IsValidUnlockStakeMetadata: ")
 	}

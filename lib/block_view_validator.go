@@ -1715,6 +1715,7 @@ func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte) 
 	}
 
 	// Validate sufficient epochs have elapsed for validator to be unjailed.
+	// TODO: Retrieve snapshot ValidatorJailEpochDuration, not current value.
 	if validatorEntry.JailedAtEpochNumber+bav.GetValidatorJailEpochDuration(0) > currentEpochNumber {
 		return errors.Wrapf(RuleErrorUnjailingValidatorTooEarly, "UtxoView.IsValidUnjailValidatorMetadata: ")
 	}
