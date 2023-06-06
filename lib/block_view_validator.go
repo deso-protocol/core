@@ -539,7 +539,7 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 }
 
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
-	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
+	key := append([]byte{}, Prefixes.PrefixValidatorByStatusAndStake...)
 	key = append(key, EncodeUint8(uint8(validatorEntry.Status()))...)
 	key = append(key, FixedWidthEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
@@ -596,7 +596,7 @@ func DBGetTopActiveValidatorsByStake(
 	}
 
 	// Retrieve top N active ValidatorEntry keys by stake.
-	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
+	key := append([]byte{}, Prefixes.PrefixValidatorByStatusAndStake...)
 	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
 	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, int(limit), nil, true, validatorKeysToSkip,
@@ -678,12 +678,12 @@ func DBPutValidatorWithTxn(
 		)
 	}
 
-	// Set ValidatorEntry key in PrefixValidatorByStake. The value should be nil.
+	// Set ValidatorEntry key in PrefixValidatorByStatusAndStake. The value should be nil.
 	// We parse the ValidatorPKID from the key for this index.
 	key = DBKeyForValidatorByStake(validatorEntry)
 	if err := DBSetWithTxn(txn, snap, key, nil); err != nil {
 		return errors.Wrapf(
-			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByStake",
+			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByStatusAndStake",
 		)
 	}
 
@@ -719,11 +719,11 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorPKID *PK
 		)
 	}
 
-	// Delete ValidatorEntry.PKID from PrefixValidatorByStake.
+	// Delete ValidatorEntry.PKID from PrefixValidatorByStatusAndStake.
 	key = DBKeyForValidatorByStake(validatorEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByStake",
+			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByStatusAndStake",
 		)
 	}
 
