@@ -19,9 +19,8 @@ func TestIsLastBlockInCurrentEpoch(t *testing.T) {
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 
-	// Initialize fork heights.
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
-	params.ForkHeights.ProofOfStakeSnapshottingBlockHeight = uint32(1)
+	// Initialize PoS fork heights.
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -62,9 +61,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
-	// Initialize fork heights.
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
-	params.ForkHeights.ProofOfStakeSnapshottingBlockHeight = uint32(1)
+	// Initialize PoS fork heights.
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -122,7 +120,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 
 		// Validator registers.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, pkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, pkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte(fmt.Sprintf("https://%s.com", publicKey))},
 			VotingPublicKey:          votingPublicKey,

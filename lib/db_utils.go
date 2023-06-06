@@ -6948,7 +6948,7 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.NewMessageTxindexMetadata, skipMetadata...)...)
 	}
 
-	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		// encoding RegisterAsValidatorTxindexMetadata
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.RegisterAsValidatorTxindexMetadata, skipMetadata...)...)
 		// encoding UnregisterAsValidatorTxindexMetadata
@@ -7212,7 +7212,7 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		}
 	}
 
-	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		// decoding RegisterAsValidatorTxindexMetadata
 		if txnMeta.RegisterAsValidatorTxindexMetadata, err = DecodeDeSoEncoder(&RegisterAsValidatorTxindexMetadata{}, rr); err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading RegisterAsValidatorTxindexMetadata: ")
@@ -7243,7 +7243,7 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 }
 
 func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration, ProofOfStakeNewTxnTypesMigration)
+	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration, ProofOfStake1StateSetupMigration)
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {

@@ -27,13 +27,17 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	var globalActiveStakeAmountNanos *uint256.Int
 	var err error
 
-	// Initialize fork heights.
+	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights()
 	defer resetBalanceModelBlockHeights()
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
 	utxoView := func() *UtxoView {
 		newUtxoView, err := mempool.GetAugmentedUniversalView()
@@ -65,34 +69,24 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 
-	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
-
 	{
 		// ParamUpdater set min fee rate
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
 		// RuleErrorProofOfStakeTxnBeforeBlockHeight
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = math.MaxUint32
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = math.MaxUint32
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example.com")},
 			DisableDelegatedStake:    false,
@@ -103,7 +97,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
 
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	}
@@ -164,7 +158,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 	{
 		// RuleErrorValidatorMissingVotingPublicKeySignature
-		votingPublicKey, _ := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, _ := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:         [][]byte{[]byte("https://example.com")},
 			VotingPublicKey: votingPublicKey,
@@ -177,7 +171,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 	{
 		// RuleErrorValidatorInvalidVotingPublicKeySignature: invalid TransactorPkBytes
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -191,8 +185,8 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 	{
 		// RuleErrorValidatorInvalidVotingPublicKeySignature: invalid VotingPublicKey
-		votingPublicKey, _ := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
-		_, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, _ := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
+		_, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -206,7 +200,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 	{
 		// Happy path: register a validator
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example.com")},
 			DisableDelegatedStake:    false,
@@ -242,7 +236,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 	{
 		// Happy path: update a validator
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example1.com"), []byte("https://example2.com")},
 			DisableDelegatedStake:    false,
@@ -432,8 +426,8 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
-	// Initialize fork heights.
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	// Initialize PoS fork height.
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -576,25 +570,15 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 		return nil
 	}
 
-	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
-
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
@@ -605,7 +589,7 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create a VotingPublicKey and VotingSignature.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, senderPkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, senderPkBytes)
 
 		// Perform a RegisterAsValidator txn. No error expected.
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
@@ -671,7 +655,7 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 		require.Contains(t, err.Error(), RuleErrorValidatorNotFound)
 
 		// Create a VotingPublicKey and VotingSignature.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, senderPkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, senderPkBytes)
 
 		// Perform a RegisterAsValidator txn. Error expected.
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
@@ -710,7 +694,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Initialize PoS fork height.
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -750,30 +734,20 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
 	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes).PKID
 
-	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
-
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
 		// m0 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://m0.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -789,7 +763,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m1 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://m1.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -805,7 +779,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m2 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m2PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m2PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://m2.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -977,7 +951,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	m5PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m5PkBytes).PKID
 
 	// Store m0's ValidatorEntry in the db with TotalStake = 100 nanos.
-	votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+	votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 	validatorEntry := &ValidatorEntry{
 		ValidatorPKID:            m0PKID,
 		TotalStakeAmountNanos:    uint256.NewInt().SetUint64(100),
@@ -997,7 +971,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	require.Empty(t, utxoView.ValidatorPKIDToValidatorEntry)
 
 	// Store m1's jailed ValidatorEntry in the db with TotalStake = 400 nanos.
-	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m1PkBytes, blockHeight)
+	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m1PkBytes)
 	validatorEntry = &ValidatorEntry{
 		ValidatorPKID:            m1PKID,
 		TotalStakeAmountNanos:    uint256.NewInt().SetUint64(400),
@@ -1016,7 +990,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	require.Equal(t, validatorEntry.Status(), ValidatorStatusJailed)
 
 	// Store m2's ValidatorEntry in the db with TotalStake = 300 nanos.
-	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m2PkBytes, blockHeight)
+	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m2PkBytes)
 	m2ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:            m2PKID,
 		TotalStakeAmountNanos:    uint256.NewInt().SetUint64(300),
@@ -1033,7 +1007,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(300))
 
 	// Store m3's ValidatorEntry in the db with TotalStake = 600 nanos.
-	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m3PkBytes, blockHeight)
+	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m3PkBytes)
 	m3ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:            m3PKID,
 		TotalStakeAmountNanos:    uint256.NewInt().SetUint64(600),
@@ -1071,7 +1045,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	require.True(t, utxoView.ValidatorPKIDToValidatorEntry[*m3ValidatorEntry.ValidatorPKID].isDeleted)
 
 	// Store m4's ValidatorEntry in the UtxoView with TotalStake = 50 nanos.
-	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m4PkBytes, blockHeight)
+	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m4PkBytes)
 	m4ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:            m4PKID,
 		TotalStakeAmountNanos:    uint256.NewInt().SetUint64(50),
@@ -1095,7 +1069,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	)
 
 	// Store m5's jailed ValidatorEntry in the UtxoView with TotalStake = 500 nanos.
-	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m5PkBytes, blockHeight)
+	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m5PkBytes)
 	m5ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:            m5PKID,
 		TotalStakeAmountNanos:    uint256.NewInt().SetUint64(500),
@@ -1153,7 +1127,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Initialize PoS fork height.
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -1188,30 +1162,20 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 
-	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
-
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
 		// m0 registers as a validator with DisableDelegatedStake = FALSE.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://m0.com")},
 			DisableDelegatedStake:    false,
@@ -1232,7 +1196,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m0 updates DisableDelegatedStake = TRUE.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://m0.com")},
 			DisableDelegatedStake:    true,
@@ -1277,7 +1241,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m0 updates DisableDelegatedStake = FALSE.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://m0.com")},
 			DisableDelegatedStake:    false,
@@ -1309,7 +1273,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m0 tries to update DisableDelegateStake = TRUE. Errors.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://m0.com")},
 			DisableDelegatedStake:    true,
@@ -1348,7 +1312,7 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Initialize PoS fork height.
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -1384,32 +1348,23 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
 
-	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
-	require.NoError(t, err)
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 	currentEpochNumber, err := utxoView().GetCurrentEpochNumber()
 	require.NoError(t, err)
 
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
 		// m0 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://m0.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -1550,13 +1505,10 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Initialize PoS fork height.
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	chain.snapshot = nil
-
-	// For these tests, we set ValidatorJailEpochDuration to 3.
-	params.ValidatorJailEpochDuration = 3
 
 	utxoView := func() *UtxoView {
 		newUtxoView, err := mempool.GetAugmentedUniversalView()
@@ -1599,23 +1551,19 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 	require.NoError(t, err)
 
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos and ValidatorJailEpochDuration=3.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{ValidatorJailEpochDuration: UintToBuf(3)},
 		)
 	}
 	{
 		// m0 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -1721,7 +1669,7 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 	}
 	{
 		// RuleErrorProofofStakeTxnBeforeBlockHeight
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = math.MaxUint32
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = math.MaxUint32
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -1729,7 +1677,7 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
 
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	}
@@ -1767,8 +1715,8 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
-	// Initialize fork heights.
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	// Initialize PoS fork height.
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -1901,23 +1849,19 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 	require.NoError(t, err)
 
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
 		// sender registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, senderPkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, senderPkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -2060,7 +2004,7 @@ func _submitUnjailValidatorTxn(
 	return fees, nil
 }
 
-func _generateVotingPublicKeyAndSignature(t *testing.T, transactorPkBytes []byte, blockHeight uint64) (*bls.PublicKey, *bls.Signature) {
+func _generateVotingPublicKeyAndSignature(t *testing.T, transactorPkBytes []byte) (*bls.PublicKey, *bls.Signature) {
 	blsPrivateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
 	votingPublicKey := blsPrivateKey.PublicKey()

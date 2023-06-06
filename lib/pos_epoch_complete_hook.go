@@ -8,11 +8,11 @@ import (
 func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error) {
 	// Returns true if this is the last block in the current epoch.
 
-	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStakeSnapshottingBlockHeight) {
+	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
 		// Return false if we have not started snapshotting the relevant PoS entries yet.
 		return false, nil
 	}
-	if blockHeight == uint64(bav.Params.ForkHeights.ProofOfStakeSnapshottingBlockHeight) {
+	if blockHeight == uint64(bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
 		// As soon as we enable snapshotting for the first time, we should run the OnEpochCompleteHook.
 		return true, nil
 	}
