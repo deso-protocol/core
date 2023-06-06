@@ -48,10 +48,9 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	}
 
 	// Retrieve the SnapshotGlobalParam: EpochDurationNumBlocks.
-	// TODO: Retrieve snapshot value, not current value. Update SnapshotAtEpochNumber.
-	epochDurationNumBlocks, err := bav.GetSnapshotGlobalParam(EpochDurationNumBlocks, 0)
+	epochDurationNumBlocks, err := bav.GetSnapshotGlobalParam(EpochDurationNumBlocks)
 	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving EpochDurationNumBlocks: ")
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving snapshot EpochDurationNumBlocks: ")
 	}
 
 	// Snapshot the current GlobalParamsEntry.

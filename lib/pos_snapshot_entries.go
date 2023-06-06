@@ -15,23 +15,30 @@ import (
 // SnapshotGlobalParamsEntry
 //
 
-func (bav *UtxoView) GetSnapshotGlobalParam(field string, snapshotAtEpochNumber uint64) (uint64, error) {
-	var err error
+const SnapshotLookbackNumEpochs uint64 = 2
 
-	// Retrieve the CurrentGlobalParamsEntry.
-	globalParamsEntry := bav.GlobalParamsEntry
-
-	// If SnapshotAtEpochNumber > 0, retrieve the corresponding SnapshotGlobalParamsEntry.
-	if snapshotAtEpochNumber > 0 {
-		globalParamsEntry, err = bav.GetSnapshotGlobalParamsEntry(snapshotAtEpochNumber)
-		if err != nil {
-			return 0, errors.Wrapf(err, "GetSnapshotGlobalParam: error retrieving SnapshotGlobalParamsEntry: ")
-		}
+func (bav *UtxoView) GetSnapshotGlobalParam(field string) (uint64, error) {
+	// Retrieve the CurrentEpochEntry.
+	currentEpochEntry, err := bav.GetCurrentEpochEntry()
+	if err != nil {
+		return 0, errors.Wrapf(err, "GetSnapshotGlobalParam: problem retrieving CurrentEpochEntry: ")
 	}
 
-	// Error if no GlobalParamsEntry was found.
-	if globalParamsEntry == nil {
-		return 0, errors.New("GetSnapshotGlobalParam: GlobalParamsEntry is nil")
+	// Calculate the SnapshotAtEpochNumber from which to retrieve the SnapshotGlobalParamsEntry.
+	// If the SnapshotAtEpochNumber < 0, then skip and just use the default value.
+	globalParamsEntry := &GlobalParamsEntry{}
+	if currentEpochEntry.EpochNumber >= SnapshotLookbackNumEpochs {
+		snapshotAtEpochNumber, err := SafeUint64().Sub(currentEpochEntry.EpochNumber, SnapshotLookbackNumEpochs)
+		if err != nil {
+			return 0, errors.Wrapf(err, "GetSnapshotGlobalParam: problem calculating SnapshotAtEpochNumber: ")
+		}
+		globalParamsEntry, err = bav.GetSnapshotGlobalParamsEntry(snapshotAtEpochNumber)
+		if err != nil {
+			return 0, errors.Wrapf(err, "GetSnapshotGlobalParam: problem retrieving SnapshotGlobalParamsEntry: ")
+		}
+		if globalParamsEntry == nil {
+			return 0, errors.New("GetSnapshotGlobalParam: SnapshotGlobalParamsEntry is nil")
+		}
 	}
 
 	// Return the corresponding field. Either the updated value if

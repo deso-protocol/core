@@ -14,10 +14,9 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*PKID, error) {
 	}
 
 	// Retrieve the SnapshotGlobalParam: LeaderScheduleMaxNumValidators.
-	// TODO: Retrieve snapshot value, not current value. Update SnapshotAtEpochNumber.
-	leaderScheduleMaxNumValidators, err := bav.GetSnapshotGlobalParam(LeaderScheduleMaxNumValidators, 0)
+	leaderScheduleMaxNumValidators, err := bav.GetSnapshotGlobalParam(LeaderScheduleMaxNumValidators)
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error retrieving LeaderScheduleMaxNumValidators: ")
+		return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error retrieving snapshot LeaderScheduleMaxNumValidators: ")
 	}
 
 	// Retrieve top, active validators ordered by stake.

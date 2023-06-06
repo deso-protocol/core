@@ -1660,6 +1660,9 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 		epochUtxoView._setCurrentEpochEntry(
 			&EpochEntry{EpochNumber: currentEpochNumber + 3, FinalBlockHeight: blockHeight + 10},
 		)
+
+		// Store a SnapshotGlobalParamsEntry in the db.
+		epochUtxoView._setSnapshotGlobalParamsEntry(&GlobalParamsEntry{}, currentEpochNumber+1)
 		require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 
 		// Verify CurrentEpochNumber.
@@ -1920,6 +1923,9 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 		epochUtxoView._setCurrentEpochEntry(
 			&EpochEntry{EpochNumber: currentEpochNumber + 3, FinalBlockHeight: blockHeight + 10},
 		)
+
+		// Store a SnapshotGlobalParamsEntry in the db.
+		epochUtxoView._setSnapshotGlobalParamsEntry(&GlobalParamsEntry{}, currentEpochNumber+1)
 		require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 
 		// Verify CurrentEpochNumber.

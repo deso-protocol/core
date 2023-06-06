@@ -1714,10 +1714,9 @@ func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte) 
 	}
 
 	// Retrieve SnapshotGlobalParam: ValidatorJailEpochDuration.
-	// TODO: Retrieve snapshot value, not current value. Update SnapshotAtEpochNumber.
-	validatorJailEpochDuration, err := bav.GetSnapshotGlobalParam(ValidatorJailEpochDuration, 0)
+	validatorJailEpochDuration, err := bav.GetSnapshotGlobalParam(ValidatorJailEpochDuration)
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving ValidatorJailEpochDuration: ")
+		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving snapshot ValidatorJailEpochDuration: ")
 	}
 
 	// Validate sufficient epochs have elapsed for validator to be unjailed.

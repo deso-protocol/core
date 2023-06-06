@@ -1955,10 +1955,9 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	}
 
 	// Retrieve SnapshotGlobalParam: StakeLockupEpochDuration.
-	// TODO: Retrieve snapshot value, not current value. Update SnapshotAtEpochNumber.
-	stakeLockupEpochDuration, err := bav.GetSnapshotGlobalParam(StakeLockupEpochDuration, 0)
+	stakeLockupEpochDuration, err := bav.GetSnapshotGlobalParam(StakeLockupEpochDuration)
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: error retrieving StakeLockupEpochDuration: ")
+		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: error retrieving snapshot StakeLockupEpochDuration: ")
 	}
 
 	// Validate EndEpochNumber + StakeLockupEpochDuration <= CurrentEpochNumber.
