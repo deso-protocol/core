@@ -102,7 +102,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -957,7 +957,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	}
 	{
 		// m0 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example1.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -968,7 +968,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	}
 	{
 		// m1 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes)
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example2.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -1844,7 +1844,7 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 	}
 	{
 		// m0 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://m1.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -2039,7 +2039,7 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m0 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://m0.example.com")},
 			VotingPublicKey:          votingPublicKey,
