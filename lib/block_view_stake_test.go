@@ -21,7 +21,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	// Local variables
 	var err error
 
-	// Initialize fork heights.
+	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights()
 	defer resetBalanceModelBlockHeights()
 
@@ -94,7 +94,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m0 registers as a validator.
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -119,7 +119,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	//
 	{
 		// RuleErrorProofOfStakeTxnBeforeBlockHeight
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = math.MaxUint32
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = math.MaxUint32
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -133,7 +133,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
 
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	}
@@ -272,7 +272,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	//
 	{
 		// RuleErrorProofOfStakeTxnBeforeBlockHeight
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = math.MaxUint32
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = math.MaxUint32
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -286,7 +286,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
 
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	}
@@ -468,7 +468,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	//
 	{
 		// RuleErrorProofOfStakeTxnBeforeBlockHeight
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = math.MaxUint32
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = math.MaxUint32
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -483,7 +483,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorProofofStakeTxnBeforeBlockHeight)
 
-		params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	}
@@ -766,9 +766,9 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
-	// Initialize fork heights.
+	// Initialize PoS fork heights.
 	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(0)
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	chain.snapshot = nil
@@ -1682,7 +1682,7 @@ func TestGetLockedStakeEntriesInRange(t *testing.T) {
 	utxoView._setLockedStakeEntryMappings(lockedStakeEntry)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
 
-	// Fetch the LockedStakeEntry so it is also cached in the UtxoView.
+	// Fetch the LockedStakeEntry, so it is also cached in the UtxoView.
 	lockedStakeEntry, err = utxoView.GetLockedStakeEntry(m0PKID, m0PKID, 2)
 	require.NoError(t, err)
 	require.NotNil(t, lockedStakeEntry)
@@ -1770,7 +1770,7 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 
 	// Initialize fork heights.
 	params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(0)
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	chain.snapshot = nil
@@ -1932,8 +1932,8 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
-	// Initialize fork heights.
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	// Initialize PoS fork heights.
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	chain.snapshot = nil

@@ -2963,7 +2963,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 		newGlobalParamsEntry.MaxNonceExpirationBlockHeightOffset = newMaxNonceExpirationBlockHeightOffset
 	}
 
-	if blockHeight >= bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+	if blockHeight >= bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
 		var bytesRead int
 		if len(extraData[StakeLockupEpochDuration]) > 0 {
 			newGlobalParamsEntry.StakeLockupEpochDuration, bytesRead = Uvarint(extraData[StakeLockupEpochDuration])

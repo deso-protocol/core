@@ -11,7 +11,7 @@ import (
 )
 
 func TestGenerateLeaderSchedule(t *testing.T) {
-	// Initialize fork heights.
+	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights()
 	defer resetBalanceModelBlockHeights()
 
@@ -19,8 +19,8 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
-	// Initialize PoS txn types block height.
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	// Initialize PoS fork height.
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 

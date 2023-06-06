@@ -994,7 +994,7 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
 		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectRegisterAsValidator: ")
 	}
 
@@ -1115,7 +1115,7 @@ func (bav *UtxoView) _disconnectRegisterAsValidator(
 	blockHeight uint32,
 ) error {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
 		return errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_disconnectRegisterAsValidator: ")
 	}
 
@@ -1178,7 +1178,7 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
 		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectUnregisterAsValidator: ")
 	}
 
@@ -1350,7 +1350,7 @@ func (bav *UtxoView) _disconnectUnregisterAsValidator(
 	blockHeight uint32,
 ) error {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
 		return errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_disconnectUnregisterAsValidator: ")
 	}
 
@@ -1436,7 +1436,7 @@ func (bav *UtxoView) _connectUnjailValidator(
 	_err error,
 ) {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
 		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectUnjailValidator: ")
 	}
 
@@ -1541,7 +1541,7 @@ func (bav *UtxoView) _disconnectUnjailValidator(
 	blockHeight uint32,
 ) error {
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
 		return errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_disconnectUnjailValidator: ")
 	}
 
