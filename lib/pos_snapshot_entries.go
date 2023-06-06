@@ -264,8 +264,16 @@ func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64, snapsho
 		}
 	}
 	// Sort the ValidatorEntries DESC by TotalStakeAmountNanos.
-	sort.Slice(validatorEntries, func(ii, jj int) bool {
-		return validatorEntries[ii].TotalStakeAmountNanos.Cmp(validatorEntries[jj].TotalStakeAmountNanos) > 0
+	sort.SliceStable(validatorEntries, func(ii, jj int) bool {
+		stakeCmp := validatorEntries[ii].TotalStakeAmountNanos.Cmp(validatorEntries[jj].TotalStakeAmountNanos)
+		if stakeCmp == 0 {
+			// Use ValidatorPKID as a tie-breaker if equal TotalStakeAmountNanos.
+			return bytes.Compare(
+				validatorEntries[ii].ValidatorPKID.ToBytes(),
+				validatorEntries[jj].ValidatorPKID.ToBytes(),
+			) > 0
+		}
+		return stakeCmp > 0
 	})
 	// Return top N.
 	upperBound := int(math.Min(float64(limit), float64(len(validatorEntries))))
