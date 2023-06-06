@@ -3793,7 +3793,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 	if MigrationTriggered(blockHeight, BalanceModelMigration) {
 		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockHeightOffset)...)
 	}
-	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		data = append(data, UintToBuf(gp.StakeLockupEpochDuration)...)
 		data = append(data, UintToBuf(gp.ValidatorJailEpochDuration)...)
 	}
@@ -3829,7 +3829,7 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxNonceExpirationBlockHeightOffset")
 		}
 	}
-	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		gp.StakeLockupEpochDuration, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakeLockupEpochDuration")
@@ -3843,7 +3843,7 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 }
 
 func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, BalanceModelMigration, ProofOfStakeNewTxnTypesMigration)
+	return GetMigrationVersion(blockHeight, BalanceModelMigration, ProofOfStake1StateSetupMigration)
 }
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {

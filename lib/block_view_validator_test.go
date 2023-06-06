@@ -35,7 +35,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
