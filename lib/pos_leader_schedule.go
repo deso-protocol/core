@@ -13,8 +13,15 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*PKID, error) {
 		return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error retrieving CurrentRandomSeedHash: ")
 	}
 
+	// Retrieve the SnapshotGlobalParam: LeaderScheduleMaxNumValidators.
+	// TODO: Retrieve snapshot value, not current value. Update SnapshotAtEpochNumber.
+	leaderScheduleMaxNumValidators, err := bav.GetSnapshotGlobalParam(LeaderScheduleMaxNumValidators, 0)
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error retrieving LeaderScheduleMaxNumValidators: ")
+	}
+
 	// Retrieve top, active validators ordered by stake.
-	validatorEntries, err := bav.GetTopActiveValidatorsByStake(bav.GetLeaderScheduleMaxNumValidators(0))
+	validatorEntries, err := bav.GetTopActiveValidatorsByStake(leaderScheduleMaxNumValidators)
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error retrieving top ValidatorEntries: ")
 	}

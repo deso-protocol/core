@@ -47,6 +47,13 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 		return errors.New("RunEpochCompleteHook: CurrentEpochEntry is nil, this should never happen")
 	}
 
+	// Retrieve the SnapshotGlobalParam: EpochDurationNumBlocks.
+	// TODO: Retrieve snapshot value, not current value. Update SnapshotAtEpochNumber.
+	epochDurationNumBlocks, err := bav.GetSnapshotGlobalParam(EpochDurationNumBlocks, 0)
+	if err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving EpochDurationNumBlocks: ")
+	}
+
 	// Snapshot the current GlobalParamsEntry.
 	bav._setSnapshotGlobalParamsEntry(bav.GlobalParamsEntry, currentEpochEntry.EpochNumber)
 
@@ -80,7 +87,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Roll-over a new epoch by setting a new CurrentEpochEntry.
 	nextEpochEntry := &EpochEntry{
 		EpochNumber:      currentEpochEntry.EpochNumber + 1,
-		FinalBlockHeight: blockHeight + bav.GetEpochDurationNumBlocks(0),
+		FinalBlockHeight: blockHeight + epochDurationNumBlocks,
 	}
 	bav._setCurrentEpochEntry(nextEpochEntry)
 

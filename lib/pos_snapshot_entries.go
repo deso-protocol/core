@@ -15,6 +15,56 @@ import (
 // SnapshotGlobalParamsEntry
 //
 
+func (bav *UtxoView) GetSnapshotGlobalParam(field string, snapshotAtEpochNumber uint64) (uint64, error) {
+	var err error
+
+	// Retrieve the CurrentGlobalParamsEntry.
+	globalParamsEntry := bav.GlobalParamsEntry
+
+	// If SnapshotAtEpochNumber > 0, retrieve the corresponding SnapshotGlobalParamsEntry.
+	if snapshotAtEpochNumber > 0 {
+		globalParamsEntry, err = bav.GetSnapshotGlobalParamsEntry(snapshotAtEpochNumber)
+		if err != nil {
+			return 0, errors.Wrapf(err, "GetSnapshotGlobalParam: error retrieving SnapshotGlobalParamsEntry: ")
+		}
+	}
+
+	// Error if no GlobalParamsEntry was found.
+	if globalParamsEntry == nil {
+		return 0, errors.New("GetSnapshotGlobalParam: GlobalParamsEntry is nil")
+	}
+
+	// Return the corresponding field. Either the updated value if
+	// set on the GlobalParamsEntry or the default value otherwise.
+	switch field {
+	case StakeLockupEpochDuration:
+		if globalParamsEntry.StakeLockupEpochDuration != 0 {
+			return globalParamsEntry.StakeLockupEpochDuration, nil
+		}
+		return bav.Params.DefaultStakeLockupEpochDuration, nil
+
+	case ValidatorJailEpochDuration:
+		if globalParamsEntry.ValidatorJailEpochDuration != 0 {
+			return globalParamsEntry.ValidatorJailEpochDuration, nil
+		}
+		return bav.Params.DefaultValidatorJailEpochDuration, nil
+
+	case LeaderScheduleMaxNumValidators:
+		if globalParamsEntry.LeaderScheduleMaxNumValidators != 0 {
+			return globalParamsEntry.LeaderScheduleMaxNumValidators, nil
+		}
+		return bav.Params.DefaultLeaderScheduleMaxNumValidators, nil
+
+	case EpochDurationNumBlocks:
+		if globalParamsEntry.EpochDurationNumBlocks != 0 {
+			return globalParamsEntry.EpochDurationNumBlocks, nil
+		}
+		return bav.Params.DefaultEpochDurationNumBlocks, nil
+	}
+
+	return 0, fmt.Errorf("GetSnapshotGlobalParam: invalid field provided: %s", field)
+}
+
 func (bav *UtxoView) GetSnapshotGlobalParamsEntry(snapshotAtEpochNumber uint64) (*GlobalParamsEntry, error) {
 	// Check the UtxoView first.
 	if globalParamsEntry, exists := bav.SnapshotGlobalParamEntries[snapshotAtEpochNumber]; exists {
@@ -413,7 +463,7 @@ func DBEnumerateAllCurrentValidators(handle *badger.DB, pkidsToSkip []*PKID) ([]
 func (bav *UtxoView) GetSnapshotGlobalActiveStakeAmountNanos(snapshotAtEpochNumber uint64) (*uint256.Int, error) {
 	// Check the UtxoView first.
 	if globalActiveStakeAmountNanos, exists := bav.SnapshotGlobalActiveStakeAmountNanos[snapshotAtEpochNumber]; exists {
-		return globalActiveStakeAmountNanos, nil
+		return globalActiveStakeAmountNanos.Clone(), nil
 	}
 	// If we don't have it in the UtxoView, check the db.
 	globalActiveStakeAmountNanos, err := DBGetSnapshotGlobalActiveStakeAmountNanos(bav.Handle, bav.Snapshot, snapshotAtEpochNumber)
