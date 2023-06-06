@@ -32,7 +32,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 
 	// For these tests, we set StakeLockupEpochDuration to zero.
 	// We test the lockup logic in a separate test.
-	params.StakeLockupEpochDuration = 0
+	params.DefaultStakeLockupEpochDuration = 0
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -82,18 +82,14 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	require.NoError(t, err)
 
 	{
-		// Param Updater set min fee rate to 101 nanos per KB
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
@@ -102,7 +98,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -779,7 +775,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 
 	// For these tests, we set StakeLockupEpochDuration to zero.
 	// We test the lockup logic in a separate test.
-	params.StakeLockupEpochDuration = 0
+	params.DefaultStakeLockupEpochDuration = 0
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -933,31 +929,23 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		return fees, nil
 	}
 
-	// Seed a CurrentEpochEntry.
-	epochUtxoView := newUtxoView()
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
-	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 	currentEpochNumber, err := newUtxoView().GetCurrentEpochNumber()
 	require.NoError(t, err)
 
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
 		// m0 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example1.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -968,7 +956,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	}
 	{
 		// m1 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes)
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://example2.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -1787,9 +1775,6 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	chain.snapshot = nil
 
-	// For these tests, we set StakeLockupEpochDuration to 3.
-	params.StakeLockupEpochDuration = 3
-
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
 		_, err = miner.MineAndProcessSingleBlock(0, mempool)
@@ -1828,23 +1813,19 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 	require.NoError(t, err)
 
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos and StakeLockupEpochDuration=3.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{StakeLockupEpochDuration: UintToBuf(3)},
 		)
 	}
 	{
 		// m0 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://m1.com")},
 			VotingPublicKey:          votingPublicKey,
@@ -1958,7 +1939,7 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 	chain.snapshot = nil
 
 	// For these tests, we set ValidatorJailEpochDuration to 0.
-	params.ValidatorJailEpochDuration = 0
+	params.DefaultValidatorJailEpochDuration = 0
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -2023,23 +2004,19 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
 		// m0 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes, blockHeight)
+		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
 			Domains:                  [][]byte{[]byte("https://m0.example.com")},
 			VotingPublicKey:          votingPublicKey,
