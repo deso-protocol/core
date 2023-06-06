@@ -75,10 +75,10 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 		return errors.Wrapf(err, "RunEpochCompleteHook: problem generating leader schedule: ")
 	}
 	for index, validatorPKID := range leaderSchedule {
-		if index > math.MaxUint8 {
-			return errors.Errorf("RunEpochCompleteHook: LeaderIndex %d overflows uint8", index)
+		if index > math.MaxUint16 {
+			return errors.Errorf("RunEpochCompleteHook: LeaderIndex %d overflows uint16", index)
 		}
-		bav._setSnapshotLeaderScheduleValidator(validatorPKID, uint8(index), currentEpochEntry.EpochNumber)
+		bav._setSnapshotLeaderScheduleValidator(validatorPKID, uint16(index), currentEpochEntry.EpochNumber)
 	}
 
 	// TODO: Jail inactive validators.

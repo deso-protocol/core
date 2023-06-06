@@ -568,10 +568,10 @@ func DBPutSnapshotGlobalActiveStakeAmountNanosWithTxn(
 
 type SnapshotLeaderScheduleMapKey struct {
 	SnapshotAtEpochNumber uint64
-	LeaderIndex           uint8
+	LeaderIndex           uint16
 }
 
-func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint8, snapshotAtEpochNumber uint64) (*ValidatorEntry, error) {
+func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint16, snapshotAtEpochNumber uint64) (*ValidatorEntry, error) {
 	// First, check the UtxoView.
 	mapKey := SnapshotLeaderScheduleMapKey{SnapshotAtEpochNumber: snapshotAtEpochNumber, LeaderIndex: leaderIndex}
 	if validatorPKID, exists := bav.SnapshotLeaderSchedule[mapKey]; exists {
@@ -589,7 +589,7 @@ func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint8, snaps
 	return validatorEntry, nil
 }
 
-func (bav *UtxoView) _setSnapshotLeaderScheduleValidator(validatorPKID *PKID, index uint8, snapshotAtEpochNumber uint64) {
+func (bav *UtxoView) _setSnapshotLeaderScheduleValidator(validatorPKID *PKID, index uint16, snapshotAtEpochNumber uint64) {
 	if validatorPKID == nil {
 		glog.Errorf("_setSnapshotLeaderScheduleValidator: called with nil ValidatorPKID, this should never happen")
 		return
@@ -619,17 +619,17 @@ func (bav *UtxoView) _flushSnapshotLeaderScheduleToDbWithTxn(txn *badger.Txn, bl
 	return nil
 }
 
-func DBKeyForSnapshotLeaderScheduleValidator(leaderIndex uint8, snapshotAtEpochNumber uint64) []byte {
+func DBKeyForSnapshotLeaderScheduleValidator(leaderIndex uint16, snapshotAtEpochNumber uint64) []byte {
 	data := append([]byte{}, Prefixes.PrefixSnapshotLeaderSchedule...)
 	data = append(data, UintToBuf(snapshotAtEpochNumber)...)
-	data = append(data, EncodeUint8(leaderIndex)...)
+	data = append(data, EncodeUint16(leaderIndex)...)
 	return data
 }
 
 func DBGetSnapshotLeaderScheduleValidator(
 	handle *badger.DB,
 	snap *Snapshot,
-	leaderIndex uint8,
+	leaderIndex uint16,
 	snapshotAtEpochNumber uint64,
 ) (*ValidatorEntry, error) {
 	var ret *ValidatorEntry
@@ -644,7 +644,7 @@ func DBGetSnapshotLeaderScheduleValidator(
 func DBGetSnapshotLeaderScheduleValidatorWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
-	leaderIndex uint8,
+	leaderIndex uint16,
 	snapshotAtEpochNumber uint64,
 ) (*ValidatorEntry, error) {
 	// Retrieve ValidatorPKID from db.
@@ -673,7 +673,7 @@ func DBPutSnapshotLeaderScheduleValidatorWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
 	validatorPKID *PKID,
-	leaderIndex uint8,
+	leaderIndex uint16,
 	snapshotAtEpochNumber uint64,
 	blockHeight uint64,
 ) error {

@@ -191,7 +191,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 
 		// Test SnapshotLeaderSchedule is nil.
 		for index := range validatorPKIDs {
-			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 0)
+			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint16(index), 0)
 			require.NoError(t, err)
 			require.Nil(t, snapshotLeaderScheduleValidator)
 		}
@@ -235,7 +235,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 
 		// Test SnapshotLeaderSchedule is nil.
 		for index := range validatorPKIDs {
-			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 0)
+			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint16(index), 0)
 			require.NoError(t, err)
 			require.Nil(t, snapshotLeaderScheduleValidator)
 		}
@@ -297,7 +297,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 
 		// Test SnapshotLeaderSchedule is populated.
 		for index := range validatorPKIDs {
-			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 1)
+			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint16(index), 1)
 			require.NoError(t, err)
 			require.NotNil(t, snapshotLeaderScheduleValidator)
 		}
@@ -327,7 +327,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 
 		// Test SnapshotLeaderSchedule for a future epoch is nil.
 		for index := range validatorPKIDs {
-			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint8(index), 2)
+			snapshotLeaderScheduleValidator, err := utxoView.GetSnapshotLeaderScheduleValidator(uint16(index), 2)
 			require.NoError(t, err)
 			require.Nil(t, snapshotLeaderScheduleValidator)
 		}

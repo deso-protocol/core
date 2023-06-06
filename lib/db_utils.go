@@ -4285,6 +4285,16 @@ func DecodeUint64(scoreBytes []byte) uint64 {
 	return binary.BigEndian.Uint64(scoreBytes)
 }
 
+func EncodeUint16(num uint16) []byte {
+	numBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(numBytes, num)
+	return numBytes
+}
+
+func DecodeUint16(numBytes []byte) uint16 {
+	return binary.BigEndian.Uint16(numBytes)
+}
+
 func EncodeUint8(num uint8) []byte {
 	return []byte{num}
 }
