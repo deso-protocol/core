@@ -59,6 +59,7 @@ const (
 	RuleErrorOutputPublicKeyNotRecognized         RuleError = "RuleErrorOutputPublicKeyNotRecognized"
 	RuleErrorInputsWithDifferingSpendKeys         RuleError = "RuleErrorInputsWithDifferingSpendKeys"
 	RuleErrorInvalidTransactionSignature          RuleError = "RuleErrorInvalidTransactionSignature"
+	RuleErrorBlockRewardTxnMustHaveOneOutput      RuleError = "RuleErrorBlockRewardTxnMustHaveOneOutput"
 
 	RuleErrorMissingBlockProducerSignature                      RuleError = "RuleErrorMissingBlockProducerSignature"
 	RuleErrorInvalidBlockProducerPublicKey                      RuleError = "RuleErrorInvalidBlockProducerPublicKey"

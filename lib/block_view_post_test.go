@@ -2108,6 +2108,11 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 func TestFreezingPosts(t *testing.T) {
 	// Initialize blockchain.
 	chain, params, db := NewLowDifficultyBlockchain(t)
+	defer func() {
+		if chain.postgres != nil {
+			require.NoError(t, ResetPostgres(chain.postgres))
+		}
+	}()
 	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)

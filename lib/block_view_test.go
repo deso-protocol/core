@@ -1433,6 +1433,7 @@ func TestBalanceModelBasicTransfers(t *testing.T) {
 
 	TestBasicTransfer(t)
 	TestBasicTransferSignatures(t)
+	TestBlockRewardPatch(t)
 }
 
 func TestBasicTransfer(t *testing.T) {
@@ -2061,5 +2062,103 @@ func TestBasicTransferSignatures(t *testing.T) {
 		)...)
 
 		mineBlockAndVerifySignatures(allTxns)
+	}
+}
+
+func TestBlockRewardPatch(t *testing.T) {
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	defer func() {
+		if chain.postgres != nil {
+			require.NoError(t, ResetPostgres(chain.postgres))
+		}
+	}()
+	params.ForkHeights.BlockRewardPatchBlockHeight = 0
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Mine some blocks so we have SOME money
+	_, err := miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(t, err)
+	_, err = miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(t, err)
+	_, err = miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(t, err)
+
+	_, _ = mempool, db
+	// Try to split block reward among multiple keys
+	{
+		blkToMine, _, _, err := miner._getBlockToMine(0)
+		require.NoError(t, err)
+		blkRewardAmount := blkToMine.Txns[0].TxOutputs[0].AmountNanos
+		blkRewardAmountSplit := blkRewardAmount / 2
+		blkToMine.Txns[0].TxOutputs[0].AmountNanos = blkRewardAmountSplit
+		blkToMine.Txns[0].TxOutputs = append(blkToMine.Txns[0].TxOutputs, &DeSoOutput{
+			PublicKey:   MustBase58CheckDecode(recipientPkString),
+			AmountNanos: blkRewardAmountSplit,
+		})
+		_, bestNonce, err := FindLowestHash(blkToMine.Header, 10000)
+		require.NoError(t, err)
+		txHashes, err := ComputeTransactionHashes(blkToMine.Txns)
+		require.NoError(t, err)
+		blkToMine.Header.Nonce = bestNonce
+		utxoView, _ := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		_, err = utxoView.ConnectBlock(blkToMine, txHashes, true, nil, uint64(chain.blockTip().Height+1))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorBlockRewardTxnMustHaveOneOutput)
+	}
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       chain.blockTip().Height + 1,
+		feeRateNanosPerKb: uint64(101),
+	}
+
+	// Try include fees from block reward output public key, should fail.
+	{
+		txn := &MsgDeSoTxn{
+			// The inputs will be set below.
+			TxInputs: []*DeSoInput{},
+			TxOutputs: []*DeSoOutput{
+				{
+					PublicKey:   MustBase58CheckDecode(recipientPkString),
+					AmountNanos: 100,
+				},
+			},
+			PublicKey: MustBase58CheckDecode(senderPkString),
+			TxnMeta:   &BasicTransferMetadata{},
+		}
+		_, _, _, _, err :=
+			chain.AddInputsAndChangeToTransaction(txn, testMeta.feeRateNanosPerKb, nil)
+		require.NoError(t, err)
+		_signTxn(t, txn, senderPrivString)
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		_, _, _, fees, err := utxoView._connectTransaction(txn, txn.Hash(), getTxnSize(*txn), chain.blockTip().Height+1, true, false)
+		require.NoError(t, err)
+		blkToMine, _, _, err := miner._getBlockToMine(0)
+		require.NoError(t, err)
+		// Append transaction and add fees to block reward output.
+		blkToMine.Txns = append(blkToMine.Txns, txn)
+		require.Len(t, blkToMine.Txns, 2)
+		blkToMine.Txns[0].TxOutputs[0].AmountNanos += fees
+		_, bestNonce, err := FindLowestHash(blkToMine.Header, 10000)
+		require.NoError(t, err)
+		txHashes, err := ComputeTransactionHashes(blkToMine.Txns)
+		require.NoError(t, err)
+		blkToMine.Header.Nonce = bestNonce
+		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		_, err = utxoView.ConnectBlock(blkToMine, txHashes, true, nil, uint64(chain.blockTip().Height+1))
+		require.Contains(t, err.Error(), RuleErrorBlockRewardExceedsMaxAllowed)
+
+		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		require.NoError(t, err)
+		// Reduce fees and try again, should succeed.
+		blkToMine.Txns[0].TxOutputs[0].AmountNanos -= fees
+		_, err = utxoView.ConnectBlock(blkToMine, txHashes, true, nil, uint64(chain.blockTip().Height+1))
+		require.NoError(t, err)
 	}
 }

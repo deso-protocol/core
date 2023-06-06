@@ -103,3 +103,14 @@ func StopTestEmbeddedPostgresDB(epg *embeddedpostgres.EmbeddedPostgres) error {
 	}
 	return nil
 }
+
+func ResetPostgres(postgres *Postgres) error {
+	migrate.LoadMigrations()
+	if err := migrations.Run(postgres.db, "migrate", []string{"", "rollback"}); err != nil {
+		return errors.Wrapf(err, "StopTestEmbeddedPostgresDB: Problem running rollback")
+	}
+	if err := migrations.Run(postgres.db, "migrate", []string{"", "migrate"}); err != nil {
+		return errors.Wrapf(err, "StopTestEmbeddedPostgresDB: Problem running migrations")
+	}
+	return nil
+}
