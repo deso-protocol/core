@@ -3284,7 +3284,7 @@ func (postgres *Postgres) GetBlockRewardsForPublicKey(publicKey *PublicKey, star
 		Where("pg_transaction_output.public_key = ?", publicKey).
 		Where("pgt.Type = ?", TxnTypeBlockReward).
 		Where("pg_transaction_output.height > ?", startHeight).
-		Where("pg_transaction_output.height < ?", endHeight).Select()
+		Where("pg_transaction_output.height <= ?", endHeight).Select()
 	if err != nil {
 		return nil
 	}
