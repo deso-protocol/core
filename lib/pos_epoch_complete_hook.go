@@ -80,7 +80,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Roll-over a new epoch by setting a new CurrentEpochEntry.
 	nextEpochEntry := &EpochEntry{
 		EpochNumber:      currentEpochEntry.EpochNumber + 1,
-		FinalBlockHeight: blockHeight + bav.Params.EpochDurationNumBlocks,
+		FinalBlockHeight: blockHeight + bav.GetEpochDurationNumBlocks(0),
 	}
 	bav._setCurrentEpochEntry(nextEpochEntry)
 

@@ -111,7 +111,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
 
 	// For these tests, we set each epoch duration to only one block.
-	params.EpochDurationNumBlocks = uint64(1)
+	params.DefaultEpochDurationNumBlocks = uint64(1)
 
 	// Helper utils
 	_registerAndStake := func(publicKey string, privateKey string, stakeAmountNanos uint64) {
