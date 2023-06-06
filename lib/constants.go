@@ -270,6 +270,12 @@ type ForkHeights struct {
 	// to an account balance model for accounting.
 	BalanceModelBlockHeight uint32
 
+	// BlockRewardPatchBlockHeight defines the height at which the block reward excludes
+	// transaction fees from the public key receiving the block reward. This prevents
+	// the recipient of the block reward from paying nothing for their transactions
+	// that are in the block.
+	BlockRewardPatchBlockHeight uint32
+
 	// ProofOfStakeNewTxnTypesBlockHeight defines the height at which we introduced the
 	// new txn types to support Proof of Stake. These txns include: RegisterAsValidator,
 	// UnregisterAsValidator, Stake, Unstake, and UnlockStake.
@@ -646,6 +652,8 @@ var RegtestForkHeights = ForkHeights{
 	// genesis block was created using the utxo model.
 	BalanceModelBlockHeight:            uint32(1),
 	ProofOfStakeNewTxnTypesBlockHeight: uint32(1),
+
+	BlockRewardPatchBlockHeight: uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1072,6 +1080,9 @@ var TestnetForkHeights = ForkHeights{
 
 	// Tues Apr 11 2023 @ 5pm PT
 	BalanceModelBlockHeight: uint32(683058),
+
+	// Tues May 23 2023 @ 9am PT
+	BlockRewardPatchBlockHeight: uint32(729753),
 
 	// FIXME: set to real block height when ready
 	ProofOfStakeNewTxnTypesBlockHeight: uint32(math.MaxUint32),
