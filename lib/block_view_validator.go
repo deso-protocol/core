@@ -1719,8 +1719,14 @@ func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte) 
 		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving snapshot ValidatorJailEpochDuration: ")
 	}
 
+	// Calculate UnjailableAtEpochNumber.
+	unjailableAtEpochNumber, err := SafeUint64().Add(validatorEntry.JailedAtEpochNumber, validatorJailEpochDuration)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error calculating UnjailableAtEpochNumber: ")
+	}
+
 	// Validate sufficient epochs have elapsed for validator to be unjailed.
-	if validatorEntry.JailedAtEpochNumber+validatorJailEpochDuration > currentEpochNumber {
+	if unjailableAtEpochNumber > currentEpochNumber {
 		return errors.Wrapf(RuleErrorUnjailingValidatorTooEarly, "UtxoView.IsValidUnjailValidatorMetadata: ")
 	}
 

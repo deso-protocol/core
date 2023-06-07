@@ -112,6 +112,7 @@ func (bav *UtxoView) GetSnapshotGlobalParamsEntry() (*GlobalParamsEntry, error) 
 func (bav *UtxoView) _setSnapshotGlobalParamsEntry(globalParamsEntry *GlobalParamsEntry, snapshotAtEpochNumber uint64) {
 	if globalParamsEntry == nil {
 		glog.Errorf("_setSnapshotGlobalParamsEntry: called with nil entry, this should never happen")
+		return
 	}
 	bav.SnapshotGlobalParamEntries[snapshotAtEpochNumber] = globalParamsEntry.Copy()
 }
@@ -532,6 +533,7 @@ func (bav *UtxoView) GetSnapshotGlobalActiveStakeAmountNanos() (*uint256.Int, er
 func (bav *UtxoView) _setSnapshotGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos *uint256.Int, snapshotAtEpochNumber uint64) {
 	if globalActiveStakeAmountNanos == nil {
 		glog.Errorf("_setSnapshotGlobalActiveStakeAmountNanos: called with nil entry, this should never happen")
+		return
 	}
 	bav.SnapshotGlobalActiveStakeAmountNanos[snapshotAtEpochNumber] = globalActiveStakeAmountNanos.Clone()
 }

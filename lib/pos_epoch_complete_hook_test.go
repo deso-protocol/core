@@ -181,6 +181,9 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	{
 		// ParamUpdater set MinFeeRateNanos and ValidatorJailEpochDuration.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+		require.Zero(t, utxoView().GlobalParamsEntry.MinimumNetworkFeeNanosPerKB)
+		require.Zero(t, utxoView().GlobalParamsEntry.ValidatorJailEpochDuration)
+
 		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
@@ -188,6 +191,15 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			paramUpdaterPriv,
 			map[string][]byte{ValidatorJailEpochDuration.ToString(): UintToBuf(4)},
 		)
+
+		require.Equal(t, utxoView().GlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
+		require.Equal(t, utxoView().GlobalParamsEntry.ValidatorJailEpochDuration, uint64(4))
+
+		// We need to reset the UniversalUtxoView since the RegisterAsValidator and Stake
+		// txn test helper utils use and flush the UniversalUtxoView. Otherwise, the
+		// updated GlobalParamsEntry will be overwritten by the default one cached in
+		// the UniversalUtxoView when it is flushed.
+		mempool.universalUtxoView._ResetViewMappingsAfterFlush()
 	}
 	{
 		// Test the state of the snapshots prior to running our first OnEpochCompleteHook.
@@ -221,6 +233,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		snapshotGlobalParamsEntry, err := utxoView().GetSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
 		require.NotNil(t, snapshotGlobalParamsEntry)
+		require.Equal(t, utxoView().GlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
+		require.Equal(t, snapshotGlobalParamsEntry.ValidatorJailEpochDuration, uint64(4))
 
 		_assertEmptyValidatorSnapshots()
 	}
@@ -253,6 +267,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, snapshotGlobalParamsEntry)
 		require.Equal(t, snapshotGlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
+		require.Equal(t, snapshotGlobalParamsEntry.ValidatorJailEpochDuration, uint64(4))
 
 		_assertEmptyValidatorSnapshots()
 	}
@@ -270,7 +285,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		snapshotGlobalParamsEntry, err := utxoView().GetSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
 		require.NotNil(t, snapshotGlobalParamsEntry)
-		//require.Equal(t, snapshotGlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
+		require.Equal(t, snapshotGlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
+		require.Equal(t, snapshotGlobalParamsEntry.ValidatorJailEpochDuration, uint64(4))
 
 		// Test SnapshotValidatorByPKID is populated.
 		for _, pkid := range validatorPKIDs {
