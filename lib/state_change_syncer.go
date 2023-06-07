@@ -214,7 +214,7 @@ type StateChangeSyncer struct {
 
 	// Mutex to prevent concurrent writes to the state change file.
 	StateSyncerMutex *sync.Mutex
-	EntryCount       uint32
+	EntryCount       uint64
 
 	BlockHeight uint64
 }
@@ -558,7 +558,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		return true, nil
 	}
 
-	stateChangeSyncer.BlockHeight = uint64(server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Height)
+	blockHeight := uint64(server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Height)
+	stateChangeSyncer.BlockHeight = blockHeight
 
 	mempoolUtxoView, err := server.GetMempool().GetAugmentedUniversalView()
 	if err != nil {
@@ -592,6 +593,29 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		CommittedFlushId: originalCommittedFlushId,
 	})
 
+	//for txHash, unconnectedTxn := range server.mempool.unconnectedTxns {
+	//	utxoOpsForTxn, totalInput, totalOutput, currentFees, err := mempoolUtxoView.ConnectTransaction(
+	//		unconnectedTxn.tx, &txHash, 0, uint32(blockHeight), false, false /*ignoreUtxos*/)
+	//
+	//}
+
+	// TODO: Create nil blockhash for keybytes
+	// TODO: Loop through all unconnectedTxns, create a fake block object containing all of them, set the block height in the block metadata, as well as anything else we may need.
+	// TODO: Emit the dbTransactionConnected event for the fake block
+	// TODO: Create a UTXOOp bundle from all the utxoOpsForTxn
+	// TODO: Emit the dbTransactionConnected event for the fake utxo op bundle
+	// TODO: Figure out how to make sure these mempool transactions get added optimistically.
+
+	//mempoolUtxoView.EventManager.dbTransactionConnected(&DBTransactionEvent{
+	//	StateChangeEntry: &StateChangeEntry{
+	//		OperationType:        DbOperationTypeUpsert,
+	//		KeyBytes:             key,
+	//		EncoderBytes:         value,
+	//	},
+	//	FlushId:      uuid.Nil,
+	//	IsMempoolTxn: true,
+	//})
+
 	return false, nil
 }
 
@@ -602,7 +626,6 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 			time.Sleep(1000 * time.Millisecond)
 		}
 		fmt.Printf("\n\n*****STARTING THE MEMPOOL SYNC****\n")
-
 		// TODO: Exit if mempool is closed.
 		mempoolClosed := server.mempool.stopped
 		for !mempoolClosed {

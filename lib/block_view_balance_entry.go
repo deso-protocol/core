@@ -562,7 +562,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	// Track the state of the creator profile entry for this txn.
 	var stateChangeMetadata DeSoEncoder
 	if isDAOCoin {
-		stateChangeMetadata = &DAOCoinStateChangeMetadata{
+		stateChangeMetadata = &DAOCoinTransferStateChangeMetadata{
 			CreatorProfileEntry: creatorProfileEntry,
 		}
 	} else {
