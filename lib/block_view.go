@@ -3017,16 +3017,28 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 
 	if blockHeight >= bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
 		var bytesRead int
-		if len(extraData[StakeLockupEpochDuration]) > 0 {
-			newGlobalParamsEntry.StakeLockupEpochDuration, bytesRead = Uvarint(extraData[StakeLockupEpochDuration])
+		if len(extraData[StakeLockupEpochDuration.ToString()]) > 0 {
+			newGlobalParamsEntry.StakeLockupEpochDuration, bytesRead = Uvarint(extraData[StakeLockupEpochDuration.ToString()])
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode StakeLockupEpochDuration as uint64")
 			}
 		}
-		if len(extraData[ValidatorJailEpochDuration]) > 0 {
-			newGlobalParamsEntry.ValidatorJailEpochDuration, bytesRead = Uvarint(extraData[ValidatorJailEpochDuration])
+		if len(extraData[ValidatorJailEpochDuration.ToString()]) > 0 {
+			newGlobalParamsEntry.ValidatorJailEpochDuration, bytesRead = Uvarint(extraData[ValidatorJailEpochDuration.ToString()])
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode ValidatorJailEpochDuration as uint64")
+			}
+		}
+		if len(extraData[LeaderScheduleMaxNumValidators.ToString()]) > 0 {
+			newGlobalParamsEntry.LeaderScheduleMaxNumValidators, bytesRead = Uvarint(extraData[LeaderScheduleMaxNumValidators.ToString()])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode LeaderScheduleMaxNumValidators as uint64")
+			}
+		}
+		if len(extraData[EpochDurationNumBlocks.ToString()]) > 0 {
+			newGlobalParamsEntry.LeaderScheduleMaxNumValidators, bytesRead = Uvarint(extraData[EpochDurationNumBlocks.ToString()])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode EpochDurationNumBlocks as uint64")
 			}
 		}
 	}

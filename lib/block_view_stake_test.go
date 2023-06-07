@@ -1820,7 +1820,7 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			map[string][]byte{StakeLockupEpochDuration: UintToBuf(3)},
+			map[string][]byte{StakeLockupEpochDuration.ToString(): UintToBuf(3)},
 		)
 	}
 	{

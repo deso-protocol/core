@@ -1312,10 +1312,6 @@ const (
 	MaxCopiesPerNFTKey                     = "MaxCopiesPerNFT"
 	MaxNonceExpirationBlockHeightOffsetKey = "MaxNonceExpirationBlockHeightOffset"
 	ForbiddenBlockSignaturePubKeyKey       = "ForbiddenBlockSignaturePubKey"
-	StakeLockupEpochDuration               = "StakeLockupEpochDuration"
-	ValidatorJailEpochDuration             = "ValidatorJailEpochDuration"
-	LeaderScheduleMaxNumValidators         = "LeaderScheduleMaxNumValidators"
-	EpochDurationNumBlocks                 = "EpochDurationNumBlocks"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"

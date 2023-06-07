@@ -641,9 +641,9 @@ func DBGetGlobalActiveStakeAmountNanosWithTxn(txn *badger.Txn, snap *Snapshot) (
 	key := DBKeyForGlobalActiveStakeAmountNanos()
 	globalActiveStakeAmountNanosBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
-		// We don't want to error if the key isn't found. Instead, return 0.
+		// We don't want to error if the key isn't found. Instead, return nil.
 		if err == badger.ErrKeyNotFound {
-			return uint256.NewInt(), nil
+			return nil, nil
 		}
 		return nil, errors.Wrapf(err, "DBGetGlobalActiveStakeAmountNanosWithTxn: problem retrieving value")
 	}

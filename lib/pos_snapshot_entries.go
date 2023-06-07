@@ -11,34 +11,46 @@ import (
 	"sort"
 )
 
+const SnapshotLookbackNumEpochs uint64 = 2
+
+func (bav *UtxoView) GetSnapshotEpochNumber() (uint64, error) {
+	// Retrieve the CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return 0, errors.Wrapf(err, "GetSnapshotEpochNumber: problem retrieving CurrentEpochNumber: ")
+	}
+	if currentEpochNumber < SnapshotLookbackNumEpochs {
+		return 0, nil
+	}
+	return SafeUint64().Sub(currentEpochNumber, SnapshotLookbackNumEpochs)
+}
+
 //
 // SnapshotGlobalParamsEntry
 //
 
-const SnapshotLookbackNumEpochs uint64 = 2
+type SnapshotGlobalParam string
 
-func (bav *UtxoView) GetSnapshotGlobalParam(field string) (uint64, error) {
-	// Retrieve the CurrentEpochEntry.
-	currentEpochEntry, err := bav.GetCurrentEpochEntry()
+const (
+	StakeLockupEpochDuration       SnapshotGlobalParam = "StakeLockupEpochDuration"
+	ValidatorJailEpochDuration     SnapshotGlobalParam = "ValidatorJailEpochDuration"
+	LeaderScheduleMaxNumValidators SnapshotGlobalParam = "LeaderScheduleMaxNumValidators"
+	EpochDurationNumBlocks         SnapshotGlobalParam = "EpochDurationNumBlocks"
+)
+
+func (snapshotGlobalParam SnapshotGlobalParam) ToString() string {
+	return string(snapshotGlobalParam)
+}
+
+func (bav *UtxoView) GetSnapshotGlobalParam(field SnapshotGlobalParam) (uint64, error) {
+	// Retrieve the SnapshotGlobalParamsEntry.
+	globalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
 	if err != nil {
-		return 0, errors.Wrapf(err, "GetSnapshotGlobalParam: problem retrieving CurrentEpochEntry: ")
+		return 0, errors.Wrapf(err, "GetSnapshotGlobalParam: problem retrieving SnapshotGlobalParamsEntry: ")
 	}
-
-	// Calculate the SnapshotAtEpochNumber from which to retrieve the SnapshotGlobalParamsEntry.
-	// If the SnapshotAtEpochNumber < 0, then skip and just use the default value.
-	globalParamsEntry := &GlobalParamsEntry{}
-	if currentEpochEntry.EpochNumber >= SnapshotLookbackNumEpochs {
-		snapshotAtEpochNumber, err := SafeUint64().Sub(currentEpochEntry.EpochNumber, SnapshotLookbackNumEpochs)
-		if err != nil {
-			return 0, errors.Wrapf(err, "GetSnapshotGlobalParam: problem calculating SnapshotAtEpochNumber: ")
-		}
-		globalParamsEntry, err = bav.GetSnapshotGlobalParamsEntry(snapshotAtEpochNumber)
-		if err != nil {
-			return 0, errors.Wrapf(err, "GetSnapshotGlobalParam: problem retrieving SnapshotGlobalParamsEntry: ")
-		}
-		if globalParamsEntry == nil {
-			return 0, errors.New("GetSnapshotGlobalParam: SnapshotGlobalParamsEntry is nil")
-		}
+	if globalParamsEntry == nil {
+		// We will use hte default values below.
+		globalParamsEntry = &GlobalParamsEntry{}
 	}
 
 	// Return the corresponding field. Either the updated value if
@@ -72,7 +84,12 @@ func (bav *UtxoView) GetSnapshotGlobalParam(field string) (uint64, error) {
 	return 0, fmt.Errorf("GetSnapshotGlobalParam: invalid field provided: %s", field)
 }
 
-func (bav *UtxoView) GetSnapshotGlobalParamsEntry(snapshotAtEpochNumber uint64) (*GlobalParamsEntry, error) {
+func (bav *UtxoView) GetSnapshotGlobalParamsEntry() (*GlobalParamsEntry, error) {
+	// Calculate the SnapshotEpochNumber.
+	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSnapshotGlobalParamsEntry: problem calculating SnapshotEpochNumber: ")
+	}
 	// Check the UtxoView first.
 	if globalParamsEntry, exists := bav.SnapshotGlobalParamEntries[snapshotAtEpochNumber]; exists {
 		return globalParamsEntry, nil
@@ -204,7 +221,12 @@ func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64) err
 	return nil
 }
 
-func (bav *UtxoView) GetSnapshotValidatorByPKID(pkid *PKID, snapshotAtEpochNumber uint64) (*ValidatorEntry, error) {
+func (bav *UtxoView) GetSnapshotValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
+	// Calculate the SnapshotEpochNumber.
+	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSnapshotValidatorByPKID: problem calculating SnapshotEpochNumber: ")
+	}
 	// Check the UtxoView first.
 	mapKey := SnapshotValidatorMapKey{SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorPKID: *pkid}
 	if validatorEntry, exists := bav.SnapshotValidatorEntries[mapKey]; exists {
@@ -225,7 +247,13 @@ func (bav *UtxoView) GetSnapshotValidatorByPKID(pkid *PKID, snapshotAtEpochNumbe
 	return validatorEntry, nil
 }
 
-func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64, snapshotAtEpochNumber uint64) ([]*ValidatorEntry, error) {
+func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64) ([]*ValidatorEntry, error) {
+	// Calculate the SnapshotEpochNumber.
+	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSnapshotTopActiveValidatorsByStake: problem calculating SnapshotEpochNumber: ")
+	}
+	// Create a slice of all UtxoView ValidatorEntries to prevent pulling them from the db.
 	var utxoViewValidatorEntries []*ValidatorEntry
 	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
 		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber {
@@ -250,7 +278,7 @@ func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64, snapsho
 			SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorPKID: *validatorEntry.ValidatorPKID,
 		}
 		if _, exists := bav.SnapshotValidatorEntries[mapKey]; !exists {
-			bav._setValidatorEntryMappings(validatorEntry)
+			bav._setSnapshotValidatorEntry(validatorEntry, snapshotAtEpochNumber)
 		}
 	}
 	// Pull !isDeleted, active ValidatorEntries from the UtxoView with stake > 0.
@@ -475,7 +503,12 @@ func DBEnumerateAllCurrentValidators(handle *badger.DB, pkidsToSkip []*PKID) ([]
 // SnapshotGlobalActiveStakeAmountNanos
 //
 
-func (bav *UtxoView) GetSnapshotGlobalActiveStakeAmountNanos(snapshotAtEpochNumber uint64) (*uint256.Int, error) {
+func (bav *UtxoView) GetSnapshotGlobalActiveStakeAmountNanos() (*uint256.Int, error) {
+	// Calculate the SnapshotEpochNumber.
+	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSnapshotGlobalActiveStakeAmountNanos: problem calculating SnapshotEpochNumber: ")
+	}
 	// Check the UtxoView first.
 	if globalActiveStakeAmountNanos, exists := bav.SnapshotGlobalActiveStakeAmountNanos[snapshotAtEpochNumber]; exists {
 		return globalActiveStakeAmountNanos.Clone(), nil
@@ -488,10 +521,11 @@ func (bav *UtxoView) GetSnapshotGlobalActiveStakeAmountNanos(snapshotAtEpochNumb
 			"GetSnapshotGlobalActiveStakeAmountNanos: problem retrieving SnapshotGlobalActiveStakeAmountNanos from db: ",
 		)
 	}
-	if globalActiveStakeAmountNanos != nil {
-		// Cache the result in the UtxoView.
-		bav._setSnapshotGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos, snapshotAtEpochNumber)
+	if globalActiveStakeAmountNanos == nil {
+		globalActiveStakeAmountNanos = uint256.NewInt()
 	}
+	// Cache the result in the UtxoView.
+	bav._setSnapshotGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos, snapshotAtEpochNumber)
 	return globalActiveStakeAmountNanos, nil
 }
 
@@ -586,11 +620,16 @@ type SnapshotLeaderScheduleMapKey struct {
 	LeaderIndex           uint16
 }
 
-func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint16, snapshotAtEpochNumber uint64) (*ValidatorEntry, error) {
+func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint16) (*ValidatorEntry, error) {
+	// Calculate the SnapshotEpochNumber.
+	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	if err != nil {
+		return nil, errors.Wrapf(err, " GetSnapshotLeaderScheduleValidator: problem calculating SnapshotEpochNumber: ")
+	}
 	// First, check the UtxoView.
 	mapKey := SnapshotLeaderScheduleMapKey{SnapshotAtEpochNumber: snapshotAtEpochNumber, LeaderIndex: leaderIndex}
 	if validatorPKID, exists := bav.SnapshotLeaderSchedule[mapKey]; exists {
-		return bav.GetSnapshotValidatorByPKID(validatorPKID, snapshotAtEpochNumber)
+		return bav.GetSnapshotValidatorByPKID(validatorPKID)
 	}
 	// Next, check the db.
 	validatorEntry, err := DBGetSnapshotLeaderScheduleValidator(bav.Handle, bav.Snapshot, leaderIndex, snapshotAtEpochNumber)

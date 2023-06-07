@@ -70,7 +70,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
@@ -1558,7 +1558,7 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			map[string][]byte{ValidatorJailEpochDuration: UintToBuf(3)},
+			map[string][]byte{ValidatorJailEpochDuration.ToString(): UintToBuf(3)},
 		)
 	}
 	{
