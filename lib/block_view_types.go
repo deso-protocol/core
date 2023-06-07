@@ -3787,6 +3787,11 @@ type GlobalParamsEntry struct {
 
 	// EpochDurationNumBlocks is the number of blocks included in one epoch.
 	EpochDurationNumBlocks uint64
+
+	// JailInactiveValidatorEpochThreshold is the number of epochs we allow
+	// a validator to be inactive for (neither voting nor proposing blocks)
+	// before they are jailed.
+	JailInactiveValidatorEpochThreshold uint64
 }
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
@@ -3801,6 +3806,7 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		ValidatorJailEpochDuration:          gp.ValidatorJailEpochDuration,
 		LeaderScheduleMaxNumValidators:      gp.LeaderScheduleMaxNumValidators,
 		EpochDurationNumBlocks:              gp.EpochDurationNumBlocks,
+		JailInactiveValidatorEpochThreshold: gp.JailInactiveValidatorEpochThreshold,
 	}
 }
 
@@ -3820,6 +3826,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.ValidatorJailEpochDuration)...)
 		data = append(data, UintToBuf(gp.LeaderScheduleMaxNumValidators)...)
 		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
+		data = append(data, UintToBuf(gp.JailInactiveValidatorEpochThreshold)...)
 	}
 	return data
 }
@@ -3869,6 +3876,10 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		gp.EpochDurationNumBlocks, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading EpochDurationNumBlocks: ")
+		}
+		gp.JailInactiveValidatorEpochThreshold, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading JailInactiveValidatorEpochThreshold: ")
 		}
 	}
 	return nil

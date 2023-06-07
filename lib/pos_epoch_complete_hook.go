@@ -50,7 +50,10 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Snapshot the current GlobalParamsEntry.
 	bav._setSnapshotGlobalParamsEntry(bav.GlobalParamsEntry, currentEpochEntry.EpochNumber)
 
-	// Snapshot the current ValidatorEntries.
+	// Snapshot the current ValidatorEntries. This loops through all validators to snapshot them, O(N).
+	// To save on runtime, we also check if we should jail each validator and jail them if so.
+	// We optionally jail a validator after we snapshot them. A jailed validator should be considered jailed
+	// in the new epoch starting after this OnEpochCompleteHook, and not the previous epoch which is snapshot.
 	if err = bav.SnapshotCurrentValidators(currentEpochEntry.EpochNumber); err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: problem snapshotting validators: ")
 	}
@@ -74,7 +77,6 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 		bav._setSnapshotLeaderScheduleValidator(validatorPKID, uint16(index), currentEpochEntry.EpochNumber)
 	}
 
-	// TODO: Jail inactive validators.
 	// TODO: Delete old snapshots that are no longer used.
 
 	// Retrieve the SnapshotGlobalParam: EpochDurationNumBlocks.

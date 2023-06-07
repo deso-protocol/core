@@ -1713,7 +1713,7 @@ func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte) 
 		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving CurrentEpochNumber: ")
 	}
 
-	// Retrieve SnapshotGlobalParam: ValidatorJailEpochDuration.
+	// Retrieve the SnapshotGlobalParam: ValidatorJailEpochDuration.
 	validatorJailEpochDuration, err := bav.GetSnapshotGlobalParam(ValidatorJailEpochDuration)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving snapshot ValidatorJailEpochDuration: ")
@@ -1922,6 +1922,36 @@ func (bav *UtxoView) GetGlobalActiveStakeAmountNanos() (*uint256.Int, error) {
 	// Cache the GlobalActiveStakeAmountNanos from the db in the UtxoView.
 	bav._setGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos)
 	return globalActiveStakeAmountNanos, nil
+}
+
+func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry) (bool, error) {
+	// Return false if the validator is already jailed. We do not want to jail
+	// them again. And we want to retain their original JailedAtEpochNumber so
+	// that they can eventually unjail themselves.
+	if validatorEntry.Status() == ValidatorStatusJailed {
+		return false, nil
+	}
+
+	// Retrieve the CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving CurrentEpochNumber: ")
+	}
+
+	// Retrieve the SnapshotGlobalParam: JailInactiveValidatorEpochThreshold.
+	jailInactiveValidatorEpochThreshold, err := bav.GetSnapshotGlobalParam(JailInactiveValidatorEpochThreshold)
+	if err != nil {
+		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving JailInactiveValidatorEpochThreshold: ")
+	}
+
+	// Calculate JailAtEpochNumber.
+	jailAtEpochNumber, err := SafeUint64().Add(validatorEntry.LastActiveAtEpochNumber, jailInactiveValidatorEpochThreshold)
+	if err != nil {
+		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error calculating JailAtEpochNumber: ")
+	}
+
+	// Return true if LastActiveAtEpochNumber + JailInactiveValidatorEpochThreshold <= CurrentEpochNumber.
+	return jailAtEpochNumber <= currentEpochNumber, nil
 }
 
 func (bav *UtxoView) JailValidator(validatorEntry *ValidatorEntry) error {
