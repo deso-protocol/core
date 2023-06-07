@@ -32,11 +32,11 @@ func (bav *UtxoView) GetSnapshotEpochNumber() (uint64, error) {
 type SnapshotGlobalParam string
 
 const (
-	StakeLockupEpochDuration            SnapshotGlobalParam = "StakeLockupEpochDuration"
-	ValidatorJailEpochDuration          SnapshotGlobalParam = "ValidatorJailEpochDuration"
-	LeaderScheduleMaxNumValidators      SnapshotGlobalParam = "LeaderScheduleMaxNumValidators"
-	EpochDurationNumBlocks              SnapshotGlobalParam = "EpochDurationNumBlocks"
-	JailInactiveValidatorEpochThreshold SnapshotGlobalParam = "JailInactiveValidatorEpochThreshold"
+	StakeLockupEpochDuration               SnapshotGlobalParam = "StakeLockupEpochDuration"
+	ValidatorJailEpochDuration             SnapshotGlobalParam = "ValidatorJailEpochDuration"
+	LeaderScheduleMaxNumValidators         SnapshotGlobalParam = "LeaderScheduleMaxNumValidators"
+	EpochDurationNumBlocks                 SnapshotGlobalParam = "EpochDurationNumBlocks"
+	JailInactiveValidatorGracePeriodEpochs SnapshotGlobalParam = "JailInactiveValidatorGracePeriodEpochs"
 )
 
 func (snapshotGlobalParam SnapshotGlobalParam) ToString() string {
@@ -81,11 +81,11 @@ func (bav *UtxoView) GetSnapshotGlobalParam(field SnapshotGlobalParam) (uint64, 
 		}
 		return bav.Params.DefaultEpochDurationNumBlocks, nil
 
-	case JailInactiveValidatorEpochThreshold:
-		if globalParamsEntry.JailInactiveValidatorEpochThreshold != 0 {
-			return globalParamsEntry.JailInactiveValidatorEpochThreshold, nil
+	case JailInactiveValidatorGracePeriodEpochs:
+		if globalParamsEntry.JailInactiveValidatorGracePeriodEpochs != 0 {
+			return globalParamsEntry.JailInactiveValidatorGracePeriodEpochs, nil
 		}
-		return bav.Params.DefaultJailInactiveValidatorEpochThreshold, nil
+		return bav.Params.DefaultJailInactiveValidatorGracePeriodEpochs, nil
 	}
 
 	return 0, fmt.Errorf("GetSnapshotGlobalParam: invalid field provided: %s", field)
@@ -219,13 +219,14 @@ func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64) err
 			shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry)
 			if err != nil {
 				return errors.Wrapf(
-					err, "SnapshotValidators: problem determining if should jail validator %v: ", validatorEntry.ValidatorPKID,
+					err,
+					"SnapshotValidators: problem determining if should jail validator %v: ",
+					validatorEntry.ValidatorPKID,
 				)
 			}
 			// Jail them if so.
 			if shouldJailValidator {
-				err = bav.JailValidator(validatorEntry)
-				if err != nil {
+				if err = bav.JailValidator(validatorEntry); err != nil {
 					return errors.Wrapf(
 						err, "SnapshotValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
 					)
@@ -252,8 +253,7 @@ func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64) err
 		}
 		// Jail them if so.
 		if shouldJailValidator {
-			err = bav.JailValidator(validatorEntry)
-			if err != nil {
+			if err = bav.JailValidator(validatorEntry); err != nil {
 				return errors.Wrapf(
 					err, "SnapshotValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
 				)

@@ -630,10 +630,10 @@ type DeSoParams struct {
 	// DefaultEpochDurationNumBlocks is the default number of blocks included in one epoch.
 	DefaultEpochDurationNumBlocks uint64
 
-	// DefaultJailInactiveValidatorEpochThreshold is the default number of epochs
+	// DefaultJailInactiveValidatorGracePeriodEpochs is the default number of epochs
 	// we allow a validator to be inactive for (neither voting nor proposing blocks)
 	// before they are jailed.
-	DefaultJailInactiveValidatorEpochThreshold uint64
+	DefaultJailInactiveValidatorGracePeriodEpochs uint64
 
 	ForkHeights ForkHeights
 
@@ -1028,7 +1028,7 @@ var DeSoMainnetParams = DeSoParams{
 	DefaultEpochDurationNumBlocks: uint64(3600),
 
 	// The number of epochs before an inactive validator is jailed
-	DefaultJailInactiveValidatorEpochThreshold: uint64(48),
+	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
 
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
@@ -1277,7 +1277,7 @@ var DeSoTestnetParams = DeSoParams{
 	DefaultEpochDurationNumBlocks: uint64(3600),
 
 	// The number of epochs before an inactive validator is jailed
-	DefaultJailInactiveValidatorEpochThreshold: uint64(48),
+	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),

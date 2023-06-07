@@ -1938,19 +1938,19 @@ func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry) (bool, 
 		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving CurrentEpochNumber: ")
 	}
 
-	// Retrieve the SnapshotGlobalParam: JailInactiveValidatorEpochThreshold.
-	jailInactiveValidatorEpochThreshold, err := bav.GetSnapshotGlobalParam(JailInactiveValidatorEpochThreshold)
+	// Retrieve the SnapshotGlobalParam: JailInactiveValidatorGracePeriodEpochs.
+	jailInactiveValidatorGracePeriodEpochs, err := bav.GetSnapshotGlobalParam(JailInactiveValidatorGracePeriodEpochs)
 	if err != nil {
-		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving JailInactiveValidatorEpochThreshold: ")
+		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving JailInactiveValidatorGracePeriodEpochs: ")
 	}
 
 	// Calculate JailAtEpochNumber.
-	jailAtEpochNumber, err := SafeUint64().Add(validatorEntry.LastActiveAtEpochNumber, jailInactiveValidatorEpochThreshold)
+	jailAtEpochNumber, err := SafeUint64().Add(validatorEntry.LastActiveAtEpochNumber, jailInactiveValidatorGracePeriodEpochs)
 	if err != nil {
 		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error calculating JailAtEpochNumber: ")
 	}
 
-	// Return true if LastActiveAtEpochNumber + JailInactiveValidatorEpochThreshold <= CurrentEpochNumber.
+	// Return true if LastActiveAtEpochNumber + JailInactiveValidatorGracePeriodEpochs <= CurrentEpochNumber.
 	return jailAtEpochNumber <= currentEpochNumber, nil
 }
 
