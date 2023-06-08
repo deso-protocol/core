@@ -1954,9 +1954,20 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: error retrieving CurrentEpochNumber: ")
 	}
 
+	// Retrieve SnapshotGlobalParam: StakeLockupEpochDuration.
+	stakeLockupEpochDuration, err := bav.GetSnapshotGlobalParam(StakeLockupEpochDuration)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: error retrieving snapshot StakeLockupEpochDuration: ")
+	}
+
+	// Calculate UnlockableAtEpochNumber.
+	unlockableAtEpochNumber, err := SafeUint64().Add(metadata.EndEpochNumber, stakeLockupEpochDuration)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: error calculating UnlockableAtEpochNumber: ")
+	}
+
 	// Validate EndEpochNumber + StakeLockupEpochDuration <= CurrentEpochNumber.
-	// TODO: Retrieve snapshot StakeLockupEpochDuration, not current value.
-	if metadata.EndEpochNumber+bav.GetStakeLockupEpochDuration(0) > currentEpochNumber {
+	if unlockableAtEpochNumber > currentEpochNumber {
 		return errors.Wrapf(RuleErrorInvalidUnlockStakeMustWaitLockupDuration, "UtxoView.IsValidUnlockStakeMetadata: ")
 	}
 

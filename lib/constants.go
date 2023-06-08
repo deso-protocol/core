@@ -623,10 +623,12 @@ type DeSoParams struct {
 	// an UnjailValidator txn.
 	DefaultValidatorJailEpochDuration uint64
 
-	// LeaderScheduleMaxNumValidators is the maximum number of validators that
-	// are included when generating a new Proof-of-Stake leader schedule.
-	// TODO: Move this to GlobalParamsEntry.
-	LeaderScheduleMaxNumValidators uint64
+	// DefaultLeaderScheduleMaxNumValidators is the default maximum number of validators
+	// that are included when generating a new Proof-of-Stake leader schedule.
+	DefaultLeaderScheduleMaxNumValidators uint64
+
+	// DefaultEpochDurationNumBlocks is the default number of blocks included in one epoch.
+	DefaultEpochDurationNumBlocks uint64
 
 	ForkHeights ForkHeights
 
@@ -1015,7 +1017,10 @@ var DeSoMainnetParams = DeSoParams{
 	DefaultValidatorJailEpochDuration: uint64(3),
 
 	// The max number of validators included in a leader schedule.
-	LeaderScheduleMaxNumValidators: uint64(100),
+	DefaultLeaderScheduleMaxNumValidators: uint64(100),
+
+	// The number of blocks in one epoch
+	DefaultEpochDurationNumBlocks: uint64(3600),
 
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
@@ -1258,7 +1263,10 @@ var DeSoTestnetParams = DeSoParams{
 	DefaultValidatorJailEpochDuration: uint64(3),
 
 	// The max number of validators included in a leader schedule.
-	LeaderScheduleMaxNumValidators: uint64(100),
+	DefaultLeaderScheduleMaxNumValidators: uint64(100),
+
+	// The number of blocks in one epoch
+	DefaultEpochDurationNumBlocks: uint64(3600),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
@@ -1304,8 +1312,6 @@ const (
 	MaxCopiesPerNFTKey                     = "MaxCopiesPerNFT"
 	MaxNonceExpirationBlockHeightOffsetKey = "MaxNonceExpirationBlockHeightOffset"
 	ForbiddenBlockSignaturePubKeyKey       = "ForbiddenBlockSignaturePubKey"
-	StakeLockupEpochDuration               = "StakeLockupEpochDuration"
-	ValidatorJailEpochDuration             = "ValidatorJailEpochDuration"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"

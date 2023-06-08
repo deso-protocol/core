@@ -539,7 +539,7 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 }
 
 func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
-	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
+	key := append([]byte{}, Prefixes.PrefixValidatorByStatusAndStake...)
 	key = append(key, EncodeUint8(uint8(validatorEntry.Status()))...)
 	key = append(key, FixedWidthEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
@@ -596,7 +596,7 @@ func DBGetTopActiveValidatorsByStake(
 	}
 
 	// Retrieve top N active ValidatorEntry keys by stake.
-	key := append([]byte{}, Prefixes.PrefixValidatorByStake...)
+	key := append([]byte{}, Prefixes.PrefixValidatorByStatusAndStake...)
 	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
 	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, int(limit), nil, true, validatorKeysToSkip,
@@ -641,9 +641,9 @@ func DBGetGlobalActiveStakeAmountNanosWithTxn(txn *badger.Txn, snap *Snapshot) (
 	key := DBKeyForGlobalActiveStakeAmountNanos()
 	globalActiveStakeAmountNanosBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
-		// We don't want to error if the key isn't found. Instead, return 0.
+		// We don't want to error if the key isn't found. Instead, return nil.
 		if err == badger.ErrKeyNotFound {
-			return uint256.NewInt(), nil
+			return nil, nil
 		}
 		return nil, errors.Wrapf(err, "DBGetGlobalActiveStakeAmountNanosWithTxn: problem retrieving value")
 	}
@@ -678,12 +678,12 @@ func DBPutValidatorWithTxn(
 		)
 	}
 
-	// Set ValidatorEntry key in PrefixValidatorByStake. The value should be nil.
+	// Set ValidatorEntry key in PrefixValidatorByStatusAndStake. The value should be nil.
 	// We parse the ValidatorPKID from the key for this index.
 	key = DBKeyForValidatorByStake(validatorEntry)
 	if err := DBSetWithTxn(txn, snap, key, nil); err != nil {
 		return errors.Wrapf(
-			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByStake",
+			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByStatusAndStake",
 		)
 	}
 
@@ -719,11 +719,11 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorPKID *PK
 		)
 	}
 
-	// Delete ValidatorEntry.PKID from PrefixValidatorByStake.
+	// Delete ValidatorEntry.PKID from PrefixValidatorByStatusAndStake.
 	key = DBKeyForValidatorByStake(validatorEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByStake",
+			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByStatusAndStake",
 		)
 	}
 
@@ -1713,9 +1713,20 @@ func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte) 
 		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving CurrentEpochNumber: ")
 	}
 
+	// Retrieve SnapshotGlobalParam: ValidatorJailEpochDuration.
+	validatorJailEpochDuration, err := bav.GetSnapshotGlobalParam(ValidatorJailEpochDuration)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving snapshot ValidatorJailEpochDuration: ")
+	}
+
+	// Calculate UnjailableAtEpochNumber.
+	unjailableAtEpochNumber, err := SafeUint64().Add(validatorEntry.JailedAtEpochNumber, validatorJailEpochDuration)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error calculating UnjailableAtEpochNumber: ")
+	}
+
 	// Validate sufficient epochs have elapsed for validator to be unjailed.
-	// TODO: Retrieve snapshot ValidatorJailEpochDuration, not current value.
-	if validatorEntry.JailedAtEpochNumber+bav.GetValidatorJailEpochDuration(0) > currentEpochNumber {
+	if unjailableAtEpochNumber > currentEpochNumber {
 		return errors.Wrapf(RuleErrorUnjailingValidatorTooEarly, "UtxoView.IsValidUnjailValidatorMetadata: ")
 	}
 
@@ -1879,8 +1890,16 @@ func (bav *UtxoView) GetTopActiveValidatorsByStake(limit uint64) ([]*ValidatorEn
 		}
 	}
 	// Sort the ValidatorEntries DESC by TotalStakeAmountNanos.
-	sort.Slice(validatorEntries, func(ii, jj int) bool {
-		return validatorEntries[ii].TotalStakeAmountNanos.Cmp(validatorEntries[jj].TotalStakeAmountNanos) > 0
+	sort.SliceStable(validatorEntries, func(ii, jj int) bool {
+		stakeCmp := validatorEntries[ii].TotalStakeAmountNanos.Cmp(validatorEntries[jj].TotalStakeAmountNanos)
+		if stakeCmp == 0 {
+			// Use ValidatorPKID as a tie-breaker if equal TotalStakeAmountNanos.
+			return bytes.Compare(
+				validatorEntries[ii].ValidatorPKID.ToBytes(),
+				validatorEntries[jj].ValidatorPKID.ToBytes(),
+			) > 0
+		}
+		return stakeCmp > 0
 	})
 	// Return top N.
 	upperBound := int(math.Min(float64(limit), float64(len(validatorEntries))))

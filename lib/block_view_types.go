@@ -3780,6 +3780,28 @@ type GlobalParamsEntry struct {
 	// ValidatorJailEpochDuration is the number of epochs that a validator must
 	// wait after being jailed before submitting an UnjailValidator txn.
 	ValidatorJailEpochDuration uint64
+
+	// LeaderScheduleMaxNumValidators is the maximum number of validators that
+	// are included when generating a new Proof-of-Stake leader schedule.
+	LeaderScheduleMaxNumValidators uint64
+
+	// EpochDurationNumBlocks is the number of blocks included in one epoch.
+	EpochDurationNumBlocks uint64
+}
+
+func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
+	return &GlobalParamsEntry{
+		USDCentsPerBitcoin:                  gp.USDCentsPerBitcoin,
+		CreateProfileFeeNanos:               gp.CreateProfileFeeNanos,
+		CreateNFTFeeNanos:                   gp.CreateNFTFeeNanos,
+		MaxCopiesPerNFT:                     gp.MaxCopiesPerNFT,
+		MinimumNetworkFeeNanosPerKB:         gp.MinimumNetworkFeeNanosPerKB,
+		MaxNonceExpirationBlockHeightOffset: gp.MaxNonceExpirationBlockHeightOffset,
+		StakeLockupEpochDuration:            gp.StakeLockupEpochDuration,
+		ValidatorJailEpochDuration:          gp.ValidatorJailEpochDuration,
+		LeaderScheduleMaxNumValidators:      gp.LeaderScheduleMaxNumValidators,
+		EpochDurationNumBlocks:              gp.EpochDurationNumBlocks,
+	}
 }
 
 func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -3796,6 +3818,8 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		data = append(data, UintToBuf(gp.StakeLockupEpochDuration)...)
 		data = append(data, UintToBuf(gp.ValidatorJailEpochDuration)...)
+		data = append(data, UintToBuf(gp.LeaderScheduleMaxNumValidators)...)
+		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
 	}
 	return data
 }
@@ -3832,11 +3856,19 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		gp.StakeLockupEpochDuration, err = ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakeLockupEpochDuration")
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakeLockupEpochDuration: ")
 		}
 		gp.ValidatorJailEpochDuration, err = ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading ValidatorJailEpochDuration")
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading ValidatorJailEpochDuration: ")
+		}
+		gp.LeaderScheduleMaxNumValidators, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading LeaderScheduleMaxNumValidators: ")
+		}
+		gp.EpochDurationNumBlocks, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading EpochDurationNumBlocks: ")
 		}
 	}
 	return nil

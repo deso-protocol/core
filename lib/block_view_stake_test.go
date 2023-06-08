@@ -1807,7 +1807,7 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 
 	// Seed a CurrentEpochEntry.
 	epochUtxoView := newUtxoView()
-	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 5, FinalBlockHeight: blockHeight + 10})
+	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
 	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 	currentEpochNumber, err := newUtxoView().GetCurrentEpochNumber()
 	require.NoError(t, err)
@@ -1820,7 +1820,7 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			map[string][]byte{StakeLockupEpochDuration: UintToBuf(3)},
+			map[string][]byte{StakeLockupEpochDuration.ToString(): UintToBuf(3)},
 		)
 	}
 	{
@@ -1889,6 +1889,8 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 		epochUtxoView._setCurrentEpochEntry(
 			&EpochEntry{EpochNumber: currentEpochNumber + 3, FinalBlockHeight: blockHeight + 10},
 		)
+		// Also store a SnapshotGlobalParamsEntry in the db.
+		epochUtxoView._setSnapshotGlobalParamsEntry(&GlobalParamsEntry{}, currentEpochNumber+1)
 		require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 		currentEpochNumber, err = newUtxoView().GetCurrentEpochNumber()
 		require.NoError(t, err)

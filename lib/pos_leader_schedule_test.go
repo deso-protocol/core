@@ -124,18 +124,14 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
 
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
@@ -246,8 +242,8 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		testGenerateLeaderSchedule([]*PKID{m3PKID, m5PKID, m6PKID, m4PKID, m2PKID, m1PKID, m0PKID})
 	}
 	{
-		// Test changing params.LeaderScheduleMaxNumValidators.
-		params.LeaderScheduleMaxNumValidators = 5
+		// Test changing LeaderScheduleMaxNumValidators.
+		params.DefaultLeaderScheduleMaxNumValidators = 5
 		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 5)

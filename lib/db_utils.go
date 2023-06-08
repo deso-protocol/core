@@ -481,10 +481,10 @@ type DBPrefixes struct {
 	// Prefix, ValidatorPKID -> ValidatorEntry
 	PrefixValidatorByPKID []byte `prefix_id:"[78]" is_state:"true"`
 
-	// PrefixValidatorByStake: Retrieve the top N validators by stake.
+	// PrefixValidatorByStatusAndStake: Retrieve the top N active validators by stake.
 	// Prefix, Status, TotalStakeAmountNanos, ValidatorPKID -> nil
 	// Note that we save space by storing a nil value and parsing the ValidatorPKID from the key.
-	PrefixValidatorByStake []byte `prefix_id:"[79]" is_state:"true"`
+	PrefixValidatorByStatusAndStake []byte `prefix_id:"[79]" is_state:"true"`
 
 	// PrefixGlobalActiveStakeAmountNanos: Retrieve the cumulative stake across all validators.
 	// Prefix -> *uint256.Int
@@ -529,7 +529,28 @@ type DBPrefixes struct {
 	// Prefix -> <RandomSeedHash [32]byte>.
 	PrefixCurrentRandomSeedHash []byte `prefix_id:"[84]" is_state:"true"`
 
-	// NEXT_TAG: 85
+	// PrefixSnapshotGlobalParamsEntry: Retrieve a snapshot GlobalParamsEntry by SnapshotAtEpochNumber.
+	// Prefix, SnapshotAtEpochNumber -> *GlobalParamsEntry
+	PrefixSnapshotGlobalParamsEntry []byte `prefix_id:"[85]" is_state:"true"`
+
+	// PrefixSnapshotValidatorByPKID: Retrieve a snapshot ValidatorEntry by <SnapshotAtEpochNumber, PKID>.
+	// Prefix, SnapshotAtEpochNumber, ValidatorPKID -> *ValidatorEntry
+	PrefixSnapshotValidatorByPKID []byte `prefix_id:"[86]" is_state:"true"`
+
+	// PrefixSnapshotValidatorByStatusAndStake: Retrieve stake-ordered active ValidatorEntries by SnapshotAtEpochNumber.
+	// Prefix, SnapshotAtEpochNumber, Status, TotalStakeAmountNanos, ValidatorPKID -> nil
+	// Note: we parse the ValidatorPKID from the key and the value is nil to save space.
+	PrefixSnapshotValidatorByStatusAndStake []byte `prefix_id:"[87]" is_state:"true"`
+
+	// PrefixSnapshotGlobalActiveStakeAmountNanos: Retrieve a snapshot GlobalActiveStakeAmountNanos by SnapshotAtEpochNumber.
+	// Prefix, SnapshotAtEpochNumber -> *uint256.Int
+	PrefixSnapshotGlobalActiveStakeAmountNanos []byte `prefix_id:"[88]" is_state:"true"`
+
+	// PrefixSnapshotLeaderSchedule: Retrieve a ValidatorPKID by <SnapshotAtEpochNumber, LeaderIndex>.
+	// Prefix, SnapshotAtEpochNumber, LeaderIndex -> ValidatorPKID
+	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[89]" is_state:"true"`
+
+	// NEXT_TAG: 90
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -734,7 +755,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByPKID) {
 		// prefix_id:"[78]"
 		return true, &ValidatorEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStake) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStatusAndStake) {
 		// prefix_id:"[79]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixGlobalActiveStakeAmountNanos) {
@@ -752,6 +773,21 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentRandomSeedHash) {
 		// prefix_id:"[84]"
 		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalParamsEntry) {
+		// prefix_id:"[85]"
+		return true, &GlobalParamsEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByPKID) {
+		// prefix_id:"[86]"
+		return true, &ValidatorEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByStatusAndStake) {
+		// prefix_id:"[87]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanos) {
+		// prefix_id:"[88]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotLeaderSchedule) {
+		// prefix_id:"[89]"
+		return true, &PKID{}
 	}
 
 	return true, nil
@@ -4247,6 +4283,16 @@ func EncodeUint64(num uint64) []byte {
 
 func DecodeUint64(scoreBytes []byte) uint64 {
 	return binary.BigEndian.Uint64(scoreBytes)
+}
+
+func EncodeUint16(num uint16) []byte {
+	numBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(numBytes, num)
+	return numBytes
+}
+
+func DecodeUint16(numBytes []byte) uint16 {
+	return binary.BigEndian.Uint16(numBytes)
 }
 
 func EncodeUint8(num uint8) []byte {
