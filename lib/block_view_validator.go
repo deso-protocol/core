@@ -1926,7 +1926,7 @@ func (bav *UtxoView) GetGlobalActiveStakeAmountNanos() (*uint256.Int, error) {
 
 func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry) (bool, error) {
 	// Return false if the validator is already jailed. We do not want to jail
-	// them again. And we want to retain their original JailedAtEpochNumber so
+	// them again as we want to retain their original JailedAtEpochNumber so
 	// that they can eventually unjail themselves.
 	if validatorEntry.Status() == ValidatorStatusJailed {
 		return false, nil
@@ -1944,7 +1944,7 @@ func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry) (bool, 
 		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving JailInactiveValidatorGracePeriodEpochs: ")
 	}
 
-	// Calculate JailAtEpochNumber.
+	// Calculate the JailAtEpochNumber.
 	jailAtEpochNumber, err := SafeUint64().Add(validatorEntry.LastActiveAtEpochNumber, jailInactiveValidatorGracePeriodEpochs)
 	if err != nil {
 		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error calculating JailAtEpochNumber: ")
