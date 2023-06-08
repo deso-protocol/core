@@ -1890,6 +1890,10 @@ type MsgDeSoHeader struct {
 	// An extra nonce that can be used to provice *even more* entropy for miners, in the
 	// event that ASICs become powerful enough to have birthday problems in the future.
 	ExtraNonce uint64
+
+	// FailingTransactionNanosPerKB is the fee rate for failing transaction contained in this block.
+	// It's part of the Revolution PoS failing transactions mechanism.
+	FailingTransactionNanosPerKB uint64
 }
 
 func HeaderSizeBytes() int {
@@ -2019,7 +2023,20 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error
 }
 
 func (msg *MsgDeSoHeader) EncoderHeaderPosVersion0(preSignature bool) ([]byte, error) {
-	return msg.EncodeHeaderVersion1(preSignature)
+	headerBytes, err := msg.EncodeHeaderVersion1(preSignature)
+	if err != nil {
+		return nil, err
+	}
+
+	// FailingTransactionNanosPerKB
+	{
+		scratchBytes := [8]byte{}
+		binary.BigEndian.PutUint64(scratchBytes[:], msg.FailingTransactionNanosPerKB)
+		headerBytes = append(headerBytes, scratchBytes[:]...)
+	}
+
+	return headerBytes, err
+
 }
 
 func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
@@ -2145,6 +2162,25 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgDeSoHeader, error) {
 	return retHeader, nil
 }
 
+func DecodeHeaderPoSVersion0(rr io.Reader) (*MsgDeSoHeader, error) {
+	retHeader, err := DecodeHeaderVersion1(rr)
+	if err != nil {
+		return nil, err
+	}
+
+	// FailingTransactionNanosPerKB
+	{
+		scratchBytes := [8]byte{}
+		_, err := io.ReadFull(rr, scratchBytes[:])
+		if err != nil {
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding FailingTransactionNanosPerKB")
+		}
+		retHeader.FailingTransactionNanosPerKB = binary.BigEndian.Uint64(scratchBytes[:])
+	}
+
+	return retHeader, nil
+}
+
 func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 	// Read the version to determine
 	scratchBytes := [4]byte{}
@@ -2159,6 +2195,8 @@ func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 		ret, err = DecodeHeaderVersion0(rr)
 	} else if headerVersion == HeaderVersion1 {
 		ret, err = DecodeHeaderVersion1(rr)
+	} else if headerVersion == HeaderPoSVersion0 {
+		ret, err = DecodeHeaderPoSVersion0(rr)
 	} else {
 		// If we have an unrecognized version then we default to de-serializing with
 		// version 0. This is necessary because there are places where we use a
