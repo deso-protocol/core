@@ -179,7 +179,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	params.DefaultEpochDurationNumBlocks = uint64(1)
 
 	{
-		// ParamUpdater set MinFeeRateNanos and ValidatorJailEpochDuration.
+		// ParamUpdater set MinFeeRateNanos, ValidatorJailEpochDuration,
+		// and JailInactiveValidatorGracePeriodEpochs.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
 		require.Zero(t, utxoView().GlobalParamsEntry.MinimumNetworkFeeNanosPerKB)
 		require.Zero(t, utxoView().GlobalParamsEntry.ValidatorJailEpochDuration)
@@ -189,7 +190,10 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			map[string][]byte{ValidatorJailEpochDuration.ToString(): UintToBuf(4)},
+			map[string][]byte{
+				ValidatorJailEpochDuration.ToString():             UintToBuf(4),
+				JailInactiveValidatorGracePeriodEpochs.ToString(): UintToBuf(10),
+			},
 		)
 
 		require.Equal(t, utxoView().GlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
@@ -412,5 +416,84 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		snapshotValidatorEntries, err = utxoView().GetSnapshotTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorEntries, 6)
+	}
+	{
+		// Test jailing inactive validators.
+		//
+		// The CurrentEpochNumber is 9. All validators were last active in epoch 1
+		// which is the epoch in which they registered.
+		//
+		// The JailInactiveValidatorGracePeriodEpochs is 10 epochs. So all
+		// validators should be jailed after epoch 11, at the start of epoch 12.
+		//
+		// The SnapshotLookbackNumEpochs is 2, so all registered snapshot validators
+		// should be considered jailed after epoch 13, at the start of epoch 14.
+
+		// Define helper utils.
+		getCurrentEpochNumber := func() int {
+			currentEpochNumber, err := utxoView().GetCurrentEpochNumber()
+			require.NoError(t, err)
+			return int(currentEpochNumber)
+		}
+
+		getNumCurrentActiveValidators := func() int {
+			validatorEntries, err := utxoView().GetTopActiveValidatorsByStake(10)
+			require.NoError(t, err)
+			return len(validatorEntries)
+		}
+
+		getNumSnapshotActiveValidators := func() int {
+			snapshotValidatorEntries, err := utxoView().GetSnapshotTopActiveValidatorsByStake(10)
+			require.NoError(t, err)
+			return len(snapshotValidatorEntries)
+		}
+
+		// In epoch 9, all registered validators have Status = Active.
+		require.Equal(t, getCurrentEpochNumber(), 9)
+		require.Equal(t, getNumCurrentActiveValidators(), 6)
+		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+
+		// Run OnEpochCompleteHook().
+		_runOnEpochCompleteHook()
+
+		// In epoch 10, all registered validators have Status = Active.
+		require.Equal(t, getCurrentEpochNumber(), 10)
+		require.Equal(t, getNumCurrentActiveValidators(), 6)
+		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+
+		// Run OnEpochCompleteHook().
+		_runOnEpochCompleteHook()
+
+		// In epoch 11, all registered validators have Status = Active.
+		require.Equal(t, getCurrentEpochNumber(), 11)
+		require.Equal(t, getNumCurrentActiveValidators(), 6)
+		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+
+		// Run OnEpochCompleteHook().
+		_runOnEpochCompleteHook()
+
+		// In epoch 12, all current registered validators have Status = Jailed.
+		// In snapshot 10, all snapshot registered validators have Status = Active.
+		require.Equal(t, getCurrentEpochNumber(), 12)
+		require.Empty(t, getNumCurrentActiveValidators())
+		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+
+		// Run OnEpochCompleteHook().
+		_runOnEpochCompleteHook()
+
+		// In epoch 13, all current registered validators have Status = Jailed.
+		// In snapshot 11, all snapshot registered validators have Status = Active.
+		require.Equal(t, getCurrentEpochNumber(), 13)
+		require.Empty(t, getNumCurrentActiveValidators())
+		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+
+		// Run OnEpochCompleteHook().
+		_runOnEpochCompleteHook()
+
+		// In epoch 14, all current registered validators have Status = Jailed.
+		// In snapshot 12, all snapshot registered validators have Status = Jailed.
+		require.Equal(t, getCurrentEpochNumber(), 14)
+		require.Empty(t, getNumCurrentActiveValidators())
+		require.Empty(t, getNumSnapshotActiveValidators())
 	}
 }
