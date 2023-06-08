@@ -63,6 +63,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 
 	// Initialize PoS fork heights.
 	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
+	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -448,6 +449,18 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			return len(snapshotValidatorEntries)
 		}
 
+		getCurrentValidator := func(validatorPKID *PKID) *ValidatorEntry {
+			validatorEntry, err := utxoView().GetValidatorByPKID(validatorPKID)
+			require.NoError(t, err)
+			return validatorEntry
+		}
+
+		getSnapshotValidator := func(validatorPKID *PKID) *ValidatorEntry {
+			snapshotValidatorEntry, err := utxoView().GetSnapshotValidatorByPKID(validatorPKID)
+			require.NoError(t, err)
+			return snapshotValidatorEntry
+		}
+
 		// In epoch 9, all registered validators have Status = Active.
 		require.Equal(t, getCurrentEpochNumber(), 9)
 		require.Equal(t, getNumCurrentActiveValidators(), 6)
@@ -477,6 +490,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, getCurrentEpochNumber(), 12)
 		require.Empty(t, getNumCurrentActiveValidators())
 		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+		require.Equal(t, getCurrentValidator(m6PKID).Status(), ValidatorStatusJailed)
+		require.Equal(t, getCurrentValidator(m6PKID).JailedAtEpochNumber, uint64(11))
 
 		// Run OnEpochCompleteHook().
 		_runOnEpochCompleteHook()
@@ -495,5 +510,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, getCurrentEpochNumber(), 14)
 		require.Empty(t, getNumCurrentActiveValidators())
 		require.Empty(t, getNumSnapshotActiveValidators())
+		require.Equal(t, getSnapshotValidator(m6PKID).Status(), ValidatorStatusJailed)
+		require.Equal(t, getSnapshotValidator(m6PKID).JailedAtEpochNumber, uint64(11))
 	}
 }

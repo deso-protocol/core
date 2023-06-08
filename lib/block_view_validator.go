@@ -1924,7 +1924,15 @@ func (bav *UtxoView) GetGlobalActiveStakeAmountNanos() (*uint256.Int, error) {
 	return globalActiveStakeAmountNanos, nil
 }
 
-func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry) (bool, error) {
+func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry, blockHeight uint64) (bool, error) {
+	// Return false if we haven't switched from PoW to PoS yet. Otherwise,
+	// there would be an edge case where all validators will get jailed
+	// after we deploy the StateSetup block height, but before we deploy
+	// the ConsensusCutover block height.
+	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		return false, nil
+	}
+
 	// Return false if the validator is already jailed. We do not want to jail
 	// them again as we want to retain their original JailedAtEpochNumber so
 	// that they can eventually unjail themselves.

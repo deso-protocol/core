@@ -207,7 +207,7 @@ type SnapshotValidatorMapKey struct {
 	ValidatorPKID         PKID
 }
 
-func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64) error {
+func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64, blockHeight uint64) error {
 	// First, snapshot any !isDeleted ValidatorEntries in the UtxoView.
 	var utxoViewValidatorPKIDs []*PKID
 	for _, validatorEntry := range bav.ValidatorPKIDToValidatorEntry {
@@ -216,7 +216,7 @@ func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64) err
 			bav._setSnapshotValidatorEntry(validatorEntry, snapshotAtEpochNumber)
 
 			// Check if we should jail the validator.
-			shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry)
+			shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry, blockHeight)
 			if err != nil {
 				return errors.Wrapf(
 					err,
@@ -245,7 +245,7 @@ func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64) err
 		bav._setSnapshotValidatorEntry(validatorEntry, snapshotAtEpochNumber)
 
 		// Check if we should jail the validator.
-		shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry)
+		shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry, blockHeight)
 		if err != nil {
 			return errors.Wrapf(
 				err, "SnapshotValidators: problem determining if should jail validator %v: ", validatorEntry.ValidatorPKID,

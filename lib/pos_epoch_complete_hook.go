@@ -54,7 +54,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// To save on runtime, in this loop we also check if we should jail each validator and jail them if so.
 	// We optionally jail a validator after we snapshot them. A jailed validator should be considered jailed
 	// in the new epoch starting after this OnEpochCompleteHook, and not the previous epoch which is snapshot.
-	if err = bav.SnapshotCurrentValidators(currentEpochEntry.EpochNumber); err != nil {
+	if err = bav.SnapshotCurrentValidators(currentEpochEntry.EpochNumber, blockHeight); err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: problem snapshotting validators: ")
 	}
 
