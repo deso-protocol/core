@@ -32,10 +32,11 @@ func (bav *UtxoView) GetSnapshotEpochNumber() (uint64, error) {
 type SnapshotGlobalParam string
 
 const (
-	StakeLockupEpochDuration       SnapshotGlobalParam = "StakeLockupEpochDuration"
-	ValidatorJailEpochDuration     SnapshotGlobalParam = "ValidatorJailEpochDuration"
-	LeaderScheduleMaxNumValidators SnapshotGlobalParam = "LeaderScheduleMaxNumValidators"
-	EpochDurationNumBlocks         SnapshotGlobalParam = "EpochDurationNumBlocks"
+	StakeLockupEpochDuration               SnapshotGlobalParam = "StakeLockupEpochDuration"
+	ValidatorJailEpochDuration             SnapshotGlobalParam = "ValidatorJailEpochDuration"
+	LeaderScheduleMaxNumValidators         SnapshotGlobalParam = "LeaderScheduleMaxNumValidators"
+	EpochDurationNumBlocks                 SnapshotGlobalParam = "EpochDurationNumBlocks"
+	JailInactiveValidatorGracePeriodEpochs SnapshotGlobalParam = "JailInactiveValidatorGracePeriodEpochs"
 )
 
 func (snapshotGlobalParam SnapshotGlobalParam) ToString() string {
@@ -49,7 +50,7 @@ func (bav *UtxoView) GetSnapshotGlobalParam(field SnapshotGlobalParam) (uint64, 
 		return 0, errors.Wrapf(err, "GetSnapshotGlobalParam: problem retrieving SnapshotGlobalParamsEntry: ")
 	}
 	if globalParamsEntry == nil {
-		// We will use hte default values below.
+		// We will use the default values below.
 		globalParamsEntry = &GlobalParamsEntry{}
 	}
 
@@ -79,6 +80,12 @@ func (bav *UtxoView) GetSnapshotGlobalParam(field SnapshotGlobalParam) (uint64, 
 			return globalParamsEntry.EpochDurationNumBlocks, nil
 		}
 		return bav.Params.DefaultEpochDurationNumBlocks, nil
+
+	case JailInactiveValidatorGracePeriodEpochs:
+		if globalParamsEntry.JailInactiveValidatorGracePeriodEpochs != 0 {
+			return globalParamsEntry.JailInactiveValidatorGracePeriodEpochs, nil
+		}
+		return bav.Params.DefaultJailInactiveValidatorGracePeriodEpochs, nil
 	}
 
 	return 0, fmt.Errorf("GetSnapshotGlobalParam: invalid field provided: %s", field)
@@ -200,13 +207,31 @@ type SnapshotValidatorMapKey struct {
 	ValidatorPKID         PKID
 }
 
-func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64) error {
+func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64, blockHeight uint64) error {
 	// First, snapshot any !isDeleted ValidatorEntries in the UtxoView.
 	var utxoViewValidatorPKIDs []*PKID
 	for _, validatorEntry := range bav.ValidatorPKIDToValidatorEntry {
 		if !validatorEntry.isDeleted {
 			// We only want to snapshot !isDeleted ValidatorEntries.
 			bav._setSnapshotValidatorEntry(validatorEntry, snapshotAtEpochNumber)
+
+			// Check if we should jail the validator.
+			shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry, blockHeight)
+			if err != nil {
+				return errors.Wrapf(
+					err,
+					"SnapshotValidators: problem determining if should jail validator %v: ",
+					validatorEntry.ValidatorPKID,
+				)
+			}
+			// Jail them if so.
+			if shouldJailValidator {
+				if err = bav.JailValidator(validatorEntry); err != nil {
+					return errors.Wrapf(
+						err, "SnapshotValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
+					)
+				}
+			}
 		}
 		// We don't want to retrieve any ValidatorEntries from the db that are present in the UtxoView.
 		utxoViewValidatorPKIDs = append(utxoViewValidatorPKIDs, validatorEntry.ValidatorPKID)
@@ -218,6 +243,22 @@ func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64) err
 	}
 	for _, validatorEntry := range dbValidatorEntries {
 		bav._setSnapshotValidatorEntry(validatorEntry, snapshotAtEpochNumber)
+
+		// Check if we should jail the validator.
+		shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry, blockHeight)
+		if err != nil {
+			return errors.Wrapf(
+				err, "SnapshotValidators: problem determining if should jail validator %v: ", validatorEntry.ValidatorPKID,
+			)
+		}
+		// Jail them if so.
+		if shouldJailValidator {
+			if err = bav.JailValidator(validatorEntry); err != nil {
+				return errors.Wrapf(
+					err, "SnapshotValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
+				)
+			}
+		}
 	}
 	return nil
 }

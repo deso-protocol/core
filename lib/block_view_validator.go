@@ -1713,7 +1713,7 @@ func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte) 
 		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving CurrentEpochNumber: ")
 	}
 
-	// Retrieve SnapshotGlobalParam: ValidatorJailEpochDuration.
+	// Retrieve the SnapshotGlobalParam: ValidatorJailEpochDuration.
 	validatorJailEpochDuration, err := bav.GetSnapshotGlobalParam(ValidatorJailEpochDuration)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving snapshot ValidatorJailEpochDuration: ")
@@ -1922,6 +1922,76 @@ func (bav *UtxoView) GetGlobalActiveStakeAmountNanos() (*uint256.Int, error) {
 	// Cache the GlobalActiveStakeAmountNanos from the db in the UtxoView.
 	bav._setGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos)
 	return globalActiveStakeAmountNanos, nil
+}
+
+func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry, blockHeight uint64) (bool, error) {
+	// Return false if we haven't switched from PoW to PoS yet. Otherwise,
+	// there would be an edge case where all validators will get jailed
+	// after we deploy the StateSetup block height, but before we deploy
+	// the ConsensusCutover block height.
+	//
+	// We do another check below to make sure enough blocks have passed even
+	// after we cut-over to PoS, but since this check is so quick to perform,
+	// we keep this one here as well, since this will catch all OnEpochCompleteHooks
+	// after the StateSetup block height and before the CutoverConsensus block height
+	// and saves us a few look-ups and computations.
+	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		return false, nil
+	}
+
+	// Return false if the validator is already jailed. We do not want to jail
+	// them again as we want to retain their original JailedAtEpochNumber so
+	// that they can eventually unjail themselves.
+	if validatorEntry.Status() == ValidatorStatusJailed {
+		return false, nil
+	}
+
+	// Retrieve the SnapshotGlobalParam: JailInactiveValidatorGracePeriodEpochs.
+	jailInactiveValidatorGracePeriodEpochs, err := bav.GetSnapshotGlobalParam(JailInactiveValidatorGracePeriodEpochs)
+	if err != nil {
+		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving JailInactiveValidatorGracePeriodEpochs: ")
+	}
+
+	// Retrieve the SnapshotGlobalParam: EpochDurationNumBlocks.
+	epochDurationNumBlocks, err := bav.GetSnapshotGlobalParam(EpochDurationNumBlocks)
+	if err != nil {
+		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving EpochDurationNumBlocks: ")
+	}
+
+	// Calculate if enough blocks have passed since cutting over to PoS to start jailing validators.
+	// We want to allow a buffer after we cut-over to PoS to allow validators enough time to vote.
+	// Otherwise, validators may be jailed prior to the "jail inactive validators grace period"
+	// elapsing since all validators' LastActiveAtEpochNumber = 0 prior to the PoS cut-over.
+	//
+	// StartJailingBlockHeight = ConsensusCutoverBlockHeight + (JailInactiveValidatorGracePeriodEpochs * EpochDurationNumBlocks)
+	startJailingGracePeriodBlocks, err := SafeUint64().Mul(jailInactiveValidatorGracePeriodEpochs, epochDurationNumBlocks)
+	if err != nil {
+		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error calculating StartJailingGracePeriod: ")
+	}
+	startJailingBlockHeight, err := SafeUint64().Add(
+		uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight), startJailingGracePeriodBlocks,
+	)
+	if err != nil {
+		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error calculating StartJailingBlockHeight: ")
+	}
+	if blockHeight < startJailingBlockHeight {
+		return false, nil
+	}
+
+	// Retrieve the CurrentEpochNumber.
+	currentEpochNumber, err := bav.GetCurrentEpochNumber()
+	if err != nil {
+		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving CurrentEpochNumber: ")
+	}
+
+	// Calculate the JailAtEpochNumber.
+	jailAtEpochNumber, err := SafeUint64().Add(validatorEntry.LastActiveAtEpochNumber, jailInactiveValidatorGracePeriodEpochs)
+	if err != nil {
+		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error calculating JailAtEpochNumber: ")
+	}
+
+	// Return true if LastActiveAtEpochNumber + JailInactiveValidatorGracePeriodEpochs <= CurrentEpochNumber.
+	return jailAtEpochNumber <= currentEpochNumber, nil
 }
 
 func (bav *UtxoView) JailValidator(validatorEntry *ValidatorEntry) error {

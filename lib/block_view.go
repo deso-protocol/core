@@ -3041,6 +3041,16 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode EpochDurationNumBlocks as uint64")
 			}
 		}
+		if len(extraData[JailInactiveValidatorGracePeriodEpochs.ToString()]) > 0 {
+			newGlobalParamsEntry.JailInactiveValidatorGracePeriodEpochs, bytesRead = Uvarint(
+				extraData[JailInactiveValidatorGracePeriodEpochs.ToString()],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode JailInactiveValidatorGracePeriodEpochs as uint64",
+				)
+			}
+		}
 	}
 
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
