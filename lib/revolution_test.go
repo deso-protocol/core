@@ -68,3 +68,37 @@ func TestFeeTimeBucket(t *testing.T) {
 		require.Equal(registerTxns[ii].Added.UnixNano(), txnPool[ii].Added.UnixNano())
 	}
 }
+
+func TestComputeFeeBucket(t *testing.T) {
+	require := require.New(t)
+	_ = require
+
+	feeBuckets := []uint64{}
+	for ii := 0; ii < 100; ii++ {
+		feeBuckets = append(feeBuckets, ComputeNthFeeBucket(ii, nil))
+	}
+
+	for ii := 0; ii < 100; ii++ {
+		require.Equal(feeBuckets[ii], ComputeNthFeeBucket(ii, nil))
+	}
+}
+
+func TestComputeFeeBucketWithFee(t *testing.T) {
+	verifyFeeBucket := func(n int, fee uint64) bool {
+		bucket := ComputeNthFeeBucket(n, nil)
+		if bucket > fee {
+			return false
+		}
+		if bucket < fee && ComputeNthFeeBucket(n+1, nil) <= fee {
+			return false
+		}
+		return true
+	}
+
+	require := require.New(t)
+	_ = require
+	for ii := uint64(1000); ii < 100000; ii++ {
+		n := MapFeeToNthBucket(ii, nil)
+		require.True(verifyFeeBucket(n, ii))
+	}
+}

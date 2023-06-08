@@ -576,7 +576,7 @@ func (desoBlockProducer *DeSoBlockProducer) GetFeeTimeBlock() (*MsgDeSoBlock, er
 		// Add the fee to the block reward output as we go. Note this has some risk of
 		// increasing the size of the block by one byte, but it seems like this is an
 		// extreme edge case that goes away as soon as the function is called again.
-		totalFeeNanos += feeNanos
+		totalFeeNanos += BinaryLog(feeNanos)
 	}
 
 	// TODO: BMF stuff

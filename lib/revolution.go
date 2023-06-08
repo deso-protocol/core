@@ -5,11 +5,63 @@ import (
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"math"
+	"math/big"
 	"time"
 )
 
 const RevolutionViolationLimit = 10
 const RevolutionViolationExpirationBlocks = 50
+
+//============================================
+//	Fee Buckets
+//============================================
+
+func ComputeNthFeeBucket(n int, params *GlobalParamsEntry) uint64 {
+	// TODO: replace with params from GlobalParamsEntry
+	feeBucketBaseRate := NewFloat().SetFloat64(1000)
+	feeBucketMultiplier := NewFloat().SetFloat64(1.1)
+
+	if n == 0 {
+		fee, _ := feeBucketBaseRate.Uint64()
+		return fee
+	}
+
+	pow := NewFloat().SetInt(big.NewInt(int64(n)))
+	multiplier := BigFloatPow(feeBucketMultiplier, pow)
+	fee := NewFloat().Mul(feeBucketBaseRate, multiplier)
+
+	feeUint64, _ := fee.Uint64()
+	return feeUint64
+}
+
+func MapFeeToNthBucket(fee uint64, params *GlobalParamsEntry) int {
+	// TODO: replace with params from GlobalParamsEntry
+	feeBucketBaseRate := NewFloat().SetFloat64(1000)
+	feeBucketMultiplier := NewFloat().SetFloat64(1.1)
+
+	feeFloat := NewFloat().SetUint64(fee)
+	logFeeFloat := BigFloatLog(feeFloat)
+	logBaseRate := BigFloatLog(feeBucketBaseRate)
+	logMultiplier := BigFloatLog(feeBucketMultiplier)
+
+	subFee := Sub(logFeeFloat, logBaseRate)
+	if subFee.Cmp(NewFloat().SetFloat64(0)) < 0 {
+		return 0
+	}
+
+	divFee := Div(subFee, logMultiplier)
+	feeBucket, _ := divFee.Uint64()
+	feeBucketInt := int(feeBucket)
+	if ComputeNthFeeBucket(feeBucketInt, params) > fee {
+		return feeBucketInt - 1
+	} else if ComputeNthFeeBucket(feeBucketInt+1, params) <= fee {
+		// This condition actually gets triggered while the above doesn't. It happens exactly on fee bucket boundaries
+		// and the float rounding makes the number slightly smaller like .9999999991 instead of 1.0.
+		return feeBucketInt + 1
+	} else {
+		return feeBucketInt
+	}
+}
 
 //============================================
 //	Block Proposer side of Revolution
