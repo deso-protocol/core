@@ -3036,7 +3036,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			}
 		}
 		if len(extraData[EpochDurationNumBlocks.ToString()]) > 0 {
-			newGlobalParamsEntry.LeaderScheduleMaxNumValidators, bytesRead = Uvarint(extraData[EpochDurationNumBlocks.ToString()])
+			newGlobalParamsEntry.EpochDurationNumBlocks, bytesRead = Uvarint(extraData[EpochDurationNumBlocks.ToString()])
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode EpochDurationNumBlocks as uint64")
 			}
