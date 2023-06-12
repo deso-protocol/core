@@ -308,6 +308,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 			Type:                                 OperationTypeDAOCoinLimitOrder,
 			PrevTransactorDAOCoinLimitOrderEntry: prevTransactorOrder,
+			StateChangeMetadata:                  &DAOCoinLimitOrderStateChangeMetadata{},
 		})
 
 		return totalInput, totalOutput, utxoOpsForTxn, nil
