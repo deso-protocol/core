@@ -43,6 +43,10 @@ func (snapshotGlobalParam SnapshotGlobalParam) ToString() string {
 	return string(snapshotGlobalParam)
 }
 
+func (bav *UtxoView) GetCurrentGlobalParam(field SnapshotGlobalParam) uint64 {
+	return _getGlobalParam(bav, bav.GlobalParamsEntry, field)
+}
+
 func (bav *UtxoView) GetSnapshotGlobalParam(field SnapshotGlobalParam) (uint64, error) {
 	// Retrieve the SnapshotGlobalParamsEntry.
 	globalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
@@ -53,42 +57,49 @@ func (bav *UtxoView) GetSnapshotGlobalParam(field SnapshotGlobalParam) (uint64, 
 		// We will use the default values below.
 		globalParamsEntry = &GlobalParamsEntry{}
 	}
+	return _getGlobalParam(bav, globalParamsEntry, field), nil
+}
 
+func _getGlobalParam(bav *UtxoView, globalParamsEntry *GlobalParamsEntry, field SnapshotGlobalParam) uint64 {
 	// Return the corresponding field. Either the updated value if
 	// set on the GlobalParamsEntry or the default value otherwise.
 	switch field {
 	case StakeLockupEpochDuration:
-		if globalParamsEntry.StakeLockupEpochDuration != 0 {
-			return globalParamsEntry.StakeLockupEpochDuration, nil
+		if globalParamsEntry.StakeLockupEpochDuration > 0 {
+			return globalParamsEntry.StakeLockupEpochDuration
 		}
-		return bav.Params.DefaultStakeLockupEpochDuration, nil
+		return bav.Params.DefaultStakeLockupEpochDuration
 
 	case ValidatorJailEpochDuration:
-		if globalParamsEntry.ValidatorJailEpochDuration != 0 {
-			return globalParamsEntry.ValidatorJailEpochDuration, nil
+		if globalParamsEntry.ValidatorJailEpochDuration > 0 {
+			return globalParamsEntry.ValidatorJailEpochDuration
 		}
-		return bav.Params.DefaultValidatorJailEpochDuration, nil
+		return bav.Params.DefaultValidatorJailEpochDuration
 
 	case LeaderScheduleMaxNumValidators:
-		if globalParamsEntry.LeaderScheduleMaxNumValidators != 0 {
-			return globalParamsEntry.LeaderScheduleMaxNumValidators, nil
+		if globalParamsEntry.LeaderScheduleMaxNumValidators > 0 {
+			return globalParamsEntry.LeaderScheduleMaxNumValidators
 		}
-		return bav.Params.DefaultLeaderScheduleMaxNumValidators, nil
+		return bav.Params.DefaultLeaderScheduleMaxNumValidators
 
 	case EpochDurationNumBlocks:
-		if globalParamsEntry.EpochDurationNumBlocks != 0 {
-			return globalParamsEntry.EpochDurationNumBlocks, nil
+		if globalParamsEntry.EpochDurationNumBlocks > 0 {
+			return globalParamsEntry.EpochDurationNumBlocks
 		}
-		return bav.Params.DefaultEpochDurationNumBlocks, nil
+		return bav.Params.DefaultEpochDurationNumBlocks
 
 	case JailInactiveValidatorGracePeriodEpochs:
-		if globalParamsEntry.JailInactiveValidatorGracePeriodEpochs != 0 {
-			return globalParamsEntry.JailInactiveValidatorGracePeriodEpochs, nil
+		if globalParamsEntry.JailInactiveValidatorGracePeriodEpochs > 0 {
+			return globalParamsEntry.JailInactiveValidatorGracePeriodEpochs
 		}
-		return bav.Params.DefaultJailInactiveValidatorGracePeriodEpochs, nil
-	}
+		return bav.Params.DefaultJailInactiveValidatorGracePeriodEpochs
 
-	return 0, fmt.Errorf("GetSnapshotGlobalParam: invalid field provided: %s", field)
+	default:
+		// This can never happen in production since we pass in a restricted enum
+		// field param. This would only catch the edge case where a developer adds
+		// a new SnapshotGlobalParam but forgets to add it to this case statement.
+		panic(fmt.Sprintf("GetSnapshotGlobalParam: invalid field provided: %s", field))
+	}
 }
 
 func (bav *UtxoView) GetSnapshotGlobalParamsEntry() (*GlobalParamsEntry, error) {
