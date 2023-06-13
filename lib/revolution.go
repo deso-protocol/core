@@ -3,9 +3,7 @@ package lib
 import (
 	"container/heap"
 	"github.com/golang/glog"
-	"github.com/holiman/uint256"
 	"math"
-	"math/big"
 	"time"
 )
 
@@ -13,96 +11,21 @@ const RevolutionViolationLimit = 10
 const RevolutionViolationExpirationBlocks = 50
 
 //============================================
-//	Fee Buckets
-//============================================
-
-func ComputeNthFeeBucket(n int, params *GlobalParamsEntry) uint64 {
-	// TODO: replace with params from GlobalParamsEntry
-	feeBucketBaseRate := NewFloat().SetFloat64(1000)
-	feeBucketMultiplier := NewFloat().SetFloat64(1.1)
-
-	if n == 0 {
-		fee, _ := feeBucketBaseRate.Uint64()
-		return fee
-	}
-
-	pow := NewFloat().SetInt(big.NewInt(int64(n)))
-	multiplier := BigFloatPow(feeBucketMultiplier, pow)
-	fee := NewFloat().Mul(feeBucketBaseRate, multiplier)
-
-	feeUint64, _ := fee.Uint64()
-	return feeUint64
-}
-
-func MapFeeToNthBucket(fee uint64, params *GlobalParamsEntry) int {
-	// TODO: replace with params from GlobalParamsEntry
-	feeBucketBaseRate := NewFloat().SetFloat64(1000)
-	feeBucketMultiplier := NewFloat().SetFloat64(1.1)
-
-	feeFloat := NewFloat().SetUint64(fee)
-	logFeeFloat := BigFloatLog(feeFloat)
-	logBaseRate := BigFloatLog(feeBucketBaseRate)
-	logMultiplier := BigFloatLog(feeBucketMultiplier)
-
-	subFee := Sub(logFeeFloat, logBaseRate)
-	if subFee.Cmp(NewFloat().SetFloat64(0)) < 0 {
-		return 0
-	}
-
-	divFee := Div(subFee, logMultiplier)
-	feeBucket, _ := divFee.Uint64()
-	feeBucketInt := int(feeBucket)
-	if ComputeNthFeeBucket(feeBucketInt, params) > fee {
-		return feeBucketInt - 1
-	} else if ComputeNthFeeBucket(feeBucketInt+1, params) <= fee {
-		// This condition actually gets triggered while the above doesn't. It happens exactly on fee bucket boundaries
-		// and the float rounding makes the number slightly smaller like .9999999991 instead of 1.0.
-		return feeBucketInt + 1
-	} else {
-		return feeBucketInt
-	}
-}
-
-//============================================
 //	Block Proposer side of Revolution
 //============================================
 
-type TransactionRegister struct {
-	buckets *FeeBucketHeap
-}
-
-func NewTransactionRegister() *TransactionRegister {
-	buckets := (FeeBucketHeap)([]*TimeBucketHeap{})
-	return &TransactionRegister{
-		buckets: &buckets,
-	}
-}
-
-func (txnRegister *TransactionRegister) InsertTransaction(txn *MempoolTx) {
-	txnBucketFee := txn.FeePerKB - (txn.FeePerKB % 1000)
-	for _, tb := range *txnRegister.buckets {
-		if tb.fee == txnBucketFee {
-			heap.Push(tb, txn)
-			return
-		}
-	}
-
-	timeBucket := NewTimeBucketHeap(txnBucketFee, []*MempoolTx{txn})
-	heap.Push(txnRegister.buckets, timeBucket)
-}
-
 // FIXME: Note, this clears out the txn register. It has to be regenerated afterwards.
-func (txnRegister *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
-	feeTimeTxns := []*MempoolTx{}
-	for !txnRegister.buckets.Empty() {
-		bucket := heap.Pop(txnRegister.buckets).(*TimeBucketHeap)
-		for !bucket.Empty() {
-			txn := heap.Pop(bucket).(*MempoolTx)
-			feeTimeTxns = append(feeTimeTxns, txn)
-		}
-	}
-	return feeTimeTxns
-}
+//func (txnRegister *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
+//	feeTimeTxns := []*MempoolTx{}
+//	for !txnRegister.buckets.Empty() {
+//		bucket := heap.Pop(txnRegister.buckets).(*TimeBucket)
+//		for !bucket.Empty() {
+//			txn := heap.Pop(bucket).(*MempoolTx)
+//			feeTimeTxns = append(feeTimeTxns, txn)
+//		}
+//	}
+//	return feeTimeTxns
+//}
 
 // FIXME: Debatable whether we want a TransactionRegister method to be aware of block size and regenerate by itself.
 //
@@ -114,100 +37,13 @@ func (txnRegister *TransactionRegister) GetBlockTransactions(params *DeSoParams)
 	for ii := 0; ii < len(feeTimeTxns); ii++ {
 		if currentSize+feeTimeTxns[ii].TxSizeBytes > params.MaxBlockSizeBytes {
 			// FIXME: Comment at the top
-			txnRegister.InsertTransaction(feeTimeTxns[ii])
+			txnRegister.AddTransaction(feeTimeTxns[ii])
 			continue
 		}
 		blockTxns = append(blockTxns, feeTimeTxns[ii])
 		currentSize += feeTimeTxns[ii].TxSizeBytes
 	}
 	return blockTxns
-}
-
-type FeeBucketHeap []*TimeBucketHeap
-
-func (fb FeeBucketHeap) Len() int { return len(fb) }
-
-func (fb FeeBucketHeap) Less(i, j int) bool {
-	return fb[i].fee > fb[j].fee
-}
-
-func (fb FeeBucketHeap) Swap(i, j int) {
-	fb[i], fb[j] = fb[j], fb[i]
-}
-
-func (fb *FeeBucketHeap) Push(x interface{}) {
-	item := x.(*TimeBucketHeap)
-	*fb = append(*fb, item)
-}
-
-func (fb *FeeBucketHeap) Pop() interface{} {
-	old := *fb
-	n := len(old)
-	item := *(old[n-1])
-	old[n-1] = nil
-	*fb = old[0 : n-1]
-	return &item
-}
-
-func (fb *FeeBucketHeap) Empty() bool {
-	return len(*fb) == 0
-}
-
-type TimeBucketHeap struct {
-	fee  uint64
-	txns []*MempoolTx
-}
-
-func NewTimeBucketHeap(fee uint64, txns []*MempoolTx) *TimeBucketHeap {
-	return &TimeBucketHeap{
-		fee:  fee,
-		txns: txns,
-	}
-}
-
-func (tb TimeBucketHeap) Len() int { return len(tb.txns) }
-
-func (tb TimeBucketHeap) Less(i, j int) bool {
-	if tb.txns[i].Added.UnixNano() < tb.txns[j].Added.UnixNano() {
-		return true
-	} else if tb.txns[i].Added.UnixNano() == tb.txns[j].Added.UnixNano() {
-		// When two transactions are in the same fee bucket and have the same timestamp, we
-		// give greater priority to higher-fee txn. However, in case timestamp AND fee are equal,
-		// we give greater priority to the txn with "higher" hash.
-		if tb.txns[i].FeePerKB > tb.txns[j].FeePerKB {
-			return true
-		} else if tb.txns[i].FeePerKB == tb.txns[j].FeePerKB {
-			// TODO: temporary hack, revisit later
-			if tb.txns[i].Hash == nil || tb.txns[j].Hash == nil {
-				return true
-			}
-			h1 := uint256.NewInt().SetBytes(tb.txns[i].Hash.ToBytes())
-			h2 := uint256.NewInt().SetBytes(tb.txns[j].Hash.ToBytes())
-			return h1.Gt(h2)
-		}
-	}
-	return false
-}
-
-func (tb TimeBucketHeap) Swap(i, j int) {
-	tb.txns[i], tb.txns[j] = tb.txns[j], tb.txns[i]
-}
-
-func (tb *TimeBucketHeap) Push(x interface{}) {
-	item := x.(*MempoolTx)
-	tb.txns = append(tb.txns, item)
-}
-
-func (tb *TimeBucketHeap) Pop() interface{} {
-	n := len(tb.txns)
-	item := *(tb.txns[n-1])
-	tb.txns[n-1] = nil
-	tb.txns = tb.txns[0 : n-1]
-	return &item
-}
-
-func (tb *TimeBucketHeap) Empty() bool {
-	return len(tb.txns) == 0
 }
 
 //============================================
@@ -315,7 +151,7 @@ func NewRevolutionModule() *RevolutionModule {
 func (rev *RevolutionModule) ValidateBlock(txns []*MsgDeSoTxn) bool {
 	// Add the block transactions to an empty TransactionRegister, and use it to fetch Fee-Time transactions.
 	// This is the same computation the leader should have done during block construction.
-	txnRegister := NewTransactionRegister()
+	txnRegister := NewTransactionRegister(nil)
 	for _, txn := range txns {
 		mempoolTx := &MempoolTx{
 			Tx:          txn,
@@ -327,7 +163,7 @@ func (rev *RevolutionModule) ValidateBlock(txns []*MsgDeSoTxn) bool {
 			Fee:         0,
 			FeePerKB:    0,
 		}
-		txnRegister.InsertTransaction(mempoolTx)
+		txnRegister.AddTransaction(mempoolTx)
 	}
 
 	// Get Fee-Time
@@ -353,7 +189,7 @@ func (rev *RevolutionModule) ProcessCommittedBlock(block *MsgDeSoBlock, txnPool 
 	// the RevolutionModule
 
 	// First create a blank TransactionRegister.
-	txnRegister := NewTransactionRegister()
+	txnRegister := NewTransactionRegister(nil)
 	// Now add all block transactions to the register. We also determine the lowest fee-bucket in the block, and the
 	// cumulative size of the block's transactions.
 	txnsSize := uint64(0)
@@ -370,7 +206,7 @@ func (rev *RevolutionModule) ProcessCommittedBlock(block *MsgDeSoBlock, txnPool 
 			Fee:         0,
 			FeePerKB:    0,
 		}
-		txnRegister.InsertTransaction(mempoolTx)
+		txnRegister.AddTransaction(mempoolTx)
 
 		// Update the lowest fee-bucket.
 		feeBucket := mempoolTx.FeePerKB - (mempoolTx.FeePerKB % 1000)
@@ -392,17 +228,17 @@ func (rev *RevolutionModule) ProcessCommittedBlock(block *MsgDeSoBlock, txnPool 
 		feeBucket := txn.FeePerKB - (txn.FeePerKB % 1000)
 		// If the transaction is not the lowest fee-bucket, add it to our txnRegister.
 		if feeBucket > lowestFeeBucket {
-			txnRegister.InsertTransaction(txn)
+			txnRegister.AddTransaction(txn)
 		} else {
 			// If the transaction is the lowest fee-bucket, or a lower one, then only add the txn if the block isn't full.
 			if txnsSize+txn.TxSizeBytes < MaxBlockTransactionsSize {
-				txnRegister.InsertTransaction(txn)
+				txnRegister.AddTransaction(txn)
 			}
 		}
 	}
 	// FIXME: Temporary. Regenerate the mempool.
 	for _, txn := range mempoolTxns {
-		txnPool.InsertTransaction(txn)
+		txnPool.AddTransaction(txn)
 	}
 
 	// TODO: We could potentially add another constraint to above merge step. We could skip transactions which have

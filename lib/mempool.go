@@ -382,7 +382,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		"" /*dataDir*/, "")
+		""     /*dataDir*/, "")
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -2629,7 +2629,7 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 		readOnlyUniversalTransactionMap: make(map[BlockHash]*MempoolTx),
 		readOnlyOutpoints:               make(map[UtxoKey]*MsgDeSoTxn),
 		dataDir:                         _dataDir,
-		txnRegister:                     NewTransactionRegister(),
+		txnRegister:                     NewTransactionRegister(nil),
 	}
 
 	if newPool.mempoolDir != "" {

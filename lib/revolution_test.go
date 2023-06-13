@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 	"math/rand"
 	"sort"
@@ -10,7 +9,7 @@ import (
 )
 
 func TestFeeTimeBucket(t *testing.T) {
-	seed := time.Now().UnixNano()
+	seed := int64(1)
 	testCases := 10000
 	maxFee := uint64(10000)
 	maxTimestamp := uint64(100)
@@ -20,15 +19,16 @@ func TestFeeTimeBucket(t *testing.T) {
 	txnPool := []*MempoolTx{}
 	for ii := 0; ii < testCases; ii++ {
 		txnPool = append(txnPool, &MempoolTx{
-			FeePerKB: rand.Uint64() % maxFee,
+			FeePerKB: rand.Uint64()%maxFee + 1000,
 			Added:    time.UnixMicro(int64(rand.Uint64() % maxTimestamp)),
+			Hash:     NewBlockHash(RandomBytes(32)),
 		})
 	}
 
 	// Create new TransactionRegister and add the txn pool
-	txnRegister := NewTransactionRegister()
+	txnRegister := NewTransactionRegister(nil)
 	for ii := 0; ii < testCases; ii++ {
-		txnRegister.InsertTransaction(txnPool[ii])
+		txnRegister.AddTransaction(txnPool[ii])
 	}
 
 	// Iterate through TransactionRegister to get Fee-Time ordering.
@@ -36,8 +36,8 @@ func TestFeeTimeBucket(t *testing.T) {
 
 	// Now sort the txnPool by Fee-Time without priority queues.
 	sort.Slice(txnPool, func(i, j int) bool {
-		feeBucketI := txnPool[i].FeePerKB - (txnPool[i].FeePerKB % 1000)
-		feeBucketJ := txnPool[j].FeePerKB - (txnPool[j].FeePerKB % 1000)
+		feeBucketI := MapFeeToNthBucket(txnPool[i].FeePerKB, nil)
+		feeBucketJ := MapFeeToNthBucket(txnPool[j].FeePerKB, nil)
 		if feeBucketI > feeBucketJ {
 			return true
 		} else if feeBucketI == feeBucketJ {
@@ -50,9 +50,7 @@ func TestFeeTimeBucket(t *testing.T) {
 					if txnPool[i].Hash == nil || txnPool[j].Hash == nil {
 						return true
 					}
-					h1 := uint256.NewInt().SetBytes(txnPool[i].Hash.ToBytes())
-					h2 := uint256.NewInt().SetBytes(txnPool[j].Hash.ToBytes())
-					return h1.Gt(h2)
+					return txnPool[i].Hash.String() > txnPool[j].Hash.String()
 				}
 			}
 		}
@@ -63,7 +61,8 @@ func TestFeeTimeBucket(t *testing.T) {
 	// Now compare the priority queue ordering with the non-priority queue ordering.
 	require.Equal(len(registerTxns), len(txnPool))
 	for ii := 0; ii < len(txnPool); ii++ {
-		//glog.Infof("Fee (%v) Timestamp (%v)", txnPool[ii].FeePerKB, txnPool[ii].timestamp)
+		//glog.Infof("Fee (%v) Timestamp (%v) | Fee (%v) Timestamp (%v)", txnPool[ii].FeePerKB, txnPool[ii].Added.UnixNano(),
+		//	registerTxns[ii].FeePerKB, registerTxns[ii].Added.UnixNano())
 		require.Equal(registerTxns[ii].FeePerKB, txnPool[ii].FeePerKB)
 		require.Equal(registerTxns[ii].Added.UnixNano(), txnPool[ii].Added.UnixNano())
 	}
