@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -113,6 +114,20 @@ func (privateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, 
 	return privateKey, err
 }
 
+func (privateKey *PrivateKey) MarshalJSON() ([]byte, error) {
+	return json.Marshal(privateKey.ToString())
+}
+
+func (privateKey *PrivateKey) UnmarshalJSON(data []byte) error {
+	privateKeyString := ""
+	err := json.Unmarshal(data, &privateKeyString)
+	if err != nil {
+		return err
+	}
+	_, err = privateKey.FromString(privateKeyString)
+	return err
+}
+
 func (privateKey *PrivateKey) Eq(other *PrivateKey) bool {
 	if privateKey == nil || privateKey.flowPrivateKey == nil || other == nil {
 		return false
@@ -173,6 +188,20 @@ func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, erro
 	// Convert from byte slice to bls.PublicKey.
 	publicKey.flowPublicKey, err = flowCrypto.DecodePublicKey(SigningAlgorithm, publicKeyBytes)
 	return publicKey, err
+}
+
+func (publicKey *PublicKey) MarshalJSON() ([]byte, error) {
+	return json.Marshal(publicKey.ToString())
+}
+
+func (publicKey *PublicKey) UnmarshalJSON(data []byte) error {
+	publicKeyString := ""
+	err := json.Unmarshal(data, &publicKeyString)
+	if err != nil {
+		return err
+	}
+	_, err = publicKey.FromString(publicKeyString)
+	return err
 }
 
 func (publicKey *PublicKey) Eq(other *PublicKey) bool {
@@ -236,6 +265,20 @@ func (signature *Signature) FromString(signatureString string) (*Signature, erro
 	// Convert from byte slice to bls.Signature.
 	signature.flowSignature = signatureBytes
 	return signature, nil
+}
+
+func (signature *Signature) MarshalJSON() ([]byte, error) {
+	return json.Marshal(signature.ToString())
+}
+
+func (signature *Signature) UnmarshalJSON(data []byte) error {
+	signatureString := ""
+	err := json.Unmarshal(data, &signatureString)
+	if err != nil {
+		return err
+	}
+	_, err = signature.FromString(signatureString)
+	return err
 }
 
 func (signature *Signature) Eq(other *Signature) bool {

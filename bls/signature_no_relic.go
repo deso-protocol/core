@@ -38,6 +38,14 @@ func (privateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, 
 	panic(BLSNoRelicError)
 }
 
+func (privateKey *PrivateKey) MarshalJSON() ([]byte, error) {
+	panic(BLSNoRelicError)
+}
+
+func (privateKey *PrivateKey) UnmarshalJSON(data []byte) error {
+	panic(BLSNoRelicError)
+}
+
 func (privateKey *PrivateKey) Eq(other *PrivateKey) bool {
 	panic(BLSNoRelicError)
 }
@@ -68,6 +76,14 @@ func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, erro
 	panic(BLSNoRelicError)
 }
 
+func (publicKey *PublicKey) MarshalJSON() ([]byte, error) {
+	panic(BLSNoRelicError)
+}
+
+func (publicKey *PublicKey) UnmarshalJSON(data []byte) error {
+	panic(BLSNoRelicError)
+}
+
 func (publicKey *PublicKey) Eq(other *PublicKey) bool {
 	panic(BLSNoRelicError)
 }
@@ -95,6 +111,14 @@ func (signature *Signature) ToString() string {
 }
 
 func (signature *Signature) FromString(signatureString string) (*Signature, error) {
+	panic(BLSNoRelicError)
+}
+
+func (signature *Signature) MarshalJSON() ([]byte, error) {
+	panic(BLSNoRelicError)
+}
+
+func (signature *Signature) UnmarshalJSON(data []byte) error {
 	panic(BLSNoRelicError)
 }
 
