@@ -105,6 +105,9 @@ const (
 	CurrentHeaderVersion = HeaderVersion1
 )
 
+const ValidatorVoteVersion0 = uint8(0)
+const ValidatorTimeoutVersion0 = uint8(0)
+
 var (
 	MaxUint256, _ = uint256.FromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 
