@@ -1752,12 +1752,13 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	require.Contains(err.Error(), RuleErrorForbiddenBlockProducerPublicKey)
 }
 
-// We skip this test in CI, but leave it here in case we need to double check it.
 func TestPGGenesisBlock(t *testing.T) {
-	t.Skip("Skip PG Genesis Block Test")
-	chain, params, epg := NewLowDifficultyBlockchainWithParamsAndDb(t, &DeSoTestnetParams, true, 5435, true)
-	_, _, _ = chain, params, epg
-
+	// We skip this test in buildkite CI, but include it in GH actions postgres testing.
+	// Comment out this conditional to test locally.
+	if len(os.Getenv("POSTGRES_URI")) == 0 {
+		return
+	}
+	chain, params, _ := NewLowDifficultyBlockchainWithParamsAndDb(t, &DeSoTestnetParams, true, 5435, true)
 	for _, seedBalance := range params.SeedBalances {
 		bal := chain.postgres.GetBalance(NewPublicKey(seedBalance.PublicKey))
 		require.Equal(t, bal, seedBalance.AmountNanos)
