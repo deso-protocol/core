@@ -151,7 +151,7 @@ func NewRevolutionModule() *RevolutionModule {
 func (rev *RevolutionModule) ValidateBlock(txns []*MsgDeSoTxn) bool {
 	// Add the block transactions to an empty TransactionRegister, and use it to fetch Fee-Time transactions.
 	// This is the same computation the leader should have done during block construction.
-	txnRegister := NewTransactionRegister(nil)
+	txnRegister := NewTransactionRegister(nil, nil)
 	for _, txn := range txns {
 		mempoolTx := &MempoolTx{
 			Tx:          txn,
@@ -189,7 +189,7 @@ func (rev *RevolutionModule) ProcessCommittedBlock(block *MsgDeSoBlock, txnPool 
 	// the RevolutionModule
 
 	// First create a blank TransactionRegister.
-	txnRegister := NewTransactionRegister(nil)
+	txnRegister := NewTransactionRegister(nil, nil)
 	// Now add all block transactions to the register. We also determine the lowest fee-bucket in the block, and the
 	// cumulative size of the block's transactions.
 	txnsSize := uint64(0)

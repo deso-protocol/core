@@ -254,8 +254,6 @@ type DeSoMempool struct {
 	// We pass a copy of the data dir flag to the tx pool so that we can instantiate
 	// temp badger db instances and dump mempool txns to them.
 	dataDir string
-
-	txnRegister *TransactionRegister
 }
 
 // See comment on RemoveUnconnectedTxn. The mempool lock must be called for writing
@@ -382,7 +380,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		""     /*dataDir*/, "")
+		"" /*dataDir*/, "")
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -1132,7 +1130,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 }
 
 func (mempool *DeSoMempool) GetTransactionsOrderedByFeeTime() []*MempoolTx {
-	return mempool.txnRegister.GetBlockTransactions(mempool.bc.params)
+	return []*MempoolTx{}
 }
 
 func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
@@ -2629,7 +2627,6 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 		readOnlyUniversalTransactionMap: make(map[BlockHash]*MempoolTx),
 		readOnlyOutpoints:               make(map[UtxoKey]*MsgDeSoTxn),
 		dataDir:                         _dataDir,
-		txnRegister:                     NewTransactionRegister(nil),
 	}
 
 	if newPool.mempoolDir != "" {

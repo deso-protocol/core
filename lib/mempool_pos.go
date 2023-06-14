@@ -2,13 +2,91 @@ package lib
 
 import (
 	"github.com/emirpasic/gods/sets/treeset"
+	"github.com/pkg/errors"
+	"math"
 	"math/big"
+	"time"
 )
 
 type DeSoMempoolPos struct {
-	quit chan struct{}
+	bc           *Blockchain
+	txnRegister  *TransactionRegister
+	globalParams *GlobalParamsEntry
 
-	txnRegister *TransactionRegister
+	reservedBalances map[PublicKey]uint64
+}
+
+func NewDeSoMempoolPos(bc *Blockchain) *DeSoMempoolPos {
+	// TODO: Think about how to handle global params.
+	globalParams := DbGetGlobalParamsEntry(bc.db, bc.snapshot)
+
+	return &DeSoMempoolPos{
+		bc:               bc,
+		txnRegister:      NewTransactionRegister(bc.params, globalParams),
+		globalParams:     globalParams,
+		reservedBalances: make(map[PublicKey]uint64),
+	}
+}
+
+func (dmp *DeSoMempoolPos) AddTransaction(txn *MsgDeSoTxn, blockHeight uint64, utxoView *UtxoView) error {
+	// First, validate that the transaction is properly formatted.
+	if err := txn.ValidateTransactionSanityBalanceModel(blockHeight, dmp.bc.params, dmp.globalParams); err != nil {
+		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: ")
+	}
+
+	// Validate that the user has enough balance to cover the transaction fees.
+	userPk := NewPublicKey(txn.PublicKey)
+	txnFee := txn.TxnFeeNanos
+	reservedBalance, exists := dmp.reservedBalances[*userPk]
+
+	// Check for reserved balance overflow.
+	if exists && txnFee > math.MaxUint64-reservedBalance {
+		return errors.Errorf("DeSoMempoolPos.AddTransaction: Reserved balance overflow")
+	}
+	newReservedBalance := reservedBalance + txnFee
+	spendableBalanceNanos, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(txn.PublicKey, uint32(blockHeight))
+	if err != nil {
+		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: ")
+	}
+
+	if newReservedBalance > spendableBalanceNanos {
+		return errors.Errorf("DeSoMempoolPos.AddTransaction: Not enough balance to cover txn fees "+
+			"(newReservedBalance: %d, spendableBalanceNanos: %d)", newReservedBalance, spendableBalanceNanos)
+	}
+	// If we get here, this means user has enough balance to cover the txn fees. We update the reserved balance to
+	// include the newly added transaction's fee.
+	dmp.reservedBalances[*userPk] = newReservedBalance
+
+	// Construct the MempoolTx from the MsgDeSoTxn.
+	txnBytes, err := txn.ToBytes(false)
+	if err != nil {
+		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: Problem serializing txn")
+	}
+	serializedLen := uint64(len(txnBytes))
+
+	txnHash := txn.Hash()
+	if txnHash == nil {
+		return errors.Errorf("DeSoMempoolPos.AddTransaction: Problem hashing txn")
+	}
+	feePerKb, err := txn.ComputeFeePerKB()
+	if err != nil {
+		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: Problem computing fee per KB")
+	}
+
+	mempoolTx := &MempoolTx{
+		Tx:          txn,
+		Hash:        txnHash,
+		TxSizeBytes: serializedLen,
+		Added:       time.Now(),
+		Height:      uint32(blockHeight),
+		Fee:         txnFee,
+		FeePerKB:    feePerKb,
+	}
+	if !dmp.txnRegister.AddTransaction(mempoolTx) {
+		return errors.Errorf("DeSoMempoolPos.AddTransaction: Problem adding txn to register")
+	}
+
+	return nil
 }
 
 // ========================
@@ -16,18 +94,39 @@ type DeSoMempoolPos struct {
 // ========================
 
 type TransactionRegister struct {
-	buckets *FeeBucket
+	buckets       *FeeBucket
+	txnMembership map[BlockHash]struct{}
+	totalTxnSize  uint64
+
+	params       *DeSoParams
+	globalParams *GlobalParamsEntry
 }
 
-func NewTransactionRegister(params *GlobalParamsEntry) *TransactionRegister {
-	buckets := NewFeeBucket([]*TimeBucket{}, params)
+func NewTransactionRegister(params *DeSoParams, globalParams *GlobalParamsEntry) *TransactionRegister {
+	buckets := NewFeeBucket([]*TimeBucket{}, globalParams)
 	return &TransactionRegister{
-		buckets: buckets,
+		buckets:       buckets,
+		txnMembership: map[BlockHash]struct{}{},
+		totalTxnSize:  0,
+		params:        params,
+		globalParams:  globalParams,
 	}
 }
 
-func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) {
+func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) bool {
+	if _, ok := tr.txnMembership[*txn.Hash]; ok {
+		return false
+	}
+
+	// If the transaction overflows the maximum mempool size, reject it.
+	if tr.totalTxnSize+txn.TxSizeBytes > tr.params.MaxMempoolPosSizeBytes {
+		return false
+	}
+	tr.totalTxnSize += txn.TxSizeBytes
+
 	tr.buckets.AddTransaction(txn)
+	tr.txnMembership[*txn.Hash] = struct{}{}
+	return true
 }
 
 func (tr *TransactionRegister) GetIterator() *TransactionRegisterIterator {
