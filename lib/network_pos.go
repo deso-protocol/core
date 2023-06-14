@@ -51,23 +51,21 @@ func (msg *MsgDeSoValidatorVote) ToBytes(bool) ([]byte, error) {
 
 	// ValidatorVotingPublicKey
 	if msg.ValidatorVotingPublicKey == nil {
-		return nil, errors.New("MsgDeSoValidatorTimeout.ToBytes: HighQC must not be nil")
+		return nil, errors.New("MsgDeSoValidatorVote.ToBytes: ValidatorVotingPublicKey must not be nil")
 	}
-	encodedValidatorVotingPublicKey := msg.ValidatorVotingPublicKey.ToBytes()
-	retBytes = append(retBytes, UintToBuf(uint64(len(encodedValidatorVotingPublicKey)))...)
-	retBytes = append(retBytes, msg.ValidatorVotingPublicKey.ToBytes()...)
+	retBytes = append(retBytes, EncodeBLSPublicKey(msg.ValidatorVotingPublicKey)...)
 
 	// BlockHash
 	if msg.BlockHash == nil {
-		return nil, errors.New("MsgDeSoValidatorTimeout.ToBytes: BlockHash must not be nil")
+		return nil, errors.New("MsgDeSoValidatorVote.ToBytes: BlockHash must not be nil")
 	}
 	retBytes = append(retBytes, msg.BlockHash.ToBytes()...)
 
 	// VotePartialSignature
 	if msg.VotePartialSignature == nil {
-		return nil, errors.New("MsgDeSoValidatorTimeout.ToBytes: VotePartialSignature must not be nil")
+		return nil, errors.New("MsgDeSoValidatorVote.ToBytes: VotePartialSignature must not be nil")
 	}
-	retBytes = append(retBytes, msg.VotePartialSignature.ToBytes()...)
+	retBytes = append(retBytes, EncodeBLSSignature(msg.VotePartialSignature)...)
 
 	return retBytes, nil
 }
@@ -86,30 +84,22 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 	msg.MsgVersion = msgVersion
 
 	// ValidatorVotingPublicKey
-	validatorVotingPublicKeyLen, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem reading length for ValidatorVotingPublicKey")
-	}
-	validatorVotingPublicKeyBytes := make([]byte, validatorVotingPublicKeyLen)
-	_, err = rr.Read(validatorVotingPublicKeyBytes)
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem reading ValidatorVotingPublicKey")
-	}
-	validatorVotingPublicKey, err := (&bls.PublicKey{}).FromBytes(validatorVotingPublicKeyBytes)
+	msg.ValidatorVotingPublicKey, err = DecodeBLSPublicKey(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem decoding ValidatorVotingPublicKey")
 	}
-	msg.ValidatorVotingPublicKey = validatorVotingPublicKey
 
 	// BlockHash
-	blockHashBytes := make([]byte, HashSizeBytes)
-	_, err = rr.Read(blockHashBytes)
+	msg.BlockHash, err = ReadBlockHash(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem reading BlockHash")
 	}
 
 	// VotePartialSignature
-	// TODO
+	msg.VotePartialSignature, err = DecodeBLSSignature(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem decoding VotePartialSignature")
+	}
 
 	return nil
 }
@@ -132,10 +122,10 @@ type MsgDeSoValidatorTimeout struct {
 	// they haven't received a valid block for it and they timed out.
 	TimedOutView uint64
 
-	// This BlockQuorumCertificate has the highest view that the validator is aware
+	// This VoteQuorumCertificate has the highest view that the validator is aware
 	// of. This QC allows the leader to link back to the most recent block that
 	// 2/3rds of validators are aware of when constructing the next block.
-	HighQC *BlockQuorumCertificate
+	HighQC *VoteQuorumCertificate
 
 	// A signature of (TimeoutView, HighQC.View) that indicates this validator
 	// wants to timeout. Notice that we include the HighQC.View in the signature
@@ -163,7 +153,7 @@ func (msg *MsgDeSoValidatorTimeout) ToBytes(bool) ([]byte, error) {
 	if msg.ValidatorVotingPublicKey == nil {
 		return nil, errors.New("MsgDeSoValidatorTimeout.ToBytes: ValidatorVotingPublicKey must not be nil")
 	}
-	retBytes = append(retBytes, msg.ValidatorVotingPublicKey.ToBytes()...)
+	retBytes = append(retBytes, EncodeBLSPublicKey(msg.ValidatorVotingPublicKey)...)
 
 	// TimeoutView
 	retBytes = append(retBytes, UintToBuf(msg.TimedOutView)...)
@@ -182,7 +172,7 @@ func (msg *MsgDeSoValidatorTimeout) ToBytes(bool) ([]byte, error) {
 	if msg.TimeoutPartialSignature == nil {
 		return nil, errors.New("MsgDeSoValidatorTimeout.ToBytes: TimeoutPartialSignature must not be nil")
 	}
-	retBytes = append(retBytes, msg.TimeoutPartialSignature.ToBytes()...)
+	retBytes = append(retBytes, EncodeBLSSignature(msg.TimeoutPartialSignature)...)
 
 	return retBytes, nil
 }
@@ -193,24 +183,36 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 	// MsgVersion
 	msgVersion, err := rr.ReadByte()
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem reading MsgVersion")
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Problem reading MsgVersion")
 	}
 	if msgVersion != ValidatorVoteVersion0 {
-		return fmt.Errorf("MsgDeSoValidatorVote.FromBytes: Invalid MsgVersion %d", msgVersion)
+		return fmt.Errorf("MsgDeSoValidatorTimeout.FromBytes: Invalid MsgVersion %d", msgVersion)
 	}
 	msg.MsgVersion = msgVersion
 
 	// ValidatorVotingPublicKey
-	// TODO
+	msg.ValidatorVotingPublicKey, err = DecodeBLSPublicKey(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Problem decoding ValidatorVotingPublicKey")
+	}
 
 	// TimedOutView
-	// TODO
+	msg.TimedOutView, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Problem reading TimedOutView")
+	}
 
 	// HighQC
-	// TODO
+	msg.HighQC, err = DecodeQuorumCertificate(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Problem reading HighQC")
+	}
 
 	// TimeoutPartialSignature
-	// TODO
+	msg.TimeoutPartialSignature, err = DecodeBLSSignature(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Problem decoding TimeoutPartialSignature")
+	}
 
 	return nil
 }
@@ -218,7 +220,7 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 // A QuorumCertificate contains an aggregated signature from 2/3rds of the validators
 // on the network, weighted by stake. The signatures are associated with a block hash
 // and view both of which are identified in the certificate.
-type BlockQuorumCertificate struct {
+type VoteQuorumCertificate struct {
 	// No versioning field is needed for this type since it is a member field
 	// for other top-level P2P messages, which will be versioned themselves.
 
@@ -237,7 +239,7 @@ type BlockQuorumCertificate struct {
 	AggregatedVoteSignature *bls.Signature
 }
 
-func (qc *BlockQuorumCertificate) ToBytes() ([]byte, error) {
+func (qc *VoteQuorumCertificate) ToBytes() ([]byte, error) {
 	retBytes := []byte{}
 
 	// BlockHash
@@ -253,11 +255,29 @@ func (qc *BlockQuorumCertificate) ToBytes() ([]byte, error) {
 	if qc.AggregatedVoteSignature == nil {
 		return nil, errors.New("QuorumCertificate.ToBytes: AggregatedVoteSignature must not be nil")
 	}
-	retBytes = append(retBytes, qc.AggregatedVoteSignature.ToBytes()...)
+	retBytes = append(retBytes, EncodeBLSSignature(qc.AggregatedVoteSignature)...)
 
 	return retBytes, nil
 }
 
-func (qc *BlockQuorumCertificate) Read(rr *bytes.Reader) error {
-	return nil
+func DecodeQuorumCertificate(rr *bytes.Reader) (*VoteQuorumCertificate, error) {
+	var qc VoteQuorumCertificate
+	var err error
+
+	qc.BlockHash, err = ReadBlockHash(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Problem reading BlockHash")
+	}
+
+	qc.ProposedInView, err = ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Problem reading ProposedInView")
+	}
+
+	qc.AggregatedVoteSignature, err = DecodeBLSSignature(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Problem reading AggregatedVoteSignature")
+	}
+
+	return &qc, nil
 }

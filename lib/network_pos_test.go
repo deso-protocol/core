@@ -10,19 +10,19 @@ import (
 )
 
 func TestValidatorVoteEncodeDecode(t *testing.T) {
-	blsPublicKey, blsSignature := _generateValidatorVotingPublicKeyAndSignature(t)
+	validatorVotingPublicKey, votePartialSignature := _generateValidatorVotingPublicKeyAndSignature(t)
 
 	originalMsg := MsgDeSoValidatorVote{
 		MsgVersion:               ValidatorVoteVersion0,
-		ValidatorVotingPublicKey: blsPublicKey,
+		ValidatorVotingPublicKey: validatorVotingPublicKey,
 		BlockHash:                &BlockHash{},
-		VotePartialSignature:     blsSignature,
+		VotePartialSignature:     votePartialSignature,
 	}
 
 	// Encode the message and verify the length is correct.
 	encodedMsgBytes, err := originalMsg.ToBytes(false)
 	require.NoError(t, err)
-	require.Equal(t, 178, len(encodedMsgBytes))
+	require.Equal(t, 179, len(encodedMsgBytes))
 
 	// Decode the message.
 	decodedMsg := &MsgDeSoValidatorVote{}
@@ -37,7 +37,45 @@ func TestValidatorVoteEncodeDecode(t *testing.T) {
 }
 
 func TestValidatorTimeoutEncodeDecode(t *testing.T) {
-	// TODO
+	validatorVotingPublicKey, timeoutPartialSignature := _generateValidatorVotingPublicKeyAndSignature(t)
+
+	_, partialSignature1 := _generateValidatorVotingPublicKeyAndSignature(t)
+	_, partialSignature2 := _generateValidatorVotingPublicKeyAndSignature(t)
+
+	aggregateSignature, err := bls.AggregateSignatures([]*bls.Signature{partialSignature1, partialSignature2})
+	require.NoError(t, err)
+
+	originalMsg := MsgDeSoValidatorTimeout{
+		MsgVersion:               ValidatorTimeoutVersion0,
+		ValidatorVotingPublicKey: validatorVotingPublicKey,
+		TimedOutView:             999912,
+		HighQC: &VoteQuorumCertificate{
+			BlockHash:               &BlockHash{},
+			ProposedInView:          999910,
+			AggregatedVoteSignature: aggregateSignature,
+		},
+		TimeoutPartialSignature: timeoutPartialSignature,
+	}
+
+	// Encode the message and verify the length is correct.
+	encodedMsgBytes, err := originalMsg.ToBytes(false)
+	require.NoError(t, err)
+	require.Equal(t, 234, len(encodedMsgBytes))
+
+	// Decode the message.
+	decodedMsg := &MsgDeSoValidatorTimeout{}
+	err = decodedMsg.FromBytes(encodedMsgBytes)
+	require.NoError(t, err)
+
+	// Check that the message versions are the same.
+	require.Equal(t, originalMsg.MsgVersion, decodedMsg.MsgVersion)
+	require.True(t, originalMsg.ValidatorVotingPublicKey.Eq(decodedMsg.ValidatorVotingPublicKey))
+	require.Equal(t, originalMsg.TimedOutView, decodedMsg.TimedOutView)
+	require.NotNil(t, decodedMsg.HighQC)
+	require.Equal(t, originalMsg.HighQC.BlockHash, decodedMsg.HighQC.BlockHash)
+	require.Equal(t, originalMsg.HighQC.ProposedInView, decodedMsg.HighQC.ProposedInView)
+	require.True(t, originalMsg.HighQC.AggregatedVoteSignature.Eq(decodedMsg.HighQC.AggregatedVoteSignature))
+	require.True(t, originalMsg.TimeoutPartialSignature.Eq(decodedMsg.TimeoutPartialSignature))
 }
 
 // Creates an arbitrary BLS public key and signature for testing.
