@@ -13,7 +13,7 @@ func TestValidatorVoteEncodeDecode(t *testing.T) {
 	validatorVotingPublicKey, votePartialSignature := _generateValidatorVotingPublicKeyAndSignature(t)
 
 	originalMsg := MsgDeSoValidatorVote{
-		MsgVersion:               ValidatorVoteVersion0,
+		MsgVersion:               MsgValidatorVoteVersion0,
 		ValidatorVotingPublicKey: validatorVotingPublicKey,
 		BlockHash:                &BlockHash{},
 		ProposedInView:           9910,
@@ -48,7 +48,7 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 
 	originalMsg := MsgDeSoValidatorTimeout{
-		MsgVersion:               ValidatorTimeoutVersion0,
+		MsgVersion:               MsgValidatorTimeoutVersion0,
 		ValidatorVotingPublicKey: validatorVotingPublicKey,
 		TimedOutView:             999912,
 		HighQC: &VoteQuorumCertificate{

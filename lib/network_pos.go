@@ -46,7 +46,7 @@ func (msg *MsgDeSoValidatorVote) GetMsgType() MsgType {
 }
 
 func (msg *MsgDeSoValidatorVote) ToBytes(bool) ([]byte, error) {
-	if msg.MsgVersion != ValidatorVoteVersion0 {
+	if msg.MsgVersion != MsgValidatorVoteVersion0 {
 		return nil, fmt.Errorf("MsgDeSoValidatorVote.ToBytes: Invalid MsgVersion %d", msg.MsgVersion)
 	}
 
@@ -85,9 +85,9 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 	// MsgVersion
 	msgVersion, err := rr.ReadByte()
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem reading MsgVersion")
+		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Error decoding MsgVersion")
 	}
-	if msgVersion != ValidatorVoteVersion0 {
+	if msgVersion != MsgValidatorVoteVersion0 {
 		return fmt.Errorf("MsgDeSoValidatorVote.FromBytes: Invalid MsgVersion %d", msgVersion)
 	}
 	msg.MsgVersion = msgVersion
@@ -95,25 +95,25 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 	// ValidatorVotingPublicKey
 	msg.ValidatorVotingPublicKey, err = DecodeBLSPublicKey(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem decoding ValidatorVotingPublicKey")
+		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Error decoding ValidatorVotingPublicKey")
 	}
 
 	// BlockHash
 	msg.BlockHash, err = ReadBlockHash(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem reading BlockHash")
+		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Error decoding BlockHash")
 	}
 
 	// ProposedInView
 	msg.ProposedInView, err = ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem reading ProposedInView")
+		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Error decoding ProposedInView")
 	}
 
 	// VotePartialSignature
 	msg.VotePartialSignature, err = DecodeBLSSignature(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem decoding VotePartialSignature")
+		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Error decoding VotePartialSignature")
 	}
 
 	return nil
@@ -153,7 +153,7 @@ func (msg *MsgDeSoValidatorTimeout) GetMsgType() MsgType {
 }
 
 func (msg *MsgDeSoValidatorTimeout) ToBytes(bool) ([]byte, error) {
-	if msg.MsgVersion != ValidatorTimeoutVersion0 {
+	if msg.MsgVersion != MsgValidatorTimeoutVersion0 {
 		return nil, fmt.Errorf("MsgDeSoValidatorTimeout.ToBytes: Invalid MsgVersion %d", msg.MsgVersion)
 	}
 
@@ -177,7 +177,7 @@ func (msg *MsgDeSoValidatorTimeout) ToBytes(bool) ([]byte, error) {
 	}
 	encodedHighQC, err := msg.HighQC.ToBytes()
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgDeSoValidatorTimeout.ToBytes: Problem encoding HighQC")
+		return nil, errors.Wrapf(err, "MsgDeSoValidatorTimeout.ToBytes: Error encoding HighQC")
 	}
 	retBytes = append(retBytes, encodedHighQC...)
 
@@ -196,9 +196,9 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 	// MsgVersion
 	msgVersion, err := rr.ReadByte()
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Problem reading MsgVersion")
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding MsgVersion")
 	}
-	if msgVersion != ValidatorVoteVersion0 {
+	if msgVersion != MsgValidatorVoteVersion0 {
 		return fmt.Errorf("MsgDeSoValidatorTimeout.FromBytes: Invalid MsgVersion %d", msgVersion)
 	}
 	msg.MsgVersion = msgVersion
@@ -206,25 +206,25 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 	// ValidatorVotingPublicKey
 	msg.ValidatorVotingPublicKey, err = DecodeBLSPublicKey(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Problem decoding ValidatorVotingPublicKey")
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding ValidatorVotingPublicKey")
 	}
 
 	// TimedOutView
 	msg.TimedOutView, err = ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Problem reading TimedOutView")
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding TimedOutView")
 	}
 
 	// HighQC
 	msg.HighQC, err = DecodeQuorumCertificate(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Problem reading HighQC")
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding HighQC")
 	}
 
 	// TimeoutPartialSignature
 	msg.TimeoutPartialSignature, err = DecodeBLSSignature(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Problem decoding TimeoutPartialSignature")
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding TimeoutPartialSignature")
 	}
 
 	return nil
@@ -243,12 +243,13 @@ type VoteQuorumCertificate struct {
 	// The view number when the the block was proposed.
 	ProposedInView uint64
 
-	// This BLS signature is aggregated from all of the partial BLS signatures for vote
-	// messages that have been aggregated by the leader. The partial signatures sign the
-	// (ProposedInView, BlockHash) for the block.
+	// This BLS signature is aggregated from all of the partial BLS signatures for
+	// vote messages that have been aggregated by the leader. The partial signatures
+	// sign the (ProposedInView, BlockHash) pair for the block.
 	//
-	// Based on the block hash, block height, and ordering of validator BLS public keys in
-	// the aggregated signature.
+	// From the block hash, we can look up the block height and ordering of validator
+	// BLS public keys at that block height which determines the ordering of BLS public
+	// keys in the aggregated signature.
 	AggregatedVoteSignature *bls.Signature
 }
 
@@ -279,17 +280,17 @@ func DecodeQuorumCertificate(rr *bytes.Reader) (*VoteQuorumCertificate, error) {
 
 	qc.BlockHash, err = ReadBlockHash(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Problem reading BlockHash")
+		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding BlockHash")
 	}
 
 	qc.ProposedInView, err = ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Problem reading ProposedInView")
+		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding ProposedInView")
 	}
 
 	qc.AggregatedVoteSignature, err = DecodeBLSSignature(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Problem reading AggregatedVoteSignature")
+		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding AggregatedVoteSignature")
 	}
 
 	return &qc, nil
