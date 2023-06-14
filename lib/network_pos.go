@@ -247,9 +247,8 @@ type VoteQuorumCertificate struct {
 	// vote messages that have been aggregated by the leader. The partial signatures
 	// sign the (ProposedInView, BlockHash) pair for the block.
 	//
-	// From the block hash, we can look up the block height and ordering of validator
-	// BLS public keys at that block height which determines the ordering of BLS public
-	// keys in the aggregated signature.
+	// From the block hash, we can look up the block height, the validator set at that
+	// block height, and measure if the QC has 2/3rds of the total stake.
 	AggregatedVoteSignature *bls.Signature
 }
 
