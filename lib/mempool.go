@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcutil"
-	"github.com/dgraph-io/badger/v3"
 	"github.com/gernest/mention"
 	"log"
 	"math"
@@ -18,6 +17,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/deso-protocol/go-deadlock"
@@ -380,7 +381,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		"" /*dataDir*/, "")
+		""     /*dataDir*/, "")
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -1127,10 +1128,6 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 		len(mp.poolMap))
 
 	return nil, mempoolTx, nil
-}
-
-func (mempool *DeSoMempool) GetTransactionsOrderedByFeeTime() []*MempoolTx {
-	return []*MempoolTx{}
 }
 
 func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
