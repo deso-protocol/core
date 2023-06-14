@@ -2,8 +2,9 @@ package lib
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func _filterOutBlockRewards(utxoEntries []*UtxoEntry) []*UtxoEntry {
@@ -52,7 +53,7 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 	// Validate this txn.
 	mp := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0 /* minFeeRateNanosPerKB */, "", true,
+		0  /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	_, err := mp.processTransaction(txn1, false /*allowUnconnectedTxn*/, false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
 	require.NoError(err)
@@ -116,7 +117,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	// accept all of the transactions we're about to create without fail.
 	mpNoMinFees := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0 /* minFeeRateNanosPerKB */, "", true,
+		0  /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 
 	// Create a transaction that sends 1 DeSo to the recipient as its
@@ -133,7 +134,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	mpWithMinFee := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		100 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "")
+		""  /*dataDir*/, "")
 	_, err = mpWithMinFee.processTransaction(txn1, false /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 	require.Error(err)
 	require.Contains(err.Error(), TxErrorInsufficientFeeMinFee)
@@ -181,7 +182,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	// feerate set since 24 transactions should be ~2400 bytes.
 	mpWithRateLimit := NewDeSoMempool(
 		chain, 100, /* rateLimitFeeRateNanosPerKB */
-		0 /* minFeeRateNanosPerKB */, "", true,
+		0  /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	processingErrors := []error{}
 	for _, txn := range txnsCreated {
@@ -309,7 +310,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	// not testing that here.
 	mp := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
-		0 /* minFeeRateNanosPerKB */, "", true,
+		0  /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 
 	// Process the first transaction.
