@@ -1850,7 +1850,8 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	*/
 	committedBlocks := []*MsgDeSoBlock{}
 	for _, block := range committedBlocks {
-		srv.revolutionModule.ProcessCommittedBlock(block, srv.mempool.txnRegister)
+		_ = block
+		//srv.revolutionModule.ProcessCommittedBlock(block, srv.mempool.txnRegister)
 	}
 
 	// If we hit an error then abort mission entirely. We should generally never

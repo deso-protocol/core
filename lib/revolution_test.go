@@ -26,9 +26,9 @@ func TestFeeTimeBucket(t *testing.T) {
 	}
 
 	// Create new TransactionRegister and add the txn pool
-	txnRegister := NewTransactionRegister(nil)
+	txnRegister := NewTransactionRegister(&DeSoTestnetParams, nil)
 	for ii := 0; ii < testCases; ii++ {
-		txnRegister.AddTransaction(txnPool[ii])
+		require.Equal(true, txnRegister.AddTransaction(txnPool[ii]))
 	}
 
 	// Iterate through TransactionRegister to get Fee-Time ordering.
