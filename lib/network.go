@@ -1890,6 +1890,10 @@ type MsgDeSoHeader struct {
 	// An extra nonce that can be used to provice *even more* entropy for miners, in the
 	// event that ASICs become powerful enough to have birthday problems in the future.
 	ExtraNonce uint64
+
+	// FailingTransactionNanosPerKB is the fee rate for failing transaction contained in this block.
+	// It's part of the Revolution PoS failing transactions mechanism.
+	FailingTransactionNanosPerKB uint64
 }
 
 func HeaderSizeBytes() int {
@@ -2018,6 +2022,23 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error
 	return retBytes, nil
 }
 
+func (msg *MsgDeSoHeader) EncoderHeaderPosVersion0(preSignature bool) ([]byte, error) {
+	headerBytes, err := msg.EncodeHeaderVersion1(preSignature)
+	if err != nil {
+		return nil, err
+	}
+
+	// FailingTransactionNanosPerKB
+	{
+		scratchBytes := [8]byte{}
+		binary.BigEndian.PutUint64(scratchBytes[:], msg.FailingTransactionNanosPerKB)
+		headerBytes = append(headerBytes, scratchBytes[:]...)
+	}
+
+	return headerBytes, err
+
+}
+
 func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
 
 	// Depending on the version, we decode the header differently.
@@ -2025,6 +2046,8 @@ func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
 		return msg.EncodeHeaderVersion0(preSignature)
 	} else if msg.Version == HeaderVersion1 {
 		return msg.EncodeHeaderVersion1(preSignature)
+	} else if msg.Version == HeaderPoSVersion0 {
+		return msg.EncoderHeaderPosVersion0(preSignature)
 	} else {
 		// If we have an unrecognized version then we default to serializing with
 		// version 0. This is necessary because there are places where we use a
@@ -2139,6 +2162,25 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgDeSoHeader, error) {
 	return retHeader, nil
 }
 
+func DecodeHeaderPoSVersion0(rr io.Reader) (*MsgDeSoHeader, error) {
+	retHeader, err := DecodeHeaderVersion1(rr)
+	if err != nil {
+		return nil, err
+	}
+
+	// FailingTransactionNanosPerKB
+	{
+		scratchBytes := [8]byte{}
+		_, err := io.ReadFull(rr, scratchBytes[:])
+		if err != nil {
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding FailingTransactionNanosPerKB")
+		}
+		retHeader.FailingTransactionNanosPerKB = binary.BigEndian.Uint64(scratchBytes[:])
+	}
+
+	return retHeader, nil
+}
+
 func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 	// Read the version to determine
 	scratchBytes := [4]byte{}
@@ -2153,6 +2195,8 @@ func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 		ret, err = DecodeHeaderVersion0(rr)
 	} else if headerVersion == HeaderVersion1 {
 		ret, err = DecodeHeaderVersion1(rr)
+	} else if headerVersion == HeaderPoSVersion0 {
+		ret, err = DecodeHeaderPoSVersion0(rr)
 	} else {
 		// If we have an unrecognized version then we default to de-serializing with
 		// version 0. This is necessary because there are places where we use a
@@ -2989,6 +3033,7 @@ type DeSoTxnVersion uint64
 const (
 	DeSoTxnVersion0 DeSoTxnVersion = 0
 	DeSoTxnVersion1 DeSoTxnVersion = 1
+	DeSoTxnVersion2 DeSoTxnVersion = 2
 )
 
 type MsgDeSoTxn struct {
@@ -3033,6 +3078,15 @@ type MsgDeSoTxn struct {
 	// BLOCK_REWARD and CREATE_deso transactions do not require a signature
 	// since they have no inputs.
 	Signature DeSoSignature
+
+	// This determines whether the transaction passed/failed validation in Revolution.
+	// Only works for blocks with HeaderPoSVersion0 in the header.
+	StateConnected bool
+
+	// ProposerTimestamp is the time of arrival of this transaction to the block proposer's mempool.
+	// This timestamp can be spoofed, without negative impact on the consensus. The timestamp determines
+	// the transaction ordering in blocks across fee-bucket.
+	ProposerTimestamp uint64
 
 	// (!!) **DO_NOT_USE** (!!)
 	//

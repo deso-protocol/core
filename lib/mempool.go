@@ -1130,6 +1130,11 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	return nil, mempoolTx, nil
 }
 
+func (mempool *DeSoMempool) GetTransactionsOrderedByFeeTime() []*MempoolTx {
+	return []*MempoolTx{}
+	//return mempool.txnRegister.GetBlockTransactions(mempool.bc.params)
+}
+
 func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
 	totalNanosPurchasedBefore uint64, usdCentsPerBitcoinBefore uint64, totalInput uint64, totalOutput uint64,
 	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation, blockHeight uint64) *TransactionMetadata {

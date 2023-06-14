@@ -1784,6 +1784,10 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 }
 
 func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _err error) {
+	// TODO: Revolution: PoS blocks contain pass/fail flags. It means we might not be able to connect all transactions
+	// 	to a single UtxoView without error. We should check if each transaction passes or fails according to what was
+	// 	advertised in the block by the proposer.
+
 	// TODO: Move this to be more isolated.
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
