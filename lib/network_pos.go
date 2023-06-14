@@ -15,23 +15,29 @@ import (
 type MsgDeSoValidatorVote struct {
 	MsgVersion uint8
 
-	// BLS public key of the validator voting for this block. This can be
-	// mapped directly to the validator's ECDSA public key to verify their
-	// stale. We include the BLS public key here so that it's easy to verify
-	// the signature on the block without having to look up the validator's
-	// ECDSA public key.
+	// BLS voting public key of the validator who constructed this vote. This public
+	// key can be mapped directly to the validator's ECDSA public key to verify
+	// their stake. We use the BLS public key here instead of the ECDSA so that
+	// so that it's trivial to verify the signature in this message without
+	// having to look up anything for the validator in consensus.
 	ValidatorVotingPublicKey *bls.PublicKey
 
 	// The block hash corresponding to the block that this vote is for.
 	BlockHash *BlockHash
 
-	// TODO: Do we want to add BlockHeight and ProposedInView here too? They're
-	// not strictly necessary because they can be looked up based on BlockHash,
-	// but they are convenient to have on-hand here for debugging.
+	// The view number when the the block was proposed.
+	ProposedInView uint64
 
-	// The validator's partial BLS signature of the block hash, representing
-	// the validator's vote for this block. The block hash captures the block
-	// height and view.
+	// TODO: Do we want to add BlockHeight here too? It's not strictly necessary
+	// because it can be derived based on BlockHash alone, but it is convenient
+	// to have on-hand here for debugging. The trade-off of including it is that
+	// it results in a larger size message. In general, we should try to keep the
+	// size of vote messages as small as possible as there will be O(n) votes per block
+	// where n is the number of validators.
+
+	// The validator's partial BLS signature of the (ProposedInView, BlockHash) pair
+	// This represents the validator's vote for this block. The block height is implicitly
+	// captured in the block hash.
 	VotePartialSignature *bls.Signature
 }
 
@@ -60,6 +66,9 @@ func (msg *MsgDeSoValidatorVote) ToBytes(bool) ([]byte, error) {
 		return nil, errors.New("MsgDeSoValidatorVote.ToBytes: BlockHash must not be nil")
 	}
 	retBytes = append(retBytes, msg.BlockHash.ToBytes()...)
+
+	// ProposedInView
+	retBytes = append(retBytes, UintToBuf(msg.ProposedInView)...)
 
 	// VotePartialSignature
 	if msg.VotePartialSignature == nil {
@@ -95,6 +104,12 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem reading BlockHash")
 	}
 
+	// ProposedInView
+	msg.ProposedInView, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Problem reading ProposedInView")
+	}
+
 	// VotePartialSignature
 	msg.VotePartialSignature, err = DecodeBLSSignature(rr)
 	if err != nil {
@@ -111,27 +126,25 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 type MsgDeSoValidatorTimeout struct {
 	MsgVersion uint8
 
-	// BLS public key of the validator that's timed out for this block. This
-	// public key can be mapped directly to the validator's ECDSA public key
-	// to verify their stale. We include the BLS public key here so that it's
-	// easy to verify the signature on the block without having to look up the
-	// validator's ECDSA public key.
+	// BLS voting public key of the validator who constructed this timeout message.
+	// The public key can be mapped directly to the validator's ECDSA public key
+	// to verify their stake. We use the BLS public key here instead of the ECDSA
+	// so that so that it's trivial to verify the signature in this message without
+	// having to look up anything for the validator in consensus.
 	ValidatorVotingPublicKey *bls.PublicKey
 
-	// The view that the validator has timed out on and to skip over because
-	// they haven't received a valid block for it and they timed out.
+	// The view that the validator has timed out on.
 	TimedOutView uint64
 
-	// This VoteQuorumCertificate has the highest view that the validator is aware
-	// of. This QC allows the leader to link back to the most recent block that
-	// 2/3rds of validators are aware of when constructing the next block.
+	// This QC has the highest view that the validator is aware of. This QC allows
+	// the leader to link back to the most recent block that 2/3rds of validators
+	// are aware of when constructing the next block.
 	HighQC *VoteQuorumCertificate
 
-	// A signature of (TimeoutView, HighQC.View) that indicates this validator
-	// wants to timeout. Notice that we include the HighQC.View in the signature
-	// payload rather than signing the full serialized HighQC itself. This allows
-	// the leader to better aggregate validator signatures without compromising the
-	// integrity of the protocol.
+	// The validator's BLS signature on (TimedOutView, HighQC.View). Notice that we
+	// include the HighQC.View in the signature payload rather than signing the full
+	// serialized HighQC itself. This allows the leader to better aggregate validator
+	// signatures without compromising the integrity of the protocol.
 	TimeoutPartialSignature *bls.Signature
 }
 
@@ -219,7 +232,7 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 
 // A QuorumCertificate contains an aggregated signature from 2/3rds of the validators
 // on the network, weighted by stake. The signatures are associated with a block hash
-// and view both of which are identified in the certificate.
+// and a view, both of which are identified in the certificate.
 type VoteQuorumCertificate struct {
 	// No versioning field is needed for this type since it is a member field
 	// for other top-level P2P messages, which will be versioned themselves.
@@ -232,10 +245,10 @@ type VoteQuorumCertificate struct {
 
 	// This BLS signature is aggregated from all of the partial BLS signatures for vote
 	// messages that have been aggregated by the leader. The partial signatures sign the
-	// block hash for the block this QC authorizes.
+	// (ProposedInView, BlockHash) for the block.
 	//
-	// Based on the block hash, we can determine the view number, block height, and ordering
-	// of validators in this signature.
+	// Based on the block hash, block height, and ordering of validator BLS public keys in
+	// the aggregated signature.
 	AggregatedVoteSignature *bls.Signature
 }
 

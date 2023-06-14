@@ -16,13 +16,14 @@ func TestValidatorVoteEncodeDecode(t *testing.T) {
 		MsgVersion:               ValidatorVoteVersion0,
 		ValidatorVotingPublicKey: validatorVotingPublicKey,
 		BlockHash:                &BlockHash{},
+		ProposedInView:           9910,
 		VotePartialSignature:     votePartialSignature,
 	}
 
 	// Encode the message and verify the length is correct.
 	encodedMsgBytes, err := originalMsg.ToBytes(false)
 	require.NoError(t, err)
-	require.Equal(t, 179, len(encodedMsgBytes))
+	require.Equal(t, 181, len(encodedMsgBytes))
 
 	// Decode the message.
 	decodedMsg := &MsgDeSoValidatorVote{}
@@ -33,6 +34,7 @@ func TestValidatorVoteEncodeDecode(t *testing.T) {
 	require.Equal(t, originalMsg.MsgVersion, decodedMsg.MsgVersion)
 	require.True(t, originalMsg.ValidatorVotingPublicKey.Eq(decodedMsg.ValidatorVotingPublicKey))
 	require.Equal(t, originalMsg.BlockHash, decodedMsg.BlockHash)
+	require.Equal(t, originalMsg.ProposedInView, decodedMsg.ProposedInView)
 	require.True(t, originalMsg.VotePartialSignature.Eq(decodedMsg.VotePartialSignature))
 }
 
