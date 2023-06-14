@@ -753,6 +753,10 @@ func NewMessage(msgType MsgType) DeSoMessage {
 		return &MsgDeSoTransactionBundle{}
 	case MsgTypeTransactionBundleV2:
 		return &MsgDeSoTransactionBundleV2{}
+	case MsgTypeValidatorVote:
+		return &MsgDeSoValidatorVote{}
+	case MsgTypeValidatorTimeout:
+		return &MsgDeSoValidatorTimeout{}
 	case MsgTypeMempool:
 		return &MsgDeSoMempool{}
 	case MsgTypeGetHeaders:
