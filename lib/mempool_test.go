@@ -2,8 +2,9 @@ package lib
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func _filterOutBlockRewards(utxoEntries []*UtxoEntry) []*UtxoEntry {

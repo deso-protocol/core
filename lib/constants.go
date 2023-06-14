@@ -50,15 +50,6 @@ const (
 	NodeErase
 )
 
-// FIXME: Move this somewhere more sensible.
-type ConsensusMessage struct {
-	/*
-		QC          QuorumCertificate
-		AggregateQC AggregateCertificate
-		View        uint64
-	*/
-}
-
 // Snapshot constants
 const (
 	// GetSnapshotTimeout is used in Peer when we fetch a snapshot chunk, and we need to retry.
@@ -110,13 +101,7 @@ const (
 	//
 	// At the time of this writing, the intent is to deploy it in a backwards-compatible
 	// fashion, with the eventual goal of phasing out blocks with the previous version.
-	HeaderVersion1 = uint32(1)
-
-	// This version will (likely) introduce the following encoding changes:
-	// - Transactions in MsgDeSoBlock will include pass/fail validation flags.
-	// - Consensus information like QC, AggregateQC, etc. will be included in the header.
-	// - etc.
-	HeaderPoSVersion0    = uint32(2)
+	HeaderVersion1       = uint32(1)
 	CurrentHeaderVersion = HeaderVersion1
 )
 

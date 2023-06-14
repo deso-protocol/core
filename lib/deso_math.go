@@ -308,12 +308,3 @@ func (safeUint64 *_SafeUint64) Div(x uint64, y uint64) (uint64, error) {
 
 	return x / y, nil
 }
-
-func BinaryLog(x uint64) uint64 {
-	val := uint64(0)
-	for ; x > 0; x >>= 1 {
-		val++
-	}
-
-	return val
-}
