@@ -99,6 +99,17 @@ const (
 	ValidatorStatusJailed  ValidatorStatus = 2
 )
 
+func (validatorStatus ValidatorStatus) ToString() string {
+	switch validatorStatus {
+	case ValidatorStatusActive:
+		return "Active"
+	case ValidatorStatusJailed:
+		return "Jailed"
+	default:
+		return "Unknown"
+	}
+}
+
 func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 	// Copy domains.
 	var domainsCopy [][]byte
