@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"io"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/pkg/errors"
@@ -279,7 +280,7 @@ func (qc *QuorumCertificate) ToBytes() ([]byte, error) {
 	return retBytes, nil
 }
 
-func DecodeQuorumCertificate(rr *bytes.Reader) (*QuorumCertificate, error) {
+func DecodeQuorumCertificate(rr io.Reader) (*QuorumCertificate, error) {
 	var qc QuorumCertificate
 	var err error
 
@@ -328,7 +329,7 @@ func (sig *AggregatedBLSSignature) ToBytes() ([]byte, error) {
 	return retBytes, nil
 }
 
-func DecodeAggregatedBLSSignature(rr *bytes.Reader) (*AggregatedBLSSignature, error) {
+func DecodeAggregatedBLSSignature(rr io.Reader) (*AggregatedBLSSignature, error) {
 	var sig AggregatedBLSSignature
 	var err error
 
