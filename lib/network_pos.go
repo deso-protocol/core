@@ -139,7 +139,7 @@ type MsgDeSoValidatorTimeout struct {
 	// This QC has the highest view that the validator is aware of. This QC allows
 	// the leader to link back to the most recent block that 2/3rds of validators
 	// are aware of when constructing the next block.
-	HighQC *VoteQuorumCertificate
+	HighQC *QuorumCertificate
 
 	// The validator's BLS signature on (TimedOutView, HighQC.View). Notice that we
 	// include the HighQC.View in the signature payload rather than signing the full
@@ -233,7 +233,7 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 // A QuorumCertificate contains an aggregated signature from 2/3rds of the validators
 // on the network, weighted by stake. The signatures are associated with a block hash
 // and a view, both of which are identified in the certificate.
-type VoteQuorumCertificate struct {
+type QuorumCertificate struct {
 	// No versioning field is needed for this type since it is a member field
 	// for other top-level P2P messages, which will be versioned themselves.
 
@@ -254,7 +254,7 @@ type VoteQuorumCertificate struct {
 	ValidatorsVoteAggregatedSignature *AggregatedBLSSignature
 }
 
-func (qc *VoteQuorumCertificate) ToBytes() ([]byte, error) {
+func (qc *QuorumCertificate) ToBytes() ([]byte, error) {
 	retBytes := []byte{}
 
 	// BlockHash
@@ -279,8 +279,8 @@ func (qc *VoteQuorumCertificate) ToBytes() ([]byte, error) {
 	return retBytes, nil
 }
 
-func DecodeQuorumCertificate(rr *bytes.Reader) (*VoteQuorumCertificate, error) {
-	var qc VoteQuorumCertificate
+func DecodeQuorumCertificate(rr *bytes.Reader) (*QuorumCertificate, error) {
+	var qc QuorumCertificate
 	var err error
 
 	qc.BlockHash, err = ReadBlockHash(rr)

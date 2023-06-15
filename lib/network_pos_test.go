@@ -51,7 +51,7 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 		MsgVersion:               MsgValidatorTimeoutVersion0,
 		ValidatorVotingPublicKey: validatorVotingPublicKey,
 		TimedOutView:             999912,
-		HighQC: &VoteQuorumCertificate{
+		HighQC: &QuorumCertificate{
 			BlockHash:      &BlockHash{},
 			ProposedInView: 999910,
 			ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
