@@ -88,10 +88,10 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example.com")},
-			DisableDelegatedStake:    false,
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:               [][]byte{[]byte("https://example.com")},
+			DisableDelegatedStake: false,
+			VotingPublicKey:       votingPublicKey,
+			VotingSignature:       votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.Error(t, err)
@@ -157,7 +157,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorValidatorMissingVotingPublicKey)
 	}
 	{
-		// RuleErrorValidatorMissingVotingPublicKeySignature
+		// RuleErrorValidatorMissingVotingSignature
 		votingPublicKey, _ := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:         [][]byte{[]byte("https://example.com")},
@@ -167,45 +167,45 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
 		)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), RuleErrorValidatorMissingVotingPublicKeySignature)
+		require.Contains(t, err.Error(), RuleErrorValidatorMissingVotingSignature)
 	}
 	{
-		// RuleErrorValidatorInvalidVotingPublicKeySignature: invalid TransactorPkBytes
+		// RuleErrorValidatorInvalidVotingSignature: invalid TransactorPkBytes
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:         [][]byte{[]byte("https://example.com")},
+			VotingPublicKey: votingPublicKey,
+			VotingSignature: votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(
 			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
 		)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), RuleErrorValidatorInvalidVotingPublicKeySignature)
+		require.Contains(t, err.Error(), RuleErrorValidatorInvalidVotingSignature)
 	}
 	{
-		// RuleErrorValidatorInvalidVotingPublicKeySignature: invalid VotingPublicKey
+		// RuleErrorValidatorInvalidVotingSignature: invalid VotingPublicKey
 		votingPublicKey, _ := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		_, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:         [][]byte{[]byte("https://example.com")},
+			VotingPublicKey: votingPublicKey,
+			VotingSignature: votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(
 			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
 		)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), RuleErrorValidatorInvalidVotingPublicKeySignature)
+		require.Contains(t, err.Error(), RuleErrorValidatorInvalidVotingSignature)
 	}
 	{
 		// Happy path: register a validator
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example.com")},
-			DisableDelegatedStake:    false,
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:               [][]byte{[]byte("https://example.com")},
+			DisableDelegatedStake: false,
+			VotingPublicKey:       votingPublicKey,
+			VotingSignature:       votingSignature,
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue1")}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB)
@@ -238,10 +238,10 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		// Happy path: update a validator
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example1.com"), []byte("https://example2.com")},
-			DisableDelegatedStake:    false,
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:               [][]byte{[]byte("https://example1.com"), []byte("https://example2.com")},
+			DisableDelegatedStake: false,
+			VotingPublicKey:       votingPublicKey,
+			VotingSignature:       votingSignature,
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB)
@@ -593,9 +593,9 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 
 		// Perform a RegisterAsValidator txn. No error expected.
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:         [][]byte{[]byte("https://example.com")},
+			VotingPublicKey: votingPublicKey,
+			VotingSignature: votingSignature,
 		}
 		err = _submitValidatorTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: registerAsValidatorMetadata},
@@ -659,9 +659,9 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 
 		// Perform a RegisterAsValidator txn. Error expected.
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:         [][]byte{[]byte("https://example.com")},
+			VotingPublicKey: votingPublicKey,
+			VotingSignature: votingSignature,
 		}
 		err = _submitValidatorTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: registerAsValidatorMetadata},
@@ -749,9 +749,9 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		// m0 registers as a validator.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://m0.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:         [][]byte{[]byte("https://m0.com")},
+			VotingPublicKey: votingPublicKey,
+			VotingSignature: votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -765,9 +765,9 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		// m1 registers as a validator.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://m1.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:         [][]byte{[]byte("https://m1.com")},
+			VotingPublicKey: votingPublicKey,
+			VotingSignature: votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m1Pub, m1Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -781,9 +781,9 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		// m2 registers as a validator.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m2PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://m2.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:         [][]byte{[]byte("https://m2.com")},
+			VotingPublicKey: votingPublicKey,
+			VotingSignature: votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m2Pub, m2Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -953,10 +953,10 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	// Store m0's ValidatorEntry in the db with TotalStake = 100 nanos.
 	votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 	validatorEntry := &ValidatorEntry{
-		ValidatorPKID:            m0PKID,
-		TotalStakeAmountNanos:    uint256.NewInt().SetUint64(100),
-		VotingPublicKey:          votingPublicKey,
-		VotingPublicKeySignature: votingSignature,
+		ValidatorPKID:         m0PKID,
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(100),
+		VotingPublicKey:       votingPublicKey,
+		VotingSignature:       votingSignature,
 	}
 	utxoView._setValidatorEntryMappings(validatorEntry)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
@@ -973,11 +973,11 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	// Store m1's jailed ValidatorEntry in the db with TotalStake = 400 nanos.
 	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m1PkBytes)
 	validatorEntry = &ValidatorEntry{
-		ValidatorPKID:            m1PKID,
-		TotalStakeAmountNanos:    uint256.NewInt().SetUint64(400),
-		VotingPublicKey:          votingPublicKey,
-		VotingPublicKeySignature: votingSignature,
-		JailedAtEpochNumber:      1,
+		ValidatorPKID:         m1PKID,
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(400),
+		VotingPublicKey:       votingPublicKey,
+		VotingSignature:       votingSignature,
+		JailedAtEpochNumber:   1,
 	}
 	utxoView._setValidatorEntryMappings(validatorEntry)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
@@ -992,10 +992,10 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	// Store m2's ValidatorEntry in the db with TotalStake = 300 nanos.
 	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m2PkBytes)
 	m2ValidatorEntry := &ValidatorEntry{
-		ValidatorPKID:            m2PKID,
-		TotalStakeAmountNanos:    uint256.NewInt().SetUint64(300),
-		VotingPublicKey:          votingPublicKey,
-		VotingPublicKeySignature: votingSignature,
+		ValidatorPKID:         m2PKID,
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(300),
+		VotingPublicKey:       votingPublicKey,
+		VotingSignature:       votingSignature,
 	}
 	utxoView._setValidatorEntryMappings(m2ValidatorEntry)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
@@ -1009,10 +1009,10 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	// Store m3's ValidatorEntry in the db with TotalStake = 600 nanos.
 	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m3PkBytes)
 	m3ValidatorEntry := &ValidatorEntry{
-		ValidatorPKID:            m3PKID,
-		TotalStakeAmountNanos:    uint256.NewInt().SetUint64(600),
-		VotingPublicKey:          votingPublicKey,
-		VotingPublicKeySignature: votingSignature,
+		ValidatorPKID:         m3PKID,
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(600),
+		VotingPublicKey:       votingPublicKey,
+		VotingSignature:       votingSignature,
 	}
 	utxoView._setValidatorEntryMappings(m3ValidatorEntry)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
@@ -1047,10 +1047,10 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	// Store m4's ValidatorEntry in the UtxoView with TotalStake = 50 nanos.
 	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m4PkBytes)
 	m4ValidatorEntry := &ValidatorEntry{
-		ValidatorPKID:            m4PKID,
-		TotalStakeAmountNanos:    uint256.NewInt().SetUint64(50),
-		VotingPublicKey:          votingPublicKey,
-		VotingPublicKeySignature: votingSignature,
+		ValidatorPKID:         m4PKID,
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(50),
+		VotingPublicKey:       votingPublicKey,
+		VotingSignature:       votingSignature,
 	}
 	utxoView._setValidatorEntryMappings(m4ValidatorEntry)
 
@@ -1071,11 +1071,11 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	// Store m5's jailed ValidatorEntry in the UtxoView with TotalStake = 500 nanos.
 	votingPublicKey, votingSignature = _generateVotingPublicKeyAndSignature(t, m5PkBytes)
 	m5ValidatorEntry := &ValidatorEntry{
-		ValidatorPKID:            m5PKID,
-		TotalStakeAmountNanos:    uint256.NewInt().SetUint64(500),
-		VotingPublicKey:          votingPublicKey,
-		VotingPublicKeySignature: votingSignature,
-		JailedAtEpochNumber:      1,
+		ValidatorPKID:         m5PKID,
+		TotalStakeAmountNanos: uint256.NewInt().SetUint64(500),
+		VotingPublicKey:       votingPublicKey,
+		VotingSignature:       votingSignature,
+		JailedAtEpochNumber:   1,
 	}
 	utxoView._setValidatorEntryMappings(m5ValidatorEntry)
 
@@ -1177,10 +1177,10 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 		// m0 registers as a validator with DisableDelegatedStake = FALSE.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://m0.com")},
-			DisableDelegatedStake:    false,
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:               [][]byte{[]byte("https://m0.com")},
+			DisableDelegatedStake: false,
+			VotingPublicKey:       votingPublicKey,
+			VotingSignature:       votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -1198,10 +1198,10 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 		// m0 updates DisableDelegatedStake = TRUE.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://m0.com")},
-			DisableDelegatedStake:    true,
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:               [][]byte{[]byte("https://m0.com")},
+			DisableDelegatedStake: true,
+			VotingPublicKey:       votingPublicKey,
+			VotingSignature:       votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -1243,10 +1243,10 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 		// m0 updates DisableDelegatedStake = FALSE.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://m0.com")},
-			DisableDelegatedStake:    false,
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:               [][]byte{[]byte("https://m0.com")},
+			DisableDelegatedStake: false,
+			VotingPublicKey:       votingPublicKey,
+			VotingSignature:       votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -1275,10 +1275,10 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 		// m0 tries to update DisableDelegateStake = TRUE. Errors.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://m0.com")},
-			DisableDelegatedStake:    true,
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:               [][]byte{[]byte("https://m0.com")},
+			DisableDelegatedStake: true,
+			VotingPublicKey:       votingPublicKey,
+			VotingSignature:       votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.Error(t, err)
@@ -1366,9 +1366,9 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		// m0 registers as a validator.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://m0.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:         [][]byte{[]byte("https://m0.com")},
+			VotingPublicKey: votingPublicKey,
+			VotingSignature: votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -1565,9 +1565,9 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 		// m0 registers as a validator.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:         [][]byte{[]byte("https://example.com")},
+			VotingPublicKey: votingPublicKey,
+			VotingSignature: votingSignature,
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue1")}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB)
@@ -1866,9 +1866,9 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 		// sender registers as a validator.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, senderPkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:         [][]byte{[]byte("https://example.com")},
+			VotingPublicKey: votingPublicKey,
+			VotingSignature: votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, senderPkString, senderPrivString, registerMetadata, nil, true)
 		require.NoError(t, err)

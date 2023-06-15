@@ -75,9 +75,9 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		// Validator registers.
 		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, pkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte(fmt.Sprintf("https://%s.com", publicKey))},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:         [][]byte{[]byte(fmt.Sprintf("https://%s.com", publicKey))},
+			VotingPublicKey: votingPublicKey,
+			VotingSignature: votingSignature,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, publicKey, privateKey, registerMetadata, nil, true)
 		require.NoError(t, err)
