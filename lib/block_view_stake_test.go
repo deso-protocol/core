@@ -98,11 +98,11 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
+		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:             [][]byte{[]byte("https://example.com")},
+			VotingPublicKey:     votingPublicKey,
+			VotingAuthorization: votingAuthorization,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerAsValidatorMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -945,22 +945,22 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	}
 	{
 		// m0 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
+		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example1.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:             [][]byte{[]byte("https://example1.com")},
+			VotingPublicKey:     votingPublicKey,
+			VotingAuthorization: votingAuthorization,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerAsValidatorMetadata, nil, true)
 		require.NoError(t, err)
 	}
 	{
 		// m1 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m1PkBytes)
+		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m1PkBytes)
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://example2.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:             [][]byte{[]byte("https://example2.com")},
+			VotingPublicKey:     votingPublicKey,
+			VotingAuthorization: votingAuthorization,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m1Pub, m1Priv, registerAsValidatorMetadata, nil, true)
 		require.NoError(t, err)
@@ -1825,11 +1825,11 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 	}
 	{
 		// m0 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
+		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://m1.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:             [][]byte{[]byte("https://m1.com")},
+			VotingPublicKey:     votingPublicKey,
+			VotingAuthorization: votingAuthorization,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, true)
 		require.NoError(t, err)
@@ -2018,11 +2018,11 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 	}
 	{
 		// m0 registers as a validator.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, m0PkBytes)
+		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte("https://m0.example.com")},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:             [][]byte{[]byte("https://m0.example.com")},
+			VotingPublicKey:     votingPublicKey,
+			VotingAuthorization: votingAuthorization,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.NoError(t, err)
