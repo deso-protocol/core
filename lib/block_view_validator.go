@@ -54,11 +54,11 @@ type ValidatorEntry struct {
 	// other validators can reliably prove the message came from this validator
 	// by verifying against their VotingPublicKey.
 	VotingPublicKey *bls.PublicKey
-	// The VotingSignature is the signature of the SHA256(TransactorPublicKey)
-	// by the VotingPrivateKey.
-	// This proves that this validator is indeed the proper owner of the corresponding
-	// VotingPrivateKey. See comment on CreateValidatorVotingSignaturePayload for more details.
-	VotingSignature *bls.Signature
+	// The VotingAuthorization is the BLS signature of the SHA256(TransactorPublicKey)
+	// by the VotingPrivateKey. This proves that this validator is indeed the proper
+	// owner of the corresponding VotingPrivateKey. See comment on
+	// CreateValidatorVotingAuthorizationPayload for more details.
+	VotingAuthorization *bls.Signature
 	// TotalStakeAmountNanos is a cached value of this validator's total stake, calculated
 	// by summing all the corresponding StakeEntries assigned to this validator. We cache
 	// the value here to avoid the O(N) operation of recomputing when determining a
@@ -123,7 +123,7 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 		Domains:                 domainsCopy,
 		DisableDelegatedStake:   validatorEntry.DisableDelegatedStake,
 		VotingPublicKey:         validatorEntry.VotingPublicKey.Copy(),
-		VotingSignature:         validatorEntry.VotingSignature.Copy(),
+		VotingAuthorization:     validatorEntry.VotingAuthorization.Copy(),
 		TotalStakeAmountNanos:   validatorEntry.TotalStakeAmountNanos.Clone(),
 		LastActiveAtEpochNumber: validatorEntry.LastActiveAtEpochNumber,
 		JailedAtEpochNumber:     validatorEntry.JailedAtEpochNumber,
@@ -144,7 +144,7 @@ func (validatorEntry *ValidatorEntry) RawEncodeWithoutMetadata(blockHeight uint6
 
 	data = append(data, BoolToByte(validatorEntry.DisableDelegatedStake))
 	data = append(data, EncodeBLSPublicKey(validatorEntry.VotingPublicKey)...)
-	data = append(data, EncodeBLSSignature(validatorEntry.VotingSignature)...)
+	data = append(data, EncodeBLSSignature(validatorEntry.VotingAuthorization)...)
 	data = append(data, VariableEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	data = append(data, UintToBuf(validatorEntry.LastActiveAtEpochNumber)...)
 	data = append(data, UintToBuf(validatorEntry.JailedAtEpochNumber)...)
@@ -186,10 +186,10 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading VotingPublicKey: ")
 	}
 
-	// VotingSignature
-	validatorEntry.VotingSignature, err = DecodeBLSSignature(rr)
+	// VotingAuthorization
+	validatorEntry.VotingAuthorization, err = DecodeBLSSignature(rr)
 	if err != nil {
-		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading VotingSignature: ")
+		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading VotingAuthorization: ")
 	}
 
 	// TotalStakeAmountNanos
@@ -235,7 +235,7 @@ type RegisterAsValidatorMetadata struct {
 	Domains               [][]byte
 	DisableDelegatedStake bool
 	VotingPublicKey       *bls.PublicKey
-	VotingSignature       *bls.Signature
+	VotingAuthorization   *bls.Signature
 }
 
 func (txnData *RegisterAsValidatorMetadata) GetTxnType() TxnType {
@@ -253,7 +253,7 @@ func (txnData *RegisterAsValidatorMetadata) ToBytes(preSignature bool) ([]byte, 
 
 	data = append(data, BoolToByte(txnData.DisableDelegatedStake))
 	data = append(data, EncodeBLSPublicKey(txnData.VotingPublicKey)...)
-	data = append(data, EncodeBLSSignature(txnData.VotingSignature)...)
+	data = append(data, EncodeBLSSignature(txnData.VotingAuthorization)...)
 	return data, nil
 }
 
@@ -285,10 +285,10 @@ func (txnData *RegisterAsValidatorMetadata) FromBytes(data []byte) error {
 		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading VotingPublicKey: ")
 	}
 
-	// VotingSignature
-	txnData.VotingSignature, err = DecodeBLSSignature(rr)
+	// VotingAuthorization
+	txnData.VotingAuthorization, err = DecodeBLSSignature(rr)
 	if err != nil {
-		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading VotingSignature: ")
+		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading VotingAuthorization: ")
 	}
 
 	return nil
@@ -351,7 +351,7 @@ type RegisterAsValidatorTxindexMetadata struct {
 	Domains                       []string
 	DisableDelegatedStake         bool
 	VotingPublicKey               string
-	VotingSignature               string
+	VotingAuthorization           string
 }
 
 func (txindexMetadata *RegisterAsValidatorTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -366,7 +366,7 @@ func (txindexMetadata *RegisterAsValidatorTxindexMetadata) RawEncodeWithoutMetad
 
 	data = append(data, BoolToByte(txindexMetadata.DisableDelegatedStake))
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.VotingPublicKey))...)
-	data = append(data, EncodeByteArray([]byte(txindexMetadata.VotingSignature))...)
+	data = append(data, EncodeByteArray([]byte(txindexMetadata.VotingAuthorization))...)
 	return data
 }
 
@@ -406,12 +406,12 @@ func (txindexMetadata *RegisterAsValidatorTxindexMetadata) RawDecodeWithoutMetad
 	}
 	txindexMetadata.VotingPublicKey = string(votingPublicKeyBytes)
 
-	// VotingSignature
-	votingSignatureBytes, err := DecodeByteArray(rr)
+	// VotingAuthorization
+	votingAuthorizationBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "RegisterAsValidatorTxindexMetadata.Decode: Problem reading VotingSignature: ")
+		return errors.Wrapf(err, "RegisterAsValidatorTxindexMetadata.Decode: Problem reading VotingAuthorization: ")
 	}
-	txindexMetadata.VotingSignature = string(votingSignatureBytes)
+	txindexMetadata.VotingAuthorization = string(votingAuthorizationBytes)
 
 	return nil
 }
@@ -1101,7 +1101,7 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		Domains:                 txMeta.Domains,
 		DisableDelegatedStake:   txMeta.DisableDelegatedStake,
 		VotingPublicKey:         txMeta.VotingPublicKey,
-		VotingSignature:         txMeta.VotingSignature,
+		VotingAuthorization:     txMeta.VotingAuthorization,
 		TotalStakeAmountNanos:   totalStakeAmountNanos,
 		LastActiveAtEpochNumber: lastActiveAtEpochNumber,
 		JailedAtEpochNumber:     jailedAtEpochNumber,
@@ -1641,17 +1641,17 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(
 		return errors.Wrapf(RuleErrorValidatorMissingVotingPublicKey, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
 
-	// Validate VotingSignature.
-	if metadata.VotingSignature == nil {
-		return errors.Wrapf(RuleErrorValidatorMissingVotingSignature, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
+	// Validate VotingAuthorization.
+	if metadata.VotingAuthorization == nil {
+		return errors.Wrapf(RuleErrorValidatorMissingVotingAuthorization, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
-	votingSignaturePayload := CreateValidatorVotingSignaturePayload(transactorPublicKey)
-	isValidBLSSignature, err := metadata.VotingPublicKey.Verify(metadata.VotingSignature, votingSignaturePayload)
+	votingAuthorizationPayload := CreateValidatorVotingAuthorizationPayload(transactorPublicKey)
+	isValidBLSSignature, err := metadata.VotingPublicKey.Verify(metadata.VotingAuthorization, votingAuthorizationPayload)
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error verifying VotingSignature: ")
+		return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error verifying VotingAuthorization: ")
 	}
 	if !isValidBLSSignature {
-		return errors.Wrapf(RuleErrorValidatorInvalidVotingSignature, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
+		return errors.Wrapf(RuleErrorValidatorInvalidVotingAuthorization, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
 
 	// Error if updating DisableDelegatedStake from false to
@@ -2147,7 +2147,7 @@ func (bav *UtxoView) CreateRegisterAsValidatorTxindexMetadata(
 		Domains:                       domains,
 		DisableDelegatedStake:         metadata.DisableDelegatedStake,
 		VotingPublicKey:               metadata.VotingPublicKey.ToString(),
-		VotingSignature:               metadata.VotingSignature.ToString(),
+		VotingAuthorization:           metadata.VotingAuthorization.ToString(),
 	}
 
 	// Construct AffectedPublicKeys.
@@ -2299,7 +2299,7 @@ func DecodeBLSSignature(rr io.Reader) (*bls.Signature, error) {
 // This means that nobody can construct a transaction to re-register this validator
 // without constructing a new transaction with a fresh nonce, thus requiring a new
 // signature from the same transactorPublicKey, which they wouldn't have access to.
-func CreateValidatorVotingSignaturePayload(
+func CreateValidatorVotingAuthorizationPayload(
 	transactorPublicKeyBytes []byte,
 ) []byte {
 	// HASH(TransactorPublicKey)
@@ -2319,8 +2319,8 @@ const RuleErrorValidatorInvalidDomain RuleError = "RuleErrorValidatorInvalidDoma
 const RuleErrorValidatorDuplicateDomains RuleError = "RuleErrorValidatorDuplicateDomains"
 const RuleErrorValidatorNotFound RuleError = "RuleErrorValidatorNotFound"
 const RuleErrorValidatorMissingVotingPublicKey RuleError = "RuleErrorValidatorMissingVotingPublicKey"
-const RuleErrorValidatorMissingVotingSignature RuleError = "RuleErrorValidatorMissingVotingSignature"
-const RuleErrorValidatorInvalidVotingSignature RuleError = "RuleErrorValidatorInvalidVotingSignature"
+const RuleErrorValidatorMissingVotingAuthorization RuleError = "RuleErrorValidatorMissingVotingAuthorization"
+const RuleErrorValidatorInvalidVotingAuthorization RuleError = "RuleErrorValidatorInvalidVotingAuthorization"
 const RuleErrorValidatorDisablingExistingDelegatedStakers RuleError = "RuleErrorValidatorDisablingExistingDelegatedStakers"
 const RuleErrorUnjailingNonjailedValidator RuleError = "RuleErrorUnjailingNonjailedValidator"
 const RuleErrorUnjailingValidatorTooEarly RuleError = "RuleErrorUnjailingValidatorTooEarly"
