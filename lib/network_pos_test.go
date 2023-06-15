@@ -52,9 +52,12 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 		ValidatorVotingPublicKey: validatorVotingPublicKey,
 		TimedOutView:             999912,
 		HighQC: &VoteQuorumCertificate{
-			BlockHash:               &BlockHash{},
-			ProposedInView:          999910,
-			AggregatedVoteSignature: aggregateSignature,
+			BlockHash:      &BlockHash{},
+			ProposedInView: 999910,
+			ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+				SignersList: []byte{1, 2},
+				Signature:   aggregateSignature,
+			},
 		},
 		TimeoutPartialSignature: timeoutPartialSignature,
 	}
@@ -62,7 +65,7 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 	// Encode the message and verify the length is correct.
 	encodedMsgBytes, err := originalMsg.ToBytes(false)
 	require.NoError(t, err)
-	require.Equal(t, 234, len(encodedMsgBytes))
+	require.Equal(t, 237, len(encodedMsgBytes))
 
 	// Decode the message.
 	decodedMsg := &MsgDeSoValidatorTimeout{}
@@ -73,11 +76,20 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 	require.Equal(t, originalMsg.MsgVersion, decodedMsg.MsgVersion)
 	require.True(t, originalMsg.ValidatorVotingPublicKey.Eq(decodedMsg.ValidatorVotingPublicKey))
 	require.Equal(t, originalMsg.TimedOutView, decodedMsg.TimedOutView)
-	require.NotNil(t, decodedMsg.HighQC)
 	require.Equal(t, originalMsg.HighQC.BlockHash, decodedMsg.HighQC.BlockHash)
 	require.Equal(t, originalMsg.HighQC.ProposedInView, decodedMsg.HighQC.ProposedInView)
-	require.True(t, originalMsg.HighQC.AggregatedVoteSignature.Eq(decodedMsg.HighQC.AggregatedVoteSignature))
 	require.True(t, originalMsg.TimeoutPartialSignature.Eq(decodedMsg.TimeoutPartialSignature))
+
+	// Check the aggregated signature.
+	require.True(t,
+		originalMsg.HighQC.ValidatorsVoteAggregatedSignature.Signature.Eq(
+			decodedMsg.HighQC.ValidatorsVoteAggregatedSignature.Signature,
+		),
+	)
+	require.Equal(t,
+		originalMsg.HighQC.ValidatorsVoteAggregatedSignature.SignersList,
+		decodedMsg.HighQC.ValidatorsVoteAggregatedSignature.SignersList,
+	)
 }
 
 // Creates an arbitrary BLS public key and signature for testing.

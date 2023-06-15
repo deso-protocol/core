@@ -248,8 +248,10 @@ type VoteQuorumCertificate struct {
 	// sign the (ProposedInView, BlockHash) pair for the block.
 	//
 	// From the block hash, we can look up the block height, the validator set at that
-	// block height, and measure if the QC has 2/3rds of the total stake.
-	AggregatedVoteSignature *bls.Signature
+	// block height, and the ordering of validators in consensus which identifies the
+	// present signers in the provided signers list. We can then use this to determine
+	// if the QC has 2/3rds of the total stake.
+	ValidatorsVoteAggregatedSignature *AggregatedBLSSignature
 }
 
 func (qc *VoteQuorumCertificate) ToBytes() ([]byte, error) {
@@ -264,11 +266,15 @@ func (qc *VoteQuorumCertificate) ToBytes() ([]byte, error) {
 	// ProposedInView
 	retBytes = append(retBytes, UintToBuf(qc.ProposedInView)...)
 
-	// AggregatedVoteSignature
-	if qc.AggregatedVoteSignature == nil {
-		return nil, errors.New("QuorumCertificate.ToBytes: AggregatedVoteSignature must not be nil")
+	// ValidatorsVoteAggregatedSignature
+	if qc.ValidatorsVoteAggregatedSignature == nil {
+		return nil, errors.New("QuorumCertificate.ToBytes: ValidatorsVoteAggregatedSignature must not be nil")
 	}
-	retBytes = append(retBytes, EncodeBLSSignature(qc.AggregatedVoteSignature)...)
+	encodedValidatorsVoteAggregatedSignature, err := qc.ValidatorsVoteAggregatedSignature.ToBytes()
+	if err != nil {
+		return nil, errors.Wrapf(err, "QuorumCertificate.ToBytes: Error encoding ValidatorsVoteAggregatedSignature")
+	}
+	retBytes = append(retBytes, encodedValidatorsVoteAggregatedSignature...)
 
 	return retBytes, nil
 }
@@ -287,10 +293,54 @@ func DecodeQuorumCertificate(rr *bytes.Reader) (*VoteQuorumCertificate, error) {
 		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding ProposedInView")
 	}
 
-	qc.AggregatedVoteSignature, err = DecodeBLSSignature(rr)
+	qc.ValidatorsVoteAggregatedSignature, err = DecodeAggregatedBLSSignature(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding AggregatedVoteSignature")
+		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding ValidatorsVoteAggregatedSignature")
 	}
 
 	return &qc, nil
+}
+
+// This is an aggregated BLS signature from a set of validators. Each validator's
+// presence in the signature is denoted in the provided signers list. I.e. if the
+// list's value at index 0 is 1, then the validator identified by that index is
+// present in the aggregated signature. The indices of all validators are expected
+// to be known by the caller.
+type AggregatedBLSSignature struct {
+	// TODO: Switch this to a bitlist, which will result in ~8x reduction in total
+	// size of this construct.
+	SignersList []byte
+	Signature   *bls.Signature
+}
+
+func (sig *AggregatedBLSSignature) ToBytes() ([]byte, error) {
+	retBytes := []byte{}
+
+	// SignersList
+	retBytes = append(retBytes, EncodeByteArray(sig.SignersList)...)
+
+	// Signature
+	if sig.Signature == nil {
+		return nil, errors.New("AggregatedBLSSignature.ToBytes: Signature must not be nil")
+	}
+	retBytes = append(retBytes, EncodeBLSSignature(sig.Signature)...)
+
+	return retBytes, nil
+}
+
+func DecodeAggregatedBLSSignature(rr *bytes.Reader) (*AggregatedBLSSignature, error) {
+	var sig AggregatedBLSSignature
+	var err error
+
+	sig.SignersList, err = DecodeByteArray(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeAggregatedBLSSignature: Error decoding SignersList")
+	}
+
+	sig.Signature, err = DecodeBLSSignature(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeAggregatedBLSSignature: Error decoding Signature")
+	}
+
+	return &sig, nil
 }
