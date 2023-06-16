@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"fmt"
 	"github.com/emirpasic/gods/sets/treeset"
 	"github.com/stretchr/testify/require"
 	"math/rand"
@@ -17,8 +18,17 @@ func TestTreeSet(t *testing.T) {
 	set := treeset.NewWithIntComparator(7, 10, 15, 22, 13, 200, 5, 0)
 	it := set.Iterator()
 	for it.Next() {
-		t.Log(it.Value())
+		fmt.Printf("%v ", it.Value())
 	}
+	fmt.Println()
+
+	set.Remove(22)
+
+	it = set.Iterator()
+	for it.Next() {
+		fmt.Printf("%v ", it.Value())
+	}
+	fmt.Println()
 }
 
 func TestFeeTimeBucket(t *testing.T) {

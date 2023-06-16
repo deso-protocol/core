@@ -48,45 +48,75 @@ func (dmp *DeSoMempoolPos) AddTransaction(txn *MsgDeSoTxn, blockHeight uint64, u
 	if err != nil {
 		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: ")
 	}
-
 	if newReservedBalance > spendableBalanceNanos {
 		return errors.Errorf("DeSoMempoolPos.AddTransaction: Not enough balance to cover txn fees "+
 			"(newReservedBalance: %d, spendableBalanceNanos: %d)", newReservedBalance, spendableBalanceNanos)
 	}
-	// If we get here, this means user has enough balance to cover the txn fees. We update the reserved balance to
+
+	// Check transaction signature
+	if _, err = utxoView._verifySignature(txn, uint32(blockHeight)); err != nil {
+		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: Signature validation failed")
+	}
+
+	// Construct the MempoolTx from the MsgDeSoTxn.
+	mempoolTx, err := NewMempoolTx(txn, blockHeight)
+	if err != nil {
+		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: Problem constructing MempoolTx")
+	}
+
+	if !dmp.txnRegister.AddTransaction(mempoolTx) {
+		return errors.Errorf("DeSoMempoolPos.AddTransaction: Problem adding txn to register")
+	}
+
+	// If we get here, this means the transaction was successfully added to the mempool. We update the reserved balance to
 	// include the newly added transaction's fee.
 	dmp.reservedBalances[*userPk] = newReservedBalance
 
-	// Construct the MempoolTx from the MsgDeSoTxn.
+	return nil
+}
+
+func (dmp *DeSoMempoolPos) RemoveTransaction(txn *MempoolTx) error {
+	// First, sanity check our reserved balance.
+	userPk := NewPublicKey(txn.Tx.PublicKey)
+	reservedBalance := dmp.reservedBalances[*userPk]
+	if txn.Fee > reservedBalance {
+		return errors.Errorf("DeSoMempoolPos.RemoveTransaction: Fee exceeds reserved balance")
+	}
+
+	// Remove the transaction from the register.
+	if !dmp.txnRegister.RemoveTransaction(txn) {
+		return errors.Errorf("DeSoMempoolPos.RemoveTransaction: Problem removing txn from register")
+	}
+	dmp.reservedBalances[*userPk] = reservedBalance - txn.Fee
+
+	return nil
+}
+
+func NewMempoolTx(txn *MsgDeSoTxn, blockHeight uint64) (*MempoolTx, error) {
 	txnBytes, err := txn.ToBytes(false)
 	if err != nil {
-		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: Problem serializing txn")
+		return nil, errors.Wrapf(err, "DeSoMempoolPos.GetMempoolTx: Problem serializing txn")
 	}
 	serializedLen := uint64(len(txnBytes))
 
 	txnHash := txn.Hash()
 	if txnHash == nil {
-		return errors.Errorf("DeSoMempoolPos.AddTransaction: Problem hashing txn")
+		return nil, errors.Errorf("DeSoMempoolPos.GetMempoolTx: Problem hashing txn")
 	}
 	feePerKb, err := txn.ComputeFeePerKB()
 	if err != nil {
-		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: Problem computing fee per KB")
+		return nil, errors.Wrapf(err, "DeSoMempoolPos.GetMempoolTx: Problem computing fee per KB")
 	}
 
-	mempoolTx := &MempoolTx{
+	return &MempoolTx{
 		Tx:          txn,
 		Hash:        txnHash,
 		TxSizeBytes: serializedLen,
 		Added:       time.Now(),
 		Height:      uint32(blockHeight),
-		Fee:         txnFee,
+		Fee:         txn.TxnFeeNanos,
 		FeePerKB:    feePerKb,
-	}
-	if !dmp.txnRegister.AddTransaction(mempoolTx) {
-		return errors.Errorf("DeSoMempoolPos.AddTransaction: Problem adding txn to register")
-	}
-
-	return nil
+	}, nil
 }
 
 // ========================
@@ -126,6 +156,17 @@ func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) bool {
 
 	tr.buckets.AddTransaction(txn)
 	tr.txnMembership[*txn.Hash] = struct{}{}
+	return true
+}
+
+func (tr *TransactionRegister) RemoveTransaction(txn *MempoolTx) bool {
+	if _, ok := tr.txnMembership[*txn.Hash]; !ok {
+		return false
+	}
+
+	tr.buckets.RemoveTransaction(txn)
+	delete(tr.txnMembership, *txn.Hash)
+	tr.totalTxnSize -= txn.TxSizeBytes
 	return true
 }
 
@@ -231,12 +272,27 @@ func FeeBucketComparator(a, b interface{}) int {
 func (fb *FeeBucket) AddTransaction(txn *MempoolTx) {
 	nthBucket := MapFeeToNthBucket(txn.FeePerKB, fb.params)
 	if bucket, exists := fb.bucketNthMap[nthBucket]; exists {
-		bucket.txnsSet.Add(txn)
+		bucket.AddTransaction(txn)
 	} else {
 		newBucket := NewTimeBucketHeap(txn.FeePerKB, []*MempoolTx{txn})
 		fb.bucketSet.Add(newBucket)
 		fb.bucketNthMap[nthBucket] = newBucket
 	}
+}
+
+func (fb *FeeBucket) RemoveTransaction(txn *MempoolTx) {
+	nthBucket := MapFeeToNthBucket(txn.FeePerKB, fb.params)
+	if bucket, exists := fb.bucketNthMap[nthBucket]; exists {
+		bucket.RemoveTransaction(txn)
+		if bucket.Empty() {
+			fb.bucketSet.Remove(bucket)
+			delete(fb.bucketNthMap, nthBucket)
+		}
+	}
+}
+
+func (fb *FeeBucket) Empty() bool {
+	return fb.bucketSet.Empty()
 }
 
 func (fb *FeeBucket) GetIterator() treeset.Iterator {
@@ -287,6 +343,18 @@ func TimeBucketComparator(a, b interface{}) int {
 			}
 		}
 	}
+}
+
+func (tb *TimeBucket) AddTransaction(txn *MempoolTx) {
+	tb.txnsSet.Add(txn)
+}
+
+func (tb *TimeBucket) RemoveTransaction(txn *MempoolTx) {
+	tb.txnsSet.Remove(txn)
+}
+
+func (tb *TimeBucket) Empty() bool {
+	return tb.txnsSet.Empty()
 }
 
 func (tb *TimeBucket) GetIterator() treeset.Iterator {
