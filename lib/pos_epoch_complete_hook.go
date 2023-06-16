@@ -79,14 +79,14 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 
 	// TODO: Delete old snapshots that are no longer used.
 
-	// Retrieve the SnapshotGlobalParam: EpochDurationNumBlocks.
-	epochDurationNumBlocks, err := bav.GetSnapshotGlobalParam(EpochDurationNumBlocks)
+	// Retrieve the SnapshotGlobalParamsEntry.EpochDurationNumBlocks.
+	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
 	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving snapshot EpochDurationNumBlocks: ")
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving SnapshotGlobalParamsEntry: ")
 	}
 
 	// Calculate the NextEpochFinalBlockHeight.
-	nextEpochFinalBlockHeight, err := SafeUint64().Add(blockHeight, epochDurationNumBlocks)
+	nextEpochFinalBlockHeight, err := SafeUint64().Add(blockHeight, snapshotGlobalParamsEntry.EpochDurationNumBlocks)
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: problem calculating NextEpochFinalBlockHeight: ")
 	}

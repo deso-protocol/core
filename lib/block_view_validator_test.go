@@ -1558,7 +1558,7 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			map[string][]byte{ValidatorJailEpochDuration.ToString(): UintToBuf(3)},
+			map[string][]byte{ValidatorJailEpochDurationKey: UintToBuf(3)},
 		)
 	}
 	{
