@@ -1724,14 +1724,16 @@ func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte) 
 		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving CurrentEpochNumber: ")
 	}
 
-	// Retrieve the SnapshotGlobalParam: ValidatorJailEpochDuration.
-	validatorJailEpochDuration, err := bav.GetSnapshotGlobalParam(ValidatorJailEpochDuration)
+	// Retrieve the SnapshotGlobalParamsEntry.ValidatorJailEpochDuration.
+	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving snapshot ValidatorJailEpochDuration: ")
+		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving SnapshotGlobalParamsEntry: ")
 	}
 
 	// Calculate UnjailableAtEpochNumber.
-	unjailableAtEpochNumber, err := SafeUint64().Add(validatorEntry.JailedAtEpochNumber, validatorJailEpochDuration)
+	unjailableAtEpochNumber, err := SafeUint64().Add(
+		validatorEntry.JailedAtEpochNumber, snapshotGlobalParamsEntry.ValidatorJailEpochDuration,
+	)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error calculating UnjailableAtEpochNumber: ")
 	}
@@ -1957,16 +1959,12 @@ func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry, blockHe
 		return false, nil
 	}
 
-	// Retrieve the SnapshotGlobalParam: JailInactiveValidatorGracePeriodEpochs.
-	jailInactiveValidatorGracePeriodEpochs, err := bav.GetSnapshotGlobalParam(JailInactiveValidatorGracePeriodEpochs)
+	// Retrieve the SnapshotGlobalParamsEntry:
+	//   - JailInactiveValidatorGracePeriodEpochs
+	//   - EpochDurationNumBlocks
+	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
 	if err != nil {
-		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving JailInactiveValidatorGracePeriodEpochs: ")
-	}
-
-	// Retrieve the SnapshotGlobalParam: EpochDurationNumBlocks.
-	epochDurationNumBlocks, err := bav.GetSnapshotGlobalParam(EpochDurationNumBlocks)
-	if err != nil {
-		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving EpochDurationNumBlocks: ")
+		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving SnapshotGlobalParamsEntry: ")
 	}
 
 	// Calculate if enough blocks have passed since cutting over to PoS to start jailing validators.
@@ -1975,7 +1973,10 @@ func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry, blockHe
 	// elapsing since all validators' LastActiveAtEpochNumber = 0 prior to the PoS cut-over.
 	//
 	// StartJailingBlockHeight = ConsensusCutoverBlockHeight + (JailInactiveValidatorGracePeriodEpochs * EpochDurationNumBlocks)
-	startJailingGracePeriodBlocks, err := SafeUint64().Mul(jailInactiveValidatorGracePeriodEpochs, epochDurationNumBlocks)
+	startJailingGracePeriodBlocks, err := SafeUint64().Mul(
+		snapshotGlobalParamsEntry.JailInactiveValidatorGracePeriodEpochs,
+		snapshotGlobalParamsEntry.EpochDurationNumBlocks,
+	)
 	if err != nil {
 		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error calculating StartJailingGracePeriod: ")
 	}
@@ -1996,7 +1997,9 @@ func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry, blockHe
 	}
 
 	// Calculate the JailAtEpochNumber.
-	jailAtEpochNumber, err := SafeUint64().Add(validatorEntry.LastActiveAtEpochNumber, jailInactiveValidatorGracePeriodEpochs)
+	jailAtEpochNumber, err := SafeUint64().Add(
+		validatorEntry.LastActiveAtEpochNumber, snapshotGlobalParamsEntry.JailInactiveValidatorGracePeriodEpochs,
+	)
 	if err != nil {
 		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error calculating JailAtEpochNumber: ")
 	}

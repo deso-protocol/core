@@ -192,8 +192,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			paramUpdaterPub,
 			paramUpdaterPriv,
 			map[string][]byte{
-				ValidatorJailEpochDuration.ToString():             UintToBuf(4),
-				JailInactiveValidatorGracePeriodEpochs.ToString(): UintToBuf(10),
+				ValidatorJailEpochDurationKey:             UintToBuf(4),
+				JailInactiveValidatorGracePeriodEpochsKey: UintToBuf(10),
 			},
 		)
 
@@ -214,10 +214,11 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, currentEpochNumber, uint64(0))
 
-		// Test SnapshotGlobalParamsEntry is nil.
+		// Test SnapshotGlobalParamsEntry is non-nil and contains the default values.
 		snapshotGlobalParamsEntry, err := utxoView().GetSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
-		require.Nil(t, snapshotGlobalParamsEntry)
+		require.NotNil(t, snapshotGlobalParamsEntry)
+		require.Equal(t, snapshotGlobalParamsEntry.ValidatorJailEpochDuration, uint64(3))
 
 		_assertEmptyValidatorSnapshots()
 	}
@@ -361,16 +362,16 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		// Test snapshotting changing GlobalParams.
 
 		// Update StakeLockupEpochDuration from default of 3 to 2.
-		stakeLockupEpochDuration, err := utxoView().GetSnapshotGlobalParam(StakeLockupEpochDuration)
+		snapshotGlobalsParamsEntry, err := utxoView().GetSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
-		require.Equal(t, stakeLockupEpochDuration, uint64(3))
+		require.Equal(t, snapshotGlobalsParamsEntry.StakeLockupEpochDuration, uint64(3))
 
 		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			map[string][]byte{StakeLockupEpochDuration.ToString(): UintToBuf(2)},
+			map[string][]byte{StakeLockupEpochDurationKey: UintToBuf(2)},
 		)
 
 		require.Equal(t, utxoView().GlobalParamsEntry.StakeLockupEpochDuration, uint64(2))
@@ -379,17 +380,17 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook()
 
 		// Snapshot StakeLockupEpochDuration is still 3.
-		stakeLockupEpochDuration, err = utxoView().GetSnapshotGlobalParam(StakeLockupEpochDuration)
+		snapshotGlobalsParamsEntry, err = utxoView().GetSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
-		require.Equal(t, stakeLockupEpochDuration, uint64(3))
+		require.Equal(t, snapshotGlobalsParamsEntry.StakeLockupEpochDuration, uint64(3))
 
 		// Run OnEpochCompleteHook().
 		_runOnEpochCompleteHook()
 
 		// Snapshot StakeLockupEpochDuration is updated to 2.
-		stakeLockupEpochDuration, err = utxoView().GetSnapshotGlobalParam(StakeLockupEpochDuration)
+		snapshotGlobalsParamsEntry, err = utxoView().GetSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
-		require.Equal(t, stakeLockupEpochDuration, uint64(2))
+		require.Equal(t, snapshotGlobalsParamsEntry.StakeLockupEpochDuration, uint64(2))
 	}
 	{
 		// Test snapshotting changing validator set.

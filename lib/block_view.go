@@ -3017,33 +3017,33 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 
 	if blockHeight >= bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
 		var bytesRead int
-		if len(extraData[StakeLockupEpochDuration.ToString()]) > 0 {
-			newGlobalParamsEntry.StakeLockupEpochDuration, bytesRead = Uvarint(extraData[StakeLockupEpochDuration.ToString()])
+		if len(extraData[StakeLockupEpochDurationKey]) > 0 {
+			newGlobalParamsEntry.StakeLockupEpochDuration, bytesRead = Uvarint(extraData[StakeLockupEpochDurationKey])
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode StakeLockupEpochDuration as uint64")
 			}
 		}
-		if len(extraData[ValidatorJailEpochDuration.ToString()]) > 0 {
-			newGlobalParamsEntry.ValidatorJailEpochDuration, bytesRead = Uvarint(extraData[ValidatorJailEpochDuration.ToString()])
+		if len(extraData[ValidatorJailEpochDurationKey]) > 0 {
+			newGlobalParamsEntry.ValidatorJailEpochDuration, bytesRead = Uvarint(extraData[ValidatorJailEpochDurationKey])
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode ValidatorJailEpochDuration as uint64")
 			}
 		}
-		if len(extraData[LeaderScheduleMaxNumValidators.ToString()]) > 0 {
-			newGlobalParamsEntry.LeaderScheduleMaxNumValidators, bytesRead = Uvarint(extraData[LeaderScheduleMaxNumValidators.ToString()])
+		if len(extraData[LeaderScheduleMaxNumValidatorsKey]) > 0 {
+			newGlobalParamsEntry.LeaderScheduleMaxNumValidators, bytesRead = Uvarint(extraData[LeaderScheduleMaxNumValidatorsKey])
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode LeaderScheduleMaxNumValidators as uint64")
 			}
 		}
-		if len(extraData[EpochDurationNumBlocks.ToString()]) > 0 {
-			newGlobalParamsEntry.EpochDurationNumBlocks, bytesRead = Uvarint(extraData[EpochDurationNumBlocks.ToString()])
+		if len(extraData[EpochDurationNumBlocksKey]) > 0 {
+			newGlobalParamsEntry.EpochDurationNumBlocks, bytesRead = Uvarint(extraData[EpochDurationNumBlocksKey])
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode EpochDurationNumBlocks as uint64")
 			}
 		}
-		if len(extraData[JailInactiveValidatorGracePeriodEpochs.ToString()]) > 0 {
+		if len(extraData[JailInactiveValidatorGracePeriodEpochsKey]) > 0 {
 			newGlobalParamsEntry.JailInactiveValidatorGracePeriodEpochs, bytesRead = Uvarint(
-				extraData[JailInactiveValidatorGracePeriodEpochs.ToString()],
+				extraData[JailInactiveValidatorGracePeriodEpochsKey],
 			)
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
