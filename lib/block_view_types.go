@@ -3772,9 +3772,6 @@ type GlobalParamsEntry struct {
 	// and the expiration block height specified in the nonce for a
 	// transaction.
 	MaxNonceExpirationBlockHeightOffset uint64
-
-	FeeBucketBaseRate              uint64
-	FeeBucketMultiplierBasisPoints uint64
 }
 
 func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {

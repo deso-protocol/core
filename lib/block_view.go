@@ -3093,7 +3093,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	_fees uint64, _err error) {
 
 	// Do a quick sanity check before trying to connect.
-	if err := CheckTransactionSanity(txn, uint64(blockHeight), bav.Params); err != nil {
+	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "_connectTransaction: ")
 	}
 
