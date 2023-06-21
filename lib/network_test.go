@@ -17,6 +17,7 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/bxcodec/faker"
+	"github.com/deso-protocol/core/utils/bitset"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -123,6 +124,8 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 
 	_, testBLSSignature := _generateValidatorVotingPublicKeyAndSignature(t)
 
+	testBitset := bitset.NewBitset().Set(0, true).Set(3, true)
+
 	return &MsgDeSoHeader{
 		Version:               2,
 		PrevBlockHash:         &testBlockHash,
@@ -137,7 +140,7 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 			BlockHash:      &testBlockHash,
 			ProposedInView: uint64(123456789123),
 			ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
-				SignersList: []byte{1},
+				SignersList: testBitset,
 				Signature:   testBLSSignature,
 			},
 		},
@@ -147,13 +150,13 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 				BlockHash:      &testBlockHash,
 				ProposedInView: uint64(345678912345),
 				ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
-					SignersList: []byte{2},
+					SignersList: testBitset,
 					Signature:   testBLSSignature,
 				},
 			},
 			ValidatorsTimeoutHighQCViews: []uint64{456789123456},
 			ValidatorsTimeoutAggregatedSignature: &AggregatedBLSSignature{
-				SignersList: []byte{3},
+				SignersList: testBitset,
 				Signature:   testBLSSignature,
 			},
 		},
