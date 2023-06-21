@@ -69,7 +69,7 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 	// Encode the message and verify the length is correct.
 	encodedMsgBytes, err := originalMsg.ToBytes(false)
 	require.NoError(t, err)
-	require.Equal(t, 268, len(encodedMsgBytes))
+	require.Equal(t, 269, len(encodedMsgBytes))
 
 	// Decode the message.
 	decodedMsg := &MsgDeSoValidatorTimeout{}
