@@ -22,8 +22,8 @@ type Bitset struct {
 // This allows us to implement a straightforward  Bitset data structure while
 // having full transparency into the underlying implementation, and no reliance
 // on 3rd party libraries.
-func NewBitset() Bitset {
-	return Bitset{
+func NewBitset() *Bitset {
+	return &Bitset{
 		store: big.NewInt(0),
 	}
 }
@@ -32,13 +32,14 @@ func (b *Bitset) Get(index int) bool {
 	return b.store.Bit(index) == 1
 }
 
-func (b *Bitset) Set(index int, newValue bool) {
+func (b *Bitset) Set(index int, newValue bool) *Bitset {
 	booleanValue := uint(0)
 	if newValue {
 		booleanValue = 1
 	}
 
 	b.store.SetBit(b.store, index, booleanValue)
+	return b
 }
 
 // Returns the total number of bits used by this bitset. This is
