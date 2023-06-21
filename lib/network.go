@@ -3125,6 +3125,31 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 	return data, nil
 }
 
+func (msg *MsgDeSoTxn) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	txnBytes, err := msg.ToBytes(false /*preSignature*/)
+	if err != nil {
+		glog.Errorf("MsgDeSoTxn.RawEncodeWithoutMetadata: Problem encoding block: %v", err)
+	}
+	return EncodeByteArray(txnBytes)
+}
+
+func (msg *MsgDeSoTxn) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	txnBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoBlock.RawDecodeWithoutMetadata: Problem decoding block")
+	}
+	return msg.FromBytes(txnBytes)
+}
+
+func (msg *MsgDeSoTxn) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+// GetEncoderType should return the EncoderType corresponding to the DeSoEncoder.
+func (msg *MsgDeSoTxn) GetEncoderType() EncoderType {
+	return EncoderTypeTxn
+}
+
 func ReadTransaction(rr io.Reader) (*MsgDeSoTxn, error) {
 	ret := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
 	// When the DeSo blockchain switched from UTXOs to a balance model, new fields had to be

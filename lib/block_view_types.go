@@ -114,9 +114,10 @@ const (
 	EncoderTypeFollowEntry                       EncoderType = 41
 	EncoderTypeDeSoBalanceEntry                  EncoderType = 42
 	EncoderTypeBlock                             EncoderType = 43
+	EncoderTypeTxn                               EncoderType = 44
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 44
+	EncoderTypeEndBlockView EncoderType = 45
 )
 
 // Txindex encoder types.
@@ -248,6 +249,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &DeSoBalanceEntry{}
 	case EncoderTypeBlock:
 		return &MsgDeSoBlock{}
+	case EncoderTypeTxn:
+		return &MsgDeSoTxn{}
 	}
 
 	// Txindex encoder types

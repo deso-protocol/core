@@ -477,7 +477,17 @@ type DBPrefixes struct {
 	// 	<prefix, expirationBlockHeight, PKID, partialID> -> <>
 	PrefixNoncePKIDIndex []byte `prefix_id:"[77]" is_state:"true"`
 
-	// NEXT_TAG: 78
+	// PrefixTxnHashToTxn is used to store transactions that have been processed by the node. This isn't actually stored
+	// in badger, but is tracked by state syncer when processing mempool transactions.
+	// The index has the following structure:
+	// 	<prefix, txnHash> -> <Transaction>
+	PrefixTxnHashToTxn []byte `prefix_id:"[78]" core_state:"true"`
+
+	// PrefixTxnHashToUtxoOps is used to store UtxoOps for transactions that have been processed by the node.
+	// This isn't actually stored in badger, but is tracked by state syncer when processing mempool transactions.
+	PrefixTxnHashToUtxoOps []byte `prefix_id:"[79]" core_state:"true"`
+
+	// NEXT_TAG: 80
 
 }
 
@@ -718,6 +728,12 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixNoncePKIDIndex) {
 		// prefix_id:"[77]"
 		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixTxnHashToTxn) {
+		// prefix_id:"[78]"
+		return true, &MsgDeSoTxn{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixTxnHashToUtxoOps) {
+		// prefix_id:"[79]"
+		return true, &UtxoOperationBundle{}
 	}
 
 	return true, nil
@@ -776,6 +792,9 @@ type DBStatePrefixes struct {
 	// StatePrefixesList is a list of state prefixes.
 	StatePrefixesList [][]byte
 
+	// CoreStatePrefixesList is a list of core state prefixes for state syncer.
+	CoreStatePrefixesList [][]byte
+
 	// TxIndexPrefixes is a list of TxIndex prefixes
 	TxIndexPrefixes [][]byte
 }
@@ -808,6 +827,7 @@ func GetStatePrefixes() *DBStatePrefixes {
 
 		if structFields.Field(i).Tag.Get("core_state") == "true" {
 			statePrefixes.CoreStatePrefixesMap[prefix] = true
+			statePrefixes.CoreStatePrefixesList = append(statePrefixes.CoreStatePrefixesList, []byte{prefix})
 		}
 
 		if structFields.Field(i).Tag.Get("is_state") == "true" {
@@ -4619,6 +4639,10 @@ func _DbKeyForUtxoOps(blockHash *BlockHash) []byte {
 	return append(append([]byte{}, Prefixes.PrefixBlockHashToUtxoOperations...), blockHash[:]...)
 }
 
+func _DbKeyForTxnUtxoOps(txnHash *BlockHash) []byte {
+	return append(append([]byte{}, Prefixes.PrefixTxnHashToUtxoOps...), txnHash[:]...)
+}
+
 func GetUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHash *BlockHash) ([][]*UtxoOperation, error) {
 	utxoOpsBytes, err := DBGetWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash))
 	if err != nil {
@@ -4816,6 +4840,10 @@ func PutBestHash(handle *badger.DB, snap *Snapshot, bh *BlockHash, chainType Cha
 
 func BlockHashToBlockKey(blockHash *BlockHash) []byte {
 	return append(append([]byte{}, Prefixes.PrefixBlockHashToBlock...), blockHash[:]...)
+}
+
+func TxnHashToTxnKey(txnHash *BlockHash) []byte {
+	return append(append([]byte{}, Prefixes.PrefixTxnHashToTxn...), txnHash[:]...)
 }
 
 func PublicKeyBlockHashToBlockRewardKey(publicKey []byte, blockHash *BlockHash) []byte {

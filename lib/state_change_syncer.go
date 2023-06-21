@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"os"
-	"reflect"
 	"sync"
 	"time"
 )
@@ -222,6 +221,12 @@ type StateChangeSyncer struct {
 	EntryCount       uint64
 
 	BlockHeight uint64
+
+	SyncType NodeSyncType
+
+	// During blocksync, we flush all entries by index to the state change file once the sync is complete.
+	// This is used to track whether this procedure has been initiated.
+	BlocksyncCompleteEntriesFlushed bool
 }
 
 // Open a file, create if it doesn't exist.
@@ -234,7 +239,7 @@ func openOrCreateLogFile(fileName string) (*os.File, error) {
 }
 
 // NewStateChangeSyncer initializes necessary log files and returns a StateChangeSyncer.
-func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string) *StateChangeSyncer {
+func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string, nodeSyncType NodeSyncType) *StateChangeSyncer {
 	stateChangeIndexFilePath := fmt.Sprintf("%s-index", stateChangeFilePath)
 	stateChangeMemPoolFilePath := fmt.Sprintf("%s-mempool", stateChangeFilePath)
 	stateChangeMempoolIndexFilePath := fmt.Sprintf("%s-mempool-index", stateChangeFilePath)
@@ -273,6 +278,7 @@ func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string) *S
 		MempoolKeyValueMap:          make(map[string][]byte),
 		MempoolFlushKeySet:          make(map[string]bool),
 		StateSyncerMutex:            &sync.Mutex{},
+		SyncType:                    nodeSyncType,
 	}
 }
 
@@ -302,6 +308,11 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	stateChangeSyncer.StateSyncerMutex.Lock()
 	defer stateChangeSyncer.StateSyncerMutex.Unlock()
 
+	// If we're in blocksync mode, we only want to flush entries once the sync is complete.
+	if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
+		return
+	}
+
 	stateChangeEntry := event.StateChangeEntry
 
 	// Check to see if the index in question has a "core_state" annotation in its definition.
@@ -313,7 +324,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 
 	// TODO: Clean this up.
 	if event.IsMempoolTxn {
-		// Create a flush ID if one doesn't already exist.
+		// Create a mempool flush ID if one doesn't already exist.
 		if event.FlushId == uuid.Nil && stateChangeSyncer.MempoolFlushId == uuid.Nil {
 			stateChangeSyncer.MempoolFlushId = uuid.New()
 		}
@@ -322,6 +333,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 			stateChangeSyncer.BlockSyncFlushId = uuid.New()
 		}
 
+		// If the flush ID is nil, then we need to use the mempool flush ID.
 		if event.FlushId == uuid.Nil {
 			flushId = stateChangeSyncer.MempoolFlushId
 		} else {
@@ -330,12 +342,6 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 
 		// Create key for op + key map
 		txKey := fmt.Sprintf("%v%v", event.StateChangeEntry.OperationType, string(event.StateChangeEntry.KeyBytes))
-
-		//// Figure out if we should do the modified mempool logic check
-		//if event.StateChangeEntry.Encoder != nil && event.StateChangeEntry.Encoder.GetEncoderType() == EncoderTypeBlock && stateChangeSyncer.BlockMatchesSyncedTxns(event.StateChangeEntry.Encoder.(*MsgDeSoBlock)) {
-		//	// If the block matches the synced txns, then we don't need to
-		//	return
-		//}
 
 		// Check to see if the key is in the map, and if the value is the same as the value in the event.
 		if valueBytes, ok := stateChangeSyncer.MempoolKeyValueMap[txKey]; ok && bytes.Equal(valueBytes, event.StateChangeEntry.EncoderBytes) {
@@ -562,53 +568,9 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *DBFlu
 	return nil
 }
 
-func (stateChangeSyncer *StateChangeSyncer) BlockMatchesSyncedTxns(block *MsgDeSoBlock) bool {
-	if stateChangeSyncer.MempoolBlock == nil {
-		return true
-	}
-	// Check that the block height matches.
-	if block.Header.Height != stateChangeSyncer.BlockHeight {
-		return false
-	}
-	// If the new mempool block is shorter than the stored block, then the mempool needs to be re-flushed.
-	if len(stateChangeSyncer.MempoolBlock.Txns) > len(block.Txns) {
-		return false
-	}
-	// Loop through every transaction in the synced block and check that it matches the mempool block.
-	for ii, tx := range stateChangeSyncer.MempoolBlock.Txns {
-		newTxn := block.Txns[ii]
-		// Check that the transaction hashes match. If not, then the mempool needs to be re-flushed.
-		if !reflect.DeepEqual(tx.Hash(), newTxn.Hash()) {
-			return false
-		}
-	}
-	// If all the transactions in the synced block match the mempool block, then the mempool doesn't need to be re-flushed.
-	return true
-}
-
-func (stateChangeSyncer *StateChangeSyncer) UtxoOpBundleMatchesSyncedBundle(utxoOpBundle *UtxoOperationBundle) bool {
-	if stateChangeSyncer.MempoolUtxoOpBundle == nil {
-		return true
-	}
-
-	// If the new utxo op bundle is shorter than the one that is already synced, then the mempool needs to be re-flushed.
-	if len(stateChangeSyncer.MempoolUtxoOpBundle.UtxoOpBundle) > len(utxoOpBundle.UtxoOpBundle) {
-		return false
-	}
-
-	// Create a new utxo op bundle the size of the already synced bundle, in order to do a byte comparison.
-	newUtxoOpBundle := &UtxoOperationBundle{}
-
-	newUtxoOpBundle.UtxoOpBundle = utxoOpBundle.UtxoOpBundle[:len(stateChangeSyncer.MempoolUtxoOpBundle.UtxoOpBundle)]
-
-	// Check to see if the new utxo op bundle matches the synced bundle.
-	if !bytes.Equal(EncodeToBytes(stateChangeSyncer.BlockHeight, stateChangeSyncer.MempoolUtxoOpBundle, true), EncodeToBytes(stateChangeSyncer.BlockHeight, newUtxoOpBundle, true)) {
-		return false
-	}
-	// If the new utxo op bundle matches the synced bundle, then the mempool doesn't need to be re-flushed.
-	return true
-}
-
+// SyncMempoolToStateSyncer flushes all mempool transactions to the db, capturing those state changes
+// in the mempool state change file. It also loops through all unconnected transactions and their associated
+// utxo ops and adds them to the mempool state change file.
 func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Server) (bool, error) {
 	originalCommittedFlushId := stateChangeSyncer.BlockSyncFlushId
 
@@ -617,6 +579,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	}
 
 	blockHeight := uint64(server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Height)
+
 	stateChangeSyncer.BlockHeight = blockHeight
 
 	mempoolUtxoView, err := server.GetMempool().GetAugmentedUniversalView()
@@ -651,50 +614,43 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		CommittedFlushId: originalCommittedFlushId,
 	})
 
-	//mempoolBlock := &MsgDeSoBlock{
-	//	Header: &MsgDeSoHeader{
-	//		Height: blockHeight,
-	//		// Set timestamp seconds to now
-	//		TstampSecs: uint64(time.Now().Unix()),
-	//	},
-	//	Txns: []*MsgDeSoTxn{},
-	//}
-	//
-	//utxoOpBundle := &UtxoOperationBundle{
-	//	UtxoOpBundle: [][]*UtxoOperation{},
-	//}
-	//
-	//for txHash, unconnectedTxn := range server.mempool.unconnectedTxns {
-	//	utxoOpsForTxn, _, _, _, err := mempoolUtxoView.ConnectTransaction(
-	//		unconnectedTxn.tx, &txHash, 0, uint32(blockHeight), false, false /*ignoreUtxos*/)
-	//	if err != nil {
-	//		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
-	//	}
-	//	mempoolBlock.Txns = append(mempoolBlock.Txns, unconnectedTxn.tx)
-	//	utxoOpBundle.UtxoOpBundle = append(utxoOpBundle.UtxoOpBundle, utxoOpsForTxn)
-	//}
-	//
-	//// Emit block event
-	//mempoolUtxoView.EventManager.dbTransactionConnected(&DBTransactionEvent{
-	//	StateChangeEntry: &StateChangeEntry{
-	//		OperationType: DbOperationTypeUpsert,
-	//		KeyBytes:      BlockHashToBlockKey(&BlockHash{}),
-	//		Encoder:       mempoolBlock,
-	//	},
-	//	FlushId:      uuid.Nil,
-	//	IsMempoolTxn: true,
-	//})
-	//
-	//// Emit UTXOOp bundle event
-	//mempoolUtxoView.EventManager.dbTransactionConnected(&DBTransactionEvent{
-	//	StateChangeEntry: &StateChangeEntry{
-	//		OperationType: DbOperationTypeUpsert,
-	//		KeyBytes:      _DbKeyForUtxoOps(&BlockHash{}),
-	//		Encoder:       utxoOpBundle,
-	//	},
-	//	FlushId:      uuid.Nil,
-	//	IsMempoolTxn: true,
-	//})
+	// Loop through all the unconnected transactions in the mempool and connect them and their utxo ops to the mempool view.
+	for txHash, unconnectedTxn := range server.mempool.unconnectedTxns {
+		utxoOpsForTxn, _, _, _, err := mempoolUtxoView.ConnectTransaction(
+			unconnectedTxn.tx, &txHash, 0, uint32(blockHeight), false, false /*ignoreUtxos*/)
+		if err != nil {
+			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
+		}
+
+		// Emit transaction state change.
+		mempoolUtxoView.EventManager.dbTransactionConnected(&DBTransactionEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeUpsert,
+				KeyBytes:      TxnHashToTxnKey(&txHash),
+				EncoderBytes:  EncodeToBytes(blockHeight, unconnectedTxn.tx, false),
+			},
+			FlushId:      uuid.Nil,
+			IsMempoolTxn: true,
+		})
+
+		// Capture the utxo ops for the transaction in a UTXOOp bundle.
+		utxoOpBundle := &UtxoOperationBundle{
+			UtxoOpBundle: [][]*UtxoOperation{},
+		}
+
+		utxoOpBundle.UtxoOpBundle = append(utxoOpBundle.UtxoOpBundle, utxoOpsForTxn)
+
+		// Emit UTXOOp bundle event
+		mempoolUtxoView.EventManager.dbTransactionConnected(&DBTransactionEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeUpsert,
+				KeyBytes:      _DbKeyForTxnUtxoOps(&txHash),
+				EncoderBytes:  EncodeToBytes(blockHeight, utxoOpBundle, false),
+			},
+			FlushId:      uuid.Nil,
+			IsMempoolTxn: true,
+		})
+	}
 
 	return false, nil
 }
@@ -706,6 +662,9 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 			time.Sleep(1000 * time.Millisecond)
 		}
 		fmt.Printf("\n\n*****STARTING THE MEMPOOL SYNC****\n")
+		if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
+			stateChangeSyncer.FlushAllEntriesToFile(server)
+		}
 		// TODO: Exit if mempool is closed.
 		mempoolClosed := server.mempool.stopped
 		for !mempoolClosed {
@@ -719,4 +678,49 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 			}
 		}
 	}()
+}
+
+func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server) error {
+	// Lock the blockchain so that nothing shifts under our feet while dumping the current state to the state change file.
+	server.blockchain.ChainLock.Lock()
+	defer server.blockchain.ChainLock.Unlock()
+
+	fmt.Printf("\n\n*****FLUSHING ALL ENTRIES TO FILE****\n")
+
+	// Loop through all prefixes that hold state change entries.
+	for _, prefix := range StatePrefixes.CoreStatePrefixesList {
+		// Start with the first key in the prefix.
+		lastReceivedKey := prefix
+		chunkComplete := false
+		var err error
+		var dbBatchEntries []*DBEntry
+
+		// Loop through all the batches of entries for the prefix until we get a non-full chunk.
+		for !chunkComplete {
+			fmt.Printf("Processing chunk for prefix: %+v\n", prefix)
+			// Create a flush ID for this chunk.
+			dbFlushId := uuid.New()
+			// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
+			dbBatchEntries, chunkComplete, err = DBIteratePrefixKeys(server.blockchain.db, prefix, lastReceivedKey, SnapshotBatchSize)
+			if err != nil {
+				return errors.Wrapf(err, "StateChangeSyncer.FlushAllEntriesToFile: ")
+			}
+			if len(dbBatchEntries) != 0 {
+				lastReceivedKey = dbBatchEntries[len(dbBatchEntries)-1].Key
+			}
+			for _, dbEntry := range dbBatchEntries {
+				server.eventManager.dbTransactionConnected(&DBTransactionEvent{
+					StateChangeEntry: &StateChangeEntry{
+						OperationType: DbOperationTypeInsert,
+						KeyBytes:      dbEntry.Key,
+						EncoderBytes:  dbEntry.Value,
+					},
+					FlushId: dbFlushId,
+				})
+			}
+		}
+	}
+	// Mark the blocksync complete entries as flushed.
+	stateChangeSyncer.BlocksyncCompleteEntriesFlushed = true
+	return nil
 }
