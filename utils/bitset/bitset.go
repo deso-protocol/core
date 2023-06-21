@@ -4,24 +4,24 @@ import (
 	"math/big"
 )
 
+// A Bitset creates is an ordered list of bits with arbitrary length. It uses
+// the built in big.Int as the underlying storage scheme. The big.Int maintains
+// an ordered bit list and provides an interface where we can flip each bit
+// individually. The Bitset acts as a wrapper and provides boolean Get and Set
+// functions on top.
+//
+// We implement a custom Bitset data structure using Big.Int rather than using
+// an off-the-shelf solution because we need to support byte encoding and decoding,
+// with known endianness. Out of the box, the built in big.Int supports individual
+// bit operations, safe indexing & boundary checks, dynamic resizing, and big
+// endian byte encoding/decoding. It allows us to implement a straightforward
+// Bitset data structure while having full transparency into the underlying
+// implementation, and no reliance on 3rd party libraries.
 type Bitset struct {
 	store *big.Int
 }
 
-// NewBitSet creates a new ordered bit list of arbitrary length, using a
-// big.Int as the underlying storage. It maintains an ordered bit list
-// of arbitrary length, where the bit at index i has value 1 or 0, and
-// represents if the value i is in the set to true or false.
-//
-// We implement a custom Bitset data structure rather than using an
-// off-the-shelf solution because we need to support byte encoding and
-// decoding with a known endianness. Out of the box, the built in big.Int
-// supports bit operations, dynamic resizing, and big endian byte
-// encoding/decoding.
-//
-// This allows us to implement a straightforward  Bitset data structure while
-// having full transparency into the underlying implementation, and no reliance
-// on 3rd party libraries.
+// Initializes a new Bitset with zero value for all indices.
 func NewBitset() *Bitset {
 	return &Bitset{
 		store: big.NewInt(0),
