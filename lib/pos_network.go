@@ -16,11 +16,14 @@ import (
 type MsgDeSoValidatorVote struct {
 	MsgVersion uint8
 
-	// BLS voting public key of the validator who constructed this vote. This public
-	// key can be mapped directly to the validator's ECDSA public key to verify
-	// their stake. We use the BLS public key here instead of the ECDSA so that
-	// so that it's trivial to verify the signature in this message without
-	// having to look up anything for the validator in consensus.
+	// The ECDSA and BLS voting public key of the validator who constructed this
+	// vote. We include both keys here:
+	// - the ECDSA key is used to perform a lookup of the validator's stake in consensus,
+	//   and fetch the validator's registered BLS public key for the block height
+	// - the BLS public key is used to cheaply verify the integrity of the signature
+	//   as soon as we receive this message, before having to perform any lookups in
+	//   on this message before performing any lookups in consensus.
+	ValidatorPublicKey       *PublicKey
 	ValidatorVotingPublicKey *bls.PublicKey
 
 	// The block hash corresponding to the block that this vote is for.
@@ -55,6 +58,12 @@ func (msg *MsgDeSoValidatorVote) ToBytes(bool) ([]byte, error) {
 
 	// MsgVersion
 	retBytes = append(retBytes, msg.MsgVersion)
+
+	// ValidatorPublicKey
+	if msg.ValidatorPublicKey == nil {
+		return nil, errors.New("MsgDeSoValidatorVote.ToBytes: ValidatorPublicKey must not be nil")
+	}
+	retBytes = append(retBytes, msg.ValidatorPublicKey.ToBytes()...)
 
 	// ValidatorVotingPublicKey
 	if msg.ValidatorVotingPublicKey == nil {
@@ -93,6 +102,12 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 	}
 	msg.MsgVersion = msgVersion
 
+	// ValidatorPublicKey
+	msg.ValidatorPublicKey, err = ReadPublicKey(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Error decoding ValidatorPublicKey")
+	}
+
 	// ValidatorVotingPublicKey
 	msg.ValidatorVotingPublicKey, err = DecodeBLSPublicKey(rr)
 	if err != nil {
@@ -127,11 +142,14 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 type MsgDeSoValidatorTimeout struct {
 	MsgVersion uint8
 
-	// BLS voting public key of the validator who constructed this timeout message.
-	// The public key can be mapped directly to the validator's ECDSA public key
-	// to verify their stake. We use the BLS public key here instead of the ECDSA
-	// so that so that it's trivial to verify the signature in this message without
-	// having to look up anything for the validator in consensus.
+	// The ECDSA and BLS voting public key of the validator who constructed this
+	// vote. We include both keys here:
+	// - the ECDSA key is used to perform a lookup of the validator's stake in consensus,
+	//   and fetch the validator's registered BLS public key for the block height
+	// - the BLS public key is used to cheaply verify the integrity of the signature
+	//   as soon as we receive this message, before having to perform any lookups in
+	//   on this message before performing any lookups in consensus.
+	ValidatorPublicKey       *PublicKey
 	ValidatorVotingPublicKey *bls.PublicKey
 
 	// The view that the validator has timed out on.
@@ -162,6 +180,12 @@ func (msg *MsgDeSoValidatorTimeout) ToBytes(bool) ([]byte, error) {
 
 	// MsgVersion
 	retBytes = append(retBytes, msg.MsgVersion)
+
+	// ValidatorPublicKey
+	if msg.ValidatorPublicKey == nil {
+		return nil, errors.New("MsgDeSoValidatorTimeout.ToBytes: ValidatorPublicKey must not be nil")
+	}
+	retBytes = append(retBytes, msg.ValidatorPublicKey.ToBytes()...)
 
 	// ValidatorVotingPublicKey
 	if msg.ValidatorVotingPublicKey == nil {
@@ -203,6 +227,12 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 		return fmt.Errorf("MsgDeSoValidatorTimeout.FromBytes: Invalid MsgVersion %d", msgVersion)
 	}
 	msg.MsgVersion = msgVersion
+
+	// ValidatorPublicKey
+	msg.ValidatorPublicKey, err = ReadPublicKey(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding ValidatorPublicKey")
+	}
 
 	// ValidatorVotingPublicKey
 	msg.ValidatorVotingPublicKey, err = DecodeBLSPublicKey(rr)

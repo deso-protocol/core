@@ -14,6 +14,7 @@ func TestValidatorVoteEncodeDecode(t *testing.T) {
 
 	originalMsg := MsgDeSoValidatorVote{
 		MsgVersion:               MsgValidatorVoteVersion0,
+		ValidatorPublicKey:       &PublicKey{},
 		ValidatorVotingPublicKey: validatorVotingPublicKey,
 		BlockHash:                &BlockHash{},
 		ProposedInView:           9910,
@@ -23,7 +24,7 @@ func TestValidatorVoteEncodeDecode(t *testing.T) {
 	// Encode the message and verify the length is correct.
 	encodedMsgBytes, err := originalMsg.ToBytes(false)
 	require.NoError(t, err)
-	require.Equal(t, 181, len(encodedMsgBytes))
+	require.Equal(t, 214, len(encodedMsgBytes))
 
 	// Decode the message.
 	decodedMsg := &MsgDeSoValidatorVote{}
@@ -32,6 +33,7 @@ func TestValidatorVoteEncodeDecode(t *testing.T) {
 
 	// Check that the message bodies are the same.
 	require.Equal(t, originalMsg.MsgVersion, decodedMsg.MsgVersion)
+	require.True(t, originalMsg.ValidatorPublicKey.Equal(*decodedMsg.ValidatorPublicKey))
 	require.True(t, originalMsg.ValidatorVotingPublicKey.Eq(decodedMsg.ValidatorVotingPublicKey))
 	require.Equal(t, originalMsg.BlockHash, decodedMsg.BlockHash)
 	require.Equal(t, originalMsg.ProposedInView, decodedMsg.ProposedInView)
@@ -49,6 +51,7 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 
 	originalMsg := MsgDeSoValidatorTimeout{
 		MsgVersion:               MsgValidatorTimeoutVersion0,
+		ValidatorPublicKey:       &PublicKey{},
 		ValidatorVotingPublicKey: validatorVotingPublicKey,
 		TimedOutView:             999912,
 		HighQC: &QuorumCertificate{
@@ -65,7 +68,7 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 	// Encode the message and verify the length is correct.
 	encodedMsgBytes, err := originalMsg.ToBytes(false)
 	require.NoError(t, err)
-	require.Equal(t, 237, len(encodedMsgBytes))
+	require.Equal(t, 270, len(encodedMsgBytes))
 
 	// Decode the message.
 	decodedMsg := &MsgDeSoValidatorTimeout{}
@@ -74,11 +77,12 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 
 	// Check that the message bodies are the same.
 	require.Equal(t, originalMsg.MsgVersion, decodedMsg.MsgVersion)
+	require.True(t, originalMsg.ValidatorPublicKey.Equal(*decodedMsg.ValidatorPublicKey))
 	require.True(t, originalMsg.ValidatorVotingPublicKey.Eq(decodedMsg.ValidatorVotingPublicKey))
 	require.Equal(t, originalMsg.TimedOutView, decodedMsg.TimedOutView)
 	require.True(t, originalMsg.TimeoutPartialSignature.Eq(decodedMsg.TimeoutPartialSignature))
 
-	// Check the high QC is the same.
+	// Check that the high QCs are the same.
 	require.True(t,
 		originalMsg.HighQC.ValidatorsVoteAggregatedSignature.Eq(
 			decodedMsg.HighQC.ValidatorsVoteAggregatedSignature,
