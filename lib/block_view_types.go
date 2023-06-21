@@ -3773,7 +3773,14 @@ type GlobalParamsEntry struct {
 	// transaction.
 	MaxNonceExpirationBlockHeightOffset uint64
 
-	FeeBucketBaseRate              uint64
+	// TODO: Properly handle the newly added GlobalParamsEntry fields
+	// FeeBucketBaseRate is the minimal FeeRatePerKB a transaction can have.
+	// If a transaction has a lower fee than FeeBucketBaseRate, it will be
+	// rejected by the node's mempool.
+	FeeBucketBaseRate uint64
+
+	// FeeBucketMultiplierBasisPoints is the rate of growth of the fee bucket ranges.
+	// The multiplier is given as basis points.
 	FeeBucketMultiplierBasisPoints uint64
 }
 
@@ -3787,6 +3794,10 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 	data = append(data, UintToBuf(gp.MinimumNetworkFeeNanosPerKB)...)
 	if MigrationTriggered(blockHeight, BalanceModelMigration) {
 		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockHeightOffset)...)
+	}
+	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+		data = append(data, UintToBuf(gp.FeeBucketBaseRate)...)
+		data = append(data, UintToBuf(gp.FeeBucketMultiplierBasisPoints)...)
 	}
 	return data
 }
@@ -3820,11 +3831,21 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxNonceExpirationBlockHeightOffset")
 		}
 	}
+	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+		gp.FeeBucketBaseRate, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketBaseRate")
+		}
+		gp.FeeBucketMultiplierBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketMultiplierBasisPoints")
+		}
+	}
 	return nil
 }
 
 func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, BalanceModelMigration)
+	return GetMigrationVersion(blockHeight, BalanceModelMigration, ProofOfStakeNewTxnTypesMigration)
 }
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {

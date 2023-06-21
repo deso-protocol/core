@@ -1363,8 +1363,10 @@ var (
 		// We initialize the CreateProfileFeeNanos to 0 so we do not assess a fee to create a profile until specified by ParamUpdater.
 		CreateProfileFeeNanos: 0,
 		// We initialize the CreateNFTFeeNanos to 0 so we do not assess a fee to create an NFT until specified by ParamUpdater.
-		CreateNFTFeeNanos: 0,
-		MaxCopiesPerNFT:   0,
+		CreateNFTFeeNanos:              0,
+		MaxCopiesPerNFT:                0,
+		FeeBucketBaseRate:              0,
+		FeeBucketMultiplierBasisPoints: 0,
 	}
 )
 

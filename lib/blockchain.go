@@ -1466,7 +1466,6 @@ func _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode) *BlockNode {
 }
 
 func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint64, params *DeSoParams) error {
-
 	// We don't check the sanity of block reward transactions.
 	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 		return nil
