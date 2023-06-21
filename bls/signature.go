@@ -115,10 +115,18 @@ func (privateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, 
 }
 
 func (privateKey *PrivateKey) MarshalJSON() ([]byte, error) {
+	// This is called automatically by the JSON library when converting a
+	// bls.PrivateKey to JSON. This is currently not used, since the client
+	// never shares their bls.PrivateKey over the network, but is included
+	// here are as a nicety utility for completeness.
 	return json.Marshal(privateKey.ToString())
 }
 
 func (privateKey *PrivateKey) UnmarshalJSON(data []byte) error {
+	// This is called automatically by the JSON library when converting a
+	// bls.PrivateKey from JSON. This is currently not used, since the client
+	// never shares their bls.PrivateKey over the network, but is included
+	// here are as a nicety utility for completeness.
 	privateKeyString := ""
 	err := json.Unmarshal(data, &privateKeyString)
 	if err != nil {
@@ -191,10 +199,16 @@ func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, erro
 }
 
 func (publicKey *PublicKey) MarshalJSON() ([]byte, error) {
+	// This is called automatically by the JSON library when converting a
+	// bls.PublicKey to JSON. This is useful when passing a bls.PublicKey
+	// back and forth from the backend to the frontend as JSON.
 	return json.Marshal(publicKey.ToString())
 }
 
 func (publicKey *PublicKey) UnmarshalJSON(data []byte) error {
+	// This is called automatically by the JSON library when converting a
+	// bls.PublicKey from JSON. This is useful when passing a bls.PublicKey
+	// back and forth from the frontend to the backend as JSON.
 	publicKeyString := ""
 	err := json.Unmarshal(data, &publicKeyString)
 	if err != nil {
@@ -268,10 +282,16 @@ func (signature *Signature) FromString(signatureString string) (*Signature, erro
 }
 
 func (signature *Signature) MarshalJSON() ([]byte, error) {
+	// This is called automatically by the JSON library when converting a
+	// bls.Signature to JSON. This is useful when passing a bls.Signature
+	// back and forth from the backend to the frontend as JSON.
 	return json.Marshal(signature.ToString())
 }
 
 func (signature *Signature) UnmarshalJSON(data []byte) error {
+	// This is called automatically by the JSON library when converting a
+	// bls.Signature from JSON. This is useful when passing a bls.Signature
+	// back and forth from the frontend to the backend as JSON.
 	signatureString := ""
 	err := json.Unmarshal(data, &signatureString)
 	if err != nil {
