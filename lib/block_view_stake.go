@@ -536,7 +536,7 @@ func DBKeyForStakeByValidator(stakeEntry *StakeEntry) []byte {
 
 func DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(lockedStakeEntry *LockedStakeEntry) []byte {
 	data := DBPrefixKeyForLockedStakeByValidatorAndStaker(lockedStakeEntry)
-	data = append(data, UintToBuf(lockedStakeEntry.LockedAtEpochNumber)...)
+	data = append(data, EncodeUint64(lockedStakeEntry.LockedAtEpochNumber)...)
 	return data
 }
 

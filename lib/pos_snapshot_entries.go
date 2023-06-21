@@ -20,6 +20,24 @@ func (bav *UtxoView) GetSnapshotEpochNumber() (uint64, error) {
 		return 0, errors.Wrapf(err, "GetSnapshotEpochNumber: problem retrieving CurrentEpochNumber: ")
 	}
 	if currentEpochNumber < SnapshotLookbackNumEpochs {
+		// We want to return 0 in this case and not error. We start snapshotting with our StateSetup block height,
+		// so we should have the correct number of snapshots and not hit this case once we hit the ConsensusCutover
+		// block height. This case will only be hit immediately following the StateSetup block height. We run one
+		// OnEpochCompleteHook right away on the StateSetup block height which will increment our CurrentEpochNumber
+		// from zero (the starting default) to one. Then we wait one epoch and run our second OnEpochCompleteHook to
+		// increment our CurrentEpochNumber from one to two. At this point, we will have the correct number of
+		// snapshots and no longer hit this edge case.
+		//
+		// The problem is what about snapshot values we need to use in that first block where CurrentBlockHeight =
+		// StateSetup block height and then the first epoch after that? The only snapshot values that we use relate
+		// to our new PoS txn types. We pull the snapshot GlobalParamsEntry to retrieve the StakeLockupEpochDuration
+		// and the ValidatorJailEpochDuration. Both of these impact the new PoS txn types which are unlocked after
+		// the StateSetup block height. The ValidatorJailEpochDuration value doesn't really matter since no validators
+		// will be jailed until the ConsensusCutover block height. For the StakeLockupEpochDuration (and all other
+		// snapshot GlobalParamsEntry values), if there is no snapshot value, we return an empty GlobalParamsEntry with
+		// just our defaults, which is what we intend. There's one other small edge case here which is if we update the
+		// StakeLockupEpochDuration parameter within that first block (which would be weird and should not happen),
+		// then that value will take immediate effect in the first epoch with no lagged snapshot wait period.
 		return 0, nil
 	}
 	return SafeUint64().Sub(currentEpochNumber, SnapshotLookbackNumEpochs)
@@ -121,7 +139,7 @@ func (bav *UtxoView) _flushSnapshotGlobalParamsEntryToDbWithTxn(txn *badger.Txn,
 
 func DBKeyForSnapshotGlobalParamsEntry(snapshotEpochNumber uint64) []byte {
 	key := append([]byte{}, Prefixes.PrefixSnapshotGlobalParamsEntry...)
-	key = append(key, UintToBuf(snapshotEpochNumber)...)
+	key = append(key, EncodeUint64(snapshotEpochNumber)...)
 	return key
 }
 
@@ -358,14 +376,14 @@ func (bav *UtxoView) _flushSnapshotValidatorEntriesToDbWithTxn(txn *badger.Txn, 
 
 func DBKeyForSnapshotValidatorByPKID(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) []byte {
 	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorByPKID...)
-	key = append(key, UintToBuf(snapshotAtEpochNumber)...)
+	key = append(key, EncodeUint64(snapshotAtEpochNumber)...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
 	return key
 }
 
 func DBKeyForSnapshotValidatorByStake(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) []byte {
 	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorByStatusAndStake...)
-	key = append(key, UintToBuf(snapshotAtEpochNumber)...)
+	key = append(key, EncodeUint64(snapshotAtEpochNumber)...)
 	key = append(key, EncodeUint8(uint8(validatorEntry.Status()))...)
 	key = append(key, FixedWidthEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
@@ -425,7 +443,7 @@ func DBGetSnapshotTopActiveValidatorsByStake(
 
 	// Retrieve top N active ValidatorEntry keys by stake.
 	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorByStatusAndStake...)
-	key = append(key, UintToBuf(snapshotAtEpochNumber)...)
+	key = append(key, EncodeUint64(snapshotAtEpochNumber)...)
 	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
 	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, int(limit), nil, true, validatorKeysToSkip,
@@ -576,7 +594,7 @@ func (bav *UtxoView) _flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn(txn *
 
 func DBKeyForSnapshotGlobalActiveStakeAmountNanos(snapshotAtEpochNumber uint64) []byte {
 	key := append([]byte{}, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanos...)
-	key = append(key, UintToBuf(snapshotAtEpochNumber)...)
+	key = append(key, EncodeUint64(snapshotAtEpochNumber)...)
 	return key
 }
 
@@ -692,7 +710,7 @@ func (bav *UtxoView) _flushSnapshotLeaderScheduleToDbWithTxn(txn *badger.Txn, bl
 
 func DBKeyForSnapshotLeaderScheduleValidator(leaderIndex uint16, snapshotAtEpochNumber uint64) []byte {
 	data := append([]byte{}, Prefixes.PrefixSnapshotLeaderSchedule...)
-	data = append(data, UintToBuf(snapshotAtEpochNumber)...)
+	data = append(data, EncodeUint64(snapshotAtEpochNumber)...)
 	data = append(data, EncodeUint16(leaderIndex)...)
 	return data
 }

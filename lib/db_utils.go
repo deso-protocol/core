@@ -478,11 +478,11 @@ type DBPrefixes struct {
 	PrefixNoncePKIDIndex []byte `prefix_id:"[77]" is_state:"true"`
 
 	// PrefixValidatorByPKID: Retrieve a validator by PKID.
-	// Prefix, ValidatorPKID -> ValidatorEntry
+	// Prefix, <ValidatorPKID [33]byte> -> ValidatorEntry
 	PrefixValidatorByPKID []byte `prefix_id:"[78]" is_state:"true"`
 
 	// PrefixValidatorByStatusAndStake: Retrieve the top N active validators by stake.
-	// Prefix, Status, TotalStakeAmountNanos, ValidatorPKID -> nil
+	// Prefix, <Status uint8>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
 	// Note that we save space by storing a nil value and parsing the ValidatorPKID from the key.
 	PrefixValidatorByStatusAndStake []byte `prefix_id:"[79]" is_state:"true"`
 
@@ -491,11 +491,11 @@ type DBPrefixes struct {
 	PrefixGlobalActiveStakeAmountNanos []byte `prefix_id:"[80]" is_state:"true"`
 
 	// PrefixStakeByValidatorAndStaker: Retrieve a StakeEntry.
-	// Prefix, ValidatorPKID, StakerPKID -> StakeEntry
+	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> StakeEntry
 	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[81]" is_state:"true"`
 
 	// PrefixLockedStakeByValidatorAndStakerAndLockedAt: Retrieve a LockedStakeEntry.
-	// Prefix, ValidatorPKID, StakerPKID, LockedAtEpochNumber -> LockedStakeEntry
+	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte>, <LockedAtEpochNumber uint64> -> LockedStakeEntry
 	//
 	// The way staking works is that staking to a validator is instant and creates a StakeEntry
 	// immediately, but UNstaking from a validator has a "cooldown" period before the funds
@@ -530,24 +530,24 @@ type DBPrefixes struct {
 	PrefixCurrentRandomSeedHash []byte `prefix_id:"[84]" is_state:"true"`
 
 	// PrefixSnapshotGlobalParamsEntry: Retrieve a snapshot GlobalParamsEntry by SnapshotAtEpochNumber.
-	// Prefix, SnapshotAtEpochNumber -> *GlobalParamsEntry
+	// Prefix, <SnapshotAtEpochNumber uint64> -> *GlobalParamsEntry
 	PrefixSnapshotGlobalParamsEntry []byte `prefix_id:"[85]" is_state:"true"`
 
 	// PrefixSnapshotValidatorByPKID: Retrieve a snapshot ValidatorEntry by <SnapshotAtEpochNumber, PKID>.
-	// Prefix, SnapshotAtEpochNumber, ValidatorPKID -> *ValidatorEntry
+	// Prefix, <SnapshotAtEpochNumber uint64>, <ValidatorPKID [33]byte> -> *ValidatorEntry
 	PrefixSnapshotValidatorByPKID []byte `prefix_id:"[86]" is_state:"true"`
 
 	// PrefixSnapshotValidatorByStatusAndStake: Retrieve stake-ordered active ValidatorEntries by SnapshotAtEpochNumber.
-	// Prefix, SnapshotAtEpochNumber, Status, TotalStakeAmountNanos, ValidatorPKID -> nil
+	// Prefix, <SnapshotAtEpochNumber uint64>, <Status uint8>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
 	// Note: we parse the ValidatorPKID from the key and the value is nil to save space.
 	PrefixSnapshotValidatorByStatusAndStake []byte `prefix_id:"[87]" is_state:"true"`
 
 	// PrefixSnapshotGlobalActiveStakeAmountNanos: Retrieve a snapshot GlobalActiveStakeAmountNanos by SnapshotAtEpochNumber.
-	// Prefix, SnapshotAtEpochNumber -> *uint256.Int
+	// Prefix, <SnapshotAtEpochNumber uint64> -> *uint256.Int
 	PrefixSnapshotGlobalActiveStakeAmountNanos []byte `prefix_id:"[88]" is_state:"true"`
 
 	// PrefixSnapshotLeaderSchedule: Retrieve a ValidatorPKID by <SnapshotAtEpochNumber, LeaderIndex>.
-	// Prefix, SnapshotAtEpochNumber, LeaderIndex -> ValidatorPKID
+	// Prefix, <SnapshotAtEpochNumber uint64>, <LeaderIndex uint16> -> ValidatorPKID
 	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[89]" is_state:"true"`
 
 	// NEXT_TAG: 90
