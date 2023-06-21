@@ -122,9 +122,8 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 		0x64, 0x65,
 	}
 
-	_, testBLSSignature := _generateValidatorVotingPublicKeyAndSignature(t)
-
 	testBitset := bitset.NewBitset().Set(0, true).Set(3, true)
+	_, testBLSSignature := _generateValidatorVotingPublicKeyAndSignature(t)
 
 	return &MsgDeSoHeader{
 		Version:               2,

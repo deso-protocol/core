@@ -50,10 +50,6 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 	aggregateSignature, err := bls.AggregateSignatures([]*bls.Signature{partialSignature1, partialSignature2})
 	require.NoError(t, err)
 
-	signersList := bitset.NewBitset()
-	signersList.Set(0, true)
-	signersList.Set(3, true)
-
 	originalMsg := MsgDeSoValidatorTimeout{
 		MsgVersion:               MsgValidatorTimeoutVersion0,
 		ValidatorPublicKey:       &PublicKey{},
@@ -63,7 +59,7 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 			BlockHash:      &BlockHash{},
 			ProposedInView: 999910,
 			ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
-				SignersList: bitset.NewBitset(),
+				SignersList: bitset.NewBitset().Set(0, true).Set(3, true),
 				Signature:   aggregateSignature,
 			},
 		},
