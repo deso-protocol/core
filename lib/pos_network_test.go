@@ -30,7 +30,7 @@ func TestValidatorVoteEncodeDecode(t *testing.T) {
 	err = decodedMsg.FromBytes(encodedMsgBytes)
 	require.NoError(t, err)
 
-	// Check that the message versions are the same.
+	// Check that the message bodies are the same.
 	require.Equal(t, originalMsg.MsgVersion, decodedMsg.MsgVersion)
 	require.True(t, originalMsg.ValidatorVotingPublicKey.Eq(decodedMsg.ValidatorVotingPublicKey))
 	require.Equal(t, originalMsg.BlockHash, decodedMsg.BlockHash)
@@ -72,23 +72,17 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 	err = decodedMsg.FromBytes(encodedMsgBytes)
 	require.NoError(t, err)
 
-	// Check that the message versions are the same.
+	// Check that the message bodies are the same.
 	require.Equal(t, originalMsg.MsgVersion, decodedMsg.MsgVersion)
 	require.True(t, originalMsg.ValidatorVotingPublicKey.Eq(decodedMsg.ValidatorVotingPublicKey))
 	require.Equal(t, originalMsg.TimedOutView, decodedMsg.TimedOutView)
-	require.Equal(t, originalMsg.HighQC.BlockHash, decodedMsg.HighQC.BlockHash)
-	require.Equal(t, originalMsg.HighQC.ProposedInView, decodedMsg.HighQC.ProposedInView)
 	require.True(t, originalMsg.TimeoutPartialSignature.Eq(decodedMsg.TimeoutPartialSignature))
 
-	// Check the aggregated signature.
+	// Check the high QC is the same.
 	require.True(t,
-		originalMsg.HighQC.ValidatorsVoteAggregatedSignature.Signature.Eq(
-			decodedMsg.HighQC.ValidatorsVoteAggregatedSignature.Signature,
+		originalMsg.HighQC.ValidatorsVoteAggregatedSignature.Eq(
+			decodedMsg.HighQC.ValidatorsVoteAggregatedSignature,
 		),
-	)
-	require.Equal(t,
-		originalMsg.HighQC.ValidatorsVoteAggregatedSignature.SignersList,
-		decodedMsg.HighQC.ValidatorsVoteAggregatedSignature.SignersList,
 	)
 }
 

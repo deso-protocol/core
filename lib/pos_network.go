@@ -255,6 +255,22 @@ type QuorumCertificate struct {
 	ValidatorsVoteAggregatedSignature *AggregatedBLSSignature
 }
 
+// Performs a deep equality check between two QuorumCertificates, and returns
+// true if the values of the two are identical.
+func (qc *QuorumCertificate) Eq(other *QuorumCertificate) bool {
+	if qc == nil && other == nil {
+		return true
+	}
+
+	if (qc == nil) != (other == nil) {
+		return false
+	}
+
+	return bytes.Equal(qc.BlockHash.ToBytes(), other.BlockHash.ToBytes()) &&
+		qc.ProposedInView == other.ProposedInView &&
+		qc.ValidatorsVoteAggregatedSignature.Eq(other.ValidatorsVoteAggregatedSignature)
+}
+
 func (qc *QuorumCertificate) ToBytes() ([]byte, error) {
 	retBytes := []byte{}
 
@@ -312,6 +328,19 @@ type AggregatedBLSSignature struct {
 	// size of this construct.
 	SignersList []byte
 	Signature   *bls.Signature
+}
+
+func (sig *AggregatedBLSSignature) Eq(other *AggregatedBLSSignature) bool {
+	if sig == nil && other == nil {
+		return true
+	}
+
+	if (sig == nil) != (other == nil) {
+		return false
+	}
+
+	return bytes.Equal(sig.SignersList, other.SignersList) &&
+		sig.Signature.Eq(other.Signature)
 }
 
 func (sig *AggregatedBLSSignature) ToBytes() ([]byte, error) {
