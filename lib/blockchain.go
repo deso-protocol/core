@@ -1465,7 +1465,8 @@ func _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode) *BlockNode {
 	return node1
 }
 
-func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint32, params *DeSoParams) error {
+func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint64, params *DeSoParams) error {
+
 	// We don't check the sanity of block reward transactions.
 	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 		return nil
@@ -1496,7 +1497,7 @@ func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint32, params *DeSoPar
 	//
 	// TODO: The above is easily fixed by requiring something like block height to
 	// be present in the ExtraNonce field.
-	canHaveZeroInputs := blockHeight >= params.ForkHeights.BalanceModelBlockHeight ||
+	canHaveZeroInputs := blockHeight >= uint64(params.ForkHeights.BalanceModelBlockHeight) ||
 		txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange ||
 		txn.TxnMeta.GetTxnType() == TxnTypePrivateMessage
 	if len(txn.TxInputs) == 0 && !canHaveZeroInputs {
@@ -1783,6 +1784,10 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 }
 
 func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _err error) {
+	// TODO: Revolution: PoS blocks contain pass/fail flags. It means we might not be able to connect all transactions
+	// 	to a single UtxoView without error. We should check if each transaction passes or fails according to what was
+	// 	advertised in the block by the proposer.
+
 	// TODO: Move this to be more isolated.
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
@@ -1981,7 +1986,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			return false, false, RuleErrorMoreThanOneBlockReward
 		}
 
-		if err = CheckTransactionSanity(txn, uint32(blockHeight), bc.params); err != nil {
+		if err = CheckTransactionSanity(txn, blockHeight, bc.params); err != nil {
 			bc.MarkBlockInvalid(
 				nodeToValidate, RuleError(errors.Wrapf(RuleErrorTxnSanity, "Error: %v", err).Error()))
 			return false, false, err

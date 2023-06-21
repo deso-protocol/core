@@ -50,6 +50,15 @@ const (
 	NodeErase
 )
 
+// FIXME: Move this somewhere more sensible.
+type ConsensusMessage struct {
+	/*
+		QC          QuorumCertificate
+		AggregateQC AggregateCertificate
+		View        uint64
+	*/
+}
+
 // Snapshot constants
 const (
 	// GetSnapshotTimeout is used in Peer when we fetch a snapshot chunk, and we need to retry.
@@ -101,7 +110,13 @@ const (
 	//
 	// At the time of this writing, the intent is to deploy it in a backwards-compatible
 	// fashion, with the eventual goal of phasing out blocks with the previous version.
-	HeaderVersion1       = uint32(1)
+	HeaderVersion1 = uint32(1)
+
+	// This version will (likely) introduce the following encoding changes:
+	// - Transactions in MsgDeSoBlock will include pass/fail validation flags.
+	// - Consensus information like QC, AggregateQC, etc. will be included in the header.
+	// - etc.
+	HeaderPoSVersion0    = uint32(2)
 	CurrentHeaderVersion = HeaderVersion1
 )
 
@@ -622,6 +637,9 @@ type DeSoParams struct {
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
 	EncoderMigrationHeightsList []*MigrationHeight
+
+	// The maximum aggregate number of bytes of transactions included in the PoS mempool.
+	MaxMempoolPosSizeBytes uint64
 }
 
 var RegtestForkHeights = ForkHeights{
@@ -1004,6 +1022,8 @@ var DeSoMainnetParams = DeSoParams{
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
+
+	MaxMempoolPosSizeBytes: 3 << 30, // 3GB
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -1244,6 +1264,8 @@ var DeSoTestnetParams = DeSoParams{
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
+
+	MaxMempoolPosSizeBytes: 3 << 30, // 3GB
 }
 
 // GetDataDir gets the user data directory where we store files

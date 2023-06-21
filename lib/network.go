@@ -1890,6 +1890,10 @@ type MsgDeSoHeader struct {
 	// An extra nonce that can be used to provice *even more* entropy for miners, in the
 	// event that ASICs become powerful enough to have birthday problems in the future.
 	ExtraNonce uint64
+
+	// FailingTransactionNanosPerKB is the fee rate for failing transaction contained in this block.
+	// It's part of the Revolution PoS failing transactions mechanism.
+	FailingTransactionNanosPerKB uint64
 }
 
 func HeaderSizeBytes() int {
@@ -2018,6 +2022,23 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error
 	return retBytes, nil
 }
 
+func (msg *MsgDeSoHeader) EncoderHeaderPosVersion0(preSignature bool) ([]byte, error) {
+	headerBytes, err := msg.EncodeHeaderVersion1(preSignature)
+	if err != nil {
+		return nil, err
+	}
+
+	// FailingTransactionNanosPerKB
+	{
+		scratchBytes := [8]byte{}
+		binary.BigEndian.PutUint64(scratchBytes[:], msg.FailingTransactionNanosPerKB)
+		headerBytes = append(headerBytes, scratchBytes[:]...)
+	}
+
+	return headerBytes, err
+
+}
+
 func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
 
 	// Depending on the version, we decode the header differently.
@@ -2025,6 +2046,8 @@ func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
 		return msg.EncodeHeaderVersion0(preSignature)
 	} else if msg.Version == HeaderVersion1 {
 		return msg.EncodeHeaderVersion1(preSignature)
+	} else if msg.Version == HeaderPoSVersion0 {
+		return msg.EncoderHeaderPosVersion0(preSignature)
 	} else {
 		// If we have an unrecognized version then we default to serializing with
 		// version 0. This is necessary because there are places where we use a
@@ -2139,6 +2162,25 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgDeSoHeader, error) {
 	return retHeader, nil
 }
 
+func DecodeHeaderPoSVersion0(rr io.Reader) (*MsgDeSoHeader, error) {
+	retHeader, err := DecodeHeaderVersion1(rr)
+	if err != nil {
+		return nil, err
+	}
+
+	// FailingTransactionNanosPerKB
+	{
+		scratchBytes := [8]byte{}
+		_, err := io.ReadFull(rr, scratchBytes[:])
+		if err != nil {
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding FailingTransactionNanosPerKB")
+		}
+		retHeader.FailingTransactionNanosPerKB = binary.BigEndian.Uint64(scratchBytes[:])
+	}
+
+	return retHeader, nil
+}
+
 func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 	// Read the version to determine
 	scratchBytes := [4]byte{}
@@ -2153,6 +2195,8 @@ func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 		ret, err = DecodeHeaderVersion0(rr)
 	} else if headerVersion == HeaderVersion1 {
 		ret, err = DecodeHeaderVersion1(rr)
+	} else if headerVersion == HeaderPoSVersion0 {
+		ret, err = DecodeHeaderPoSVersion0(rr)
 	} else {
 		// If we have an unrecognized version then we default to de-serializing with
 		// version 0. This is necessary because there are places where we use a
@@ -2989,6 +3033,7 @@ type DeSoTxnVersion uint64
 const (
 	DeSoTxnVersion0 DeSoTxnVersion = 0
 	DeSoTxnVersion1 DeSoTxnVersion = 1
+	DeSoTxnVersion2 DeSoTxnVersion = 2
 )
 
 type MsgDeSoTxn struct {
@@ -3033,6 +3078,15 @@ type MsgDeSoTxn struct {
 	// BLOCK_REWARD and CREATE_deso transactions do not require a signature
 	// since they have no inputs.
 	Signature DeSoSignature
+
+	// This determines whether the transaction passed/failed validation in Revolution.
+	// Only works for blocks with HeaderPoSVersion0 in the header.
+	StateConnected bool
+
+	// ProposerTimestamp is the time of arrival of this transaction to the block proposer's mempool.
+	// This timestamp can be spoofed, without negative impact on the consensus. The timestamp determines
+	// the transaction ordering in blocks across fee-bucket.
+	ProposerTimestamp uint64
 
 	// (!!) **DO_NOT_USE** (!!)
 	//
@@ -3532,6 +3586,117 @@ func (msg *MsgDeSoTxn) UnmarshalJSON(data []byte) error {
 	msg.TxnTypeJSON = 0
 
 	return nil
+}
+
+func (txn *MsgDeSoTxn) ValidateTransactionSanityBalanceModel(blockHeight uint64, params *DeSoParams,
+	globalParams *GlobalParamsEntry) error {
+
+	// Make sure the block height is greater than the balance model fork height.
+	if blockHeight < uint64(params.ForkHeights.BalanceModelBlockHeight) {
+		return fmt.Errorf("ValidateTransactionSanityBalanceModel: Block height %d is less than "+
+			"BalanceModelBlockHeight %d", blockHeight, params.ForkHeights.BalanceModelBlockHeight)
+	}
+
+	// Validate transaction to/from bytes encoding
+	txnBytes, err := txn.ToBytes(false)
+	if err != nil {
+		return fmt.Errorf("ValidateTransactionSanityBalanceModel: Problem encoding transaction: %v", err)
+	}
+	dummyTxn := &MsgDeSoTxn{}
+	err = dummyTxn.FromBytes(txnBytes)
+	if err != nil {
+		return fmt.Errorf("ValidateTransactionSanityBalanceModel: Problem decoding transaction: %v", err)
+	}
+	reTxnBytes, err := dummyTxn.ToBytes(false)
+	if err != nil {
+		return fmt.Errorf("ValidateTransactionSanityBalanceModel: Problem re-encoding transaction: %v", err)
+	}
+	if !bytes.Equal(txnBytes, reTxnBytes) {
+		return fmt.Errorf("ValidateTransactionSanityBalanceModel: Transaction bytes are not equal: %v, %v", txnBytes, reTxnBytes)
+	}
+
+	// TODO: Do we want a separate parameter for transaction size? Should it be a part of GlobalDeSoParams?
+	// Validate transaction size
+	if uint64(len(txnBytes)) > params.MaxBlockSizeBytes/2 {
+		return errors.Wrapf(RuleErrorTxnTooBig, "ValidateTransactionSanityBalanceModel: Transaction size %d is greater than "+
+			"MaxBlockSizeBytes/2 %d", len(txnBytes), params.MaxBlockSizeBytes/2)
+	}
+	if uint64(len(txnBytes)) > MaxUnconnectedTxSizeBytes {
+		return errors.Wrapf(TxErrorTooLarge, "ValidateTransactionSanityBalanceModel: Transaction size %d is greater than "+
+			"MaxUnconnectedTxSizeBytes %d", len(txnBytes), MaxUnconnectedTxSizeBytes)
+	}
+
+	// Validate transaction version
+	if txn.TxnVersion == DeSoTxnVersion0 {
+		return fmt.Errorf("ValidateTransactionSanityBalanceModel: DeSoTxnVersion0 is no longer supported: %v", txnBytes)
+	}
+
+	// Validate that the transaction has correct metadata
+	if txn.TxnMeta == nil {
+		return fmt.Errorf("ValidateTransactionSanityBalanceModel: Transaction is missing TxnMeta: %v", txnBytes)
+	}
+	if _, err := NewTxnMetadata(txn.TxnMeta.GetTxnType()); err != nil {
+		return fmt.Errorf("ValidateTransactionSanityBalanceModel: Problem parsing TxnType: %v, %v", err, txnBytes)
+	}
+
+	// Verify inputs/outputs.
+	if len(txn.TxInputs) != 0 {
+		return errors.Wrapf(RuleErrorBalanceModelDoesNotUseUTXOInputs, "ValidateTransactionSanityBalanceModel: Balance model "+
+			"transactions should not have any inputs: %v", txnBytes)
+	}
+	if err = CheckTransactionSanity(txn, blockHeight, params); err != nil {
+		return errors.Wrapf(err, "ValidateTransactionSanityBalanceModel: Problem calling CheckTransactionSanity "+
+			"with transaction: %v", txnBytes)
+	}
+
+	// Verify the TxnNonce
+	if txn.TxnNonce == nil {
+		return errors.Wrapf(TxErrorNoNonceAfterBalanceModelBlockHeight, "ValidateTransactionSanityBalanceModel: Transaction "+
+			"does not have a nonce: %v", txnBytes)
+	}
+	if txn.TxnNonce.ExpirationBlockHeight < blockHeight {
+		return errors.Wrapf(TxErrorNonceExpired, "ValidateTransactionSanityBalanceModel: Transaction nonce has expired: %v", txnBytes)
+	}
+	if globalParams.MaxNonceExpirationBlockHeightOffset != 0 &&
+		txn.TxnNonce.ExpirationBlockHeight > blockHeight+globalParams.MaxNonceExpirationBlockHeightOffset {
+		return errors.Wrapf(TxErrorNonceExpirationBlockHeightOffsetExceeded, "ValidateTransactionSanityBalanceModel: Transaction "+
+			"nonce expiration block height offset exceeded: %v", txnBytes)
+	}
+
+	// Verify the transaction fee
+	feeNanosPerKb, err := txn.ComputeFeePerKB()
+	if err != nil {
+		return errors.Wrapf(err, "ValidateTransactionSanityBalanceModel: Problem computing fee per KB: %v", txnBytes)
+	}
+	if feeNanosPerKb < globalParams.MinimumNetworkFeeNanosPerKB {
+		return errors.Wrapf(RuleErrorTxnFeeBelowNetworkMinimum, "ValidateTransactionSanityBalanceModel: Transaction fee "+
+			"per KB %d is less than the network minimum %d: %v", feeNanosPerKb, globalParams.MinimumNetworkFeeNanosPerKB, txnBytes)
+	}
+
+	// verify the public key
+	if err := IsByteArrayValidPublicKey(txn.PublicKey); err != nil {
+		return errors.Wrapf(err, "ValidateTransactionSanityBalanceModel: Public key is invalid: %v", txnBytes)
+	}
+
+	return nil
+}
+
+func (txn *MsgDeSoTxn) ComputeFeePerKB() (uint64, error) {
+	txBytes, err := txn.ToBytes(false)
+	if err != nil {
+		return 0, errors.Wrapf(err, "ComputeFeePerKB: Problem converting txn to bytes")
+	}
+	serializedLen := uint64(len(txBytes))
+	if serializedLen == 0 {
+		return 0, fmt.Errorf("ComputeFeePerKB: Txn has zero length")
+	}
+
+	fees := txn.TxnFeeNanos
+	if fees != ((fees * 1000) / 1000) {
+		return 0, errors.Wrapf(RuleErrorOverflowDetectedInFeeRateCalculation, "ComputeFeePerKB: Overflow detected in fee rate calculation")
+	}
+
+	return (fees * 1000) / serializedLen, nil
 }
 
 // ==================================================================
