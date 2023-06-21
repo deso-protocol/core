@@ -419,15 +419,43 @@ type TimeoutAggregateQuorumCertificate struct {
 	ValidatorsHighQC *QuorumCertificate
 
 	// Here we include a list of the HighQC.View values we got from each of the
-	// validators in the ValidatorTimeoutHighQCViews field. In addition, for each
+	// validators in the ValidatorsTimeoutHighQCViews field. In addition, for each
 	// unique HighQC.View value we received, we combine all the partial signatures
 	// for that HighQC.View into a single BLSMultiSignature.
 	//
 	// Note: The aggregated signature is made up of partial signatures for all
 	// present validators, each of whom signed a payload with the pair
 	// (current view, the validator's local HighQC.View).
-	ValidatorTimeoutHighQCViews         []uint64
-	ValidatorTimeoutAggregatedSignature *AggregatedBLSSignature
+	ValidatorsTimeoutHighQCViews         []uint64
+	ValidatorsTimeoutAggregatedSignature *AggregatedBLSSignature
+}
+
+// Performs a deep equality check between two TimeoutAggregateQuorumCertificate, and
+// returns true if the values of the two are identical.
+func (aggQC *TimeoutAggregateQuorumCertificate) Eq(
+	other *TimeoutAggregateQuorumCertificate,
+) bool {
+	if aggQC == nil && other == nil {
+		return true
+	}
+
+	if (aggQC == nil) != (other == nil) {
+		return false
+	}
+
+	if len(aggQC.ValidatorsTimeoutHighQCViews) != len(other.ValidatorsTimeoutHighQCViews) {
+		return false
+	}
+
+	for i := 0; i < len(aggQC.ValidatorsTimeoutHighQCViews); i++ {
+		if aggQC.ValidatorsTimeoutHighQCViews[i] != other.ValidatorsTimeoutHighQCViews[i] {
+			return false
+		}
+	}
+
+	return aggQC.TimedOutView == other.TimedOutView &&
+		aggQC.ValidatorsHighQC.Eq(other.ValidatorsHighQC) &&
+		aggQC.ValidatorsTimeoutAggregatedSignature.Eq(other.ValidatorsTimeoutAggregatedSignature)
 }
 
 func (aggQC *TimeoutAggregateQuorumCertificate) ToBytes() ([]byte, error) {
@@ -446,18 +474,18 @@ func (aggQC *TimeoutAggregateQuorumCertificate) ToBytes() ([]byte, error) {
 	}
 	retBytes = append(retBytes, encodedValidatorsHighQC...)
 
-	// ValidatorTimeoutHighQCViews
-	retBytes = append(retBytes, EncodeUint64Array(aggQC.ValidatorTimeoutHighQCViews)...)
+	// ValidatorsTimeoutHighQCViews
+	retBytes = append(retBytes, EncodeUint64Array(aggQC.ValidatorsTimeoutHighQCViews)...)
 
-	// ValidatorTimeoutAggregatedSignature
-	if aggQC.ValidatorTimeoutAggregatedSignature == nil {
-		return nil, errors.New("TimeoutAggregateQuorumCertificate.ToBytes: ValidatorTimeoutAggregatedSignature must not be nil")
+	// ValidatorsTimeoutAggregatedSignature
+	if aggQC.ValidatorsTimeoutAggregatedSignature == nil {
+		return nil, errors.New("TimeoutAggregateQuorumCertificate.ToBytes: ValidatorsTimeoutAggregatedSignature must not be nil")
 	}
-	encodedValidatorTimeoutAggregatedSignature, err := aggQC.ValidatorTimeoutAggregatedSignature.ToBytes()
+	encodedValidatorsTimeoutAggregatedSignature, err := aggQC.ValidatorsTimeoutAggregatedSignature.ToBytes()
 	if err != nil {
-		return nil, errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.ToBytes: Error encoding ValidatorTimeoutAggregatedSignature")
+		return nil, errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.ToBytes: Error encoding ValidatorsTimeoutAggregatedSignature")
 	}
-	retBytes = append(retBytes, encodedValidatorTimeoutAggregatedSignature...)
+	retBytes = append(retBytes, encodedValidatorsTimeoutAggregatedSignature...)
 
 	return retBytes, nil
 }
@@ -476,14 +504,14 @@ func DecodeTimeoutAggregateQuorumCertificate(rr io.Reader) (*TimeoutAggregateQuo
 		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding ValidatorsHighQC")
 	}
 
-	aggQC.ValidatorTimeoutHighQCViews, err = DecodeUint64Array(rr)
+	aggQC.ValidatorsTimeoutHighQCViews, err = DecodeUint64Array(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding ValidatorTimeoutHighQCViews")
+		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding ValidatorsTimeoutHighQCViews")
 	}
 
-	aggQC.ValidatorTimeoutAggregatedSignature, err = DecodeAggregatedBLSSignature(rr)
+	aggQC.ValidatorsTimeoutAggregatedSignature, err = DecodeAggregatedBLSSignature(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding ValidatorTimeoutAggregatedSignature")
+		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding ValidatorsTimeoutAggregatedSignature")
 	}
 
 	return &aggQC, nil
