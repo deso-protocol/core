@@ -1894,7 +1894,7 @@ type MsgDeSoHeader struct {
 	Height uint64
 
 	// Nonce is only used for Proof of Work blocks, and will only be populated
-	// in MsgDeSoHeader Version 0 and 1. For all later versions, this field will
+	// in MsgDeSoHeader versions 0 and 1. For all later versions, this field will
 	// default to a value of zero.
 	//
 	// The nonce that is used by miners in order to produce valid blocks.
@@ -1905,7 +1905,7 @@ type MsgDeSoHeader struct {
 	Nonce uint64
 
 	// ExtraNonce is only used for Proof of Work blocks, and will only be populated
-	// in MsgDeSoHeader Version 0 and 1. For all later versions, this field will
+	// in MsgDeSoHeader versions 0 and 1. For all later versions, this field will
 	// default to zero.
 	//
 	// An extra nonce that can be used to provide *even more* entropy for miners, in the
@@ -1913,15 +1913,15 @@ type MsgDeSoHeader struct {
 	ExtraNonce uint64
 
 	// ValidatorsVoteQC is only used for Proof of Stake blocks, and will only be
-	// populated in MsgDeSoHeader 2 and higher. For all earlier version, this field will
-	// be null.
+	// populated in MsgDeSoHeader versions 2 and higher. For all earlier version, this
+	// field will be null.
 	//
 	// This corresponds to QC containing votes from 2/3 of validators for weighted by stake.
 	ValidatorsVoteQC *QuorumCertificate
 
 	// ValidatorsTimeoutAggregateQC is only used for Proof of Stake blocks, and will only be
-	// populated in MsgDeSoHeader 2 and higher. For all earlier version, this field will
-	// be null.
+	// populated in MsgDeSoHeader versions 2 and higher. For all earlier version, this field
+	// will be null.
 	//
 	// In the event of a timeout, this field will contain the aggregate QC constructed from
 	// timeout messages from 2/3 of validators weighted by stake, and proves that they have
@@ -2080,16 +2080,12 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	}
 	retBytes = append(retBytes, transactionMerkleRoot[:]...)
 
-	// TstampSecs
+	// TstampSecs: this field can be encoded to take up the full 64 bits now
+	// that MsgDeSoHeader version 2 does not need to be backwards compatible.
 	{
 		scratchBytes := [8]byte{}
 		binary.BigEndian.PutUint64(scratchBytes[:], msg.TstampSecs)
 		retBytes = append(retBytes, scratchBytes[:]...)
-
-		if msg.TstampSecs > math.MaxUint32 {
-			return nil, fmt.Errorf("EncodeHeaderVersion1: TstampSecs not yet allowed " +
-				"to exceed max uint32. This will be fixed in the future")
-		}
 	}
 
 	// Height
@@ -2287,6 +2283,11 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 		retHeader.Height = binary.BigEndian.Uint64(scratchBytes[:])
 	}
 
+	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
+	// during both encoding and decoding.
+	retHeader.Nonce = 0
+	retHeader.ExtraNonce = 0
+
 	// ValidatorsVoteQC
 	validatorsVoteQC, err := DecodeQuorumCertificate(rr)
 	if err != nil {
@@ -2321,18 +2322,13 @@ func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 	} else if headerVersion == HeaderVersion2 {
 		ret, err = DecodeHeaderVersion2(rr)
 	} else {
-		// If we have an unrecognized version then we default to de-serializing with
-		// version 0. This is necessary because there are places where we use a
-		// MsgDeSoHeader struct to store Bitcoin headers.
-		//
-		// TODO: If the version is unrecognized, it seems safest to not attempt to
-		// parse it entirely. The difference between V1 and V2 is large enough that
-		// that the old V0 decoder will not work for V2.
-		ret, err = DecodeHeaderVersion0(rr)
+		// If we have an unrecognized version then we return an error. The schema
+		// differences between header versions 0, 1, 2, and beyond will be large
+		// enough that no one decoder is a safe fallback.
+		err = fmt.Errorf("DecodeHeader: Unrecognized header version: %v", headerVersion)
 	}
 	if err != nil {
-		return nil, fmt.Errorf(
-			"DecodeHeader: Unrecognized header version: %v", headerVersion)
+		return nil, errors.Wrapf(err, "DecodeHeader: Error parsing header:")
 	}
 	// Set the version since it's not decoded in the version-specific handlers.
 	ret.Version = headerVersion

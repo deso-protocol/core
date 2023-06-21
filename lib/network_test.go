@@ -173,7 +173,7 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 	}
 
 	// Performs a full E2E byte encode and decode of all the block header
-	// version we want to test.
+	// versions we want to test.
 	for _, expectedBlockHeader := range expectedBlockHeadersToTest {
 		data, err := expectedBlockHeader.ToBytes(false)
 		assert.NoError(err)

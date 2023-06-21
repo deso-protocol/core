@@ -104,12 +104,21 @@ const (
 	HeaderVersion1 = uint32(1)
 	// This version introduces the transition from Proof of Work to Proof of Stake blocks.
 	// It includes several changes to the header format:
+	// - Nonce field is removed
+	// - ExtraNonce field is removed
+	// - ValidatorsVoteQC field is added
+	// - ValidatorsTimeoutAggregateQC field is added
 	//
+	// This format change is a breaking change that is not backwards-compatible with
+	// versions 0 and 1.
 	HeaderVersion2 = uint32(2)
-	// TODO: Having an implicit CurrentHeaderVersion is risky for rolling header format
-	// migrations because the same deployed node will need to seamlessly migrate from
-	// version 1 or version 2. Ideally, we delete this CurrentHeaderVersion and instead
-	// have the code check for the version it wants explicitly.
+	// This CurrentHeaderVersion is an implicit version type that represents the latest
+	// backwards compatible Proof of Work header format. This value is now locked to
+	// HeaderVersion1 since versions 2 and onwards will be used for Proof of Stake formats.
+	//
+	// TODO: rename this constant to "LatestProofOfWorkHeaderVersion". Note, doing so will
+	// be a breaking change for 3rd party applications that import core and use this
+	// constant.
 	CurrentHeaderVersion = HeaderVersion1
 )
 
