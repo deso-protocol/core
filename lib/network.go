@@ -1879,8 +1879,7 @@ type MsgDeSoHeader struct {
 	// uvarint or a uint64.
 	Version uint32
 
-	// Hash of the previous block in the chain. This is a hash of the entire
-	// previous block, including the header, txns, and block producer info.
+	// Hash of the previous block in the chain.
 	PrevBlockHash *BlockHash
 
 	// The merkle root of all the transactions contained within the block.

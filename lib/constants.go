@@ -104,8 +104,8 @@ const (
 	HeaderVersion1 = uint32(1)
 	// This version introduces the transition from Proof of Work to Proof of Stake blocks.
 	// It includes several changes to the header format:
-	// - Nonce field is removed
-	// - ExtraNonce field is removed
+	// - Nonce field is deprecated
+	// - ExtraNonce field is deprecated
 	// - ValidatorsVoteQC field is added
 	// - ValidatorsTimeoutAggregateQC field is added
 	//
