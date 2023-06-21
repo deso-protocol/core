@@ -22,6 +22,7 @@ COPY cmd       cmd
 COPY desohash  desohash
 COPY lib       lib
 COPY migrate   migrate
+COPY utils     utils
 COPY test_data test_data
 COPY main.go   .
 
