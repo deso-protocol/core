@@ -2086,9 +2086,6 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 		binary.BigEndian.PutUint64(scratchBytes[:], msg.TstampSecs)
 		retBytes = append(retBytes, scratchBytes[:]...)
 
-		// TODO: Don't allow this field to exceed 32-bits for now. This will
-		// adjust once other parts of the code are fixed to handle the wider
-		// type.
 		if msg.TstampSecs > math.MaxUint32 {
 			return nil, fmt.Errorf("EncodeHeaderVersion1: TstampSecs not yet allowed " +
 				"to exceed max uint32. This will be fixed in the future")
@@ -2102,21 +2099,8 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 		retBytes = append(retBytes, scratchBytes[:]...)
 	}
 
-	// Nonce: for backwards compatibility with old nodes, we still encode a default
-	// zero value for nonce here, so that old can can read them and gracefully handle
-	// the zero values.
-	{
-		scratchBytes := [8]byte{}
-		binary.BigEndian.PutUint64(scratchBytes[:], 0)
-		retBytes = append(retBytes, scratchBytes[:]...)
-	}
-
-	// ExtraNonce
-	{
-		scratchBytes := [8]byte{}
-		binary.BigEndian.PutUint64(scratchBytes[:], 0)
-		retBytes = append(retBytes, scratchBytes[:]...)
-	}
+	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
+	// during both encoding and decoding.
 
 	// ValidatorsVoteQC
 	{
@@ -2269,13 +2253,39 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgDeSoHeader, error) {
 }
 
 func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
-	// Decode all of the Version1 fields first.
-	retHeader, err := DecodeHeaderVersion1(rr)
+	retHeader := NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
+
+	// PrevBlockHash
+	_, err := io.ReadFull(rr, retHeader.PrevBlockHash[:])
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Version1 fields")
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding PrevBlockHash")
 	}
 
-	// Decode the remaining PoS Version 2 fields
+	// TransactionMerkleRoot
+	_, err = io.ReadFull(rr, retHeader.TransactionMerkleRoot[:])
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TransactionMerkleRoot")
+	}
+
+	// TstampSecs
+	{
+		scratchBytes := [8]byte{}
+		_, err := io.ReadFull(rr, scratchBytes[:])
+		if err != nil {
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
+		}
+		retHeader.TstampSecs = binary.BigEndian.Uint64(scratchBytes[:])
+	}
+
+	// Height
+	{
+		scratchBytes := [8]byte{}
+		_, err := io.ReadFull(rr, scratchBytes[:])
+		if err != nil {
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Height")
+		}
+		retHeader.Height = binary.BigEndian.Uint64(scratchBytes[:])
+	}
 
 	// ValidatorsVoteQC
 	validatorsVoteQC, err := DecodeQuorumCertificate(rr)
