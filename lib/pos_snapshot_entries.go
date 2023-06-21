@@ -353,13 +353,50 @@ func (bav *UtxoView) _setSnapshotValidatorEntry(validatorEntry *ValidatorEntry, 
 	bav.SnapshotValidatorEntries[mapKey] = validatorEntry.Copy()
 }
 
+func (bav *UtxoView) _deleteSnapshotValidatorEntry(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) {
+	// This function shouldn't be called with nil.
+	if validatorEntry == nil {
+		glog.Errorf("_deleteSnapshotValidatorEntry: called with nil entry, this should never happen")
+		return
+	}
+	// Create a tombstone entry.
+	tombstoneEntry := *validatorEntry
+	tombstoneEntry.isDeleted = true
+	// Set the mappings to the point to the tombstone entry.
+	bav._setSnapshotValidatorEntry(&tombstoneEntry, snapshotAtEpochNumber)
+}
+
 func (bav *UtxoView) _flushSnapshotValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Delete all SnapshotValidatorEntries from the db that are in the UtxoView.
 	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
 		if validatorEntry == nil {
 			return fmt.Errorf(
 				"_flushSnapshotValidatorEntriesToDb: found nil entry for EpochNumber %d, this should never happen",
 				mapKey.SnapshotAtEpochNumber,
 			)
+		}
+		if err := DBDeleteSnapshotValidatorEntryWithTxn(
+			txn, bav.Snapshot, &mapKey.ValidatorPKID, mapKey.SnapshotAtEpochNumber,
+		); err != nil {
+			return errors.Wrapf(
+				err,
+				"_flushSnapshotValidatorEntriesToDb: problem deleting ValidatorEntry for EpochNumber %d: ",
+				mapKey.SnapshotAtEpochNumber,
+			)
+		}
+	}
+
+	// Set all !isDeleted SnapshotValidatorEntries into the db from the UtxoView.
+	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
+		if validatorEntry == nil {
+			return fmt.Errorf(
+				"_flushSnapshotValidatorEntriesToDb: found nil entry for EpochNumber %d, this should never happen",
+				mapKey.SnapshotAtEpochNumber,
+			)
+		}
+		if validatorEntry.isDeleted {
+			// Skip any deleted SnapshotValidatorEntries.
+			continue
 		}
 		if err := DBPutSnapshotValidatorEntryWithTxn(
 			txn, bav.Snapshot, validatorEntry, mapKey.SnapshotAtEpochNumber, blockHeight,
@@ -495,12 +532,54 @@ func DBPutSnapshotValidatorEntryWithTxn(
 		)
 	}
 
-	// Put the ValidatorPKID in the SnapshotValidatorByStake index.
+	// Put the ValidatorPKID in the SnapshotValidatorByStatusAndStake index.
 	key = DBKeyForSnapshotValidatorByStake(validatorEntry, snapshotAtEpochNumber)
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry.ValidatorPKID)); err != nil {
 		return errors.Wrapf(
 			err,
 			"DBPutSnapshotValidatorEntryWithTxn: problem putting ValidatorPKID in the SnapshotValidatorByStake index: ",
+		)
+	}
+
+	return nil
+}
+
+func DBDeleteSnapshotValidatorEntryWithTxn(
+	txn *badger.Txn, snap *Snapshot, validatorPKID *PKID, snapshotAtEpochNumber uint64,
+) error {
+	if validatorPKID == nil {
+		// This should never happen but is a sanity check.
+		glog.Errorf("DBDeleteSnapshotValidatorEntryWithTxn: called with nil ValidatorPKID")
+		return nil
+	}
+
+	// Look up the existing SnapshotValidatorEntry in the db using the PKID.
+	// We need to use this validator's values to delete the corresponding indexes.
+	validatorEntry, err := DBGetSnapshotValidatorByPKIDWithTxn(txn, snap, validatorPKID, snapshotAtEpochNumber)
+	if err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteSnapshotValidatorEntryWithTxn: problem retrieving ValidatorEntry for PKID %v: ", validatorPKID,
+		)
+	}
+
+	// If there is no ValidatorEntry in the DB for this PKID, then there is nothing to delete.
+	if validatorEntry == nil {
+		return nil
+	}
+
+	// Delete ValidatorEntry from PrefixSnapshotValidatorByPKID.
+	key := DBKeyForSnapshotValidatorByPKID(validatorEntry, snapshotAtEpochNumber)
+	if err = DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteSnapshotValidatorEntryWithTxn: problem deleting ValidatorEntry from index PrefixSnapshotValidatorByPKID",
+		)
+	}
+
+	// Delete ValidatorEntry.PKID from PrefixSnapshotValidatorByStatusAndStake.
+	key = DBKeyForSnapshotValidatorByStake(validatorEntry, snapshotAtEpochNumber)
+	if err = DBDeleteWithTxn(txn, snap, key); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteSnapshotValidatorEntryWithTxn: problem deleting ValidatorEntry from index PrefixSnapshotValidatorByStatusAndStake",
 		)
 	}
 
