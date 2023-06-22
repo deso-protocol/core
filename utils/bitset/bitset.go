@@ -4,15 +4,15 @@ import (
 	"math/big"
 )
 
-// A Bitset creates is an ordered list of bits with arbitrary length. It uses
-// the built in big.Int as the underlying storage scheme. The big.Int maintains
+// A Bitset is an ordered list of bits with arbitrary length. It uses
+// the built-in big.Int as the underlying storage scheme. The big.Int maintains
 // an ordered bit list and provides an interface where we can flip each bit
 // individually. The Bitset acts as a wrapper and provides boolean Get and Set
 // functions on top.
 //
 // We implement a custom Bitset data structure using Big.Int rather than using
 // an off-the-shelf solution because we need to support byte encoding and decoding,
-// with known endianness. Out of the box, the built in big.Int supports individual
+// with known endianness. Out of the box, the built-in big.Int supports individual
 // bit operations, safe indexing & boundary checks, dynamic resizing, and big
 // endian byte encoding/decoding. It allows us to implement a straightforward
 // Bitset data structure while having full transparency into the underlying
