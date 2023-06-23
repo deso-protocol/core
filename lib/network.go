@@ -2443,6 +2443,16 @@ func (msg *MsgDeSoBlock) GetEncoderType() EncoderType {
 	return EncoderTypeBlock
 }
 
+// Append DeSo Encoder Metadata bytes to MsgDeSoBlock bytes.
+func AddEncoderMetadataToMsgDeSoBlockBytes(blockBytes []byte, blockHeight uint64) []byte {
+	var blockData []byte
+	blockData = append(blockData, BoolToByte(true))
+	blockData = append(blockData, UintToBuf(uint64((&MsgDeSoBlock{}).GetEncoderType()))...)
+	blockData = append(blockData, UintToBuf(uint64((&MsgDeSoBlock{}).GetVersionByte(blockHeight)))...)
+	blockData = append(blockData, EncodeByteArray(blockBytes)...)
+	return blockData
+}
+
 // ==================================================================
 // SNAPSHOT Message
 // ==================================================================

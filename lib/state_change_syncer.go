@@ -19,10 +19,7 @@ type StateSyncerOperationType uint8
 const (
 	DbOperationTypeInsert StateSyncerOperationType = 0
 	DbOperationTypeDelete StateSyncerOperationType = 1
-	DbOperationTypeUpdate StateSyncerOperationType = 2
-	DbOperationTypeUpsert StateSyncerOperationType = 3
-	// DbOperationTypeSkip is used to indicate that the operation is not relevant to DeSo state and should be skipped.
-	DbOperationTypeSkip StateSyncerOperationType = 4
+	DbOperationTypeUpsert StateSyncerOperationType = 2
 )
 
 // StateChangeEntry is used to capture the state of the database. These changes are then written to a file, which is
@@ -188,7 +185,6 @@ type StateChangeSyncer struct {
 	StateChangeMempoolIndexFile *os.File
 	StateChangeMempoolFileSize  uint64
 
-	DeSoParams *DeSoParams
 	// This map is used to keep track of the bytes should be written to the state change file upon a db flush.
 	// The ID of the flush is to track which entries should be written to the state change file upon flush completion.
 	// This is needed because many flushes can occur asynchronously during hypersync, and we need to make sure that
@@ -203,13 +199,9 @@ type StateChangeSyncer struct {
 	// The value is the badger entry that was flushed to the db.
 	MempoolKeyValueMap map[string][]byte
 	// This map tracks the keys that were flushed to the mempool in a single flush.
-	// This is used to determine if there are any mempool transactions currently tracked by state syncer that are
-	// no longer in the mempool. If so, state syncer should completely refresh the mempool.
+	// This is used to determine if there are any tracked mempool transactions that have "disappeared" from the current
+	// mempool state. If so, state syncer should completely refresh the mempool.
 	MempoolFlushKeySet map[string]bool
-
-	MempoolBlock *MsgDeSoBlock
-
-	MempoolUtxoOpBundle *UtxoOperationBundle
 
 	// Tracks the flush IDs of the last block sync flush and the last mempool flush.
 	// These are not used during hypersync, as many flushes are being processed asynchronously.
@@ -239,7 +231,7 @@ func openOrCreateLogFile(fileName string) (*os.File, error) {
 }
 
 // NewStateChangeSyncer initializes necessary log files and returns a StateChangeSyncer.
-func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string, nodeSyncType NodeSyncType) *StateChangeSyncer {
+func NewStateChangeSyncer(stateChangeFilePath string, nodeSyncType NodeSyncType) *StateChangeSyncer {
 	stateChangeIndexFilePath := fmt.Sprintf("%s-index", stateChangeFilePath)
 	stateChangeMemPoolFilePath := fmt.Sprintf("%s-mempool", stateChangeFilePath)
 	stateChangeMempoolIndexFilePath := fmt.Sprintf("%s-mempool-index", stateChangeFilePath)
@@ -266,6 +258,8 @@ func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string, no
 		glog.Fatalf("Error getting stateChangeMempoolFileInfo: %v", err)
 	}
 
+	// TODO: Check if the state change file is empty. If not, BlocksyncCompleteEntriesFlushed should be true.
+
 	return &StateChangeSyncer{
 		StateChangeFile:             stateChangeFile,
 		StateChangeIndexFile:        stateChangeIndexFile,
@@ -273,7 +267,6 @@ func NewStateChangeSyncer(desoParams *DeSoParams, stateChangeFilePath string, no
 		StateChangeMempoolFile:      stateChangeMempoolFile,
 		StateChangeMempoolIndexFile: stateChangeMempoolIndexFile,
 		StateChangeMempoolFileSize:  uint64(stateChangeMempoolFileInfo.Size()),
-		DeSoParams:                  desoParams,
 		UnflushedBytes:              make(map[uuid.UUID]UnflushedStateSyncerBytes),
 		MempoolKeyValueMap:          make(map[string][]byte),
 		MempoolFlushKeySet:          make(map[string]bool),
@@ -304,10 +297,7 @@ func (stateChangeSyncer *StateChangeSyncer) Reset() {
 // to be written to the state change file upon DB flush.
 // It also writes the offset of the entry in the file to a separate index file, such that a consumer can look up a
 // particular entry index in the state change file.
-func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransactionEvent) {
-	stateChangeSyncer.StateSyncerMutex.Lock()
-	defer stateChangeSyncer.StateSyncerMutex.Unlock()
-
+func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *StateSyncerOperationEvent) {
 	// If we're in blocksync mode, we only want to flush entries once the sync is complete.
 	if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
 		return
@@ -320,26 +310,32 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 		return
 	}
 
+	// Make sure 2 operations aren't logged simultaneously.
+	stateChangeSyncer.StateSyncerMutex.Lock()
+	defer stateChangeSyncer.StateSyncerMutex.Unlock()
+
 	flushId := event.FlushId
 
-	// TODO: Clean this up.
+	// Crate a block sync flush ID if one doesn't already exist.
+	if event.FlushId == uuid.Nil && stateChangeSyncer.BlockSyncFlushId == uuid.Nil {
+		stateChangeSyncer.BlockSyncFlushId = uuid.New()
+	}
+
 	if event.IsMempoolTxn {
 		// Create a mempool flush ID if one doesn't already exist.
 		if event.FlushId == uuid.Nil && stateChangeSyncer.MempoolFlushId == uuid.Nil {
 			stateChangeSyncer.MempoolFlushId = uuid.New()
 		}
-		// Crate a committed flush ID if one doesn't already exist.
-		if event.FlushId == uuid.Nil && stateChangeSyncer.BlockSyncFlushId == uuid.Nil {
-			stateChangeSyncer.BlockSyncFlushId = uuid.New()
-		}
 
-		// If the flush ID is nil, then we need to use the mempool flush ID.
+		// If the event flush ID is nil, then we need to use the global mempool flush ID.
 		if event.FlushId == uuid.Nil {
 			flushId = stateChangeSyncer.MempoolFlushId
 		} else {
 			flushId = event.FlushId
 		}
 
+		// The current state of the tracked mempool is stored in the MempoolKeyValueMap. If this entry is already in there
+		// then we don't need to re-write it to the state change file.
 		// Create key for op + key map
 		txKey := fmt.Sprintf("%v%v", event.StateChangeEntry.OperationType, string(event.StateChangeEntry.KeyBytes))
 
@@ -350,14 +346,16 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 			return
 		}
 
-		stateChangeSyncer.MempoolKeyValueMap[txKey] = event.StateChangeEntry.EncoderBytes
-		stateChangeSyncer.MempoolFlushKeySet[txKey] = true
-	} else {
-		// Create a flush ID if one doesn't already exist.
-		if event.FlushId == uuid.Nil && stateChangeSyncer.BlockSyncFlushId == uuid.Nil {
-			stateChangeSyncer.BlockSyncFlushId = uuid.New()
+		// Add or remove from our tracking maps based on operation types.
+		if stateChangeEntry.OperationType == DbOperationTypeDelete {
+			delete(stateChangeSyncer.MempoolKeyValueMap, txKey)
+			delete(stateChangeSyncer.MempoolFlushKeySet, txKey)
+		} else {
+			stateChangeSyncer.MempoolKeyValueMap[txKey] = event.StateChangeEntry.EncoderBytes
+			stateChangeSyncer.MempoolFlushKeySet[txKey] = true
 		}
-
+	} else {
+		// If the flush ID is nil, then we need to use the global block sync flush ID.
 		if event.FlushId == uuid.Nil {
 			flushId = stateChangeSyncer.BlockSyncFlushId
 		} else {
@@ -368,22 +366,17 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	// Get the relevant deso encoder for this keyBytes.
 	var encoderType EncoderType
 	if isEncoder, encoder := StateKeyToDeSoEncoder(stateChangeEntry.KeyBytes); isEncoder && encoder != nil {
-		// Convert block encoder bytes to deso encoder bytes (append metadata).
+		// Blocks are stored in a non-DeSo-Encoder format, so we need to convert them to DeSo-Encoder format by appending metadata.
 		if encoder.GetEncoderType() == EncoderTypeBlock {
-			var blockData []byte
-			blockData = append(blockData, BoolToByte(true))
-			blockData = append(blockData, UintToBuf(uint64(encoder.GetEncoderType()))...)
-			blockData = append(blockData, UintToBuf(uint64(encoder.GetVersionByte(stateChangeEntry.BlockHeight)))...)
-			blockData = append(blockData, EncodeByteArray(stateChangeEntry.EncoderBytes)...)
-			stateChangeEntry.EncoderBytes = blockData
+			stateChangeEntry.EncoderBytes = AddEncoderMetadataToMsgDeSoBlockBytes(stateChangeEntry.EncoderBytes, stateChangeEntry.BlockHeight)
 		}
 
 		encoderType = encoder.GetEncoderType()
 	} else {
-		// If the keyBytes is not an encoder, then we decode the entry from the key value.
+		// If the value associated with the key is not an encoder, then we decode the encoder from the key itself.
 		keyEncoder, err := DecodeStateKey(stateChangeEntry.KeyBytes, stateChangeEntry.EncoderBytes)
 		if err != nil {
-			glog.Fatalf("Server._handleDbTransaction: Error decoding state key: %v", err)
+			glog.Fatalf("Server._handleStateSyncerOperation: Error decoding state key: %v", err)
 		}
 		encoderType = keyEncoder.GetEncoderType()
 		stateChangeEntry.Encoder = keyEncoder
@@ -405,17 +398,17 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbTransaction(event *DBTransa
 	stateChangeSyncer.addTransactionToQueue(stateChangeEntry.FlushId, writeBytes)
 }
 
-// _handleDbFlush is called when a Badger db flush takes place. It calls a helper function that takes the bytes that
+// _handleStateSyncerFlush is called when a Badger db flush takes place. It calls a helper function that takes the bytes that
 // have been cached on the StateChangeSyncer and writes them to the state change file.
-func (stateChangeSyncer *StateChangeSyncer) _handleDbFlush(event *DBFlushedEvent) {
+func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *StateSyncerFlushedEvent) {
 	stateChangeSyncer.StateSyncerMutex.Lock()
 	defer stateChangeSyncer.StateSyncerMutex.Unlock()
 
-	// If this is a mempool flush, make sure they entries to be flushed are compatible with what is currently tracked
-	// by state syncer. If not, reset the mempool maps and file, and start from scratch. The consumer will revert everything
-	// it currently has and sync from scratch.
 	if event.IsMempoolFlush {
-		if stateChangeSyncer.BlockSyncFlushId != event.CommittedFlushId {
+		// If this is a mempool flush, make sure a block hasn't mined since the mempool entries were added to queue.
+		// If not, reset the mempool maps and file, and start from scratch. The consumer will revert the mempool transactions
+		// it currently has and sync from scratch.
+		if stateChangeSyncer.BlockSyncFlushId != event.BlockSyncFlushId {
 			stateChangeSyncer.ResetMempool()
 			return
 		}
@@ -430,15 +423,16 @@ func (stateChangeSyncer *StateChangeSyncer) _handleDbFlush(event *DBFlushedEvent
 				return
 			}
 		}
+		stateChangeSyncer.MempoolFlushKeySet = make(map[string]bool)
 	}
 
 	err := stateChangeSyncer.FlushTransactionsToFile(event)
 	if err != nil {
-		glog.Errorf("StateChangeSyncer._handleDbFlush: Error flushing transactions to file: %v", err)
+		glog.Errorf("StateChangeSyncer._handleStateSyncerFlush: Error flushing transactions to file: %v", err)
 	}
 
 	if !event.IsMempoolFlush {
-		// Reset the block sync flush ID.
+		// After flushing blocksync transactions to file, reset the block sync flush ID, and reset the mempool.
 		stateChangeSyncer.BlockSyncFlushId = uuid.New()
 		stateChangeSyncer.ResetMempool()
 	}
@@ -483,9 +477,9 @@ func (stateChangeSyncer *StateChangeSyncer) addTransactionToQueue(flushId uuid.U
 }
 
 // FlushTransactionsToFile writes the bytes that have been cached on the StateChangeSyncer to the state change file.
-func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *DBFlushedEvent) error {
+func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *StateSyncerFlushedEvent) error {
 	flushId := event.FlushId
-	// Get the flush ID from the state change syncer if the flush ID is nil.
+	// Get the relevant global flush ID from the state change syncer if the flush ID is nil.
 	if event.IsMempoolFlush && event.FlushId == uuid.Nil {
 		flushId = stateChangeSyncer.MempoolFlushId
 	} else if !event.IsMempoolFlush && event.FlushId == uuid.Nil {
@@ -515,12 +509,6 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *DBFlu
 
 	if !exists {
 		return nil
-	}
-
-	if event.IsMempoolFlush {
-		fmt.Printf("\n\n\n*****Flushing mempool state changes to file. FlushId: %v\n", flushId)
-		fmt.Printf("Committed ID: %v\n", event.CommittedFlushId)
-		fmt.Printf("Block ID: %v\n", stateChangeSyncer.BlockSyncFlushId)
 	}
 
 	if unflushedBytes.StateChangeBytes == nil || unflushedBytes.StateChangeOperationIndexes == nil || len(unflushedBytes.StateChangeOperationIndexes) == 0 {
@@ -600,18 +588,18 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	err = mempoolUtxoView.FlushToDbWithTxn(txn, uint64(server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Height))
 
 	if err != nil || originalCommittedFlushId != stateChangeSyncer.BlockSyncFlushId {
-		mempoolUtxoView.EventManager.dbFlushed(&DBFlushedEvent{
+		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 			FlushId:        uuid.Nil,
 			Succeeded:      false,
 			IsMempoolFlush: true,
 		})
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
-	mempoolUtxoView.EventManager.dbFlushed(&DBFlushedEvent{
+	mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 		FlushId:          uuid.Nil,
 		Succeeded:        true,
 		IsMempoolFlush:   true,
-		CommittedFlushId: originalCommittedFlushId,
+		BlockSyncFlushId: originalCommittedFlushId,
 	})
 
 	// Loop through all the unconnected transactions in the mempool and connect them and their utxo ops to the mempool view.
@@ -623,7 +611,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		}
 
 		// Emit transaction state change.
-		mempoolUtxoView.EventManager.dbTransactionConnected(&DBTransactionEvent{
+		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType: DbOperationTypeUpsert,
 				KeyBytes:      TxnHashToTxnKey(&txHash),
@@ -641,7 +629,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		utxoOpBundle.UtxoOpBundle = append(utxoOpBundle.UtxoOpBundle, utxoOpsForTxn)
 
 		// Emit UTXOOp bundle event
-		mempoolUtxoView.EventManager.dbTransactionConnected(&DBTransactionEvent{
+		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType: DbOperationTypeUpsert,
 				KeyBytes:      _DbKeyForTxnUtxoOps(&txHash),
@@ -665,7 +653,6 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 		if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
 			stateChangeSyncer.FlushAllEntriesToFile(server)
 		}
-		// TODO: Exit if mempool is closed.
 		mempoolClosed := server.mempool.stopped
 		for !mempoolClosed {
 			// Sleep for a short while to avoid a tight loop.
@@ -686,22 +673,24 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 	defer server.blockchain.ChainLock.Unlock()
 
 	fmt.Printf("\n\n*****FLUSHING ALL ENTRIES TO FILE****\n")
+	// Allow the state change syncer to flush entries to file.
+	stateChangeSyncer.BlocksyncCompleteEntriesFlushed = true
 
 	// Loop through all prefixes that hold state change entries.
 	for _, prefix := range StatePrefixes.CoreStatePrefixesList {
 		// Start with the first key in the prefix.
 		lastReceivedKey := prefix
-		chunkComplete := false
+		chunkFull := true
 		var err error
 		var dbBatchEntries []*DBEntry
 
 		// Loop through all the batches of entries for the prefix until we get a non-full chunk.
-		for !chunkComplete {
+		for chunkFull {
 			fmt.Printf("Processing chunk for prefix: %+v\n", prefix)
 			// Create a flush ID for this chunk.
 			dbFlushId := uuid.New()
 			// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
-			dbBatchEntries, chunkComplete, err = DBIteratePrefixKeys(server.blockchain.db, prefix, lastReceivedKey, SnapshotBatchSize)
+			dbBatchEntries, chunkFull, err = DBIteratePrefixKeys(server.blockchain.db, prefix, lastReceivedKey, SnapshotBatchSize)
 			if err != nil {
 				return errors.Wrapf(err, "StateChangeSyncer.FlushAllEntriesToFile: ")
 			}
@@ -709,15 +698,21 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 				lastReceivedKey = dbBatchEntries[len(dbBatchEntries)-1].Key
 			}
 			for _, dbEntry := range dbBatchEntries {
-				server.eventManager.dbTransactionConnected(&DBTransactionEvent{
+				server.eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 					StateChangeEntry: &StateChangeEntry{
 						OperationType: DbOperationTypeInsert,
 						KeyBytes:      dbEntry.Key,
 						EncoderBytes:  dbEntry.Value,
 					},
-					FlushId: dbFlushId,
+					FlushId:      dbFlushId,
+					IsMempoolTxn: false,
 				})
 			}
+			server.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+				FlushId:        dbFlushId,
+				Succeeded:      true,
+				IsMempoolFlush: false,
+			})
 		}
 	}
 	// Mark the blocksync complete entries as flushed.

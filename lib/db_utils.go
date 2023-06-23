@@ -980,7 +980,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 
 	// If we have an event manager, we fire off the on db transaction event.
 	if eventManager != nil {
-		eventManager.dbTransactionConnected(&DBTransactionEvent{
+		eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType:        DbOperationTypeUpsert,
 				KeyBytes:             key,
@@ -1082,7 +1082,7 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 	// If we have an event manager, and the entry's isDeleted==true (i.e. it isn't going to be re-inserted later on in the
 	// same transaction), we fire off the on db transaction event.
 	if eventManager != nil && entryIsDeleted {
-		eventManager.dbTransactionConnected(&DBTransactionEvent{
+		eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType:        DbOperationTypeDelete,
 				KeyBytes:             key,

@@ -1237,7 +1237,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		for _, dbEntry := range chunk {
 			localErr := wb.Set(dbEntry.Key, dbEntry.Value) // Will create txns as needed.
 			if snap.eventManager != nil {
-				snap.eventManager.dbTransactionConnected(&DBTransactionEvent{
+				snap.eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 					StateChangeEntry: &StateChangeEntry{
 						OperationType: DbOperationTypeInsert,
 						KeyBytes:      dbEntry.Key,
@@ -1254,7 +1254,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		}
 		if localErr := wb.Flush(); localErr != nil {
 			if snap.eventManager != nil {
-				snap.eventManager.dbFlushed(&DBFlushedEvent{
+				snap.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 					FlushId:   dbFlushId,
 					Succeeded: false,
 				})
@@ -1290,7 +1290,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 	// If there's a problem setting the snapshot checksum, we'll reschedule this snapshot chunk set.
 	if err != nil {
 		if snap.eventManager != nil {
-			snap.eventManager.dbFlushed(&DBFlushedEvent{
+			snap.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 				FlushId:   dbFlushId,
 				Succeeded: false,
 			})
@@ -1308,7 +1308,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 	}
 
 	if snap.eventManager != nil {
-		snap.eventManager.dbFlushed(&DBFlushedEvent{
+		snap.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 			FlushId:   dbFlushId,
 			Succeeded: true,
 		})

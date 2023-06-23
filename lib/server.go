@@ -378,9 +378,9 @@ func NewServer(
 	if _stateChangeFilePath != "" {
 		// Create the state change syncer to handle syncing state changes to disk, and assign some of its methods
 		// to the event manager.
-		stateChangeSyncer = NewStateChangeSyncer(_params, _stateChangeFilePath, _syncType)
-		eventManager.OnDbTransactionConnected(stateChangeSyncer._handleDbTransaction)
-		eventManager.OnDbFlushed(stateChangeSyncer._handleDbFlush)
+		stateChangeSyncer = NewStateChangeSyncer(_stateChangeFilePath, _syncType)
+		eventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
+		eventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
 	}
 
 	// Setup snapshot

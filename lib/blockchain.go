@@ -2185,7 +2185,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 				}
 				if bc.eventManager != nil && !bc.blockView.IsMempoolView {
-					bc.eventManager.dbFlushed(&DBFlushedEvent{
+					bc.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 						FlushId:   uuid.Nil,
 						Succeeded: err == nil,
 					})
