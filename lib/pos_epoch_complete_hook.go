@@ -30,6 +30,10 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Rolls-over the current epoch into a new one. Handles the associated snapshotting + accounting.
 
 	// Sanity-check that the current block is the last block in the current epoch.
+	//
+	// Note that this will also return true if we're currently at the
+	// ProofOfStake1StateSetupBlockHeight so that we can run the hook for the first time
+	// to initialize the CurrentEpochEntry.
 	isLastBlockInCurrentEpoch, err := bav.IsLastBlockInCurrentEpoch(blockHeight)
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: ")
