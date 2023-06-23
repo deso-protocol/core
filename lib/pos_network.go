@@ -14,16 +14,18 @@ import (
 // ==================================================================
 
 type MsgDeSoValidatorVote struct {
-	MsgVersion uint8
+	MsgVersion MsgValidatorVoteVersion
 
-	// The ECDSA and BLS voting public key of the validator who constructed this
-	// vote. We include both keys here:
-	// - the ECDSA key is used to perform a lookup of the validator's stake in consensus,
-	//   and fetch the validator's registered BLS public key for the block height
-	// - the BLS public key is used to cheaply verify the integrity of the signature
-	//   as soon as we receive this message, before having to perform any lookups in
-	//   on this message before performing any lookups in consensus.
-	ValidatorPublicKey       *PublicKey
+	// The ECDSA public key for the validator who constructed this vote message.
+	// Given the validator's ECDSA public key, we can look up their Validator PKID
+	// and their stake in consensus. This allows us to verify that the vote message
+	// was sent by a registered validator.
+	ValidatorPublicKey *PublicKey
+	// The BLS voting public key for the validator who constructed this vote message.
+	// The BLS public key is included in the vote message for because it allows us to
+	// easily verify if the BLS VotePartialSignature is correctly formed, without having
+	// to first look up the validator's BLS public key in consensus. It helps optimize
+	// vote validation.
 	ValidatorVotingPublicKey *bls.PublicKey
 
 	// The block hash corresponding to the block that this vote is for.
@@ -31,13 +33,6 @@ type MsgDeSoValidatorVote struct {
 
 	// The view number when the the block was proposed.
 	ProposedInView uint64
-
-	// TODO: Do we want to add BlockHeight here too? It's not strictly necessary
-	// because it can be derived based on BlockHash alone, but it is convenient
-	// to have on-hand here for debugging. The trade-off of including it is that
-	// it results in a larger size message. In general, we should try to keep the
-	// size of vote messages as small as possible as there will be O(n) votes per block
-	// where n is the number of validators.
 
 	// The validator's partial BLS signature of the (ProposedInView, BlockHash) pair
 	// This represents the validator's vote for this block. The block height is implicitly
@@ -140,16 +135,17 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 // ==================================================================
 
 type MsgDeSoValidatorTimeout struct {
-	MsgVersion uint8
+	MsgVersion MsgValidatorTimeoutVersion
 
-	// The ECDSA and BLS voting public key of the validator who constructed this
-	// vote. We include both keys here:
-	// - the ECDSA key is used to perform a lookup of the validator's stake in consensus,
-	//   and fetch the validator's registered BLS public key for the block height
-	// - the BLS public key is used to cheaply verify the integrity of the signature
-	//   as soon as we receive this message, before having to perform any lookups in
-	//   on this message before performing any lookups in consensus.
-	ValidatorPublicKey       *PublicKey
+	// The ECDSA public key for the validator who constructed this timeout message.
+	// Given the validator's ECDSA public key, we can look up their Validator PKID.
+	// This allows us to verify that the timeout originated from a registered validator.
+	ValidatorPublicKey *PublicKey
+	// The BLS voting public key for the validator who constructed this timeout. The BLS
+	// public key is included in the timeout message reasons because it allows us to easily
+	// verify that the BLS TimeoutPartialSignature is correctly formed, without having to
+	// first look up the validator's BLS public key in consensus. It helps optimize timeout
+	// message validation.
 	ValidatorVotingPublicKey *bls.PublicKey
 
 	// The view that the validator has timed out on.

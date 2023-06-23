@@ -105,8 +105,21 @@ const (
 	CurrentHeaderVersion = HeaderVersion1
 )
 
-const MsgValidatorVoteVersion0 = uint8(0)
-const MsgValidatorTimeoutVersion0 = uint8(0)
+// Versioning for the MsgValidatorVote message type. This type alias is equivalent
+// to a uint8, and supports the same byte encoders/decoders.
+type MsgValidatorVoteVersion = byte
+
+const (
+	MsgValidatorVoteVersion0 MsgValidatorVoteVersion = 0
+)
+
+// Versioning for the MsgValidatorTimeout message type. This type alias is equivalent
+// to a uint8, and supports the same byte encoders/decoders.
+type MsgValidatorTimeoutVersion = byte
+
+const (
+	MsgValidatorTimeoutVersion0 MsgValidatorTimeoutVersion = 0
+)
 
 var (
 	MaxUint256, _ = uint256.FromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
