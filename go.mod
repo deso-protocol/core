@@ -23,6 +23,7 @@ require (
 	github.com/holiman/uint256 v1.1.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/oleiade/lane v1.0.1
+	github.com/onflow/flow-go/crypto v0.24.7
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/robinjoseph08/go-pg-migrations/v3 v3.0.0
@@ -45,9 +46,7 @@ require (
 )
 
 require (
-	github.com/DataDog/zstd v1.4.8 // indirect
 	github.com/Microsoft/go-winio v0.4.16 // indirect
-	github.com/NVIDIA/cstruct v0.0.0-20210817223100-441a06a021c8 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.2.1 // indirect
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
 	github.com/bwesterb/go-ristretto v1.2.0 // indirect
@@ -79,7 +78,6 @@ require (
 	github.com/mattn/goveralls v0.0.6 // indirect
 	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b // indirect
 	github.com/mitchellh/mapstructure v1.1.2 // indirect
-	github.com/onflow/flow-go/crypto v0.24.7 // indirect
 	github.com/onsi/ginkgo v1.15.0 // indirect
 	github.com/onsi/gomega v1.10.5 // indirect
 	github.com/pelletier/go-toml v1.7.0 // indirect
@@ -100,7 +98,6 @@ require (
 	github.com/vmihailenco/tagparser v0.1.2 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.opencensus.io v0.23.0 // indirect
-	golang.org/x/mod v0.4.2 // indirect
 	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2 // indirect
 	golang.org/x/sys v0.0.0-20221010170243-090e33056c14 // indirect
 	golang.org/x/text v0.3.6 // indirect

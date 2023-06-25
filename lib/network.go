@@ -93,7 +93,11 @@ const (
 	// MsgTypeTransactionBundleV2 contains transactions after the balance model block height from a peer.
 	MsgTypeTransactionBundleV2 MsgType = 19
 
-	// NEXT_TAG = 20
+	// Proof of stake vote and timeout messages
+	MsgTypeValidatorVote    MsgType = 20
+	MsgTypeValidatorTimeout MsgType = 21
+
+	// NEXT_TAG = 22
 
 	// Below are control messages used to signal to the Server from other parts of
 	// the code but not actually sent among peers.
@@ -151,6 +155,10 @@ func (msgType MsgType) String() string {
 		return "TRANSACTION_BUNDLE"
 	case MsgTypeTransactionBundleV2:
 		return "TRANSACTION_BUNDLE_V2"
+	case MsgTypeValidatorVote:
+		return "VALIDATOR_VOTE"
+	case MsgTypeValidatorTimeout:
+		return "VALIDATOR_TIMEOUT"
 	case MsgTypeMempool:
 		return "MEMPOOL"
 	case MsgTypeAddr:
@@ -745,6 +753,10 @@ func NewMessage(msgType MsgType) DeSoMessage {
 		return &MsgDeSoTransactionBundle{}
 	case MsgTypeTransactionBundleV2:
 		return &MsgDeSoTransactionBundleV2{}
+	case MsgTypeValidatorVote:
+		return &MsgDeSoValidatorVote{}
+	case MsgTypeValidatorTimeout:
+		return &MsgDeSoValidatorTimeout{}
 	case MsgTypeMempool:
 		return &MsgDeSoMempool{}
 	case MsgTypeGetHeaders:
