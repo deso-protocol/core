@@ -85,9 +85,11 @@ const (
 	NetworkType_TESTNET NetworkType = 2
 )
 
+type MsgDeSoHeaderVersion = uint32
+
 const (
 	// This is the header version that the blockchain started with.
-	HeaderVersion0 = uint32(0)
+	HeaderVersion0 = MsgDeSoHeaderVersion(0)
 	// This version made several changes to the previous header encoding format:
 	// - The Nonce field was expanded to 64 bits
 	// - Another ExtraNonce field was added to provide *another* 64 bits of entropy,
@@ -101,7 +103,7 @@ const (
 	//
 	// At the time of this writing, the intent is to deploy it in a backwards-compatible
 	// fashion, with the eventual goal of phasing out blocks with the previous version.
-	HeaderVersion1 = uint32(1)
+	HeaderVersion1 = MsgDeSoHeaderVersion(1)
 	// This version introduces the transition from Proof of Work to Proof of Stake blocks.
 	// It includes several changes to the header format:
 	// - Nonce field is deprecated
@@ -111,7 +113,7 @@ const (
 	//
 	// This format change is a breaking change that is not backwards-compatible with
 	// versions 0 and 1.
-	HeaderVersion2 = uint32(2)
+	HeaderVersion2 = MsgDeSoHeaderVersion(2)
 	// This CurrentHeaderVersion is an implicit version type that represents the latest
 	// backwards compatible Proof of Work header format. This value is now locked to
 	// HeaderVersion1 since versions 2 and onwards will be used for Proof of Stake formats.

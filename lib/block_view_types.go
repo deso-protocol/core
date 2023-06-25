@@ -4659,22 +4659,22 @@ func EncodeUint64Array(uint64s []uint64) []byte {
 }
 
 func DecodeUint64Array(reader io.Reader) ([]uint64, error) {
-	pkLen, err := ReadUvarint(reader)
+	arrLen, err := ReadUvarint(reader)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DecodeUint64Array: Problem reading array length")
 	}
 
-	if pkLen <= 0 {
+	if arrLen <= 0 {
 		return nil, nil
 	}
 
 	var result []uint64
-	result, err = SafeMakeSliceWithLength[uint64](pkLen)
+	result, err = SafeMakeSliceWithLength[uint64](arrLen)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DecodeUint64Array: Problem creating slice")
 	}
 
-	for ii := uint64(0); ii < pkLen; ii++ {
+	for ii := uint64(0); ii < arrLen; ii++ {
 		result[ii], err = ReadUvarint(reader)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DecodeUint64Array: Problem reading uint64")

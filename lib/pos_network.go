@@ -405,7 +405,7 @@ func DecodeAggregatedBLSSignature(rr io.Reader) (*AggregatedBLSSignature, error)
 // of all validators, weighted by stake, which indicates that these validators want to
 // time out a particular view.
 //
-// When validators want to time a view, they send their high QCs to the block proposer
+// When validators want to time out a view, they send their high QCs to the block proposer
 // who builds an aggregate QC extending the chain from the highest QC that it received
 // from all validators who timed out. To prove that it has selected the highest QC, the
 // proposer also includes a list of the high QC views that each validator has sent.
@@ -447,15 +447,25 @@ func (aggQC *TimeoutAggregateQuorumCertificate) Eq(
 		return false
 	}
 
+	if aggQC.TimedOutView != other.TimedOutView {
+		return false
+	}
+
+	if !aggQC.ValidatorsHighQC.Eq(other.ValidatorsHighQC) {
+		return false
+	}
+
+	if !aggQC.ValidatorsTimeoutAggregatedSignature.Eq(other.ValidatorsTimeoutAggregatedSignature) {
+		return false
+	}
+
 	for i := 0; i < len(aggQC.ValidatorsTimeoutHighQCViews); i++ {
 		if aggQC.ValidatorsTimeoutHighQCViews[i] != other.ValidatorsTimeoutHighQCViews[i] {
 			return false
 		}
 	}
 
-	return aggQC.TimedOutView == other.TimedOutView &&
-		aggQC.ValidatorsHighQC.Eq(other.ValidatorsHighQC) &&
-		aggQC.ValidatorsTimeoutAggregatedSignature.Eq(other.ValidatorsTimeoutAggregatedSignature)
+	return true
 }
 
 func (aggQC *TimeoutAggregateQuorumCertificate) ToBytes() ([]byte, error) {

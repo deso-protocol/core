@@ -2288,18 +2288,16 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	retHeader.ExtraNonce = 0
 
 	// ValidatorsVoteQC
-	validatorsVoteQC, err := DecodeQuorumCertificate(rr)
+	retHeader.ValidatorsVoteQC, err = DecodeQuorumCertificate(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ValidatorsVoteQC")
 	}
-	retHeader.ValidatorsVoteQC = validatorsVoteQC
 
 	// ValidatorsTimeoutAggregateQC
-	validatorsTimeoutAggregateQC, err := DecodeTimeoutAggregateQuorumCertificate(rr)
+	retHeader.ValidatorsTimeoutAggregateQC, err = DecodeTimeoutAggregateQuorumCertificate(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ValidatorsTimeoutAggregateQC")
 	}
-	retHeader.ValidatorsTimeoutAggregateQC = validatorsTimeoutAggregateQC
 
 	return retHeader, nil
 }
