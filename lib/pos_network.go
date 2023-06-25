@@ -22,7 +22,7 @@ type MsgDeSoValidatorVote struct {
 	// was sent by a registered validator.
 	ValidatorPublicKey *PublicKey
 	// The BLS voting public key for the validator who constructed this vote message.
-	// The BLS public key is included in the vote message for because it allows us to
+	// The BLS public key is included in the vote message because it allows us to
 	// easily verify if the BLS VotePartialSignature is correctly formed, without having
 	// to first look up the validator's BLS public key in consensus. It helps optimize
 	// vote validation.
@@ -142,7 +142,7 @@ type MsgDeSoValidatorTimeout struct {
 	// This allows us to verify that the timeout originated from a registered validator.
 	ValidatorPublicKey *PublicKey
 	// The BLS voting public key for the validator who constructed this timeout. The BLS
-	// public key is included in the timeout message reasons because it allows us to easily
+	// public key is included in the timeout message because it allows us to easily
 	// verify that the BLS TimeoutPartialSignature is correctly formed, without having to
 	// first look up the validator's BLS public key in consensus. It helps optimize timeout
 	// message validation.
