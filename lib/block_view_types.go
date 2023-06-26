@@ -3774,14 +3774,17 @@ type GlobalParamsEntry struct {
 	MaxNonceExpirationBlockHeightOffset uint64
 
 	// TODO: Properly handle the newly added GlobalParamsEntry fields
-	// FeeBucketBaseRate is the minimal FeeRatePerKB a transaction can have.
-	// If a transaction has a lower fee than FeeBucketBaseRate, it will be
+	// FeeBucketBaseRateNanosPerKB is the minimal FeeRatePerKB a transaction can have.
+	// If a transaction has a lower fee than FeeBucketBaseRateNanosPerKB, it will be
 	// rejected by the node's mempool.
-	FeeBucketBaseRate uint64
+	FeeBucketBaseRateNanosPerKB uint64
 
-	// FeeBucketMultiplierBasisPoints is the rate of growth of the fee bucket ranges.
-	// The multiplier is given as basis points.
-	FeeBucketMultiplierBasisPoints uint64
+	// FeeBucketRateMultiplierBasisPoints is the rate of growth of the fee bucket ranges.
+	// The multiplier is given as basis points. For example a value of 1000 means
+	// that the fee bucket ranges will grow by 10% each time. If, let's say, we start with
+	// FeeBucketBaseRateNanosPerKB of 1000 nanos, then the first bucket will be [1000, 1099],
+	// the second bucket will be [1100, 1209], the third bucket will be [1210, 1330], etc.
+	FeeBucketRateMultiplierBasisPoints uint64
 }
 
 func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -3796,8 +3799,8 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockHeightOffset)...)
 	}
 	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
-		data = append(data, UintToBuf(gp.FeeBucketBaseRate)...)
-		data = append(data, UintToBuf(gp.FeeBucketMultiplierBasisPoints)...)
+		data = append(data, UintToBuf(gp.FeeBucketBaseRateNanosPerKB)...)
+		data = append(data, UintToBuf(gp.FeeBucketRateMultiplierBasisPoints)...)
 	}
 	return data
 }
@@ -3832,13 +3835,13 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		}
 	}
 	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
-		gp.FeeBucketBaseRate, err = ReadUvarint(rr)
+		gp.FeeBucketBaseRateNanosPerKB, err = ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketBaseRate")
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketBaseRateNanosPerKB")
 		}
-		gp.FeeBucketMultiplierBasisPoints, err = ReadUvarint(rr)
+		gp.FeeBucketRateMultiplierBasisPoints, err = ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketMultiplierBasisPoints")
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketRateMultiplierBasisPoints")
 		}
 	}
 	return nil
@@ -3850,6 +3853,17 @@ func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {
 	return EncoderTypeGlobalParamsEntry
+}
+
+// computeFeeBucketBaseAndMultiplier takes the fee base rate and multiplier for the GlobalParamsEntry,
+// and returns them as big.Floats.
+func (gp *GlobalParamsEntry) computeFeeBucketBaseAndMultiplier() (
+	_baseRate *big.Float, _bucketMultiplier *big.Float) {
+
+	feeBucketBaseRateNanos := NewFloat().SetUint64(gp.FeeBucketBaseRateNanosPerKB)
+	feeBucketMultiplier := NewFloat().SetUint64(10000 + gp.FeeBucketRateMultiplierBasisPoints)
+	feeBucketMultiplier.Quo(feeBucketMultiplier, NewFloat().SetUint64(10000))
+	return feeBucketBaseRateNanos, feeBucketMultiplier
 }
 
 // This struct holds info on a readers interactions (e.g. likes) with a post.

@@ -36,7 +36,7 @@ func TestTransactionRegisterWithRemoves(t *testing.T) {
 	require := require.New(t)
 	rand := rand.New(rand.NewSource(seed))
 	globalParams := _testGetDefaultGlobalParams()
-	txnPool := _testGetRandomMempoolTxns(rand, globalParams.FeeBucketBaseRate, feeRange, timestampRange, testCases)
+	txnPool := _testGetRandomMempoolTxns(rand, globalParams.FeeBucketBaseRateNanosPerKB, feeRange, timestampRange, testCases)
 
 	txnRegister := NewTransactionRegister(&DeSoTestnetParams, globalParams)
 	_testBucketStandardRemoveTest(t, txnPool, globalParams, false,
@@ -64,7 +64,7 @@ func TestTransactionRegisterBasic(t *testing.T) {
 	require := require.New(t)
 	rand := rand.New(rand.NewSource(seed))
 	globalParams := _testGetDefaultGlobalParams()
-	txnPool := _testGetRandomMempoolTxns(rand, globalParams.FeeBucketBaseRate, feeRange, timestampRange, testCases)
+	txnPool := _testGetRandomMempoolTxns(rand, globalParams.FeeBucketBaseRateNanosPerKB, feeRange, timestampRange, testCases)
 
 	txnRegister := NewTransactionRegister(&DeSoTestnetParams, globalParams)
 	_testBucketStandardAddTest(t, txnPool, globalParams, false,
@@ -73,58 +73,6 @@ func TestTransactionRegisterBasic(t *testing.T) {
 		},
 		func() []*MempoolTx {
 			return txnRegister.GetFeeTimeTransactions()
-		},
-	)
-}
-
-func TestFeeBucketWithRemoves(t *testing.T) {
-	seed := int64(6)
-	testCases := 1000
-	feeRange := uint64(10000)
-	timestampRange := uint64(10000)
-
-	require := require.New(t)
-	rand := rand.New(rand.NewSource(seed))
-	globalParams := _testGetDefaultGlobalParams()
-	txnPool := _testGetRandomMempoolTxns(rand, globalParams.FeeBucketBaseRate, feeRange, timestampRange, testCases)
-
-	// Create new FeeBucket and add the txn pool
-	feeBucket := NewFeeBucket(globalParams)
-	_testBucketStandardRemoveTest(t, txnPool, globalParams, false,
-		func(tx *MempoolTx) {
-			require.Equal(nil, feeBucket.AddTransaction(tx))
-		},
-		func(tx *MempoolTx) {
-			feeBucket.RemoveTransaction(tx)
-		},
-		func() []*MempoolTx {
-			return feeBucket.GetFeeTimeTransactions()
-		},
-		func() {
-			require.Equal(true, feeBucket.Empty())
-		},
-	)
-}
-
-func TestFeeBucketBasic(t *testing.T) {
-	seed := int64(7)
-	testCases := 1000
-	feeRange := uint64(10000)
-	timestampRange := uint64(10000)
-
-	require := require.New(t)
-	rand := rand.New(rand.NewSource(seed))
-	globalParams := _testGetDefaultGlobalParams()
-	txnPool := _testGetRandomMempoolTxns(rand, globalParams.FeeBucketBaseRate, feeRange, timestampRange, testCases)
-
-	// Create new FeeBucket and add the txn pool
-	feeBucket := NewFeeBucket(globalParams)
-	_testBucketStandardAddTest(t, txnPool, globalParams, false,
-		func(tx *MempoolTx) {
-			require.Equal(nil, feeBucket.AddTransaction(tx))
-		},
-		func() []*MempoolTx {
-			return feeBucket.GetFeeTimeTransactions()
 		},
 	)
 }
@@ -139,11 +87,12 @@ func TestTimeBucketRemove(t *testing.T) {
 	rand := rand.New(rand.NewSource(seed))
 	globalParams := _testGetDefaultGlobalParams()
 	randomIndex := rand.Intn(indexRange)
-	feeMin, feeMax := ComputeTimeBucketRangeFromIndex(randomIndex, globalParams)
+	baseRate, bucketMultiplier := globalParams.computeFeeBucketBaseAndMultiplier()
+	feeMin, feeMax := ComputeTimeBucketRangeFromIndex(randomIndex, baseRate, bucketMultiplier)
 	txnPool := _testGetRandomMempoolTxns(rand, feeMin, feeMax, timestampRange, testCases)
 
 	// Create new FeeBucket and add the txn pool
-	timeBucket := NewTimeBucket(randomIndex, globalParams)
+	timeBucket := NewTimeBucket(randomIndex, baseRate, bucketMultiplier)
 	_testBucketStandardRemoveTest(t, txnPool, globalParams, false,
 		func(tx *MempoolTx) {
 			require.Equal(nil, timeBucket.AddTransaction(tx))
@@ -170,11 +119,12 @@ func TestTimeBucketBasic(t *testing.T) {
 	rand := rand.New(rand.NewSource(seed))
 	globalParams := _testGetDefaultGlobalParams()
 	randomIndex := rand.Intn(indexRange)
-	feeMin, feeMax := ComputeTimeBucketRangeFromIndex(randomIndex, globalParams)
+	baseRate, bucketMultiplier := globalParams.computeFeeBucketBaseAndMultiplier()
+	feeMin, feeMax := ComputeTimeBucketRangeFromIndex(randomIndex, baseRate, bucketMultiplier)
 	txnPool := _testGetRandomMempoolTxns(rand, feeMin, feeMax, timestampRange, testCases)
 
 	// Create new FeeBucket and add the txn pool
-	timeBucket := NewTimeBucket(randomIndex, globalParams)
+	timeBucket := NewTimeBucket(randomIndex, baseRate, bucketMultiplier)
 	_testBucketStandardAddTest(t, txnPool, globalParams, true,
 		func(tx *MempoolTx) {
 			require.Equal(nil, timeBucket.AddTransaction(tx))
@@ -187,8 +137,8 @@ func TestTimeBucketBasic(t *testing.T) {
 
 func _testGetDefaultGlobalParams() *GlobalParamsEntry {
 	globalParams := InitialGlobalParamsEntry
-	globalParams.FeeBucketBaseRate = 1000
-	globalParams.FeeBucketMultiplierBasisPoints = 1000
+	globalParams.FeeBucketBaseRateNanosPerKB = 1000
+	globalParams.FeeBucketRateMultiplierBasisPoints = 1000
 
 	return &globalParams
 }
@@ -205,9 +155,10 @@ func _testGetRandomMempoolTxns(rand *rand.Rand, feeMin uint64, feeMax uint64, ti
 	return txnPool
 }
 
-func _testMapMempoolTxnToTimeBucket(txn *MempoolTx, globalParams *GlobalParamsEntry) *TimeBucket {
-	timeBucketIndex := ComputeTimeBucketIndexFromFeePerKBNanos(txn.FeePerKB, globalParams)
-	return NewTimeBucket(timeBucketIndex, globalParams)
+func _testMapMempoolTxnToTimeBucket(txn *MempoolTx, globalParams *GlobalParamsEntry) *FeeTimeBucket {
+	baseRate, bucketMultiplier := globalParams.computeFeeBucketBaseAndMultiplier()
+	timeBucketIndex := ComputeTimeBucketIndexFromFeePerKBNanos(txn.FeePerKB, baseRate, bucketMultiplier)
+	return NewTimeBucket(timeBucketIndex, baseRate, bucketMultiplier)
 }
 
 func _testSortMempoolTxnsByFeeTime(txnPool []*MempoolTx, globalParams *GlobalParamsEntry, timeOnly bool) []*MempoolTx {
@@ -216,13 +167,13 @@ func _testSortMempoolTxnsByFeeTime(txnPool []*MempoolTx, globalParams *GlobalPar
 			timeBucketI := _testMapMempoolTxnToTimeBucket(txnPool[i], globalParams)
 			timeBucketJ := _testMapMempoolTxnToTimeBucket(txnPool[j], globalParams)
 
-			feeComparison := FeeBucketComparator(timeBucketI, timeBucketJ)
+			feeComparison := FeeTimeBucketComparator(timeBucketI, timeBucketJ)
 			if feeComparison == 1 {
 				return false
 			} else if feeComparison == -1 {
 				return true
 			} else {
-				timeComparison := TimeBucketComparator(txnPool[i], txnPool[j])
+				timeComparison := MempoolTxTimeOrderComparator(txnPool[i], txnPool[j])
 				if timeComparison == 1 {
 					return false
 				} else if timeComparison == -1 {
@@ -235,7 +186,7 @@ func _testSortMempoolTxnsByFeeTime(txnPool []*MempoolTx, globalParams *GlobalPar
 		})
 	} else {
 		sort.Slice(txnPool, func(i, j int) bool {
-			timeComparison := TimeBucketComparator(txnPool[i], txnPool[j])
+			timeComparison := MempoolTxTimeOrderComparator(txnPool[i], txnPool[j])
 			if timeComparison == 1 {
 				return false
 			} else if timeComparison == -1 {
@@ -327,10 +278,11 @@ func TestComputeFeeBucketRanges(t *testing.T) {
 	_ = require
 
 	globalParams := _testGetDefaultGlobalParams()
+	baseRate, bucketMultiplier := globalParams.computeFeeBucketBaseAndMultiplier()
 
 	feeMins, feeMaxs := []uint64{}, []uint64{}
 	for ii := 0; ii < 100; ii++ {
-		feeMin, feeMax := ComputeTimeBucketRangeFromIndex(ii, globalParams)
+		feeMin, feeMax := ComputeTimeBucketRangeFromIndex(ii, baseRate, bucketMultiplier)
 		feeMins = append(feeMins, feeMin)
 		feeMaxs = append(feeMaxs, feeMax)
 	}
@@ -340,7 +292,7 @@ func TestComputeFeeBucketRanges(t *testing.T) {
 	}
 
 	for ii := 0; ii < 100; ii++ {
-		feeMin, feeMax := ComputeTimeBucketRangeFromIndex(ii, globalParams)
+		feeMin, feeMax := ComputeTimeBucketRangeFromIndex(ii, baseRate, bucketMultiplier)
 		require.Equal(feeMins[ii], feeMin)
 		require.Equal(feeMaxs[ii], feeMax)
 	}
@@ -349,9 +301,10 @@ func TestComputeFeeBucketRanges(t *testing.T) {
 // TestComputeFeeBucketWithFee checks that the fee bucket index is computed correctly from a fee.
 func TestComputeFeeBucketWithFee(t *testing.T) {
 	globalParams := _testGetDefaultGlobalParams()
+	baseRate, bucketMultiplier := globalParams.computeFeeBucketBaseAndMultiplier()
 
 	verifyFeeBucket := func(n int, fee uint64) bool {
-		feeMin, feeMax := ComputeTimeBucketRangeFromIndex(n, globalParams)
+		feeMin, feeMax := ComputeTimeBucketRangeFromIndex(n, baseRate, bucketMultiplier)
 		if fee < feeMin {
 			return false
 		}
@@ -364,7 +317,7 @@ func TestComputeFeeBucketWithFee(t *testing.T) {
 	require := require.New(t)
 	_ = require
 	for ii := uint64(1000); ii < 100000; ii++ {
-		n := ComputeTimeBucketIndexFromFeePerKBNanos(ii, globalParams)
+		n := ComputeTimeBucketIndexFromFeePerKBNanos(ii, baseRate, bucketMultiplier)
 		require.True(verifyFeeBucket(n, ii))
 	}
 }
