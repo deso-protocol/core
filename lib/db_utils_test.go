@@ -668,6 +668,18 @@ func TestDeleteExpiredTransactorNonceEntries(t *testing.T) {
 
 }
 
+func TestEncodeUint16(t *testing.T) {
+	for _, num := range []uint16{0, 5819, math.MaxUint16} {
+		// Encode to bytes.
+		encoded := EncodeUint16(num)
+		require.Len(t, encoded, 2)
+
+		// Decode from bytes.
+		decoded := DecodeUint16(encoded)
+		require.Equal(t, num, decoded)
+	}
+}
+
 func TestEncodeUint8(t *testing.T) {
 	for _, num := range []uint8{0, 95, math.MaxUint8} {
 		// Encode to bytes.

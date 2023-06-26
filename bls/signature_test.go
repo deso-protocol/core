@@ -5,6 +5,7 @@ package bls
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/json"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -212,6 +213,35 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	require.Nil(t, (&Signature{}).Copy().flowSignature)
 }
 
+func TestJsonMarshalingBLSKeys(t *testing.T) {
+	// Generate random BLS PrivateKey, PublicKey, and Signature.
+	privateKey := _generateRandomBLSPrivateKey(t)
+	publicKey := privateKey.PublicKey()
+	signature, err := privateKey.Sign(_generateRandomBytes(t, 64))
+	require.NoError(t, err)
+
+	// Test JSON marshaling of bls.PrivateKey.
+	privateKeyEncoded, err := json.Marshal(privateKey)
+	require.NoError(t, err)
+	privateKeyDecoded := &PrivateKey{}
+	require.NoError(t, json.Unmarshal(privateKeyEncoded, privateKeyDecoded))
+	require.True(t, privateKey.Eq(privateKeyDecoded))
+
+	// Test JSON marshaling of bls.PublicKey.
+	publicKeyEncoded, err := json.Marshal(publicKey)
+	require.NoError(t, err)
+	publicKeyDecoded := &PublicKey{}
+	require.NoError(t, json.Unmarshal(publicKeyEncoded, publicKeyDecoded))
+	require.True(t, publicKey.Eq(publicKeyDecoded))
+
+	// Test JSON marshaling of bls.Signature.
+	signatureEncoded, err := json.Marshal(signature)
+	require.NoError(t, err)
+	signatureDecoded := &Signature{}
+	require.NoError(t, json.Unmarshal(signatureEncoded, signatureDecoded))
+	require.True(t, signature.Eq(signatureDecoded))
+}
+
 func _generateRandomBLSPrivateKey(t *testing.T) *PrivateKey {
 	privateKey, err := NewPrivateKey()
 	require.NoError(t, err)
@@ -219,7 +249,7 @@ func _generateRandomBLSPrivateKey(t *testing.T) *PrivateKey {
 }
 
 func _generateRandomBytes(t *testing.T, numBytes int) []byte {
-	randomBytes := make([]byte, 64)
+	randomBytes := make([]byte, numBytes)
 	_, err := rand.Read(randomBytes)
 	require.NoError(t, err)
 	return randomBytes

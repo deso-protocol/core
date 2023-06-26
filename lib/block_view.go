@@ -133,6 +133,23 @@ type UtxoView struct {
 	// Current RandomSeedHash
 	CurrentRandomSeedHash *RandomSeedHash
 
+	// SnapshotGlobalParamEntries is a map of SnapshotAtEpochNumber to a GlobalParamsEntry.
+	// It contains the snapshot value of the GlobalParamsEntry at the given SnapshotAtEpochNumber.
+	SnapshotGlobalParamEntries map[uint64]*GlobalParamsEntry
+
+	// SnapshotValidatorEntries is a map of <SnapshotAtEpochNumber, ValidatorPKID> to a ValidatorEntry.
+	// It contains the snapshot value of a ValidatorEntry at the given SnapshotAtEpochNumber.
+	SnapshotValidatorEntries map[SnapshotValidatorMapKey]*ValidatorEntry
+
+	// SnapshotGlobalActiveStakeAmountNanos is a map of SnapshotAtEpochNumber to a GlobalActiveStakeAmountNanos.
+	// It contains the snapshot value of the GlobalActiveStakeAmountNanos at the given SnapshotAtEpochNumber.
+	SnapshotGlobalActiveStakeAmountNanos map[uint64]*uint256.Int
+
+	// SnapshotLeaderSchedule is a map of <SnapshotAtEpochNumber, LeaderIndex> to a ValidatorPKID.
+	// It contains the PKID of the validator at the given index in the leader schedule
+	// generated at the given SnapshotAtEpochNumber.
+	SnapshotLeaderSchedule map[SnapshotLeaderScheduleMapKey]*PKID
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -238,6 +255,18 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// CurrentEpochEntry
 	bav.CurrentEpochEntry = nil
+
+	// SnapshotGlobalParamEntries
+	bav.SnapshotGlobalParamEntries = make(map[uint64]*GlobalParamsEntry)
+
+	// SnapshotValidatorEntries
+	bav.SnapshotValidatorEntries = make(map[SnapshotValidatorMapKey]*ValidatorEntry)
+
+	// SnapshotGlobalActiveStakeAmountNanos
+	bav.SnapshotGlobalActiveStakeAmountNanos = make(map[uint64]*uint256.Int)
+
+	// SnapshotLeaderSchedule
+	bav.SnapshotLeaderSchedule = make(map[SnapshotLeaderScheduleMapKey]*PKID)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -523,6 +552,26 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the CurrentRandomSeedHash
 	if bav.CurrentRandomSeedHash != nil {
 		newView.CurrentRandomSeedHash = bav.CurrentRandomSeedHash.Copy()
+	}
+
+	// Copy the SnapshotGlobalParamEntries
+	for epochNumber, globalParamsEntry := range bav.SnapshotGlobalParamEntries {
+		newView.SnapshotGlobalParamEntries[epochNumber] = globalParamsEntry.Copy()
+	}
+
+	// Copy the SnapshotValidatorEntries
+	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
+		newView.SnapshotValidatorEntries[mapKey] = validatorEntry.Copy()
+	}
+
+	// Copy the SnapshotGlobalActiveStakeAmountNanos
+	for epochNumber, globalActiveStakeAmountNanos := range bav.SnapshotGlobalActiveStakeAmountNanos {
+		newView.SnapshotGlobalActiveStakeAmountNanos[epochNumber] = globalActiveStakeAmountNanos.Clone()
+	}
+
+	// Copy the SnapshotLeaderSchedule
+	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
+		newView.SnapshotLeaderSchedule[mapKey] = validatorPKID.NewPKID()
 	}
 
 	return newView, nil
@@ -2964,6 +3013,44 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode MaxNonceExpirationBlockHeightOffset as uint64")
 		}
 		newGlobalParamsEntry.MaxNonceExpirationBlockHeightOffset = newMaxNonceExpirationBlockHeightOffset
+	}
+
+	if blockHeight >= bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
+		var bytesRead int
+		if len(extraData[StakeLockupEpochDurationKey]) > 0 {
+			newGlobalParamsEntry.StakeLockupEpochDuration, bytesRead = Uvarint(extraData[StakeLockupEpochDurationKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode StakeLockupEpochDuration as uint64")
+			}
+		}
+		if len(extraData[ValidatorJailEpochDurationKey]) > 0 {
+			newGlobalParamsEntry.ValidatorJailEpochDuration, bytesRead = Uvarint(extraData[ValidatorJailEpochDurationKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode ValidatorJailEpochDuration as uint64")
+			}
+		}
+		if len(extraData[LeaderScheduleMaxNumValidatorsKey]) > 0 {
+			newGlobalParamsEntry.LeaderScheduleMaxNumValidators, bytesRead = Uvarint(extraData[LeaderScheduleMaxNumValidatorsKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode LeaderScheduleMaxNumValidators as uint64")
+			}
+		}
+		if len(extraData[EpochDurationNumBlocksKey]) > 0 {
+			newGlobalParamsEntry.EpochDurationNumBlocks, bytesRead = Uvarint(extraData[EpochDurationNumBlocksKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode EpochDurationNumBlocks as uint64")
+			}
+		}
+		if len(extraData[JailInactiveValidatorGracePeriodEpochsKey]) > 0 {
+			newGlobalParamsEntry.JailInactiveValidatorGracePeriodEpochs, bytesRead = Uvarint(
+				extraData[JailInactiveValidatorGracePeriodEpochsKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode JailInactiveValidatorGracePeriodEpochs as uint64",
+				)
+			}
+		}
 	}
 
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
