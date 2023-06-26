@@ -61,9 +61,10 @@ func (b *Bitset) ToBytes() []byte {
 }
 
 // Populates the BitSet from a big-endian byte slice.
-func (b *Bitset) FromBytes(bytes []byte) {
+func (b *Bitset) FromBytes(bytes []byte) *Bitset {
 	if b.store == nil {
 		b.store = big.NewInt(0)
 	}
 	b.store.SetBytes(bytes)
+	return b
 }

@@ -378,7 +378,7 @@ func (sig *AggregatedBLSSignature) ToBytes() ([]byte, error) {
 	if sig.SignersList == nil {
 		return nil, errors.New("AggregatedBLSSignature.ToBytes: SignersList must not be nil")
 	}
-	retBytes = append(retBytes, EncodeByteArray(sig.SignersList.ToBytes())...)
+	retBytes = append(retBytes, EncodeBitset(sig.SignersList)...)
 
 	// Signature
 	if sig.Signature == nil {
@@ -392,12 +392,10 @@ func (sig *AggregatedBLSSignature) ToBytes() ([]byte, error) {
 func (sig *AggregatedBLSSignature) FromBytes(rr io.Reader) error {
 	var err error
 
-	encodedSignersList, err := DecodeByteArray(rr)
+	sig.SignersList, err = DecodeBitset(rr)
 	if err != nil {
 		return errors.Wrapf(err, "AggregatedBLSSignature.FromBytes: Error decoding SignersList")
 	}
-	sig.SignersList = bitset.NewBitset()
-	sig.SignersList.FromBytes(encodedSignersList)
 
 	sig.Signature, err = DecodeBLSSignature(rr)
 	if err != nil {
@@ -537,4 +535,24 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 	}
 
 	return nil
+}
+
+// ==================================================================
+// Bitset Utils
+// ==================================================================
+
+func EncodeBitset(b *bitset.Bitset) []byte {
+	var encodedBytes []byte
+	if b != nil {
+		encodedBytes = b.ToBytes()
+	}
+	return EncodeByteArray(encodedBytes)
+}
+
+func DecodeBitset(rr io.Reader) (*bitset.Bitset, error) {
+	encodedBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeBitset: Error decoding bitset")
+	}
+	return (bitset.NewBitset()).FromBytes(encodedBytes), nil
 }
