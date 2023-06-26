@@ -2294,8 +2294,8 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	}
 
 	// ValidatorsTimeoutAggregateQC
-	retHeader.ValidatorsTimeoutAggregateQC, err = DecodeTimeoutAggregateQuorumCertificate(rr)
-	if err != nil {
+	retHeader.ValidatorsTimeoutAggregateQC = &TimeoutAggregateQuorumCertificate{}
+	if err = retHeader.ValidatorsTimeoutAggregateQC.FromBytes(rr); err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ValidatorsTimeoutAggregateQC")
 	}
 

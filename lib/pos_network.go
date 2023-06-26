@@ -336,8 +336,8 @@ func DecodeQuorumCertificate(rr io.Reader) (*QuorumCertificate, error) {
 		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding ProposedInView")
 	}
 
-	qc.ValidatorsVoteAggregatedSignature, err = DecodeAggregatedBLSSignature(rr)
-	if err != nil {
+	qc.ValidatorsVoteAggregatedSignature = &AggregatedBLSSignature{}
+	if err = qc.ValidatorsVoteAggregatedSignature.FromBytes(rr); err != nil {
 		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding ValidatorsVoteAggregatedSignature")
 	}
 
@@ -384,21 +384,20 @@ func (sig *AggregatedBLSSignature) ToBytes() ([]byte, error) {
 	return retBytes, nil
 }
 
-func DecodeAggregatedBLSSignature(rr io.Reader) (*AggregatedBLSSignature, error) {
-	var sig AggregatedBLSSignature
+func (sig *AggregatedBLSSignature) FromBytes(rr io.Reader) error {
 	var err error
 
 	sig.SignersList, err = DecodeByteArray(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeAggregatedBLSSignature: Error decoding SignersList")
+		return errors.Wrapf(err, "AggregatedBLSSignature.FromBytes: Error decoding SignersList")
 	}
 
 	sig.Signature, err = DecodeBLSSignature(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeAggregatedBLSSignature: Error decoding Signature")
+		return errors.Wrapf(err, "AggregatedBLSSignature.FromBytes: Error decoding Signature")
 	}
 
-	return &sig, nil
+	return nil
 }
 
 // TimeoutAggregateQuorumCertificate is an aggregation of timeout messages from 2/3rds
@@ -500,29 +499,28 @@ func (aggQC *TimeoutAggregateQuorumCertificate) ToBytes() ([]byte, error) {
 	return retBytes, nil
 }
 
-func DecodeTimeoutAggregateQuorumCertificate(rr io.Reader) (*TimeoutAggregateQuorumCertificate, error) {
-	var aggQC TimeoutAggregateQuorumCertificate
+func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 	var err error
 
 	aggQC.TimedOutView, err = ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding TimedOutView")
+		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding TimedOutView")
 	}
 
 	aggQC.ValidatorsHighQC, err = DecodeQuorumCertificate(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding ValidatorsHighQC")
+		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsHighQC")
 	}
 
 	aggQC.ValidatorsTimeoutHighQCViews, err = DecodeUint64Array(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding ValidatorsTimeoutHighQCViews")
+		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsTimeoutHighQCViews")
 	}
 
-	aggQC.ValidatorsTimeoutAggregatedSignature, err = DecodeAggregatedBLSSignature(rr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding ValidatorsTimeoutAggregatedSignature")
+	aggQC.ValidatorsTimeoutAggregatedSignature = &AggregatedBLSSignature{}
+	if aggQC.ValidatorsTimeoutAggregatedSignature.FromBytes(rr); err != nil {
+		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsTimeoutAggregatedSignature")
 	}
 
-	return &aggQC, nil
+	return nil
 }
