@@ -23,6 +23,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	decredEC "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+	"github.com/deso-protocol/core/bls"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 	"github.com/holiman/uint256"
@@ -2351,8 +2352,13 @@ func (msg *MsgDeSoHeader) String() string {
 // ==================================================================
 
 type BlockProducerInfo struct {
+	Version byte
+
 	PublicKey []byte
 	Signature *btcec.Signature
+
+	ValidatorVotingPublicKey bls.PublicKey
+	VotePartialSignature     bls.Signature
 }
 
 func (bpi *BlockProducerInfo) Serialize() []byte {
@@ -2436,10 +2442,21 @@ type MsgDeSoBlock struct {
 	Header *MsgDeSoHeader
 	Txns   []*MsgDeSoTxn
 
-	// This field is optional and provides the producer of the block the ability to sign it
-	// with their private key. Doing this proves that this block was produced by a particular
-	// entity, which can be useful for nodes that want to restrict who they accept blocks
-	// from.
+	// This BlockProducerInfo field describes the proposer for the block and their signature
+	// for the block.
+	//
+	// In Proof of Work blocks, this field is optional and provides the producer of the block
+	// the ability to sign the block with their private key. Doing this proves that this block
+	// was produced by a particular entity, which can be useful for nodes that want to restrict
+	// who they accept blocks from.
+	//
+	// In Proof of Stake blocks, this field is required and serves two purposes:
+	// 1. It's allows the block producer to sign their block with their ECDSA or BLS private key.
+	// This allows validators to verify that the block was produced by the expected leader for the
+	// current block height and view.
+	// 2. It contains the block producer's BLS partial signature, which acts as their vote on the
+	// block. This way, their vote can be aggregated into a QC by the next block proposer in the leader
+	// schedule.
 	BlockProducerInfo *BlockProducerInfo
 }
 
@@ -2493,11 +2510,23 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion1(preSignature bool) ([]byte, error) 
 	return data, nil
 }
 
+func (msg *MsgDeSoBlock) EncodeBlockVersion2(preSignature bool) ([]byte, error) {
+	data, err := msg.EncodeBlockCommmon(preSignature)
+	if err != nil {
+		return nil, err
+	}
+
+	// BlockProducerInfo
+	return data, nil
+}
+
 func (msg *MsgDeSoBlock) ToBytes(preSignature bool) ([]byte, error) {
 	if msg.Header.Version == HeaderVersion0 {
 		return msg.EncodeBlockVersion0(preSignature)
 	} else if msg.Header.Version == HeaderVersion1 {
 		return msg.EncodeBlockVersion1(preSignature)
+	} else if msg.Header.Version == HeaderVersion2 {
+		return msg.EncodeBlockVersion2(preSignature)
 	} else {
 		return nil, fmt.Errorf("MsgDeSoBlock.ToBytes: Error encoding version: %v", msg.Header.Version)
 	}
