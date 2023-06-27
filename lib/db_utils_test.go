@@ -61,7 +61,7 @@ func _GetTestBlockNode() *BlockNode {
 
 	// Header (make a copy)
 	bs.Header = NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
-	headerBytes, _ := expectedBlockHeader.ToBytes(false)
+	headerBytes, _ := expectedBlockHeaderVersion1.ToBytes(false)
 	bs.Header.FromBytes(headerBytes)
 
 	// Status
