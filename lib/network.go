@@ -2355,7 +2355,7 @@ type BlockProducerInfo struct {
 	Version BlockProducerInfoVersion
 
 	// ECDSA public key for the block producer.
-	PublicKey []byte
+	PublicKey *PublicKey
 	// The block producer's ECDSA signature for the block. This field is used in
 	// BlockProducerInfo version 0, and is deprecated from version 1 onwards.
 	Signature *btcec.Signature
@@ -2385,10 +2385,10 @@ func (bpi *BlockProducerInfo) ToBytes() ([]byte, error) {
 	encodedBytes = append(encodedBytes, bpi.Version)
 
 	// Required ECDSA PublicKey
-	if len(bpi.PublicKey) == 0 {
+	if bpi.PublicKey == nil {
 		return nil, fmt.Errorf("BlockProducerInfo.ToBytes: PublicKey is required")
 	}
-	encodedBytes = append(encodedBytes, EncodeByteArray(bpi.PublicKey)...)
+	encodedBytes = append(encodedBytes, bpi.PublicKey.ToBytes()...)
 
 	// The ECDSA Signature is redundant, and is removed in BlockProducerInfo version 1 and above
 
@@ -2426,7 +2426,7 @@ func (bpi *BlockProducerInfo) FromBytes(rr *bytes.Reader) error {
 	}
 
 	// Required ECDSA PublicKey
-	bpi.PublicKey, err = DecodeByteArray(rr)
+	bpi.PublicKey, err = ReadPublicKey(rr)
 	if err != nil {
 		return errors.Wrapf(err, "BlockProducerInfo.FromBytes: Problem reading PublicKey")
 	}
@@ -2455,7 +2455,7 @@ func (bpi *BlockProducerInfo) FromBytes(rr *bytes.Reader) error {
 func (bpi *BlockProducerInfo) Serialize_Legacy() []byte {
 	data := []byte{}
 	data = append(data, UintToBuf(uint64(len(bpi.PublicKey)))...)
-	data = append(data, bpi.PublicKey...)
+	data = append(data, bpi.PublicKey.ToBytes()...)
 
 	sigBytes := []byte{}
 	if bpi.Signature != nil {
@@ -2486,15 +2486,10 @@ func (bpi *BlockProducerInfo) Deserialize_Legacy(data []byte) error {
 		if pkLen > MaxMessagePayload {
 			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: pkLen too long: %v", pkLen)
 		}
-		pkBytes, err := SafeMakeSliceWithLength[byte](pkLen)
-		if err != nil {
-			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Problem making slice for pkBytes")
-		}
-		_, err = io.ReadFull(rr, pkBytes)
+		ret.PublicKey, err = ReadPublicKey(rr)
 		if err != nil {
 			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Error reading public key: ")
 		}
-		ret.PublicKey = pkBytes
 	}
 
 	// De-serialize the signature.
@@ -2532,7 +2527,7 @@ func (bpi *BlockProducerInfo) String() string {
 	if bpi == nil || len(bpi.PublicKey) == 0 {
 		return "Signer Key: NONE"
 	}
-	return fmt.Sprintf("Signer Key: %v", PkToStringMainnet(bpi.PublicKey))
+	return fmt.Sprintf("Signer Key: %v", PkToStringMainnet(bpi.PublicKey.ToBytes()))
 }
 
 type MsgDeSoBlock struct {
