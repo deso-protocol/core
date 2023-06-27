@@ -1912,6 +1912,13 @@ type MsgDeSoHeader struct {
 	// event that ASICs become powerful enough to have birthday problems in the future.
 	ExtraNonce uint64
 
+	// ProposedInView is only used for Proof of Stake blocks, and will only be populated
+	// in MsgDeSoHeader versions 2 and higher. For all earlier version, this field will
+	// default to zero.
+	//
+	// Denotes the view in which this block was proposed.
+	ProposedInView uint64
+
 	// ValidatorsVoteQC is only used for Proof of Stake blocks, and will only be
 	// populated in MsgDeSoHeader versions 2 and higher. For all earlier version, this
 	// field will be null.
@@ -2090,6 +2097,9 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
 	// during both encoding and decoding.
 
+	// ProposedInView
+	retBytes = append(retBytes, EncodeUint64BigEndian(msg.ProposedInView)...)
+
 	// ValidatorsVoteQC
 	if msg.ValidatorsVoteQC == nil {
 		return nil, fmt.Errorf("EncodeHeaderVersion2: ValidatorsVoteQC must be non-nil")
@@ -2267,6 +2277,12 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	// during both encoding and decoding.
 	retHeader.Nonce = 0
 	retHeader.ExtraNonce = 0
+
+	// ProposedInView
+	retHeader.ProposedInView, err = DecodeUint64BigEndian(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposedInView")
+	}
 
 	// ValidatorsVoteQC
 	retHeader.ValidatorsVoteQC, err = DecodeQuorumCertificate(rr)
