@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/utils/bitset"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,7 +59,7 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 			BlockHash:      &BlockHash{},
 			ProposedInView: 999910,
 			ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
-				SignersList: []byte{1, 2},
+				SignersList: bitset.NewBitset().Set(0, true).Set(3, true),
 				Signature:   aggregateSignature,
 			},
 		},
@@ -68,7 +69,7 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 	// Encode the message and verify the length is correct.
 	encodedMsgBytes, err := originalMsg.ToBytes(false)
 	require.NoError(t, err)
-	require.Equal(t, 270, len(encodedMsgBytes))
+	require.Equal(t, 269, len(encodedMsgBytes))
 
 	// Decode the message.
 	decodedMsg := &MsgDeSoValidatorTimeout{}

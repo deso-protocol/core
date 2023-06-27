@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/utils/bitset"
 	"github.com/pkg/errors"
 )
 
@@ -350,9 +351,7 @@ func DecodeQuorumCertificate(rr io.Reader) (*QuorumCertificate, error) {
 // present in the aggregated signature. The indices of all validators are expected
 // to be known by the caller.
 type AggregatedBLSSignature struct {
-	// TODO: Switch this to a bitlist, which will result in ~8x reduction in total
-	// size of this construct.
-	SignersList []byte
+	SignersList *bitset.Bitset
 	Signature   *bls.Signature
 }
 
@@ -365,15 +364,21 @@ func (sig *AggregatedBLSSignature) Eq(other *AggregatedBLSSignature) bool {
 		return false
 	}
 
-	return bytes.Equal(sig.SignersList, other.SignersList) &&
-		sig.Signature.Eq(other.Signature)
+	if !sig.Signature.Eq(other.Signature) {
+		return false
+	}
+
+	return bytes.Equal(sig.SignersList.ToBytes(), other.SignersList.ToBytes())
 }
 
 func (sig *AggregatedBLSSignature) ToBytes() ([]byte, error) {
 	retBytes := []byte{}
 
 	// SignersList
-	retBytes = append(retBytes, EncodeByteArray(sig.SignersList)...)
+	if sig.SignersList == nil {
+		return nil, errors.New("AggregatedBLSSignature.ToBytes: SignersList must not be nil")
+	}
+	retBytes = append(retBytes, EncodeBitset(sig.SignersList)...)
 
 	// Signature
 	if sig.Signature == nil {
@@ -387,7 +392,7 @@ func (sig *AggregatedBLSSignature) ToBytes() ([]byte, error) {
 func (sig *AggregatedBLSSignature) FromBytes(rr io.Reader) error {
 	var err error
 
-	sig.SignersList, err = DecodeByteArray(rr)
+	sig.SignersList, err = DecodeBitset(rr)
 	if err != nil {
 		return errors.Wrapf(err, "AggregatedBLSSignature.FromBytes: Error decoding SignersList")
 	}
@@ -530,4 +535,24 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 	}
 
 	return nil
+}
+
+// ==================================================================
+// Bitset Utils
+// ==================================================================
+
+func EncodeBitset(b *bitset.Bitset) []byte {
+	var encodedBytes []byte
+	if b != nil {
+		encodedBytes = b.ToBytes()
+	}
+	return EncodeByteArray(encodedBytes)
+}
+
+func DecodeBitset(rr io.Reader) (*bitset.Bitset, error) {
+	encodedBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeBitset: Error decoding bitset")
+	}
+	return (bitset.NewBitset()).FromBytes(encodedBytes), nil
 }
