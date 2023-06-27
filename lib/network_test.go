@@ -162,6 +162,17 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 	}
 }
 
+func createTestBlockProducerInfoVersion1(t *testing.T) *BlockProducerInfo {
+	testBLSPublicKey, testBLSSignature := _generateValidatorVotingPublicKeyAndSignature(t)
+
+	return &BlockProducerInfo{
+		Version:              1,
+		PublicKey:            pkForTesting1,
+		VotingPublicKey:      testBLSPublicKey,
+		VotePartialSignature: testBLSSignature,
+	}
+}
+
 func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -484,6 +495,30 @@ var expectedV0Header = &MsgDeSoHeader{
 	TstampSecs: uint64(0x70717273),
 	Height:     uint64(99999),
 	Nonce:      uint64(123456),
+}
+
+func TestSerializeBlockVersion2(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	originalBlock := &MsgDeSoBlock{
+		Header:            createTestBlockHeaderVersion2(t),
+		BlockProducerInfo: createTestBlockProducerInfoVersion1(t),
+	}
+
+	encodedBytes, err := originalBlock.ToBytes(false)
+	require.NoError(err)
+
+	decodedBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+	err = decodedBlock.FromBytes(encodedBytes)
+	require.NoError(err)
+
+	assert.Equal(originalBlock.Header.Version, decodedBlock.Header.Version)
+	assert.Equal(originalBlock.BlockProducerInfo.PublicKey, decodedBlock.BlockProducerInfo.PublicKey)
+	assert.True(originalBlock.BlockProducerInfo.VotingPublicKey.Eq(decodedBlock.BlockProducerInfo.VotingPublicKey))
+	assert.True(originalBlock.BlockProducerInfo.VotePartialSignature.Eq(decodedBlock.BlockProducerInfo.VotePartialSignature))
 }
 
 func TestBlockSerialize(t *testing.T) {

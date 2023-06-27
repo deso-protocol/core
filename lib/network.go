@@ -2360,9 +2360,13 @@ type BlockProducerInfo struct {
 	// BlockProducerInfo version 0, and is deprecated from version 1 onwards.
 	Signature *btcec.Signature
 
-	// The block producer's BLS public key and partial signature for the block. These
-	// are populated starting in BlockProducerInfo version 1.
-	VotingPublicKey      *bls.PublicKey
+	// The BLS public key of the validator who constructed this block. This field is
+	// populated starting in BlockProducerInfo version 1.
+	VotingPublicKey *bls.PublicKey
+	// The validator's partial BLS signature of the (ProposedInView, BlockHash) pair
+	// for enclosing block. This signature proves the validator proposed the block,
+	// and also acts as the validator's vote for this block. This filed is only populated
+	// starting in BlockProducerInfo version 1.
 	VotePartialSignature *bls.Signature
 }
 
@@ -2370,14 +2374,14 @@ type BlockProducerInfo struct {
 // supports BlockProducerInfo version 1 and above. For the legacy version 0, use the
 // BlockProducerInfo.Serialize_Legacy() method instead.
 func (bpi *BlockProducerInfo) ToBytes() ([]byte, error) {
-	// If BlockProducerInfo version is 0, we're done.
+	// BlockProducerInfo version 0 is not supported.
 	if bpi.Version == BlockProducerInfoVersion0 {
 		return nil, fmt.Errorf("BlockProducerInfo.ToBytes: BlockProducerInfo version 0 not supported")
 	}
 
 	encodedBytes := []byte{}
 
-	// Required Version field.
+	// Required Version field
 	encodedBytes = append(encodedBytes, bpi.Version)
 
 	// Required ECDSA PublicKey
@@ -2406,19 +2410,19 @@ func (bpi *BlockProducerInfo) ToBytes() ([]byte, error) {
 // Byte decoder for the BlockProducerInfo, with support for versioning. The encoder only
 // supports BlockProducerInfo version 1 and above. For the legacy version 0, use the
 // BlockProducerInfo.Serialize_Legacy() method instead.
-func (bpi *BlockProducerInfo) FromBytes(rr *bytes.Reader) (*BlockProducerInfo, error) {
+func (bpi *BlockProducerInfo) FromBytes(rr *bytes.Reader) error {
 	var err error
 
 	// Required Version field
 	bpi.Version, err = rr.ReadByte()
 	if err != nil {
-		return nil, errors.Wrapf(err, "BlockProducerInfo.FromBytes: Problem reading Version")
+		return errors.Wrapf(err, "BlockProducerInfo.FromBytes: Problem reading Version")
 	}
 
 	// Required ECDSA PublicKey
 	bpi.PublicKey, err = DecodeByteArray(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "BlockProducerInfo.FromBytes: Problem reading PublicKey")
+		return errors.Wrapf(err, "BlockProducerInfo.FromBytes: Problem reading PublicKey")
 	}
 
 	// The ECDSA Signature is redundant, and is removed in BlockProducerInfo version 1 and above
@@ -2427,16 +2431,16 @@ func (bpi *BlockProducerInfo) FromBytes(rr *bytes.Reader) (*BlockProducerInfo, e
 	// Voting BLS PublicKey
 	bpi.VotingPublicKey, err = DecodeBLSPublicKey(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "BlockProducerInfo.FromBytes: Problem reading VotingPublicKey")
+		return errors.Wrapf(err, "BlockProducerInfo.FromBytes: Problem reading VotingPublicKey")
 	}
 
 	// Vote BLS Partial Signature
 	bpi.VotePartialSignature, err = DecodeBLSSignature(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "BlockProducerInfo.FromBytes: Problem reading VotePartialSignature")
+		return errors.Wrapf(err, "BlockProducerInfo.FromBytes: Problem reading VotePartialSignature")
 	}
 
-	return bpi, nil
+	return nil
 }
 
 // Legacy byte encoder for BlockProducerInfo with no support for versioning.
@@ -2599,7 +2603,7 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion1(preSignature bool) ([]byte, error) 
 
 func (msg *MsgDeSoBlock) EncodeBlockVersion2(preSignature bool) ([]byte, error) {
 	// Encode MsgDeSoHeader and []*MsgDeSoTxn
-	data, err := msg.EncodeBlockCommmon(preSignature)
+	encodedBytes, err := msg.EncodeBlockCommmon(preSignature)
 	if err != nil {
 		return nil, err
 	}
@@ -2612,10 +2616,9 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion2(preSignature bool) ([]byte, error) 
 	if err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoBlock.EncodeBlockVersion2: Problem encoding BlockProducerInfo")
 	}
+	encodedBytes = append(encodedBytes, EncodeByteArray(blockProducerInfoBytes)...)
 
-	data = append(data, blockProducerInfoBytes...)
-
-	return data, nil
+	return encodedBytes, nil
 }
 
 func (msg *MsgDeSoBlock) ToBytes(preSignature bool) ([]byte, error) {
@@ -2736,8 +2739,8 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 			return fmt.Errorf("MsgDeSoBlock.FromBytes: BlockProducerInfo length cannot be zero")
 		}
 
-		blockProducerInfo, err := (&BlockProducerInfo{}).FromBytes(rr)
-		if err != nil {
+		blockProducerInfo := &BlockProducerInfo{}
+		if blockProducerInfo.FromBytes(rr); err != nil {
 			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error decoding BlockProducerInfo")
 		}
 		ret.BlockProducerInfo = blockProducerInfo
