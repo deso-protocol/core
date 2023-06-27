@@ -2409,7 +2409,7 @@ func (bpi *BlockProducerInfo) ToBytes() ([]byte, error) {
 
 // Byte decoder for the BlockProducerInfo, with support for versioning. The encoder only
 // supports BlockProducerInfo version 1 and above. For the legacy version 0, use the
-// BlockProducerInfo.Serialize_Legacy() method instead.
+// BlockProducerInfo.Deserialize_Legacy() method instead.
 func (bpi *BlockProducerInfo) FromBytes(rr *bytes.Reader) error {
 	var err error
 
@@ -2417,6 +2417,12 @@ func (bpi *BlockProducerInfo) FromBytes(rr *bytes.Reader) error {
 	bpi.Version, err = rr.ReadByte()
 	if err != nil {
 		return errors.Wrapf(err, "BlockProducerInfo.FromBytes: Problem reading Version")
+	}
+
+	// If we see version 0 here, we know the BlockProducerInfo is malformed. The new byte encoder
+	// cannot have produced this byte encoding.
+	if bpi.Version == BlockProducerInfoVersion0 {
+		return fmt.Errorf("BlockProducerInfo.FromBytes: BlockProducerInfo version 0 not supported")
 	}
 
 	// Required ECDSA PublicKey
@@ -2542,11 +2548,11 @@ type MsgDeSoBlock struct {
 	// who they accept blocks from.
 	//
 	// In Proof of Stake blocks, this field is required and serves two purposes:
-	// 1. It's allows the block producer to sign their block with their ECDSA or BLS private key.
+	// 1. It allows the block producer to sign its block with its ECDSA or BLS private key.
 	// This allows validators to verify that the block was produced by the expected leader for the
 	// current block height and view.
 	// 2. It contains the block producer's BLS partial signature, which acts as their vote on the
-	// block. This way, their vote can be aggregated into a QC by the next block proposer in the leader
+	// block. This way, its vote can be aggregated into a QC by the next block proposer in the leader
 	// schedule.
 	BlockProducerInfo *BlockProducerInfo
 }
