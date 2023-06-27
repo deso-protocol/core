@@ -2442,7 +2442,7 @@ type MsgDeSoBlock struct {
 	Header *MsgDeSoHeader
 	Txns   []*MsgDeSoTxn
 
-	// This BlockProducerInfo field describes the proposer for the block and their signature
+	// This BlockProducerInfo field describes the producer of the block and their signature
 	// for the block.
 	//
 	// In Proof of Work blocks, this field is optional and provides the producer of the block
