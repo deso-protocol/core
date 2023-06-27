@@ -14,12 +14,12 @@ func TestValidatorVoteEncodeDecode(t *testing.T) {
 	validatorVotingPublicKey, votePartialSignature := _generateValidatorVotingPublicKeyAndSignature(t)
 
 	originalMsg := MsgDeSoValidatorVote{
-		MsgVersion:               MsgValidatorVoteVersion0,
-		ValidatorPublicKey:       &PublicKey{},
-		ValidatorVotingPublicKey: validatorVotingPublicKey,
-		BlockHash:                &BlockHash{},
-		ProposedInView:           9910,
-		VotePartialSignature:     votePartialSignature,
+		MsgVersion:           MsgValidatorVoteVersion0,
+		PublicKey:            &PublicKey{},
+		VotingPublicKey:      validatorVotingPublicKey,
+		BlockHash:            &BlockHash{},
+		ProposedInView:       9910,
+		VotePartialSignature: votePartialSignature,
 	}
 
 	// Encode the message and verify the length is correct.
@@ -34,8 +34,8 @@ func TestValidatorVoteEncodeDecode(t *testing.T) {
 
 	// Check that the message bodies are the same.
 	require.Equal(t, originalMsg.MsgVersion, decodedMsg.MsgVersion)
-	require.True(t, originalMsg.ValidatorPublicKey.Equal(*decodedMsg.ValidatorPublicKey))
-	require.True(t, originalMsg.ValidatorVotingPublicKey.Eq(decodedMsg.ValidatorVotingPublicKey))
+	require.True(t, originalMsg.PublicKey.Equal(*decodedMsg.PublicKey))
+	require.True(t, originalMsg.VotingPublicKey.Eq(decodedMsg.VotingPublicKey))
 	require.Equal(t, originalMsg.BlockHash, decodedMsg.BlockHash)
 	require.Equal(t, originalMsg.ProposedInView, decodedMsg.ProposedInView)
 	require.True(t, originalMsg.VotePartialSignature.Eq(decodedMsg.VotePartialSignature))
@@ -51,10 +51,10 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 
 	originalMsg := MsgDeSoValidatorTimeout{
-		MsgVersion:               MsgValidatorTimeoutVersion0,
-		ValidatorPublicKey:       &PublicKey{},
-		ValidatorVotingPublicKey: validatorVotingPublicKey,
-		TimedOutView:             999912,
+		MsgVersion:      MsgValidatorTimeoutVersion0,
+		PublicKey:       &PublicKey{},
+		VotingPublicKey: validatorVotingPublicKey,
+		TimedOutView:    999912,
 		HighQC: &QuorumCertificate{
 			BlockHash:      &BlockHash{},
 			ProposedInView: 999910,
@@ -78,8 +78,8 @@ func TestValidatorTimeoutEncodeDecode(t *testing.T) {
 
 	// Check that the message bodies are the same.
 	require.Equal(t, originalMsg.MsgVersion, decodedMsg.MsgVersion)
-	require.True(t, originalMsg.ValidatorPublicKey.Equal(*decodedMsg.ValidatorPublicKey))
-	require.True(t, originalMsg.ValidatorVotingPublicKey.Eq(decodedMsg.ValidatorVotingPublicKey))
+	require.True(t, originalMsg.PublicKey.Equal(*decodedMsg.PublicKey))
+	require.True(t, originalMsg.VotingPublicKey.Eq(decodedMsg.VotingPublicKey))
 	require.Equal(t, originalMsg.TimedOutView, decodedMsg.TimedOutView)
 	require.True(t, originalMsg.TimeoutPartialSignature.Eq(decodedMsg.TimeoutPartialSignature))
 

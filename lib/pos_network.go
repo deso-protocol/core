@@ -21,13 +21,13 @@ type MsgDeSoValidatorVote struct {
 	// Given the validator's ECDSA public key, we can look up their Validator PKID
 	// and their stake in consensus. This allows us to verify that the vote message
 	// was sent by a registered validator.
-	ValidatorPublicKey *PublicKey
+	PublicKey *PublicKey
 	// The BLS voting public key for the validator who constructed this vote message.
 	// The BLS public key is included in the vote message because it allows us to
 	// easily verify if the BLS VotePartialSignature is correctly formed, without having
 	// to first look up the validator's BLS public key in consensus. It helps optimize
 	// vote validation.
-	ValidatorVotingPublicKey *bls.PublicKey
+	VotingPublicKey *bls.PublicKey
 
 	// The block hash corresponding to the block that this vote is for.
 	BlockHash *BlockHash
@@ -55,17 +55,17 @@ func (msg *MsgDeSoValidatorVote) ToBytes(bool) ([]byte, error) {
 	// MsgVersion
 	retBytes = append(retBytes, msg.MsgVersion)
 
-	// ValidatorPublicKey
-	if msg.ValidatorPublicKey == nil {
-		return nil, errors.New("MsgDeSoValidatorVote.ToBytes: ValidatorPublicKey must not be nil")
+	// PublicKey
+	if msg.PublicKey == nil {
+		return nil, errors.New("MsgDeSoValidatorVote.ToBytes: PublicKey must not be nil")
 	}
-	retBytes = append(retBytes, msg.ValidatorPublicKey.ToBytes()...)
+	retBytes = append(retBytes, msg.PublicKey.ToBytes()...)
 
-	// ValidatorVotingPublicKey
-	if msg.ValidatorVotingPublicKey == nil {
-		return nil, errors.New("MsgDeSoValidatorVote.ToBytes: ValidatorVotingPublicKey must not be nil")
+	// VotingPublicKey
+	if msg.VotingPublicKey == nil {
+		return nil, errors.New("MsgDeSoValidatorVote.ToBytes: VotingPublicKey must not be nil")
 	}
-	retBytes = append(retBytes, EncodeBLSPublicKey(msg.ValidatorVotingPublicKey)...)
+	retBytes = append(retBytes, EncodeBLSPublicKey(msg.VotingPublicKey)...)
 
 	// BlockHash
 	if msg.BlockHash == nil {
@@ -98,16 +98,16 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 	}
 	msg.MsgVersion = msgVersion
 
-	// ValidatorPublicKey
-	msg.ValidatorPublicKey, err = ReadPublicKey(rr)
+	// PublicKey
+	msg.PublicKey, err = ReadPublicKey(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Error decoding ValidatorPublicKey")
+		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Error decoding PublicKey")
 	}
 
-	// ValidatorVotingPublicKey
-	msg.ValidatorVotingPublicKey, err = DecodeBLSPublicKey(rr)
+	// VotingPublicKey
+	msg.VotingPublicKey, err = DecodeBLSPublicKey(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Error decoding ValidatorVotingPublicKey")
+		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Error decoding VotingPublicKey")
 	}
 
 	// BlockHash
@@ -141,13 +141,13 @@ type MsgDeSoValidatorTimeout struct {
 	// The ECDSA public key for the validator who constructed this timeout message.
 	// Given the validator's ECDSA public key, we can look up their Validator PKID.
 	// This allows us to verify that the timeout originated from a registered validator.
-	ValidatorPublicKey *PublicKey
+	PublicKey *PublicKey
 	// The BLS voting public key for the validator who constructed this timeout. The BLS
 	// public key is included in the timeout message because it allows us to easily
 	// verify that the BLS TimeoutPartialSignature is correctly formed, without having to
 	// first look up the validator's BLS public key in consensus. It helps optimize timeout
 	// message validation.
-	ValidatorVotingPublicKey *bls.PublicKey
+	VotingPublicKey *bls.PublicKey
 
 	// The view that the validator has timed out on.
 	TimedOutView uint64
@@ -178,17 +178,17 @@ func (msg *MsgDeSoValidatorTimeout) ToBytes(bool) ([]byte, error) {
 	// MsgVersion
 	retBytes = append(retBytes, msg.MsgVersion)
 
-	// ValidatorPublicKey
-	if msg.ValidatorPublicKey == nil {
-		return nil, errors.New("MsgDeSoValidatorTimeout.ToBytes: ValidatorPublicKey must not be nil")
+	// PublicKey
+	if msg.PublicKey == nil {
+		return nil, errors.New("MsgDeSoValidatorTimeout.ToBytes: PublicKey must not be nil")
 	}
-	retBytes = append(retBytes, msg.ValidatorPublicKey.ToBytes()...)
+	retBytes = append(retBytes, msg.PublicKey.ToBytes()...)
 
-	// ValidatorVotingPublicKey
-	if msg.ValidatorVotingPublicKey == nil {
-		return nil, errors.New("MsgDeSoValidatorTimeout.ToBytes: ValidatorVotingPublicKey must not be nil")
+	// VotingPublicKey
+	if msg.VotingPublicKey == nil {
+		return nil, errors.New("MsgDeSoValidatorTimeout.ToBytes: VotingPublicKey must not be nil")
 	}
-	retBytes = append(retBytes, EncodeBLSPublicKey(msg.ValidatorVotingPublicKey)...)
+	retBytes = append(retBytes, EncodeBLSPublicKey(msg.VotingPublicKey)...)
 
 	// TimeoutView
 	retBytes = append(retBytes, UintToBuf(msg.TimedOutView)...)
@@ -225,16 +225,16 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 	}
 	msg.MsgVersion = msgVersion
 
-	// ValidatorPublicKey
-	msg.ValidatorPublicKey, err = ReadPublicKey(rr)
+	// PublicKey
+	msg.PublicKey, err = ReadPublicKey(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding ValidatorPublicKey")
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding PublicKey")
 	}
 
-	// ValidatorVotingPublicKey
-	msg.ValidatorVotingPublicKey, err = DecodeBLSPublicKey(rr)
+	// VotingPublicKey
+	msg.VotingPublicKey, err = DecodeBLSPublicKey(rr)
 	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding ValidatorVotingPublicKey")
+		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding VotingPublicKey")
 	}
 
 	// TimedOutView
