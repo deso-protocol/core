@@ -2081,45 +2081,33 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 
 	// TstampSecs: this field can be encoded to take up the full 64 bits now
 	// that MsgDeSoHeader version 2 does not need to be backwards compatible.
-	{
-		scratchBytes := [8]byte{}
-		binary.BigEndian.PutUint64(scratchBytes[:], msg.TstampSecs)
-		retBytes = append(retBytes, scratchBytes[:]...)
-	}
+	retBytes = append(retBytes, EncodeUint64BigEndian(msg.TstampSecs)...)
 
 	// Height
-	{
-		scratchBytes := [8]byte{}
-		binary.BigEndian.PutUint64(scratchBytes[:], msg.Height)
-		retBytes = append(retBytes, scratchBytes[:]...)
-	}
+	retBytes = append(retBytes, EncodeUint64BigEndian(msg.Height)...)
 
 	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
 	// during both encoding and decoding.
 
 	// ValidatorsVoteQC
-	{
-		if msg.ValidatorsVoteQC == nil {
-			return nil, fmt.Errorf("EncodeHeaderVersion2: ValidatorsVoteQC must be non-nil")
-		}
-		encodedValidatorsVoteQC, err := msg.ValidatorsVoteQC.ToBytes()
-		if err != nil {
-			return nil, errors.Wrapf(err, "EncodeHeaderVersion2: error encoding ValidatorsVoteQC")
-		}
-		retBytes = append(retBytes, encodedValidatorsVoteQC...)
+	if msg.ValidatorsVoteQC == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: ValidatorsVoteQC must be non-nil")
 	}
+	encodedValidatorsVoteQC, err := msg.ValidatorsVoteQC.ToBytes()
+	if err != nil {
+		return nil, errors.Wrapf(err, "EncodeHeaderVersion2: error encoding ValidatorsVoteQC")
+	}
+	retBytes = append(retBytes, encodedValidatorsVoteQC...)
 
 	// ValidatorsTimeoutAggregateQC
-	{
-		if msg.ValidatorsTimeoutAggregateQC == nil {
-			return nil, fmt.Errorf("EncodeHeaderVersion2: ValidatorsTimeoutAggregateQC must be non-nil")
-		}
-		encodedValidatorsTimeoutAggregateQC, err := msg.ValidatorsTimeoutAggregateQC.ToBytes()
-		if err != nil {
-			return nil, errors.Wrapf(err, "EncodeHeaderVersion2: error encoding ValidatorsTimeoutAggregateQC")
-		}
-		retBytes = append(retBytes, encodedValidatorsTimeoutAggregateQC...)
+	if msg.ValidatorsTimeoutAggregateQC == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: ValidatorsTimeoutAggregateQC must be non-nil")
 	}
+	encodedValidatorsTimeoutAggregateQC, err := msg.ValidatorsTimeoutAggregateQC.ToBytes()
+	if err != nil {
+		return nil, errors.Wrapf(err, "EncodeHeaderVersion2: error encoding ValidatorsTimeoutAggregateQC")
+	}
+	retBytes = append(retBytes, encodedValidatorsTimeoutAggregateQC...)
 
 	return retBytes, nil
 }
@@ -2263,23 +2251,15 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	}
 
 	// TstampSecs
-	{
-		scratchBytes := [8]byte{}
-		_, err := io.ReadFull(rr, scratchBytes[:])
-		if err != nil {
-			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
-		}
-		retHeader.TstampSecs = binary.BigEndian.Uint64(scratchBytes[:])
+	retHeader.TstampSecs, err = DecodeUint64BigEndian(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
 	}
 
 	// Height
-	{
-		scratchBytes := [8]byte{}
-		_, err := io.ReadFull(rr, scratchBytes[:])
-		if err != nil {
-			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Height")
-		}
-		retHeader.Height = binary.BigEndian.Uint64(scratchBytes[:])
+	retHeader.Height, err = DecodeUint64BigEndian(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Height")
 	}
 
 	// The Nonce and ExtraNonce fields are unused in version 2. We skip them

@@ -422,9 +422,16 @@ type TimeoutAggregateQuorumCertificate struct {
 	// unique HighQC.View value we received, we combine all the partial signatures
 	// for that HighQC.View into a single BLSMultiSignature.
 	//
-	// Note: The aggregated signature is made up of partial signatures for all
-	// present validators, each of whom signed a payload with the pair
+	//
+	// The aggregated signature is made up of partial signatures for all present
+	// validators, each of whom signed a payload with the pair
 	// (current view, the validator's local HighQC.View).
+	//
+	// The ordering of high QC views and validators in the aggregate signature will
+	// match the ordering of active validators in descending order of stake for the
+	// current view's epoch. I.e. index 0 will correspond to the highest-staked active
+	// validator in the epoch, index 1 will correspond to the second-highest-staked active
+	// validator, ...
 	ValidatorsTimeoutHighQCViews         []uint64
 	ValidatorsTimeoutAggregatedSignature *AggregatedBLSSignature
 }
