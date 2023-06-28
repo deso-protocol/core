@@ -2374,9 +2374,10 @@ type BlockProducerInfo struct {
 // supports BlockProducerInfo version 1 and above. For the legacy version 0, use the
 // BlockProducerInfo.Serialize_Legacy() method instead.
 func (bpi *BlockProducerInfo) ToBytes() ([]byte, error) {
-	// BlockProducerInfo version 0 is not supported.
-	if bpi.Version == BlockProducerInfoVersion0 {
-		return nil, fmt.Errorf("BlockProducerInfo.ToBytes: BlockProducerInfo version 0 not supported")
+	// Only support byte encoding for BlockProducerInfo version 1. All later versions will
+	// need custom encoding.
+	if bpi.Version != BlockProducerInfoVersion1 {
+		return nil, fmt.Errorf("BlockProducerInfo.ToBytes: BlockProducerInfo version %d not supported", bpi.Version)
 	}
 
 	encodedBytes := []byte{}
@@ -2419,10 +2420,10 @@ func (bpi *BlockProducerInfo) FromBytes(rr *bytes.Reader) error {
 		return errors.Wrapf(err, "BlockProducerInfo.FromBytes: Problem reading Version")
 	}
 
-	// If we see version 0 here, we know the BlockProducerInfo is malformed. The new byte encoder
-	// cannot have produced this byte encoding.
-	if bpi.Version == BlockProducerInfoVersion0 {
-		return fmt.Errorf("BlockProducerInfo.FromBytes: BlockProducerInfo version 0 not supported")
+	// Only support byte decoding for BlockProducerInfo version 1. All later versions will
+	// need custom decoding.
+	if bpi.Version != BlockProducerInfoVersion1 {
+		return fmt.Errorf("BlockProducerInfo.FromBytes: BlockProducerInfo version %d not supported", bpi.Version)
 	}
 
 	// Required ECDSA PublicKey
