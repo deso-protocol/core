@@ -6,7 +6,7 @@ import (
 	"io"
 
 	"github.com/deso-protocol/core/bls"
-	"github.com/deso-protocol/core/utils/bitset"
+	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/pkg/errors"
 )
 
