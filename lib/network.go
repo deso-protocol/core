@@ -2089,16 +2089,16 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 
 	// TstampSecs: this field can be encoded to take up the full 64 bits now
 	// that MsgDeSoHeader version 2 does not need to be backwards compatible.
-	retBytes = append(retBytes, EncodeUint64BigEndian(msg.TstampSecs)...)
+	retBytes = append(retBytes, UintToBuf(msg.TstampSecs)...)
 
 	// Height
-	retBytes = append(retBytes, EncodeUint64BigEndian(msg.Height)...)
+	retBytes = append(retBytes, UintToBuf(msg.Height)...)
 
 	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
 	// during both encoding and decoding.
 
 	// ProposedInView
-	retBytes = append(retBytes, EncodeUint64BigEndian(msg.ProposedInView)...)
+	retBytes = append(retBytes, UintToBuf(msg.ProposedInView)...)
 
 	// ValidatorsVoteQC
 	if msg.ValidatorsVoteQC == nil {
@@ -2262,13 +2262,13 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	}
 
 	// TstampSecs
-	retHeader.TstampSecs, err = DecodeUint64BigEndian(rr)
+	retHeader.TstampSecs, err = ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
 	}
 
 	// Height
-	retHeader.Height, err = DecodeUint64BigEndian(rr)
+	retHeader.Height, err = ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Height")
 	}
@@ -2279,7 +2279,7 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	retHeader.ExtraNonce = 0
 
 	// ProposedInView
-	retHeader.ProposedInView, err = DecodeUint64BigEndian(rr)
+	retHeader.ProposedInView, err = ReadUvarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposedInView")
 	}

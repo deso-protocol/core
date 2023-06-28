@@ -2,7 +2,6 @@ package lib
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -4683,21 +4682,6 @@ func DecodeUint64Array(reader io.Reader) ([]uint64, error) {
 	}
 
 	return result, nil
-}
-
-func EncodeUint64BigEndian(val uint64) []byte {
-	encodedBytes := [8]byte{}
-	binary.BigEndian.PutUint64(encodedBytes[:], val)
-	return encodedBytes[:]
-}
-
-func DecodeUint64BigEndian(rr io.Reader) (uint64, error) {
-	scratchBytes := [8]byte{}
-	_, err := io.ReadFull(rr, scratchBytes[:])
-	if err != nil {
-		return 0, err
-	}
-	return binary.BigEndian.Uint64(scratchBytes[:]), nil
 }
 
 func EncodePKIDuint64Map(pkidMap map[PKID]uint64) []byte {
