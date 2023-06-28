@@ -142,18 +142,18 @@ const (
 
 // Versioning for the BlockProducerInfo field included in MsgDeSoBlock. This type alias
 // is equivalent to a uint8, and supports the same byte encoders/decoders.
-type BlockProducerInfoVersion = byte
+type MsgDeSoBlockProducerInfoVersion = byte
 
 const (
 	// This represents the original schema for the BlockProducerInfo field included in
 	// Proof of Work blocks. The original schema  did not have versioning, so we use a default
 	// version value of 0 to denote this. The original schema only contains the block producer's
 	// ECDSA public key and ECDSA signature of the block.
-	BlockProducerInfoVersion0 BlockProducerInfoVersion = 0
+	MsgDeSoBlockProducerInfoVersion0 MsgDeSoBlockProducerInfoVersion = 0
 	// This version is introduced starting with Proof of Stake blocks. It adds versioning to the
 	// BlockProducerInfo schema, and adds two new fields for the block producer's BLS public key
 	// and BLS partial signature for the block.
-	BlockProducerInfoVersion1 BlockProducerInfoVersion = 1
+	MsgDeSoBlockProducerInfoVersion1 MsgDeSoBlockProducerInfoVersion = 1
 )
 
 var (

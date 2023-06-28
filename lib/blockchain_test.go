@@ -1652,7 +1652,7 @@ func TestBadBlockSignature(t *testing.T) {
 
 	// Since MineAndProcesssSingleBlock returns a valid block above, we can play with its
 	// signature and re-process the block to see what happens.
-	blockProducerInfoCopy := &BlockProducerInfo{Signature: &btcec.Signature{}}
+	blockProducerInfoCopy := &MsgDeSoBlockProducerInfo{Signature: &btcec.Signature{}}
 	blockProducerInfoCopy.PublicKey = NewPublicKey(finalBlock1.BlockProducerInfo.PublicKey[:])
 	*blockProducerInfoCopy.Signature = *finalBlock1.BlockProducerInfo.Signature
 

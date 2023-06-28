@@ -517,7 +517,7 @@ func (desoBlockProducer *DeSoBlockProducer) SignBlock(blockFound *MsgDeSoBlock) 
 	// If we get here, we now have a valid signature for the block.
 
 	// Embed the signature into the block.
-	blockFound.BlockProducerInfo = &BlockProducerInfo{
+	blockFound.BlockProducerInfo = &MsgDeSoBlockProducerInfo{
 		PublicKey: NewPublicKey(desoBlockProducer.blockProducerPrivateKey.PubKey().SerializeCompressed()),
 		Signature: signature,
 	}

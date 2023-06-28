@@ -162,10 +162,10 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 	}
 }
 
-func createTestBlockProducerInfoVersion1(t *testing.T) *BlockProducerInfo {
+func createTestBlockProducerInfoVersion1(t *testing.T) *MsgDeSoBlockProducerInfo {
 	testBLSPublicKey, testBLSSignature := _generateValidatorVotingPublicKeyAndSignature(t)
 
-	return &BlockProducerInfo{
+	return &MsgDeSoBlockProducerInfo{
 		Version:              1,
 		PublicKey:            NewPublicKey(pkForTesting1),
 		VotingPublicKey:      testBLSPublicKey,
@@ -338,7 +338,7 @@ var expectedBlock = &MsgDeSoBlock{
 	Header: expectedBlockHeaderVersion1,
 	Txns:   expectedTransactions(true), // originally was effectively false
 
-	BlockProducerInfo: &BlockProducerInfo{
+	BlockProducerInfo: &MsgDeSoBlockProducerInfo{
 		PublicKey: NewPublicKey([]byte{
 			// random bytes
 			0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x30,
